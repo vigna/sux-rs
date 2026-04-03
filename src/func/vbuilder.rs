@@ -1234,6 +1234,9 @@ impl<
             self.num_threads
         ));
 
+        // Shard processing details are logged at debug level
+        pl.log_level(log::Level::Debug);
+
         if self.lge {
             pl.info(format_args!(
                 "Peeling with lazy Gaussian elimination fallback"
@@ -1272,6 +1275,8 @@ impl<
                 pl,
             )?;
         }
+
+        pl.log_level(log::Level::Info);
 
         pl.info(format_args!(
             "Bits/keys: {} ({:+.4}%)",

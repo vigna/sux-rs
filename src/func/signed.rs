@@ -40,7 +40,6 @@ use {
     core::error::Error,
     dsi_progress_logger::ProgressLog,
     lender::*,
-    num_primitive::PrimitiveNumberAs,
     rdst::RadixKey,
     std::ops::{BitXor, BitXorAssign},
     value_traits::slices::SliceByValueMut,
@@ -54,7 +53,7 @@ use crate::func::shard_edge::{Fuse3Shards, ShardEdge};
 use crate::traits::Backend;
 use crate::utils::*;
 use mem_dbg::*;
-use num_primitive::{PrimitiveInteger, PrimitiveNumber};
+use num_primitive::{PrimitiveInteger, PrimitiveNumber, PrimitiveNumberAs};
 use value_traits::slices::SliceByValue;
 
 /// Truncates a hash to a given width.
@@ -1450,15 +1449,6 @@ where
 // ═══════════════════════════════════════════════════════════════════
 
 use crate::traits::{TryIntoUnaligned, Word};
-
-impl<W: Word> TryIntoUnaligned for Box<[W]> {
-    type Unaligned = Box<[W]>;
-    fn try_into_unaligned(
-        self,
-    ) -> std::result::Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
-        Ok(self)
-    }
-}
 
 impl<F: TryIntoUnaligned, H: TryIntoUnaligned> TryIntoUnaligned for SignedFunc<F, H> {
     type Unaligned = SignedFunc<F::Unaligned, H::Unaligned>;
