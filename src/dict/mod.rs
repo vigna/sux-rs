@@ -16,9 +16,9 @@
 //!   immutable lists of strings or byte sequences with random access.
 //! - [`MappedRearCodedListStr`] / [`MappedRearCodedListSliceU8`]: Rear-coded
 //!   lists with element reordering for better compression.
-//! - [`SignedFunc`] / [`BitSignedFunc`]:
+//! - [`SignedFunc`]:
 //!   Index functions verified by hash signatures, returning `None` on mismatch.
-//!   These are re-exported from [`func::signed`](crate::func::signed).
+//!   Re-exported from [`func::signed`](crate::func::signed).
 //!   Use concrete types like `SignedFunc<LcpMmphfStr, Box<[u64]>>`.
 //! - [`VFilter`]: Static filters (approximate membership structures) based on
 //!   hash comparison. Use the `Box<[W]>` backend for full-width hashes, or the
@@ -48,7 +48,7 @@ pub use mapped_rear_coded_list::{MappedRearCodedListSliceU8, MappedRearCodedList
 mod slice_seq;
 pub use slice_seq::SliceSeq;
 
-pub use crate::func::signed::{BitSignedFunc, SignedFunc};
+pub use crate::func::signed::SignedFunc;
 
 pub mod vfilter;
 pub use vfilter::VFilter;

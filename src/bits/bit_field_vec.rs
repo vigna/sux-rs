@@ -257,6 +257,12 @@ impl<B: Backend<Word: Word>> BitFieldVec<B> {
         (self.bits, self.bit_width, self.len)
     }
 
+    /// Returns the mask used to extract values from the vector.
+    /// This will keep the lowest `bit_width` bits.
+    pub const fn mask(&self) -> B::Word {
+        self.mask
+    }
+
     /// Replaces the backend by applying a function, consuming this vector.
     ///
     /// # Safety
@@ -431,12 +437,6 @@ impl<W: Word> BitFieldVec<Vec<W>> {
     pub const fn bit_width(&self) -> usize {
         debug_assert!(self.bit_width <= W::BITS as usize);
         self.bit_width
-    }
-
-    /// Returns the mask used to extract values from the vector.
-    /// This will keep the lowest `bit_width` bits.
-    pub const fn mask(&self) -> W {
-        self.mask
     }
 
     /// Creates a new vector by copying a slice; the bit width will be the minimum
@@ -1854,6 +1854,12 @@ impl<B: Backend<Word: Word>> BitFieldVecU<B> {
     /// Consumes the wrapper and returns the inner [`BitFieldVec`].
     pub fn into_inner(self) -> BitFieldVec<B> {
         self.0
+    }
+
+    /// Returns the mask used to extract values from the vector.
+    /// This will keep the lowest `bit_width` bits.
+    pub const fn mask(&self) -> B::Word {
+        self.0.mask()
     }
 }
 

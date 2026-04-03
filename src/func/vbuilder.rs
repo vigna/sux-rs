@@ -43,8 +43,10 @@ const LOG2_MAX_SHARDS: u32 = 16;
 
 /// A builder for [`VFunc`] and [`VFilter`](crate::dict::VFilter).
 ///
-/// Most users should not call `VBuilder` methods directly. Instead,
-/// functions and filters have `try_new` and `try_new_with_builder`.
+/// Most users should not use the construction methods this structure directly.
+/// Instead, functions and filters have `try_new` and `try_new_with_builder`
+/// methods. In the second case, an instance of this structure can be passed
+/// to configure the construction.
 ///
 /// There are two construction modes: in core memory (default) and
 /// [offline](VBuilder::offline); both use a [`SigStore`]. In the first case,

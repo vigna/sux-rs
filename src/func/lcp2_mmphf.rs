@@ -434,14 +434,14 @@ where
                 builder.try_solve_once(
                     seed,
                     &mut populate,
-                    &mut |_builder,
+                    &mut |builder,
                           seed,
                           mut store,
                           _max_value,
                           _num_keys,
                           pl: &mut P,
                           state: &mut State<T>| {
-                        let shard_edge = _builder.shard_edge;
+                        let shard_edge = builder.shard_edge;
                         let store = &mut *store;
 
                         // -- Compute optimal r and remap/inv_map from LCP frequencies --
@@ -526,7 +526,7 @@ where
                         // -- Build LCP long VFunc (escaped keys only) --
                         let lcp_long = if n_escaped > 0 {
                             let mut long_shard_edge = Fuse3Shards::default();
-                            long_shard_edge.set_up_shards(n_escaped, _builder.eps);
+                            long_shard_edge.set_up_shards(n_escaped, builder.eps);
                             let long_shb = long_shard_edge.shard_high_bits();
 
                             let long_num_shards = 1usize << long_shb;
@@ -553,7 +553,7 @@ where
                             );
 
                             VBuilder::<BitFieldVec<Box<[usize]>>, S, Fuse3Shards>::default()
-                                .max_num_threads(_builder.max_num_threads)
+                                .max_num_threads(builder.max_num_threads)
                                 .try_build_func_with_store::<T, u64>(
                                     seed,
                                     long_shard_edge,

@@ -29,9 +29,11 @@
 //!   [`LcpMmphfInt`]/[`LcpMmphf`] that use a [`VFunc2`] to reduce space usage, at
 //!   the cost of slightly slower queries.
 //!
-//! - [`SignedFunc`]/[`BitSignedFunc`] wrap any of the above with per-key
-//!   verification hashes, returning `None` for keys outside the original set.
-//!   Use concrete types like `SignedFunc<LcpMmphfStr, Box<[u64]>>`.
+//! - [`SignedFunc`] wraps any of the above with per-key verification hashes,
+//!   returning `None` for keys outside the original set. Use `Box<[W]>` for
+//!   full-width hashes or [`BitFieldVec`](crate::bits::BitFieldVec) for
+//!   sub-word-width hashes. Use concrete types like
+//!   `SignedFunc<LcpMmphfStr, Box<[u64]>>`.
 //!
 //! Most structures implement the
 //! [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing them
@@ -46,16 +48,11 @@
 //! | Map sorted keys → rank (monotone) | [`LcpMmphfInt`] / [`LcpMmphf`] | ~1.8 bits/key |
 //! | Same, less space, slower queries | [`Lcp2MmphfInt`] / [`Lcp2Mmphf`] | ~1.4 bits/key |
 //! | Approximate membership (Bloom-like) | [`VFilter`](crate::dict::VFilter) | ~1.13 × filter_bits per key |
-//! | Any of the above + reject unknown keys | [`SignedFunc`] / [`BitSignedFunc`] | inner cost + hash bits |
+//! | Any of the above + reject unknown keys | [`SignedFunc`] | inner cost + hash bits |
 //!
 //! All constructors follow the pattern `try_new(keys, …, pl)` for default
 //! settings, and `try_new_with_builder(keys, …, builder, pl)` to configure
 //! the [`VBuilder`] (offline mode, thread count, sharding overhead, seed).
-//!
-//! [`SignedFunc`] and [`BitSignedFunc`] wrap any inner function. Use
-//! [`BitSignedFunc`] when you want sub-word-width hashes (e.g., 8-bit for
-//! ~0.4% false positives); use [`SignedFunc`] for full-width hashes
-//! (faster comparison).
 
 mod vfunc;
 pub use vfunc::*;
