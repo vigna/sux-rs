@@ -116,7 +116,7 @@ use ambassador::Delegate;
 use anyhow::{Result, bail};
 use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic, PrimitiveAtomicUnsigned};
 use mem_dbg::*;
-use num_primitive::{PrimitiveInteger, PrimitiveNumber};
+use num_primitive::{PrimitiveInteger, PrimitiveNumber, PrimitiveNumberAs};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use std::iter::FusedIterator;
@@ -444,7 +444,7 @@ impl<W: Word> BitFieldVec<Vec<W>> {
     ///
     /// Returns an error if the bit width of the values in `slice` is larger than
     /// `W::BITS`.
-    pub fn from_slice<S: BitFieldSlice<Value: Word + num_primitive::PrimitiveNumberAs<W>>>(
+    pub fn from_slice<S: BitFieldSlice<Value: Word + PrimitiveNumberAs<W>>>(
         slice: &S,
     ) -> Result<Self> {
         let mut max_len: usize = 0;
@@ -1883,6 +1883,33 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldSlice for BitFieldVecU<B
 impl<B: Backend<Word: Word> + AsRef<[B::Word]>> AsRef<[B::Word]> for BitFieldVecU<B> {
     fn as_ref(&self) -> &[B::Word] {
         self.0.bits.as_ref()
+    }
+}
+
+impl<W: Word> crate::traits::TryIntoUnaligned for Box<[W]> {
+    type Unaligned = Box<[W]>;
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+        Ok(self)
+    }
+}
+
+impl<W: Word> crate::traits::TryIntoUnaligned for Vec<W> {
+    type Unaligned = Vec<W>;
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+        Ok(self)
+    }
+}
+
+impl<W: Word, const N: usize> crate::traits::TryIntoUnaligned for [W; N] {
+    type Unaligned = [W; N];
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+        Ok(self)
     }
 }
 
