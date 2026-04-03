@@ -6,31 +6,31 @@
 
 #![allow(clippy::type_complexity, private_bounds)]
 
-//! Signed static functions and monotone minimal perfect hash functions.
+//! Signed static functions.
 //!
 //! A signed function stores for each key a hash. When querying a key, the
 //! function first computes the hash of the key and compares it with the stored
-//! hash for the returned index. If the hashes match, the index is returned;
+//! hash for the returned index (for this to make sense, the function must be a
+//! minimal perfect hash). If the hashes match, the index is returned;
 //! otherwise, [`None`] is returned. This allows the function to reject queries
 //! for keys outside the original set, with a false-positive probability
 //! depending on the size of the stored hashes.
 //!
-//! Two wrappers are provided:
+//! [`SignedFunc`] is generic over the inner function `F` (which must implement
+//! [`SignableFunc`]) and the hash storage `H` (which must implement
+//! [`TruncateHash`]). The hash storage can be a full-width boxed slice (e.g.,
+//! `Box<[u64]>`, giving false-positive probability 2<sup>−64</sup>) or a
+//! [`BitFieldVec`] with a caller-chosen bit width (e.g., 8 bits for ~0.4%
+//! false positives). Per-inner-type `get` methods are provided via
+//! monomorphized `impl` blocks.
 //!
-//! - [`SignedFunc`] stores full-width hashes (e.g., `Box<[u64]>`).
-//!   False-positive probability is 2<sup>-`H::Value::BITS`</sup>.
-//! - [`BitSignedFunc`] stores hashes in a [`BitFieldVec`] with a
-//!   caller-chosen bit width. False-positive probability is
-//!   2<sup>-`hash_width`</sup>.
-//!
-//! Both wrappers are generic over the inner function `F` (which must implement
-//! [`SignableFunc`]) and the hash storage `H`. Per-inner-type `get` methods are
-//! provided via monomorphized `impl` blocks.
-//!
-//! Use concrete types directly, e.g., `SignedFunc<LcpMmphfStr, Box<[u64]>>`
-//! or `BitSignedFunc<LcpMmphfInt<u64>, BitFieldVec<Box<[usize]>>>`.
+//! Use concrete types directly, like `SignedFunc<LcpMmphfStr, Box<[u64]>>` or
+//! `SignedFunc<LcpMmphfInt<u64>, BitFieldVec<Box<[usize]>>>`. For each such
+//! concrete type, this module provides `try_new`, `try_new_with_builder`, and
+//! `get` methods.
 
 use std::borrow::Borrow;
+use std::mem::size_of;
 
 #[cfg(feature = "rayon")]
 use {
@@ -51,18 +51,60 @@ use crate::func::VFunc;
 use crate::func::lcp_mmphf::{LcpMmphf, LcpMmphfInt};
 use crate::func::lcp2_mmphf::{Lcp2Mmphf, Lcp2MmphfInt};
 use crate::func::shard_edge::{Fuse3Shards, ShardEdge};
+use crate::traits::Backend;
 use crate::utils::*;
 use mem_dbg::*;
 use num_primitive::{PrimitiveInteger, PrimitiveNumber};
 use value_traits::slices::SliceByValue;
 
+/// Truncates a hash to a given width.
+///
+/// For full-word collections (e.g., `Box<[u16]>`), this is a type
+/// conversion; for sub-word collections ([`BitFieldVec`]), this uses
+/// the stored mask.
+pub trait TruncateHash<W> {
+    /// Returns the given hash truncated to the bit width of the stored
+    /// values.
+    fn truncate_hash(&self, hash: u64) -> W;
+}
+
+impl<W: PrimitiveNumber> TruncateHash<W> for Box<[W]>
+where
+    u64: PrimitiveNumberAs<W>,
+{
+    #[inline(always)]
+    fn truncate_hash(&self, hash: u64) -> W {
+        hash.as_to::<W>()
+    }
+}
+
+impl<B: Backend<Word: Word>> TruncateHash<B::Word> for BitFieldVec<B>
+where
+    u64: PrimitiveNumberAs<B::Word>,
+{
+    #[inline(always)]
+    fn truncate_hash(&self, hash: u64) -> B::Word {
+        hash.as_to::<B::Word>() & self.mask()
+    }
+}
+
+impl<B: Backend<Word: Word>> TruncateHash<B::Word> for BitFieldVecU<B>
+where
+    u64: PrimitiveNumberAs<B::Word>,
+{
+    #[inline(always)]
+    fn truncate_hash(&self, hash: u64) -> B::Word {
+        hash.as_to::<B::Word>() & self.mask()
+    }
+}
+
 /// Common interface for inner functions used by signed wrappers.
 ///
-/// This trait is not intended to be implemented by users; it iss an internal
+/// This trait is not intended to be implemented by users; it is an internal
 /// abstraction to allow the signed wrappers to work with different static
 /// functions. It provides access to the seed, shard edge, and key count, so
-/// that [`SignedFunc`] and [`BitSignedFunc`] can verify hashes without knowing
-/// which specific MMPHF variant they wrap.
+/// that [`SignedFunc`] can verify hashes without knowing which specific type
+/// of function it wraps.
 pub trait SignableFunc {
     type Sig: Sig;
     type Edge: ShardEdge<Self::Sig, 3>;
@@ -178,29 +220,20 @@ impl<T: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableFunc for VF
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// SignedFunc — full-width hashes
-// ═══════════════════════════════════════════════════════════════════
-
-/// A signed function using a [`SliceByValue`] to store full-width hashes.
+/// A signed function using a [`TruncateHash`] to store verification hashes.
 ///
 /// Wraps an inner function `F` (any type implementing [`SignableFunc`]) and adds
 /// per-key verification hashes so that queries for keys outside the original
-/// set return `None` (with false-positive probability
-/// 2<sup>-`H::Value::BITS`</sup>).
-///
-/// Usually, the [`SliceByValue`] will be a boxed slice. Note that the result of
-/// the [`SliceByValue`] is assumed to be a hash of size
-/// `SliceByValue::Value::BITS`. If you are using implementations returning less
-/// hash bits (such as a [`BitFieldVec<Box<[W]>>`](BitFieldVec)), you will need to use
-/// [`BitSignedFunc`] instead.
+/// set return `None`. The false-positive probability depends on the hash
+/// storage: for `Box<[W]>` it is 2<sup>−`W::BITS`</sup>; for [`BitFieldVec`]
+/// it is 2<sup>−`hash_width`</sup>.
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
 ///
 /// # Examples
 ///
-/// Wrapping a [`VFunc`] to build a verified index function:
+/// Wrapping a [`VFunc`] with full-width hashes:
 ///
 /// ```rust
 /// # #[cfg(feature = "rayon")]
@@ -262,7 +295,9 @@ impl<F, H> SignedFunc<F, H> {
 
 // ── Unified query helpers ────────────────────────────────────────
 
-impl<F: SignableFunc, H: SliceByValue<Value: PrimitiveNumber>> SignedFunc<F, H> {
+impl<F: SignableFunc, H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::Value>>
+    SignedFunc<F, H>
+{
     /// Verifies that the stored hash matches the remixed hash for the
     /// given index and signature.
     #[inline(always)]
@@ -273,202 +308,10 @@ impl<F: SignableFunc, H: SliceByValue<Value: PrimitiveNumber>> SignedFunc<F, H> 
                 "Hash value type must fit in u64 without truncation"
             );
         }
-        let expected = self.func.shard_edge().remixed_hash(sig);
-        let stored = self
+        let expected = self
             .hashes
-            .get_value(index.as_to::<usize>())?
-            .as_to::<u64>();
-        if stored == <H::Value>::as_from(expected).as_to::<u64>() {
-            Some(index)
-        } else {
-            None
-        }
-    }
-
-    /// Returns the number of keys in the function.
-    pub fn len(&self) -> usize {
-        self.func.len()
-    }
-
-    /// Returns whether the function has no keys.
-    pub fn is_empty(&self) -> bool {
-        self.func.is_empty()
-    }
-}
-
-// ── VFunc `get` ──────────────────────────────────────────────────
-
-impl<
-    T: ?Sized + ToSig<S>,
-    W: Word + BinSafe,
-    D: SliceByValue<Value = W>,
-    S: Sig,
-    E: ShardEdge<S, 3>,
-    H: SliceByValue<Value: PrimitiveNumber>,
-> SignedFunc<VFunc<T, D, S, E>, H>
-{
-    /// Returns the index of a key associated with the given signature, if there
-    /// was such a key in the list provided at construction time; otherwise,
-    /// returns `None`.
-    ///
-    /// False positives happen with probability
-    /// 2<sup>-`SliceByValue::Value::BITS`</sup>.
-    ///
-    /// This method is mainly useful in the construction of compound functions.
-    #[inline]
-    pub fn get_by_sig(&self, sig: S) -> Option<W> {
-        self.verify(self.func.get_by_sig(sig), sig)
-    }
-
-    /// Returns the index of the given key, if the key was in the list provided at
-    /// construction time; otherwise, returns `None`.
-    ///
-    /// False positives happen with probability
-    /// 2<sup>-`SliceByValue::Value::BITS`</sup>.
-    #[inline(always)]
-    pub fn get(&self, key: impl Borrow<T>) -> Option<W> {
-        self.get_by_sig(T::to_sig(key.borrow(), self.func.seed()))
-    }
-}
-
-// ── LcpMmphfInt `get` ────────────────────────────────────────────
-
-impl<
-    T: PrimitiveInteger + ToSig<S> + Copy,
-    D: SliceByValue<Value = usize>,
-    H: SliceByValue<Value: PrimitiveNumber>,
-    S: Sig,
-    E: ShardEdge<S, 3>,
-> SignedFunc<LcpMmphfInt<T, D, S, E>, H>
-{
-    /// Returns the rank of the given key if it was in the original set,
-    /// or `None` if the verification hash does not match.
-    ///
-    /// False positives happen with probability
-    /// 2<sup>-`H::Value::BITS`</sup>.
-    #[inline]
-    pub fn get(&self, key: T) -> Option<usize> {
-        let rank = self.func.get(key);
-        self.verify(rank, T::to_sig(key, self.func.seed()))
-    }
-}
-
-// ── LcpMmphf `get` ──────────────────────────────────────────────
-
-impl<
-    K: ?Sized + AsRef<[u8]> + ToSig<S>,
-    D: SliceByValue<Value = usize>,
-    H: SliceByValue<Value: PrimitiveNumber>,
-    S: Sig,
-    E: ShardEdge<S, 3>,
-> SignedFunc<LcpMmphf<K, D, S, E>, H>
-{
-    /// Returns the rank of the given key if it was in the original set,
-    /// or `None` if the verification hash does not match.
-    #[inline]
-    pub fn get(&self, key: &K) -> Option<usize> {
-        let rank = self.func.get(key);
-        self.verify(rank, K::to_sig(key, self.func.seed()))
-    }
-}
-
-// ── Lcp2MmphfInt `get` ──────────────────────────────────────────
-
-impl<
-    T: PrimitiveInteger + ToSig<S> + Copy,
-    D: SliceByValue<Value = usize>,
-    H: SliceByValue<Value: PrimitiveNumber>,
-    S: Sig,
-    E: ShardEdge<S, 3>,
-> SignedFunc<Lcp2MmphfInt<T, D, S, E>, H>
-where
-    Fuse3Shards: ShardEdge<S, 3>,
-{
-    /// Returns the rank of the given key if it was in the original set,
-    /// or `None` if the verification hash does not match.
-    #[inline]
-    pub fn get(&self, key: T) -> Option<usize> {
-        let rank = self.func.get(key);
-        self.verify(rank, T::to_sig(key, self.func.seed()))
-    }
-}
-
-// ── Lcp2Mmphf `get` ─────────────────────────────────────────────
-
-impl<
-    K: ?Sized + AsRef<[u8]> + ToSig<S>,
-    D: SliceByValue<Value = usize>,
-    H: SliceByValue<Value: PrimitiveNumber>,
-    S: Sig,
-    E: ShardEdge<S, 3>,
-> SignedFunc<Lcp2Mmphf<K, D, S, E>, H>
-where
-    Fuse3Shards: ShardEdge<S, 3>,
-{
-    /// Returns the rank of the given key if it was in the original set,
-    /// or `None` if the verification hash does not match.
-    #[inline]
-    pub fn get(&self, key: &K) -> Option<usize> {
-        let rank = self.func.get(key);
-        self.verify(rank, K::to_sig(key, self.func.seed()))
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// BitSignedFunc — sub-word-width hashes in a BitFieldVec
-// ═══════════════════════════════════════════════════════════════════
-
-/// A bit-signed function using a [`SliceByValue`] to store hashes.
-///
-/// This structure contains a `hash_mask`, and values returned by the
-/// [`SliceByValue`] are compared only on the masked bits. This approach makes
-/// it possible to have, for example, signatures stored in a [`BitFieldVec`]
-/// using fewer bits than the integer type supporting the [`BitFieldVec`]. If you
-/// are using all the bits of the type (e.g., 16-bit signatures on `u16`),
-/// please consider using a [`SignedFunc`] as hash comparison will be faster.
-#[derive(Debug, MemDbg, MemSize)]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct BitSignedFunc<F, H> {
-    pub(crate) func: F,
-    pub(crate) hashes: H,
-    pub(crate) hash_mask: u64,
-}
-
-impl<F, H> BitSignedFunc<F, H> {
-    /// Creates a new `BitSignedFunc` from a function, a hash slice, and
-    /// a hash mask.
-    ///
-    /// This is a low-level constructor; prefer
-    /// [`try_new`](Self::try_new)/[`try_new_with_builder`](Self::try_new_with_builder)
-    /// when possible.
-    pub fn from_parts(func: F, hashes: H, hash_mask: u64) -> Self {
-        Self {
-            func,
-            hashes,
-            hash_mask,
-        }
-    }
-}
-
-// ── Unified query helpers ────────────────────────────────────────
-
-impl<F: SignableFunc, H: SliceByValue<Value: PrimitiveNumber>> BitSignedFunc<F, H> {
-    /// Verifies that the stored hash matches the masked remixed hash for
-    /// the given index and signature.
-    #[inline(always)]
-    fn verify<V: PrimitiveNumber>(&self, index: V, sig: F::Sig) -> Option<V> {
-        const {
-            assert!(
-                size_of::<H::Value>() <= size_of::<u64>(),
-                "Hash value type must fit in u64 without truncation"
-            );
-        }
-        let expected = self.func.shard_edge().remixed_hash(sig) & self.hash_mask;
-        let stored = self
-            .hashes
-            .get_value(index.as_to::<usize>())?
-            .as_to::<u64>();
+            .truncate_hash(self.func.shard_edge().remixed_hash(sig));
+        let stored = self.hashes.get_value(index.as_to::<usize>())?;
         if stored == expected {
             Some(index)
         } else {
@@ -494,8 +337,8 @@ impl<
     D: SliceByValue<Value: Word + BinSafe>,
     S: Sig,
     E: ShardEdge<S, 3>,
-    H: SliceByValue<Value: PrimitiveNumber>,
-> BitSignedFunc<VFunc<T, D, S, E>, H>
+    H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::Value>,
+> SignedFunc<VFunc<T, D, S, E>, H>
 {
     /// Returns the index of a key associated with the given signature, if there
     /// was such a key in the list provided at construction time; otherwise,
@@ -524,10 +367,10 @@ impl<
 impl<
     T: PrimitiveInteger + ToSig<S> + Copy,
     D: SliceByValue<Value = usize>,
-    H: SliceByValue<Value: PrimitiveNumber>,
+    H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::Value>,
     S: Sig,
     E: ShardEdge<S, 3>,
-> BitSignedFunc<LcpMmphfInt<T, D, S, E>, H>
+> SignedFunc<LcpMmphfInt<T, D, S, E>, H>
 {
     /// Returns the rank of the given key if it was in the original set,
     /// or `None` if the verification hash does not match.
@@ -543,10 +386,10 @@ impl<
 impl<
     K: ?Sized + AsRef<[u8]> + ToSig<S>,
     D: SliceByValue<Value = usize>,
-    H: SliceByValue<Value: PrimitiveNumber>,
+    H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::Value>,
     S: Sig,
     E: ShardEdge<S, 3>,
-> BitSignedFunc<LcpMmphf<K, D, S, E>, H>
+> SignedFunc<LcpMmphf<K, D, S, E>, H>
 {
     /// Returns the rank of the given key if it was in the original set,
     /// or `None` if the verification hash does not match.
@@ -562,10 +405,10 @@ impl<
 impl<
     T: PrimitiveInteger + ToSig<S> + Copy,
     D: SliceByValue<Value = usize>,
-    H: SliceByValue<Value: PrimitiveNumber>,
+    H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::Value>,
     S: Sig,
     E: ShardEdge<S, 3>,
-> BitSignedFunc<Lcp2MmphfInt<T, D, S, E>, H>
+> SignedFunc<Lcp2MmphfInt<T, D, S, E>, H>
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
@@ -583,10 +426,10 @@ where
 impl<
     K: ?Sized + AsRef<[u8]> + ToSig<S>,
     D: SliceByValue<Value = usize>,
-    H: SliceByValue<Value: PrimitiveNumber>,
+    H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::Value>,
     S: Sig,
     E: ShardEdge<S, 3>,
-> BitSignedFunc<Lcp2Mmphf<K, D, S, E>, H>
+> SignedFunc<Lcp2Mmphf<K, D, S, E>, H>
 where
     Fuse3Shards: ShardEdge<S, 3>,
 {
@@ -643,9 +486,9 @@ where
 ///
 /// Iterates the first `n` elements of `keys`, converting each borrowed
 /// key to a signature via the `to_sig` closure and then computing the
-/// remixed hash through `shard_edge`. The hash is masked with
-/// `hash_mask` and stored in a [`BitFieldVec`] of the given
-/// `hash_width`.
+/// remixed hash through `shard_edge`. The hash is truncated using the
+/// [`BitFieldVec`]'s stored mask and stored in a [`BitFieldVec`] of the
+/// given `hash_width`.
 ///
 /// # Panics
 ///
@@ -656,7 +499,6 @@ fn fill_bit_hashes<H, S, E, L>(
     seed: u64,
     n: usize,
     hash_width: usize,
-    hash_mask: u64,
     mut keys: L,
     to_sig: impl Fn(&<L as FallibleLending<'_>>::Lend, u64) -> S,
 ) -> Result<BitFieldVec<Box<[H]>>>
@@ -671,7 +513,7 @@ where
     let mut hashes = BitFieldVec::<Box<[H]>>::new_unaligned(hash_width, n);
     for i in 0..n {
         let key = keys.next()?.expect("Not enough keys for hashes");
-        let h = (shard_edge.remixed_hash(to_sig(&key, seed)) & hash_mask).as_to::<H>();
+        let h = hashes.truncate_hash(shard_edge.remixed_hash(to_sig(&key, seed)));
         hashes.set_value(i, h);
     }
     Ok(hashes)
@@ -826,11 +668,11 @@ where
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Constructors — BitSignedFunc<VFunc<...>>
+// Constructors — SignedFunc<VFunc<...>, BitFieldVec<...>>
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl<T, S, E, H> BitSignedFunc<VFunc<T, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
+impl<T, S, E, H> SignedFunc<VFunc<T, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
 where
     T: ?Sized + ToSig<S> + std::fmt::Debug,
     S: Sig + Send + Sync,
@@ -839,12 +681,12 @@ where
     SigVal<S, usize>: RadixKey,
     SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
 {
-    /// Builds a [`BitSignedFunc`] wrapping a [`VFunc`] from keys using
+    /// Builds a [`SignedFunc`] wrapping a [`VFunc`] from keys using
     /// default [`VBuilder`] settings.
     ///
     /// The function maps each key to its index in the input sequence
     /// and stores `hash_width`-bit hashes for verification, giving a
-    /// false-positive rate of 2<sup>-`hash_width`</sup>.
+    /// false-positive rate of 2<sup>−`hash_width`</sup>.
     ///
     /// * `keys` must be rewindable (they may be rewound on retry).
     /// * `n` is the expected number of keys; a significantly wrong
@@ -863,9 +705,9 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromCloneableIntoIterator;
-    /// use sux::func::{BitSignedFunc, VFunc};
+    /// use sux::func::{SignedFunc, VFunc};
     /// use sux::bits::BitFieldVec;
-    /// type BSFunc = BitSignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, BitFieldVec<Box<[usize]>>>;
+    /// type BSFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, BitFieldVec<Box<[usize]>>>;
     /// let func: BSFunc = BSFunc::try_new(
     ///     FromCloneableIntoIterator::new(0..100_usize),
     ///     100,
@@ -896,12 +738,12 @@ where
         Self::try_new_with_builder(keys, n, hash_width, VBuilder::default(), pl)
     }
 
-    /// Builds a [`BitSignedFunc`] wrapping a [`VFunc`] from keys using
+    /// Builds a [`SignedFunc`] wrapping a [`VFunc`] from keys using
     /// the given [`VBuilder`] configuration.
     ///
     /// The function maps each key to its index in the input sequence
     /// and stores `hash_width`-bit hashes for verification, giving a
-    /// false-positive rate of 2<sup>-`hash_width`</sup>.
+    /// false-positive rate of 2<sup>−`hash_width`</sup>.
     ///
     /// * `keys` must be rewindable (they may be rewound on retry).
     /// * `n` is the expected number of keys.
@@ -919,9 +761,9 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromCloneableIntoIterator;
-    /// use sux::func::{BitSignedFunc, VBuilder, VFunc};
+    /// use sux::func::{SignedFunc, VBuilder, VFunc};
     /// use sux::bits::BitFieldVec;
-    /// type BSFunc = BitSignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, BitFieldVec<Box<[usize]>>>;
+    /// type BSFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, BitFieldVec<Box<[usize]>>>;
     /// let func: BSFunc = BSFunc::try_new_with_builder(
     ///     FromCloneableIntoIterator::new(0..100_usize),
     ///     100,
@@ -962,13 +804,8 @@ where
         )?;
 
         let num_keys = func.len();
-        let hash_mask = if hash_width == 64 {
-            u64::MAX
-        } else {
-            (1u64 << hash_width) - 1
-        };
 
-        // Create the signature vector
+        // Create the hash vector
         let mut hashes: BitFieldVec<Box<[H]>> =
             BitFieldVec::<Box<[H]>>::new_unaligned(hash_width, num_keys);
 
@@ -980,7 +817,7 @@ where
         for shard in store.iter() {
             for sig_val in shard.iter() {
                 let pos = sig_val.val;
-                let hash = (func.shard_edge().remixed_hash(sig_val.sig) & hash_mask).as_to::<H>();
+                let hash = hashes.truncate_hash(func.shard_edge().remixed_hash(sig_val.sig));
                 hashes.set_value(pos, hash);
                 pl.light_update();
             }
@@ -988,11 +825,7 @@ where
 
         pl.done();
 
-        Ok(BitSignedFunc {
-            func,
-            hashes,
-            hash_mask,
-        })
+        Ok(SignedFunc { func, hashes })
     }
 }
 
@@ -1103,8 +936,8 @@ where
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: SignedFunc<LcpMmphfStr, Box<[u16]>> =
-    ///     SignedFunc<LcpMmphfStr, Box<[u64]>>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    /// let func: SignedFunc<LcpMmphfStr, Box<[u64]>> =
+    ///     <SignedFunc<LcpMmphfStr, Box<[u64]>>>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1261,8 +1094,8 @@ where
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: SignedFunc<Lcp2MmphfStr, Box<[u16]>> =
-    ///     SignedFunc<Lcp2MmphfStr, Box<[u64]>>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    /// let func: SignedFunc<Lcp2MmphfStr, Box<[u64]>> =
+    ///     <SignedFunc<Lcp2MmphfStr, Box<[u64]>>>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1304,12 +1137,11 @@ where
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Constructors — BitSignedFunc<LcpMmphfInt<...>>
+// Constructors — SignedFunc<LcpMmphfInt<...>, BitFieldVec<...>>
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl<T, H, S, E>
-    BitSignedFunc<LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
+impl<T, H, S, E> SignedFunc<LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
 where
     T: PrimitiveInteger + ToSig<S> + std::fmt::Debug + Send + Sync + Copy + Ord,
     H: Word,
@@ -1319,11 +1151,12 @@ where
     SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<H>,
 {
-    /// Creates a new bit-signed LCP-based MMPHF for integers.
+    /// Creates a new signed LCP-based MMPHF for integers with
+    /// sub-word-width hashes.
     ///
     /// `hash_width` is the number of hash bits stored per key (must be
-    /// in `1..=H::BITS`). False-positive probability is
-    /// 2<sup>-`hash_width`</sup>.
+    /// in `1 . . H::BITS`). False-positive probability is
+    /// 2<sup>−`hash_width`</sup>.
     ///
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
@@ -1334,13 +1167,14 @@ where
     /// ```rust
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::func::{BitSignedFunc, LcpMmphfInt};
+    /// # use sux::func::{SignedFunc, LcpMmphfInt};
     /// # use sux::bits::BitFieldVec;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    /// let func: BitSignedFunc<LcpMmphfInt<u64>, Box<[u64]>> =
-    ///     Bit<SignedFunc<LcpMmphfInt<u64>, Box<[u16]>>>::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
+    /// type BSFunc = SignedFunc<LcpMmphfInt<u64>, BitFieldVec<Box<[usize]>>>;
+    /// let func: BSFunc =
+    ///     BSFunc::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1375,12 +1209,6 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         assert!(hash_width > 0 && hash_width <= H::BITS as usize);
-        let hash_mask = if hash_width == 64 {
-            u64::MAX
-        } else {
-            (1u64 << hash_width) - 1
-        };
-
         let (func, keys) = LcpMmphfInt::try_new_inner(keys, n, builder, pl)?;
         let mut keys = keys.rewind()?;
         let hashes = fill_bit_hashes(
@@ -1388,24 +1216,19 @@ where
             func.seed(),
             n,
             hash_width,
-            hash_mask,
             &mut keys,
             |key, seed| T::to_sig(*key, seed),
         )?;
-        Ok(Self {
-            func,
-            hashes,
-            hash_mask,
-        })
+        Ok(Self { func, hashes })
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Constructors — BitSignedFunc<LcpMmphf<K, ...>>
+// Constructors — SignedFunc<LcpMmphf<K, ...>, BitFieldVec<...>>
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl<K, H, S, E> BitSignedFunc<LcpMmphf<K, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
+impl<K, H, S, E> SignedFunc<LcpMmphf<K, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
 where
     K: ?Sized + AsRef<[u8]> + ToSig<S> + std::fmt::Debug,
     H: Word,
@@ -1415,11 +1238,12 @@ where
     SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<H>,
 {
-    /// Creates a new bit-signed LCP-based MMPHF for byte-sequence keys.
+    /// Creates a new signed LCP-based MMPHF for byte-sequence keys with
+    /// sub-word-width hashes.
     ///
     /// `hash_width` is the number of hash bits stored per key (must be
-    /// in `1..=H::BITS`). False-positive probability is
-    /// 2<sup>-`hash_width`</sup>.
+    /// in `1 . . H::BITS`). False-positive probability is
+    /// 2<sup>−`hash_width`</sup>.
     ///
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
@@ -1430,16 +1254,19 @@ where
     /// ```rust
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::func::BitSignedFunc<LcpMmphfStr, Box<[u64]>>;
+    /// # use sux::func::{SignedFunc, LcpMmphfStr};
+    /// # use sux::bits::BitFieldVec;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
-    /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: BitSignedFunc<LcpMmphfStr, Box<[u64]>> =
-    ///     BitSignedFunc<LcpMmphfStr, Box<[u64]>>::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
+    /// let keys = vec!["alpha", "beta", "delta", "gamma"];
+    /// type BSFunc = SignedFunc<LcpMmphfStr, BitFieldVec<Box<[usize]>>>;
+    /// let func: BSFunc =
+    ///     BSFunc::try_new(FromSlice::new(&keys), keys.len(), 12, no_logging![])?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
     /// }
+    /// assert_eq!(func.get("missing"), None);
     /// # Ok(())
     /// # }
     /// # #[cfg(not(feature = "rayon"))]
@@ -1470,12 +1297,6 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         assert!(hash_width > 0 && hash_width <= H::BITS as usize);
-        let hash_mask = if hash_width == 64 {
-            u64::MAX
-        } else {
-            (1u64 << hash_width) - 1
-        };
-
         let (func, keys) = LcpMmphf::try_new_inner(keys, n, builder, pl)?;
         let mut keys = keys.rewind()?;
         let hashes = fill_bit_hashes(
@@ -1483,25 +1304,19 @@ where
             func.seed(),
             n,
             hash_width,
-            hash_mask,
             &mut keys,
             |key, seed| K::to_sig(<B as Borrow<K>>::borrow(key), seed),
         )?;
-        Ok(Self {
-            func,
-            hashes,
-            hash_mask,
-        })
+        Ok(Self { func, hashes })
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Constructors — BitSignedFunc<Lcp2MmphfInt<...>>
+// Constructors — SignedFunc<Lcp2MmphfInt<...>, BitFieldVec<...>>
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl<T, H, S, E>
-    BitSignedFunc<Lcp2MmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
+impl<T, H, S, E> SignedFunc<Lcp2MmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
 where
     T: PrimitiveInteger + ToSig<S> + std::fmt::Debug + Send + Sync + Copy + Ord,
     H: Word,
@@ -1518,38 +1333,12 @@ where
         std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<H>,
 {
-    /// Creates a new bit-signed two-step LCP-based MMPHF for integers.
-    ///
-    /// `hash_width` is the number of hash bits stored per key (must be
-    /// in `1..=H::BITS`). False-positive probability is
-    /// 2<sup>−`hash_width`</sup>.
+    /// Creates a new signed two-step LCP-based MMPHF for integers with
+    /// sub-word-width hashes.
     ///
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
     /// `VBuilder::default()`.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # #[cfg(feature = "rayon")]
-    /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::func::{BitSignedFunc, Lcp2MmphfInt};
-    /// # use sux::bits::BitFieldVec;
-    /// # use dsi_progress_logger::no_logging;
-    /// # use sux::utils::FromSlice;
-    /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    /// let func: BitSignedFunc<Lcp2MmphfInt<u64>, BitFieldVec<Box<[usize]>>> =
-    ///     Bit<SignedFunc<Lcp2MmphfInt<u64>, Box<[u16]>>>::try_new(
-    ///         FromSlice::new(&keys), keys.len(), 8, no_logging![],
-    ///     )?;
-    /// for (i, &key) in keys.iter().enumerate() {
-    ///     assert_eq!(func.get(key), Some(i));
-    /// }
-    /// # Ok(())
-    /// # }
-    /// # #[cfg(not(feature = "rayon"))]
-    /// # fn main() {}
-    /// ```
     pub fn try_new(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -1575,12 +1364,6 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         assert!(hash_width > 0 && hash_width <= H::BITS as usize);
-        let hash_mask = if hash_width == 64 {
-            u64::MAX
-        } else {
-            (1u64 << hash_width) - 1
-        };
-
         let (func, keys) = Lcp2MmphfInt::try_new_inner(keys, n, builder, pl)?;
         let mut keys = keys.rewind()?;
         let hashes = fill_bit_hashes(
@@ -1588,24 +1371,19 @@ where
             func.seed(),
             n,
             hash_width,
-            hash_mask,
             &mut keys,
             |key, seed| T::to_sig(*key, seed),
         )?;
-        Ok(Self {
-            func,
-            hashes,
-            hash_mask,
-        })
+        Ok(Self { func, hashes })
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Constructors — BitSignedFunc<Lcp2Mmphf<K, ...>>
+// Constructors — SignedFunc<Lcp2Mmphf<K, ...>, BitFieldVec<...>>
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl<K, H, S, E> BitSignedFunc<Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
+impl<K, H, S, E> SignedFunc<Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
 where
     K: ?Sized + AsRef<[u8]> + ToSig<S> + std::fmt::Debug,
     H: Word,
@@ -1622,37 +1400,12 @@ where
         std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<H>,
 {
-    /// Creates a new bit-signed two-step LCP-based MMPHF for byte-sequence keys.
-    ///
-    /// `hash_width` is the number of hash bits stored per key (must be
-    /// in `1..=H::BITS`). False-positive probability is
-    /// 2<sup>−`hash_width`</sup>.
+    /// Creates a new signed two-step LCP-based MMPHF for byte-sequence keys
+    /// with sub-word-width hashes.
     ///
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
     /// `VBuilder::default()`.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # #[cfg(feature = "rayon")]
-    /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::func::BitSignedFunc<Lcp2MmphfStr, Box<[u64]>>;
-    /// # use dsi_progress_logger::no_logging;
-    /// # use sux::utils::FromSlice;
-    /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: BitSignedFunc<Lcp2MmphfStr, Box<[u64]>> =
-    ///     BitSignedFunc<Lcp2MmphfStr, Box<[u64]>>::try_new(
-    ///         FromSlice::new(&keys), keys.len(), 12, no_logging![],
-    ///     )?;
-    /// for (i, &key) in keys.iter().enumerate() {
-    ///     assert_eq!(func.get(key), Some(i));
-    /// }
-    /// # Ok(())
-    /// # }
-    /// # #[cfg(not(feature = "rayon"))]
-    /// # fn main() {}
-    /// ```
     pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -1678,12 +1431,6 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         assert!(hash_width > 0 && hash_width <= H::BITS as usize);
-        let hash_mask = if hash_width == 64 {
-            u64::MAX
-        } else {
-            (1u64 << hash_width) - 1
-        };
-
         let (func, keys) = Lcp2Mmphf::try_new_inner(keys, n, builder, pl)?;
         let mut keys = keys.rewind()?;
         let hashes = fill_bit_hashes(
@@ -1691,15 +1438,10 @@ where
             func.seed(),
             n,
             hash_width,
-            hash_mask,
             &mut keys,
             |key, seed| K::to_sig(<B as Borrow<K>>::borrow(key), seed),
         )?;
-        Ok(Self {
-            func,
-            hashes,
-            hash_mask,
-        })
+        Ok(Self { func, hashes })
     }
 }
 
@@ -1709,16 +1451,23 @@ where
 
 use crate::traits::{TryIntoUnaligned, Word};
 
-// -- SignedFunc: only func needs converting, hashes stay as-is --
+impl<W: Word> TryIntoUnaligned for Box<[W]> {
+    type Unaligned = Box<[W]>;
+    fn try_into_unaligned(
+        self,
+    ) -> std::result::Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+        Ok(self)
+    }
+}
 
-impl<F: TryIntoUnaligned, H> TryIntoUnaligned for SignedFunc<F, H> {
-    type Unaligned = SignedFunc<F::Unaligned, H>;
+impl<F: TryIntoUnaligned, H: TryIntoUnaligned> TryIntoUnaligned for SignedFunc<F, H> {
+    type Unaligned = SignedFunc<F::Unaligned, H::Unaligned>;
     fn try_into_unaligned(
         self,
     ) -> std::result::Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(SignedFunc {
             func: self.func.try_into_unaligned()?,
-            hashes: self.hashes,
+            hashes: self.hashes.try_into_unaligned()?,
         })
     }
 }
@@ -1735,32 +1484,16 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, H>
     }
 }
 
-// -- BitSignedFunc: both func and hashes are converted --
-
-impl<F: TryIntoUnaligned, H: TryIntoUnaligned> TryIntoUnaligned for BitSignedFunc<F, H> {
-    type Unaligned = BitSignedFunc<F::Unaligned, H::Unaligned>;
-    fn try_into_unaligned(
-        self,
-    ) -> std::result::Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
-        Ok(BitSignedFunc {
-            func: self.func.try_into_unaligned()?,
-            hashes: self.hashes.try_into_unaligned()?,
-            hash_mask: self.hash_mask,
-        })
-    }
-}
-
-impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>>
-    From<BitSignedFunc<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>, BitFieldVecU<Box<[W]>>>>
-    for BitSignedFunc<VFunc<T, BitFieldVec<Box<[W]>>, S, E>, BitFieldVec<Box<[W]>>>
+impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, W2: Word>
+    From<SignedFunc<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>, BitFieldVecU<Box<[W2]>>>>
+    for SignedFunc<VFunc<T, BitFieldVec<Box<[W]>>, S, E>, BitFieldVec<Box<[W2]>>>
 {
     fn from(
-        f: BitSignedFunc<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>, BitFieldVecU<Box<[W]>>>,
+        f: SignedFunc<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>, BitFieldVecU<Box<[W2]>>>,
     ) -> Self {
-        BitSignedFunc {
+        SignedFunc {
             func: f.func.into(),
             hashes: f.hashes.into(),
-            hash_mask: f.hash_mask,
         }
     }
 }

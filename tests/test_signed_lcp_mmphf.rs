@@ -10,15 +10,15 @@ use dsi_progress_logger::no_logging;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::bits::BitFieldVec;
-use sux::func::{BitSignedFunc, LcpMmphf, LcpMmphfInt, SignedFunc};
+use sux::func::{LcpMmphf, LcpMmphfInt, SignedFunc};
 use sux::traits::TryIntoUnaligned;
 use sux::utils::FromSlice;
 
 type SignedLcpMmphfStr = SignedFunc<LcpMmphf<str>, Box<[u64]>>;
 type SignedLcpMmphfSliceU8 = SignedFunc<LcpMmphf<[u8]>, Box<[u64]>>;
 type SignedLcpMmphfInt<T> = SignedFunc<LcpMmphfInt<T>, Box<[u64]>>;
-type BitSignedLcpMmphfInt<T> = BitSignedFunc<LcpMmphfInt<T>, BitFieldVec<Box<[usize]>>>;
-type BitSignedLcpMmphfStr = BitSignedFunc<LcpMmphf<str>, BitFieldVec<Box<[usize]>>>;
+type BitSignedLcpMmphfInt<T> = SignedFunc<LcpMmphfInt<T>, BitFieldVec<Box<[usize]>>>;
+type BitSignedLcpMmphfStr = SignedFunc<LcpMmphf<str>, BitFieldVec<Box<[usize]>>>;
 
 // ── String tests ────────────────────────────────────────────────────
 
