@@ -1113,8 +1113,13 @@ where
         let func = <VFunc<T, BitFieldVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
             keys, &values, builder, pl,
         )?;
-        let hashes =
-            fill_bit_hashes_from_slice(func.shard_edge(), func.seed(), func.len(), hash_width, keys);
+        let hashes = fill_bit_hashes_from_slice(
+            func.shard_edge(),
+            func.seed(),
+            func.len(),
+            hash_width,
+            keys,
+        );
         Ok(SignedFunc { func, hashes })
     }
 }

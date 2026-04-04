@@ -634,30 +634,28 @@ where
         pl.info(format_args!(
             "Building key → (LCP length, offset) map (parallel)..."
         ));
-        let offset_lcp_length = builder
-            .expected_num_keys(n)
-            .try_par_populate_and_build(
-                keys,
-                &|i| (lcp_bit_lengths[i >> log2_bs] << log2_bs) | (i & bucket_mask),
-                &mut |builder, seed, mut store, max_value, _num_keys, pl, _state: &mut ()| {
-                    builder.bit_width = max_value.bit_len() as usize;
-                    let data = BitFieldVec::<Box<[usize]>>::new_unaligned(
-                        builder.bit_width,
-                        builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
-                    );
-                    let func = builder.try_build_from_shard_iter(
-                        seed,
-                        data,
-                        store.drain(),
-                        &|_, sv| sv.val,
-                        &|_| {},
-                        pl,
-                    )?;
-                    Ok(func)
-                },
-                pl,
-                (),
-            )?;
+        let offset_lcp_length = builder.expected_num_keys(n).try_par_populate_and_build(
+            keys,
+            &|i| (lcp_bit_lengths[i >> log2_bs] << log2_bs) | (i & bucket_mask),
+            &mut |builder, seed, mut store, max_value, _num_keys, pl, _state: &mut ()| {
+                builder.bit_width = max_value.bit_len() as usize;
+                let data = BitFieldVec::<Box<[usize]>>::new_unaligned(
+                    builder.bit_width,
+                    builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
+                );
+                let func = builder.try_build_from_shard_iter(
+                    seed,
+                    data,
+                    store.drain(),
+                    &|_, sv| sv.val,
+                    &|_| {},
+                    pl,
+                )?;
+                Ok(func)
+            },
+            pl,
+            (),
+        )?;
 
         // -- Build lcp2bucket VFunc (sequential, small) --
 
@@ -1427,30 +1425,28 @@ where
         pl.info(format_args!(
             "Building key → (LCP length, offset) map (parallel)..."
         ));
-        let offset_lcp_length = builder
-            .expected_num_keys(n)
-            .try_par_populate_and_build(
-                keys,
-                &|i| (lcp_bit_lengths[i >> log2_bs] << log2_bs) | (i & bucket_mask),
-                &mut |builder, seed, mut store, max_value, _num_keys, pl, _state: &mut ()| {
-                    builder.bit_width = max_value.bit_len() as usize;
-                    let data = BitFieldVec::<Box<[usize]>>::new_unaligned(
-                        builder.bit_width,
-                        builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
-                    );
-                    let func = builder.try_build_from_shard_iter(
-                        seed,
-                        data,
-                        store.drain(),
-                        &|_, sv| sv.val,
-                        &|_| {},
-                        pl,
-                    )?;
-                    Ok(func)
-                },
-                pl,
-                (),
-            )?;
+        let offset_lcp_length = builder.expected_num_keys(n).try_par_populate_and_build(
+            keys,
+            &|i| (lcp_bit_lengths[i >> log2_bs] << log2_bs) | (i & bucket_mask),
+            &mut |builder, seed, mut store, max_value, _num_keys, pl, _state: &mut ()| {
+                builder.bit_width = max_value.bit_len() as usize;
+                let data = BitFieldVec::<Box<[usize]>>::new_unaligned(
+                    builder.bit_width,
+                    builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
+                );
+                let func = builder.try_build_from_shard_iter(
+                    seed,
+                    data,
+                    store.drain(),
+                    &|_, sv| sv.val,
+                    &|_| {},
+                    pl,
+                )?;
+                Ok(func)
+            },
+            pl,
+            (),
+        )?;
 
         // -- Build lcp2bucket VFunc (sequential, small) --
 

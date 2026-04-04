@@ -36,21 +36,19 @@ indices, and whether to index zeros or ones). Whenever possible, there are
 mapping methods that replace an underlying structure with another one, provided
 it is compatible.
 
-This crate does not provide high-level genericity on bit vectors: [bit vectors
-operations] on words of type `W` are based on a combination of the [`BitLength`]
-trait, which provides the bit length, and on [`AsRef<W>`]/[`AsMut<W>`], which
-provide access to the underlying data. This approach makes it possible to use
-any structure that implements these traits as a bit vector, and to implement
-your own bit vector if you need specific features (e.g., support for unaligned
-access).
+This crate does not provide high-level genericity on bit vectors: [operations on
+bit vectors] are based on a word type `W`, on the [`BitLength`] trait, which
+provides the bit length, and on the traits [`AsRef<W>`]/[`AsMut<W>`], which
+provide concrete access to the underlying data. This approach makes it possible
+to use any structure that implements these traits as a bit vector, and to
+implement your own bit vector if you need specific features (e.g., support for
+unaligned access).
 
-To make rank/select structures composable, we parameterize them with a _backend_
-that needs to implement the [`Backend`] trait, which provides only the backend
-word as an associated type [`Word`]. Implementations can then use [`BitLength`]
-and [`AsRef<Self::Word>`]/[`AsMut<Self::Word>`] to access the backend using bit
-operations. Bit vectors and structures delegate these traits to their backend,
-so you can use any structure that implements the [`Backend`] trait as a backend
-for (further) rank/select structures.
+Rank/select structures are built on backends implementing the [`Backend`] trait,
+providing via an associated type the word type, and on the traits above;
+moreover, the strutures export the same traits by delegation, so you can use any
+structure as a backend for (further) rank/select structures, making arbitrary
+nesting of structures simple, typesafe and zero-cost.
 
 ## ε-serde Support
 
@@ -68,8 +66,10 @@ gated by the feature `serde`.
 ## Slice by Value Support
 
 Wherever possible, we support the “slice by value” traits from the
-[`value-traits`] crate, which make it possible to treat in a manner similar to
-slices structures such as bit-field vectors or succinct representations.
+[`value-traits`] crate, which make it possible to treat structures such as
+bit-field vectors or succinct representations in a manner similar to slices.
+This approach is also used to make [vectors of bit fields] and slices (where the
+bit width of the fields is exactly that of the word type) interchangeable.
 
 ## `MemDbg`/`MemSize` Support
 
@@ -206,7 +206,7 @@ Union nor the Italian MUR can be held responsible for them.
 [monotone minimal perfect hash functions]: https://docs.rs/sux/latest/sux/func/lcp_mmphf/index.html
 [static filters]: https://docs.rs/sux/latest/sux/dict/vfilter/struct.VFilter.html
 [partial arrays]: https://docs.rs/sux/latest/sux/array/struct.PartialArray.html
-[bit vectors operations]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
+[opertions on bit vectors]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
 [unaligned access]: https://docs.rs/sux/latest/sux/traits/trait.TryIntoUnaligned.html
 [`value-traits`]: https://crates.io/crates/value-traits
 [serde]: https://crates.io/crates/serde/
@@ -215,9 +215,9 @@ Union nor the Italian MUR can be held responsible for them.
 [signed minimal perfect hash functions]: https://docs.rs/sux/latest/sux/dict/signed_vfunc/struct.SignedVFunc.html
 [lists]: https://docs.rs/sux/latest/sux/list/index.html
 [compressed lists of integers]: https://docs.rs/sux/latest/sux/list/comp_int_list/struct.CompIntList.html
+[`AsRef<Backend:Word>`]: https://doc.rust-lang.org/core/convert/trait.AsRef.html
+[`AsMut<Backend:Word>`]: https://doc.rust-lang.org/core/convert/trait.AsMut.html
 [`AsRef<W>`]: https://doc.rust-lang.org/core/convert/trait.AsRef.html
 [`AsMut<W>`]: https://doc.rust-lang.org/core/convert/trait.AsMut.html
-[`AsRef<Self::Word>`]: https://doc.rust-lang.org/core/convert/trait.AsRef.html
-[`AsMut<Self::Word>`]: https://doc.rust-lang.org/core/convert/trait.AsMut.html
 [`Word`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html#associatedtype.Word
 [`Backend`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html

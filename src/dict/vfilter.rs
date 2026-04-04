@@ -445,47 +445,39 @@ where
     {
         let n = keys.len();
         let filter_mask = W::MAX;
-        let func = builder
-            .expected_num_keys(n)
-            .try_par_populate_and_build(
-                keys,
-                &|_| EmptyVal::default(),
-                &mut |builder,
-                      seed,
-                      mut store,
-                      _max_value,
-                      _num_keys,
-                      pl: &mut P,
-                      _state: &mut ()| {
-                    builder.bit_width = W::BITS as usize;
+        let func = builder.expected_num_keys(n).try_par_populate_and_build(
+            keys,
+            &|_| EmptyVal::default(),
+            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
+                builder.bit_width = W::BITS as usize;
 
-                    let data: Box<[W]> = vec![
-                        W::ZERO;
-                        builder.shard_edge.num_vertices()
-                            * builder.shard_edge.num_shards()
-                    ]
-                    .into();
+                let data: Box<[W]> = vec![
+                    W::ZERO;
+                    builder.shard_edge.num_vertices()
+                        * builder.shard_edge.num_shards()
+                ]
+                .into();
 
-                    pl.info(format_args!(
-                        "Number of keys: {} Bit width: {}",
-                        builder.num_keys, builder.bit_width,
-                    ));
+                pl.info(format_args!(
+                    "Number of keys: {} Bit width: {}",
+                    builder.num_keys, builder.bit_width,
+                ));
 
-                    let func = builder.try_build_from_shard_iter(
-                        seed,
-                        data,
-                        store.drain(),
-                        &|shard_edge: &E, sig_val| {
-                            W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig)))
-                        },
-                        &|_| {},
-                        pl,
-                    )?;
-                    Ok(func)
-                },
-                pl,
-                (),
-            )?;
+                let func = builder.try_build_from_shard_iter(
+                    seed,
+                    data,
+                    store.drain(),
+                    &|shard_edge: &E, sig_val| {
+                        W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig)))
+                    },
+                    &|_| {},
+                    pl,
+                )?;
+                Ok(func)
+            },
+            pl,
+            (),
+        )?;
 
         Ok(VFilter { func, filter_mask })
     }
@@ -751,46 +743,38 @@ where
         assert!(filter_bits <= W::BITS as usize);
         let n = keys.len();
         let filter_mask = W::MAX >> (W::BITS - filter_bits as u32);
-        let func = builder
-            .expected_num_keys(n)
-            .try_par_populate_and_build(
-                keys,
-                &|_| EmptyVal::default(),
-                &mut |builder,
-                      seed,
-                      mut store,
-                      _max_value,
-                      _num_keys,
-                      pl: &mut P,
-                      _state: &mut ()| {
-                    builder.bit_width = filter_bits;
+        let func = builder.expected_num_keys(n).try_par_populate_and_build(
+            keys,
+            &|_| EmptyVal::default(),
+            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
+                builder.bit_width = filter_bits;
 
-                    let data = BitFieldVec::<Box<[W]>>::new_unaligned(
-                        builder.bit_width,
-                        builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
-                    );
+                let data = BitFieldVec::<Box<[W]>>::new_unaligned(
+                    builder.bit_width,
+                    builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
+                );
 
-                    pl.info(format_args!(
-                        "Number of keys: {} Bit width: {}",
-                        builder.num_keys, builder.bit_width,
-                    ));
+                pl.info(format_args!(
+                    "Number of keys: {} Bit width: {}",
+                    builder.num_keys, builder.bit_width,
+                ));
 
-                    let func = builder.try_build_from_shard_iter(
-                        seed,
-                        data,
-                        store.drain(),
-                        &|shard_edge: &E, sig_val| {
-                            W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig)))
-                                & filter_mask
-                        },
-                        &|_| {},
-                        pl,
-                    )?;
-                    Ok(func)
-                },
-                pl,
-                (),
-            )?;
+                let func = builder.try_build_from_shard_iter(
+                    seed,
+                    data,
+                    store.drain(),
+                    &|shard_edge: &E, sig_val| {
+                        W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig)))
+                            & filter_mask
+                    },
+                    &|_| {},
+                    pl,
+                )?;
+                Ok(func)
+            },
+            pl,
+            (),
+        )?;
 
         Ok(VFilter { func, filter_mask })
     }

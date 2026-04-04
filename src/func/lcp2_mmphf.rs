@@ -799,17 +799,15 @@ where
         let num_remapped = escape_usize.min(m);
 
         let remap: Box<[usize]> = sorted_vals[..num_remapped].to_vec().into_boxed_slice();
-        let mut inv_map: HybridMap<usize, usize> =
-            HybridMap::new(Some(max_lcp), escape_usize);
+        let mut inv_map: HybridMap<usize, usize> = HybridMap::new(Some(max_lcp), escape_usize);
         for (i, &val) in remap.iter().enumerate() {
             inv_map.insert(val, i);
         }
 
-        let n_escaped = n
-            - sorted_vals[..num_remapped]
-                .iter()
-                .map(|&v| lcp_counts.get(v))
-                .sum::<usize>();
+        let n_escaped = n - sorted_vals[..num_remapped]
+            .iter()
+            .map(|&v| lcp_counts.get(v))
+            .sum::<usize>();
 
         pl.info(format_args!(
             "Fused offset+LCP: r={best_r}, log2_bs={log2_bs}, \
@@ -825,144 +823,135 @@ where
             best_r + log2_bs
         ));
 
-        let fused_result = builder
-            .expected_num_keys(n)
-            .try_par_populate_and_build(
-                keys,
-                &|i| {
-                    ((lcp_bit_lengths[i >> log2_bs] as u64) << log2_bs)
-                        | (i as u64 & bucket_mask as u64)
-                },
-                &mut |_builder,
-                      seed,
-                      mut store,
-                      _max_value,
-                      _num_keys,
-                      pl: &mut P,
-                      _state: &mut ()| {
-                    let shard_edge = _builder.shard_edge;
-                    let store = &mut *store;
+        let fused_result = builder.expected_num_keys(n).try_par_populate_and_build(
+            keys,
+            &|i| {
+                ((lcp_bit_lengths[i >> log2_bs] as u64) << log2_bs)
+                    | (i as u64 & bucket_mask as u64)
+            },
+            &mut |_builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
+                let shard_edge = _builder.shard_edge;
+                let store = &mut *store;
 
-                    // -- Build fused VFunc: (remapped_lcp << log2_bs) | offset --
-                    let fused_max = (escape_usize << log2_bs) | bucket_mask;
+                // -- Build fused VFunc: (remapped_lcp << log2_bs) | offset --
+                let fused_max = (escape_usize << log2_bs) | bucket_mask;
 
-                    let shb = shard_edge.shard_high_bits();
-                    let num_shards_se = 1usize << shb;
-                    let shard_mask = (1u64 << shb) - 1;
-                    let mut escaped_counts = vec![0usize; num_shards_se];
-                    let sync_counts = escaped_counts.as_sync_slice();
+                let shb = shard_edge.shard_high_bits();
+                let num_shards_se = 1usize << shb;
+                let shard_mask = (1u64 << shb) - 1;
+                let mut escaped_counts = vec![0usize; num_shards_se];
+                let sync_counts = escaped_counts.as_sync_slice();
 
-                    let fused = VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default()
-                        .try_build_func_with_store_and_inspect::<T, u64>(
-                            seed,
-                            shard_edge,
-                            fused_max,
-                            store,
-                            &|_, sig_val| {
-                                let lcp = (sig_val.val >> log2_bs) as usize;
-                                let offset = (sig_val.val as usize) & bucket_mask;
-                                (inv_map.get(lcp) << log2_bs) | offset
-                            },
-                            &|sv: &SigVal<S, u64>| {
-                                let lcp = (sv.val >> log2_bs) as usize;
-                                if inv_map.get(lcp) == escape_usize {
-                                    let shard_idx =
-                                        sv.sig.high_bits(shb, shard_mask) as usize;
-                                    // SAFETY: each shard is processed by
-                                    // exactly one thread.
-                                    unsafe {
-                                        let c = sync_counts[shard_idx].get();
-                                        sync_counts[shard_idx].set(c + 1);
-                                    }
+                let fused = VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default()
+                    .try_build_func_with_store_and_inspect::<T, u64>(
+                        seed,
+                        shard_edge,
+                        fused_max,
+                        store,
+                        &|_, sig_val| {
+                            let lcp = (sig_val.val >> log2_bs) as usize;
+                            let offset = (sig_val.val as usize) & bucket_mask;
+                            (inv_map.get(lcp) << log2_bs) | offset
+                        },
+                        &|sv: &SigVal<S, u64>| {
+                            let lcp = (sv.val >> log2_bs) as usize;
+                            if inv_map.get(lcp) == escape_usize {
+                                let shard_idx = sv.sig.high_bits(shb, shard_mask) as usize;
+                                // SAFETY: each shard is processed by
+                                // exactly one thread.
+                                unsafe {
+                                    let c = sync_counts[shard_idx].get();
+                                    sync_counts[shard_idx].set(c + 1);
                                 }
-                            },
-                            pl,
-                        )?;
-
-                    // -- Build LCP long VFunc (escaped keys only) --
-                    let lcp_long = if n_escaped > 0 {
-                        let mut long_shard_edge = Fuse3Shards::default();
-                        long_shard_edge.set_up_shards(n_escaped, _builder.eps);
-                        let long_shb = long_shard_edge.shard_high_bits();
-
-                        let long_num_shards = 1usize << long_shb;
-                        let filtered_shard_sizes = if long_num_shards >= num_shards_se {
-                            escaped_counts
-                        } else {
-                            let per = num_shards_se / long_num_shards;
-                            escaped_counts.chunks(per).map(|c| c.iter().sum()).collect()
-                        };
-
-                        pl.info(format_args!(
-                            "Building LCP long map ({n_escaped} escaped \
-                             keys, {:.1}%)...",
-                            100.0 * n_escaped as f64 / n as f64
-                        ));
-
-                        let mut filtered_store = FilteredShardStore::new(
-                            store,
-                            long_shb,
-                            |sv: &SigVal<S, u64>| {
-                                inv_map.get((sv.val >> log2_bs) as usize) == escape_usize
-                            },
-                            filtered_shard_sizes,
-                        );
-
-                        VBuilder::<BitFieldVec<Box<[usize]>>, S, Fuse3Shards>::default()
-                            .max_num_threads(_builder.max_num_threads)
-                            .try_build_func_with_store::<T, u64>(
-                                seed,
-                                long_shard_edge,
-                                max_lcp,
-                                &mut filtered_store,
-                                &|_e, sig_val| (sig_val.val >> log2_bs) as usize,
-                                pl,
-                            )?
-                    } else {
-                        VFunc::empty()
-                    };
-
-                    // -- lcp2bucket --
-                    pl.info(format_args!(
-                        "Building LCP prefix → bucket map ({num_buckets} buckets)..."
-                    ));
-                    let lcp2bucket = <VFunc<
-                        IntBitPrefix<T>,
-                        BitFieldVec<Box<[usize]>>,
-                        [u64; 1],
-                        Fuse3NoShards,
-                    >>::try_new_with_builder(
-                        FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
-                            IntBitPrefix::new(
-                                bucket_first_keys[b] ^ T::MIN,
-                                lcp_bit_lengths[b] as usize,
-                            )
-                        })),
-                        FromCloneableIntoIterator::new(0..num_buckets),
-                        num_buckets,
-                        VBuilder::default(),
+                            }
+                        },
                         pl,
                     )?;
 
-                    let result = Self {
-                        n,
-                        log2_bucket_size: log2_bs,
-                        fused,
-                        lcp_long,
-                        remap: remap.clone(),
-                        escape: escape_usize,
-                        lcp2bucket,
+                // -- Build LCP long VFunc (escaped keys only) --
+                let lcp_long = if n_escaped > 0 {
+                    let mut long_shard_edge = Fuse3Shards::default();
+                    long_shard_edge.set_up_shards(n_escaped, _builder.eps);
+                    let long_shb = long_shard_edge.shard_high_bits();
+
+                    let long_num_shards = 1usize << long_shb;
+                    let filtered_shard_sizes = if long_num_shards >= num_shards_se {
+                        escaped_counts
+                    } else {
+                        let per = num_shards_se / long_num_shards;
+                        escaped_counts.chunks(per).map(|c| c.iter().sum()).collect()
                     };
-                    let total = result.mem_size(SizeFlags::default()) * 8;
+
                     pl.info(format_args!(
-                        "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
-                        total as f64 / n as f64
+                        "Building LCP long map ({n_escaped} escaped \
+                             keys, {:.1}%)...",
+                        100.0 * n_escaped as f64 / n as f64
                     ));
-                    Ok(result)
-                },
-                pl,
-                (),
-            )?;
+
+                    let mut filtered_store = FilteredShardStore::new(
+                        store,
+                        long_shb,
+                        |sv: &SigVal<S, u64>| {
+                            inv_map.get((sv.val >> log2_bs) as usize) == escape_usize
+                        },
+                        filtered_shard_sizes,
+                    );
+
+                    VBuilder::<BitFieldVec<Box<[usize]>>, S, Fuse3Shards>::default()
+                        .max_num_threads(_builder.max_num_threads)
+                        .try_build_func_with_store::<T, u64>(
+                            seed,
+                            long_shard_edge,
+                            max_lcp,
+                            &mut filtered_store,
+                            &|_e, sig_val| (sig_val.val >> log2_bs) as usize,
+                            pl,
+                        )?
+                } else {
+                    VFunc::empty()
+                };
+
+                // -- lcp2bucket --
+                pl.info(format_args!(
+                    "Building LCP prefix → bucket map ({num_buckets} buckets)..."
+                ));
+                let lcp2bucket = <VFunc<
+                    IntBitPrefix<T>,
+                    BitFieldVec<Box<[usize]>>,
+                    [u64; 1],
+                    Fuse3NoShards,
+                >>::try_new_with_builder(
+                    FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
+                        IntBitPrefix::new(
+                            bucket_first_keys[b] ^ T::MIN,
+                            lcp_bit_lengths[b] as usize,
+                        )
+                    })),
+                    FromCloneableIntoIterator::new(0..num_buckets),
+                    num_buckets,
+                    VBuilder::default(),
+                    pl,
+                )?;
+
+                let result = Self {
+                    n,
+                    log2_bucket_size: log2_bs,
+                    fused,
+                    lcp_long,
+                    remap: remap.clone(),
+                    escape: escape_usize,
+                    lcp2bucket,
+                };
+                let total = result.mem_size(SizeFlags::default()) * 8;
+                pl.info(format_args!(
+                    "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
+                    total as f64 / n as f64
+                ));
+                Ok(result)
+            },
+            pl,
+            (),
+        )?;
 
         Ok(fused_result)
     }
@@ -1620,7 +1609,10 @@ where
     }
 
     /// Internal parallel constructor for byte-sequence keys.
-    pub(crate) fn try_par_new_inner<B: AsRef<[u8]> + Borrow<K> + Sync, P: ProgressLog + Clone + Send + Sync>(
+    pub(crate) fn try_par_new_inner<
+        B: AsRef<[u8]> + Borrow<K> + Sync,
+        P: ProgressLog + Clone + Send + Sync,
+    >(
         keys: &[B],
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut P,
@@ -1718,17 +1710,15 @@ where
         let num_remapped = escape_usize.min(m);
 
         let remap: Box<[usize]> = sorted_vals[..num_remapped].to_vec().into_boxed_slice();
-        let mut inv_map: HybridMap<usize, usize> =
-            HybridMap::new(Some(max_lcp), escape_usize);
+        let mut inv_map: HybridMap<usize, usize> = HybridMap::new(Some(max_lcp), escape_usize);
         for (i, &val) in remap.iter().enumerate() {
             inv_map.insert(val, i);
         }
 
-        let n_escaped = n
-            - sorted_vals[..num_remapped]
-                .iter()
-                .map(|&v| lcp_counts.get(v))
-                .sum::<usize>();
+        let n_escaped = n - sorted_vals[..num_remapped]
+            .iter()
+            .map(|&v| lcp_counts.get(v))
+            .sum::<usize>();
 
         pl.info(format_args!(
             "Fused offset+LCP: r={best_r}, log2_bs={log2_bs}, \
@@ -1744,154 +1734,142 @@ where
             best_r + log2_bs
         ));
 
-        let fused_result = builder
-            .expected_num_keys(n)
-            .try_par_populate_and_build(
-                keys,
-                &|i| {
-                    ((lcp_bit_lengths[i >> log2_bs] as u64) << log2_bs)
-                        | (i as u64 & bucket_mask as u64)
-                },
-                &mut |_builder,
-                      seed,
-                      mut store,
-                      _max_value,
-                      _num_keys,
-                      pl: &mut P,
-                      _state: &mut ()| {
-                    let shard_edge = _builder.shard_edge;
-                    let store = &mut *store;
+        let fused_result = builder.expected_num_keys(n).try_par_populate_and_build(
+            keys,
+            &|i| {
+                ((lcp_bit_lengths[i >> log2_bs] as u64) << log2_bs)
+                    | (i as u64 & bucket_mask as u64)
+            },
+            &mut |_builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
+                let shard_edge = _builder.shard_edge;
+                let store = &mut *store;
 
-                    // -- Build fused VFunc: (remapped_lcp << log2_bs) | offset --
-                    let fused_max = (escape_usize << log2_bs) | bucket_mask;
+                // -- Build fused VFunc: (remapped_lcp << log2_bs) | offset --
+                let fused_max = (escape_usize << log2_bs) | bucket_mask;
 
-                    let shb = shard_edge.shard_high_bits();
-                    let num_shards_se = 1usize << shb;
-                    let shard_mask = (1u64 << shb) - 1;
-                    let mut escaped_counts = vec![0usize; num_shards_se];
-                    let sync_counts = escaped_counts.as_sync_slice();
+                let shb = shard_edge.shard_high_bits();
+                let num_shards_se = 1usize << shb;
+                let shard_mask = (1u64 << shb) - 1;
+                let mut escaped_counts = vec![0usize; num_shards_se];
+                let sync_counts = escaped_counts.as_sync_slice();
 
-                    let fused = VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default()
-                        .try_build_func_with_store_and_inspect::<K, u64>(
-                            seed,
-                            shard_edge,
-                            fused_max,
-                            store,
-                            &|_, sig_val| {
-                                let lcp = (sig_val.val >> log2_bs) as usize;
-                                let offset = (sig_val.val as usize) & bucket_mask;
-                                (inv_map.get(lcp) << log2_bs) | offset
-                            },
-                            &|sv: &SigVal<S, u64>| {
-                                let lcp = (sv.val >> log2_bs) as usize;
-                                if inv_map.get(lcp) == escape_usize {
-                                    let shard_idx =
-                                        sv.sig.high_bits(shb, shard_mask) as usize;
-                                    // SAFETY: each shard is processed by
-                                    // exactly one thread.
-                                    unsafe {
-                                        let c = sync_counts[shard_idx].get();
-                                        sync_counts[shard_idx].set(c + 1);
-                                    }
+                let fused = VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default()
+                    .try_build_func_with_store_and_inspect::<K, u64>(
+                        seed,
+                        shard_edge,
+                        fused_max,
+                        store,
+                        &|_, sig_val| {
+                            let lcp = (sig_val.val >> log2_bs) as usize;
+                            let offset = (sig_val.val as usize) & bucket_mask;
+                            (inv_map.get(lcp) << log2_bs) | offset
+                        },
+                        &|sv: &SigVal<S, u64>| {
+                            let lcp = (sv.val >> log2_bs) as usize;
+                            if inv_map.get(lcp) == escape_usize {
+                                let shard_idx = sv.sig.high_bits(shb, shard_mask) as usize;
+                                // SAFETY: each shard is processed by
+                                // exactly one thread.
+                                unsafe {
+                                    let c = sync_counts[shard_idx].get();
+                                    sync_counts[shard_idx].set(c + 1);
                                 }
-                            },
-                            pl,
-                        )?;
-
-                    // -- Build LCP long VFunc (escaped keys only) --
-                    let lcp_long = if n_escaped > 0 {
-                        let mut long_shard_edge = Fuse3Shards::default();
-                        long_shard_edge.set_up_shards(n_escaped, _builder.eps);
-                        let long_shb = long_shard_edge.shard_high_bits();
-
-                        let long_num_shards = 1usize << long_shb;
-                        let filtered_shard_sizes = if long_num_shards >= num_shards_se {
-                            escaped_counts
-                        } else {
-                            let per = num_shards_se / long_num_shards;
-                            escaped_counts.chunks(per).map(|c| c.iter().sum()).collect()
-                        };
-
-                        pl.info(format_args!(
-                            "Building LCP long map ({n_escaped} escaped \
-                             keys, {:.1}%)...",
-                            100.0 * n_escaped as f64 / n as f64
-                        ));
-
-                        let mut filtered_store = FilteredShardStore::new(
-                            store,
-                            long_shb,
-                            |sv: &SigVal<S, u64>| {
-                                inv_map.get((sv.val >> log2_bs) as usize) == escape_usize
-                            },
-                            filtered_shard_sizes,
-                        );
-
-                        VBuilder::<BitFieldVec<Box<[usize]>>, S, Fuse3Shards>::default()
-                            .max_num_threads(_builder.max_num_threads)
-                            .try_build_func_with_store::<K, u64>(
-                                seed,
-                                long_shard_edge,
-                                max_lcp,
-                                &mut filtered_store,
-                                &|_e, sig_val| (sig_val.val >> log2_bs) as usize,
-                                pl,
-                            )?
-                    } else {
-                        VFunc::empty()
-                    };
-
-                    // -- lcp2bucket --
-                    pl.info(format_args!(
-                        "Building LCP prefix → bucket map ({num_buckets} buckets)..."
-                    ));
-                    let extended_first_keys: Vec<Vec<u8>> = bucket_first_keys
-                        .iter()
-                        .map(|k| {
-                            let mut v = Vec::with_capacity(k.len() + 1);
-                            v.extend_from_slice(k);
-                            v.push(0x00);
-                            v
-                        })
-                        .collect();
-
-                    let lcp2bucket = <VFunc<
-                        BitPrefix,
-                        BitFieldVec<Box<[usize]>>,
-                        [u64; 1],
-                        Fuse3NoShards,
-                    >>::try_new_with_builder(
-                        FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
-                            BitPrefix::new(
-                                &extended_first_keys[b],
-                                lcp_bit_lengths[b] as usize,
-                            )
-                        })),
-                        FromCloneableIntoIterator::new(0..num_buckets),
-                        num_buckets,
-                        VBuilder::default(),
+                            }
+                        },
                         pl,
                     )?;
 
-                    let result = Self {
-                        n,
-                        log2_bucket_size: log2_bs,
-                        fused,
-                        lcp_long,
-                        remap: remap.clone(),
-                        escape: escape_usize,
-                        lcp2bucket,
+                // -- Build LCP long VFunc (escaped keys only) --
+                let lcp_long = if n_escaped > 0 {
+                    let mut long_shard_edge = Fuse3Shards::default();
+                    long_shard_edge.set_up_shards(n_escaped, _builder.eps);
+                    let long_shb = long_shard_edge.shard_high_bits();
+
+                    let long_num_shards = 1usize << long_shb;
+                    let filtered_shard_sizes = if long_num_shards >= num_shards_se {
+                        escaped_counts
+                    } else {
+                        let per = num_shards_se / long_num_shards;
+                        escaped_counts.chunks(per).map(|c| c.iter().sum()).collect()
                     };
-                    let total = result.mem_size(SizeFlags::default()) * 8;
+
                     pl.info(format_args!(
-                        "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
-                        total as f64 / n as f64
+                        "Building LCP long map ({n_escaped} escaped \
+                             keys, {:.1}%)...",
+                        100.0 * n_escaped as f64 / n as f64
                     ));
-                    Ok(result)
-                },
-                pl,
-                (),
-            )?;
+
+                    let mut filtered_store = FilteredShardStore::new(
+                        store,
+                        long_shb,
+                        |sv: &SigVal<S, u64>| {
+                            inv_map.get((sv.val >> log2_bs) as usize) == escape_usize
+                        },
+                        filtered_shard_sizes,
+                    );
+
+                    VBuilder::<BitFieldVec<Box<[usize]>>, S, Fuse3Shards>::default()
+                        .max_num_threads(_builder.max_num_threads)
+                        .try_build_func_with_store::<K, u64>(
+                            seed,
+                            long_shard_edge,
+                            max_lcp,
+                            &mut filtered_store,
+                            &|_e, sig_val| (sig_val.val >> log2_bs) as usize,
+                            pl,
+                        )?
+                } else {
+                    VFunc::empty()
+                };
+
+                // -- lcp2bucket --
+                pl.info(format_args!(
+                    "Building LCP prefix → bucket map ({num_buckets} buckets)..."
+                ));
+                let extended_first_keys: Vec<Vec<u8>> = bucket_first_keys
+                    .iter()
+                    .map(|k| {
+                        let mut v = Vec::with_capacity(k.len() + 1);
+                        v.extend_from_slice(k);
+                        v.push(0x00);
+                        v
+                    })
+                    .collect();
+
+                let lcp2bucket = <VFunc<
+                    BitPrefix,
+                    BitFieldVec<Box<[usize]>>,
+                    [u64; 1],
+                    Fuse3NoShards,
+                >>::try_new_with_builder(
+                    FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
+                        BitPrefix::new(&extended_first_keys[b], lcp_bit_lengths[b] as usize)
+                    })),
+                    FromCloneableIntoIterator::new(0..num_buckets),
+                    num_buckets,
+                    VBuilder::default(),
+                    pl,
+                )?;
+
+                let result = Self {
+                    n,
+                    log2_bucket_size: log2_bs,
+                    fused,
+                    lcp_long,
+                    remap: remap.clone(),
+                    escape: escape_usize,
+                    lcp2bucket,
+                };
+                let total = result.mem_size(SizeFlags::default()) * 8;
+                pl.info(format_args!(
+                    "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
+                    total as f64 / n as f64
+                ));
+                Ok(result)
+            },
+            pl,
+            (),
+        )?;
 
         Ok(fused_result)
     }
