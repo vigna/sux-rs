@@ -1,0 +1,106 @@
+=== Lcp2Mmphf Construction Benchmark ===
+Date: Sun Mar 29 10:13:30 AM CEST 2026
+
+### ONE-PASS 10M online
+Loaded 10000000 keys (0.1 GB) in 0.0s, offline=false
+[2026-03-29T08:13:30Z INFO  bench_lcp2_construction] Bucket size: 2^4 = 16 (625000 buckets for 10000000 keys)
+=== RESULTS ===
+Keys:            10000000
+Offline:         false
+Construction:    3.053s
+Bits/key:        9.26
+Total size:      92638144 bits (11.6 MB)
+Verification:    OK (1000 samples)
+
+### TWO-PASS 10M online
+Loaded 10000000 keys (0.1 GB) in 0.0s, offline=false
+[2026-03-29T08:13:33Z INFO  bench_lcp2_construction] Bucket size: 2^4 = 16 (625000 buckets for 10000000 keys)
+=== RESULTS ===
+Keys:            10000000
+Offline:         false
+Construction:    4.271s
+Bits/key:        9.26
+Total size:      92638080 bits (11.6 MB)
+Verification:    OK (1000 samples)
+
+### ONE-PASS 10M offline
+Loaded 10000000 keys (0.1 GB) in 0.0s, offline=true
+[2026-03-29T08:13:37Z INFO  bench_lcp2_construction] Bucket size: 2^4 = 16 (625000 buckets for 10000000 keys)
+=== RESULTS ===
+Keys:            10000000
+Offline:         true
+Construction:    3.283s
+Bits/key:        9.26
+Total size:      92638144 bits (11.6 MB)
+Verification:    OK (1000 samples)
+
+### TWO-PASS 10M offline
+Loaded 10000000 keys (0.1 GB) in 0.0s, offline=true
+[2026-03-29T08:13:40Z INFO  bench_lcp2_construction] Bucket size: 2^4 = 16 (625000 buckets for 10000000 keys)
+
+### ONE-PASS 100M online
+Loaded 100000000 keys (0.8 GB) in 0.3s, offline=false
+[2026-03-29T08:13:42Z INFO  bench_lcp2_construction] Bucket size: 2^5 = 32 (3125000 buckets for 100000000 keys)
+=== RESULTS ===
+Keys:            100000000
+Offline:         false
+Construction:    12.424s
+Bits/key:        9.47
+Total size:      947293120 bits (118.4 MB)
+Verification:    OK (1000 samples)
+
+### TWO-PASS 100M online
+Loaded 100000000 keys (0.8 GB) in 0.3s, offline=false
+[2026-03-29T08:13:55Z INFO  bench_lcp2_construction] Bucket size: 2^5 = 32 (3125000 buckets for 100000000 keys)
+=== RESULTS ===
+Keys:            100000000
+Offline:         false
+Construction:    12.517s
+Bits/key:        9.47
+Total size:      947293056 bits (118.4 MB)
+
+### ONE-PASS 100M offline
+Loaded 100000000 keys (0.8 GB) in 0.3s, offline=true
+[2026-03-29T08:14:08Z INFO  bench_lcp2_construction] Bucket size: 2^5 = 32 (3125000 buckets for 100000000 keys)
+=== RESULTS ===
+Keys:            100000000
+Offline:         true
+Construction:    12.895s
+Bits/key:        9.47
+Total size:      947293120 bits (118.4 MB)
+Verification:    OK (1000 samples)
+
+### TWO-PASS 100M offline
+Loaded 100000000 keys (0.8 GB) in 0.3s, offline=true
+[2026-03-29T08:14:21Z INFO  bench_lcp2_construction] Bucket size: 2^5 = 32 (3125000 buckets for 100000000 keys)
+
+### ONE-PASS 1B online
+Loaded 1000000000 keys (8.0 GB) in 3.0s, offline=false
+[2026-03-29T08:14:29Z INFO  bench_lcp2_construction] Bucket size: 2^5 = 32 (31250000 buckets for 1000000000 keys)
+=== RESULTS ===
+Keys:            1000000000
+Offline:         false
+Construction:    149.865s
+Bits/key:        9.37
+Total size:      9367522240 bits (1170.9 MB)
+Verification:    OK (1000 samples)
+
+### TWO-PASS 1B online
+Loaded 1000000000 keys (8.0 GB) in 4.2s, offline=false
+[2026-03-29T08:17:04Z INFO  bench_lcp2_construction] Bucket size: 2^5 = 32 (31250000 buckets for 1000000000 keys)
+=== RESULTS ===
+Keys:            1000000000
+Offline:         false
+Construction:    157.478s
+Bits/key:        9.37
+Total size:      9367522176 bits (1170.9 MB)
+
+### ONE-PASS 1B offline
+Loaded 1000000000 keys (8.0 GB) in 3.0s, offline=true
+[2026-03-29T08:19:45Z INFO  bench_lcp2_construction] Bucket size: 2^5 = 32 (31250000 buckets for 1000000000 keys)
+
+### TWO-PASS 1B offline
+Loaded 1000000000 keys (8.0 GB) in 3.0s, offline=true
+[2026-03-29T08:19:58Z INFO  bench_lcp2_construction] Bucket size: 2^5 = 32 (31250000 buckets for 1000000000 keys)
+
+=== Done ===

@@ -37,15 +37,26 @@ use {
 // Bit manipulation helpers
 // ═══════════════════════════════════════════════════════════════════
 
-/// Read bit `i` from a byte slice (MSB-first within each byte).
-/// Returns `false` for positions beyond the key length (virtual NUL).
+/// Read bit `i` from a byte slice (MSB-first within each byte) with
+/// a prefix-free virtual terminator.
+///
+/// For positions within the key: returns the actual bit.
+/// For the first bit after the key (`i == key.len() * 8`): returns `true`.
+/// For subsequent positions: returns `false`.
+///
+/// This makes the bit representation prefix-free: no key's bit
+/// sequence is a prefix of another's, as long as actual bytes are
+/// nonzero (so the `1` terminator bit differs from any real byte's
+/// MSB for bytes 0x00–0x7F, and extends unambiguously for 0x80–0xFF).
 #[cfg(feature = "rayon")]
 #[inline]
 fn get_key_bit(key: &[u8], i: usize) -> bool {
     let byte_idx = i / 8;
-    let bit_idx = 7 - (i % 8); // MSB first
+    let bit_idx = 7 - (i % 8);
     if byte_idx < key.len() {
         (key[byte_idx] >> bit_idx) & 1 != 0
+    } else if i == key.len() * 8 {
+        true // terminator bit
     } else {
         false // virtual NUL
     }
@@ -86,8 +97,12 @@ fn push_bits(dst: &mut Vec<u64>, dst_len: &mut usize, src: &[u64], src_len: usiz
 // ═══════════════════════════════════════════════════════════════════
 
 /// LCP in bits between two byte slices (MSB-first, with virtual NUL).
+/// LCP in bits between two byte slices using the prefix-free
+/// terminator convention: after the last byte, bit `len*8` is `1`,
+/// then all-zeros. This ensures prefix-freeness for keys with no
+/// zero bytes.
 #[cfg(feature = "rayon")]
-fn lcp_bits_nul(a: &[u8], b: &[u8]) -> usize {
+fn lcp_bits_pf(a: &[u8], b: &[u8]) -> usize {
     let min_len = a.len().min(b.len());
     for i in 0..min_len {
         if a[i] != b[i] {
@@ -95,10 +110,29 @@ fn lcp_bits_nul(a: &[u8], b: &[u8]) -> usize {
         }
     }
     if a.len() == b.len() {
-        a.len() * 8 + 8 // identical + virtual NUL
+        // Both bytes match and both terminators are `1` → LCP
+        // extends through the terminator bit (position min_len * 8).
+        // The next bit (min_len * 8 + 1) is `0` for both, so LCP
+        // continues indefinitely. Return min_len * 8 + 1 as a
+        // sentinel for "identical keys."
+        min_len * 8 + 1
     } else {
-        let longer = if a.len() > b.len() { a } else { b };
-        min_len * 8 + longer[min_len].leading_zeros() as usize
+        // The shorter key has terminator `1` at bit `min_len * 8`.
+        // The longer key has byte `b[min_len]` starting at that bit.
+        // XOR the terminator `1` against the MSB of the next byte.
+        // For bytes 0x00-0x7F the MSB is 0, so the first bit differs.
+        // For bytes 0x80-0xFF the MSB is 1, check further bits.
+        let next_byte = if a.len() > b.len() { a[min_len] } else { b[min_len] };
+        // Virtual terminator byte: 0x80 (1 followed by zeros)
+        let xor = next_byte ^ 0x80;
+        if xor == 0 {
+            // First bit matches (both 1); divergence is in the rest.
+            // This shouldn't happen for non-zero bytes < 0x80, but
+            // handle it for robustness.
+            min_len * 8 + 8 // conservative
+        } else {
+            min_len * 8 + xor.leading_zeros() as usize
+        }
     }
 }
 
@@ -197,7 +231,7 @@ impl HollowTrieBuilder {
             return;
         }
 
-        let lcp = lcp_bits_nul(&self.prev, key);
+        let lcp = lcp_bits_pf(&self.prev, key);
 
         // Pop nodes whose cumulative path length exceeds the LCP.
         let mut last = self.stack.len() as isize - 1;
@@ -486,7 +520,7 @@ impl HollowTrieDistributor {
                 None
             };
             delimiter_lcp = match (left_delimiter, right_delimiter) {
-                (Some(l), Some(r)) => Some(lcp_bits_nul(l, r)),
+                (Some(l), Some(r)) => Some(lcp_bits_pf(l, r)),
                 _ => None,
             };
 
@@ -504,11 +538,11 @@ impl HollowTrieDistributor {
 
             for j in 0..real_bucket_size {
                 let curr = keys[bucket_start + j].as_ref();
-                let length = curr.len() * 8; // bit length (without virtual NUL)
+                let length = curr.len() * 8 + 1; // bit length including prefix-free terminator
 
                 // Adjust stack using LCP with previous key in bucket
                 if let Some(prev) = prev_key {
-                    let prefix = lcp_bits_nul(prev, curr);
+                    let prefix = lcp_bits_pf(prev, curr);
                     while depth > 0 && stack_s[depth] > prefix {
                         depth -= 1;
                     }
@@ -523,21 +557,21 @@ impl HollowTrieDistributor {
                 let (exit_left, max_descent_length) = match (left_delimiter, right_delimiter) {
                     (None, Some(rd)) => {
                         // First bucket: no left delimiter
-                        (true, lcp_bits_nul(curr, rd) + 1)
+                        (true, lcp_bits_pf(curr, rd) + 1)
                     }
                     (Some(ld), None) => {
                         // Last (partial) bucket: no right delimiter
-                        (false, lcp_bits_nul(curr, ld) + 1)
+                        (false, lcp_bits_pf(curr, ld) + 1)
                     }
                     (Some(ld), Some(rd)) => {
                         let dlcp = delimiter_lcp.unwrap();
                         let el = get_key_bit(curr, dlcp);
                         if el {
                             // Closer to right delimiter
-                            (true, lcp_bits_nul(curr, rd) + 1)
+                            (true, lcp_bits_pf(curr, rd) + 1)
                         } else {
                             // Closer to left delimiter
-                            (false, lcp_bits_nul(curr, ld) + 1)
+                            (false, lcp_bits_pf(curr, ld) + 1)
                         }
                     }
                     (None, None) => {
@@ -702,7 +736,7 @@ impl HollowTrieDistributor {
         }
 
         let trie_words = self.bal_paren.words();
-        let length = key.len() * 8;
+        let length = key.len() * 8 + 1; // including prefix-free terminator
         let mut p: usize = 1;
         let mut index: usize = 0;
         let mut r: usize = 0;
@@ -1126,6 +1160,23 @@ mod tests {
                 no_logging![],
             )
             .unwrap();
+            for (i, key) in keys.iter().enumerate() {
+                assert_eq!(
+                    func.get(key.as_bytes()),
+                    i,
+                    "Mismatch for key {key:?} at position {i}"
+                );
+            }
+        }
+
+        #[test]
+        fn test_ht_dist_mmphf_prefix_keys() {
+            let keys: Vec<&str> = vec![
+                "0", "00", "000", "0000", "00000", "000000", "0000000",
+                "00000000", "000000000", "0000000000", "1", "10", "100",
+                "2", "20", "200",
+            ];
+            let func = HtDistMmphf::try_new(&keys, no_logging![]).unwrap();
             for (i, key) in keys.iter().enumerate() {
                 assert_eq!(
                     func.get(key.as_bytes()),

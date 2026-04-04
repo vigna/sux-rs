@@ -1,0 +1,246 @@
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.10s
+     Running benches/bench_select_in_word.rs (target/release/deps/bench_select_in_word-a91847c0a3512020)
+Benchmarking broadword_u8
+Benchmarking broadword_u8: Warming up for 3.0000 s
+Benchmarking broadword_u8: Collecting 100 samples in estimated 5.0000 s (4.7B iterations)
+Benchmarking broadword_u8: Analyzing
+broadword_u8            time:   [1.0596 ns 1.0596 ns 1.0596 ns]
+                        change: [−98.782% −98.781% −98.781%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 6 outliers among 100 measurements (6.00%)
+  1 (1.00%) low mild
+  1 (1.00%) high mild
+  4 (4.00%) high severe
+
+Benchmarking broadword_u16
+Benchmarking broadword_u16: Warming up for 3.0000 s
+Benchmarking broadword_u16: Collecting 100 samples in estimated 5.0000 s (1.2B iterations)
+Benchmarking broadword_u16: Analyzing
+broadword_u16           time:   [4.1786 ns 4.1793 ns 4.1800 ns]
+                        change: [−99.150% −99.150% −99.149%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 3 outliers among 100 measurements (3.00%)
+  1 (1.00%) low severe
+  1 (1.00%) low mild
+  1 (1.00%) high mild
+
+Benchmarking broadword_u32
+Benchmarking broadword_u32: Warming up for 3.0000 s
+Benchmarking broadword_u32: Collecting 100 samples in estimated 5.0000 s (1.3B iterations)
+Benchmarking broadword_u32: Analyzing
+broadword_u32           time:   [3.8932 ns 3.8933 ns 3.8934 ns]
+                        change: [+0.0022% +0.0069% +0.0116%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 7 outliers among 100 measurements (7.00%)
+  1 (1.00%) low mild
+  6 (6.00%) high mild
+
+Benchmarking broadword_u64
+Benchmarking broadword_u64: Warming up for 3.0000 s
+Benchmarking broadword_u64: Collecting 100 samples in estimated 5.0000 s (1.3B iterations)
+Benchmarking broadword_u64: Analyzing
+broadword_u64           time:   [3.9584 ns 3.9586 ns 3.9588 ns]
+                        change: [−99.145% −99.145% −99.145%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 14 outliers among 100 measurements (14.00%)
+  7 (7.00%) high mild
+  7 (7.00%) high severe
+
+Benchmarking broadword_u128
+Benchmarking broadword_u128: Warming up for 3.0000 s
+Benchmarking broadword_u128: Collecting 100 samples in estimated 5.0000 s (332M iterations)
+Benchmarking broadword_u128: Analyzing
+broadword_u128          time:   [15.268 ns 15.344 ns 15.420 ns]
+                        change: [−1.1329% −0.4851% +0.2142%] (p = 0.16 > 0.05)
+                        No change in performance detected.
+
+Benchmarking popcount_u8
+Benchmarking popcount_u8: Warming up for 3.0000 s
+Benchmarking popcount_u8: Collecting 100 samples in estimated 5.0000 s (4.7B iterations)
+Benchmarking popcount_u8: Analyzing
+popcount_u8             time:   [1.0599 ns 1.0617 ns 1.0647 ns]
+                        change: [−98.785% −98.784% −98.783%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 9 outliers among 100 measurements (9.00%)
+  3 (3.00%) low mild
+  1 (1.00%) high mild
+  5 (5.00%) high severe
+
+Benchmarking popcount_u16
+Benchmarking popcount_u16: Warming up for 3.0000 s
+Benchmarking popcount_u16: Collecting 100 samples in estimated 5.0000 s (3.2B iterations)
+Benchmarking popcount_u16: Analyzing
+popcount_u16            time:   [1.5627 ns 1.5628 ns 1.5629 ns]
+                        change: [−98.825% −98.825% −98.825%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 4 outliers among 100 measurements (4.00%)
+  3 (3.00%) low mild
+  1 (1.00%) high mild
+
+Benchmarking popcount_u32
+Benchmarking popcount_u32: Warming up for 3.0000 s
+Benchmarking popcount_u32: Collecting 100 samples in estimated 5.0000 s (2.5B iterations)
+Benchmarking popcount_u32: Analyzing
+popcount_u32            time:   [1.9770 ns 1.9772 ns 1.9773 ns]
+                        change: [+0.4131% +0.4612% +0.5073%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high mild
+
+Benchmarking popcount_u64
+Benchmarking popcount_u64: Warming up for 3.0000 s
+Benchmarking popcount_u64: Collecting 100 samples in estimated 5.0000 s (1.5B iterations)
+Benchmarking popcount_u64: Analyzing
+popcount_u64            time:   [3.2798 ns 3.2805 ns 3.2819 ns]
+                        change: [−99.161% −99.161% −99.161%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 6 outliers among 100 measurements (6.00%)
+  1 (1.00%) low severe
+  3 (3.00%) high mild
+  2 (2.00%) high severe
+
+Benchmarking popcount_u128
+Benchmarking popcount_u128: Warming up for 3.0000 s
+Benchmarking popcount_u128: Collecting 100 samples in estimated 5.0000 s (933M iterations)
+Benchmarking popcount_u128: Analyzing
+popcount_u128           time:   [5.3241 ns 5.3248 ns 5.3256 ns]
+                        change: [+0.0393% +0.0534% +0.0693%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 6 outliers among 100 measurements (6.00%)
+  3 (3.00%) high mild
+  3 (3.00%) high severe
+
+Benchmarking popcount2_u64
+Benchmarking popcount2_u64: Warming up for 3.0000 s
+Benchmarking popcount2_u64: Collecting 100 samples in estimated 5.0000 s (1.9B iterations)
+Benchmarking popcount2_u64: Analyzing
+popcount2_u64           time:   [2.6598 ns 2.6598 ns 2.6599 ns]
+                        change: [+0.0319% +0.0353% +0.0388%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 5 outliers among 100 measurements (5.00%)
+  4 (4.00%) high mild
+  1 (1.00%) high severe
+
+Benchmarking popcount2_u128
+Benchmarking popcount2_u128: Warming up for 3.0000 s
+Benchmarking popcount2_u128: Collecting 100 samples in estimated 5.0000 s (1.2B iterations)
+Benchmarking popcount2_u128: Analyzing
+popcount2_u128          time:   [4.1514 ns 4.1515 ns 4.1516 ns]
+                        change: [+0.0227% +0.0306% +0.0384%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+
+Benchmarking popcount3_u128
+Benchmarking popcount3_u128: Warming up for 3.0000 s
+Benchmarking popcount3_u128: Collecting 100 samples in estimated 5.0000 s (1.3B iterations)
+Benchmarking popcount3_u128: Analyzing
+popcount3_u128          time:   [3.7260 ns 3.7261 ns 3.7263 ns]
+                        change: [+0.1315% +0.1400% +0.1489%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 3 outliers among 100 measurements (3.00%)
+  1 (1.00%) high mild
+  2 (2.00%) high severe
+
+Benchmarking cancellation_u8
+Benchmarking cancellation_u8: Warming up for 3.0000 s
+Benchmarking cancellation_u8: Collecting 100 samples in estimated 5.0000 s (2.5B iterations)
+Benchmarking cancellation_u8: Analyzing
+cancellation_u8         time:   [1.9844 ns 1.9845 ns 1.9846 ns]
+Found 14 outliers among 100 measurements (14.00%)
+  3 (3.00%) high mild
+  11 (11.00%) high severe
+
+Benchmarking cancellation_u16
+Benchmarking cancellation_u16: Warming up for 3.0000 s
+Benchmarking cancellation_u16: Collecting 100 samples in estimated 5.0000 s (1.7B iterations)
+Benchmarking cancellation_u16: Analyzing
+cancellation_u16        time:   [2.8960 ns 2.8964 ns 2.8969 ns]
+Found 15 outliers among 100 measurements (15.00%)
+  15 (15.00%) high severe
+
+Benchmarking cancellation_u32
+Benchmarking cancellation_u32: Warming up for 3.0000 s
+Benchmarking cancellation_u32: Collecting 100 samples in estimated 5.0000 s (1.4B iterations)
+Benchmarking cancellation_u32: Analyzing
+cancellation_u32        time:   [3.6427 ns 3.6442 ns 3.6458 ns]
+                        change: [−0.1559% −0.1145% −0.0724%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high mild
+
+Benchmarking cancellation_u64
+Benchmarking cancellation_u64: Warming up for 3.0000 s
+Benchmarking cancellation_u64: Collecting 100 samples in estimated 5.0000 s (625M iterations)
+Benchmarking cancellation_u64: Analyzing
+cancellation_u64        time:   [7.9683 ns 7.9688 ns 7.9694 ns]
+Found 15 outliers among 100 measurements (15.00%)
+  15 (15.00%) high severe
+
+Benchmarking cancellation_u128
+Benchmarking cancellation_u128: Warming up for 3.0000 s
+Benchmarking cancellation_u128: Collecting 100 samples in estimated 5.0001 s (233M iterations)
+Benchmarking cancellation_u128: Analyzing
+cancellation_u128       time:   [21.408 ns 21.409 ns 21.411 ns]
+                        change: [+0.0104% +0.0182% +0.0259%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 13 outliers among 100 measurements (13.00%)
+  8 (8.00%) low mild
+  4 (4.00%) high mild
+  1 (1.00%) high severe
+
+Benchmarking bmi_u8
+Benchmarking bmi_u8: Warming up for 3.0000 s
+Benchmarking bmi_u8: Collecting 100 samples in estimated 5.0000 s (5.3B iterations)
+Benchmarking bmi_u8: Analyzing
+bmi_u8                  time:   [949.06 ps 949.07 ps 949.08 ps]
+                        change: [−98.827% −98.826% −98.826%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 6 outliers among 100 measurements (6.00%)
+  1 (1.00%) low mild
+  2 (2.00%) high mild
+  3 (3.00%) high severe
+
+Benchmarking bmi_u16
+Benchmarking bmi_u16: Warming up for 3.0000 s
+Benchmarking bmi_u16: Collecting 100 samples in estimated 5.0000 s (5.3B iterations)
+Benchmarking bmi_u16: Analyzing
+bmi_u16                 time:   [949.07 ps 949.31 ps 949.84 ps]
+                        change: [−98.826% −98.826% −98.825%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 8 outliers among 100 measurements (8.00%)
+  2 (2.00%) low mild
+  4 (4.00%) high mild
+  2 (2.00%) high severe
+
+Benchmarking bmi_u32
+Benchmarking bmi_u32: Warming up for 3.0000 s
+Benchmarking bmi_u32: Collecting 100 samples in estimated 5.0000 s (5.3B iterations)
+Benchmarking bmi_u32: Analyzing
+bmi_u32                 time:   [949.07 ps 949.09 ps 949.12 ps]
+                        change: [+0.0257% +0.0285% +0.0312%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 5 outliers among 100 measurements (5.00%)
+  3 (3.00%) high mild
+  2 (2.00%) high severe
+
+Benchmarking bmi_u64
+Benchmarking bmi_u64: Warming up for 3.0000 s
+Benchmarking bmi_u64: Collecting 100 samples in estimated 5.0000 s (5.1B iterations)
+Benchmarking bmi_u64: Analyzing
+bmi_u64                 time:   [976.57 ps 976.57 ps 976.58 ps]
+                        change: [−98.788% −98.788% −98.788%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 5 outliers among 100 measurements (5.00%)
+  3 (3.00%) high mild
+  2 (2.00%) high severe
+
+Benchmarking bmi_u128
+Benchmarking bmi_u128: Warming up for 3.0000 s
+Benchmarking bmi_u128: Collecting 100 samples in estimated 5.0000 s (3.6B iterations)
+Benchmarking bmi_u128: Analyzing
+bmi_u128                time:   [1.3986 ns 1.3988 ns 1.3990 ns]
+                        change: [+0.1539% +0.1704% +0.1860%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+

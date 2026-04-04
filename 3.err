@@ -1,0 +1,89 @@
+commit cbe2e9f515be72ef6954825f347d4f7554064d38
+Author: Sebastiano Vigna <sebastiano.vigna@gmail.com>
+Date:   Tue Mar 4 02:02:44 2025 +0000
+
+    Docs
+   Compiling sux v0.5.0 (/home/vigna/git/sux-rs)
+    Finished `release` profile [optimized + debuginfo] target(s) in 45.92s
+     Running `target/release/vfunc 10000000 func.eps --no-shards --dict`
+[2025-03-04T17:04:26Z INFO  vfunc] Reading input...
+[2025-03-04T17:04:26Z INFO  vfunc] Using 1 bucket
+[2025-03-04T17:04:26Z INFO  vfunc] Completed.
+[2025-03-04T17:04:26Z INFO  vfunc] Elapsed: 245ms [10,000,000 keys, 40709716.92 keys/s, 24.56 ns/key]
+[2025-03-04T17:04:26Z INFO  vfunc] Number of keys: 10000000 Max value: 255 Bit width: 8
+[2025-03-04T17:04:26Z INFO  vfunc] Fuse (no shards) Segment size: 2^15 Number of segments: 342
+[2025-03-04T17:04:26Z INFO  vfunc] c: 1.12, Overhead: 1.1207% Number of threads: 2
+[2025-03-04T17:04:26Z INFO  vfunc] Solving shards...
+[2025-03-04T17:04:26Z INFO  vfunc] Analyzing shard 1/1...
+[2025-03-04T17:04:26Z INFO  vfunc] Solving shard 1/1...
+[2025-03-04T17:04:26Z INFO  vfunc] Generating graph for shard 1/1...
+[2025-03-04T17:04:26Z INFO  vfunc] Completed.
+[2025-03-04T17:04:26Z INFO  vfunc] Elapsed: 120ms [10,000,000 keys, 82776070.34 keys/s, 12.08 ns/key]
+[2025-03-04T17:04:26Z INFO  vfunc] Peeling graph for shard 1/1...
+[2025-03-04T17:04:27Z INFO  vfunc] Completed.
+[2025-03-04T17:04:27Z INFO  vfunc] Elapsed: 602ms [10,000,000 keys, 16589975.17 keys/s, 60.28 ns/key]
+[2025-03-04T17:04:27Z INFO  vfunc] Assigning values for shard 1/1...
+[2025-03-04T17:04:27Z INFO  vfunc] Completed.
+[2025-03-04T17:04:27Z INFO  vfunc] Elapsed: 259ms [10,000,000 keys, 38562003.01 keys/s, 25.93 ns/key]
+[2025-03-04T17:04:27Z INFO  vfunc] Completed shard 1/1
+[2025-03-04T17:04:27Z INFO  vfunc] 1 shard, 1s, 56.81 shards/m, 1.06 s/shard; 100.00% done, 0ms to end; res/vir/avail/free/total mem 350.77MB/496.77MB/64.51GB/49.03GB/67.20GB
+[2025-03-04T17:04:27Z INFO  vfunc] Completed.
+[2025-03-04T17:04:27Z INFO  vfunc] Elapsed: 1s [1 shard, 56.24 shards/m, 1.07 s/shard]; res/vir/avail/free/total mem 181.53MB/1.71GB/64.51GB/49.03GB/67.20GB
+[2025-03-04T17:04:27Z INFO  vfunc] Bits/keys: 8.9653248 (112.07%)
+[2025-03-04T17:04:27Z INFO  vfunc] Completed in 1.333 seconds (133.321 ns/key)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.10s
+     Running `target/release/vfunc 100000000 func.eps --no-shards --dict`
+[2025-03-04T17:04:27Z INFO  vfunc] Reading input...
+[2025-03-04T17:04:27Z INFO  vfunc] Using 1 bucket
+[2025-03-04T17:04:30Z INFO  vfunc] Completed.
+[2025-03-04T17:04:30Z INFO  vfunc] Elapsed: 2s [100,000,000 keys, 37222238.30 keys/s, 26.87 ns/key]
+[2025-03-04T17:04:30Z INFO  vfunc] Number of keys: 100000000 Max value: 255 Bit width: 8
+[2025-03-04T17:04:30Z INFO  vfunc] Fuse (no shards) Segment size: 2^17 Number of segments: 844
+[2025-03-04T17:04:30Z INFO  vfunc] c: 1.105, Overhead: 1.1062% Number of threads: 2
+[2025-03-04T17:04:30Z INFO  vfunc] Solving shards...
+[2025-03-04T17:04:31Z INFO  vfunc] Analyzing shard 1/1...
+[2025-03-04T17:04:31Z INFO  vfunc] Solving shard 1/1...
+[2025-03-04T17:04:31Z INFO  vfunc] Generating graph for shard 1/1...
+[2025-03-04T17:04:34Z INFO  vfunc] Completed.
+[2025-03-04T17:04:34Z INFO  vfunc] Elapsed: 3s [100,000,000 keys, 28873486.20 keys/s, 34.63 ns/key]
+[2025-03-04T17:04:34Z INFO  vfunc] Peeling graph for shard 1/1...
+[2025-03-04T17:04:43Z INFO  vfunc] Completed.
+[2025-03-04T17:04:43Z INFO  vfunc] Elapsed: 9s [100,000,000 keys, 10580502.51 keys/s, 94.51 ns/key]
+[2025-03-04T17:04:43Z INFO  vfunc] Assigning values for shard 1/1...
+[2025-03-04T17:04:48Z INFO  vfunc] Completed.
+[2025-03-04T17:04:48Z INFO  vfunc] Elapsed: 4s [100,000,000 keys, 21232829.48 keys/s, 47.10 ns/key]
+[2025-03-04T17:04:48Z INFO  vfunc] Completed shard 1/1
+[2025-03-04T17:04:48Z INFO  vfunc] 1 shard, 18s, 3.28 shards/m, 18.32 s/shard; 100.00% done, 0ms to end; res/vir/avail/free/total mem 3.33GB/3.58GB/63.55GB/49.17GB/67.20GB
+[2025-03-04T17:04:48Z INFO  vfunc] Completed.
+[2025-03-04T17:04:48Z INFO  vfunc] Elapsed: 18s [1 shard, 3.26 shards/m, 18.41 s/shard]; res/vir/avail/free/total mem 1.72GB/3.25GB/63.55GB/49.17GB/67.20GB
+[2025-03-04T17:04:48Z INFO  vfunc] Bits/keys: 8.84998144 (110.62%)
+[2025-03-04T17:04:48Z INFO  vfunc] Completed in 21.229 seconds (212.285 ns/key)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.10s
+     Running `target/release/vfunc 1000000000 func.eps --no-shards --dict`
+[2025-03-04T17:04:49Z INFO  vfunc] Reading input...
+[2025-03-04T17:04:49Z INFO  vfunc] Using 1 bucket
+[2025-03-04T17:04:59Z INFO  vfunc] 367,001,600 keys, 10s, 36672878.14 keys/s, 27.27 ns/key
+[2025-03-04T17:05:09Z INFO  vfunc] 744,488,960 keys, 20s, 37169576.64 keys/s, 26.90 ns/key
+[2025-03-04T17:05:16Z INFO  vfunc] Completed.
+[2025-03-04T17:05:16Z INFO  vfunc] Elapsed: 26s [1,000,000,000 keys, 37321094.10 keys/s, 26.79 ns/key]
+[2025-03-04T17:05:16Z INFO  vfunc] Number of keys: 1000000000 Max value: 255 Bit width: 8
+[2025-03-04T17:05:16Z INFO  vfunc] Fuse (no shards) Segment size: 2^19 Number of segments: 2108
+[2025-03-04T17:05:16Z INFO  vfunc] c: 1.105, Overhead: 1.1052% Number of threads: 2
+[2025-03-04T17:05:16Z INFO  vfunc] Solving shards...
+[2025-03-04T17:05:22Z INFO  vfunc] Analyzing shard 1/1...
+[2025-03-04T17:05:22Z INFO  vfunc] Solving shard 1/1...
+[2025-03-04T17:05:22Z INFO  vfunc] Generating graph for shard 1/1...
+[2025-03-04T17:06:01Z INFO  vfunc] Completed.
+[2025-03-04T17:06:01Z INFO  vfunc] Elapsed: 38s [1,000,000,000 keys, 25923534.73 keys/s, 38.57 ns/key]
+[2025-03-04T17:06:01Z INFO  vfunc] Peeling graph for shard 1/1...
+[2025-03-04T17:08:59Z INFO  vfunc] Completed.
+[2025-03-04T17:08:59Z INFO  vfunc] Elapsed: 2m 57s [1,000,000,000 keys, 5618118.79 keys/s, 178.00 ns/key]
+[2025-03-04T17:08:59Z INFO  vfunc] Assigning values for shard 1/1...
+[2025-03-04T17:10:26Z INFO  vfunc] Completed.
+[2025-03-04T17:10:26Z INFO  vfunc] Elapsed: 1m 27s [1,000,000,000 keys, 11463196.64 keys/s, 87.24 ns/key]
+[2025-03-04T17:10:26Z INFO  vfunc] Completed shard 1/1
+[2025-03-04T17:10:26Z INFO  vfunc] 1 shard, 5m 10s, 11.58 shards/h, 5.18 m/shard; 100.00% done, 0ms to end; res/vir/avail/free/total mem 33.12GB/34.36GB/49.47GB/34.99GB/67.20GB
+[2025-03-04T17:10:27Z INFO  vfunc] Completed.
+[2025-03-04T17:10:27Z INFO  vfunc] Elapsed: 5m 11s [1 shard, 11.56 shards/h, 5.19 m/shard]; res/vir/avail/free/total mem 17.12GB/18.64GB/49.47GB/34.99GB/67.20GB
+[2025-03-04T17:10:27Z INFO  vfunc] Bits/keys: 8.841592832 (110.52%)
+[2025-03-04T17:10:29Z INFO  vfunc] Completed in 339.815 seconds (339.815 ns/key)

@@ -1,0 +1,1033 @@
+   Compiling sux v0.14.0 (/home/vigna/git/sux-rs)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 40.33s
+     Running benches/bench_elias_fano.rs (target/release/deps/bench_elias_fano-d5ca0e66f4732e2b)
+Benchmarking ef_get_unchecked/aligned/1M/l=2
+Benchmarking ef_get_unchecked/aligned/1M/l=2: Warming up for 3.0000 s
+Benchmarking ef_get_unchecked/aligned/1M/l=2: Collecting 100 samples in estimated 5.0001 s (261M iterations)
+Benchmarking ef_get_unchecked/aligned/1M/l=2: Analyzing
+ef_get_unchecked/aligned/1M/l=2
+                        time:   [19.138 ns 19.141 ns 19.144 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 10 outliers among 100 measurements (10.00%)
+  3 (3.00%) low mild
+  7 (7.00%) high mild
+Benchmarking ef_get_unchecked/unaligned/1M/l=2
+Benchmarking ef_get_unchecked/unaligned/1M/l=2: Warming up for 3.0000 s
+Benchmarking ef_get_unchecked/unaligned/1M/l=2: Collecting 100 samples in estimated 5.0001 s (264M iterations)
+Benchmarking ef_get_unchecked/unaligned/1M/l=2: Analyzing
+ef_get_unchecked/unaligned/1M/l=2
+                        time:   [18.957 ns 18.961 ns 18.964 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 11 outliers among 100 measurements (11.00%)
+  7 (7.00%) low severe
+  3 (3.00%) low mild
+  1 (1.00%) high mild
+Benchmarking ef_get_unchecked/aligned/1M/l=4
+Benchmarking ef_get_unchecked/aligned/1M/l=4: Warming up for 3.0000 s
+Benchmarking ef_get_unchecked/aligned/1M/l=4: Collecting 100 samples in estimated 5.0001 s (259M iterations)
+Benchmarking ef_get_unchecked/aligned/1M/l=4: Analyzing
+ef_get_unchecked/aligned/1M/l=4
+                        time:   [19.266 ns 19.270 ns 19.274 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 3 outliers among 100 measurements (3.00%)
+  1 (1.00%) low mild
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+Benchmarking ef_get_unchecked/unaligned/1M/l=4
+Benchmarking ef_get_unchecked/unaligned/1M/l=4: Warming up for 3.0000 s
+Benchmarking ef_get_unchecked/unaligned/1M/l=4: Collecting 100 samples in estimated 5.0001 s (263M iterations)
+Benchmarking ef_get_unchecked/unaligned/1M/l=4: Analyzing
+ef_get_unchecked/unaligned/1M/l=4
+                        time:   [18.994 ns 18.997 ns 19.001 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 7 outliers among 100 measurements (7.00%)
+  5 (5.00%) low severe
+  2 (2.00%) low mild
+Benchmarking ef_get_unchecked/aligned/1M/l=8
+Benchmarking ef_get_unchecked/aligned/1M/l=8: Warming up for 3.0000 s
+Benchmarking ef_get_unchecked/aligned/1M/l=8: Collecting 100 samples in estimated 5.0001 s (260M iterations)
+Benchmarking ef_get_unchecked/aligned/1M/l=8: Analyzing
+ef_get_unchecked/aligned/1M/l=8
+                        time:   [19.220 ns 19.224 ns 19.228 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 4 outliers among 100 measurements (4.00%)
+  4 (4.00%) low mild
+Benchmarking ef_get_unchecked/unaligned/1M/l=8
+Benchmarking ef_get_unchecked/unaligned/1M/l=8: Warming up for 3.0000 s
+Benchmarking ef_get_unchecked/unaligned/1M/l=8: Collecting 100 samples in estimated 5.0001 s (262M iterations)
+Benchmarking ef_get_unchecked/unaligned/1M/l=8: Analyzing
+ef_get_unchecked/unaligned/1M/l=8
+                        time:   [19.072 ns 19.076 ns 19.080 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 5 outliers among 100 measurements (5.00%)
+  3 (3.00%) low severe
+  2 (2.00%) low mild
+Benchmarking ef_get_unchecked/aligned/1M/l=16
+Benchmarking ef_get_unchecked/aligned/1M/l=16: Warming up for 3.0000 s
+Benchmarking ef_get_unchecked/aligned/1M/l=16: Collecting 100 samples in estimated 5.0000 s (256M iterations)
+Benchmarking ef_get_unchecked/aligned/1M/l=16: Analyzing
+ef_get_unchecked/aligned/1M/l=16
+                        time:   [19.541 ns 19.545 ns 19.550 ns]
+Found 9 outliers among 100 measurements (9.00%)
+  1 (1.00%) low severe
+  4 (4.00%) low mild
+  3 (3.00%) high mild
+  1 (1.00%) high severe
+Benchmarking ef_get_unchecked/unaligned/1M/l=16
+Benchmarking ef_get_unchecked/unaligned/1M/l=16: Warming up for 3.0000 s
+Benchmarking ef_get_unchecked/unaligned/1M/l=16: Collecting 100 samples in estimated 5.0001 s (261M iterations)
+Benchmarking ef_get_unchecked/unaligned/1M/l=16: Analyzing
+ef_get_unchecked/unaligned/1M/l=16
+                        time:   [19.219 ns 19.221 ns 19.223 ns]
+Found 13 outliers among 100 measurements (13.00%)
+  1 (1.00%) low severe
+  10 (10.00%) low mild
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+Benchmarking ef_get_unchecked/aligned/1G/l=2
+Benchmarking ef_get_unchecked/aligned/1G/l=2: Warming up for 3.0000 s
+Benchmarking ef_get_unchecked/aligned/1G/l=2: Collecting 100 samples in estimated 5.0002 s (43M iterations)
+Benchmarking ef_get_unchecked/aligned/1G/l=2: Analyzing
+ef_get_unchecked/aligned/1G/l=2
+                        time:   [116.72 ns 116.78 ns 116.84 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 11 outliers among 100 measurements (11.00%)
+  8 (8.00%) low severe
+  3 (3.00%) low mild
+Benchmarking ef_get_unchecked/unaligned/1G/l=2
+Benchmarking ef_get_unchecked/unaligned/1G/l=2: Warming up for 3.0000 s
+Benchmarking ef_get_unchecked/unaligned/1G/l=2: Collecting 100 samples in estimated 5.0005 s (42M iterations)
+Benchmarking ef_get_unchecked/unaligned/1G/l=2: Analyzing
+ef_get_unchecked/unaligned/1G/l=2
+                        time:   [117.58 ns 117.76 ns 117.92 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 6 outliers among 100 measurements (6.00%)
+  5 (5.00%) low severe
+  1 (1.00%) low mild
+Benchmarking ef_get_unchecked/aligned/1G/l=4
+Benchmarking ef_get_unchecked/aligned/1G/l=4: Warming up for 3.0000 s
+Benchmarking ef_get_unchecked/aligned/1G/l=4: Collecting 100 samples in estimated 5.0005 s (42M iterations)
+Benchmarking ef_get_unchecked/aligned/1G/l=4: Analyzing
+ef_get_unchecked/aligned/1G/l=4
+                        time:   [118.43 ns 118.56 ns 118.67 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 7 outliers among 100 measurements (7.00%)
+  6 (6.00%) low severe
+  1 (1.00%) low mild
+Benchmarking ef_get_unchecked/unaligned/1G/l=4
+Benchmarking ef_get_unchecked/unaligned/1G/l=4: Warming up for 3.0000 s
+Benchmarking ef_get_unchecked/unaligned/1G/l=4: Collecting 100 samples in estimated 5.0003 s (42M iterations)
+Benchmarking ef_get_unchecked/unaligned/1G/l=4: Analyzing
+ef_get_unchecked/unaligned/1G/l=4
+                        time:   [120.75 ns 120.88 ns 120.99 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 6 outliers among 100 measurements (6.00%)
+  5 (5.00%) low severe
+  1 (1.00%) low mild
+Benchmarking ef_get_unchecked/aligned/1G/l=8
+Benchmarking ef_get_unchecked/aligned/1G/l=8: Warming up for 3.0000 s
+Benchmarking ef_get_unchecked/aligned/1G/l=8: Collecting 100 samples in estimated 5.0003 s (41M iterations)
+Benchmarking ef_get_unchecked/aligned/1G/l=8: Analyzing
+ef_get_unchecked/aligned/1G/l=8
+                        time:   [121.14 ns 121.27 ns 121.40 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 7 outliers among 100 measurements (7.00%)
+  6 (6.00%) low severe
+  1 (1.00%) low mild
+Benchmarking ef_get_unchecked/unaligned/1G/l=8
+Benchmarking ef_get_unchecked/unaligned/1G/l=8: Warming up for 3.0000 s
+Benchmarking ef_get_unchecked/unaligned/1G/l=8: Collecting 100 samples in estimated 5.0004 s (41M iterations)
+Benchmarking ef_get_unchecked/unaligned/1G/l=8: Analyzing
+ef_get_unchecked/unaligned/1G/l=8
+                        time:   [122.88 ns 123.00 ns 123.12 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 7 outliers among 100 measurements (7.00%)
+  6 (6.00%) low severe
+  1 (1.00%) low mild
+Benchmarking ef_get_unchecked/aligned/1G/l=16
+Benchmarking ef_get_unchecked/aligned/1G/l=16: Warming up for 3.0000 s
+Benchmarking ef_get_unchecked/aligned/1G/l=16: Collecting 100 samples in estimated 5.0004 s (39M iterations)
+Benchmarking ef_get_unchecked/aligned/1G/l=16: Analyzing
+ef_get_unchecked/aligned/1G/l=16
+                        time:   [126.75 ns 126.86 ns 126.96 ns]
+Found 10 outliers among 100 measurements (10.00%)
+  7 (7.00%) low severe
+  3 (3.00%) low mild
+Benchmarking ef_get_unchecked/unaligned/1G/l=16
+Benchmarking ef_get_unchecked/unaligned/1G/l=16: Warming up for 3.0000 s
+Benchmarking ef_get_unchecked/unaligned/1G/l=16: Collecting 100 samples in estimated 5.0004 s (39M iterations)
+Benchmarking ef_get_unchecked/unaligned/1G/l=16: Analyzing
+ef_get_unchecked/unaligned/1G/l=16
+                        time:   [128.58 ns 128.78 ns 128.97 ns]
+Found 6 outliers among 100 measurements (6.00%)
+  6 (6.00%) low severe
+
+Benchmarking ef_get/aligned/1M/l=2
+Benchmarking ef_get/aligned/1M/l=2: Warming up for 3.0000 s
+Benchmarking ef_get/aligned/1M/l=2: Collecting 100 samples in estimated 5.0000 s (262M iterations)
+Benchmarking ef_get/aligned/1M/l=2: Analyzing
+ef_get/aligned/1M/l=2   time:   [19.105 ns 19.108 ns 19.112 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 6 outliers among 100 measurements (6.00%)
+  1 (1.00%) low severe
+  3 (3.00%) low mild
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+Benchmarking ef_get/unaligned/1M/l=2
+Benchmarking ef_get/unaligned/1M/l=2: Warming up for 3.0000 s
+Benchmarking ef_get/unaligned/1M/l=2: Collecting 100 samples in estimated 5.0001 s (264M iterations)
+Benchmarking ef_get/unaligned/1M/l=2: Analyzing
+ef_get/unaligned/1M/l=2 time:   [18.946 ns 18.948 ns 18.950 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 8 outliers among 100 measurements (8.00%)
+  4 (4.00%) low severe
+  2 (2.00%) low mild
+  2 (2.00%) high mild
+Benchmarking ef_get/aligned/1M/l=4
+Benchmarking ef_get/aligned/1M/l=4: Warming up for 3.0000 s
+Benchmarking ef_get/aligned/1M/l=4: Collecting 100 samples in estimated 5.0001 s (260M iterations)
+Benchmarking ef_get/aligned/1M/l=4: Analyzing
+ef_get/aligned/1M/l=4   time:   [19.184 ns 19.188 ns 19.191 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) low mild
+Benchmarking ef_get/unaligned/1M/l=4
+Benchmarking ef_get/unaligned/1M/l=4: Warming up for 3.0000 s
+Benchmarking ef_get/unaligned/1M/l=4: Collecting 100 samples in estimated 5.0001 s (266M iterations)
+Benchmarking ef_get/unaligned/1M/l=4: Analyzing
+ef_get/unaligned/1M/l=4 time:   [18.828 ns 18.830 ns 18.833 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 2 outliers among 100 measurements (2.00%)
+  2 (2.00%) low mild
+Benchmarking ef_get/aligned/1M/l=8
+Benchmarking ef_get/aligned/1M/l=8: Warming up for 3.0000 s
+Benchmarking ef_get/aligned/1M/l=8: Collecting 100 samples in estimated 5.0000 s (260M iterations)
+Benchmarking ef_get/aligned/1M/l=8: Analyzing
+ef_get/aligned/1M/l=8   time:   [19.245 ns 19.249 ns 19.252 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high mild
+Benchmarking ef_get/unaligned/1M/l=8
+Benchmarking ef_get/unaligned/1M/l=8: Warming up for 3.0000 s
+Benchmarking ef_get/unaligned/1M/l=8: Collecting 100 samples in estimated 5.0001 s (265M iterations)
+Benchmarking ef_get/unaligned/1M/l=8: Analyzing
+ef_get/unaligned/1M/l=8 time:   [18.893 ns 18.896 ns 18.899 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 5 outliers among 100 measurements (5.00%)
+  1 (1.00%) low severe
+  2 (2.00%) low mild
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+Benchmarking ef_get/aligned/1M/l=16
+Benchmarking ef_get/aligned/1M/l=16: Warming up for 3.0000 s
+Benchmarking ef_get/aligned/1M/l=16: Collecting 100 samples in estimated 5.0000 s (256M iterations)
+Benchmarking ef_get/aligned/1M/l=16: Analyzing
+ef_get/aligned/1M/l=16  time:   [19.503 ns 19.507 ns 19.511 ns]
+Found 6 outliers among 100 measurements (6.00%)
+  4 (4.00%) low mild
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+Benchmarking ef_get/unaligned/1M/l=16
+Benchmarking ef_get/unaligned/1M/l=16: Warming up for 3.0000 s
+Benchmarking ef_get/unaligned/1M/l=16: Collecting 100 samples in estimated 5.0000 s (259M iterations)
+Benchmarking ef_get/unaligned/1M/l=16: Analyzing
+ef_get/unaligned/1M/l=16
+                        time:   [19.277 ns 19.280 ns 19.284 ns]
+Found 4 outliers among 100 measurements (4.00%)
+  2 (2.00%) low severe
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+Benchmarking ef_get/aligned/1G/l=2
+Benchmarking ef_get/aligned/1G/l=2: Warming up for 3.0000 s
+Benchmarking ef_get/aligned/1G/l=2: Collecting 100 samples in estimated 5.0001 s (44M iterations)
+Benchmarking ef_get/aligned/1G/l=2: Analyzing
+ef_get/aligned/1G/l=2   time:   [113.95 ns 114.02 ns 114.08 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 11 outliers among 100 measurements (11.00%)
+  9 (9.00%) low severe
+  2 (2.00%) low mild
+Benchmarking ef_get/unaligned/1G/l=2
+Benchmarking ef_get/unaligned/1G/l=2: Warming up for 3.0000 s
+Benchmarking ef_get/unaligned/1G/l=2: Collecting 100 samples in estimated 5.0004 s (42M iterations)
+Benchmarking ef_get/unaligned/1G/l=2: Analyzing
+ef_get/unaligned/1G/l=2 time:   [118.66 ns 118.72 ns 118.76 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 15 outliers among 100 measurements (15.00%)
+  9 (9.00%) low severe
+  5 (5.00%) low mild
+  1 (1.00%) high mild
+Benchmarking ef_get/aligned/1G/l=4
+Benchmarking ef_get/aligned/1G/l=4: Warming up for 3.0000 s
+Benchmarking ef_get/aligned/1G/l=4: Collecting 100 samples in estimated 5.0005 s (43M iterations)
+Benchmarking ef_get/aligned/1G/l=4: Analyzing
+ef_get/aligned/1G/l=4   time:   [115.70 ns 115.79 ns 115.86 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 9 outliers among 100 measurements (9.00%)
+  7 (7.00%) low severe
+  1 (1.00%) low mild
+  1 (1.00%) high severe
+Benchmarking ef_get/unaligned/1G/l=4
+Benchmarking ef_get/unaligned/1G/l=4: Warming up for 3.0000 s
+Benchmarking ef_get/unaligned/1G/l=4: Collecting 100 samples in estimated 5.0001 s (42M iterations)
+Benchmarking ef_get/unaligned/1G/l=4: Analyzing
+ef_get/unaligned/1G/l=4 time:   [119.71 ns 119.77 ns 119.83 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 14 outliers among 100 measurements (14.00%)
+  8 (8.00%) low severe
+  4 (4.00%) low mild
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+Benchmarking ef_get/aligned/1G/l=8
+Benchmarking ef_get/aligned/1G/l=8: Warming up for 3.0000 s
+Benchmarking ef_get/aligned/1G/l=8: Collecting 100 samples in estimated 5.0003 s (42M iterations)
+Benchmarking ef_get/aligned/1G/l=8: Analyzing
+ef_get/aligned/1G/l=8   time:   [118.66 ns 118.71 ns 118.75 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 10 outliers among 100 measurements (10.00%)
+  7 (7.00%) low severe
+  3 (3.00%) low mild
+Benchmarking ef_get/unaligned/1G/l=8
+Benchmarking ef_get/unaligned/1G/l=8: Warming up for 3.0000 s
+Benchmarking ef_get/unaligned/1G/l=8: Collecting 100 samples in estimated 5.0001 s (41M iterations)
+Benchmarking ef_get/unaligned/1G/l=8: Analyzing
+ef_get/unaligned/1G/l=8 time:   [123.09 ns 123.19 ns 123.27 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 8 outliers among 100 measurements (8.00%)
+  7 (7.00%) low severe
+  1 (1.00%) low mild
+Benchmarking ef_get/aligned/1G/l=16
+Benchmarking ef_get/aligned/1G/l=16: Warming up for 3.0000 s
+Benchmarking ef_get/aligned/1G/l=16: Collecting 100 samples in estimated 5.0002 s (40M iterations)
+Benchmarking ef_get/aligned/1G/l=16: Analyzing
+ef_get/aligned/1G/l=16  time:   [123.57 ns 123.63 ns 123.68 ns]
+Found 8 outliers among 100 measurements (8.00%)
+  7 (7.00%) low severe
+  1 (1.00%) low mild
+Benchmarking ef_get/unaligned/1G/l=16
+Benchmarking ef_get/unaligned/1G/l=16: Warming up for 3.0000 s
+Benchmarking ef_get/unaligned/1G/l=16: Collecting 100 samples in estimated 5.0005 s (39M iterations)
+Benchmarking ef_get/unaligned/1G/l=16: Analyzing
+ef_get/unaligned/1G/l=16
+                        time:   [128.04 ns 128.15 ns 128.25 ns]
+Found 9 outliers among 100 measurements (9.00%)
+  7 (7.00%) low severe
+  2 (2.00%) low mild
+
+Benchmarking ef_succ_unchecked/aligned/1M/l=2
+Benchmarking ef_succ_unchecked/aligned/1M/l=2: Warming up for 3.0000 s
+Benchmarking ef_succ_unchecked/aligned/1M/l=2: Collecting 100 samples in estimated 5.0000 s (170M iterations)
+Benchmarking ef_succ_unchecked/aligned/1M/l=2: Analyzing
+ef_succ_unchecked/aligned/1M/l=2
+                        time:   [29.467 ns 29.479 ns 29.492 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 3 outliers among 100 measurements (3.00%)
+  3 (3.00%) high mild
+Benchmarking ef_succ_unchecked/unaligned/1M/l=2
+Benchmarking ef_succ_unchecked/unaligned/1M/l=2: Warming up for 3.0000 s
+Benchmarking ef_succ_unchecked/unaligned/1M/l=2: Collecting 100 samples in estimated 5.0001 s (169M iterations)
+Benchmarking ef_succ_unchecked/unaligned/1M/l=2: Analyzing
+ef_succ_unchecked/unaligned/1M/l=2
+                        time:   [29.626 ns 29.633 ns 29.639 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 5 outliers among 100 measurements (5.00%)
+  4 (4.00%) low severe
+  1 (1.00%) low mild
+Benchmarking ef_succ_unchecked/aligned/1M/l=4
+Benchmarking ef_succ_unchecked/aligned/1M/l=4: Warming up for 3.0000 s
+Benchmarking ef_succ_unchecked/aligned/1M/l=4: Collecting 100 samples in estimated 5.0001 s (159M iterations)
+Benchmarking ef_succ_unchecked/aligned/1M/l=4: Analyzing
+ef_succ_unchecked/aligned/1M/l=4
+                        time:   [31.426 ns 31.434 ns 31.441 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 8 outliers among 100 measurements (8.00%)
+  4 (4.00%) low severe
+  4 (4.00%) low mild
+Benchmarking ef_succ_unchecked/unaligned/1M/l=4
+Benchmarking ef_succ_unchecked/unaligned/1M/l=4: Warming up for 3.0000 s
+Benchmarking ef_succ_unchecked/unaligned/1M/l=4: Collecting 100 samples in estimated 5.0001 s (159M iterations)
+Benchmarking ef_succ_unchecked/unaligned/1M/l=4: Analyzing
+ef_succ_unchecked/unaligned/1M/l=4
+                        time:   [31.389 ns 31.399 ns 31.408 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 7 outliers among 100 measurements (7.00%)
+  3 (3.00%) low severe
+  4 (4.00%) low mild
+Benchmarking ef_succ_unchecked/aligned/1M/l=8
+Benchmarking ef_succ_unchecked/aligned/1M/l=8: Warming up for 3.0000 s
+Benchmarking ef_succ_unchecked/aligned/1M/l=8: Collecting 100 samples in estimated 5.0001 s (155M iterations)
+Benchmarking ef_succ_unchecked/aligned/1M/l=8: Analyzing
+ef_succ_unchecked/aligned/1M/l=8
+                        time:   [32.252 ns 32.258 ns 32.265 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 7 outliers among 100 measurements (7.00%)
+  6 (6.00%) low mild
+  1 (1.00%) high severe
+Benchmarking ef_succ_unchecked/unaligned/1M/l=8
+Benchmarking ef_succ_unchecked/unaligned/1M/l=8: Warming up for 3.0000 s
+Benchmarking ef_succ_unchecked/unaligned/1M/l=8: Collecting 100 samples in estimated 5.0000 s (155M iterations)
+Benchmarking ef_succ_unchecked/unaligned/1M/l=8: Analyzing
+ef_succ_unchecked/unaligned/1M/l=8
+                        time:   [32.337 ns 32.343 ns 32.349 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 11 outliers among 100 measurements (11.00%)
+  4 (4.00%) low severe
+  4 (4.00%) low mild
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+Benchmarking ef_succ_unchecked/aligned/1M/l=16
+Benchmarking ef_succ_unchecked/aligned/1M/l=16: Warming up for 3.0000 s
+Benchmarking ef_succ_unchecked/aligned/1M/l=16: Collecting 100 samples in estimated 5.0001 s (151M iterations)
+Benchmarking ef_succ_unchecked/aligned/1M/l=16: Analyzing
+ef_succ_unchecked/aligned/1M/l=16
+                        time:   [33.021 ns 33.027 ns 33.033 ns]
+Found 7 outliers among 100 measurements (7.00%)
+  3 (3.00%) low mild
+  2 (2.00%) high mild
+  2 (2.00%) high severe
+Benchmarking ef_succ_unchecked/unaligned/1M/l=16
+Benchmarking ef_succ_unchecked/unaligned/1M/l=16: Warming up for 3.0000 s
+Benchmarking ef_succ_unchecked/unaligned/1M/l=16: Collecting 100 samples in estimated 5.0001 s (152M iterations)
+Benchmarking ef_succ_unchecked/unaligned/1M/l=16: Analyzing
+ef_succ_unchecked/unaligned/1M/l=16
+                        time:   [32.914 ns 32.919 ns 32.924 ns]
+Found 5 outliers among 100 measurements (5.00%)
+  3 (3.00%) low severe
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+Benchmarking ef_succ_unchecked/aligned/1G/l=2
+Benchmarking ef_succ_unchecked/aligned/1G/l=2: Warming up for 3.0000 s
+Benchmarking ef_succ_unchecked/aligned/1G/l=2: Collecting 100 samples in estimated 5.0003 s (35M iterations)
+Benchmarking ef_succ_unchecked/aligned/1G/l=2: Analyzing
+ef_succ_unchecked/aligned/1G/l=2
+                        time:   [144.15 ns 144.17 ns 144.20 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 15 outliers among 100 measurements (15.00%)
+  12 (12.00%) low severe
+  1 (1.00%) low mild
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+Benchmarking ef_succ_unchecked/unaligned/1G/l=2
+Benchmarking ef_succ_unchecked/unaligned/1G/l=2: Warming up for 3.0000 s
+Benchmarking ef_succ_unchecked/unaligned/1G/l=2: Collecting 100 samples in estimated 5.0007 s (35M iterations)
+Benchmarking ef_succ_unchecked/unaligned/1G/l=2: Analyzing
+ef_succ_unchecked/unaligned/1G/l=2
+                        time:   [143.96 ns 143.98 ns 144.01 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 16 outliers among 100 measurements (16.00%)
+  11 (11.00%) low severe
+  3 (3.00%) low mild
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+Benchmarking ef_succ_unchecked/aligned/1G/l=4
+Benchmarking ef_succ_unchecked/aligned/1G/l=4: Warming up for 3.0000 s
+Benchmarking ef_succ_unchecked/aligned/1G/l=4: Collecting 100 samples in estimated 5.0004 s (32M iterations)
+Benchmarking ef_succ_unchecked/aligned/1G/l=4: Analyzing
+ef_succ_unchecked/aligned/1G/l=4
+                        time:   [154.58 ns 154.61 ns 154.65 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 16 outliers among 100 measurements (16.00%)
+  12 (12.00%) low severe
+  2 (2.00%) low mild
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+Benchmarking ef_succ_unchecked/unaligned/1G/l=4
+Benchmarking ef_succ_unchecked/unaligned/1G/l=4: Warming up for 3.0000 s
+Benchmarking ef_succ_unchecked/unaligned/1G/l=4: Collecting 100 samples in estimated 5.0006 s (32M iterations)
+Benchmarking ef_succ_unchecked/unaligned/1G/l=4: Analyzing
+ef_succ_unchecked/unaligned/1G/l=4
+                        time:   [154.63 ns 154.68 ns 154.72 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 15 outliers among 100 measurements (15.00%)
+  10 (10.00%) low severe
+  3 (3.00%) low mild
+  2 (2.00%) high mild
+Benchmarking ef_succ_unchecked/aligned/1G/l=8
+Benchmarking ef_succ_unchecked/aligned/1G/l=8: Warming up for 3.0000 s
+Benchmarking ef_succ_unchecked/aligned/1G/l=8: Collecting 100 samples in estimated 5.0005 s (32M iterations)
+Benchmarking ef_succ_unchecked/aligned/1G/l=8: Analyzing
+ef_succ_unchecked/aligned/1G/l=8
+                        time:   [156.23 ns 156.27 ns 156.30 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 12 outliers among 100 measurements (12.00%)
+  8 (8.00%) low severe
+  1 (1.00%) low mild
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+Benchmarking ef_succ_unchecked/unaligned/1G/l=8
+Benchmarking ef_succ_unchecked/unaligned/1G/l=8: Warming up for 3.0000 s
+Benchmarking ef_succ_unchecked/unaligned/1G/l=8: Collecting 100 samples in estimated 5.0000 s (32M iterations)
+Benchmarking ef_succ_unchecked/unaligned/1G/l=8: Analyzing
+ef_succ_unchecked/unaligned/1G/l=8
+                        time:   [156.53 ns 156.64 ns 156.76 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 7 outliers among 100 measurements (7.00%)
+  7 (7.00%) low severe
+Benchmarking ef_succ_unchecked/aligned/1G/l=16
+Benchmarking ef_succ_unchecked/aligned/1G/l=16: Warming up for 3.0000 s
+Benchmarking ef_succ_unchecked/aligned/1G/l=16: Collecting 100 samples in estimated 5.0002 s (31M iterations)
+Benchmarking ef_succ_unchecked/aligned/1G/l=16: Analyzing
+ef_succ_unchecked/aligned/1G/l=16
+                        time:   [163.62 ns 163.72 ns 163.83 ns]
+Found 12 outliers among 100 measurements (12.00%)
+  9 (9.00%) low severe
+  2 (2.00%) low mild
+  1 (1.00%) high mild
+Benchmarking ef_succ_unchecked/unaligned/1G/l=16
+Benchmarking ef_succ_unchecked/unaligned/1G/l=16: Warming up for 3.0000 s
+Benchmarking ef_succ_unchecked/unaligned/1G/l=16: Collecting 100 samples in estimated 5.0004 s (31M iterations)
+Benchmarking ef_succ_unchecked/unaligned/1G/l=16: Analyzing
+ef_succ_unchecked/unaligned/1G/l=16
+                        time:   [163.10 ns 163.18 ns 163.27 ns]
+Found 20 outliers among 100 measurements (20.00%)
+  11 (11.00%) low severe
+  1 (1.00%) low mild
+  7 (7.00%) high mild
+  1 (1.00%) high severe
+
+Benchmarking ef_succ/aligned/1M/l=2
+Benchmarking ef_succ/aligned/1M/l=2: Warming up for 3.0000 s
+Benchmarking ef_succ/aligned/1M/l=2: Collecting 100 samples in estimated 5.0002 s (130M iterations)
+Benchmarking ef_succ/aligned/1M/l=2: Analyzing
+ef_succ/aligned/1M/l=2  time:   [38.474 ns 38.479 ns 38.483 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 5 outliers among 100 measurements (5.00%)
+  4 (4.00%) low mild
+  1 (1.00%) high severe
+Benchmarking ef_succ/unaligned/1M/l=2
+Benchmarking ef_succ/unaligned/1M/l=2: Warming up for 3.0000 s
+Benchmarking ef_succ/unaligned/1M/l=2: Collecting 100 samples in estimated 5.0000 s (128M iterations)
+Benchmarking ef_succ/unaligned/1M/l=2: Analyzing
+ef_succ/unaligned/1M/l=2
+                        time:   [38.996 ns 39.014 ns 39.032 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 4 outliers among 100 measurements (4.00%)
+  1 (1.00%) low severe
+  2 (2.00%) low mild
+  1 (1.00%) high mild
+Benchmarking ef_succ/aligned/1M/l=4
+Benchmarking ef_succ/aligned/1M/l=4: Warming up for 3.0000 s
+Benchmarking ef_succ/aligned/1M/l=4: Collecting 100 samples in estimated 5.0001 s (122M iterations)
+Benchmarking ef_succ/aligned/1M/l=4: Analyzing
+ef_succ/aligned/1M/l=4  time:   [40.838 ns 40.850 ns 40.861 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 8 outliers among 100 measurements (8.00%)
+  6 (6.00%) low severe
+  2 (2.00%) low mild
+Benchmarking ef_succ/unaligned/1M/l=4
+Benchmarking ef_succ/unaligned/1M/l=4: Warming up for 3.0000 s
+Benchmarking ef_succ/unaligned/1M/l=4: Collecting 100 samples in estimated 5.0001 s (121M iterations)
+Benchmarking ef_succ/unaligned/1M/l=4: Analyzing
+ef_succ/unaligned/1M/l=4
+                        time:   [41.174 ns 41.194 ns 41.213 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 8 outliers among 100 measurements (8.00%)
+  6 (6.00%) low severe
+  2 (2.00%) low mild
+Benchmarking ef_succ/aligned/1M/l=8
+Benchmarking ef_succ/aligned/1M/l=8: Warming up for 3.0000 s
+Benchmarking ef_succ/aligned/1M/l=8: Collecting 100 samples in estimated 5.0000 s (120M iterations)
+Benchmarking ef_succ/aligned/1M/l=8: Analyzing
+ef_succ/aligned/1M/l=8  time:   [41.703 ns 41.719 ns 41.734 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 7 outliers among 100 measurements (7.00%)
+  7 (7.00%) low mild
+Benchmarking ef_succ/unaligned/1M/l=8
+Benchmarking ef_succ/unaligned/1M/l=8: Warming up for 3.0000 s
+Benchmarking ef_succ/unaligned/1M/l=8: Collecting 100 samples in estimated 5.0000 s (118M iterations)
+Benchmarking ef_succ/unaligned/1M/l=8: Analyzing
+ef_succ/unaligned/1M/l=8
+                        time:   [42.157 ns 42.169 ns 42.182 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 4 outliers among 100 measurements (4.00%)
+  2 (2.00%) low severe
+  2 (2.00%) low mild
+Benchmarking ef_succ/aligned/1M/l=16
+Benchmarking ef_succ/aligned/1M/l=16: Warming up for 3.0000 s
+Benchmarking ef_succ/aligned/1M/l=16: Collecting 100 samples in estimated 5.0001 s (118M iterations)
+Benchmarking ef_succ/aligned/1M/l=16: Analyzing
+ef_succ/aligned/1M/l=16 time:   [42.449 ns 42.466 ns 42.483 ns]
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) low severe
+  1 (1.00%) low mild
+Benchmarking ef_succ/unaligned/1M/l=16
+Benchmarking ef_succ/unaligned/1M/l=16: Warming up for 3.0000 s
+Benchmarking ef_succ/unaligned/1M/l=16: Collecting 100 samples in estimated 5.0001 s (117M iterations)
+Benchmarking ef_succ/unaligned/1M/l=16: Analyzing
+ef_succ/unaligned/1M/l=16
+                        time:   [42.698 ns 42.705 ns 42.713 ns]
+Found 6 outliers among 100 measurements (6.00%)
+  4 (4.00%) low severe
+  1 (1.00%) low mild
+  1 (1.00%) high mild
+Benchmarking ef_succ/aligned/1G/l=2
+Benchmarking ef_succ/aligned/1G/l=2: Warming up for 3.0000 s
+Benchmarking ef_succ/aligned/1G/l=2: Collecting 100 samples in estimated 5.0004 s (27M iterations)
+Benchmarking ef_succ/aligned/1G/l=2: Analyzing
+ef_succ/aligned/1G/l=2  time:   [182.60 ns 182.64 ns 182.68 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 20 outliers among 100 measurements (20.00%)
+  16 (16.00%) low severe
+  4 (4.00%) low mild
+Benchmarking ef_succ/unaligned/1G/l=2
+Benchmarking ef_succ/unaligned/1G/l=2: Warming up for 3.0000 s
+Benchmarking ef_succ/unaligned/1G/l=2: Collecting 100 samples in estimated 5.0000 s (27M iterations)
+Benchmarking ef_succ/unaligned/1G/l=2: Analyzing
+ef_succ/unaligned/1G/l=2
+                        time:   [183.96 ns 184.00 ns 184.03 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 20 outliers among 100 measurements (20.00%)
+  15 (15.00%) low severe
+  4 (4.00%) low mild
+  1 (1.00%) high mild
+Benchmarking ef_succ/aligned/1G/l=4
+Benchmarking ef_succ/aligned/1G/l=4: Warming up for 3.0000 s
+Benchmarking ef_succ/aligned/1G/l=4: Collecting 100 samples in estimated 5.0007 s (26M iterations)
+Benchmarking ef_succ/aligned/1G/l=4: Analyzing
+ef_succ/aligned/1G/l=4  time:   [191.92 ns 191.96 ns 192.00 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 17 outliers among 100 measurements (17.00%)
+  15 (15.00%) low severe
+  2 (2.00%) low mild
+Benchmarking ef_succ/unaligned/1G/l=4
+Benchmarking ef_succ/unaligned/1G/l=4: Warming up for 3.0000 s
+Benchmarking ef_succ/unaligned/1G/l=4: Collecting 100 samples in estimated 5.0008 s (26M iterations)
+Benchmarking ef_succ/unaligned/1G/l=4: Analyzing
+ef_succ/unaligned/1G/l=4
+                        time:   [193.66 ns 193.73 ns 193.80 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 19 outliers among 100 measurements (19.00%)
+  15 (15.00%) low severe
+  2 (2.00%) low mild
+  2 (2.00%) high severe
+Benchmarking ef_succ/aligned/1G/l=8
+Benchmarking ef_succ/aligned/1G/l=8: Warming up for 3.0000 s
+Benchmarking ef_succ/aligned/1G/l=8: Collecting 100 samples in estimated 5.0005 s (25M iterations)
+Benchmarking ef_succ/aligned/1G/l=8: Analyzing
+ef_succ/aligned/1G/l=8  time:   [199.02 ns 199.07 ns 199.11 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 17 outliers among 100 measurements (17.00%)
+  15 (15.00%) low severe
+  2 (2.00%) low mild
+Benchmarking ef_succ/unaligned/1G/l=8
+Benchmarking ef_succ/unaligned/1G/l=8: Warming up for 3.0000 s
+Benchmarking ef_succ/unaligned/1G/l=8: Collecting 100 samples in estimated 5.0008 s (25M iterations)
+Benchmarking ef_succ/unaligned/1G/l=8: Analyzing
+ef_succ/unaligned/1G/l=8
+                        time:   [200.84 ns 200.88 ns 200.92 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 21 outliers among 100 measurements (21.00%)
+  17 (17.00%) low severe
+  1 (1.00%) low mild
+  3 (3.00%) high mild
+Benchmarking ef_succ/aligned/1G/l=16
+Benchmarking ef_succ/aligned/1G/l=16: Warming up for 3.0000 s
+Benchmarking ef_succ/aligned/1G/l=16: Collecting 100 samples in estimated 5.0001 s (25M iterations)
+Benchmarking ef_succ/aligned/1G/l=16: Analyzing
+ef_succ/aligned/1G/l=16 time:   [202.29 ns 202.33 ns 202.37 ns]
+Found 16 outliers among 100 measurements (16.00%)
+  14 (14.00%) low severe
+  2 (2.00%) low mild
+Benchmarking ef_succ/unaligned/1G/l=16
+Benchmarking ef_succ/unaligned/1G/l=16: Warming up for 3.0000 s
+Benchmarking ef_succ/unaligned/1G/l=16: Collecting 100 samples in estimated 5.0000 s (25M iterations)
+Benchmarking ef_succ/unaligned/1G/l=16: Analyzing
+ef_succ/unaligned/1G/l=16
+                        time:   [203.86 ns 203.93 ns 203.99 ns]
+Found 16 outliers among 100 measurements (16.00%)
+  13 (13.00%) low severe
+  3 (3.00%) low mild
+
+Benchmarking ef_pred_unchecked/aligned/1M/l=2
+Benchmarking ef_pred_unchecked/aligned/1M/l=2: Warming up for 3.0000 s
+Benchmarking ef_pred_unchecked/aligned/1M/l=2: Collecting 100 samples in estimated 5.0002 s (136M iterations)
+Benchmarking ef_pred_unchecked/aligned/1M/l=2: Analyzing
+ef_pred_unchecked/aligned/1M/l=2
+                        time:   [36.799 ns 36.810 ns 36.822 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 4 outliers among 100 measurements (4.00%)
+  2 (2.00%) low mild
+  2 (2.00%) high mild
+Benchmarking ef_pred_unchecked/unaligned/1M/l=2
+Benchmarking ef_pred_unchecked/unaligned/1M/l=2: Warming up for 3.0000 s
+Benchmarking ef_pred_unchecked/unaligned/1M/l=2: Collecting 100 samples in estimated 5.0001 s (136M iterations)
+Benchmarking ef_pred_unchecked/unaligned/1M/l=2: Analyzing
+ef_pred_unchecked/unaligned/1M/l=2
+                        time:   [36.864 ns 36.872 ns 36.880 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 6 outliers among 100 measurements (6.00%)
+  2 (2.00%) low severe
+  4 (4.00%) low mild
+Benchmarking ef_pred_unchecked/aligned/1M/l=4
+Benchmarking ef_pred_unchecked/aligned/1M/l=4: Warming up for 3.0000 s
+Benchmarking ef_pred_unchecked/aligned/1M/l=4: Collecting 100 samples in estimated 5.0002 s (128M iterations)
+Benchmarking ef_pred_unchecked/aligned/1M/l=4: Analyzing
+ef_pred_unchecked/aligned/1M/l=4
+                        time:   [39.076 ns 39.083 ns 39.090 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 6 outliers among 100 measurements (6.00%)
+  3 (3.00%) low mild
+  3 (3.00%) high mild
+Benchmarking ef_pred_unchecked/unaligned/1M/l=4
+Benchmarking ef_pred_unchecked/unaligned/1M/l=4: Warming up for 3.0000 s
+Benchmarking ef_pred_unchecked/unaligned/1M/l=4: Collecting 100 samples in estimated 5.0002 s (128M iterations)
+Benchmarking ef_pred_unchecked/unaligned/1M/l=4: Analyzing
+ef_pred_unchecked/unaligned/1M/l=4
+                        time:   [39.023 ns 39.031 ns 39.038 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 6 outliers among 100 measurements (6.00%)
+  6 (6.00%) low mild
+Benchmarking ef_pred_unchecked/aligned/1M/l=8
+Benchmarking ef_pred_unchecked/aligned/1M/l=8: Warming up for 3.0000 s
+Benchmarking ef_pred_unchecked/aligned/1M/l=8: Collecting 100 samples in estimated 5.0002 s (125M iterations)
+Benchmarking ef_pred_unchecked/aligned/1M/l=8: Analyzing
+ef_pred_unchecked/aligned/1M/l=8
+                        time:   [39.935 ns 39.945 ns 39.953 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 2 outliers among 100 measurements (2.00%)
+  1 (1.00%) low mild
+  1 (1.00%) high mild
+Benchmarking ef_pred_unchecked/unaligned/1M/l=8
+Benchmarking ef_pred_unchecked/unaligned/1M/l=8: Warming up for 3.0000 s
+Benchmarking ef_pred_unchecked/unaligned/1M/l=8: Collecting 100 samples in estimated 5.0001 s (125M iterations)
+Benchmarking ef_pred_unchecked/unaligned/1M/l=8: Analyzing
+ef_pred_unchecked/unaligned/1M/l=8
+                        time:   [39.848 ns 39.854 ns 39.862 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 2 outliers among 100 measurements (2.00%)
+  2 (2.00%) low mild
+Benchmarking ef_pred_unchecked/aligned/1M/l=16
+Benchmarking ef_pred_unchecked/aligned/1M/l=16: Warming up for 3.0000 s
+Benchmarking ef_pred_unchecked/aligned/1M/l=16: Collecting 100 samples in estimated 5.0002 s (121M iterations)
+Benchmarking ef_pred_unchecked/aligned/1M/l=16: Analyzing
+ef_pred_unchecked/aligned/1M/l=16
+                        time:   [41.073 ns 41.093 ns 41.110 ns]
+Found 3 outliers among 100 measurements (3.00%)
+  1 (1.00%) low mild
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+Benchmarking ef_pred_unchecked/unaligned/1M/l=16
+Benchmarking ef_pred_unchecked/unaligned/1M/l=16: Warming up for 3.0000 s
+Benchmarking ef_pred_unchecked/unaligned/1M/l=16: Collecting 100 samples in estimated 5.0002 s (122M iterations)
+Benchmarking ef_pred_unchecked/unaligned/1M/l=16: Analyzing
+ef_pred_unchecked/unaligned/1M/l=16
+                        time:   [40.917 ns 40.930 ns 40.949 ns]
+Found 3 outliers among 100 measurements (3.00%)
+  1 (1.00%) high mild
+  2 (2.00%) high severe
+Benchmarking ef_pred_unchecked/aligned/1G/l=2
+Benchmarking ef_pred_unchecked/aligned/1G/l=2: Warming up for 3.0000 s
+Benchmarking ef_pred_unchecked/aligned/1G/l=2: Collecting 100 samples in estimated 5.0009 s (25M iterations)
+Benchmarking ef_pred_unchecked/aligned/1G/l=2: Analyzing
+ef_pred_unchecked/aligned/1G/l=2
+                        time:   [202.71 ns 202.82 ns 202.92 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 15 outliers among 100 measurements (15.00%)
+  13 (13.00%) low severe
+  1 (1.00%) low mild
+  1 (1.00%) high mild
+Benchmarking ef_pred_unchecked/unaligned/1G/l=2
+Benchmarking ef_pred_unchecked/unaligned/1G/l=2: Warming up for 3.0000 s
+Benchmarking ef_pred_unchecked/unaligned/1G/l=2: Collecting 100 samples in estimated 5.0002 s (25M iterations)
+Benchmarking ef_pred_unchecked/unaligned/1G/l=2: Analyzing
+ef_pred_unchecked/unaligned/1G/l=2
+                        time:   [202.76 ns 202.85 ns 202.94 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 16 outliers among 100 measurements (16.00%)
+  14 (14.00%) low severe
+  1 (1.00%) low mild
+  1 (1.00%) high severe
+Benchmarking ef_pred_unchecked/aligned/1G/l=4
+Benchmarking ef_pred_unchecked/aligned/1G/l=4: Warming up for 3.0000 s
+Benchmarking ef_pred_unchecked/aligned/1G/l=4: Collecting 100 samples in estimated 5.0001 s (22M iterations)
+Benchmarking ef_pred_unchecked/aligned/1G/l=4: Analyzing
+ef_pred_unchecked/aligned/1G/l=4
+                        time:   [230.89 ns 231.04 ns 231.16 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 17 outliers among 100 measurements (17.00%)
+  15 (15.00%) low severe
+  2 (2.00%) low mild
+Benchmarking ef_pred_unchecked/unaligned/1G/l=4
+Benchmarking ef_pred_unchecked/unaligned/1G/l=4: Warming up for 3.0000 s
+Benchmarking ef_pred_unchecked/unaligned/1G/l=4: Collecting 100 samples in estimated 5.0007 s (22M iterations)
+Benchmarking ef_pred_unchecked/unaligned/1G/l=4: Analyzing
+ef_pred_unchecked/unaligned/1G/l=4
+                        time:   [230.76 ns 230.90 ns 231.02 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 18 outliers among 100 measurements (18.00%)
+  15 (15.00%) low severe
+  3 (3.00%) low mild
+Benchmarking ef_pred_unchecked/aligned/1G/l=8
+Benchmarking ef_pred_unchecked/aligned/1G/l=8: Warming up for 3.0000 s
+Benchmarking ef_pred_unchecked/aligned/1G/l=8: Collecting 100 samples in estimated 5.0005 s (21M iterations)
+Benchmarking ef_pred_unchecked/aligned/1G/l=8: Analyzing
+ef_pred_unchecked/aligned/1G/l=8
+                        time:   [243.89 ns 244.01 ns 244.11 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 18 outliers among 100 measurements (18.00%)
+  15 (15.00%) low severe
+  3 (3.00%) low mild
+Benchmarking ef_pred_unchecked/unaligned/1G/l=8
+Benchmarking ef_pred_unchecked/unaligned/1G/l=8: Warming up for 3.0000 s
+Benchmarking ef_pred_unchecked/unaligned/1G/l=8: Collecting 100 samples in estimated 5.0011 s (20M iterations)
+Benchmarking ef_pred_unchecked/unaligned/1G/l=8: Analyzing
+ef_pred_unchecked/unaligned/1G/l=8
+                        time:   [243.97 ns 244.10 ns 244.22 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 17 outliers among 100 measurements (17.00%)
+  15 (15.00%) low severe
+  1 (1.00%) low mild
+  1 (1.00%) high severe
+Benchmarking ef_pred_unchecked/aligned/1G/l=16
+Benchmarking ef_pred_unchecked/aligned/1G/l=16: Warming up for 3.0000 s
+Benchmarking ef_pred_unchecked/aligned/1G/l=16: Collecting 100 samples in estimated 5.0012 s (20M iterations)
+Benchmarking ef_pred_unchecked/aligned/1G/l=16: Analyzing
+ef_pred_unchecked/aligned/1G/l=16
+                        time:   [255.26 ns 255.40 ns 255.52 ns]
+Found 17 outliers among 100 measurements (17.00%)
+  15 (15.00%) low severe
+  2 (2.00%) low mild
+Benchmarking ef_pred_unchecked/unaligned/1G/l=16
+Benchmarking ef_pred_unchecked/unaligned/1G/l=16: Warming up for 3.0000 s
+Benchmarking ef_pred_unchecked/unaligned/1G/l=16: Collecting 100 samples in estimated 5.0003 s (20M iterations)
+Benchmarking ef_pred_unchecked/unaligned/1G/l=16: Analyzing
+ef_pred_unchecked/unaligned/1G/l=16
+                        time:   [255.37 ns 255.62 ns 255.89 ns]
+Found 22 outliers among 100 measurements (22.00%)
+  16 (16.00%) low severe
+  3 (3.00%) low mild
+  3 (3.00%) high mild
+
+Benchmarking ef_pred/aligned/1M/l=2
+Benchmarking ef_pred/aligned/1M/l=2: Warming up for 3.0000 s
+Benchmarking ef_pred/aligned/1M/l=2: Collecting 100 samples in estimated 5.0001 s (122M iterations)
+Benchmarking ef_pred/aligned/1M/l=2: Analyzing
+ef_pred/aligned/1M/l=2  time:   [41.106 ns 41.114 ns 41.122 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 7 outliers among 100 measurements (7.00%)
+  3 (3.00%) low mild
+  3 (3.00%) high mild
+  1 (1.00%) high severe
+Benchmarking ef_pred/unaligned/1M/l=2
+Benchmarking ef_pred/unaligned/1M/l=2: Warming up for 3.0000 s
+Benchmarking ef_pred/unaligned/1M/l=2: Collecting 100 samples in estimated 5.0002 s (122M iterations)
+Benchmarking ef_pred/unaligned/1M/l=2: Analyzing
+ef_pred/unaligned/1M/l=2
+                        time:   [41.006 ns 41.015 ns 41.023 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 6 outliers among 100 measurements (6.00%)
+  4 (4.00%) low severe
+  2 (2.00%) low mild
+Benchmarking ef_pred/aligned/1M/l=4
+Benchmarking ef_pred/aligned/1M/l=4: Warming up for 3.0000 s
+Benchmarking ef_pred/aligned/1M/l=4: Collecting 100 samples in estimated 5.0002 s (115M iterations)
+Benchmarking ef_pred/aligned/1M/l=4: Analyzing
+ef_pred/aligned/1M/l=4  time:   [43.440 ns 43.445 ns 43.450 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 7 outliers among 100 measurements (7.00%)
+  7 (7.00%) low mild
+Benchmarking ef_pred/unaligned/1M/l=4
+Benchmarking ef_pred/unaligned/1M/l=4: Warming up for 3.0000 s
+Benchmarking ef_pred/unaligned/1M/l=4: Collecting 100 samples in estimated 5.0001 s (115M iterations)
+Benchmarking ef_pred/unaligned/1M/l=4: Analyzing
+ef_pred/unaligned/1M/l=4
+                        time:   [43.331 ns 43.339 ns 43.348 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 7 outliers among 100 measurements (7.00%)
+  5 (5.00%) low severe
+  2 (2.00%) low mild
+Benchmarking ef_pred/aligned/1M/l=8
+Benchmarking ef_pred/aligned/1M/l=8: Warming up for 3.0000 s
+Benchmarking ef_pred/aligned/1M/l=8: Collecting 100 samples in estimated 5.0000 s (113M iterations)
+Benchmarking ef_pred/aligned/1M/l=8: Analyzing
+ef_pred/aligned/1M/l=8  time:   [44.286 ns 44.293 ns 44.301 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 8 outliers among 100 measurements (8.00%)
+  1 (1.00%) low severe
+  6 (6.00%) low mild
+  1 (1.00%) high mild
+Benchmarking ef_pred/unaligned/1M/l=8
+Benchmarking ef_pred/unaligned/1M/l=8: Warming up for 3.0000 s
+Benchmarking ef_pred/unaligned/1M/l=8: Collecting 100 samples in estimated 5.0000 s (113M iterations)
+Benchmarking ef_pred/unaligned/1M/l=8: Analyzing
+ef_pred/unaligned/1M/l=8
+                        time:   [44.319 ns 44.325 ns 44.332 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 5 outliers among 100 measurements (5.00%)
+  1 (1.00%) low severe
+  4 (4.00%) low mild
+Benchmarking ef_pred/aligned/1M/l=16
+Benchmarking ef_pred/aligned/1M/l=16: Warming up for 3.0000 s
+Benchmarking ef_pred/aligned/1M/l=16: Collecting 100 samples in estimated 5.0001 s (110M iterations)
+Benchmarking ef_pred/aligned/1M/l=16: Analyzing
+ef_pred/aligned/1M/l=16 time:   [45.402 ns 45.422 ns 45.439 ns]
+Found 7 outliers among 100 measurements (7.00%)
+  1 (1.00%) low severe
+  4 (4.00%) low mild
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+Benchmarking ef_pred/unaligned/1M/l=16
+Benchmarking ef_pred/unaligned/1M/l=16: Warming up for 3.0000 s
+Benchmarking ef_pred/unaligned/1M/l=16: Collecting 100 samples in estimated 5.0002 s (110M iterations)
+Benchmarking ef_pred/unaligned/1M/l=16: Analyzing
+ef_pred/unaligned/1M/l=16
+                        time:   [45.339 ns 45.356 ns 45.378 ns]
+Found 12 outliers among 100 measurements (12.00%)
+  3 (3.00%) low severe
+  2 (2.00%) low mild
+  3 (3.00%) high mild
+  4 (4.00%) high severe
+Benchmarking ef_pred/aligned/1G/l=2
+Benchmarking ef_pred/aligned/1G/l=2: Warming up for 3.0000 s
+Benchmarking ef_pred/aligned/1G/l=2: Collecting 100 samples in estimated 5.0008 s (23M iterations)
+Benchmarking ef_pred/aligned/1G/l=2: Analyzing
+ef_pred/aligned/1G/l=2  time:   [216.11 ns 216.22 ns 216.33 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 19 outliers among 100 measurements (19.00%)
+  15 (15.00%) low severe
+  3 (3.00%) low mild
+  1 (1.00%) high severe
+Benchmarking ef_pred/unaligned/1G/l=2
+Benchmarking ef_pred/unaligned/1G/l=2: Warming up for 3.0000 s
+Benchmarking ef_pred/unaligned/1G/l=2: Collecting 100 samples in estimated 5.0007 s (23M iterations)
+Benchmarking ef_pred/unaligned/1G/l=2: Analyzing
+ef_pred/unaligned/1G/l=2
+                        time:   [214.66 ns 214.75 ns 214.82 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 18 outliers among 100 measurements (18.00%)
+  15 (15.00%) low severe
+  2 (2.00%) low mild
+  1 (1.00%) high severe
+Benchmarking ef_pred/aligned/1G/l=4
+Benchmarking ef_pred/aligned/1G/l=4: Warming up for 3.0000 s
+Benchmarking ef_pred/aligned/1G/l=4: Collecting 100 samples in estimated 5.0007 s (20M iterations)
+Benchmarking ef_pred/aligned/1G/l=4: Analyzing
+ef_pred/aligned/1G/l=4  time:   [244.78 ns 244.99 ns 245.21 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 18 outliers among 100 measurements (18.00%)
+  16 (16.00%) low severe
+  1 (1.00%) low mild
+  1 (1.00%) high mild
+Benchmarking ef_pred/unaligned/1G/l=4
+Benchmarking ef_pred/unaligned/1G/l=4: Warming up for 3.0000 s
+Benchmarking ef_pred/unaligned/1G/l=4: Collecting 100 samples in estimated 5.0008 s (21M iterations)
+Benchmarking ef_pred/unaligned/1G/l=4: Analyzing
+ef_pred/unaligned/1G/l=4
+                        time:   [241.06 ns 241.20 ns 241.31 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 18 outliers among 100 measurements (18.00%)
+  14 (14.00%) low severe
+  4 (4.00%) low mild
+Benchmarking ef_pred/aligned/1G/l=8
+Benchmarking ef_pred/aligned/1G/l=8: Warming up for 3.0000 s
+Benchmarking ef_pred/aligned/1G/l=8: Collecting 100 samples in estimated 5.0008 s (19M iterations)
+Benchmarking ef_pred/aligned/1G/l=8: Analyzing
+ef_pred/aligned/1G/l=8  time:   [262.56 ns 262.74 ns 262.91 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 21 outliers among 100 measurements (21.00%)
+  18 (18.00%) low severe
+  2 (2.00%) low mild
+  1 (1.00%) high mild
+Benchmarking ef_pred/unaligned/1G/l=8
+Benchmarking ef_pred/unaligned/1G/l=8: Warming up for 3.0000 s
+Benchmarking ef_pred/unaligned/1G/l=8: Collecting 100 samples in estimated 5.0002 s (19M iterations)
+Benchmarking ef_pred/unaligned/1G/l=8: Analyzing
+ef_pred/unaligned/1G/l=8
+                        time:   [259.63 ns 259.79 ns 259.94 ns]
+                        change: [−100.000% −100.000% −100.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 24 outliers among 100 measurements (24.00%)
+  17 (17.00%) low severe
+  2 (2.00%) low mild
+  3 (3.00%) high mild
+  2 (2.00%) high severe
+Benchmarking ef_pred/aligned/1G/l=16
+Benchmarking ef_pred/aligned/1G/l=16: Warming up for 3.0000 s
+Benchmarking ef_pred/aligned/1G/l=16: Collecting 100 samples in estimated 5.0006 s (18M iterations)
+Benchmarking ef_pred/aligned/1G/l=16: Analyzing
+ef_pred/aligned/1G/l=16 time:   [273.40 ns 273.58 ns 273.72 ns]
+Found 23 outliers among 100 measurements (23.00%)
+  20 (20.00%) low severe
+  1 (1.00%) low mild
+  2 (2.00%) high severe
+Benchmarking ef_pred/unaligned/1G/l=16
+Benchmarking ef_pred/unaligned/1G/l=16: Warming up for 3.0000 s
+Benchmarking ef_pred/unaligned/1G/l=16: Collecting 100 samples in estimated 5.0002 s (19M iterations)
+Benchmarking ef_pred/unaligned/1G/l=16: Analyzing
+ef_pred/unaligned/1G/l=16
+                        time:   [270.17 ns 270.35 ns 270.50 ns]
+Found 22 outliers among 100 measurements (22.00%)
+  18 (18.00%) low severe
+  3 (3.00%) low mild
+  1 (1.00%) high severe
+

@@ -1,0 +1,20 @@
+warning: unexpected `cfg` condition value: `nightly`
+  --> /home/vigna/git/xorf/src/lib.rs:64:13
+   |
+64 | #![cfg_attr(feature = "nightly", feature(allocator_internals), needs_allocator)]
+   |             ^^^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `feature` are: `binary-fuse`, `bincode`, `default`, `libm`, `num-traits`, `rand`, `serde`, and `uniform-random`
+   = help: consider adding `nightly` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+   = note: `#[warn(unexpected_cfgs)]` on by default
+
+warning: `xorf` (lib) generated 1 warning
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.10s
+     Running `target/release/examples/bench_vfunc 100000000 results-pthash/func.eps --no-shards --sig64`
+[2025-03-10T08:20:28Z INFO  bench_vfunc] Querying (independent)...
+[2025-03-10T08:20:34Z INFO  bench_vfunc] Completed.
+[2025-03-10T08:20:34Z INFO  bench_vfunc] Elapsed: 6s [100,000,000 keys, 15398200.86 keys/s, 64.94 ns/key]
+[2025-03-10T08:20:34Z INFO  bench_vfunc] Querying (dependent)...
+[2025-03-10T08:20:45Z INFO  bench_vfunc] Completed.
+[2025-03-10T08:20:45Z INFO  bench_vfunc] Elapsed: 11s [100,000,000 keys, 8999134.47 keys/s, 111.12 ns/key]
