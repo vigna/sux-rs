@@ -447,21 +447,29 @@ where
         for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
     {
         let n = keys.len();
-        builder
-            .expected_num_keys(n)
-            .try_par_populate_and_build(
-                keys,
-                &|i| values[i],
-                &mut |builder, seed, mut store, _max_value, _num_keys, pl, _state: &mut ()| {
-                    let data: Box<[W]> = vec![W::ZERO; builder.shard_edge.num_vertices() * builder.shard_edge.num_shards()].into();
-                    let func = builder.try_build_from_shard_iter(
-                        seed, data, store.drain(), &|_, sv| sv.val, &|_| {}, pl,
-                    )?;
-                    Ok(func)
-                },
-                pl,
-                (),
-            )
+        builder.expected_num_keys(n).try_par_populate_and_build(
+            keys,
+            &|i| values[i],
+            &mut |builder, seed, mut store, _max_value, _num_keys, pl, _state: &mut ()| {
+                let data: Box<[W]> = vec![
+                    W::ZERO;
+                    builder.shard_edge.num_vertices()
+                        * builder.shard_edge.num_shards()
+                ]
+                .into();
+                let func = builder.try_build_from_shard_iter(
+                    seed,
+                    data,
+                    store.drain(),
+                    &|_, sv| sv.val,
+                    &|_| {},
+                    pl,
+                )?;
+                Ok(func)
+            },
+            pl,
+            (),
+        )
     }
 }
 
@@ -708,24 +716,27 @@ where
         W: Copy,
     {
         let n = keys.len();
-        builder
-            .expected_num_keys(n)
-            .try_par_populate_and_build(
-                keys,
-                &|i| values[i],
-                &mut |builder, seed, mut store, max_value, _num_keys, pl, _state: &mut ()| {
-                    builder.bit_width = max_value.bit_len() as usize;
-                    let data = BitFieldVec::<Box<[W]>>::new_unaligned(
-                        builder.bit_width,
-                        builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
-                    );
-                    let func = builder.try_build_from_shard_iter(
-                        seed, data, store.drain(), &|_, sv| sv.val, &|_| {}, pl,
-                    )?;
-                    Ok(func)
-                },
-                pl,
-                (),
-            )
+        builder.expected_num_keys(n).try_par_populate_and_build(
+            keys,
+            &|i| values[i],
+            &mut |builder, seed, mut store, max_value, _num_keys, pl, _state: &mut ()| {
+                builder.bit_width = max_value.bit_len() as usize;
+                let data = BitFieldVec::<Box<[W]>>::new_unaligned(
+                    builder.bit_width,
+                    builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
+                );
+                let func = builder.try_build_from_shard_iter(
+                    seed,
+                    data,
+                    store.drain(),
+                    &|_, sv| sv.val,
+                    &|_| {},
+                    pl,
+                )?;
+                Ok(func)
+            },
+            pl,
+            (),
+        )
     }
 }

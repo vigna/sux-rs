@@ -637,11 +637,7 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
     /// Thread-local buffers (one per bucket) batch insertions to reduce
     /// lock acquisitions. Returns the maximum value seen (for bit-width
     /// computation).
-    pub fn par_populate(
-        &mut self,
-        n: usize,
-        f: impl Fn(usize) -> SigVal<S, V> + Send + Sync,
-    ) -> V
+    pub fn par_populate(&mut self, n: usize, f: impl Fn(usize) -> SigVal<S, V> + Send + Sync) -> V
     where
         V: Default + Ord + Send,
     {
@@ -659,11 +655,8 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
         let smask = self.max_shard_mask;
 
         // Wrap each bucket Vec in a Mutex.
-        let mutexed_buckets: Vec<Mutex<Vec<SigVal<S, V>>>> = self
-            .buckets
-            .drain(..)
-            .map(|b| Mutex::new(b))
-            .collect();
+        let mutexed_buckets: Vec<Mutex<Vec<SigVal<S, V>>>> =
+            self.buckets.drain(..).map(Mutex::new).collect();
 
         // Atomic counters for bucket sizes and shard sizes.
         let bucket_counts: Vec<AtomicUsize> = (0..num_buckets)
@@ -695,10 +688,8 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
                     shard_counts[shard].fetch_add(1, Ordering::Relaxed);
                     local_bufs[bucket].push(sv);
                     if local_bufs[bucket].len() >= BATCH {
-                        let buf = std::mem::replace(
-                            &mut local_bufs[bucket],
-                            Vec::with_capacity(BATCH),
-                        );
+                        let buf =
+                            std::mem::replace(&mut local_bufs[bucket], Vec::with_capacity(BATCH));
                         mutexed_buckets[bucket].lock().unwrap().extend(buf);
                     }
                     (local_max, local_bufs)
