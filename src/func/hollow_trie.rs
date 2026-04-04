@@ -41,13 +41,12 @@ use {
 /// a prefix-free virtual terminator.
 ///
 /// For positions within the key: returns the actual bit.
-/// For the first bit after the key (`i == key.len() * 8`): returns `true`.
-/// For subsequent positions: returns `false`.
+/// For positions beyond the key: returns `false` (virtual NUL byte).
 ///
-/// This makes the bit representation prefix-free: no key's bit
-/// sequence is a prefix of another's, as long as actual bytes are
-/// nonzero (so the `1` terminator bit differs from any real byte's
-/// MSB for bytes 0x00–0x7F, and extends unambiguously for 0x80–0xFF).
+/// This makes the bit representation prefix-free: since actual bytes
+/// are assumed nonzero, the all-zero virtual NUL byte differs from
+/// any continuation byte. The NUL sorts before any real byte,
+/// preserving lexicographic order.
 #[cfg(feature = "rayon")]
 #[inline]
 fn get_key_bit(key: &[u8], i: usize) -> bool {
@@ -55,8 +54,6 @@ fn get_key_bit(key: &[u8], i: usize) -> bool {
     let bit_idx = 7 - (i % 8);
     if byte_idx < key.len() {
         (key[byte_idx] >> bit_idx) & 1 != 0
-    } else if i == key.len() * 8 {
-        true // terminator bit
     } else {
         false // virtual NUL
     }
@@ -97,12 +94,13 @@ fn push_bits(dst: &mut Vec<u64>, dst_len: &mut usize, src: &[u64], src_len: usiz
 // ═══════════════════════════════════════════════════════════════════
 
 /// LCP in bits between two byte slices (MSB-first, with virtual NUL).
-/// LCP in bits between two byte slices using the prefix-free
-/// terminator convention: after the last byte, bit `len*8` is `1`,
-/// then all-zeros. This ensures prefix-freeness for keys with no
-/// zero bytes.
+/// LCP in bits between two byte slices (MSB-first) with virtual NUL
+/// terminator (all-zero byte after the last real byte). Since actual
+/// bytes are assumed nonzero, the NUL is always distinct from any
+/// continuation byte, ensuring prefix-freeness while preserving
+/// lexicographic order.
 #[cfg(feature = "rayon")]
-fn lcp_bits_pf(a: &[u8], b: &[u8]) -> usize {
+fn lcp_bits_nul(a: &[u8], b: &[u8]) -> usize {
     let min_len = a.len().min(b.len());
     for i in 0..min_len {
         if a[i] != b[i] {
@@ -110,29 +108,16 @@ fn lcp_bits_pf(a: &[u8], b: &[u8]) -> usize {
         }
     }
     if a.len() == b.len() {
-        // Both bytes match and both terminators are `1` → LCP
-        // extends through the terminator bit (position min_len * 8).
-        // The next bit (min_len * 8 + 1) is `0` for both, so LCP
-        // continues indefinitely. Return min_len * 8 + 1 as a
-        // sentinel for "identical keys."
-        min_len * 8 + 1
+        // Identical keys (including virtual NUL). The virtual NUL is
+        // 0x00 for both, so all bits match. Return len*8 + 8 as the
+        // full extent (the NUL byte is fully shared).
+        min_len * 8 + 8
     } else {
-        // The shorter key has terminator `1` at bit `min_len * 8`.
-        // The longer key has byte `b[min_len]` starting at that bit.
-        // XOR the terminator `1` against the MSB of the next byte.
-        // For bytes 0x00-0x7F the MSB is 0, so the first bit differs.
-        // For bytes 0x80-0xFF the MSB is 1, check further bits.
+        // The shorter key has virtual NUL 0x00 at position min_len.
+        // The longer key has byte b[min_len] (nonzero by assumption).
+        // NUL XOR nonzero byte = the byte itself.
         let next_byte = if a.len() > b.len() { a[min_len] } else { b[min_len] };
-        // Virtual terminator byte: 0x80 (1 followed by zeros)
-        let xor = next_byte ^ 0x80;
-        if xor == 0 {
-            // First bit matches (both 1); divergence is in the rest.
-            // This shouldn't happen for non-zero bytes < 0x80, but
-            // handle it for robustness.
-            min_len * 8 + 8 // conservative
-        } else {
-            min_len * 8 + xor.leading_zeros() as usize
-        }
+        min_len * 8 + next_byte.leading_zeros() as usize
     }
 }
 
@@ -231,7 +216,7 @@ impl HollowTrieBuilder {
             return;
         }
 
-        let lcp = lcp_bits_pf(&self.prev, key);
+        let lcp = lcp_bits_nul(&self.prev, key);
 
         // Pop nodes whose cumulative path length exceeds the LCP.
         let mut last = self.stack.len() as isize - 1;
@@ -391,8 +376,8 @@ fn encode_behaviour_key(
 pub struct HollowTrieDistributor {
     /// Balanced-parentheses support structure for the trie.
     bal_paren: BalancedParens,
-    /// Skip values indexed by DFS rank.
-    skips: Vec<usize>,
+    /// Skip values indexed by DFS rank, stored compactly.
+    skips: crate::bits::BitFieldVec<Box<[usize]>>,
     /// Number of internal nodes (= number of delimiters - 1).
     #[allow(dead_code)]
     num_nodes: usize,
@@ -467,11 +452,19 @@ impl HollowTrieDistributor {
             builder.push(keys[last_idx].as_ref());
         }
 
-        let (trie_words, trie_len, skips, num_nodes) = builder.finish();
+        let (trie_words, trie_len, raw_skips, num_nodes) = builder.finish();
         let bal_paren = BalancedParens::new(trie_words.clone(), trie_len);
 
+        // Pack skips into a compact BitFieldVec
+        let max_skip = raw_skips.iter().copied().max().unwrap_or(0);
+        let skip_bits = if max_skip == 0 { 1 } else { (usize::BITS - max_skip.leading_zeros()) as usize };
+        let mut skips: crate::bits::BitFieldVec<Box<[usize]>> = crate::bits::BitFieldVec::<Vec<usize>>::new(skip_bits, raw_skips.len()).into();
+        for (i, &s) in raw_skips.iter().enumerate() {
+            use value_traits::slices::SliceByValueMut;
+            skips.set_value(i, s);
+        }
+
         if num_delimiters == 0 {
-            // No full buckets: everything is in one partial bucket.
             return Ok(Self {
                 bal_paren,
                 skips,
@@ -520,7 +513,7 @@ impl HollowTrieDistributor {
                 None
             };
             delimiter_lcp = match (left_delimiter, right_delimiter) {
-                (Some(l), Some(r)) => Some(lcp_bits_pf(l, r)),
+                (Some(l), Some(r)) => Some(lcp_bits_nul(l, r)),
                 _ => None,
             };
 
@@ -538,11 +531,11 @@ impl HollowTrieDistributor {
 
             for j in 0..real_bucket_size {
                 let curr = keys[bucket_start + j].as_ref();
-                let length = curr.len() * 8 + 1; // bit length including prefix-free terminator
+                let length = curr.len() * 8 + 8; // bit length including prefix-free terminator
 
                 // Adjust stack using LCP with previous key in bucket
                 if let Some(prev) = prev_key {
-                    let prefix = lcp_bits_pf(prev, curr);
+                    let prefix = lcp_bits_nul(prev, curr);
                     while depth > 0 && stack_s[depth] > prefix {
                         depth -= 1;
                     }
@@ -557,21 +550,21 @@ impl HollowTrieDistributor {
                 let (exit_left, max_descent_length) = match (left_delimiter, right_delimiter) {
                     (None, Some(rd)) => {
                         // First bucket: no left delimiter
-                        (true, lcp_bits_pf(curr, rd) + 1)
+                        (true, lcp_bits_nul(curr, rd) + 1)
                     }
                     (Some(ld), None) => {
                         // Last (partial) bucket: no right delimiter
-                        (false, lcp_bits_pf(curr, ld) + 1)
+                        (false, lcp_bits_nul(curr, ld) + 1)
                     }
                     (Some(ld), Some(rd)) => {
                         let dlcp = delimiter_lcp.unwrap();
                         let el = get_key_bit(curr, dlcp);
                         if el {
                             // Closer to right delimiter
-                            (true, lcp_bits_pf(curr, rd) + 1)
+                            (true, lcp_bits_nul(curr, rd) + 1)
                         } else {
                             // Closer to left delimiter
-                            (false, lcp_bits_pf(curr, ld) + 1)
+                            (false, lcp_bits_nul(curr, ld) + 1)
                         }
                     }
                     (None, None) => {
@@ -587,7 +580,8 @@ impl HollowTrieDistributor {
                 loop {
                     is_internal = get_bit(&trie_words, p);
                     if is_internal {
-                        skip = skips[r];
+                        use value_traits::slices::SliceByValue;
+                        skip = skips.get_value(r).unwrap();
                     }
 
                     // If this is an internal node, first-time visit, and
@@ -736,7 +730,7 @@ impl HollowTrieDistributor {
         }
 
         let trie_words = self.bal_paren.words();
-        let length = key.len() * 8 + 1; // including prefix-free terminator
+        let length = key.len() * 8 + 8; // including prefix-free terminator
         let mut p: usize = 1;
         let mut index: usize = 0;
         let mut r: usize = 0;
@@ -746,7 +740,12 @@ impl HollowTrieDistributor {
 
         loop {
             let is_internal = get_bit(trie_words, p);
-            let skip = if is_internal { self.skips[r] } else { 0 };
+            let skip: usize = if is_internal {
+                use value_traits::slices::SliceByValue;
+                self.skips.get_value(r).unwrap()
+            } else {
+                0
+            };
 
             let behaviour = if is_internal {
                 let ff_key = encode_behaviour_key(
@@ -897,7 +896,7 @@ impl HtDistMmphf {
             return Ok(Self {
                 distributor: HollowTrieDistributor {
                     bal_paren: BalancedParens::new(vec![0b10], 2),
-                    skips: Vec::new(),
+                    skips: crate::bits::BitFieldVec::<Vec<usize>>::new(1, 0).into(),
                     num_nodes: 0,
                     num_delimiters: 0,
                     false_follows_detector: VFunc::empty(),
@@ -909,26 +908,32 @@ impl HtDistMmphf {
             });
         }
 
-        // Compute average key length in bits
-        let total_len: usize = keys.iter().map(|k| k.as_ref().len()).sum();
-        let avg_len = total_len.div_ceil(n);
+        // Compute average key length in bits (including virtual NUL)
+        let total_bits: usize = keys.iter().map(|k| k.as_ref().len() * 8 + 8).sum();
+        let avg_bits = total_bits as f64 / n as f64;
 
-        // Compute log2 bucket size following the Java formula
-        // We use C ~= 1.125 for fuse graphs
+        // Compute log2 bucket size following the Java formula.
+        // The constant C is the overhead of the VFunc (GOV3/fuse).
+        // For VFunc with fuse graphs, C ≈ 1.125.
         let log2_bs = log2_bucket_size.unwrap_or_else(|| {
             if n <= 1 {
                 return 0;
             }
-            let c = 1.125_f64;
-            let val = ((avg_len as f64).ln() + 2.0) * f64::ln(2.0) / c;
-            let l = (val.max(1.0).ceil() as usize).next_power_of_two().ilog2() as usize;
+            let c = 1.10_f64; // GOV3/VFunc overhead constant
+            let val = (avg_bits.ln() + 2.0) * f64::ln(2.0) / c;
+            let l = val.max(1.0).round() as usize;
+            let l = if l.is_power_of_two() {
+                l.ilog2() as usize
+            } else {
+                l.next_power_of_two().ilog2() as usize
+            };
             // Ensure we have at least 2 buckets
             if n / (1usize << l) <= 1 { 0 } else { l }
         });
         let bucket_size = 1usize << log2_bs;
 
         pl.info(format_args!(
-            "HtDistMmphf: {n} keys, bucket_size=2^{log2_bs}={bucket_size}, avg_key_len={avg_len}"
+            "HtDistMmphf: {n} keys, bucket_size=2^{log2_bs}={bucket_size}, avg_key_bits={avg_bits:.0}"
         ));
 
         let distributor = HollowTrieDistributor::try_new(keys, log2_bs, pl)?;
@@ -953,10 +958,35 @@ impl HtDistMmphf {
             n,
         };
 
-        let total_bits = result.mem_size(SizeFlags::default()) * 8;
+        let flags = SizeFlags::default();
+        let total_bits = result.mem_size(flags) * 8;
+        let dist_bp = result.distributor.bal_paren.words().len() * 8 * 8;
+        let dist_skips = result.distributor.skips.mem_size(flags) * 8;
+        let dist_ff = result.distributor.false_follows_detector.mem_size(flags) * 8;
+        let dist_ext = result.distributor.external_behaviour.mem_size(flags) * 8;
+        let offset_bits = result.offset.mem_size(flags) * 8;
         info!(
             "HtDistMmphf: {:.2} bits/key ({total_bits} bits for {n} keys)",
             total_bits as f64 / n as f64
+        );
+        info!(
+            "  Trie BP: {dist_bp} bits ({:.2}/key), skips: {dist_skips} bits ({:.2}/key)",
+            dist_bp as f64 / n as f64,
+            dist_skips as f64 / n as f64,
+        );
+        info!(
+            "  False-follows VFunc: {dist_ff} bits ({:.2}/key, {} keys)",
+            dist_ff as f64 / n as f64,
+            result.distributor.false_follows_detector.len(),
+        );
+        info!(
+            "  External behaviour VFunc: {dist_ext} bits ({:.2}/key, {} keys)",
+            dist_ext as f64 / n as f64,
+            result.distributor.external_behaviour.len(),
+        );
+        info!(
+            "  Offset VFunc: {offset_bits} bits ({:.2}/key)",
+            offset_bits as f64 / n as f64,
         );
 
         Ok(result)
