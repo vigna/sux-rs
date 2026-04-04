@@ -2194,6 +2194,27 @@ where
     ///
     /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
     /// parallelizes the hash computation for faster construction.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, Lcp2MmphfInt};
+    /// # use sux::bits::BitFieldVec;
+    /// # use dsi_progress_logger::no_logging;
+    /// # use sux::utils::FromSlice;
+    /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    /// let func: SignedFunc<Lcp2MmphfInt<u64>, BitFieldVec<Box<[usize]>>> =
+    ///     SignedFunc::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
     pub fn try_new(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -2352,6 +2373,27 @@ where
     ///
     /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
     /// parallelizes the hash computation for faster construction.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, Lcp2MmphfStr};
+    /// # use sux::bits::BitFieldVec;
+    /// # use dsi_progress_logger::no_logging;
+    /// # use sux::utils::FromSlice;
+    /// let keys = vec!["alpha", "beta", "delta", "gamma"];
+    /// let func: SignedFunc<Lcp2MmphfStr, BitFieldVec<Box<[usize]>>> =
+    ///     SignedFunc::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
     pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
