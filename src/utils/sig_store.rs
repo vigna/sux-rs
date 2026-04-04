@@ -618,6 +618,120 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
     }
 }
 
+#[cfg(feature = "rayon")]
+impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
+    SigStoreImpl<S, V, Vec<SigVal<S, V>>>
+{
+    /// Populates the store in parallel by calling `f(i)` for each index
+    /// `0..n` across rayon's thread pool and depositing the resulting
+    /// [`SigVal`] directly into its bucket.
+    ///
+    /// Each bucket is protected by a [`Mutex`](std::sync::Mutex); at 256
+    /// buckets the contention is negligible. Returns the maximum value
+    /// seen (for bit-width computation).
+    /// Populates the store in parallel by calling `f(i)` for each index
+    /// `0..n` across rayon's thread pool and depositing the resulting
+    /// [`SigVal`] directly into its bucket.
+    ///
+    /// Each bucket is protected by a [`Mutex`](std::sync::Mutex).
+    /// Thread-local buffers (one per bucket) batch insertions to reduce
+    /// lock acquisitions. Returns the maximum value seen (for bit-width
+    /// computation).
+    pub fn par_populate(
+        &mut self,
+        n: usize,
+        f: impl Fn(usize) -> SigVal<S, V> + Send + Sync,
+    ) -> V
+    where
+        V: Default + Ord + Send,
+    {
+        use rayon::prelude::*;
+        use std::sync::Mutex;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        const BATCH: usize = 32;
+
+        let num_buckets = 1usize << self.buckets_high_bits;
+        let num_shards = 1usize << self.max_shard_high_bits;
+        let bhb = self.buckets_high_bits;
+        let bmask = self.buckets_mask;
+        let shb = self.max_shard_high_bits;
+        let smask = self.max_shard_mask;
+
+        // Wrap each bucket Vec in a Mutex.
+        let mutexed_buckets: Vec<Mutex<Vec<SigVal<S, V>>>> = self
+            .buckets
+            .drain(..)
+            .map(|b| Mutex::new(b))
+            .collect();
+
+        // Atomic counters for bucket sizes and shard sizes.
+        let bucket_counts: Vec<AtomicUsize> = (0..num_buckets)
+            .map(|i| AtomicUsize::new(self.bucket_sizes[i]))
+            .collect();
+        let shard_counts: Vec<AtomicUsize> = (0..num_shards)
+            .map(|i| AtomicUsize::new(self.shard_sizes[i]))
+            .collect();
+
+        // Each rayon fold task gets a range of indices and uses thread-local
+        // per-bucket mini-buffers to batch mutex acquisitions.
+        let max_val = (0..n)
+            .into_par_iter()
+            .fold(
+                || {
+                    (
+                        V::default(),
+                        (0..num_buckets)
+                            .map(|_| Vec::with_capacity(BATCH))
+                            .collect::<Vec<_>>(),
+                    )
+                },
+                |(mut local_max, mut local_bufs): (V, Vec<Vec<SigVal<S, V>>>), i| {
+                    let sv = f(i);
+                    local_max = Ord::max(local_max, sv.val);
+                    let bucket = sv.sig.high_bits(bhb, bmask) as usize;
+                    let shard = sv.sig.high_bits(shb, smask) as usize;
+                    bucket_counts[bucket].fetch_add(1, Ordering::Relaxed);
+                    shard_counts[shard].fetch_add(1, Ordering::Relaxed);
+                    local_bufs[bucket].push(sv);
+                    if local_bufs[bucket].len() >= BATCH {
+                        let buf = std::mem::replace(
+                            &mut local_bufs[bucket],
+                            Vec::with_capacity(BATCH),
+                        );
+                        mutexed_buckets[bucket].lock().unwrap().extend(buf);
+                    }
+                    (local_max, local_bufs)
+                },
+            )
+            .map(|(local_max, local_bufs)| {
+                // Flush remaining buffers for this fold task.
+                for (bucket, buf) in local_bufs.into_iter().enumerate() {
+                    if !buf.is_empty() {
+                        mutexed_buckets[bucket].lock().unwrap().extend(buf);
+                    }
+                }
+                local_max
+            })
+            .reduce(V::default, Ord::max);
+
+        // Move Vecs back out of Mutexes.
+        self.buckets
+            .extend(mutexed_buckets.into_iter().map(|m| m.into_inner().unwrap()));
+
+        // Read atomic counters back.
+        for (i, c) in bucket_counts.iter().enumerate() {
+            self.bucket_sizes[i] = c.load(Ordering::Relaxed);
+        }
+        for (i, c) in shard_counts.iter().enumerate() {
+            self.shard_sizes[i] = c.load(Ordering::Relaxed);
+        }
+
+        self.len += n;
+        max_val
+    }
+}
+
 /// A container for the signatures and values accumulated by a [`SigStore`],
 /// with the ability to [enumerate them grouped in shards](ShardStore::iter).
 ///

@@ -265,10 +265,16 @@ where
     /// method if you need to configure construction parameters such
     /// as offline mode, thread count, or sharding overhead.
     ///
+    /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
+    /// parallelizes the hash computation for faster construction.
+    ///
     /// The keys must be provided in strictly increasing order.
     ///
     /// # Examples
     ///
+    ///
+    /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
+    /// parallelizes the hash computation for faster construction.
     /// ```rust
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
@@ -305,10 +311,16 @@ where
     /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
     /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
     ///
+    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// for parallel hash computation from slices.
+    ///
     /// The keys must be provided in strictly increasing order.
     ///
     /// # Examples
     ///
+    ///
+    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// for parallel hash computation from slices.
     /// ```rust
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
@@ -471,6 +483,216 @@ where
         ));
 
         Ok((result, keys))
+    }
+
+    /// Creates a new LCP-based monotone minimal perfect hash function
+    /// for integers from a slice, using parallel hash computation and
+    /// default [`VBuilder`] settings.
+    ///
+    /// This is the parallel counterpart of [`try_new`](Self::try_new).
+    /// It is a convenience wrapper around
+    /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// with `VBuilder::default()`.
+    ///
+    /// The keys must be provided in strictly increasing order.
+    ///
+    /// # Examples
+    ///
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new`](Self::try_new) instead.
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::LcpMmphfInt;
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    /// let func: LcpMmphfInt<u64> =
+    ///     LcpMmphfInt::try_par_new(&keys, no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), i);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new(
+        keys: &[T],
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
+    }
+
+    /// Creates a new LCP-based monotone minimal perfect hash function
+    /// for integers from a slice, using parallel hash computation and
+    /// the given [`VBuilder`] configuration.
+    ///
+    /// This is the parallel counterpart of
+    /// [`try_new_with_builder`](Self::try_new_with_builder).
+    ///
+    /// The keys must be provided in strictly increasing order.
+    ///
+    /// # Examples
+    ///
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{LcpMmphfInt, VBuilder};
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    /// let func: LcpMmphfInt<u64> = LcpMmphfInt::try_par_new_with_builder(
+    ///     &keys,
+    ///     VBuilder::default(),
+    ///     no_logging![],
+    /// )?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), i);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new_with_builder(
+        keys: &[T],
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        Self::try_par_new_inner(keys, builder, pl)
+    }
+
+    /// Internal parallel constructor for integer keys.
+    pub(crate) fn try_par_new_inner(
+        keys: &[T],
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        let n = keys.len();
+        if n == 0 {
+            return Ok(Self {
+                n: 0,
+                log2_bucket_size: 0,
+                offset_lcp_length: VFunc::empty(),
+                lcp2bucket: VFunc::empty(),
+            });
+        }
+
+        let log2_bs = log2_bucket_size(n);
+        let bucket_size = 1usize << log2_bs;
+        let bucket_mask = bucket_size - 1;
+        let num_buckets = n.div_ceil(bucket_size);
+
+        pl.info(format_args!(
+            "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
+        ));
+
+        // -- Sequential pass: compute bit-level LCPs --
+
+        let mut lcp_bit_lengths: Vec<usize> = Vec::with_capacity(num_buckets);
+        let mut bucket_first_keys: Vec<T> = Vec::with_capacity(num_buckets);
+
+        let mut prev_key: Option<T> = None;
+        let mut curr_lcp_bits: usize = 0;
+
+        for (i, &key) in keys.iter().enumerate() {
+            if let Some(prev) = prev_key {
+                if key <= prev {
+                    bail!(
+                        "Keys are not in strictly increasing order at \
+                         position {i}: {prev:?} >= {key:?}"
+                    );
+                }
+            }
+
+            let offset = i & bucket_mask;
+
+            if offset == 0 {
+                // First key of a new bucket.
+                if i > 0 {
+                    lcp_bit_lengths.push(curr_lcp_bits);
+                }
+                bucket_first_keys.push(key);
+                curr_lcp_bits = T::BITS as usize;
+            } else {
+                curr_lcp_bits = curr_lcp_bits.min(lcp_bits(key, prev_key.unwrap()));
+            }
+
+            prev_key = Some(key);
+        }
+
+        lcp_bit_lengths.push(curr_lcp_bits);
+        assert_eq!(lcp_bit_lengths.len(), num_buckets);
+
+        // -- Build offset_lcp_length VFunc (parallel) --
+
+        pl.info(format_args!(
+            "Building key → (LCP length, offset) map (parallel)..."
+        ));
+        let offset_lcp_length = builder
+            .expected_num_keys(n)
+            .try_par_populate_and_build(
+                keys,
+                &|i| (lcp_bit_lengths[i >> log2_bs] << log2_bs) | (i & bucket_mask),
+                &mut |builder, seed, mut store, max_value, _num_keys, pl, _state: &mut ()| {
+                    builder.bit_width = max_value.bit_len() as usize;
+                    let data = BitFieldVec::<Box<[usize]>>::new_unaligned(
+                        builder.bit_width,
+                        builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
+                    );
+                    let func = builder.try_build_from_shard_iter(
+                        seed,
+                        data,
+                        store.drain(),
+                        &|_, sv| sv.val,
+                        &|_| {},
+                        pl,
+                    )?;
+                    Ok(func)
+                },
+                pl,
+                (),
+            )?;
+
+        // -- Build lcp2bucket VFunc (sequential, small) --
+
+        pl.info(format_args!(
+            "Building LCP prefix → bucket map ({num_buckets} buckets)..."
+        ));
+        let lcp2bucket = <VFunc<
+            IntBitPrefix<T>,
+            BitFieldVec<Box<[usize]>>,
+            [u64; 1],
+            Fuse3NoShards,
+        >>::try_new_with_builder(
+            FromCloneableIntoIterator::new(
+                (0..num_buckets)
+                    .map(|b| IntBitPrefix::new(bucket_first_keys[b] ^ T::MIN, lcp_bit_lengths[b])),
+            ),
+            FromCloneableIntoIterator::new(0..num_buckets),
+            num_buckets,
+            VBuilder::default(),
+            pl,
+        )?;
+
+        let result = Self {
+            n,
+            log2_bucket_size: log2_bs,
+            offset_lcp_length,
+            lcp2bucket,
+        };
+        let total_bits = result.mem_size(SizeFlags::default()) * 8;
+        pl.info(format_args!(
+            "Actual bit cost per key: {:.2} ({total_bits} bits for {n} keys)",
+            total_bits as f64 / n as f64
+        ));
+
+        Ok(result)
     }
 }
 
@@ -805,6 +1027,9 @@ where
     /// method if you need to configure construction parameters such
     /// as offline mode, thread count, or sharding overhead.
     ///
+    /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
+    /// parallelizes the hash computation for faster construction.
+    ///
     /// The keys must be in strictly increasing lexicographic order.
     /// The lender may yield references to any type `B` that borrows
     /// as `K` (e.g., `&String` for `K = str`, `&Vec<u8>` for
@@ -812,6 +1037,9 @@ where
     ///
     /// # Examples
     ///
+    ///
+    /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
+    /// parallelizes the hash computation for faster construction.
     /// ```rust
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
@@ -849,10 +1077,16 @@ where
     /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
     /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
     ///
+    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// for parallel hash computation from slices.
+    ///
     /// The keys must be in strictly increasing lexicographic order.
     ///
     /// # Examples
     ///
+    ///
+    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// for parallel hash computation from slices.
     /// ```rust
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
@@ -1032,6 +1266,236 @@ where
         ));
 
         Ok((result, keys))
+    }
+
+    /// Creates a new LCP-based monotone minimal perfect hash function
+    /// for byte-sequence keys from a slice, using parallel hash
+    /// computation and default [`VBuilder`] settings.
+    ///
+    /// This is the parallel counterpart of [`try_new`](Self::try_new).
+    /// It is a convenience wrapper around
+    /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// with `VBuilder::default()`.
+    ///
+    /// The keys must be in strictly increasing lexicographic order.
+    ///
+    /// # Examples
+    ///
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new`](Self::try_new) instead.
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::LcpMmphfStr;
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys = vec!["a", "b", "c", "d", "e"];
+    /// let func: LcpMmphfStr =
+    ///     LcpMmphfStr::try_par_new(&keys, no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), i);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new<B: AsRef<[u8]> + Borrow<K> + Sync>(
+        keys: &[B],
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        K: Sync,
+    {
+        Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
+    }
+
+    /// Creates a new LCP-based monotone minimal perfect hash function
+    /// for byte-sequence keys from a slice, using parallel hash
+    /// computation and the given [`VBuilder`] configuration.
+    ///
+    /// This is the parallel counterpart of
+    /// [`try_new_with_builder`](Self::try_new_with_builder).
+    ///
+    /// The keys must be in strictly increasing lexicographic order.
+    ///
+    /// # Examples
+    ///
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{LcpMmphfStr, VBuilder};
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys = vec!["a", "b", "c", "d", "e"];
+    /// let func: LcpMmphfStr = LcpMmphfStr::try_par_new_with_builder(
+    ///     &keys,
+    ///     VBuilder::default(),
+    ///     no_logging![],
+    /// )?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), i);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new_with_builder<B: AsRef<[u8]> + Borrow<K> + Sync>(
+        keys: &[B],
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        K: Sync,
+    {
+        Self::try_par_new_inner(keys, builder, pl)
+    }
+
+    /// Internal parallel constructor for byte-sequence keys.
+    pub(crate) fn try_par_new_inner<B: AsRef<[u8]> + Borrow<K> + Sync>(
+        keys: &[B],
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        K: Sync,
+    {
+        let n = keys.len();
+        if n == 0 {
+            return Ok(Self {
+                n: 0,
+                log2_bucket_size: 0,
+                offset_lcp_length: VFunc::empty(),
+                lcp2bucket: VFunc::empty(),
+            });
+        }
+
+        let log2_bs = log2_bucket_size(n);
+        let bucket_size = 1usize << log2_bs;
+        let bucket_mask = bucket_size - 1;
+        let num_buckets = n.div_ceil(bucket_size);
+
+        pl.info(format_args!(
+            "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
+        ));
+
+        // -- Sequential pass: compute bit-level LCPs --
+
+        let mut lcp_bit_lengths: Vec<usize> = Vec::with_capacity(num_buckets);
+        let mut bucket_first_keys: Vec<Vec<u8>> = Vec::with_capacity(num_buckets);
+
+        let mut prev_key: Vec<u8> = Vec::new();
+        let mut curr_lcp_bits: usize = 0;
+
+        for (i, key) in keys.iter().enumerate() {
+            let key_bytes: &[u8] = key.as_ref();
+
+            if i > 0 && key_bytes <= prev_key.as_slice() {
+                bail!(
+                    "Keys are not in strictly increasing lexicographic \
+                     order at position {i}"
+                );
+            }
+
+            let offset = i & bucket_mask;
+
+            if offset == 0 {
+                // First key of a new bucket.
+                if i > 0 {
+                    lcp_bit_lengths.push(curr_lcp_bits);
+                }
+                bucket_first_keys.push(key_bytes.to_vec());
+                curr_lcp_bits = (key_bytes.len() + 1) * 8;
+            } else {
+                curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul(key_bytes, &prev_key));
+            }
+
+            prev_key.clear();
+            prev_key.extend_from_slice(key_bytes);
+        }
+
+        lcp_bit_lengths.push(curr_lcp_bits);
+        assert_eq!(lcp_bit_lengths.len(), num_buckets);
+
+        // -- Build offset_lcp_length VFunc (parallel) --
+
+        pl.info(format_args!(
+            "Building key → (LCP length, offset) map (parallel)..."
+        ));
+        let offset_lcp_length = builder
+            .expected_num_keys(n)
+            .try_par_populate_and_build(
+                keys,
+                &|i| (lcp_bit_lengths[i >> log2_bs] << log2_bs) | (i & bucket_mask),
+                &mut |builder, seed, mut store, max_value, _num_keys, pl, _state: &mut ()| {
+                    builder.bit_width = max_value.bit_len() as usize;
+                    let data = BitFieldVec::<Box<[usize]>>::new_unaligned(
+                        builder.bit_width,
+                        builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
+                    );
+                    let func = builder.try_build_from_shard_iter(
+                        seed,
+                        data,
+                        store.drain(),
+                        &|_, sv| sv.val,
+                        &|_| {},
+                        pl,
+                    )?;
+                    Ok(func)
+                },
+                pl,
+                (),
+            )?;
+
+        // -- Build lcp2bucket VFunc (sequential, small) --
+
+        pl.info(format_args!(
+            "Building LCP prefix → bucket map ({num_buckets} buckets)..."
+        ));
+        let extended_first_keys: Vec<Vec<u8>> = bucket_first_keys
+            .iter()
+            .map(|k| {
+                let mut v = Vec::with_capacity(k.len() + 1);
+                v.extend_from_slice(k);
+                v.push(0x00);
+                v
+            })
+            .collect();
+
+        let lcp2bucket = <VFunc<
+            BitPrefix,
+            BitFieldVec<Box<[usize]>>,
+            [u64; 1],
+            Fuse3NoShards,
+        >>::try_new_with_builder(
+            FromCloneableIntoIterator::new(
+                (0..num_buckets)
+                    .map(|b| BitPrefix::new(&extended_first_keys[b], lcp_bit_lengths[b])),
+            ),
+            FromCloneableIntoIterator::new(0..num_buckets),
+            num_buckets,
+            VBuilder::default(),
+            pl,
+        )?;
+
+        let result = Self {
+            n,
+            log2_bucket_size: log2_bs,
+            offset_lcp_length,
+            lcp2bucket,
+        };
+        let total_bits = result.mem_size(SizeFlags::default()) * 8;
+        pl.info(format_args!(
+            "Actual bit cost per key: {:.2} ({total_bits} bits for {n} keys)",
+            total_bits as f64 / n as f64
+        ));
+
+        Ok(result)
     }
 }
 
