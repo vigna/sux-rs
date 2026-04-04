@@ -518,6 +518,75 @@ where
     Ok(hashes)
 }
 
+/// Fills a `Box<[W]>` hash array from a key slice.
+///
+/// Iterates the first `n` elements of `keys`, converting each key to a
+/// signature via [`ToSig::to_sig`] and then computing the remixed hash
+/// through `shard_edge`. The resulting full-width hashes are stored in a
+/// newly allocated boxed slice.
+///
+/// # Panics
+///
+/// Panics if `keys.len() < n`.
+#[cfg(feature = "rayon")]
+fn fill_hashes_from_slice<B, T, W, S, E>(
+    shard_edge: &E,
+    seed: u64,
+    n: usize,
+    keys: &[B],
+) -> Box<[W]>
+where
+    B: Borrow<T>,
+    T: ?Sized + ToSig<S>,
+    W: Word,
+    S: Sig,
+    E: ShardEdge<S, 3>,
+    u64: PrimitiveNumberAs<W>,
+{
+    let mut hashes = vec![W::MIN; n];
+    for (hash, key) in hashes.iter_mut().zip(keys.iter()) {
+        *hash = shard_edge
+            .remixed_hash(T::to_sig(key.borrow(), seed))
+            .as_to::<W>();
+    }
+    hashes.into_boxed_slice()
+}
+
+/// Fills a [`BitFieldVec<Box<[H]>>`](BitFieldVec) hash array from a key
+/// slice.
+///
+/// Iterates the first `n` elements of `keys`, converting each key to a
+/// signature via [`ToSig::to_sig`] and then computing the remixed hash
+/// through `shard_edge`. The hash is truncated using the [`BitFieldVec`]'s
+/// stored mask and stored in a [`BitFieldVec`] of the given `hash_width`.
+///
+/// # Panics
+///
+/// Panics if `keys.len() < n`.
+#[cfg(feature = "rayon")]
+fn fill_bit_hashes_from_slice<B, T, H, S, E>(
+    shard_edge: &E,
+    seed: u64,
+    n: usize,
+    hash_width: usize,
+    keys: &[B],
+) -> BitFieldVec<Box<[H]>>
+where
+    B: Borrow<T>,
+    T: ?Sized + ToSig<S>,
+    H: Word,
+    S: Sig,
+    E: ShardEdge<S, 3>,
+    u64: PrimitiveNumberAs<H>,
+{
+    let mut hashes = BitFieldVec::<Box<[H]>>::new_unaligned(hash_width, n);
+    for (i, key) in keys.iter().enumerate().take(n) {
+        let h = hashes.truncate_hash(shard_edge.remixed_hash(T::to_sig(key.borrow(), seed)));
+        hashes.set_value(i, h);
+    }
+    hashes
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Constructors — SignedFunc<VFunc<...>>
 // ═══════════════════════════════════════════════════════════════════
@@ -546,6 +615,9 @@ where
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
     /// `VBuilder::default()`.
+    ///
+    /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
+    /// parallelizes the hash computation for faster construction.
     ///
     /// # Examples
     ///
@@ -596,9 +668,8 @@ where
     /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
     /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
     ///
-    /// The builder controls construction parameters such as [offline
-    /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
-    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// for parallel hash computation from slices.
     ///
     /// # Examples
     ///
@@ -664,6 +735,110 @@ where
 
         Ok(SignedFunc { func, hashes })
     }
+
+    /// Builds a [`SignedFunc`] wrapping a [`VFunc`] from in-memory key
+    /// slices, parallelizing hash computation and store population with
+    /// rayon, using default [`VBuilder`] settings.
+    ///
+    /// The function maps each key to its index in the input sequence
+    /// and stores `H::BITS`-bit hashes for verification, giving a
+    /// false-positive rate of 2<sup>-`H::BITS`</sup>.
+    ///
+    /// This is a convenience wrapper around
+    /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// with `VBuilder::default()`.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new`](Self::try_new) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use dsi_progress_logger::no_logging;
+    /// use sux::func::{SignedFunc, VFunc};
+    /// use sux::bits::BitFieldVec;
+    /// type SFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, Box<[u16]>>;
+    /// let keys: Vec<usize> = (0..100).collect();
+    /// let func: SFunc = SFunc::try_par_new(&keys, no_logging![])?;
+    ///
+    /// for i in 0..100 {
+    ///     assert_eq!(func.get(i), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new<B: Borrow<T> + Sync>(
+        keys: &[B],
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        T: Sync,
+        S: Send,
+        u64: PrimitiveNumberAs<H>,
+    {
+        Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
+    }
+
+    /// Builds a [`SignedFunc`] wrapping a [`VFunc`] from in-memory key
+    /// slices, parallelizing hash computation and store population with
+    /// rayon, using the given [`VBuilder`] configuration.
+    ///
+    /// The function maps each key to its index in the input sequence
+    /// and stores `H::BITS`-bit hashes for verification, giving a
+    /// false-positive rate of 2<sup>-`H::BITS`</sup>.
+    ///
+    /// The builder controls construction parameters such as [offline
+    /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
+    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use dsi_progress_logger::no_logging;
+    /// use sux::func::{SignedFunc, VBuilder, VFunc};
+    /// use sux::bits::BitFieldVec;
+    /// type SFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, Box<[u16]>>;
+    /// let keys: Vec<usize> = (0..100).collect();
+    /// let func: SFunc = SFunc::try_par_new_with_builder(
+    ///     &keys,
+    ///     VBuilder::default(),
+    ///     no_logging![],
+    /// )?;
+    ///
+    /// for i in 0..100 {
+    ///     assert_eq!(func.get(i), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new_with_builder<B: Borrow<T> + Sync>(
+        keys: &[B],
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        T: Sync,
+        S: Send,
+        u64: PrimitiveNumberAs<H>,
+    {
+        let values: Vec<usize> = (0..keys.len()).collect();
+        let func = <VFunc<T, BitFieldVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
+            keys, &values, builder, pl,
+        )?;
+        let hashes = fill_hashes_from_slice(func.shard_edge(), func.seed(), func.len(), keys);
+        Ok(SignedFunc { func, hashes })
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -696,6 +871,9 @@ where
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
     /// `VBuilder::default()`.
+    ///
+    /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
+    /// parallelizes the hash computation for faster construction.
     ///
     /// # Examples
     ///
@@ -752,6 +930,9 @@ where
     /// The builder controls construction parameters such as [offline
     /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
     /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+    ///
+    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// for parallel hash computation from slices.
     ///
     /// # Examples
     ///
@@ -826,6 +1007,116 @@ where
 
         Ok(SignedFunc { func, hashes })
     }
+
+    /// Builds a [`SignedFunc`] wrapping a [`VFunc`] from in-memory key
+    /// slices, parallelizing hash computation and store population with
+    /// rayon, using default [`VBuilder`] settings.
+    ///
+    /// The function maps each key to its index in the input sequence
+    /// and stores `hash_width`-bit hashes for verification, giving a
+    /// false-positive rate of 2<sup>−`hash_width`</sup>.
+    ///
+    /// This is a convenience wrapper around
+    /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// with `VBuilder::default()`.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new`](Self::try_new) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use dsi_progress_logger::no_logging;
+    /// use sux::func::{SignedFunc, VFunc};
+    /// use sux::bits::BitFieldVec;
+    /// type BSFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, BitFieldVec<Box<[usize]>>>;
+    /// let keys: Vec<usize> = (0..100).collect();
+    /// let func: BSFunc = BSFunc::try_par_new(&keys, 8, no_logging![])?;
+    ///
+    /// for i in 0..100 {
+    ///     assert_eq!(func.get(i), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new<B: Borrow<T> + Sync>(
+        keys: &[B],
+        hash_width: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        T: Sync,
+        S: Send,
+        u64: PrimitiveNumberAs<H>,
+    {
+        Self::try_par_new_with_builder(keys, hash_width, VBuilder::default(), pl)
+    }
+
+    /// Builds a [`SignedFunc`] wrapping a [`VFunc`] from in-memory key
+    /// slices, parallelizing hash computation and store population with
+    /// rayon, using the given [`VBuilder`] configuration.
+    ///
+    /// The function maps each key to its index in the input sequence
+    /// and stores `hash_width`-bit hashes for verification, giving a
+    /// false-positive rate of 2<sup>−`hash_width`</sup>.
+    ///
+    /// The builder controls construction parameters such as [offline
+    /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
+    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use dsi_progress_logger::no_logging;
+    /// use sux::func::{SignedFunc, VBuilder, VFunc};
+    /// use sux::bits::BitFieldVec;
+    /// type BSFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, BitFieldVec<Box<[usize]>>>;
+    /// let keys: Vec<usize> = (0..100).collect();
+    /// let func: BSFunc = BSFunc::try_par_new_with_builder(
+    ///     &keys,
+    ///     8,
+    ///     VBuilder::default(),
+    ///     no_logging![],
+    /// )?;
+    ///
+    /// for i in 0..100 {
+    ///     assert_eq!(func.get(i), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new_with_builder<B: Borrow<T> + Sync>(
+        keys: &[B],
+        hash_width: usize,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        T: Sync,
+        S: Send,
+        u64: PrimitiveNumberAs<H>,
+    {
+        assert!(hash_width > 0);
+        assert!(hash_width <= H::BITS as usize);
+        let values: Vec<usize> = (0..keys.len()).collect();
+        let func = <VFunc<T, BitFieldVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
+            keys, &values, builder, pl,
+        )?;
+        let hashes =
+            fill_bit_hashes_from_slice(func.shard_edge(), func.seed(), func.len(), hash_width, keys);
+        Ok(SignedFunc { func, hashes })
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -850,6 +1141,9 @@ where
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
     /// `VBuilder::default()`.
+    ///
+    /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
+    /// parallelizes the hash computation for faster construction.
     ///
     /// # Examples
     ///
@@ -884,6 +1178,9 @@ where
 
     /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`] to
     /// configure the internal `offset_lcp_length` VFunc.
+    ///
+    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// for parallel hash computation from slices.
     pub fn try_new_with_builder(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -898,6 +1195,86 @@ where
         let hashes = fill_hashes(func.shard_edge(), func.seed(), n, &mut keys, |key, seed| {
             T::to_sig(*key, seed)
         })?;
+        Ok(Self { func, hashes })
+    }
+
+    /// Creates a new signed LCP-based MMPHF for integers from a slice,
+    /// using parallel hash computation and default [`VBuilder`] settings.
+    ///
+    /// The keys must be in strictly increasing order.
+    ///
+    /// This is a convenience wrapper around
+    /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// with `VBuilder::default()`.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new`](Self::try_new) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, LcpMmphfInt};
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    /// let func: SignedFunc<LcpMmphfInt<u64>, Box<[u16]>> =
+    ///     <SignedFunc<LcpMmphfInt<u64>, Box<[u16]>>>::try_par_new(&keys, no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new(
+        keys: &[T],
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
+    }
+
+    /// Like [`try_par_new`](Self::try_par_new), but uses the given
+    /// [`VBuilder`] to configure the internal `offset_lcp_length` VFunc.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, LcpMmphfInt, VBuilder};
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    /// let func: SignedFunc<LcpMmphfInt<u64>, Box<[u16]>> =
+    ///     <SignedFunc<LcpMmphfInt<u64>, Box<[u16]>>>::try_par_new_with_builder(
+    ///         &keys, VBuilder::default(), no_logging![],
+    ///     )?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new_with_builder(
+        keys: &[T],
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        let func = LcpMmphfInt::try_par_new_inner(keys, builder, pl)?;
+        let hashes = fill_hashes_from_slice::<T, T, W, S, E>(
+            func.shard_edge(),
+            func.seed(),
+            keys.len(),
+            keys,
+        );
         Ok(Self { func, hashes })
     }
 }
@@ -925,6 +1302,9 @@ where
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
     /// `VBuilder::default()`.
+    ///
+    /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
+    /// parallelizes the hash computation for faster construction.
     ///
     /// # Examples
     ///
@@ -959,6 +1339,9 @@ where
 
     /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`] to
     /// configure the internal `offset_lcp_length` VFunc.
+    ///
+    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// for parallel hash computation from slices.
     pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -973,6 +1356,93 @@ where
         let hashes = fill_hashes(func.shard_edge(), func.seed(), n, &mut keys, |key, seed| {
             K::to_sig(<B as Borrow<K>>::borrow(key), seed)
         })?;
+        Ok(Self { func, hashes })
+    }
+
+    /// Creates a new signed LCP-based MMPHF for byte-sequence keys from
+    /// a slice, using parallel hash computation and default [`VBuilder`]
+    /// settings.
+    ///
+    /// The keys must be in strictly increasing lexicographic order.
+    ///
+    /// This is a convenience wrapper around
+    /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// with `VBuilder::default()`.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new`](Self::try_new) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, LcpMmphfStr};
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys = vec!["a", "b", "c", "d", "e"];
+    /// let func: SignedFunc<LcpMmphfStr, Box<[u64]>> =
+    ///     <SignedFunc<LcpMmphfStr, Box<[u64]>>>::try_par_new(&keys, no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new<B: AsRef<[u8]> + Borrow<K> + Sync>(
+        keys: &[B],
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        K: Sync,
+    {
+        Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
+    }
+
+    /// Like [`try_par_new`](Self::try_par_new), but uses the given
+    /// [`VBuilder`] to configure the internal `offset_lcp_length` VFunc.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, LcpMmphfStr, VBuilder};
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys = vec!["a", "b", "c", "d", "e"];
+    /// let func: SignedFunc<LcpMmphfStr, Box<[u64]>> =
+    ///     <SignedFunc<LcpMmphfStr, Box<[u64]>>>::try_par_new_with_builder(
+    ///         &keys, VBuilder::default(), no_logging![],
+    ///     )?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new_with_builder<B: AsRef<[u8]> + Borrow<K> + Sync>(
+        keys: &[B],
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        K: Sync,
+    {
+        let func = LcpMmphf::try_par_new_inner(keys, builder, pl)?;
+        let hashes = fill_hashes_from_slice::<B, K, W, S, E>(
+            func.shard_edge(),
+            func.seed(),
+            keys.len(),
+            keys,
+        );
         Ok(Self { func, hashes })
     }
 }
@@ -1004,6 +1474,9 @@ where
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
     /// `VBuilder::default()`.
+    ///
+    /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
+    /// parallelizes the hash computation for faster construction.
     ///
     /// # Examples
     ///
@@ -1038,6 +1511,9 @@ where
 
     /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`] to
     /// configure the internal VFuncs.
+    ///
+    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// for parallel hash computation from slices.
     pub fn try_new_with_builder(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -1052,6 +1528,87 @@ where
         let hashes = fill_hashes(func.shard_edge(), func.seed(), n, &mut keys, |key, seed| {
             T::to_sig(*key, seed)
         })?;
+        Ok(Self { func, hashes })
+    }
+
+    /// Creates a new signed two-step LCP-based MMPHF for integers from
+    /// a slice, using parallel hash computation and default [`VBuilder`]
+    /// settings.
+    ///
+    /// The keys must be in strictly increasing order.
+    ///
+    /// This is a convenience wrapper around
+    /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// with `VBuilder::default()`.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new`](Self::try_new) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, Lcp2MmphfInt};
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    /// let func: SignedFunc<Lcp2MmphfInt<u64>, Box<[u16]>> =
+    ///     <SignedFunc<Lcp2MmphfInt<u64>, Box<[u16]>>>::try_par_new(&keys, no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new(
+        keys: &[T],
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
+    }
+
+    /// Like [`try_par_new`](Self::try_par_new), but uses the given
+    /// [`VBuilder`] to configure the internal VFuncs.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, Lcp2MmphfInt, VBuilder};
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    /// let func: SignedFunc<Lcp2MmphfInt<u64>, Box<[u16]>> =
+    ///     <SignedFunc<Lcp2MmphfInt<u64>, Box<[u16]>>>::try_par_new_with_builder(
+    ///         &keys, VBuilder::default(), no_logging![],
+    ///     )?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new_with_builder(
+        keys: &[T],
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        let func = Lcp2MmphfInt::try_par_new_inner(keys, builder, pl)?;
+        let hashes = fill_hashes_from_slice::<T, T, W, S, E>(
+            func.shard_edge(),
+            func.seed(),
+            keys.len(),
+            keys,
+        );
         Ok(Self { func, hashes })
     }
 }
@@ -1083,6 +1640,9 @@ where
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
     /// `VBuilder::default()`.
+    ///
+    /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
+    /// parallelizes the hash computation for faster construction.
     ///
     /// # Examples
     ///
@@ -1117,6 +1677,9 @@ where
 
     /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`] to
     /// configure the internal VFuncs.
+    ///
+    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// for parallel hash computation from slices.
     pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -1131,6 +1694,93 @@ where
         let hashes = fill_hashes(func.shard_edge(), func.seed(), n, &mut keys, |key, seed| {
             K::to_sig(<B as Borrow<K>>::borrow(key), seed)
         })?;
+        Ok(Self { func, hashes })
+    }
+
+    /// Creates a new signed two-step LCP-based MMPHF for byte-sequence
+    /// keys from a slice, using parallel hash computation and default
+    /// [`VBuilder`] settings.
+    ///
+    /// The keys must be in strictly increasing lexicographic order.
+    ///
+    /// This is a convenience wrapper around
+    /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// with `VBuilder::default()`.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new`](Self::try_new) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, Lcp2MmphfStr};
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys = vec!["a", "b", "c", "d", "e"];
+    /// let func: SignedFunc<Lcp2MmphfStr, Box<[u64]>> =
+    ///     <SignedFunc<Lcp2MmphfStr, Box<[u64]>>>::try_par_new(&keys, no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new<B: AsRef<[u8]> + Borrow<K> + Sync>(
+        keys: &[B],
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        K: Sync,
+    {
+        Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
+    }
+
+    /// Like [`try_par_new`](Self::try_par_new), but uses the given
+    /// [`VBuilder`] to configure the internal VFuncs.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, Lcp2MmphfStr, VBuilder};
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys = vec!["a", "b", "c", "d", "e"];
+    /// let func: SignedFunc<Lcp2MmphfStr, Box<[u64]>> =
+    ///     <SignedFunc<Lcp2MmphfStr, Box<[u64]>>>::try_par_new_with_builder(
+    ///         &keys, VBuilder::default(), no_logging![],
+    ///     )?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new_with_builder<B: AsRef<[u8]> + Borrow<K> + Sync>(
+        keys: &[B],
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        K: Sync,
+    {
+        let func = Lcp2Mmphf::try_par_new_inner(keys, builder, pl)?;
+        let hashes = fill_hashes_from_slice::<B, K, W, S, E>(
+            func.shard_edge(),
+            func.seed(),
+            keys.len(),
+            keys,
+        );
         Ok(Self { func, hashes })
     }
 }
@@ -1160,6 +1810,9 @@ where
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
     /// `VBuilder::default()`.
+    ///
+    /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
+    /// parallelizes the hash computation for faster construction.
     ///
     /// # Examples
     ///
@@ -1197,6 +1850,9 @@ where
 
     /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`] to
     /// configure the internal `offset_lcp_length` VFunc.
+    ///
+    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// for parallel hash computation from slices.
     pub fn try_new_with_builder(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -1218,6 +1874,95 @@ where
             &mut keys,
             |key, seed| T::to_sig(*key, seed),
         )?;
+        Ok(Self { func, hashes })
+    }
+
+    /// Creates a new signed LCP-based MMPHF for integers with
+    /// sub-word-width hashes from a slice, using parallel hash
+    /// computation and default [`VBuilder`] settings.
+    ///
+    /// `hash_width` is the number of hash bits stored per key (must be
+    /// in `1 . . H::BITS`). False-positive probability is
+    /// 2<sup>−`hash_width`</sup>.
+    ///
+    /// This is a convenience wrapper around
+    /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// with `VBuilder::default()`.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new`](Self::try_new) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, LcpMmphfInt};
+    /// # use sux::bits::BitFieldVec;
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    /// type BSFunc = SignedFunc<LcpMmphfInt<u64>, BitFieldVec<Box<[usize]>>>;
+    /// let func: BSFunc =
+    ///     BSFunc::try_par_new(&keys, 8, no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new(
+        keys: &[T],
+        hash_width: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        Self::try_par_new_with_builder(keys, hash_width, VBuilder::default(), pl)
+    }
+
+    /// Like [`try_par_new`](Self::try_par_new), but uses the given
+    /// [`VBuilder`] to configure the internal `offset_lcp_length` VFunc.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, LcpMmphfInt, VBuilder};
+    /// # use sux::bits::BitFieldVec;
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    /// type BSFunc = SignedFunc<LcpMmphfInt<u64>, BitFieldVec<Box<[usize]>>>;
+    /// let func: BSFunc =
+    ///     BSFunc::try_par_new_with_builder(&keys, 8, VBuilder::default(), no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new_with_builder(
+        keys: &[T],
+        hash_width: usize,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        assert!(hash_width > 0 && hash_width <= H::BITS as usize);
+        let func = LcpMmphfInt::try_par_new_inner(keys, builder, pl)?;
+        let hashes = fill_bit_hashes_from_slice::<T, T, H, S, E>(
+            func.shard_edge(),
+            func.seed(),
+            keys.len(),
+            hash_width,
+            keys,
+        );
         Ok(Self { func, hashes })
     }
 }
@@ -1247,6 +1992,9 @@ where
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
     /// `VBuilder::default()`.
+    ///
+    /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
+    /// parallelizes the hash computation for faster construction.
     ///
     /// # Examples
     ///
@@ -1285,6 +2033,9 @@ where
 
     /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`] to
     /// configure the internal `offset_lcp_length` VFunc.
+    ///
+    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// for parallel hash computation from slices.
     pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -1306,6 +2057,103 @@ where
             &mut keys,
             |key, seed| K::to_sig(<B as Borrow<K>>::borrow(key), seed),
         )?;
+        Ok(Self { func, hashes })
+    }
+
+    /// Creates a new signed LCP-based MMPHF for byte-sequence keys with
+    /// sub-word-width hashes from a slice, using parallel hash computation
+    /// and default [`VBuilder`] settings.
+    ///
+    /// `hash_width` is the number of hash bits stored per key (must be
+    /// in `1 . . H::BITS`). False-positive probability is
+    /// 2<sup>−`hash_width`</sup>.
+    ///
+    /// This is a convenience wrapper around
+    /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// with `VBuilder::default()`.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new`](Self::try_new) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, LcpMmphfStr};
+    /// # use sux::bits::BitFieldVec;
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys = vec!["alpha", "beta", "delta", "gamma"];
+    /// type BSFunc = SignedFunc<LcpMmphfStr, BitFieldVec<Box<[usize]>>>;
+    /// let func: BSFunc =
+    ///     BSFunc::try_par_new(&keys, 12, no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// assert_eq!(func.get("missing"), None);
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new<B: AsRef<[u8]> + Borrow<K> + Sync>(
+        keys: &[B],
+        hash_width: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        K: Sync,
+    {
+        Self::try_par_new_with_builder(keys, hash_width, VBuilder::default(), pl)
+    }
+
+    /// Like [`try_par_new`](Self::try_par_new), but uses the given
+    /// [`VBuilder`] to configure the internal `offset_lcp_length` VFunc.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, LcpMmphfStr, VBuilder};
+    /// # use sux::bits::BitFieldVec;
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys = vec!["alpha", "beta", "delta", "gamma"];
+    /// type BSFunc = SignedFunc<LcpMmphfStr, BitFieldVec<Box<[usize]>>>;
+    /// let func: BSFunc =
+    ///     BSFunc::try_par_new_with_builder(&keys, 12, VBuilder::default(), no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// assert_eq!(func.get("missing"), None);
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new_with_builder<B: AsRef<[u8]> + Borrow<K> + Sync>(
+        keys: &[B],
+        hash_width: usize,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        K: Sync,
+    {
+        assert!(hash_width > 0 && hash_width <= H::BITS as usize);
+        let func = LcpMmphf::try_par_new_inner(keys, builder, pl)?;
+        let hashes = fill_bit_hashes_from_slice::<B, K, H, S, E>(
+            func.shard_edge(),
+            func.seed(),
+            keys.len(),
+            hash_width,
+            keys,
+        );
         Ok(Self { func, hashes })
     }
 }
@@ -1338,6 +2186,9 @@ where
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
     /// `VBuilder::default()`.
+    ///
+    /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
+    /// parallelizes the hash computation for faster construction.
     pub fn try_new(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -1352,6 +2203,9 @@ where
 
     /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`] to
     /// configure the internal VFuncs.
+    ///
+    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// for parallel hash computation from slices.
     pub fn try_new_with_builder(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -1373,6 +2227,91 @@ where
             &mut keys,
             |key, seed| T::to_sig(*key, seed),
         )?;
+        Ok(Self { func, hashes })
+    }
+
+    /// Creates a new signed two-step LCP-based MMPHF for integers with
+    /// sub-word-width hashes from a slice, using parallel hash computation
+    /// and default [`VBuilder`] settings.
+    ///
+    /// This is a convenience wrapper around
+    /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// with `VBuilder::default()`.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new`](Self::try_new) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, Lcp2MmphfInt};
+    /// # use sux::bits::BitFieldVec;
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    /// type BSFunc = SignedFunc<Lcp2MmphfInt<u64>, BitFieldVec<Box<[usize]>>>;
+    /// let func: BSFunc =
+    ///     BSFunc::try_par_new(&keys, 8, no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new(
+        keys: &[T],
+        hash_width: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        Self::try_par_new_with_builder(keys, hash_width, VBuilder::default(), pl)
+    }
+
+    /// Like [`try_par_new`](Self::try_par_new), but uses the given
+    /// [`VBuilder`] to configure the internal VFuncs.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, Lcp2MmphfInt, VBuilder};
+    /// # use sux::bits::BitFieldVec;
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    /// type BSFunc = SignedFunc<Lcp2MmphfInt<u64>, BitFieldVec<Box<[usize]>>>;
+    /// let func: BSFunc =
+    ///     BSFunc::try_par_new_with_builder(&keys, 8, VBuilder::default(), no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new_with_builder(
+        keys: &[T],
+        hash_width: usize,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        assert!(hash_width > 0 && hash_width <= H::BITS as usize);
+        let func = Lcp2MmphfInt::try_par_new_inner(keys, builder, pl)?;
+        let hashes = fill_bit_hashes_from_slice::<T, T, H, S, E>(
+            func.shard_edge(),
+            func.seed(),
+            keys.len(),
+            hash_width,
+            keys,
+        );
         Ok(Self { func, hashes })
     }
 }
@@ -1405,6 +2344,9 @@ where
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder) with
     /// `VBuilder::default()`.
+    ///
+    /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
+    /// parallelizes the hash computation for faster construction.
     pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -1419,6 +2361,9 @@ where
 
     /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`] to
     /// configure the internal VFuncs.
+    ///
+    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// for parallel hash computation from slices.
     pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
@@ -1440,6 +2385,97 @@ where
             &mut keys,
             |key, seed| K::to_sig(<B as Borrow<K>>::borrow(key), seed),
         )?;
+        Ok(Self { func, hashes })
+    }
+
+    /// Creates a new signed two-step LCP-based MMPHF for byte-sequence
+    /// keys with sub-word-width hashes from a slice, using parallel hash
+    /// computation and default [`VBuilder`] settings.
+    ///
+    /// This is a convenience wrapper around
+    /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// with `VBuilder::default()`.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new`](Self::try_new) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, Lcp2MmphfStr};
+    /// # use sux::bits::BitFieldVec;
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys = vec!["a", "b", "c", "d", "e"];
+    /// type BSFunc = SignedFunc<Lcp2MmphfStr, BitFieldVec<Box<[usize]>>>;
+    /// let func: BSFunc =
+    ///     BSFunc::try_par_new(&keys, 8, no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new<B: AsRef<[u8]> + Borrow<K> + Sync>(
+        keys: &[B],
+        hash_width: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        K: Sync,
+    {
+        Self::try_par_new_with_builder(keys, hash_width, VBuilder::default(), pl)
+    }
+
+    /// Like [`try_par_new`](Self::try_par_new), but uses the given
+    /// [`VBuilder`] to configure the internal VFuncs.
+    ///
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::func::{SignedFunc, Lcp2MmphfStr, VBuilder};
+    /// # use sux::bits::BitFieldVec;
+    /// # use dsi_progress_logger::no_logging;
+    /// let keys = vec!["a", "b", "c", "d", "e"];
+    /// type BSFunc = SignedFunc<Lcp2MmphfStr, BitFieldVec<Box<[usize]>>>;
+    /// let func: BSFunc =
+    ///     BSFunc::try_par_new_with_builder(&keys, 8, VBuilder::default(), no_logging![])?;
+    ///
+    /// for (i, &key) in keys.iter().enumerate() {
+    ///     assert_eq!(func.get(key), Some(i));
+    /// }
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
+    pub fn try_par_new_with_builder<B: AsRef<[u8]> + Borrow<K> + Sync>(
+        keys: &[B],
+        hash_width: usize,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
+    where
+        K: Sync,
+    {
+        assert!(hash_width > 0 && hash_width <= H::BITS as usize);
+        let func = Lcp2Mmphf::try_par_new_inner(keys, builder, pl)?;
+        let hashes = fill_bit_hashes_from_slice::<B, K, H, S, E>(
+            func.shard_edge(),
+            func.seed(),
+            keys.len(),
+            hash_width,
+            keys,
+        );
         Ok(Self { func, hashes })
     }
 }
