@@ -971,6 +971,94 @@ impl<
         }
     }
 
+    /// Like [`try_populate_and_build`](Self::try_populate_and_build), but
+    /// takes key and value **slices** and parallelizes the hash computation
+    /// and store population using rayon.
+    ///
+    /// Each key is hashed on a rayon worker thread and deposited directly
+    /// into its SigStore bucket (protected by a per-bucket mutex). This is
+    /// typically faster than the lender-based path for large in-memory key
+    /// sets, because the expensive per-key hashing runs on all available
+    /// cores.
+    pub fn try_par_populate_and_build<
+        T: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
+        B: Borrow<T> + Sync,
+        V: BinSafe + Default + Send + Sync + Ord + Copy,
+        R,
+        P: ProgressLog + Clone + Send + Sync,
+        C,
+        VF: Fn(usize) -> V + Send + Sync,
+    >(
+        &mut self,
+        keys: &[B],
+        val_fn: &VF,
+        build_fn: &mut impl FnMut(
+            &mut Self,
+            u64,
+            Box<dyn ShardStore<S, V> + Send + Sync>,
+            V,
+            usize,
+            &mut P,
+            &mut C,
+        ) -> anyhow::Result<R>,
+        pl: &mut P,
+        mut state: C,
+    ) -> anyhow::Result<R>
+    where
+        SigVal<S, V>: RadixKey,
+        S: Send,
+    {
+        let mut rs = self.retry_state(pl);
+        let n = keys.len();
+
+        loop {
+            let seed = rs.next_seed();
+
+            let result = {
+                let mut sig_store = sig_store::new_online::<S, V>(
+                    self.log2_buckets,
+                    LOG2_MAX_SHARDS,
+                    self.expected_num_keys,
+                )?;
+
+                pl.expected_updates(Some(n));
+                pl.item_name("key");
+                pl.start(format!(
+                    "Computing and storing {}-bit signatures in memory (parallel) using seed 0x{seed:016x}...",
+                    std::mem::size_of::<S>() * 8,
+                ));
+
+                let maybe_max_value = sig_store.par_populate(n, |i| SigVal {
+                    sig: T::to_sig(keys[i].borrow(), seed),
+                    val: val_fn(i),
+                });
+
+                pl.done();
+
+                let num_keys = sig_store.len();
+                let shard_edge = &mut self.shard_edge;
+                shard_edge.set_up_shards(num_keys, self.eps);
+
+                let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
+                let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
+
+                if max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64 {
+                    Err(SolveError::MaxShardTooBig.into())
+                } else {
+                    (self.c, self.lge) = shard_edge.set_up_graphs(num_keys, max_shard);
+                    self.num_keys = num_keys;
+                    let store = Box::new(shard_store) as Box<dyn ShardStore<S, V> + Send + Sync>;
+                    build_fn(self, seed, store, maybe_max_value, num_keys, pl, &mut state)
+                }
+            };
+
+            if let Some(r) = rs.handle_solve_result(result, pl)? {
+                return Ok(r);
+            }
+            // Keys and values are slices — no rewind needed.
+        }
+    }
+
     /// Performs a single population-and-build attempt for the given seed.
     ///
     /// Creates a [`SigStore`] (offline or online depending on
