@@ -74,6 +74,8 @@ pub use lcp2_mmphf::*;
 pub mod signed;
 pub use signed::*;
 
+pub mod hollow_trie;
+
 pub mod shard_edge;
 
 /// Avalanches bits using the finalization step of Austin Appleby's
