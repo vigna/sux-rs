@@ -17,6 +17,7 @@
 use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::no_logging;
+use mem_dbg::MemSize;
 use sux::bits::BitFieldVec;
 use sux::func::hollow_trie::HtDistMmphf;
 use sux::func::lcp_mmphf::LcpMmphf;
@@ -113,8 +114,14 @@ fn main() -> Result<()> {
         std::hint::black_box(sum);
     });
 
+    let ht_bits = func.mem_size(mem_dbg::SizeFlags::default()) * 8;
+    eprintln!(
+        "HtDistMmphf: {:.2} bits/key ({ht_bits} bits)\n",
+        ht_bits as f64 / n as f64,
+    );
+
     // ── LcpMmphfStr for comparison ─────────────────────────────────
-    eprintln!("\nBuilding LcpMmphfStr...");
+    eprintln!("Building LcpMmphfStr...");
     let start = std::time::Instant::now();
     let lcp = DefLcpStr::try_new(FromSlice::new(&keys), n, no_logging![])?;
     let lcp_build = start.elapsed();
@@ -127,7 +134,11 @@ fn main() -> Result<()> {
     for i in 0..n {
         assert_eq!(lcp.get(keys[i].as_str()), i, "LcpMmphf verification failed at {i}");
     }
-    eprintln!("Verified all {n} keys");
+    let lcp_bits = lcp.mem_size(mem_dbg::SizeFlags::default()) * 8;
+    eprintln!(
+        "LcpMmphfStr: {:.2} bits/key ({lcp_bits} bits)",
+        lcp_bits as f64 / n as f64,
+    );
 
     bench("LcpMmphf query", n, args.repeats, || {
         let mut sum = 0usize;

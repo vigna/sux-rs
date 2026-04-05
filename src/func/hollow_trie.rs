@@ -376,8 +376,9 @@ fn encode_behaviour_key(
 pub struct HollowTrieDistributor {
     /// Balanced-parentheses support structure for the trie.
     bal_paren: BalancedParens,
-    /// Skip values indexed by DFS rank, stored compactly.
-    skips: crate::bits::BitFieldVec<Box<[usize]>>,
+    /// Cumulative skip sums stored in Elias-Fano with indexed access.
+    /// Individual skip `r` is recovered as `cum_skips.get(r+1) - cum_skips.get(r)`.
+    cum_skips: crate::dict::EfSeq,
     /// Number of internal nodes (= number of delimiters - 1).
     #[allow(dead_code)]
     num_nodes: usize,
@@ -402,7 +403,7 @@ impl MemSize for HollowTrieDistributor {
         let mut size = core::mem::size_of::<Self>();
         // BalancedParens internal memory is opaque; estimate from words
         size += self.bal_paren.words().len() * 8;
-        size += self.skips.mem_size_rec(flags, refs);
+        size += self.cum_skips.mem_size_rec(flags, refs);
         #[cfg(feature = "rayon")]
         {
             size += self.false_follows_detector.mem_size_rec(flags, refs);
@@ -455,19 +456,25 @@ impl HollowTrieDistributor {
         let (trie_words, trie_len, raw_skips, num_nodes) = builder.finish();
         let bal_paren = BalancedParens::new(trie_words.clone(), trie_len);
 
-        // Pack skips into a compact BitFieldVec
-        let max_skip = raw_skips.iter().copied().max().unwrap_or(0);
-        let skip_bits = if max_skip == 0 { 1 } else { (usize::BITS - max_skip.leading_zeros()) as usize };
-        let mut skips: crate::bits::BitFieldVec<Box<[usize]>> = crate::bits::BitFieldVec::<Vec<usize>>::new(skip_bits, raw_skips.len()).into();
-        for (i, &s) in raw_skips.iter().enumerate() {
-            use value_traits::slices::SliceByValueMut;
-            skips.set_value(i, s);
+        // Store skips as prefix sums in Elias-Fano for compression.
+        // cum_skips[0] = 0, cum_skips[i+1] = cum_skips[i] + raw_skips[i].
+        let cum_sum: usize = raw_skips.iter().sum();
+        let mut ef_builder = crate::dict::EliasFanoBuilder::new(
+            raw_skips.len() + 1,
+            cum_sum,
+        );
+        let mut acc = 0usize;
+        ef_builder.push(acc);
+        for &s in &raw_skips {
+            acc += s;
+            ef_builder.push(acc);
         }
+        let cum_skips = ef_builder.build_with_seq();
 
         if num_delimiters == 0 {
             return Ok(Self {
                 bal_paren,
-                skips,
+                cum_skips,
                 num_nodes,
                 num_delimiters,
                 false_follows_detector: VFunc::empty(),
@@ -581,7 +588,7 @@ impl HollowTrieDistributor {
                     is_internal = get_bit(&trie_words, p);
                     if is_internal {
                         use value_traits::slices::SliceByValue;
-                        skip = skips.get_value(r).unwrap();
+                        skip = { use crate::traits::IndexedSeq; cum_skips.get(r + 1) - cum_skips.get(r) };
                     }
 
                     // If this is an internal node, first-time visit, and
@@ -710,7 +717,7 @@ impl HollowTrieDistributor {
 
         Ok(Self {
             bal_paren,
-            skips,
+            cum_skips,
             num_nodes,
             num_delimiters,
             false_follows_detector,
@@ -742,7 +749,7 @@ impl HollowTrieDistributor {
             let is_internal = get_bit(trie_words, p);
             let skip: usize = if is_internal {
                 use value_traits::slices::SliceByValue;
-                self.skips.get_value(r).unwrap()
+                { use crate::traits::IndexedSeq; self.cum_skips.get(r + 1) - self.cum_skips.get(r) }
             } else {
                 0
             };
@@ -896,7 +903,11 @@ impl HtDistMmphf {
             return Ok(Self {
                 distributor: HollowTrieDistributor {
                     bal_paren: BalancedParens::new(vec![0b10], 2),
-                    skips: crate::bits::BitFieldVec::<Vec<usize>>::new(1, 0).into(),
+                    cum_skips: {
+                        let mut b = crate::dict::EliasFanoBuilder::new(1, 0);
+                        b.push(0);
+                        b.build_with_seq()
+                    },
                     num_nodes: 0,
                     num_delimiters: 0,
                     false_follows_detector: VFunc::empty(),
@@ -961,7 +972,7 @@ impl HtDistMmphf {
         let flags = SizeFlags::default();
         let total_bits = result.mem_size(flags) * 8;
         let dist_bp = result.distributor.bal_paren.words().len() * 8 * 8;
-        let dist_skips = result.distributor.skips.mem_size(flags) * 8;
+        let dist_skips = result.distributor.cum_skips.mem_size(flags) * 8;
         let dist_ff = result.distributor.false_follows_detector.mem_size(flags) * 8;
         let dist_ext = result.distributor.external_behaviour.mem_size(flags) * 8;
         let offset_bits = result.offset.mem_size(flags) * 8;
