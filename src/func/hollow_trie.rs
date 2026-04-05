@@ -332,18 +332,23 @@ impl HollowTrieBuilder {
 ///   - ceil((bit_end - bit_start) / 8) bytes: path bits packed MSB-first
 ///
 /// The encoding must be injective for correctness.
+///
+/// Returns the number of bytes written into `buf`.
 #[cfg(feature = "rayon")]
-fn encode_behaviour_key(
+#[inline]
+fn encode_behaviour_key_into(
+    buf: &mut [u8],
     node_pos: usize,
     key_bytes: &[u8],
     bit_start: usize,
     bit_end: usize,
-) -> Vec<u8> {
+) -> usize {
     let path_len = bit_end - bit_start;
     let packed_bytes = path_len.div_ceil(8);
-    let mut buf = Vec::with_capacity(16 + packed_bytes);
-    buf.extend_from_slice(&(node_pos as u64).to_le_bytes());
-    buf.extend_from_slice(&(path_len as u64).to_le_bytes());
+    let total = 16 + packed_bytes;
+    debug_assert!(buf.len() >= total);
+    buf[0..8].copy_from_slice(&(node_pos as u64).to_le_bytes());
+    buf[8..16].copy_from_slice(&(path_len as u64).to_le_bytes());
     // Pack path bits MSB-first into bytes
     for b in 0..packed_bytes {
         let mut byte_val = 0u8;
@@ -356,8 +361,24 @@ fn encode_behaviour_key(
                 byte_val |= 1 << (7 - bit);
             }
         }
-        buf.push(byte_val);
+        buf[16 + b] = byte_val;
     }
+    total
+}
+
+/// Convenience wrapper that allocates a `Vec` — used during construction
+/// where keys need to be stored.
+#[cfg(feature = "rayon")]
+fn encode_behaviour_key(
+    node_pos: usize,
+    key_bytes: &[u8],
+    bit_start: usize,
+    bit_end: usize,
+) -> Vec<u8> {
+    let path_len = bit_end - bit_start;
+    let packed_bytes = path_len.div_ceil(8);
+    let mut buf = vec![0u8; 16 + packed_bytes];
+    encode_behaviour_key_into(&mut buf, node_pos, key_bytes, bit_start, bit_end);
     buf
 }
 
@@ -737,44 +758,49 @@ impl HollowTrieDistributor {
         }
 
         let trie_words = self.bal_paren.words();
-        let length = key.len() * 8 + 8; // including prefix-free terminator
+        let length = key.len() * 8 + 8; // including virtual NUL terminator
         let mut p: usize = 1;
         let mut index: usize = 0;
         let mut r: usize = 0;
         let mut s: usize = 0;
         let mut last_left_turn: usize = 0;
         let mut last_left_turn_index: usize = 0;
+        // Buffer for behaviour key encoding. Reused across loop iterations
+        // to avoid per-node allocation. Max size: 16 header + key path bytes.
+        let buf_size = 16 + key.len() + 1;
+        let mut key_buf_storage;
+        let mut key_buf_vec;
+        let mut key_buf: &mut [u8] = if buf_size <= 528 {
+            key_buf_storage = [0u8; 528];
+            &mut key_buf_storage[..buf_size]
+        } else {
+            key_buf_vec = vec![0u8; buf_size];
+            &mut key_buf_vec
+        };
 
         loop {
             let is_internal = get_bit(trie_words, p);
             let skip: usize = if is_internal {
-                use value_traits::slices::SliceByValue;
-                { use crate::traits::IndexedSeq; self.cum_skips.get(r + 1) - self.cum_skips.get(r) }
+                use crate::traits::IndexedSeq;
+                self.cum_skips.get(r + 1) - self.cum_skips.get(r)
             } else {
                 0
             };
 
             let behaviour = if is_internal {
-                let ff_key = encode_behaviour_key(
-                    p - 1,
-                    key,
-                    s,
-                    (s + skip).min(length),
+                let n = encode_behaviour_key_into(
+                    &mut key_buf, p - 1, key, s, (s + skip).min(length),
                 );
-                if self.false_follows_detector.get(ff_key.as_slice()) == 0 {
+                if self.false_follows_detector.get(&key_buf[..n]) == 0 {
                     FOLLOW
                 } else {
-                    let ext_key = encode_behaviour_key(
-                        p - 1,
-                        key,
-                        s,
-                        (s + skip).min(length),
-                    );
-                    self.external_behaviour.get(ext_key.as_slice())
+                    self.external_behaviour.get(&key_buf[..n])
                 }
             } else {
-                let ext_key = encode_behaviour_key(p - 1, key, s, length);
-                self.external_behaviour.get(ext_key.as_slice())
+                let n = encode_behaviour_key_into(
+                    &mut key_buf, p - 1, key, s, length,
+                );
+                self.external_behaviour.get(&key_buf[..n])
             };
 
             if behaviour != FOLLOW || !is_internal || {
