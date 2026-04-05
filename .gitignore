@@ -9,3 +9,12 @@ plots
 *.sh
 docs
 bash
+
+# Large data files
+trec.terms
+uk-2007-05.urls
+experiments/sorted_*.bin
+experiments/gen_sorted_u64
+dump.log
+perf-*.data
+err.new
