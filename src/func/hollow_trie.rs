@@ -93,7 +93,6 @@ fn push_bits(dst: &mut Vec<u64>, dst_len: &mut usize, src: &[u64], src_len: usiz
 // Trie construction (online, stack-based)
 // ═══════════════════════════════════════════════════════════════════
 
-/// LCP in bits between two byte slices (MSB-first, with virtual NUL).
 /// LCP in bits between two byte slices (MSB-first) with virtual NUL
 /// terminator (all-zero byte after the last real byte). Since actual
 /// bytes are assumed nonzero, the NUL is always distinct from any
@@ -588,29 +587,48 @@ impl HollowTrieDistributor {
                 let mut s = stack_s[depth];
                 let mut index = stack_index[depth];
 
-                // Determine exit direction and max descent length
+                // Determine exit direction and max descent length.
+                //
+                // `exit_left`: whether the key exits to the left of its
+                // closer delimiter. At the delimiter LCP position, the
+                // left delimiter has bit 0 and the right has bit 1. If
+                // the key's bit matches the right delimiter (bit 1), the
+                // key is in the right half → it exits LEFT of the right
+                // delimiter. This matches the Java's `exitLeft =
+                // curr.getBoolean(delimiterLcp)`.
+                //
+                // `max_descent_length`: the trie walk continues until
+                // `s >= max_descent_length`. Set to `lcp(key, closer
+                // delimiter) + 1`, so the walk stops just past the point
+                // where key and its delimiter diverge.
                 let (exit_left, max_descent_length) = match (left_delimiter, right_delimiter) {
                     (None, Some(rd)) => {
-                        // First bucket: no left delimiter
+                        // First bucket: no left delimiter; key exits left
+                        // of the right delimiter.
                         (true, lcp_bits_nul(curr, rd) + 1)
                     }
                     (Some(ld), None) => {
-                        // Last (partial) bucket: no right delimiter
+                        // Last (partial) bucket: no right delimiter; key
+                        // exits right of the left delimiter.
                         (false, lcp_bits_nul(curr, ld) + 1)
                     }
                     (Some(ld), Some(rd)) => {
+                        // Key falls between two delimiters. Check the bit
+                        // at the delimiter LCP position to determine which
+                        // delimiter is closer.
                         let dlcp = delimiter_lcp.unwrap();
-                        let el = get_key_bit(curr, dlcp);
-                        if el {
-                            // Closer to right delimiter
+                        if get_key_bit(curr, dlcp) {
+                            // Key bit = 1 (matches right delimiter) → exit
+                            // left of right delimiter.
                             (true, lcp_bits_nul(curr, rd) + 1)
                         } else {
-                            // Closer to left delimiter
+                            // Key bit = 0 (matches left delimiter) → exit
+                            // right of left delimiter.
                             (false, lcp_bits_nul(curr, ld) + 1)
                         }
                     }
                     (None, None) => {
-                        // Single bucket edge case
+                        // Single bucket (no delimiters at all).
                         (true, length + 1)
                     }
                 };
@@ -623,10 +641,7 @@ impl HollowTrieDistributor {
                     is_internal = get_bit(&trie_words, p);
                     if is_internal {
                         use value_traits::slices::SliceByValue;
-                        {
-                            use value_traits::slices::SliceByValue;
-                            skip = skips.index_value(r);
-                        }
+                        skip = skips.index_value(r);
                     }
 
                     // If this is an internal node, first-time visit, and
@@ -820,13 +835,24 @@ impl HollowTrieDistributor {
                 self.external_behaviour.get(&key_buf[..n])
             };
 
+            // Exit condition: behaviour is not FOLLOW, or we reached a
+            // leaf, or the key's bits are exhausted after consuming the
+            // skip. The `{s += skip; s >= length}` block both advances
+            // `s` and checks the stop condition (mirrors the Java's
+            // `(s += skip) >= maxDescentLength`).
             if behaviour != FOLLOW || !is_internal || {
                 s += skip;
                 s >= length
             } {
+                // Compute the bucket index from the exit point.
                 if behaviour == LEFT {
+                    // All leaves to the left are counted in `index`.
                     return index;
                 } else if is_internal {
+                    // EXIT RIGHT at an internal node: the bucket index
+                    // is the total number of leaves in the subtree
+                    // rooted at the last left turn plus the leaves
+                    // already counted.
                     let q = self
                         .bal_paren
                         .find_close(last_left_turn)
@@ -834,13 +860,20 @@ impl HollowTrieDistributor {
                     #[allow(clippy::manual_div_ceil)]
                     return ((q - last_left_turn + 1) / 2) + last_left_turn_index;
                 } else {
+                    // EXIT RIGHT at a leaf: one more than the current
+                    // leaf count.
                     return index + 1;
                 }
             }
 
-            // Turn left or right
+            // FOLLOW: continue descent. Turn left or right based on
+            // the key's bit at position `s` (the branching bit after
+            // the compacted path).
             if get_key_bit(key, s) {
-                // Right
+                // RIGHT: skip over the entire left subtree.
+                // `findClose(p)` gives the matching `)` of the left
+                // subtree; the right child starts at `q = findClose(p) + 1`.
+                // The number of leaves in the left subtree is `(q - p) / 2`.
                 let q = self
                     .bal_paren
                     .find_close(p)
@@ -850,14 +883,15 @@ impl HollowTrieDistributor {
                 r += (q - p) / 2;
                 p = q;
             } else {
-                // Left
+                // LEFT: the left child is at `p + 1`. Record this as
+                // the last left turn (needed for RIGHT exits later).
                 last_left_turn = p;
                 last_left_turn_index = index;
                 p += 1;
                 r += 1;
             }
 
-            s += 1;
+            s += 1; // consume the branching bit
         }
     }
 }
