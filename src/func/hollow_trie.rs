@@ -349,20 +349,47 @@ fn encode_behaviour_key_into(
     debug_assert!(buf.len() >= total);
     buf[0..8].copy_from_slice(&(node_pos as u64).to_le_bytes());
     buf[8..16].copy_from_slice(&(path_len as u64).to_le_bytes());
-    // Pack path bits MSB-first into bytes
-    for b in 0..packed_bytes {
-        let mut byte_val = 0u8;
-        for bit in 0..8 {
-            let src_bit_idx = bit_start + b * 8 + bit;
-            if src_bit_idx >= bit_end {
-                break;
-            }
-            if get_key_bit(key_bytes, src_bit_idx) {
-                byte_val |= 1 << (7 - bit);
-            }
+
+    // Pack path bits MSB-first into bytes. Since key_bytes is MSB-first,
+    // we can use byte-level operations when bit_start is byte-aligned,
+    // and shift operations otherwise.
+    let start_byte = bit_start / 8;
+    let start_bit_offset = bit_start % 8;
+
+    if start_bit_offset == 0 {
+        // Byte-aligned: copy whole bytes, mask the last one.
+        let copy_bytes = packed_bytes.min(key_bytes.len().saturating_sub(start_byte));
+        buf[16..16 + copy_bytes]
+            .copy_from_slice(&key_bytes[start_byte..start_byte + copy_bytes]);
+        // Zero any bytes beyond the key (virtual NUL).
+        for i in copy_bytes..packed_bytes {
+            buf[16 + i] = 0;
         }
-        buf[16 + b] = byte_val;
+    } else {
+        // Unaligned: shift pairs of source bytes.
+        let shift = start_bit_offset;
+        for b in 0..packed_bytes {
+            let src_idx = start_byte + b;
+            let hi = if src_idx < key_bytes.len() {
+                key_bytes[src_idx]
+            } else {
+                0
+            };
+            let lo = if src_idx + 1 < key_bytes.len() {
+                key_bytes[src_idx + 1]
+            } else {
+                0
+            };
+            buf[16 + b] = (hi << shift) | (lo >> (8 - shift));
+        }
     }
+
+    // Mask off trailing bits in the last byte.
+    let trail = path_len % 8;
+    if trail != 0 && packed_bytes > 0 {
+        buf[16 + packed_bytes - 1] &= !((1u8 << (8 - trail)) - 1);
+    }
+
     total
 }
 
@@ -397,9 +424,8 @@ fn encode_behaviour_key(
 pub struct HollowTrieDistributor {
     /// Balanced-parentheses support structure for the trie.
     bal_paren: BalancedParens,
-    /// Cumulative skip sums stored in Elias-Fano with indexed access.
-    /// Individual skip `r` is recovered as `cum_skips.get(r+1) - cum_skips.get(r)`.
-    cum_skips: crate::dict::EfSeq,
+    /// Skip values stored as a prefix-sum list over Elias-Fano.
+    skips: crate::list::PrefixSumIntList,
     /// Number of internal nodes (= number of delimiters - 1).
     #[allow(dead_code)]
     num_nodes: usize,
@@ -424,7 +450,7 @@ impl MemSize for HollowTrieDistributor {
         let mut size = core::mem::size_of::<Self>();
         // BalancedParens internal memory is opaque; estimate from words
         size += self.bal_paren.words().len() * 8;
-        size += self.cum_skips.mem_size_rec(flags, refs);
+        size += self.skips.mem_size_rec(flags, refs);
         #[cfg(feature = "rayon")]
         {
             size += self.false_follows_detector.mem_size_rec(flags, refs);
@@ -477,25 +503,13 @@ impl HollowTrieDistributor {
         let (trie_words, trie_len, raw_skips, num_nodes) = builder.finish();
         let bal_paren = BalancedParens::new(trie_words.clone(), trie_len);
 
-        // Store skips as prefix sums in Elias-Fano for compression.
-        // cum_skips[0] = 0, cum_skips[i+1] = cum_skips[i] + raw_skips[i].
-        let cum_sum: usize = raw_skips.iter().sum();
-        let mut ef_builder = crate::dict::EliasFanoBuilder::new(
-            raw_skips.len() + 1,
-            cum_sum,
-        );
-        let mut acc = 0usize;
-        ef_builder.push(acc);
-        for &s in &raw_skips {
-            acc += s;
-            ef_builder.push(acc);
-        }
-        let cum_skips = ef_builder.build_with_seq();
+        // Store skips as a prefix-sum list over Elias-Fano.
+        let skips = crate::list::PrefixSumIntList::new(&raw_skips);
 
         if num_delimiters == 0 {
             return Ok(Self {
                 bal_paren,
-                cum_skips,
+                skips,
                 num_nodes,
                 num_delimiters,
                 false_follows_detector: VFunc::empty(),
@@ -609,7 +623,10 @@ impl HollowTrieDistributor {
                     is_internal = get_bit(&trie_words, p);
                     if is_internal {
                         use value_traits::slices::SliceByValue;
-                        skip = { use crate::traits::IndexedSeq; cum_skips.get(r + 1) - cum_skips.get(r) };
+                        {
+                            use value_traits::slices::SliceByValue;
+                            skip = skips.index_value(r);
+                        }
                     }
 
                     // If this is an internal node, first-time visit, and
@@ -738,7 +755,7 @@ impl HollowTrieDistributor {
 
         Ok(Self {
             bal_paren,
-            cum_skips,
+            skips,
             num_nodes,
             num_delimiters,
             false_follows_detector,
@@ -781,8 +798,8 @@ impl HollowTrieDistributor {
         loop {
             let is_internal = get_bit(trie_words, p);
             let skip: usize = if is_internal {
-                use crate::traits::IndexedSeq;
-                self.cum_skips.get(r + 1) - self.cum_skips.get(r)
+                use value_traits::slices::SliceByValue;
+                self.skips.index_value(r)
             } else {
                 0
             };
@@ -929,11 +946,7 @@ impl HtDistMmphf {
             return Ok(Self {
                 distributor: HollowTrieDistributor {
                     bal_paren: BalancedParens::new(vec![0b10], 2),
-                    cum_skips: {
-                        let mut b = crate::dict::EliasFanoBuilder::new(1, 0);
-                        b.push(0);
-                        b.build_with_seq()
-                    },
+                    skips: crate::list::PrefixSumIntList::new(&Vec::<usize>::new()),
                     num_nodes: 0,
                     num_delimiters: 0,
                     false_follows_detector: VFunc::empty(),
@@ -998,7 +1011,7 @@ impl HtDistMmphf {
         let flags = SizeFlags::default();
         let total_bits = result.mem_size(flags) * 8;
         let dist_bp = result.distributor.bal_paren.words().len() * 8 * 8;
-        let dist_skips = result.distributor.cum_skips.mem_size(flags) * 8;
+        let dist_skips = result.distributor.skips.mem_size(flags) * 8;
         let dist_ff = result.distributor.false_follows_detector.mem_size(flags) * 8;
         let dist_ext = result.distributor.external_behaviour.mem_size(flags) * 8;
         let offset_bits = result.offset.mem_size(flags) * 8;
