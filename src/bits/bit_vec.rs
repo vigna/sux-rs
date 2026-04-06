@@ -355,6 +355,73 @@ impl<W: Word> BitVec<Vec<W>> {
         Some(result)
     }
 
+    /// Reserves capacity for at least `additional` more bits to be appended.
+    ///
+    /// After calling `reserve`, capacity will be greater than or equal to
+    /// `self.len() + additional`. The allocator may reserve more space to
+    /// speculatively avoid frequent reallocations. Does nothing if the
+    /// capacity is already sufficient.
+    pub fn reserve(&mut self, additional: usize) {
+        let needed_words = (self.len + additional).div_ceil(W::BITS as usize);
+        self.bits
+            .reserve(needed_words.saturating_sub(self.bits.len()));
+    }
+
+    /// Reserves the minimum capacity for at least `additional` more bits to
+    /// be appended.
+    ///
+    /// After calling `reserve_exact`, capacity will be greater than or equal
+    /// to `self.len() + additional`. Does nothing if the capacity is already
+    /// sufficient.
+    ///
+    /// Note that the allocator may give the collection more space than it
+    /// requests. Therefore, capacity cannot be relied upon to be precisely
+    /// minimal.
+    pub fn reserve_exact(&mut self, additional: usize) {
+        let needed_words = (self.len + additional).div_ceil(W::BITS as usize);
+        self.bits
+            .reserve_exact(needed_words.saturating_sub(self.bits.len()));
+    }
+
+    /// Appends the bits of `other` to the end of this bit vector.
+    ///
+    /// Unlike [`Vec::append`], `other` is not drained: its contents are
+    /// copied into `self`.
+    pub fn append<B2: AsRef<[W]>>(&mut self, other: &BitVec<B2>) {
+        let other_len = other.len;
+        if other_len == 0 {
+            return;
+        }
+
+        let bpw = W::BITS as usize;
+        let offset = self.len % bpw;
+        let src: &[W] = other.bits.as_ref();
+        let src_words = other_len.div_ceil(bpw);
+        let new_total = self.len + other_len;
+        let new_word_count = new_total.div_ceil(bpw);
+
+        if offset == 0 {
+            self.bits.extend_from_slice(&src[..src_words]);
+        } else {
+            self.bits.reserve(new_word_count - self.bits.len());
+
+            let last_idx = self.bits.len() - 1;
+            self.bits[last_idx] |= src[0] << offset;
+
+            let shift_right = bpw - offset;
+            for i in 1..src_words {
+                self.bits
+                    .push((src[i - 1] >> shift_right) | (src[i] << offset));
+            }
+
+            if new_word_count > self.bits.len() {
+                self.bits.push(src[src_words - 1] >> shift_right);
+            }
+        }
+
+        self.len = new_total;
+    }
+
     /// Resizes the bit vector in place, extending it with `value` if it is
     /// necessary.
     pub fn resize(&mut self, new_len: usize, value: bool) {
