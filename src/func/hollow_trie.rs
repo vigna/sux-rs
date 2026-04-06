@@ -24,6 +24,8 @@
 #[cfg(feature = "rayon")]
 use {
     crate::bits::BitFieldVec,
+    crate::bits::BitVec,
+    crate::func::lcp_mmphf::lcp_bits_nul,
     crate::func::VFunc,
     crate::utils::*,
     anyhow::Result,
@@ -66,59 +68,9 @@ fn get_bit(words: &[u64], i: usize) -> bool {
     (words[i / 64] >> (i % 64)) & 1 != 0
 }
 
-/// Append a single bit to a word-packed bit vector.
-#[cfg(feature = "rayon")]
-#[inline]
-fn push_bit(words: &mut Vec<u64>, len: &mut usize, bit: bool) {
-    if *len % 64 == 0 {
-        words.push(0);
-    }
-    if bit {
-        let last = words.len() - 1;
-        words[last] |= 1u64 << (*len % 64);
-    }
-    *len += 1;
-}
-
-/// Append `src_len` bits from `src` (word-packed, LSB-first) to `dst`.
-#[cfg(feature = "rayon")]
-fn push_bits(dst: &mut Vec<u64>, dst_len: &mut usize, src: &[u64], src_len: usize) {
-    // TODO: optimize with word-level copy + shift
-    for i in 0..src_len {
-        push_bit(dst, dst_len, get_bit(src, i));
-    }
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // Trie construction (online, stack-based)
 // ═══════════════════════════════════════════════════════════════════
-
-/// LCP in bits between two byte slices (MSB-first) with virtual NUL
-/// terminator (all-zero byte after the last real byte). Since actual
-/// bytes are assumed nonzero, the NUL is always distinct from any
-/// continuation byte, ensuring prefix-freeness while preserving
-/// lexicographic order.
-#[cfg(feature = "rayon")]
-fn lcp_bits_nul(a: &[u8], b: &[u8]) -> usize {
-    let min_len = a.len().min(b.len());
-    for i in 0..min_len {
-        if a[i] != b[i] {
-            return i * 8 + (a[i] ^ b[i]).leading_zeros() as usize;
-        }
-    }
-    if a.len() == b.len() {
-        // Identical keys (including virtual NUL). The virtual NUL is
-        // 0x00 for both, so all bits match. Return len*8 + 8 as the
-        // full extent (the NUL byte is fully shared).
-        min_len * 8 + 8
-    } else {
-        // The shorter key has virtual NUL 0x00 at position min_len.
-        // The longer key has byte b[min_len] (nonzero by assumption).
-        // NUL XOR nonzero byte = the byte itself.
-        let next_byte = if a.len() > b.len() { a[min_len] } else { b[min_len] };
-        min_len * 8 + next_byte.leading_zeros() as usize
-    }
-}
 
 #[cfg(feature = "rayon")]
 /// A node on the right spine during incremental trie construction.
@@ -131,9 +83,7 @@ struct SpineNode {
     /// Skip value (compacted path length in bits).
     skip: usize,
     /// Balanced-parentheses representation of the left subtree.
-    repr: Vec<u64>,
-    /// Number of bits used in `repr`.
-    repr_len: usize,
+    repr: BitVec<Vec<u64>>,
     /// Skip values for internal nodes in the left subtree (DFS order).
     repr_skips: Vec<usize>,
 }
@@ -143,8 +93,7 @@ impl SpineNode {
     fn new(skip: usize) -> Self {
         Self {
             skip,
-            repr: Vec::new(),
-            repr_len: 0,
+            repr: BitVec::new(0),
             repr_skips: Vec::new(),
         }
     }
@@ -189,20 +138,19 @@ impl HollowTrieBuilder {
     /// prepended to the skip list.
     fn serialize_chain(
         nodes: &[SpineNode],
-    ) -> (Vec<u64>, usize, Vec<usize>) {
-        let mut repr = Vec::new();
-        let mut repr_len = 0usize;
+    ) -> (BitVec<Vec<u64>>, Vec<usize>) {
+        let mut repr: BitVec<Vec<u64>> = BitVec::new(0);
         let mut skips = Vec::new();
 
         for node in nodes {
-            push_bit(&mut repr, &mut repr_len, true);  // (
-            push_bits(&mut repr, &mut repr_len, &node.repr, node.repr_len);
-            push_bit(&mut repr, &mut repr_len, false); // )
+            repr.push(true);  // (
+            repr.append(&node.repr);
+            repr.push(false); // )
             skips.push(node.skip);
             skips.extend_from_slice(&node.repr_skips);
         }
 
-        (repr, repr_len, skips)
+        (repr, skips)
     }
 
     /// Push a new key (delimiter). Keys must be in strictly increasing
@@ -215,7 +163,7 @@ impl HollowTrieBuilder {
             return;
         }
 
-        let lcp = lcp_bits_nul(&self.prev, key);
+        let lcp = lcp_bits_nul::<true>(&self.prev, key);
 
         // Pop nodes whose cumulative path length exceeds the LCP.
         let mut last = self.stack.len() as isize - 1;
@@ -246,11 +194,10 @@ impl HollowTrieBuilder {
             );
 
             // Serialize the adjusted chain into a new node's left subtree.
-            let (repr, repr_len, repr_skips) = Self::serialize_chain(&adjusted);
+            let (repr, repr_skips) = Self::serialize_chain(&adjusted);
 
             let mut new_node = SpineNode::new(prefix);
             new_node.repr = repr;
-            new_node.repr_len = repr_len;
             new_node.repr_skips = repr_skips;
 
             // Push the new internal node.
@@ -290,33 +237,33 @@ impl HollowTrieBuilder {
     pub fn finish(self) -> (Vec<u64>, usize, Vec<usize>, usize) {
         if self.count <= 1 {
             // Empty or single-element trie.
-            let mut words = Vec::new();
-            let mut len = 0;
-            push_bit(&mut words, &mut len, true);
-            push_bit(&mut words, &mut len, false);
+            let mut trie: BitVec<Vec<u64>> = BitVec::new(0);
+            trie.push(true);
+            trie.push(false);
+            let (words, len) = trie.into_raw_parts();
             return (words, len, Vec::new(), 0);
         }
 
         // Serialize the remaining right spine.
-        let (chain_repr, chain_repr_len, chain_skips) =
+        let (chain_repr, chain_skips) =
             Self::serialize_chain(&self.stack);
 
         // Wrap in fake root brackets: 1 [chain] 0
-        let mut trie = Vec::new();
-        let mut trie_len = 0;
-        push_bit(&mut trie, &mut trie_len, true);
-        push_bits(&mut trie, &mut trie_len, &chain_repr, chain_repr_len);
-        push_bit(&mut trie, &mut trie_len, false);
+        let mut trie: BitVec<Vec<u64>> = BitVec::new(0);
+        trie.push(true);
+        trie.append(&chain_repr);
+        trie.push(false);
 
         debug_assert_eq!(
-            trie_len,
+            trie.len(),
             2 * self.num_nodes + 2,
             "trie length mismatch: expected {}, got {}",
             2 * self.num_nodes + 2,
-            trie_len
+            trie.len()
         );
 
-        (trie, trie_len, chain_skips, self.num_nodes)
+        let (words, len) = trie.into_raw_parts();
+        (words, len, chain_skips, self.num_nodes)
     }
 }
 
@@ -554,7 +501,7 @@ impl HollowTrieDistributor {
                 None
             };
             delimiter_lcp = match (left_delimiter, right_delimiter) {
-                (Some(l), Some(r)) => Some(lcp_bits_nul(l, r)),
+                (Some(l), Some(r)) => Some(lcp_bits_nul::<true>(l, r)),
                 _ => None,
             };
 
@@ -576,7 +523,7 @@ impl HollowTrieDistributor {
 
                 // Adjust stack using LCP with previous key in bucket
                 if let Some(prev) = prev_key {
-                    let prefix = lcp_bits_nul(prev, curr);
+                    let prefix = lcp_bits_nul::<true>(prev, curr);
                     while depth > 0 && stack_s[depth] > prefix {
                         depth -= 1;
                     }
@@ -605,12 +552,12 @@ impl HollowTrieDistributor {
                     (None, Some(rd)) => {
                         // First bucket: no left delimiter; key exits left
                         // of the right delimiter.
-                        (true, lcp_bits_nul(curr, rd) + 1)
+                        (true, lcp_bits_nul::<false>(curr, rd) + 1)
                     }
                     (Some(ld), None) => {
                         // Last (partial) bucket: no right delimiter; key
                         // exits right of the left delimiter.
-                        (false, lcp_bits_nul(curr, ld) + 1)
+                        (false, lcp_bits_nul::<false>(curr, ld) + 1)
                     }
                     (Some(ld), Some(rd)) => {
                         // Key falls between two delimiters. Check the bit
@@ -620,11 +567,11 @@ impl HollowTrieDistributor {
                         if get_key_bit(curr, dlcp) {
                             // Key bit = 1 (matches right delimiter) → exit
                             // left of right delimiter.
-                            (true, lcp_bits_nul(curr, rd) + 1)
+                            (true, lcp_bits_nul::<false>(curr, rd) + 1)
                         } else {
                             // Key bit = 0 (matches left delimiter) → exit
                             // right of left delimiter.
-                            (false, lcp_bits_nul(curr, ld) + 1)
+                            (false, lcp_bits_nul::<false>(curr, ld) + 1)
                         }
                     }
                     (None, None) => {

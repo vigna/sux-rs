@@ -987,9 +987,14 @@ pub(crate) fn mismatch(xs: &[u8], ys: &[u8]) -> usize {
 /// NUL (0x00) XOR the next byte of the longer string yields that byte
 /// itself, and `leading_zeros` gives the additional shared bits.
 ///
-/// The two strings must be distinct (the constructor enforces this).
+/// If `DISTINCT` is `true`, the two strings are assumed to be distinct
+/// and the identical-string case is skipped (calling with identical
+/// strings is undefined behavior in debug builds and an out-of-bounds
+/// access in release builds). If `DISTINCT` is `false`, identical
+/// strings return `len * 8 + 8` (all bits match, including the
+/// virtual NUL).
 #[cfg(feature = "rayon")]
-pub(crate) fn lcp_bits_nul(a: &[u8], b: &[u8]) -> usize {
+pub(crate) fn lcp_bits_nul<const DISTINCT: bool>(a: &[u8], b: &[u8]) -> usize {
     let min_len = a.len().min(b.len());
     let pos = mismatch(&a[..min_len], &b[..min_len]);
 
@@ -998,13 +1003,17 @@ pub(crate) fn lcp_bits_nul(a: &[u8], b: &[u8]) -> usize {
         return pos * 8 + (a[pos] ^ b[pos]).leading_zeros() as usize;
     }
 
-    // One string is a proper prefix of the other (they cannot be
-    // identical because the constructor enforces strict ordering).
-    let longer = if a.len() >= b.len() { a } else { b };
-    debug_assert!(longer.len() > min_len);
+    if !DISTINCT && a.len() == b.len() {
+        // Identical keys (including virtual NUL). The virtual NUL is
+        // 0x00 for both, so all bits match.
+        return min_len * 8 + 8;
+    }
 
-    // The virtual NUL after the shorter string diverges from the next
-    // byte of the longer string (which is guaranteed non-NUL).
+    // One string is a proper prefix of the other. The virtual NUL
+    // after the shorter string diverges from the next byte of the
+    // longer string (which is guaranteed non-NUL).
+    let longer = if a.len() > b.len() { a } else { b };
+    debug_assert!(longer.len() > min_len);
     min_len * 8 + longer[min_len].leading_zeros() as usize
 }
 
@@ -1189,7 +1198,7 @@ where
                 curr_lcp_bits = (key_bytes.len() + 1) * 8;
             } else {
                 // Subsequent key: minimize LCP.
-                curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul(key_bytes, &prev_key));
+                curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul::<true>(key_bytes, &prev_key));
             }
 
             prev_key.clear();
@@ -1410,7 +1419,7 @@ where
                 bucket_first_keys.push(key_bytes.to_vec());
                 curr_lcp_bits = (key_bytes.len() + 1) * 8;
             } else {
-                curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul(key_bytes, &prev_key));
+                curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul::<true>(key_bytes, &prev_key));
             }
 
             prev_key.clear();

@@ -1288,7 +1288,7 @@ where
                         } else if offset == 0 {
                             curr_lcp_bits = (key_bytes.len() + 1) * 8;
                         } else {
-                            curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul(key_bytes, &prev_key));
+                            curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul::<true>(key_bytes, &prev_key));
                         }
 
                         if offset == 0 {
@@ -1676,7 +1676,7 @@ where
                 bucket_first_keys.push(key_bytes.to_vec());
                 curr_lcp_bits = (key_bytes.len() + 1) * 8;
             } else {
-                curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul(key_bytes, &prev_key));
+                curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul::<true>(key_bytes, &prev_key));
             }
 
             prev_key.clear();
