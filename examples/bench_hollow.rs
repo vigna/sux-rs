@@ -56,9 +56,6 @@ struct Args {
     /// Number of query repetitions.
     #[arg(short, long, default_value = "5")]
     repeats: usize,
-    /// Log2 of bucket size (auto if omitted).
-    #[arg(short = 'b', long)]
-    log2_bucket_size: Option<usize>,
 }
 
 fn main() -> Result<()> {
@@ -86,9 +83,9 @@ fn main() -> Result<()> {
     // Build
     eprintln!("Building HtDistMmphf...");
     let start = std::time::Instant::now();
-    let func = HtDistMmphf::try_new_with_log2_bucket_size(
-        &keys,
-        args.log2_bucket_size,
+    let func = HtDistMmphf::try_new(
+        FromSlice::new(&keys),
+        n,
         no_logging![],
     )?;
     let build_time = start.elapsed();
