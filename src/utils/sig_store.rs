@@ -666,10 +666,13 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
             .map(|i| AtomicUsize::new(self.shard_sizes[i]))
             .collect();
 
-        // Each rayon fold task gets a range of indices and uses thread-local
-        // per-bucket mini-buffers to batch mutex acquisitions.
+        // Each rayon task uses thread-local per-bucket mini-buffers to
+        // batch mutex acquisitions (32 SigVals per lock). We limit to
+        // at most 16 tasks via with_min_len to keep buffer allocation
+        // overhead low (16 tasks × 256 buffers = 4096 Vecs).
         let max_val = (0..n)
             .into_par_iter()
+            .with_min_len((n / 16).max(1_000_000))
             .fold(
                 || {
                     (
