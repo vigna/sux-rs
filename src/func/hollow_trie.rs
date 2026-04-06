@@ -870,12 +870,13 @@ impl<D: SliceByValue<Value = usize> + MemSize> HollowTrieDistributor<D> {
 /// # #[cfg(feature = "rayon")]
 /// # fn main() -> anyhow::Result<()> {
 /// # use dsi_progress_logger::no_logging;
-/// # use sux::func::hollow_trie::HtDistMmphf;
+/// # use sux::func::hollow_trie::HtDistMmphfStr;
 /// # use sux::utils::FromSlice;
 /// let keys: Vec<&str> = vec!["alpha", "beta", "delta", "gamma"];
-/// let func = HtDistMmphf::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+/// let func: HtDistMmphfStr =
+///     HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
 /// for (i, key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key.as_bytes()), i);
+///     assert_eq!(func.get(key), i);
 /// }
 /// # Ok(())
 /// # }
@@ -884,19 +885,27 @@ impl<D: SliceByValue<Value = usize> + MemSize> HollowTrieDistributor<D> {
 /// ```
 #[derive(Debug)]
 #[cfg(feature = "rayon")]
-pub struct HtDistMmphf<D: SliceByValue = BitFieldVec<Box<[usize]>>> {
+pub struct HtDistMmphf<K: ?Sized, D: SliceByValue = BitFieldVec<Box<[usize]>>> {
     /// The hollow trie distributor.
     distributor: HollowTrieDistributor<D>,
     /// Per-key offset within the bucket.
-    offset: VFunc<[u8], D>,
+    offset: VFunc<K, D>,
     /// Log2 of bucket size.
     log2_bucket_size: usize,
     /// Number of keys.
     n: usize,
 }
 
+/// An [`HtDistMmphf`] for `str` keys.
 #[cfg(feature = "rayon")]
-impl<D: SliceByValue + MemSize + mem_dbg::FlatType> MemSize for HtDistMmphf<D> {
+pub type HtDistMmphfStr<D = BitFieldVec<Box<[usize]>>> = HtDistMmphf<str, D>;
+
+/// An [`HtDistMmphf`] for `[u8]` keys.
+#[cfg(feature = "rayon")]
+pub type HtDistMmphfSliceU8<D = BitFieldVec<Box<[usize]>>> = HtDistMmphf<[u8], D>;
+
+#[cfg(feature = "rayon")]
+impl<K: ?Sized, D: SliceByValue + MemSize + mem_dbg::FlatType> MemSize for HtDistMmphf<K, D> {
     fn mem_size_rec(
         &self,
         flags: SizeFlags,
@@ -910,15 +919,18 @@ impl<D: SliceByValue + MemSize + mem_dbg::FlatType> MemSize for HtDistMmphf<D> {
 }
 
 #[cfg(feature = "rayon")]
-impl<D: SliceByValue + MemSize + mem_dbg::FlatType> MemDbgImpl for HtDistMmphf<D> {}
+impl<K: ?Sized, D: SliceByValue + MemSize + mem_dbg::FlatType> MemDbgImpl
+    for HtDistMmphf<K, D>
+{
+}
 
 #[cfg(feature = "rayon")]
-impl HtDistMmphf {
+impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K> {
     /// Builds a new hollow-trie-distributor-based monotone minimal
     /// perfect hash function from sorted byte-sequence keys.
     ///
     /// The keys must be in strictly increasing lexicographic order.
-    pub fn try_new<B: ?Sized + AsRef<[u8]>>(
+    pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
         mut keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
@@ -1227,16 +1239,12 @@ impl HtDistMmphf {
         };
 
         // ── Pass 4: build offset VFunc ────────────────────────────
-        let mut keys = keys.rewind()?;
-        let mut byte_keys: Vec<Vec<u8>> = Vec::with_capacity(n);
-        while let Some(key) = keys.next()? {
-            byte_keys.push(key.as_ref().to_vec());
-        }
+        let keys = keys.rewind()?;
 
         pl.info(format_args!("Building offset VFunc..."));
 
-        let offset = <VFunc<[u8], BitFieldVec<Box<[usize]>>>>::try_new(
-            FromSlice::new(&byte_keys),
+        let offset = <VFunc<K, BitFieldVec<Box<[usize]>>>>::try_new(
+            keys,
             FromCloneableIntoIterator::new((0..n).map(|i| i & bucket_mask)),
             n,
             pl,
@@ -1285,17 +1293,19 @@ impl HtDistMmphf {
 }
 
 #[cfg(feature = "rayon")]
-impl<D: SliceByValue<Value = usize> + MemSize> HtDistMmphf<D> {
+impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]>, D: SliceByValue<Value = usize> + MemSize>
+    HtDistMmphf<K, D>
+{
     /// Returns the rank (0-based position) of the given key in the
     /// original sorted sequence.
     ///
     /// If the key was not in the original set, the result is arbitrary.
     #[inline]
-    pub fn get(&self, key: &[u8]) -> usize {
+    pub fn get(&self, key: &K) -> usize {
         if self.n <= 1 {
             return 0;
         }
-        let bucket = self.distributor.get(key);
+        let bucket = self.distributor.get(key.as_ref());
         (bucket << self.log2_bucket_size) + self.offset.get(key)
     }
 
@@ -1346,8 +1356,8 @@ impl From<HollowTrieDistributor<BitFieldVecU<Box<[usize]>>>> for HollowTrieDistr
 }
 
 #[cfg(feature = "rayon")]
-impl TryIntoUnaligned for HtDistMmphf {
-    type Unaligned = HtDistMmphf<BitFieldVecU<Box<[usize]>>>;
+impl<K: ?Sized> TryIntoUnaligned for HtDistMmphf<K> {
+    type Unaligned = HtDistMmphf<K, BitFieldVecU<Box<[usize]>>>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -1361,8 +1371,8 @@ impl TryIntoUnaligned for HtDistMmphf {
 }
 
 #[cfg(feature = "rayon")]
-impl From<HtDistMmphf<BitFieldVecU<Box<[usize]>>>> for HtDistMmphf {
-    fn from(f: HtDistMmphf<BitFieldVecU<Box<[usize]>>>) -> Self {
+impl<K: ?Sized> From<HtDistMmphf<K, BitFieldVecU<Box<[usize]>>>> for HtDistMmphf<K> {
+    fn from(f: HtDistMmphf<K, BitFieldVecU<Box<[usize]>>>) -> Self {
         Self {
             distributor: f.distributor.into(),
             offset: f.offset.into(),
@@ -2184,10 +2194,10 @@ mod tests {
         #[test]
         fn test_ht_dist_mmphf_small() {
             let keys: Vec<&str> = vec!["alpha", "beta", "delta", "gamma", "omega"];
-            let func = HtDistMmphf::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+            let func = HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             for (i, key) in keys.iter().enumerate() {
                 assert_eq!(
-                    func.get(key.as_bytes()),
+                    func.get(key),
                     i,
                     "Mismatch for key {key:?} at position {i}"
                 );
@@ -2199,10 +2209,10 @@ mod tests {
             let keys: Vec<String> =
                 (0..500).map(|i| format!("key_{:06}", i)).collect();
             let func =
-                HtDistMmphf::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+                HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             for (i, key) in keys.iter().enumerate() {
                 assert_eq!(
-                    func.get(key.as_bytes()),
+                    func.get(key),
                     i,
                     "Mismatch for key {key:?} at position {i}"
                 );
@@ -2212,27 +2222,27 @@ mod tests {
         #[test]
         fn test_ht_dist_mmphf_two_keys() {
             let keys: Vec<&str> = vec!["aaa", "zzz"];
-            let func = HtDistMmphf::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+            let func = HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             for (i, key) in keys.iter().enumerate() {
-                assert_eq!(func.get(key.as_bytes()), i);
+                assert_eq!(func.get(key), i);
             }
         }
 
         #[test]
         fn test_ht_dist_mmphf_single_key() {
             let keys: Vec<&str> = vec!["only"];
-            let func = HtDistMmphf::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
-            assert_eq!(func.get(b"only"), 0);
+            let func = HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+            assert_eq!(func.get("only"), 0);
         }
 
         #[test]
         fn test_ht_dist_mmphf_large() {
             let keys: Vec<String> =
                 (0..5000).map(|i| format!("key_{:08}", i)).collect();
-            let func = HtDistMmphf::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+            let func = HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             for (i, key) in keys.iter().enumerate() {
                 assert_eq!(
-                    func.get(key.as_bytes()),
+                    func.get(key),
                     i,
                     "Mismatch for key {key:?} at position {i}"
                 );
@@ -2246,10 +2256,10 @@ mod tests {
                 "00000000", "000000000", "0000000000", "1", "10", "100",
                 "2", "20", "200",
             ];
-            let func = HtDistMmphf::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+            let func = HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             for (i, key) in keys.iter().enumerate() {
                 assert_eq!(
-                    func.get(key.as_bytes()),
+                    func.get(key),
                     i,
                     "Mismatch for key {key:?} at position {i}"
                 );

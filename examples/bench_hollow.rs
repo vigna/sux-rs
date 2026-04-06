@@ -19,7 +19,7 @@ use clap::Parser;
 use dsi_progress_logger::no_logging;
 use mem_dbg::MemSize;
 use sux::bits::BitFieldVec;
-use sux::func::hollow_trie::HtDistMmphf;
+use sux::func::hollow_trie::HtDistMmphfStr;
 use sux::func::lcp_mmphf::LcpMmphf;
 use sux::func::shard_edge::FuseLge3Shards;
 use sux::utils::FromSlice;
@@ -83,7 +83,7 @@ fn main() -> Result<()> {
     // Build
     eprintln!("Building HtDistMmphf...");
     let start = std::time::Instant::now();
-    let func = HtDistMmphf::try_new(
+    let func = HtDistMmphfStr::try_new(
         FromSlice::new(&keys),
         n,
         no_logging![],
@@ -97,7 +97,7 @@ fn main() -> Result<()> {
 
     // Full verification
     for i in 0..n {
-        let result = func.get(keys[i].as_bytes());
+        let result = func.get(keys[i].as_str());
         assert_eq!(result, i, "HtDistMmphf verification failed at key {i}");
     }
     eprintln!("Verified all {n} keys");
@@ -106,7 +106,7 @@ fn main() -> Result<()> {
     bench("HtDist query", n, args.repeats, || {
         let mut sum = 0usize;
         for key in &keys {
-            sum = sum.wrapping_add(func.get(key.as_bytes()));
+            sum = sum.wrapping_add(func.get(key.as_str()));
         }
         std::hint::black_box(sum);
     });
