@@ -26,7 +26,7 @@ use {
     crate::bits::BitFieldVec,
     crate::bits::BitFieldVecU,
     crate::bits::BitVec,
-    crate::func::lcp_mmphf::lcp_bits_nul,
+    crate::func::lcp_mmphf::{lcp_bits, lcp_bits_nul},
     crate::func::VFunc,
     crate::traits::TryIntoUnaligned,
     crate::utils::*,
@@ -35,6 +35,8 @@ use {
     lender::FallibleLending,
     log::info,
     mem_dbg::*,
+    num_primitive::PrimitiveInteger,
+    std::borrow::Borrow,
     succinctly::trees::BalancedParens,
     value_traits::slices::SliceByValue,
 };
@@ -1365,6 +1367,708 @@ impl From<HtDistMmphf<BitFieldVecU<Box<[usize]>>>> for HtDistMmphf {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// HtDistMmphfInt — Integer variant
+// ═══════════════════════════════════════════════════════════════════
+
+/// Read bit `i` (MSB-first) from an integer.
+#[cfg(feature = "rayon")]
+#[inline]
+fn get_int_bit<T: PrimitiveInteger>(key: T, i: usize) -> bool {
+    (key >> (T::BITS as usize - 1 - i)) & T::from(true) != T::default()
+}
+
+/// Builds the hollow trie from sorted integers (XOR-mapped with
+/// `T::MIN` so that numeric order matches bit-lexicographic order).
+#[cfg(feature = "rayon")]
+struct HollowTrieBuilderInt<T: PrimitiveInteger> {
+    stack: Vec<SpineNode>,
+    lens: Vec<usize>,
+    prev: T,
+    count: usize,
+    num_nodes: usize,
+}
+
+#[cfg(feature = "rayon")]
+impl<T: PrimitiveInteger> HollowTrieBuilderInt<T> {
+    fn new() -> Self {
+        Self {
+            stack: Vec::new(),
+            lens: Vec::new(),
+            prev: T::default(),
+            count: 0,
+            num_nodes: 0,
+        }
+    }
+
+    fn serialize_chain(nodes: &[SpineNode]) -> (BitVec<Vec<u64>>, Vec<usize>) {
+        let mut repr: BitVec<Vec<u64>> = BitVec::new(0);
+        let mut skips = Vec::new();
+        for node in nodes {
+            repr.push(true);
+            repr.append(&node.repr);
+            repr.push(false);
+            skips.push(node.skip);
+            skips.extend_from_slice(&node.repr_skips);
+        }
+        (repr, skips)
+    }
+
+    /// Push a key (already XOR-mapped). Keys must be in strictly
+    /// increasing order.
+    fn push(&mut self, key: T) {
+        if self.count == 0 {
+            self.prev = key;
+            self.count = 1;
+            return;
+        }
+
+        let lcp = lcp_bits(self.prev, key);
+
+        let mut last = self.stack.len() as isize - 1;
+        while last >= 0 && self.lens[last as usize] > lcp {
+            last -= 1;
+        }
+
+        let pop_start = (last + 1) as usize;
+        let popped: Vec<SpineNode> = self.stack.drain(pop_start..).collect();
+        self.lens.truncate(pop_start);
+
+        let prefix = if last >= 0 {
+            lcp - self.lens[last as usize]
+        } else {
+            lcp
+        };
+
+        if !popped.is_empty() {
+            let mut adjusted = popped;
+            adjusted[0].skip -= prefix + 1;
+            debug_assert!(
+                adjusted[0].skip < usize::MAX / 2,
+                "skip underflow: prefix={prefix}, original skip would give negative"
+            );
+
+            let (repr, repr_skips) = Self::serialize_chain(&adjusted);
+            let mut new_node = SpineNode::new(prefix);
+            new_node.repr = repr;
+            new_node.repr_skips = repr_skips;
+
+            let new_len = if last >= 0 {
+                self.lens[last as usize] + prefix + 1
+            } else {
+                prefix + 1
+            };
+            self.stack.push(new_node);
+            self.lens.push(new_len);
+            self.num_nodes += 1;
+        } else {
+            let new_node = SpineNode::new(prefix);
+            let new_len = if last >= 0 {
+                self.lens[last as usize] + prefix + 1
+            } else {
+                prefix + 1
+            };
+            self.stack.push(new_node);
+            self.lens.push(new_len);
+            self.num_nodes += 1;
+        }
+
+        self.prev = key;
+        self.count += 1;
+    }
+
+    fn finish(self) -> (Vec<u64>, usize, Vec<usize>, usize) {
+        if self.count <= 1 {
+            let mut trie: BitVec<Vec<u64>> = BitVec::new(0);
+            trie.push(true);
+            trie.push(false);
+            let (words, len) = trie.into_raw_parts();
+            return (words, len, Vec::new(), 0);
+        }
+
+        let (chain_repr, chain_skips) = Self::serialize_chain(&self.stack);
+        let mut trie: BitVec<Vec<u64>> = BitVec::new(0);
+        trie.push(true);
+        trie.append(&chain_repr);
+        trie.push(false);
+
+        debug_assert_eq!(
+            trie.len(),
+            2 * self.num_nodes + 2,
+            "trie length mismatch: expected {}, got {}",
+            2 * self.num_nodes + 2,
+            trie.len()
+        );
+
+        let (words, len) = trie.into_raw_parts();
+        (words, len, chain_skips, self.num_nodes)
+    }
+}
+
+/// Encode a behaviour key for an integer key. Packs `(node_pos,
+/// path_bits)` into a byte buffer for VFunc hashing, where path bits
+/// are extracted from the big-endian byte representation of the
+/// XOR-mapped integer.
+#[cfg(feature = "rayon")]
+fn encode_int_behaviour_key<T: PrimitiveInteger>(
+    node_pos: usize,
+    key: T,
+    bit_start: usize,
+    bit_end: usize,
+) -> Vec<u8> {
+    let key_bytes: T::Bytes = key.to_be_bytes();
+    let key_bytes: &[u8] = key_bytes.borrow();
+    encode_behaviour_key(node_pos, key_bytes, bit_start, bit_end)
+}
+
+/// Encode a behaviour key for an integer key into a pre-allocated
+/// buffer. Returns the number of bytes written.
+#[cfg(feature = "rayon")]
+#[inline]
+fn encode_int_behaviour_key_into<T: PrimitiveInteger>(
+    buf: &mut [u8],
+    node_pos: usize,
+    key: T,
+    bit_start: usize,
+    bit_end: usize,
+) -> usize {
+    let key_bytes: T::Bytes = key.to_be_bytes();
+    let key_bytes: &[u8] = key_bytes.borrow();
+    encode_behaviour_key_into(buf, node_pos, key_bytes, bit_start, bit_end)
+}
+
+/// A monotone minimal perfect hash function for sorted integers,
+/// based on a hollow trie distributor.
+///
+/// Given *n* integers of type `T` in ascending order, the structure
+/// maps each integer to its rank (0 to *n* − 1). Querying an integer
+/// not in the original set returns an arbitrary value.
+///
+/// Internally, keys are XOR-mapped with `T::MIN` so that numeric
+/// order matches bit-lexicographic order (for unsigned types this is
+/// a no-op).
+#[derive(Debug)]
+#[cfg(feature = "rayon")]
+pub struct HtDistMmphfInt<T: PrimitiveInteger, D: SliceByValue = BitFieldVec<Box<[usize]>>> {
+    bal_paren: BalancedParens,
+    skips: crate::list::PrefixSumIntList,
+    #[allow(dead_code)]
+    num_nodes: usize,
+    num_delimiters: usize,
+    false_follows_detector: VFunc<[u8], D>,
+    external_behaviour: VFunc<[u8], D>,
+    offset: VFunc<T, D>,
+    log2_bucket_size: usize,
+    n: usize,
+}
+
+#[cfg(feature = "rayon")]
+impl<T: PrimitiveInteger, D: SliceByValue + MemSize + mem_dbg::FlatType> MemSize
+    for HtDistMmphfInt<T, D>
+{
+    fn mem_size_rec(
+        &self,
+        flags: SizeFlags,
+        refs: &mut mem_dbg::HashMap<usize, usize>,
+    ) -> usize {
+        let mut size = core::mem::size_of::<Self>();
+        size += self.bal_paren.words().len() * 8;
+        size += self.skips.mem_size_rec(flags, refs);
+        size += self.false_follows_detector.mem_size_rec(flags, refs);
+        size += self.external_behaviour.mem_size_rec(flags, refs);
+        size += self.offset.mem_size_rec(flags, refs);
+        size
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<T: PrimitiveInteger, D: SliceByValue + MemSize + mem_dbg::FlatType> MemDbgImpl
+    for HtDistMmphfInt<T, D>
+{
+}
+
+#[cfg(feature = "rayon")]
+impl<T> HtDistMmphfInt<T>
+where
+    T: PrimitiveInteger + ToSig<[u64; 2]> + Copy + Ord + Send + Sync + std::fmt::Debug,
+{
+    /// Builds a new hollow-trie-distributor-based monotone minimal
+    /// perfect hash function from sorted integer keys.
+    ///
+    /// The keys must be in strictly increasing order.
+    pub fn try_new(
+        mut keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        n: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        let bit_length = T::BITS as usize;
+
+        if n == 0 {
+            return Ok(Self {
+                bal_paren: BalancedParens::new(vec![0b10], 2),
+                skips: crate::list::PrefixSumIntList::new(&Vec::<usize>::new()),
+                num_nodes: 0,
+                num_delimiters: 0,
+                false_follows_detector: VFunc::empty(),
+                external_behaviour: VFunc::empty(),
+                offset: VFunc::empty(),
+                log2_bucket_size: 0,
+                n: 0,
+            });
+        }
+
+        // Bucket size from key bit-width and n — no iteration needed.
+        let avg_bits = bit_length as f64;
+        let log2_bs = if n <= 1 {
+            0
+        } else {
+            let c = 1.10_f64;
+            let val = (avg_bits.ln() + 2.0) * f64::ln(2.0) / c;
+            let l = val.max(1.0).round() as usize;
+            let l = l.next_power_of_two().ilog2() as usize;
+            if n / (1usize << l) <= 1 { 0 } else { l }
+        };
+        let bucket_size = 1usize << log2_bs;
+        let bucket_mask = bucket_size - 1;
+        let num_full_buckets = n / bucket_size;
+        let num_delimiters = num_full_buckets;
+        let num_buckets = n.div_ceil(bucket_size);
+
+        pl.info(format_args!(
+            "HtDistMmphfInt<{}>: {n} keys, bucket_size=2^{log2_bs}={bucket_size}, key_bits={bit_length}",
+            std::any::type_name::<T>()
+        ));
+
+        // ── Pass 1: collect delimiters, build trie ────────────────
+        let mut builder = HollowTrieBuilderInt::<T>::new();
+        let mut delimiters: Vec<T> = Vec::with_capacity(num_delimiters);
+        let mut i = 0usize;
+        while let Some(key) = keys.next()? {
+            let mapped = *key ^ T::MIN;
+            if i % bucket_size == bucket_size - 1 && delimiters.len() < num_delimiters {
+                builder.push(mapped);
+                delimiters.push(mapped);
+            }
+            i += 1;
+        }
+        anyhow::ensure!(i == n, "Expected {n} keys but got {i}");
+        debug_assert_eq!(delimiters.len(), num_delimiters);
+
+        let (trie_words, trie_len, raw_skips, num_nodes) = builder.finish();
+        let bal_paren = BalancedParens::new(trie_words, trie_len);
+        let skips = crate::list::PrefixSumIntList::new(&raw_skips);
+
+        if num_delimiters == 0 {
+            // Rewind for the offset VFunc pass.
+            let keys = keys.rewind()?;
+            let offset = <VFunc<T, BitFieldVec<Box<[usize]>>>>::try_new(
+                keys,
+                FromCloneableIntoIterator::new((0..n).map(|i| i & bucket_mask)),
+                n,
+                pl,
+            )?;
+            return Ok(Self {
+                bal_paren,
+                skips,
+                num_nodes,
+                num_delimiters,
+                false_follows_detector: VFunc::empty(),
+                external_behaviour: VFunc::empty(),
+                offset,
+                log2_bucket_size: log2_bs,
+                n,
+            });
+        }
+
+        // ── Pass 2: compute behaviours from lender ────────────────
+        let mut keys = keys.rewind()?;
+
+        let mut emitted = vec![false; num_nodes];
+        let mut ff_keys: Vec<Vec<u8>> = Vec::new();
+        let mut ff_values: Vec<usize> = Vec::new();
+        let mut ext_keys: Vec<Vec<u8>> = Vec::new();
+        let mut ext_values: Vec<usize> = Vec::new();
+
+        pl.info(format_args!(
+            "Computing behaviour keys ({n} keys, {num_delimiters} delimiters, {num_nodes} internal nodes)..."
+        ));
+
+        let mut right_delim_idx: Option<usize> = None;
+        let mut delimiter_lcp: Option<usize>;
+
+        for b in 0..num_buckets {
+            let real_bucket_size = if b < num_full_buckets {
+                bucket_size
+            } else {
+                n - b * bucket_size
+            };
+
+            let left_delim_idx = right_delim_idx;
+            right_delim_idx = if real_bucket_size == bucket_size {
+                Some(b)
+            } else {
+                None
+            };
+            let left_delimiter: Option<T> = left_delim_idx.map(|i| delimiters[i]);
+            let right_delimiter: Option<T> = right_delim_idx.map(|i| delimiters[i]);
+            delimiter_lcp = match (left_delimiter, right_delimiter) {
+                (Some(l), Some(r)) => Some(lcp_bits(l, r)),
+                _ => None,
+            };
+
+            let mut stack_p: Vec<usize> = vec![1];
+            let mut stack_r: Vec<usize> = vec![0];
+            let mut stack_s: Vec<usize> = vec![0];
+            let mut stack_index: Vec<usize> = vec![0];
+            let mut depth: usize = 0;
+
+            let mut last_node: Option<usize> = None;
+            let mut last_path: Option<Vec<u8>> = None;
+            let mut prev_mapped: T = T::default();
+
+            for j in 0..real_bucket_size {
+                let key_ref = keys.next()?.expect("unexpected end of keys");
+                let mapped = *key_ref ^ T::MIN;
+
+                if j > 0 {
+                    let prefix = lcp_bits(prev_mapped, mapped);
+                    while depth > 0 && stack_s[depth] > prefix {
+                        depth -= 1;
+                    }
+                }
+
+                let mut p = stack_p[depth];
+                let mut r = stack_r[depth];
+                let mut s = stack_s[depth];
+                let mut index = stack_index[depth];
+
+                // For integers: identical keys yield lcp == T::BITS,
+                // so max_descent_length == T::BITS + 1 — correct.
+                let (exit_left, max_descent_length) =
+                    match (left_delimiter, right_delimiter) {
+                        (None, Some(rd)) => {
+                            (true, lcp_bits(mapped, rd) + 1)
+                        }
+                        (Some(ld), None) => {
+                            (false, lcp_bits(mapped, ld) + 1)
+                        }
+                        (Some(ld), Some(rd)) => {
+                            let dlcp = delimiter_lcp.unwrap();
+                            if get_int_bit(mapped, dlcp) {
+                                (true, lcp_bits(mapped, rd) + 1)
+                            } else {
+                                (false, lcp_bits(mapped, ld) + 1)
+                            }
+                        }
+                        (None, None) => (true, bit_length + 1),
+                    };
+
+                let mut is_internal;
+                let mut skip = 0usize;
+
+                loop {
+                    is_internal = get_bit(bal_paren.words(), p);
+                    if is_internal {
+                        use value_traits::slices::SliceByValue;
+                        skip = skips.index_value(r);
+                    }
+
+                    if is_internal
+                        && s + skip < max_descent_length
+                        && !emitted[r]
+                    {
+                        emitted[r] = true;
+                        let key = encode_int_behaviour_key(
+                            p - 1,
+                            mapped,
+                            s,
+                            (s + skip).min(bit_length),
+                        );
+                        ff_keys.push(key);
+                        ff_values.push(0);
+                    }
+
+                    if !is_internal {
+                        break;
+                    }
+                    s += skip;
+                    if s >= max_descent_length {
+                        break;
+                    }
+
+                    if get_int_bit(mapped, s) {
+                        let q = bal_paren
+                            .find_close(p)
+                            .expect("balanced parentheses broken")
+                            + 1;
+                        index += (q - p) / 2;
+                        r += (q - p) / 2;
+                        p = q;
+                    } else {
+                        p += 1;
+                        r += 1;
+                    }
+
+                    s += 1;
+
+                    depth += 1;
+                    if depth >= stack_p.len() {
+                        stack_p.resize(depth + 1, 0);
+                        stack_r.resize(depth + 1, 0);
+                        stack_s.resize(depth + 1, 0);
+                        stack_index.resize(depth + 1, 0);
+                    }
+                    stack_p[depth] = p;
+                    stack_r[depth] = r;
+                    stack_s[depth] = s;
+                    stack_index[depth] = index;
+                }
+
+                let (start_path, end_path) = if is_internal {
+                    (s.saturating_sub(skip), s.min(bit_length))
+                } else {
+                    (s.min(bit_length), bit_length)
+                };
+                debug_assert!(
+                    start_path <= end_path,
+                    "bad path range: start={start_path}, end={end_path}, s={s}, skip={skip}, bit_length={bit_length}, is_internal={is_internal}"
+                );
+
+                if !is_internal {
+                    last_node = None;
+                }
+
+                let path_key =
+                    encode_int_behaviour_key(p - 1, mapped, start_path, end_path);
+
+                let is_dup = last_node == Some(p - 1)
+                    && last_path.as_deref() == Some(path_key.as_slice());
+
+                if !is_dup {
+                    ext_values.push(if exit_left { LEFT } else { RIGHT });
+                    if is_internal {
+                        last_path = Some(path_key.clone());
+                        last_node = Some(p - 1);
+                        ff_keys.push(path_key.clone());
+                        ff_values.push(1);
+                    }
+                    ext_keys.push(path_key);
+                }
+
+                prev_mapped = mapped;
+            }
+        }
+
+        pl.info(format_args!(
+            "Building false-follows detector ({} keys)...",
+            ff_keys.len()
+        ));
+
+        let false_follows_detector =
+            <VFunc<[u8], BitFieldVec<Box<[usize]>>>>::try_new(
+                FromSlice::new(&ff_keys),
+                FromCloneableIntoIterator::new(ff_values.iter().copied()),
+                ff_keys.len(),
+                pl,
+            )?;
+
+        pl.info(format_args!(
+            "Building external behaviour ({} keys)...",
+            ext_keys.len()
+        ));
+
+        let external_behaviour =
+            <VFunc<[u8], BitFieldVec<Box<[usize]>>>>::try_new(
+                FromSlice::new(&ext_keys),
+                FromCloneableIntoIterator::new(ext_values.iter().copied()),
+                ext_keys.len(),
+                pl,
+            )?;
+
+        // ── Pass 3: build offset VFunc ────────────────────────────
+        // Pass the lender directly to VFunc<T> — no collection needed.
+        let keys = keys.rewind()?;
+
+        pl.info(format_args!("Building offset VFunc..."));
+
+        let offset = <VFunc<T, BitFieldVec<Box<[usize]>>>>::try_new(
+            keys,
+            FromCloneableIntoIterator::new((0..n).map(|i| i & bucket_mask)),
+            n,
+            pl,
+        )?;
+
+        let result = Self {
+            bal_paren,
+            skips,
+            num_nodes,
+            num_delimiters,
+            false_follows_detector,
+            external_behaviour,
+            offset,
+            log2_bucket_size: log2_bs,
+            n,
+        };
+
+        let flags = SizeFlags::default();
+        let total_bits = result.mem_size(flags) * 8;
+        info!(
+            "HtDistMmphfInt: {:.2} bits/key ({total_bits} bits for {n} keys)",
+            total_bits as f64 / n as f64
+        );
+
+        Ok(result)
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<T, D> HtDistMmphfInt<T, D>
+where
+    T: PrimitiveInteger + ToSig<[u64; 2]>,
+    D: SliceByValue<Value = usize> + MemSize + mem_dbg::FlatType,
+{
+    /// Returns the rank (0-based position) of the given key.
+    ///
+    /// If the key was not in the original set, the result is arbitrary.
+    #[inline]
+    pub fn get(&self, key: T) -> usize {
+        if self.n <= 1 {
+            return 0;
+        }
+
+        let mapped = key ^ T::MIN;
+        let length = T::BITS as usize;
+
+        let trie_words = self.bal_paren.words();
+        let mut p: usize = 1;
+        let mut index: usize = 0;
+        let mut r: usize = 0;
+        let mut s: usize = 0;
+        let mut last_left_turn: usize = 0;
+        let mut last_left_turn_index: usize = 0;
+        let buf_size = 16 + std::mem::size_of::<T>();
+        let mut key_buf = [0u8; 16 + 16];
+        let key_buf = &mut key_buf[..buf_size];
+
+        loop {
+            let is_internal = get_bit(trie_words, p);
+            let skip: usize = if is_internal {
+                use value_traits::slices::SliceByValue;
+                self.skips.index_value(r)
+            } else {
+                0
+            };
+
+            let behaviour = if is_internal {
+                let n = encode_int_behaviour_key_into(
+                    key_buf, p - 1, mapped, s, (s + skip).min(length),
+                );
+                if self.false_follows_detector.get(&key_buf[..n]) == 0 {
+                    FOLLOW
+                } else {
+                    self.external_behaviour.get(&key_buf[..n])
+                }
+            } else {
+                let n = encode_int_behaviour_key_into(
+                    key_buf, p - 1, mapped, s, length,
+                );
+                self.external_behaviour.get(&key_buf[..n])
+            };
+
+            if behaviour != FOLLOW || !is_internal || {
+                s += skip;
+                s >= length
+            } {
+                let bucket = if behaviour == LEFT {
+                    index
+                } else if is_internal {
+                    let q = self
+                        .bal_paren
+                        .find_close(last_left_turn)
+                        .expect("balanced parentheses broken");
+                    #[allow(clippy::manual_div_ceil)]
+                    { ((q - last_left_turn + 1) / 2) + last_left_turn_index }
+                } else {
+                    index + 1
+                };
+                return (bucket << self.log2_bucket_size) + self.offset.get(&key);
+            }
+
+            if get_int_bit(mapped, s) {
+                let q = self
+                    .bal_paren
+                    .find_close(p)
+                    .expect("balanced parentheses broken")
+                    + 1;
+                index += (q - p) / 2;
+                r += (q - p) / 2;
+                p = q;
+            } else {
+                last_left_turn = p;
+                last_left_turn_index = index;
+                p += 1;
+                r += 1;
+            }
+
+            s += 1;
+        }
+    }
+
+    /// Returns the number of keys.
+    pub const fn len(&self) -> usize {
+        self.n
+    }
+
+    /// Returns `true` if the function contains no keys.
+    pub const fn is_empty(&self) -> bool {
+        self.n == 0
+    }
+}
+
+// ── Integer TryIntoUnaligned conversions ──────────────────────────
+
+#[cfg(feature = "rayon")]
+impl<T: PrimitiveInteger> TryIntoUnaligned for HtDistMmphfInt<T> {
+    type Unaligned = HtDistMmphfInt<T, BitFieldVecU<Box<[usize]>>>;
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+        Ok(HtDistMmphfInt {
+            bal_paren: self.bal_paren,
+            skips: self.skips,
+            num_nodes: self.num_nodes,
+            num_delimiters: self.num_delimiters,
+            false_follows_detector: self.false_follows_detector.try_into_unaligned()?,
+            external_behaviour: self.external_behaviour.try_into_unaligned()?,
+            offset: self.offset.try_into_unaligned()?,
+            log2_bucket_size: self.log2_bucket_size,
+            n: self.n,
+        })
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<T: PrimitiveInteger> From<HtDistMmphfInt<T, BitFieldVecU<Box<[usize]>>>>
+    for HtDistMmphfInt<T>
+{
+    fn from(f: HtDistMmphfInt<T, BitFieldVecU<Box<[usize]>>>) -> Self {
+        Self {
+            bal_paren: f.bal_paren,
+            skips: f.skips,
+            num_nodes: f.num_nodes,
+            num_delimiters: f.num_delimiters,
+            false_follows_detector: f.false_follows_detector.into(),
+            external_behaviour: f.external_behaviour.into(),
+            offset: f.offset.into(),
+            log2_bucket_size: f.log2_bucket_size,
+            n: f.n,
+        }
+    }
+}
+
 #[cfg(test)]
 #[cfg(feature = "rayon")]
 mod tests {
@@ -1523,6 +2227,100 @@ mod tests {
                     i,
                     "Mismatch for key {key:?} at position {i}"
                 );
+            }
+        }
+    }
+
+    // ── HtDistMmphfInt tests ──────────────────────────────────────
+
+    #[cfg(feature = "rayon")]
+    mod int_tests {
+        use super::*;
+        use dsi_progress_logger::no_logging;
+
+        #[test]
+        fn test_int_small_u64() {
+            let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+            let func = HtDistMmphfInt::try_new(
+                FromSlice::new(&keys), keys.len(), no_logging![],
+            ).unwrap();
+            for (i, &key) in keys.iter().enumerate() {
+                assert_eq!(func.get(key), i, "Mismatch for key {key} at position {i}");
+            }
+        }
+
+        #[test]
+        fn test_int_many_u64() {
+            let keys: Vec<u64> = (0..500).map(|i| i * 7 + 1000).collect();
+            let func = HtDistMmphfInt::try_new(
+                FromSlice::new(&keys), keys.len(), no_logging![],
+            ).unwrap();
+            for (i, &key) in keys.iter().enumerate() {
+                assert_eq!(func.get(key), i, "Mismatch for key {key} at position {i}");
+            }
+        }
+
+        #[test]
+        fn test_int_two_keys() {
+            let keys: Vec<u64> = vec![0, u64::MAX];
+            let func = HtDistMmphfInt::try_new(
+                FromSlice::new(&keys), keys.len(), no_logging![],
+            ).unwrap();
+            for (i, &key) in keys.iter().enumerate() {
+                assert_eq!(func.get(key), i);
+            }
+        }
+
+        #[test]
+        fn test_int_single_key() {
+            let keys: Vec<u64> = vec![42];
+            let func = HtDistMmphfInt::try_new(
+                FromSlice::new(&keys), keys.len(), no_logging![],
+            ).unwrap();
+            assert_eq!(func.get(42), 0);
+        }
+
+        #[test]
+        fn test_int_large_u64() {
+            let keys: Vec<u64> = (0..5000).map(|i| i * 3).collect();
+            let func = HtDistMmphfInt::try_new(
+                FromSlice::new(&keys), keys.len(), no_logging![],
+            ).unwrap();
+            for (i, &key) in keys.iter().enumerate() {
+                assert_eq!(func.get(key), i, "Mismatch for key {key} at position {i}");
+            }
+        }
+
+        #[test]
+        fn test_int_u32() {
+            let keys: Vec<u32> = (0..200).map(|i| i * 11 + 5).collect();
+            let func = HtDistMmphfInt::try_new(
+                FromSlice::new(&keys), keys.len(), no_logging![],
+            ).unwrap();
+            for (i, &key) in keys.iter().enumerate() {
+                assert_eq!(func.get(key), i, "Mismatch for key {key} at position {i}");
+            }
+        }
+
+        #[test]
+        fn test_int_signed_i64() {
+            let keys: Vec<i64> = (-250..250).collect();
+            let func = HtDistMmphfInt::try_new(
+                FromSlice::new(&keys), keys.len(), no_logging![],
+            ).unwrap();
+            for (i, &key) in keys.iter().enumerate() {
+                assert_eq!(func.get(key), i, "Mismatch for key {key} at position {i}");
+            }
+        }
+
+        #[test]
+        fn test_int_consecutive_u64() {
+            let keys: Vec<u64> = (0..100).collect();
+            let func = HtDistMmphfInt::try_new(
+                FromSlice::new(&keys), keys.len(), no_logging![],
+            ).unwrap();
+            for (i, &key) in keys.iter().enumerate() {
+                assert_eq!(func.get(key), i, "Mismatch for key {key} at position {i}");
             }
         }
     }
