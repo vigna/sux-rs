@@ -242,7 +242,6 @@ impl HollowTrieBuilder {
     /// - `num_nodes`: number of internal nodes
     pub fn finish(self) -> (Vec<u64>, usize, Vec<usize>, usize) {
         if self.count <= 1 {
-            // Empty or single-element trie.
             let mut trie: BitVec<Vec<u64>> = BitVec::new(0);
             trie.push(true);
             trie.push(false);
@@ -277,11 +276,16 @@ impl HollowTrieBuilder {
 // Behaviour key encoding
 // ═══════════════════════════════════════════════════════════════════
 
+/// Header size in bytes for behaviour key encoding: two `usize` values
+/// (node position and path length).
+#[cfg(feature = "rayon")]
+const BEHAVIOUR_KEY_HEADER: usize = 2 * (usize::BITS as usize / 8);
+
 /// Encodes a (node position, path fragment) pair as a byte vector for
 /// use as a VFunc key. The encoding is:
-///   - 8 bytes: node position as u64 LE
-///   - 8 bytes: path length in bits as u64 LE
-///   - ceil((bit_end - bit_start) / 8) bytes: path bits packed MSB-first
+///   - `usize::BITS / 8` bytes: node position
+///   - `usize::BITS / 8` bytes: path length in bits
+///   - `ceil((bit_end - bit_start) / 8)` bytes: path bits packed MSB-first
 ///
 /// The encoding must be injective for correctness.
 ///
@@ -297,10 +301,11 @@ fn encode_behaviour_key_into(
 ) -> usize {
     let path_len = bit_end - bit_start;
     let packed_bytes = path_len.div_ceil(8);
-    let total = 16 + packed_bytes;
+    let total = BEHAVIOUR_KEY_HEADER + packed_bytes;
     debug_assert!(buf.len() >= total);
-    buf[0..8].copy_from_slice(&(node_pos as u64).to_ne_bytes());
-    buf[8..16].copy_from_slice(&(path_len as u64).to_ne_bytes());
+    let w = usize::BITS as usize / 8;
+    buf[..w].copy_from_slice(&node_pos.to_ne_bytes());
+    buf[w..BEHAVIOUR_KEY_HEADER].copy_from_slice(&path_len.to_ne_bytes());
 
     // Pack path bits MSB-first into bytes. Since key_bytes is MSB-first,
     // we can use byte-level operations when bit_start is byte-aligned,
@@ -311,11 +316,11 @@ fn encode_behaviour_key_into(
     if start_bit_offset == 0 {
         // Byte-aligned: copy whole bytes, mask the last one.
         let copy_bytes = packed_bytes.min(key_bytes.len().saturating_sub(start_byte));
-        buf[16..16 + copy_bytes]
+        buf[BEHAVIOUR_KEY_HEADER..BEHAVIOUR_KEY_HEADER + copy_bytes]
             .copy_from_slice(&key_bytes[start_byte..start_byte + copy_bytes]);
         // Zero any bytes beyond the key (virtual NUL).
         for i in copy_bytes..packed_bytes {
-            buf[16 + i] = 0;
+            buf[BEHAVIOUR_KEY_HEADER + i] = 0;
         }
     } else {
         // Unaligned: shift pairs of source bytes.
@@ -332,14 +337,14 @@ fn encode_behaviour_key_into(
             } else {
                 0
             };
-            buf[16 + b] = (hi << shift) | (lo >> (8 - shift));
+            buf[BEHAVIOUR_KEY_HEADER + b] = (hi << shift) | (lo >> (8 - shift));
         }
     }
 
     // Mask off trailing bits in the last byte.
     let trail = path_len % 8;
     if trail != 0 && packed_bytes > 0 {
-        buf[16 + packed_bytes - 1] &= !((1u8 << (8 - trail)) - 1);
+        buf[BEHAVIOUR_KEY_HEADER + packed_bytes - 1] &= !((1u8 << (8 - trail)) - 1);
     }
 
     total
@@ -356,7 +361,7 @@ fn encode_behaviour_key(
 ) -> Vec<u8> {
     let path_len = bit_end - bit_start;
     let packed_bytes = path_len.div_ceil(8);
-    let mut buf = vec![0u8; 16 + packed_bytes];
+    let mut buf = vec![0u8; BEHAVIOUR_KEY_HEADER + packed_bytes];
     encode_behaviour_key_into(&mut buf, node_pos, key_bytes, bit_start, bit_end);
     buf
 }
@@ -750,7 +755,7 @@ impl<D: SliceByValue<Value = usize> + MemSize> HollowTrieDistributor<D> {
         let mut last_left_turn_index: usize = 0;
         // Buffer for behaviour key encoding. Reused across loop iterations
         // to avoid per-node allocation. Max size: 16 header + key path bytes.
-        let buf_size = 16 + key.len() + 1;
+        let buf_size = BEHAVIOUR_KEY_HEADER + key.len() + 1;
         let mut key_buf_storage;
         let mut key_buf_vec;
         let key_buf: &mut [u8] = if buf_size <= 528 {
@@ -1505,24 +1510,22 @@ impl<T: PrimitiveInteger> HollowTrieBuilderInt<T> {
     }
 }
 
-/// Encode a behaviour key for an integer key. Packs `(node_pos,
-/// path_bits)` into a byte buffer for VFunc hashing, where path bits
-/// are extracted from the big-endian byte representation of the
-/// XOR-mapped integer.
+/// Header size for integer behaviour keys: `node_pos`, `path_len`,
+/// and the extracted path bits as an integer of type `T`.
 #[cfg(feature = "rayon")]
-fn encode_int_behaviour_key<T: PrimitiveInteger>(
-    node_pos: usize,
-    key: T,
-    bit_start: usize,
-    bit_end: usize,
-) -> Vec<u8> {
-    let key_bytes: T::Bytes = key.to_be_bytes();
-    let key_bytes: &[u8] = key_bytes.borrow();
-    encode_behaviour_key(node_pos, key_bytes, bit_start, bit_end)
+const fn int_behaviour_key_size<T>() -> usize {
+    2 * (usize::BITS as usize / 8) + std::mem::size_of::<T>()
 }
 
 /// Encode a behaviour key for an integer key into a pre-allocated
-/// buffer. Returns the number of bytes written.
+/// buffer by extracting the path bits directly with shifts.
+///
+/// The encoding packs `(node_pos, path_len, extracted_bits)` as
+/// native-endian bytes, where `extracted_bits` is the contiguous
+/// range `[bit_start . . bit_end)` of the XOR-mapped key,
+/// right-aligned.
+///
+/// Returns the number of bytes written.
 #[cfg(feature = "rayon")]
 #[inline]
 fn encode_int_behaviour_key_into<T: PrimitiveInteger>(
@@ -1532,9 +1535,33 @@ fn encode_int_behaviour_key_into<T: PrimitiveInteger>(
     bit_start: usize,
     bit_end: usize,
 ) -> usize {
-    let key_bytes: T::Bytes = key.to_be_bytes();
-    let key_bytes: &[u8] = key_bytes.borrow();
-    encode_behaviour_key_into(buf, node_pos, key_bytes, bit_start, bit_end)
+    let path_len = bit_end - bit_start;
+    let w = usize::BITS as usize / 8;
+    buf[..w].copy_from_slice(&node_pos.to_ne_bytes());
+    buf[w..2 * w].copy_from_slice(&path_len.to_ne_bytes());
+    // Extract bits [bit_start . . bit_end) right-aligned.
+    let extracted = if path_len == 0 {
+        T::default()
+    } else {
+        (key << bit_start) >> (T::BITS as usize - path_len)
+    };
+    let ext_bytes: T::Bytes = extracted.to_ne_bytes();
+    let ext_bytes: &[u8] = ext_bytes.borrow();
+    buf[2 * w..2 * w + ext_bytes.len()].copy_from_slice(ext_bytes);
+    int_behaviour_key_size::<T>()
+}
+
+/// Convenience wrapper that allocates a `Vec`.
+#[cfg(feature = "rayon")]
+fn encode_int_behaviour_key<T: PrimitiveInteger>(
+    node_pos: usize,
+    key: T,
+    bit_start: usize,
+    bit_end: usize,
+) -> Vec<u8> {
+    let mut buf = vec![0u8; int_behaviour_key_size::<T>()];
+    encode_int_behaviour_key_into(&mut buf, node_pos, key, bit_start, bit_end);
+    buf
 }
 
 /// A monotone minimal perfect hash function for sorted integers,
@@ -1949,9 +1976,8 @@ where
         let mut s: usize = 0;
         let mut last_left_turn: usize = 0;
         let mut last_left_turn_index: usize = 0;
-        let buf_size = 16 + std::mem::size_of::<T>();
-        let mut key_buf = [0u8; 16 + 16];
-        let key_buf = &mut key_buf[..buf_size];
+        // Max: 2 * 8 (header) + 16 (u128) = 32 bytes.
+        let mut key_buf = [0u8; BEHAVIOUR_KEY_HEADER + 16];
 
         loop {
             let is_internal = get_bit(trie_words, p);
@@ -1964,7 +1990,7 @@ where
 
             let behaviour = if is_internal {
                 let n = encode_int_behaviour_key_into(
-                    key_buf, p - 1, mapped, s, (s + skip).min(length),
+                    &mut key_buf, p - 1, mapped, s, (s + skip).min(length),
                 );
                 if self.false_follows_detector.get(&key_buf[..n]) == 0 {
                     FOLLOW
@@ -1973,7 +1999,7 @@ where
                 }
             } else {
                 let n = encode_int_behaviour_key_into(
-                    key_buf, p - 1, mapped, s, length,
+                    &mut key_buf, p - 1, mapped, s, length,
                 );
                 self.external_behaviour.get(&key_buf[..n])
             };
