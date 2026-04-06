@@ -13,7 +13,7 @@ use sux::dict::VFilter;
 use sux::func::shard_edge::FuseLge3Shards;
 use sux::func::lcp_mmphf::{LcpMmphf, LcpMmphfInt};
 use sux::func::lcp2_mmphf::{Lcp2Mmphf, Lcp2MmphfInt};
-use sux::func::{SignedFunc, BitSignedFunc, VFunc};
+use sux::func::{SignedFunc, VFunc};
 use sux::utils::{FromCloneableIntoIterator, FromSlice};
 use std::time::Instant;
 

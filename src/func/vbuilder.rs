@@ -41,6 +41,13 @@ use super::shard_edge::FuseLge3Shards;
 
 const LOG2_MAX_SHARDS: u32 = 16;
 
+/// Returns the default maximum number of threads: `min(16, available_parallelism)`.
+fn default_max_num_threads() -> usize {
+    std::thread::available_parallelism()
+        .map(|p| p.get().min(16))
+        .unwrap_or(1)
+}
+
 /// A builder for [`VFunc`] and [`VFilter`](crate::dict::VFilter).
 ///
 /// Most users should not use the construction methods this structure directly.
@@ -109,9 +116,10 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     #[derivative(Default(value = "None"))]
     expected_num_keys: Option<usize>,
 
-    /// The maximum number of parallel threads to use. The default is 8.
+    /// The maximum number of parallel threads to use for both the population
+    /// and solve phases. The default is `min(16, available_parallelism)`.
     #[setters(generate = true)]
-    #[derivative(Default(value = "8"))]
+    #[derivative(Default(value = "default_max_num_threads()"))]
     pub(crate) max_num_threads: usize,
 
     /// Use disk-based buckets to reduce core memory usage at construction time.
@@ -1028,10 +1036,11 @@ impl<
                     std::mem::size_of::<S>() * 8,
                 ));
 
-                let maybe_max_value = sig_store.par_populate(n, |i| SigVal {
-                    sig: T::to_sig(keys[i].borrow(), seed),
-                    val: val_fn(i),
-                });
+                let maybe_max_value =
+                    sig_store.par_populate(n, self.max_num_threads, |i| SigVal {
+                        sig: T::to_sig(keys[i].borrow(), seed),
+                        val: val_fn(i),
+                    });
 
                 pl.done();
 

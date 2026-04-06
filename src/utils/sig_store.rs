@@ -638,13 +638,17 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
     /// Thread-local buffers (one per bucket) batch insertions to reduce
     /// lock acquisitions. Returns the maximum value seen (for bit-width
     /// computation).
-    pub fn par_populate(&mut self, n: usize, f: impl Fn(usize) -> SigVal<S, V> + Send + Sync) -> V
+    pub fn par_populate(
+        &mut self,
+        n: usize,
+        max_num_threads: usize,
+        f: impl Fn(usize) -> SigVal<S, V> + Send + Sync,
+    ) -> V
     where
         V: Default + Ord + Send,
     {
         use rayon::prelude::*;
         use std::sync::Mutex;
-
 
         let num_buckets = 1usize << self.buckets_high_bits;
         let num_shards = 1usize << self.max_shard_high_bits;
@@ -665,21 +669,21 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
 
         let max_val = (0..n)
             .into_par_iter()
-            .with_min_len((n / 16).max(1_000_000))
+            .with_min_len((n / max_num_threads).max(1_000_000))
             .fold(
                 || {
                     let bufs: Box<[ArrayVec<SigVal<S, V>, CAP>]> = (0..num_buckets)
                         .map(|_| ArrayVec::new())
                         .collect();
-                    let bc = vec![0usize; num_buckets];
-                    let sc = vec![0usize; num_shards];
+                    let bc: Box<[usize]> = vec![0usize; num_buckets].into();
+                    let sc: Box<[usize]> = vec![0usize; num_shards].into();
                     (V::default(), bufs, bc, sc)
                 },
                 |(mut local_max, mut local_bufs, mut bc, mut sc): (
                     V,
                     Box<[ArrayVec<SigVal<S, V>, CAP>]>,
-                    Vec<usize>,
-                    Vec<usize>,
+                    Box<[usize]>,
+                    Box<[usize]>,
                 ),
                  i| {
                     let sv = f(i);
@@ -690,11 +694,10 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
                     sc[shard] += 1;
                     local_bufs[bucket].push(sv);
                     if local_bufs[bucket].is_full() {
-                        let buf = std::mem::replace(
-                            &mut local_bufs[bucket],
-                            ArrayVec::new(),
-                        );
-                        mutexed_buckets[bucket].lock().unwrap().extend(buf);
+                        mutexed_buckets[bucket]
+                            .lock()
+                            .unwrap()
+                            .extend(local_bufs[bucket].drain(..));
                     }
                     (local_max, local_bufs, bc, sc)
                 },
@@ -708,12 +711,20 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
                 (local_max, bc, sc)
             })
             .reduce(
-                || (V::default(), vec![0usize; num_buckets], vec![0usize; num_shards]),
-                |(max_a, bc_a, sc_a), (max_b, bc_b, sc_b)| {
+                || {
+                    let bc: Box<[usize]> = vec![0usize; num_buckets].into();
+                    let sc: Box<[usize]> = vec![0usize; num_shards].into();
+                    (V::default(), bc, sc)
+                },
+                |(max_a, mut bc_a, mut sc_a), (max_b, bc_b, sc_b)| {
                     let m = Ord::max(max_a, max_b);
-                    let bc: Vec<usize> = bc_a.iter().zip(bc_b.iter()).map(|(a, b)| a + b).collect();
-                    let sc: Vec<usize> = sc_a.iter().zip(sc_b.iter()).map(|(a, b)| a + b).collect();
-                    (m, bc, sc)
+                    for (a, b) in bc_a.iter_mut().zip(bc_b.iter()) {
+                        *a += b;
+                    }
+                    for (a, b) in sc_a.iter_mut().zip(sc_b.iter()) {
+                        *a += b;
+                    }
+                    (m, bc_a, sc_a)
                 },
             );
 

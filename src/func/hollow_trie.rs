@@ -751,7 +751,7 @@ impl<D: SliceByValue<Value = usize> + MemSize> HollowTrieDistributor<D> {
         let buf_size = 16 + key.len() + 1;
         let mut key_buf_storage;
         let mut key_buf_vec;
-        let mut key_buf: &mut [u8] = if buf_size <= 528 {
+        let key_buf: &mut [u8] = if buf_size <= 528 {
             key_buf_storage = [0u8; 528];
             &mut key_buf_storage[..buf_size]
         } else {
@@ -770,7 +770,7 @@ impl<D: SliceByValue<Value = usize> + MemSize> HollowTrieDistributor<D> {
 
             let behaviour = if is_internal {
                 let n = encode_behaviour_key_into(
-                    &mut key_buf, p - 1, key, s, (s + skip).min(length),
+                    key_buf, p - 1, key, s, (s + skip).min(length),
                 );
                 if self.false_follows_detector.get(&key_buf[..n]) == 0 {
                     FOLLOW
@@ -779,7 +779,7 @@ impl<D: SliceByValue<Value = usize> + MemSize> HollowTrieDistributor<D> {
                 }
             } else {
                 let n = encode_behaviour_key_into(
-                    &mut key_buf, p - 1, key, s, length,
+                    key_buf, p - 1, key, s, length,
                 );
                 self.external_behaviour.get(&key_buf[..n])
             };
