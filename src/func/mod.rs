@@ -57,7 +57,7 @@
 mod vfunc;
 pub use vfunc::*;
 
-pub mod vfunc2;
+mod vfunc2;
 pub use vfunc2::*;
 
 #[cfg(feature = "rayon")]

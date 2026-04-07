@@ -101,16 +101,22 @@ where
 ///
 /// This trait is not intended to be implemented by users; it is an internal
 /// abstraction to allow the signed wrappers to work with different static
-/// functions. It provides access to the seed, shard edge, and key count, so
-/// that [`SignedFunc`] can verify hashes without knowing which specific type
-/// of function it wraps.
+/// functions. It provides access to the seed, [signature type](Sig),
+/// [`ShardEdge`], and key count, so that [`SignedFunc`] can verify hashes
+/// without knowing which specific type of function it wraps.
 pub trait SignableFunc {
+    /// The signature type used by the inner function (e.g., `[u64; 2]`).
     type Sig: Sig;
+    /// The [`ShardEdge`] used by the inner function.
     type Edge: ShardEdge<Self::Sig, 3>;
 
+    /// Returns the seed used to hash keys into signatures.
     fn seed(&self) -> u64;
+    /// Returns a reference to the [`ShardEdge`] used by the inner function.
     fn shard_edge(&self) -> &Self::Edge;
+    /// Returns the number of keys stored in the function.
     fn len(&self) -> usize;
+    /// Returns whether the function contains no keys.
     #[inline]
     fn is_empty(&self) -> bool {
         self.len() == 0

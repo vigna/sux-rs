@@ -55,7 +55,15 @@ use crate::{debug_assert_bounds, panic_if_out_of_bounds};
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait Types {
+    /// The type used to query the dictionary (e.g., `str`, `[u8]`, `usize`).
+    ///
+    /// All methods use [`impl Borrow<Self::Input>`](Borrow) for value
+    /// arguments.
     type Input: for<'a> PartialEq<Self::Output<'a>> + PartialEq + ?Sized;
+    /// The type returned by the dictionary, parameterized by a lifetime.
+    ///
+    /// The lifetime is necessary as dictionary might return references
+    /// to internal data, possibly inside wrappers.
     type Output<'a>: PartialEq<Self::Input> + PartialEq;
 }
 
