@@ -193,12 +193,7 @@ pub(crate) fn log2_bucket_size(n: usize) -> usize {
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct LcpMmphfInt<
-    T,
-    D = BitFieldVec<Box<[usize]>>,
-    S = [u64; 2],
-    E = FuseLge3Shards,
-> {
+pub struct LcpMmphfInt<T, D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> {
     /// Number of keys.
     pub(crate) n: usize,
     /// Log2 of bucket size.
@@ -827,12 +822,7 @@ impl ToSig<[u64; 1]> for BitPrefix {
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct LcpMmphf<
-    K: ?Sized,
-    D = BitFieldVec<Box<[usize]>>,
-    S = [u64; 2],
-    E = FuseLge3Shards,
-> {
+pub struct LcpMmphf<K: ?Sized, D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> {
     /// Number of keys.
     pub(crate) n: usize,
     /// Log2 of bucket size.

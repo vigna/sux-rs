@@ -103,12 +103,7 @@ type LcpLen = u16;
         deserialize = "D: serde::Deserialize<'de>, D::Value: serde::Deserialize<'de>, E: serde::Deserialize<'de>"
     ))
 )]
-pub struct Lcp2MmphfInt<
-    T,
-    D = BitFieldVec<Box<[usize]>>,
-    S = [u64; 2],
-    E = FuseLge3Shards,
-> {
+pub struct Lcp2MmphfInt<T, D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> {
     /// The number of keys.
     pub(crate) n: usize,
     /// The base-2 logarithm of the bucket size.
