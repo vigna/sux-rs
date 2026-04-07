@@ -688,13 +688,13 @@ where
             long_builder = long_builder.low_mem(low_mem);
         }
         let long = long_builder.try_build_func_with_store::<T, V>(
-                seed,
-                long_shard_edge,
-                max_value,
-                &mut filtered_store,
-                &|_e, sig_val| get_val(sig_val.val),
-                pl,
-            )?;
+            seed,
+            long_shard_edge,
+            max_value,
+            &mut filtered_store,
+            &|_e, sig_val| get_val(sig_val.val),
+            pl,
+        )?;
 
         let result = Self {
             short,

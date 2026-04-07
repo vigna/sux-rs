@@ -176,9 +176,7 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned
     }
 }
 
-impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned
-    for VFunc<T, Box<[W]>, S, E>
-{
+impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned for VFunc<T, Box<[W]>, S, E> {
     type Unaligned = VFunc<T, Box<[W]>, S, E>;
     fn try_into_unaligned(
         self,

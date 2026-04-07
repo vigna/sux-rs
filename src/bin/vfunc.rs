@@ -20,6 +20,7 @@ use sux::func::signed::SignedFunc;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
 use sux::prelude::VBuilder;
+use sux::traits::{TryIntoUnaligned, Unaligned};
 use sux::utils::{
     DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, FromSlice, Sig, SigVal, ToSig,
 };
@@ -100,7 +101,7 @@ fn main() -> Result<()> {
 }
 
 macro_rules! filename_save_sign(
-    ($h: ty, $builder:expr, $filename: expr, $func: expr, $n: expr, $pl: expr) => {{
+    ($h: ty, $builder:expr, $filename: expr, $func: expr, $n: expr, $unaligned: expr, $pl: expr) => {{
         let func =
             <SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_new_with_builder(
                 DekoBufLineLender::from_path($filename)?.take($n),
@@ -108,14 +109,21 @@ macro_rules! filename_save_sign(
                 $builder,
                 &mut $pl,
             )?;
-        if let Some(filename) = $func {
-            unsafe { func.store(filename) }?;
+        if $unaligned {
+            let func = func.try_into_unaligned()?;
+            if let Some(filename) = $func {
+                unsafe { func.store(filename) }?;
+            }
+        } else {
+            if let Some(filename) = $func {
+                unsafe { func.store(filename) }?;
+            }
         }
     }}
 );
 
 macro_rules! n_save_sign(
-    ($h: ty, $builder:expr, $n: expr, $func: expr, $pl: expr) => {{
+    ($h: ty, $builder:expr, $n: expr, $func: expr, $unaligned: expr, $pl: expr) => {{
         let func =
             <SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_new_with_builder(
                 FromCloneableIntoIterator::new(0_usize..$n),
@@ -123,8 +131,15 @@ macro_rules! n_save_sign(
                 $builder,
                 &mut $pl,
             )?;
-        if let Some(filename) = $func {
-            unsafe { func.store(filename) }?;
+        if $unaligned {
+            let func = func.try_into_unaligned()?;
+            if let Some(filename) = $func {
+                unsafe { func.store(filename) }?;
+            }
+        } else {
+            if let Some(filename) = $func {
+                unsafe { func.store(filename) }?;
+            }
         }
     }}
 );
@@ -139,6 +154,8 @@ where
     SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
     VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>: Serialize,
     VFunc<str, BitFieldVec<Box<[usize]>>, S, E>: Serialize,
+    Unaligned<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>: Serialize,
+    Unaligned<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>>: Serialize,
     VFunc<usize, Box<[u8]>, S, E>: Serialize,
     VFunc<str, Box<[u8]>, S, E>: Serialize,
     SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>: Serialize,
@@ -149,6 +166,14 @@ where
     SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u16]>>: Serialize,
     SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u32]>>: Serialize,
     SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>: Serialize,
+    Unaligned<SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>>: Serialize,
+    Unaligned<SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u16]>>>: Serialize,
+    Unaligned<SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u32]>>>: Serialize,
+    Unaligned<SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>>: Serialize,
+    Unaligned<SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>>: Serialize,
+    Unaligned<SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u16]>>>: Serialize,
+    Unaligned<SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u32]>>>: Serialize,
+    Unaligned<SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>>: Serialize,
 {
     #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
@@ -171,21 +196,60 @@ where
                     BitFieldVec::<Box<[usize]>>::new_unaligned,
                     &mut pl,
                 )?;
-                if let Some(filename) = args.func {
-                    unsafe { func.store(filename) }?;
+                if args.builder.unaligned {
+                    let func = func.try_into_unaligned()?;
+                    if let Some(filename) = args.func {
+                        unsafe { func.store(filename) }?;
+                    }
+                } else {
+                    if let Some(filename) = args.func {
+                        unsafe { func.store(filename) }?;
+                    }
                 }
             }
             Some(HashTypes::U8) => {
-                filename_save_sign!(u8, builder, filename, args.func, n, pl)
+                filename_save_sign!(
+                    u8,
+                    builder,
+                    filename,
+                    args.func,
+                    n,
+                    args.builder.unaligned,
+                    pl
+                )
             }
             Some(HashTypes::U16) => {
-                filename_save_sign!(u16, builder, filename, args.func, n, pl)
+                filename_save_sign!(
+                    u16,
+                    builder,
+                    filename,
+                    args.func,
+                    n,
+                    args.builder.unaligned,
+                    pl
+                )
             }
             Some(HashTypes::U32) => {
-                filename_save_sign!(u32, builder, filename, args.func, n, pl)
+                filename_save_sign!(
+                    u32,
+                    builder,
+                    filename,
+                    args.func,
+                    n,
+                    args.builder.unaligned,
+                    pl
+                )
             }
             Some(HashTypes::U64) => {
-                filename_save_sign!(u64, builder, filename, args.func, n, pl)
+                filename_save_sign!(
+                    u64,
+                    builder,
+                    filename,
+                    args.func,
+                    n,
+                    args.builder.unaligned,
+                    pl
+                )
             }
         }
     } else {
@@ -202,21 +266,28 @@ where
                     builder,
                     &mut pl,
                 )?;
-                if let Some(filename) = args.func {
-                    unsafe { func.store(filename) }?;
+                if args.builder.unaligned {
+                    let func = func.try_into_unaligned()?;
+                    if let Some(filename) = args.func {
+                        unsafe { func.store(filename) }?;
+                    }
+                } else {
+                    if let Some(filename) = args.func {
+                        unsafe { func.store(filename) }?;
+                    }
                 }
             }
             Some(HashTypes::U8) => {
-                n_save_sign!(u8, builder, n, args.func, pl)
+                n_save_sign!(u8, builder, n, args.func, args.builder.unaligned, pl)
             }
             Some(HashTypes::U16) => {
-                n_save_sign!(u16, builder, n, args.func, pl)
+                n_save_sign!(u16, builder, n, args.func, args.builder.unaligned, pl)
             }
             Some(HashTypes::U32) => {
-                n_save_sign!(u32, builder, n, args.func, pl)
+                n_save_sign!(u32, builder, n, args.func, args.builder.unaligned, pl)
             }
             Some(HashTypes::U64) => {
-                n_save_sign!(u64, builder, n, args.func, pl)
+                n_save_sign!(u64, builder, n, args.func, args.builder.unaligned, pl)
             }
         }
     }
@@ -252,8 +323,15 @@ fn main_two_step(args: Args) -> Result<()> {
             builder,
             &mut pl,
         )?;
-        if let Some(filename) = args.func {
-            unsafe { func.store(filename) }?;
+        if args.builder.unaligned {
+            let func = func.try_into_unaligned()?;
+            if let Some(filename) = args.func {
+                unsafe { func.store(filename) }?;
+            }
+        } else {
+            if let Some(filename) = args.func {
+                unsafe { func.store(filename) }?;
+            }
         }
     } else {
         let n = args.n.unwrap();
@@ -266,8 +344,15 @@ fn main_two_step(args: Args) -> Result<()> {
             builder,
             &mut pl,
         )?;
-        if let Some(filename) = args.func {
-            unsafe { func.store(filename) }?;
+        if args.builder.unaligned {
+            let func = func.try_into_unaligned()?;
+            if let Some(filename) = args.func {
+                unsafe { func.store(filename) }?;
+            }
+        } else {
+            if let Some(filename) = args.func {
+                unsafe { func.store(filename) }?;
+            }
         }
     }
 

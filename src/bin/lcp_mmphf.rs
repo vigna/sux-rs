@@ -14,6 +14,7 @@ use sux::func::lcp_mmphf::*;
 use sux::func::lcp2_mmphf::*;
 use sux::func::signed::*;
 use sux::init_env_logger;
+use sux::traits::TryIntoUnaligned;
 use sux::utils::{DekoBufLineLender, FromSlice};
 
 #[derive(Parser, Debug)]
@@ -79,13 +80,21 @@ fn build_single(
         None => {
             let lender = DekoBufLineLender::from_path(&args.filename)?;
             let mmphf: LcpMmphfStr = LcpMmphfStr::try_new_with_builder(lender, n, builder, pl)?;
-            if let Some(ref f) = args.func {
-                unsafe { mmphf.store(f) }?;
+            if args.builder.unaligned {
+                let mmphf = mmphf.try_into_unaligned()?;
+                if let Some(ref f) = args.func {
+                    unsafe { mmphf.store(f) }?;
+                }
+            } else {
+                if let Some(ref f) = args.func {
+                    unsafe { mmphf.store(f) }?;
+                }
             }
         }
         Some(ref ht) => {
             let keys = read_keys(&args.filename, n)?;
             let n = keys.len();
+            let unaligned = args.builder.unaligned;
             macro_rules! build {
                 ($h:ty) => {{
                     let mmphf: SignedFunc<LcpMmphfStr, Box<[$h]>> =
@@ -95,8 +104,15 @@ fn build_single(
                             builder,
                             pl,
                         )?;
-                    if let Some(ref f) = args.func {
-                        unsafe { mmphf.store(f) }?;
+                    if unaligned {
+                        let mmphf = mmphf.try_into_unaligned()?;
+                        if let Some(ref f) = args.func {
+                            unsafe { mmphf.store(f) }?;
+                        }
+                    } else {
+                        if let Some(ref f) = args.func {
+                            unsafe { mmphf.store(f) }?;
+                        }
                     }
                 }};
             }
@@ -121,13 +137,21 @@ fn build_two_step(
         None => {
             let lender = DekoBufLineLender::from_path(&args.filename)?;
             let mmphf: Lcp2MmphfStr = Lcp2MmphfStr::try_new_with_builder(lender, n, builder, pl)?;
-            if let Some(ref f) = args.func {
-                unsafe { mmphf.store(f) }?;
+            if args.builder.unaligned {
+                let mmphf = mmphf.try_into_unaligned()?;
+                if let Some(ref f) = args.func {
+                    unsafe { mmphf.store(f) }?;
+                }
+            } else {
+                if let Some(ref f) = args.func {
+                    unsafe { mmphf.store(f) }?;
+                }
             }
         }
         Some(ref ht) => {
             let keys = read_keys(&args.filename, n)?;
             let n = keys.len();
+            let unaligned = args.builder.unaligned;
             macro_rules! build {
                 ($h:ty) => {{
                     let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =
@@ -136,8 +160,15 @@ fn build_two_step(
                             n,
                             pl,
                         )?;
-                    if let Some(ref f) = args.func {
-                        unsafe { mmphf.store(f) }?;
+                    if unaligned {
+                        let mmphf = mmphf.try_into_unaligned()?;
+                        if let Some(ref f) = args.func {
+                            unsafe { mmphf.store(f) }?;
+                        }
+                    } else {
+                        if let Some(ref f) = args.func {
+                            unsafe { mmphf.store(f) }?;
+                        }
                     }
                 }};
             }
