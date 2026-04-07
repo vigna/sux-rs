@@ -17,13 +17,13 @@
 use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::no_logging;
-use mem_dbg::MemSize;
+use mem_dbg::{DbgFlags, MemDbg, MemSize};
+use std::io::BufRead;
 use sux::bits::BitFieldVec;
 use sux::func::hollow_trie::HtDistMmphfStr;
 use sux::func::lcp_mmphf::LcpMmphf;
 use sux::func::shard_edge::FuseLge3Shards;
 use sux::utils::FromSlice;
-use std::io::BufRead;
 
 type DefLcpStr = LcpMmphf<str, BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>;
 
@@ -83,11 +83,8 @@ fn main() -> Result<()> {
     // Build
     eprintln!("Building HtDistMmphf...");
     let start = std::time::Instant::now();
-    let func = HtDistMmphfStr::try_new(
-        FromSlice::new(&keys),
-        n,
-        no_logging![],
-    )?;
+    let func = HtDistMmphfStr::try_new(FromSlice::new(&keys), n, no_logging![])?;
+    func.mem_dbg(DbgFlags::default())?;
     let build_time = start.elapsed();
     eprintln!(
         "Build time: {:.3} s ({:.0} ns/key)",
@@ -129,7 +126,11 @@ fn main() -> Result<()> {
     );
 
     for i in 0..n {
-        assert_eq!(lcp.get(keys[i].as_str()), i, "LcpMmphf verification failed at {i}");
+        assert_eq!(
+            lcp.get(keys[i].as_str()),
+            i,
+            "LcpMmphf verification failed at {i}"
+        );
     }
     let lcp_bits = lcp.mem_size(mem_dbg::SizeFlags::default()) * 8;
     eprintln!(

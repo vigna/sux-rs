@@ -14,6 +14,16 @@
 //! equal-size buckets in O(log *u*) time per query, where *u* is the
 //! universe size.
 //!
+//! The main entry point is [`HtDistMmphf`], which supports arbitrary
+//! byte-representable key types via the `K` parameter. Convenience aliases
+//! [`HtDistMmphfStr`] and [`HtDistMmphfSliceU8`] are provided for common
+//! cases. For integer keys, [`HtDistMmphfInt`] provides a specialized
+//! implementation with direct bit-level operations.
+//!
+//! These structures implement the [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned)
+//! trait, allowing them to be converted into (usually faster) structures
+//! using unaligned access.
+//!
 //! # References
 //!
 //! Djamal Belazzougui, Paolo Boldi, Rasmus Pagh, and Sebastiano Vigna.
@@ -860,9 +870,22 @@ impl<D: SliceByValue<Value = usize> + MemSize> HollowTrieDistributor<D> {
 /// [`HollowTrieDistributor`] and per-bucket offsets stored in a
 /// [`VFunc`].
 ///
-/// Given *n* byte-sequence keys in sorted order, the structure maps each
-/// key to its rank (0 to *n* − 1). Querying a key not in the original
-/// set returns an arbitrary value.
+/// Given *n* keys in sorted order, the structure maps each key to its
+/// rank (0 to *n* − 1). Querying a key not in the original set returns
+/// an arbitrary value (same contract as [`VFunc::get`]).
+///
+/// The keys are divided into equal-size buckets. A hollow trie built on
+/// the bucket delimiters (last key of each full bucket) distributes each
+/// key to its bucket. Then a per-key offset within the bucket is stored
+/// in a [`VFunc`]. The rank of a key is `bucket * bucket_size + offset`.
+///
+/// See [`HtDistMmphfStr`] and [`HtDistMmphfSliceU8`] for common
+/// instantiations. For integer keys, use [`HtDistMmphfInt`].
+///
+/// This structure implements the
+/// [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing
+/// it to be converted into (usually faster) structures using unaligned
+/// access.
 ///
 /// # Examples
 ///
@@ -897,10 +920,71 @@ pub struct HtDistMmphf<K: ?Sized, D: SliceByValue = BitFieldVec<Box<[usize]>>> {
 }
 
 /// An [`HtDistMmphf`] for `str` keys.
+///
+/// This structure implements the
+/// [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing
+/// it to be converted into (usually faster) structures using unaligned
+/// access.
+///
+/// # Examples
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::func::hollow_trie::HtDistMmphfStr;
+/// # use sux::utils::FromSlice;
+/// let keys: Vec<&str> = vec!["alpha", "beta", "delta", "gamma"];
+/// let func: HtDistMmphfStr =
+///     HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+///
+/// for (i, key) in keys.iter().enumerate() {
+///     assert_eq!(func.get(key), i);
+/// }
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 #[cfg(feature = "rayon")]
 pub type HtDistMmphfStr<D = BitFieldVec<Box<[usize]>>> = HtDistMmphf<str, D>;
 
 /// An [`HtDistMmphf`] for `[u8]` keys.
+///
+/// This structure implements the
+/// [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing
+/// it to be converted into (usually faster) structures using unaligned
+/// access.
+///
+/// # Examples
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::func::hollow_trie::HtDistMmphfSliceU8;
+/// # use sux::utils::FromSlice;
+/// let keys: Vec<Vec<u8>> = vec![
+///     b"alpha".to_vec(),
+///     b"beta".to_vec(),
+///     b"delta".to_vec(),
+///     b"gamma".to_vec(),
+/// ];
+///
+/// let func: HtDistMmphfSliceU8 = HtDistMmphfSliceU8::try_new(
+///     FromSlice::new(&keys),
+///     keys.len(),
+///     no_logging![],
+/// )?;
+///
+/// for (i, key) in keys.iter().enumerate() {
+///     assert_eq!(func.get(key.as_slice()), i);
+/// }
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 #[cfg(feature = "rayon")]
 pub type HtDistMmphfSliceU8<D = BitFieldVec<Box<[usize]>>> = HtDistMmphf<[u8], D>;
 
@@ -1579,11 +1663,44 @@ fn encode_int_behaviour_key<T: PrimitiveInteger>(
 ///
 /// Given *n* integers of type `T` in ascending order, the structure
 /// maps each integer to its rank (0 to *n* − 1). Querying an integer
-/// not in the original set returns an arbitrary value.
+/// not in the original set returns an arbitrary value (same contract as
+/// [`VFunc::get`]).
+///
+/// The keys are divided into equal-size buckets. A hollow trie built on
+/// the bucket delimiters distributes each key to its bucket using
+/// bit-level operations. Then a per-key offset is stored in a
+/// [`VFunc`]. The rank of a key is `bucket * bucket_size + offset`.
 ///
 /// Internally, keys are XOR-mapped with `T::MIN` so that numeric
 /// order matches bit-lexicographic order (for unsigned types this is
 /// a no-op).
+///
+/// This structure implements the
+/// [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing
+/// it to be converted into (usually faster) structures using unaligned
+/// access.
+///
+/// # Examples
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::func::hollow_trie::HtDistMmphfInt;
+/// # use sux::utils::FromSlice;
+/// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+///
+/// let func: HtDistMmphfInt<u64> =
+///     HtDistMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+///
+/// for (i, &key) in keys.iter().enumerate() {
+///     assert_eq!(func.get(key), i);
+/// }
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 #[derive(Debug)]
 #[cfg(feature = "rayon")]
 pub struct HtDistMmphfInt<T: PrimitiveInteger, D: SliceByValue = BitFieldVec<Box<[usize]>>> {
