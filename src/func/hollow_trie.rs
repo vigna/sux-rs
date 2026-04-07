@@ -37,6 +37,7 @@ use {
     crate::bits::BitFieldVecU,
     crate::bits::BitVec,
     crate::func::lcp_mmphf::{lcp_bits, lcp_bits_nul},
+    crate::func::shard_edge::FuseLge3NoShards,
     crate::func::VFunc,
     crate::traits::TryIntoUnaligned,
     crate::utils::*,
@@ -47,7 +48,7 @@ use {
     mem_dbg::*,
     num_primitive::PrimitiveInteger,
     std::borrow::Borrow,
-    succinctly::trees::BalancedParens,
+    super::jacobson_bp::JacobsonBP,
     value_traits::slices::SliceByValue,
 };
 
@@ -390,7 +391,7 @@ fn encode_behaviour_key(
 #[derive(Debug)]
 pub struct HollowTrieDistributor<D: SliceByValue = BitFieldVec<Box<[usize]>>> {
     /// Balanced-parentheses support structure for the trie.
-    bal_paren: BalancedParens,
+    bal_paren: JacobsonBP,
     /// Skip values stored as a prefix-sum list over Elias-Fano.
     skips: crate::list::PrefixSumIntList,
     /// Number of internal nodes (= number of delimiters - 1).
@@ -400,9 +401,9 @@ pub struct HollowTrieDistributor<D: SliceByValue = BitFieldVec<Box<[usize]>>> {
     num_delimiters: usize,
     /// Detects false follows: maps (node, path) -> 0 (true follow) or
     /// 1 (false follow).
-    false_follows_detector: VFunc<[u8], D>,
+    false_follows_detector: VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
     /// External behaviour: maps (node, path) -> LEFT (0) or RIGHT (1).
-    external_behaviour: VFunc<[u8], D>,
+    external_behaviour: VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
 }
 
 #[cfg(feature = "rayon")]
@@ -413,8 +414,7 @@ impl<D: SliceByValue + MemSize + mem_dbg::FlatType> MemSize for HollowTrieDistri
         refs: &mut mem_dbg::HashMap<usize, usize>,
     ) -> usize {
         let mut size = core::mem::size_of::<Self>();
-        // BalancedParens internal memory is opaque; estimate from words
-        size += self.bal_paren.words().len() * 8;
+        size += self.bal_paren.mem_size_rec(flags, refs);
         size += self.skips.mem_size_rec(flags, refs);
         size += self.false_follows_detector.mem_size_rec(flags, refs);
         size += self.external_behaviour.mem_size_rec(flags, refs);
@@ -463,7 +463,7 @@ impl HollowTrieDistributor {
         }
 
         let (trie_words, trie_len, raw_skips, num_nodes) = builder.finish();
-        let bal_paren = BalancedParens::new(trie_words, trie_len);
+        let bal_paren = JacobsonBP::new(trie_words, trie_len);
 
         // Store skips as a prefix-sum list over Elias-Fano.
         let skips = crate::list::PrefixSumIntList::new(&raw_skips);
@@ -711,7 +711,7 @@ impl HollowTrieDistributor {
         ));
 
         let false_follows_detector =
-            <VFunc<[u8], BitFieldVec<Box<[usize]>>>>::try_new(
+            <VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>>::try_new(
                 FromSlice::new(&ff_keys),
                 FromCloneableIntoIterator::new(ff_values.iter().copied()),
                 ff_keys.len(),
@@ -724,7 +724,7 @@ impl HollowTrieDistributor {
         ));
 
         let external_behaviour =
-            <VFunc<[u8], BitFieldVec<Box<[usize]>>>>::try_new(
+            <VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>>::try_new(
                 FromSlice::new(&ext_keys),
                 FromCloneableIntoIterator::new(ext_values.iter().copied()),
                 ext_keys.len(),
@@ -1025,7 +1025,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
         if n == 0 {
             return Ok(Self {
                 distributor: HollowTrieDistributor {
-                    bal_paren: BalancedParens::new(vec![0b10], 2),
+                    bal_paren: JacobsonBP::new(vec![0b10], 2),
                     skips: crate::list::PrefixSumIntList::new(&Vec::<usize>::new()),
                     num_nodes: 0,
                     num_delimiters: 0,
@@ -1085,7 +1085,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
         debug_assert_eq!(delimiters.len(), num_delimiters);
 
         let (trie_words, trie_len, raw_skips, num_nodes) = builder.finish();
-        let bal_paren = BalancedParens::new(trie_words, trie_len);
+        let bal_paren = JacobsonBP::new(trie_words, trie_len);
         let skips = crate::list::PrefixSumIntList::new(&raw_skips);
 
         if num_delimiters == 0 {
@@ -1293,7 +1293,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
         ));
 
         let false_follows_detector =
-            <VFunc<[u8], BitFieldVec<Box<[usize]>>>>::try_new(
+            <VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>>::try_new(
                 FromSlice::new(&ff_keys),
                 FromCloneableIntoIterator::new(ff_values.iter().copied()),
                 ff_keys.len(),
@@ -1306,7 +1306,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
         ));
 
         let external_behaviour =
-            <VFunc<[u8], BitFieldVec<Box<[usize]>>>>::try_new(
+            <VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>>::try_new(
                 FromSlice::new(&ext_keys),
                 FromCloneableIntoIterator::new(ext_values.iter().copied()),
                 ext_keys.len(),
@@ -1704,13 +1704,13 @@ fn encode_int_behaviour_key<T: PrimitiveInteger>(
 #[derive(Debug)]
 #[cfg(feature = "rayon")]
 pub struct HtDistMmphfInt<T: PrimitiveInteger, D: SliceByValue = BitFieldVec<Box<[usize]>>> {
-    bal_paren: BalancedParens,
+    bal_paren: JacobsonBP,
     skips: crate::list::PrefixSumIntList,
     #[allow(dead_code)]
     num_nodes: usize,
     num_delimiters: usize,
-    false_follows_detector: VFunc<[u8], D>,
-    external_behaviour: VFunc<[u8], D>,
+    false_follows_detector: VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
+    external_behaviour: VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
     offset: VFunc<T, D>,
     log2_bucket_size: usize,
     n: usize,
@@ -1762,7 +1762,7 @@ where
 
         if n == 0 {
             return Ok(Self {
-                bal_paren: BalancedParens::new(vec![0b10], 2),
+                bal_paren: JacobsonBP::new(vec![0b10], 2),
                 skips: crate::list::PrefixSumIntList::new(&Vec::<usize>::new()),
                 num_nodes: 0,
                 num_delimiters: 0,
@@ -1812,7 +1812,7 @@ where
         debug_assert_eq!(delimiters.len(), num_delimiters);
 
         let (trie_words, trie_len, raw_skips, num_nodes) = builder.finish();
-        let bal_paren = BalancedParens::new(trie_words, trie_len);
+        let bal_paren = JacobsonBP::new(trie_words, trie_len);
         let skips = crate::list::PrefixSumIntList::new(&raw_skips);
 
         if num_delimiters == 0 {
@@ -2022,7 +2022,7 @@ where
         ));
 
         let false_follows_detector =
-            <VFunc<[u8], BitFieldVec<Box<[usize]>>>>::try_new(
+            <VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>>::try_new(
                 FromSlice::new(&ff_keys),
                 FromCloneableIntoIterator::new(ff_values.iter().copied()),
                 ff_keys.len(),
@@ -2035,7 +2035,7 @@ where
         ));
 
         let external_behaviour =
-            <VFunc<[u8], BitFieldVec<Box<[usize]>>>>::try_new(
+            <VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>>::try_new(
                 FromSlice::new(&ext_keys),
                 FromCloneableIntoIterator::new(ext_values.iter().copied()),
                 ext_keys.len(),

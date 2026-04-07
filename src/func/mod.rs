@@ -82,6 +82,8 @@ pub use signed::*;
 pub mod hollow_trie;
 pub use hollow_trie::*;
 
+pub mod jacobson_bp;
+
 pub mod shard_edge;
 
 /// Avalanches bits using the finalization step of Austin Appleby's
