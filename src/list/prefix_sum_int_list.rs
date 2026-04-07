@@ -244,3 +244,17 @@ where
         end - start
     }
 }
+
+use crate::traits::TryIntoUnaligned;
+
+impl<D: TryIntoUnaligned> TryIntoUnaligned for PrefixSumIntList<D> {
+    type Unaligned = PrefixSumIntList<D::Unaligned>;
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+        Ok(PrefixSumIntList {
+            n: self.n,
+            prefix_sums: self.prefix_sums.try_into_unaligned()?,
+        })
+    }
+}

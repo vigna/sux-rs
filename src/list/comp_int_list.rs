@@ -239,3 +239,19 @@ where
         (stored - V::ONE) + self.min
     }
 }
+
+use crate::traits::TryIntoUnaligned;
+
+impl<V: Word, D: TryIntoUnaligned> TryIntoUnaligned for CompIntList<V, D> {
+    type Unaligned = CompIntList<V, D::Unaligned>;
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+        Ok(CompIntList {
+            n: self.n,
+            min: self.min,
+            delimiters: self.delimiters.try_into_unaligned()?,
+            data: self.data,
+        })
+    }
+}
