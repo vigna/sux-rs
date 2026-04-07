@@ -42,13 +42,17 @@ provides the bit length, and on the traits [`AsRef<W>`]/[`AsMut<W>`], which
 provide concrete access to the underlying data. This approach makes it possible
 to use any structure that implements these traits as a bit vector, and to
 implement your own bit vector if you need specific features (e.g., support for
-unaligned access).
+unaligned access). On the other hand, you cannot have implicitly defined
+bit vectors, or bit vectors whose start is not aligned to a word boundary.
 
 Rank/select structures are built on backends implementing the [`Backend`] trait,
 providing via an associated type the word type, and on the traits above;
-moreover, the strutures export the same traits by delegation, so you can use any
+moreover, the structures export the same traits by delegation, so you can use any
 structure as a backend for (further) rank/select structures, making arbitrary
 nesting of structures simple, typesafe and zero-cost.
+
+Similarly, all structures with a base word (e.g., [`VFunc`]) use the [`Backend`]
+trait to provide the word type to wrappers such as [`SignedFunc`].
 
 ## ε-serde Support
 
@@ -203,21 +207,21 @@ Union nor the Italian MUR can be held responsible for them.
 [`SelectSmall`]: https://docs.rs/sux/latest/sux/rank_sel/struct.SelectSmall.html
 [`SelectAdapt`]: https://docs.rs/sux/latest/sux/rank_sel/struct.SelectAdapt.html
 [static functions]: https://docs.rs/sux/latest/sux/func/vfunc/struct.VFunc.html
+[`VFunc`]: https://docs.rs/sux/latest/sux/func/vfunc/struct.VFunc.html
 [monotone minimal perfect hash functions]: https://docs.rs/sux/latest/sux/func/lcp_mmphf/index.html
 [static filters]: https://docs.rs/sux/latest/sux/dict/vfilter/struct.VFilter.html
 [partial arrays]: https://docs.rs/sux/latest/sux/array/struct.PartialArray.html
-[opertions on bit vectors]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
+[operations on bit vectors]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
 [unaligned access]: https://docs.rs/sux/latest/sux/traits/trait.TryIntoUnaligned.html
 [`value-traits`]: https://crates.io/crates/value-traits
 [serde]: https://crates.io/crates/serde/
 [`deko`]: https://crates.io/crates/deko/
 [`lenders`]: https://docs.rs/sux/latest/sux/utils/lenders/
-[signed minimal perfect hash functions]: https://docs.rs/sux/latest/sux/dict/signed_vfunc/struct.SignedVFunc.html
+[signed minimal perfect hash functions]: https://docs.rs/sux/latest/sux/func/signed/struct.SignedFunc.html
+[`SignedFunc`]: https://docs.rs/sux/latest/sux/func/signed/struct.SignedFunc.html
 [lists]: https://docs.rs/sux/latest/sux/list/index.html
 [compressed lists of integers]: https://docs.rs/sux/latest/sux/list/comp_int_list/struct.CompIntList.html
-[`AsRef<Backend:Word>`]: https://doc.rust-lang.org/core/convert/trait.AsRef.html
-[`AsMut<Backend:Word>`]: https://doc.rust-lang.org/core/convert/trait.AsMut.html
 [`AsRef<W>`]: https://doc.rust-lang.org/core/convert/trait.AsRef.html
 [`AsMut<W>`]: https://doc.rust-lang.org/core/convert/trait.AsMut.html
-[`Word`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html#associatedtype.Word
+[vectors of bit fields]: https://docs.rs/sux/latest/sux/bits/bit_field_vec/index.html
 [`Backend`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html

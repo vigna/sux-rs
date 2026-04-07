@@ -908,7 +908,7 @@ impl<
     /// `build_fn` is called with `(&mut self, seed, store, max_value, num_keys,
     /// pl)`. The builder's `shard_edge`, `c`, and `lge` fields are already set
     /// up when `build_fn` is invoked, so it can call
-    /// [`try_build_from_shard_iter`](Self::try_build_from_shard_iter) directly.
+    /// `try_build_from_shard_iter` directly.
     ///
     /// Returns whatever `build_fn` returns on success.
     pub fn try_populate_and_build<
