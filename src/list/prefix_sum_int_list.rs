@@ -68,7 +68,9 @@ use crate::traits::{SelectUnchecked, Word};
 /// - `D`: The prefix-sum structure. Must implement `SliceByValue<Value = V>`.
 ///   Defaults to [`EfSeq<V>`](EfSeq).
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct PrefixSumIntList<V: Word = usize, D: SliceByValue<Value = V> = EfSeq<V>> {
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PrefixSumIntList<D = EfSeq<usize>> {
     /// Number of stored values.
     ///
     /// Note that this is identical to `prefix_sums.len() - 1`, but we have no
