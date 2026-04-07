@@ -1763,12 +1763,7 @@ where
 /// This iterator is slightly slower than a [backward
 /// iterator](EliasFanoBackIter), but much faster than using selection.
 #[derive(MemDbg, MemSize)]
-pub struct EliasFanoBidiIter<
-    'a,
-    V: Word + PrimitiveNumberAs<usize>,
-    H: AsRef<[usize]>,
-    L: SliceByValue<Value = V>,
-> {
+pub struct EliasFanoBidiIter<'a, V, H, L> {
     ef: &'a EliasFano<V, H, L>,
     /// Cursor position: `next()` yields element `index`, `prev()` yields
     /// element `index - 1`.
@@ -2024,7 +2019,7 @@ impl<V: Word + PrimitiveNumberAs<usize>, A: AsRef<[V]>> From<A>
 /// assert_eq!(iter.next(), None);
 /// ```
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct EliasFanoBuilder<V: Word = usize> {
+pub struct EliasFanoBuilder<V = usize> {
     n: usize,
     u: V,
     l: usize,

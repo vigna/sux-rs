@@ -104,8 +104,8 @@ type LcpLen = u16;
     ))
 )]
 pub struct Lcp2MmphfInt<
-    T: PrimitiveInteger,
-    D: SliceByValue = BitFieldVec<Box<[usize]>>,
+    T,
+    D = BitFieldVec<Box<[usize]>>,
     S = [u64; 2],
     E = FuseLge3Shards,
 > {
@@ -976,12 +976,7 @@ where
         deserialize = "D: serde::Deserialize<'de>, D::Value: serde::Deserialize<'de>, E: serde::Deserialize<'de>"
     ))
 )]
-pub struct Lcp2Mmphf<
-    K: ?Sized,
-    D: SliceByValue = BitFieldVec<Box<[usize]>>,
-    S: Sig = [u64; 2],
-    E: ShardEdge<S, 3> = FuseLge3Shards,
-> {
+pub struct Lcp2Mmphf<K: ?Sized, D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) n: usize,
     pub(crate) log2_bucket_size: usize,
     pub(crate) fused: VFunc<K, D, S, E>,

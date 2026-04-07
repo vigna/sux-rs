@@ -106,7 +106,7 @@ impl Sig for [u64; 1] {
 
 /// A signature and a value.
 #[derive(Debug, Clone, Copy, Default, MemDbg, MemSize)]
-pub struct SigVal<S: BinSafe + Sig, V: BinSafe> {
+pub struct SigVal<S, V> {
     pub sig: S,
     pub val: V,
 }
@@ -856,7 +856,7 @@ where
 /// shard is made by one or more buckets, it will aggregate them as necessary;
 /// if a bucket contains several shards, it will split the bucket into shards.
 #[derive(Debug)]
-pub struct ShardIter<S: BinSafe + Sig, V: BinSafe, B, T: BorrowMut<ShardStoreImpl<S, V, B>>> {
+pub struct ShardIter<S, V, B, T> {
     store: T,
     /// Whether the store is borrowed.
     borrowed: bool,

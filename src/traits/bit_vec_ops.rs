@@ -226,7 +226,7 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
 
 /// An iterator over the bits of a bit vector as booleans.
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct BitIter<'a, W: Word, B: ?Sized> {
+pub struct BitIter<'a, W, B: ?Sized> {
     bits: &'a B,
     len: usize,
     next_bit_pos: usize,
@@ -271,7 +271,7 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> FusedIterator for BitIter<'_, W, B> {}
 
 /// An iterator over the positions of the ones in a bit vector.
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct OnesIter<'a, W: Word, B: ?Sized> {
+pub struct OnesIter<'a, W, B: ?Sized> {
     bits: &'a B,
     len: usize,
     word_idx: usize,
@@ -326,7 +326,7 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> FusedIterator for OnesIter<'_, W, B> {}
 
 /// An iterator over the positions of the zeros in a bit vector.
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct ZerosIter<'a, W: Word, B: ?Sized> {
+pub struct ZerosIter<'a, W, B: ?Sized> {
     bits: &'a B,
     len: usize,
     word_idx: usize,

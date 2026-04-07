@@ -66,7 +66,7 @@ use crate::utils::PrimitiveUnsignedExt;
 /// - `D`: The delimiter structure. Must implement `SliceByValue<Value = u64>`.
 ///   Defaults to [`EfSeq<u64>`](EfSeq).
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct CompIntList<V: Word = usize, D: SliceByValue<Value = u64> = EfSeq<u64>> {
+pub struct CompIntList<V = usize, D = EfSeq<u64>> {
     /// Number of stored values.
     ///
     /// Note that this is identical to `delimiters.len() - 1`, but we have no

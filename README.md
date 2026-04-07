@@ -54,20 +54,7 @@ nesting of structures simple, typesafe and zero-cost.
 Similarly, all structures with a base word (e.g., [`VFunc`]) use the [`Backend`]
 trait to provide the word type to wrappers such as [`SignedFunc`].
 
-## ε-serde Support
-
-All structures in this crate are designed to work well with [ε-serde]: in
-particular, once you have created and serialized them, you can easily map them
-into memory or load them in memory regions with specific `mmap()` attributes.
-Support for ε-serde is provided by the feature `epserde`, and support for
-memory mapping in ε-serde is provided by the `mmap` feature.
-
-## serde Support
-
-All structures in this crate support serialization with [serde]. Support is
-gated by the feature `serde`.
-
-## Slice by Value Support
+## Slice-by-value support
 
 Wherever possible, we support the “slice by value” traits from the
 [`value-traits`] crate, which make it possible to treat structures such as
@@ -75,7 +62,20 @@ bit-field vectors or succinct representations in a manner similar to slices.
 This approach is also used to make [vectors of bit fields] and slices (where the
 bit width of the fields is exactly that of the word type) interchangeable.
 
-## `MemDbg`/`MemSize` Support
+## ε-serde support
+
+All structures in this crate are designed to work well with [ε-serde]: in
+particular, once you have created and serialized them, you can easily map them
+into memory or load them in memory regions with specific `mmap()` attributes.
+Support for ε-serde is provided by the feature `epserde`, and support for
+memory mapping in ε-serde is provided by the `mmap` feature.
+
+## serde support
+
+All structures in this crate support serialization with [serde]. Support is
+gated by the feature `serde`.
+
+## `MemDbg`/`MemSize` support
 
 All structures in this crate support the [`MemDbg`] and [`MemSize`] traits from
 the [`mem_dbg`] crate, which provide convenient facilities for inspecting memory

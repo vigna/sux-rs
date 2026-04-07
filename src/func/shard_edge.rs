@@ -712,7 +712,7 @@ mod fuse {
     /// A newtype for sorting by the second value of a `[u64; 2]` signature.
     #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
     #[repr(transparent)]
-    pub struct LowSortSigVal<V: BinSafe>(SigVal<[u64; 2], V>);
+    pub struct LowSortSigVal<V>(SigVal<[u64; 2], V>);
 
     impl<V: BinSafe> RadixKey for LowSortSigVal<V> {
         const LEVELS: usize = 8;

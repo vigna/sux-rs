@@ -23,7 +23,7 @@ use arbitrary_chunks::ArbitraryChunks;
 
 /// An equation on `W::BITS`-dimensional vectors with coefficients in **F**₂.
 #[derive(Clone, Debug)]
-pub struct Modulo2Equation<W: Word = usize> {
+pub struct Modulo2Equation<W = usize> {
     /// The variables in increasing order.
     vars: Vec<u32>,
     /// The constant term
@@ -32,7 +32,7 @@ pub struct Modulo2Equation<W: Word = usize> {
 
 /// A system of [equations](struct.Modulo2Equation.html).
 #[derive(Clone, Debug)]
-pub struct Modulo2System<W: Word = usize> {
+pub struct Modulo2System<W = usize> {
     /// The number of variables.
     num_vars: usize,
     /// The equations in the system.

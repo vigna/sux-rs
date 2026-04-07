@@ -79,7 +79,7 @@ fn bench_zipf(c: &mut Criterion) {
     group.finish();
 }
 
-fn to_vec_prefix_sums(list: PrefixSumIntList) -> PrefixSumIntList<usize, Vec<usize>> {
+fn to_vec_prefix_sums(list: PrefixSumIntList) -> PrefixSumIntList<Vec<usize>> {
     unsafe {
         list.map_prefix_sums(|d| {
             let n = d.len();

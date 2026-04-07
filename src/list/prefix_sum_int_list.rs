@@ -13,8 +13,8 @@
 //!
 //! The prefix-sum structure can be [replaced](PrefixSumIntList::map_prefix_sums)
 //! with any structure implementing [`IntoIteratorFrom`] with the returned
-//! iterator implementing `UncheckedIterator<Item = V>`, as long as it returns
-//! the same cumulative sums.
+//! iterator implementing `UncheckedIterator<Item = D::Value>`, as long as it
+//! returns the same cumulative sums.
 //!
 //! This structure implements [`SliceByValue`] for random access.
 //!
@@ -51,7 +51,7 @@ use crate::traits::{SelectUnchecked, Word};
 /// A compact list of nonnegative integers based on prefix sums.
 ///
 /// The original values are stored implicitly as differences of consecutive
-/// prefix sums held in a [`SliceByValue<Value = V>`] (by default an
+/// prefix sums held in a [`SliceByValue`] structure (by default an
 /// [Elias–Fano sequence](EfSeq)). Recovering the *i*-th value requires two
 /// accesses to the prefix-sum structure.
 ///
@@ -63,12 +63,10 @@ use crate::traits::{SelectUnchecked, Word};
 ///
 /// # Type Parameters
 ///
-/// - `V`: The value type. Must be a [`Word`] type. Defaults to `usize`. The
-///   caller must ensure that the prefix sums do not overflow `V`.
-/// - `D`: The prefix-sum structure. Must implement `SliceByValue<Value = V>`.
-///   Defaults to [`EfSeq<V>`](EfSeq).
+/// - `D`: The prefix-sum structure. Must implement `SliceByValue` with a
+///   [`Word`] value type. Defaults to [`EfSeq<usize>`](EfSeq).
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct PrefixSumIntList<V: Word = usize, D: SliceByValue<Value = V> = EfSeq<V>> {
+pub struct PrefixSumIntList<D = EfSeq<usize>> {
     /// Number of stored values.
     ///
     /// Note that this is identical to `prefix_sums.len() - 1`, but we have no
@@ -78,7 +76,7 @@ pub struct PrefixSumIntList<V: Word = usize, D: SliceByValue<Value = V> = EfSeq<
     prefix_sums: D,
 }
 
-impl<V: Word> PrefixSumIntList<V> {
+impl<V: Word> PrefixSumIntList<EfSeq<V>> {
     /// Creates a new `PrefixSumIntList` from a reference to a collection of
     /// nonnegative values.
     ///
@@ -133,7 +131,7 @@ impl<V: Word> PrefixSumIntList<V> {
 
 /// Creates a `PrefixSumIntList` from an existing Elias—Fano structure.
 impl<V: Word, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = V>>
-    From<EliasFano<V, H, L>> for PrefixSumIntList<V, EliasFano<V, H, L>>
+    From<EliasFano<V, H, L>> for PrefixSumIntList<EliasFano<V, H, L>>
 {
     fn from(elias_fano: EliasFano<V, H, L>) -> Self {
         PrefixSumIntList {
@@ -143,7 +141,7 @@ impl<V: Word, H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = V>>
     }
 }
 
-impl<V: Word, D: SliceByValue<Value = V>> PrefixSumIntList<V, D> {
+impl<D: SliceByValue<Value: Word>> PrefixSumIntList<D> {
     /// Creates a `PrefixSumIntList` from an existing prefix-sum structure.
     ///
     /// The structure must contain at least one element (the initial zero),
@@ -157,7 +155,7 @@ impl<V: Word, D: SliceByValue<Value = V>> PrefixSumIntList<V, D> {
             return Err("PrefixSumIntList: prefix-sum sequence must be non-empty");
         }
         let mut prev = prefix_sums.index_value(0);
-        if prev != V::ZERO {
+        if prev != D::Value::ZERO {
             return Err("PrefixSumIntList: first element must be zero");
         }
         for i in 1..len {
@@ -174,17 +172,16 @@ impl<V: Word, D: SliceByValue<Value = V>> PrefixSumIntList<V, D> {
     }
 }
 
-impl<V: Word, D: SliceByValue<Value = V>> PrefixSumIntList<V, D> {
+impl<D: SliceByValue> PrefixSumIntList<D> {
     /// Replaces the prefix-sum structure.
     ///
     /// # Safety
     ///
     /// This method is unsafe because it is not possible to guarantee that the
     /// new structure returns the same values as the old one.
-    pub unsafe fn map_prefix_sums<F, D2>(self, func: F) -> PrefixSumIntList<V, D2>
+    pub unsafe fn map_prefix_sums<F, D2>(self, func: F) -> PrefixSumIntList<D2>
     where
         F: FnOnce(D) -> D2,
-        D2: SliceByValue<Value = V>,
     {
         PrefixSumIntList {
             n: self.n,
@@ -198,10 +195,10 @@ impl<V: Word, D: SliceByValue<Value = V>> PrefixSumIntList<V, D> {
     }
 }
 
-impl<V: Word, D: SliceByValue<Value = V>> PrefixSumIntList<V, D>
+impl<D: SliceByValue> PrefixSumIntList<D>
 where
     for<'a> &'a D: IntoIteratorFrom,
-    for<'a> <&'a D as IntoIteratorFrom>::IntoIterFrom: UncheckedIterator<Item = V>,
+    for<'a> <&'a D as IntoIteratorFrom>::IntoIterFrom: UncheckedIterator<Item = D::Value>,
 {
     /// Returns the prefix sum up to (excluded) index `i`.
     ///
@@ -211,7 +208,7 @@ where
     ///
     /// Panics if `i > self.len()`.
     #[inline(always)]
-    pub fn prefix_sum(&self, i: usize) -> V {
+    pub fn prefix_sum(&self, i: usize) -> D::Value {
         self.prefix_sums.index_value(i)
     }
 
@@ -222,17 +219,17 @@ where
     ///
     /// `i` must be in `0..=self.len()`.
     #[inline(always)]
-    pub unsafe fn prefix_sum_unchecked(&self, i: usize) -> V {
+    pub unsafe fn prefix_sum_unchecked(&self, i: usize) -> D::Value {
         unsafe { self.prefix_sums.get_value_unchecked(i) }
     }
 }
 
-impl<V: Word, D: SliceByValue<Value = V>> SliceByValue for PrefixSumIntList<V, D>
+impl<D: SliceByValue<Value: Word>> SliceByValue for PrefixSumIntList<D>
 where
     for<'a> &'a D: IntoIteratorFrom,
-    for<'a> <&'a D as IntoIteratorFrom>::IntoIterFrom: UncheckedIterator<Item = V>,
+    for<'a> <&'a D as IntoIteratorFrom>::IntoIterFrom: UncheckedIterator<Item = D::Value>,
 {
-    type Value = V;
+    type Value = D::Value;
 
     #[inline(always)]
     fn len(&self) -> usize {
@@ -240,7 +237,7 @@ where
     }
 
     #[inline]
-    unsafe fn get_value_unchecked(&self, index: usize) -> V {
+    unsafe fn get_value_unchecked(&self, index: usize) -> D::Value {
         let mut iter = (&self.prefix_sums).into_iter_from(index);
         let start = unsafe { iter.next_unchecked() };
         let end = unsafe { iter.next_unchecked() };
