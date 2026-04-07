@@ -99,8 +99,8 @@ type LcpLen = u16;
 #[cfg_attr(
     feature = "serde",
     serde(bound(
-        serialize = "D: serde::Serialize, D::Value: serde::Serialize, E: serde::Serialize",
-        deserialize = "D: serde::Deserialize<'de>, D::Value: serde::Deserialize<'de>, E: serde::Deserialize<'de>"
+        serialize = "VFunc<T, D, S, E>: serde::Serialize, VFunc<T, D, S, Fuse3Shards>: serde::Serialize, VFunc<IntBitPrefix<T>, D, [u64; 1], Fuse3NoShards>: serde::Serialize",
+        deserialize = "VFunc<T, D, S, E>: serde::Deserialize<'de>, VFunc<T, D, S, Fuse3Shards>: serde::Deserialize<'de>, VFunc<IntBitPrefix<T>, D, [u64; 1], Fuse3NoShards>: serde::Deserialize<'de>"
     ))
 )]
 pub struct Lcp2MmphfInt<T, D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> {
@@ -967,8 +967,8 @@ where
 #[cfg_attr(
     feature = "serde",
     serde(bound(
-        serialize = "D: serde::Serialize, D::Value: serde::Serialize, E: serde::Serialize",
-        deserialize = "D: serde::Deserialize<'de>, D::Value: serde::Deserialize<'de>, E: serde::Deserialize<'de>"
+        serialize = "VFunc<K, D, S, E>: serde::Serialize, VFunc<K, D, S, Fuse3Shards>: serde::Serialize, VFunc<BitPrefix, D, [u64; 1], Fuse3NoShards>: serde::Serialize",
+        deserialize = "VFunc<K, D, S, E>: serde::Deserialize<'de>, VFunc<K, D, S, Fuse3Shards>: serde::Deserialize<'de>, VFunc<BitPrefix, D, [u64; 1], Fuse3NoShards>: serde::Deserialize<'de>"
     ))
 )]
 pub struct Lcp2Mmphf<K: ?Sized, D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> {
