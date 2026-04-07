@@ -820,7 +820,19 @@ macro_rules! test_append_word_type {
 
         // Test many combinations of self_len and other_len to exercise
         // aligned, unaligned, single-word, multi-word, and empty cases.
-        let lengths = [0, 1, bpw / 2 - 1, bpw / 2, bpw - 1, bpw, bpw + 1, 2 * bpw - 1, 2 * bpw, 2 * bpw + 1, 3 * bpw + 7];
+        let lengths = [
+            0,
+            1,
+            bpw / 2 - 1,
+            bpw / 2,
+            bpw - 1,
+            bpw,
+            bpw + 1,
+            2 * bpw - 1,
+            2 * bpw,
+            2 * bpw + 1,
+            3 * bpw + 7,
+        ];
 
         for &self_len in &lengths {
             for &other_len in &lengths {

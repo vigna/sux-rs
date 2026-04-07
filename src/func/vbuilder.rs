@@ -1036,11 +1036,10 @@ impl<
                     std::mem::size_of::<S>() * 8,
                 ));
 
-                let maybe_max_value =
-                    sig_store.par_populate(n, self.max_num_threads, |i| SigVal {
-                        sig: T::to_sig(keys[i].borrow(), seed),
-                        val: val_fn(i),
-                    });
+                let maybe_max_value = sig_store.par_populate(n, self.max_num_threads, |i| SigVal {
+                    sig: T::to_sig(keys[i].borrow(), seed),
+                    val: val_fn(i),
+                });
 
                 pl.done();
 
