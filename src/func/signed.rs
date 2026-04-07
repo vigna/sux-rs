@@ -632,14 +632,15 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromCloneableIntoIterator;
+    /// # use sux::traits::TryIntoUnaligned;
     /// use sux::func::{SignedFunc, VFunc};
     /// use sux::bits::BitFieldVec;
     /// type SFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, Box<[u16]>>;
-    /// let func: SFunc = SFunc::try_new(
+    /// let func = SFunc::try_new(
     ///     FromCloneableIntoIterator::new(0..100_usize),
     ///     100,
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for i in 0..100 {
     ///     assert_eq!(func.get(i), Some(i));
@@ -684,15 +685,16 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromCloneableIntoIterator;
+    /// # use sux::traits::TryIntoUnaligned;
     /// use sux::func::{SignedFunc, VBuilder, VFunc};
     /// use sux::bits::BitFieldVec;
     /// type SFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, Box<[u16]>>;
-    /// let func: SFunc = SFunc::try_new_with_builder(
+    /// let func = SFunc::try_new_with_builder(
     ///     FromCloneableIntoIterator::new(0..100_usize),
     ///     100,
     ///     VBuilder::default().offline(true),
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for i in 0..100 {
     ///     assert_eq!(func.get(i), Some(i));
@@ -763,11 +765,12 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use dsi_progress_logger::no_logging;
+    /// # use sux::traits::TryIntoUnaligned;
     /// use sux::func::{SignedFunc, VFunc};
     /// use sux::bits::BitFieldVec;
     /// type SFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, Box<[u16]>>;
     /// let keys: Vec<usize> = (0..100).collect();
-    /// let func: SFunc = SFunc::try_par_new(&keys, no_logging![])?;
+    /// let func = SFunc::try_par_new(&keys, no_logging![])?.try_into_unaligned()?;
     ///
     /// for i in 0..100 {
     ///     assert_eq!(func.get(i), Some(i));
@@ -810,15 +813,16 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use dsi_progress_logger::no_logging;
+    /// # use sux::traits::TryIntoUnaligned;
     /// use sux::func::{SignedFunc, VBuilder, VFunc};
     /// use sux::bits::BitFieldVec;
     /// type SFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, Box<[u16]>>;
     /// let keys: Vec<usize> = (0..100).collect();
-    /// let func: SFunc = SFunc::try_par_new_with_builder(
+    /// let func = SFunc::try_par_new_with_builder(
     ///     &keys,
-    ///     VBuilder::default(),
+    ///     VBuilder::default().offline(true),
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for i in 0..100 {
     ///     assert_eq!(func.get(i), Some(i));
@@ -888,15 +892,16 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromCloneableIntoIterator;
+    /// # use sux::traits::TryIntoUnaligned;
     /// use sux::func::{SignedFunc, VFunc};
     /// use sux::bits::BitFieldVec;
     /// type BSFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, BitFieldVec<Box<[usize]>>>;
-    /// let func: BSFunc = BSFunc::try_new(
+    /// let func = BSFunc::try_new(
     ///     FromCloneableIntoIterator::new(0..100_usize),
     ///     100,
     ///     8,
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for i in 0..100 {
     ///     assert_eq!(func.get(i), Some(i));
@@ -947,16 +952,17 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromCloneableIntoIterator;
+    /// # use sux::traits::TryIntoUnaligned;
     /// use sux::func::{SignedFunc, VBuilder, VFunc};
     /// use sux::bits::BitFieldVec;
     /// type BSFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, BitFieldVec<Box<[usize]>>>;
-    /// let func: BSFunc = BSFunc::try_new_with_builder(
+    /// let func = BSFunc::try_new_with_builder(
     ///     FromCloneableIntoIterator::new(0..100_usize),
     ///     100,
     ///     8,
     ///     VBuilder::default().offline(true),
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for i in 0..100 {
     ///     assert_eq!(func.get(i), Some(i));
@@ -1035,11 +1041,12 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use dsi_progress_logger::no_logging;
+    /// # use sux::traits::TryIntoUnaligned;
     /// use sux::func::{SignedFunc, VFunc};
     /// use sux::bits::BitFieldVec;
     /// type BSFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, BitFieldVec<Box<[usize]>>>;
     /// let keys: Vec<usize> = (0..100).collect();
-    /// let func: BSFunc = BSFunc::try_par_new(&keys, 8, no_logging![])?;
+    /// let func = BSFunc::try_par_new(&keys, 8, no_logging![])?.try_into_unaligned()?;
     ///
     /// for i in 0..100 {
     ///     assert_eq!(func.get(i), Some(i));
@@ -1083,16 +1090,17 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use dsi_progress_logger::no_logging;
+    /// # use sux::traits::TryIntoUnaligned;
     /// use sux::func::{SignedFunc, VBuilder, VFunc};
     /// use sux::bits::BitFieldVec;
     /// type BSFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, BitFieldVec<Box<[usize]>>>;
     /// let keys: Vec<usize> = (0..100).collect();
-    /// let func: BSFunc = BSFunc::try_par_new_with_builder(
+    /// let func = BSFunc::try_par_new_with_builder(
     ///     &keys,
     ///     8,
-    ///     VBuilder::default(),
+    ///     VBuilder::default().offline(true),
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for i in 0..100 {
     ///     assert_eq!(func.get(i), Some(i));
@@ -1162,11 +1170,12 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, LcpMmphfInt};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    /// let func: SignedFunc<LcpMmphfInt<u64>, Box<[u16]>> =
-    ///     <SignedFunc<LcpMmphfInt<u64>, Box<[u16]>>>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    /// let func =
+    ///     <SignedFunc<LcpMmphfInt<u64>, Box<[u16]>>>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1227,10 +1236,11 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, LcpMmphfInt};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    /// let func: SignedFunc<LcpMmphfInt<u64>, Box<[u16]>> =
-    ///     <SignedFunc<LcpMmphfInt<u64>, Box<[u16]>>>::try_par_new(&keys, no_logging![])?;
+    /// let func =
+    ///     <SignedFunc<LcpMmphfInt<u64>, Box<[u16]>>>::try_par_new(&keys, no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1259,12 +1269,13 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, LcpMmphfInt, VBuilder};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    /// let func: SignedFunc<LcpMmphfInt<u64>, Box<[u16]>> =
+    /// let func =
     ///     <SignedFunc<LcpMmphfInt<u64>, Box<[u16]>>>::try_par_new_with_builder(
-    ///         &keys, VBuilder::default(), no_logging![],
-    ///     )?;
+    ///         &keys, VBuilder::default().offline(true), no_logging![],
+    ///     )?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1323,11 +1334,12 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, LcpMmphfStr};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: SignedFunc<LcpMmphfStr, Box<[u64]>> =
-    ///     <SignedFunc<LcpMmphfStr, Box<[u64]>>>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    /// let func =
+    ///     <SignedFunc<LcpMmphfStr, Box<[u64]>>>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1389,10 +1401,11 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, LcpMmphfStr};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: SignedFunc<LcpMmphfStr, Box<[u64]>> =
-    ///     <SignedFunc<LcpMmphfStr, Box<[u64]>>>::try_par_new(&keys, no_logging![])?;
+    /// let func =
+    ///     <SignedFunc<LcpMmphfStr, Box<[u64]>>>::try_par_new(&keys, no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1424,12 +1437,13 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, LcpMmphfStr, VBuilder};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: SignedFunc<LcpMmphfStr, Box<[u64]>> =
+    /// let func =
     ///     <SignedFunc<LcpMmphfStr, Box<[u64]>>>::try_par_new_with_builder(
-    ///         &keys, VBuilder::default(), no_logging![],
-    ///     )?;
+    ///         &keys, VBuilder::default().offline(true), no_logging![],
+    ///     )?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1495,11 +1509,12 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, Lcp2MmphfInt};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    /// let func: SignedFunc<Lcp2MmphfInt<u64>, Box<[u16]>> =
-    ///     <SignedFunc<Lcp2MmphfInt<u64>, Box<[u16]>>>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    /// let func =
+    ///     <SignedFunc<Lcp2MmphfInt<u64>, Box<[u16]>>>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1561,10 +1576,11 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, Lcp2MmphfInt};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    /// let func: SignedFunc<Lcp2MmphfInt<u64>, Box<[u16]>> =
-    ///     <SignedFunc<Lcp2MmphfInt<u64>, Box<[u16]>>>::try_par_new(&keys, no_logging![])?;
+    /// let func =
+    ///     <SignedFunc<Lcp2MmphfInt<u64>, Box<[u16]>>>::try_par_new(&keys, no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1593,12 +1609,13 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, Lcp2MmphfInt, VBuilder};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    /// let func: SignedFunc<Lcp2MmphfInt<u64>, Box<[u16]>> =
+    /// let func =
     ///     <SignedFunc<Lcp2MmphfInt<u64>, Box<[u16]>>>::try_par_new_with_builder(
-    ///         &keys, VBuilder::default(), no_logging![],
-    ///     )?;
+    ///         &keys, VBuilder::default().offline(true), no_logging![],
+    ///     )?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1661,11 +1678,12 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, Lcp2MmphfStr};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: SignedFunc<Lcp2MmphfStr, Box<[u64]>> =
-    ///     <SignedFunc<Lcp2MmphfStr, Box<[u64]>>>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    /// let func =
+    ///     <SignedFunc<Lcp2MmphfStr, Box<[u64]>>>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1727,10 +1745,11 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, Lcp2MmphfStr};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: SignedFunc<Lcp2MmphfStr, Box<[u64]>> =
-    ///     <SignedFunc<Lcp2MmphfStr, Box<[u64]>>>::try_par_new(&keys, no_logging![])?;
+    /// let func =
+    ///     <SignedFunc<Lcp2MmphfStr, Box<[u64]>>>::try_par_new(&keys, no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1762,12 +1781,13 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, Lcp2MmphfStr, VBuilder};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: SignedFunc<Lcp2MmphfStr, Box<[u64]>> =
+    /// let func =
     ///     <SignedFunc<Lcp2MmphfStr, Box<[u64]>>>::try_par_new_with_builder(
-    ///         &keys, VBuilder::default(), no_logging![],
-    ///     )?;
+    ///         &keys, VBuilder::default().offline(true), no_logging![],
+    ///     )?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1832,12 +1852,13 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, LcpMmphfInt};
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
     /// type BSFunc = SignedFunc<LcpMmphfInt<u64>, BitFieldVec<Box<[usize]>>>;
-    /// let func: BSFunc =
-    ///     BSFunc::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
+    /// let func =
+    ///     BSFunc::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1910,11 +1931,12 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, LcpMmphfInt};
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
     /// type BSFunc = SignedFunc<LcpMmphfInt<u64>, BitFieldVec<Box<[usize]>>>;
-    /// let func: BSFunc =
-    ///     BSFunc::try_par_new(&keys, 8, no_logging![])?;
+    /// let func =
+    ///     BSFunc::try_par_new(&keys, 8, no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -1945,11 +1967,12 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, LcpMmphfInt, VBuilder};
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
     /// type BSFunc = SignedFunc<LcpMmphfInt<u64>, BitFieldVec<Box<[usize]>>>;
-    /// let func: BSFunc =
-    ///     BSFunc::try_par_new_with_builder(&keys, 8, VBuilder::default(), no_logging![])?;
+    /// let func =
+    ///     BSFunc::try_par_new_with_builder(&keys, 8, VBuilder::default().offline(true), no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -2014,12 +2037,13 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, LcpMmphfStr};
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys = vec!["alpha", "beta", "delta", "gamma"];
     /// type BSFunc = SignedFunc<LcpMmphfStr, BitFieldVec<Box<[usize]>>>;
-    /// let func: BSFunc =
-    ///     BSFunc::try_new(FromSlice::new(&keys), keys.len(), 12, no_logging![])?;
+    /// let func =
+    ///     BSFunc::try_new(FromSlice::new(&keys), keys.len(), 12, no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -2093,11 +2117,12 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, LcpMmphfStr};
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys = vec!["alpha", "beta", "delta", "gamma"];
     /// type BSFunc = SignedFunc<LcpMmphfStr, BitFieldVec<Box<[usize]>>>;
-    /// let func: BSFunc =
-    ///     BSFunc::try_par_new(&keys, 12, no_logging![])?;
+    /// let func =
+    ///     BSFunc::try_par_new(&keys, 12, no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -2132,11 +2157,12 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, LcpMmphfStr, VBuilder};
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys = vec!["alpha", "beta", "delta", "gamma"];
     /// type BSFunc = SignedFunc<LcpMmphfStr, BitFieldVec<Box<[usize]>>>;
-    /// let func: BSFunc =
-    ///     BSFunc::try_par_new_with_builder(&keys, 12, VBuilder::default(), no_logging![])?;
+    /// let func =
+    ///     BSFunc::try_par_new_with_builder(&keys, 12, VBuilder::default().offline(true), no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -2208,12 +2234,13 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, Lcp2MmphfInt};
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
     /// let func =
     ///     <SignedFunc<Lcp2MmphfInt<u64>, BitFieldVec<Box<[usize]>>>>::try_new(
-    ///         FromSlice::new(&keys), 5, 8, no_logging![])?;
+    ///         FromSlice::new(&keys), 5, 8, no_logging![])?.try_into_unaligned()?;
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
     /// }
@@ -2281,11 +2308,12 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, Lcp2MmphfInt};
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
     /// type BSFunc = SignedFunc<Lcp2MmphfInt<u64>, BitFieldVec<Box<[usize]>>>;
-    /// let func: BSFunc =
-    ///     BSFunc::try_par_new(&keys, 8, no_logging![])?;
+    /// let func =
+    ///     BSFunc::try_par_new(&keys, 8, no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -2316,11 +2344,12 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, Lcp2MmphfInt, VBuilder};
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
     /// type BSFunc = SignedFunc<Lcp2MmphfInt<u64>, BitFieldVec<Box<[usize]>>>;
-    /// let func: BSFunc =
-    ///     BSFunc::try_par_new_with_builder(&keys, 8, VBuilder::default(), no_logging![])?;
+    /// let func =
+    ///     BSFunc::try_par_new_with_builder(&keys, 8, VBuilder::default().offline(true), no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -2388,12 +2417,13 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, Lcp2MmphfStr};
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys = vec!["alpha", "beta", "delta", "gamma"];
     /// let func =
     ///     <SignedFunc<Lcp2MmphfStr, BitFieldVec<Box<[usize]>>>>::try_new(
-    ///         FromSlice::new(&keys), 4, 8, no_logging![])?;
+    ///         FromSlice::new(&keys), 4, 8, no_logging![])?.try_into_unaligned()?;
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
     /// }
@@ -2461,11 +2491,12 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, Lcp2MmphfStr};
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys = vec!["a", "b", "c", "d", "e"];
     /// type BSFunc = SignedFunc<Lcp2MmphfStr, BitFieldVec<Box<[usize]>>>;
-    /// let func: BSFunc =
-    ///     BSFunc::try_par_new(&keys, 8, no_logging![])?;
+    /// let func =
+    ///     BSFunc::try_par_new(&keys, 8, no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
@@ -2499,11 +2530,12 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{SignedFunc, Lcp2MmphfStr, VBuilder};
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys = vec!["a", "b", "c", "d", "e"];
     /// type BSFunc = SignedFunc<Lcp2MmphfStr, BitFieldVec<Box<[usize]>>>;
-    /// let func: BSFunc =
-    ///     BSFunc::try_par_new_with_builder(&keys, 8, VBuilder::default(), no_logging![])?;
+    /// let func =
+    ///     BSFunc::try_par_new_with_builder(&keys, 8, VBuilder::default().offline(true), no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));

@@ -79,11 +79,12 @@ type LcpLen = u16;
 /// # fn main() -> anyhow::Result<()> {
 /// # use dsi_progress_logger::no_logging;
 /// # use sux::func::Lcp2MmphfInt;
+/// # use sux::traits::TryIntoUnaligned;
 /// # use sux::utils::FromSlice;
 /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
 ///
-/// let func: Lcp2MmphfInt<u64> =
-///     Lcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+/// let func =
+///     Lcp2MmphfInt::<u64>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?.try_into_unaligned()?;
 ///
 /// for (i, &key) in keys.iter().enumerate() {
 ///     assert_eq!(func.get(key), i);
@@ -218,11 +219,12 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::Lcp2MmphfInt;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    /// let func: Lcp2MmphfInt<u64> =
-    ///     Lcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    /// let func =
+    ///     Lcp2MmphfInt::<u64>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), i);
@@ -261,15 +263,16 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{Lcp2MmphfInt, VBuilder};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    /// let func: Lcp2MmphfInt<u64> = Lcp2MmphfInt::try_new_with_builder(
+    /// let func = Lcp2MmphfInt::<u64>::try_new_with_builder(
     ///     FromSlice::new(&keys),
     ///     keys.len(),
     ///     VBuilder::default().offline(true),
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), i);
@@ -637,10 +640,11 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::Lcp2MmphfInt;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    /// let func: Lcp2MmphfInt<u64> =
-    ///     Lcp2MmphfInt::try_par_new(&keys, no_logging![])?;
+    /// let func =
+    ///     Lcp2MmphfInt::<u64>::try_par_new(&keys, no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), i);
@@ -675,13 +679,14 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{Lcp2MmphfInt, VBuilder};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    /// let func: Lcp2MmphfInt<u64> = Lcp2MmphfInt::try_par_new_with_builder(
+    /// let func = Lcp2MmphfInt::<u64>::try_par_new_with_builder(
     ///     &keys,
-    ///     VBuilder::default(),
+    ///     VBuilder::default().offline(true),
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), i);
@@ -1105,11 +1110,12 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::Lcp2MmphfStr;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: Lcp2MmphfStr =
-    ///     Lcp2MmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    /// let func =
+    ///     <Lcp2MmphfStr>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), i);
@@ -1148,15 +1154,16 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{Lcp2MmphfStr, VBuilder};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: Lcp2MmphfStr = Lcp2MmphfStr::try_new_with_builder(
+    /// let func = <Lcp2MmphfStr>::try_new_with_builder(
     ///     FromSlice::new(&keys),
     ///     keys.len(),
     ///     VBuilder::default().offline(true),
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), i);
@@ -1536,10 +1543,11 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::Lcp2MmphfStr;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: Lcp2MmphfStr =
-    ///     Lcp2MmphfStr::try_par_new(&keys, no_logging![])?;
+    /// let func =
+    ///     <Lcp2MmphfStr>::try_par_new(&keys, no_logging![])?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), i);
@@ -1577,13 +1585,14 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{Lcp2MmphfStr, VBuilder};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys = vec!["a", "b", "c", "d", "e"];
-    /// let func: Lcp2MmphfStr = Lcp2MmphfStr::try_par_new_with_builder(
+    /// let func = <Lcp2MmphfStr>::try_par_new_with_builder(
     ///     &keys,
-    ///     VBuilder::default(),
+    ///     VBuilder::default().offline(true),
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), i);

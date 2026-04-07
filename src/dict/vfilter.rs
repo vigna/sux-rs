@@ -182,6 +182,17 @@ impl<T: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>> crate::traits::Tr
     }
 }
 
+impl<T: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>> crate::traits::TryIntoUnaligned
+    for VFilter<VFunc<T, Box<[W]>, S, E>>
+{
+    type Unaligned = VFilter<VFunc<T, Box<[W]>, S, E>>;
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+        Ok(self)
+    }
+}
+
 impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>>
     From<VFilter<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>>>
     for VFilter<VFunc<T, BitFieldVec<Box<[W]>>, S, E>>
@@ -237,13 +248,14 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::dict::VFilter;
     /// # use sux::func::VFunc;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromCloneableIntoIterator;
     /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_new(
     ///     FromCloneableIntoIterator::new(0..100),
     ///     100,
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for i in 0..100 {
     ///     assert!(filter[i]);
@@ -298,6 +310,7 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::dict::VFilter;
     /// # use sux::func::{VBuilder, VFunc};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromCloneableIntoIterator;
     /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_new_with_builder(
@@ -305,7 +318,7 @@ where
     ///     100,
     ///     VBuilder::default().offline(true),
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for i in 0..100 {
     ///     assert!(filter[i]);
@@ -370,12 +383,13 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::dict::VFilter;
     /// # use sux::func::VFunc;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys: Vec<usize> = (0..100).collect();
     /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_par_new(
     ///     &keys,
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for &i in &keys {
     ///     assert!(filter[i]);
@@ -422,13 +436,14 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::dict::VFilter;
     /// # use sux::func::{VBuilder, VFunc};
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys: Vec<usize> = (0..100).collect();
     /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_par_new_with_builder(
     ///     &keys,
-    ///     VBuilder::default(),
+    ///     VBuilder::default().offline(true),
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for &i in &keys {
     ///     assert!(filter[i]);
@@ -525,6 +540,7 @@ where
     /// # use sux::dict::VFilter;
     /// # use sux::func::VFunc;
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromCloneableIntoIterator;
     /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_new(
@@ -532,7 +548,7 @@ where
     ///     100,
     ///     5,
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for i in 0..100 {
     ///     assert!(filter[i]);
@@ -586,6 +602,7 @@ where
     /// # use sux::dict::VFilter;
     /// # use sux::func::{VBuilder, VFunc};
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromCloneableIntoIterator;
     /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_new_with_builder(
@@ -594,7 +611,7 @@ where
     ///     5,
     ///     VBuilder::default().offline(true),
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for i in 0..100 {
     ///     assert!(filter[i]);
@@ -661,13 +678,14 @@ where
     /// # use sux::dict::VFilter;
     /// # use sux::func::VFunc;
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys: Vec<usize> = (0..100).collect();
     /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_par_new(
     ///     &keys,
     ///     5,
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for &i in &keys {
     ///     assert!(filter[i]);
@@ -716,14 +734,15 @@ where
     /// # use sux::dict::VFilter;
     /// # use sux::func::{VBuilder, VFunc};
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys: Vec<usize> = (0..100).collect();
     /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_par_new_with_builder(
     ///     &keys,
     ///     5,
-    ///     VBuilder::default(),
+    ///     VBuilder::default().offline(true),
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for &i in &keys {
     ///     assert!(filter[i]);

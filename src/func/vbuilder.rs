@@ -124,7 +124,7 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
 
     /// Use disk-based buckets to reduce core memory usage at construction time.
     #[setters(generate = true)]
-    offline: bool,
+    pub(crate) offline: bool,
 
     /// Check for duplicated signatures. This is not necessary in general,
     /// but if you suspect you might be feeding duplicate keys, you can
@@ -139,7 +139,7 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// than three threads and more than two shards.
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "None"))]
-    low_mem: Option<bool>,
+    pub(crate) low_mem: Option<bool>,
 
     /// The seed for the random number generator.
     #[setters(generate = true)]

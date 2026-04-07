@@ -377,14 +377,15 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::VFunc2;
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromCloneableIntoIterator;
-    /// let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> = VFunc2::try_new(
+    /// let func = <VFunc2<usize, BitFieldVec<Box<[usize]>>>>::try_new(
     ///     FromCloneableIntoIterator::new(0..100_usize),
     ///     FromCloneableIntoIterator::new(0..100_usize),
     ///     100,
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for i in 0..100 {
     ///     assert_eq!(func.get(&i), i);
@@ -427,15 +428,16 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{VBuilder, VFunc2};
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromCloneableIntoIterator;
-    /// let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> = VFunc2::try_new_with_builder(
+    /// let func = <VFunc2<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
     ///     FromCloneableIntoIterator::new(0..100_usize),
     ///     FromCloneableIntoIterator::new(0..100_usize),
     ///     100,
     ///     VBuilder::default().offline(true),
     ///     no_logging![],
-    /// )?;
+    /// )?.try_into_unaligned()?;
     ///
     /// for i in 0..100 {
     ///     assert_eq!(func.get(&i), i);
@@ -464,14 +466,19 @@ where
                 keys,
                 values,
                 &mut |builder, seed, mut store, _max_value, _num_keys, pl, _state: &mut ()| {
+                    let mut inner_builder = VBuilder::default()
+                        .max_num_threads(builder.max_num_threads)
+                        .offline(builder.offline);
+                    inner_builder.eps = builder.eps;
+                    if let Some(low_mem) = builder.low_mem {
+                        inner_builder = inner_builder.low_mem(low_mem);
+                    }
                     Self::try_build_from_store::<W>(
                         seed,
                         builder.shard_edge,
                         &mut *store,
                         &|v| v,
-                        VBuilder::default()
-                            .max_num_threads(builder.max_num_threads)
-                            .eps(builder.eps),
+                        inner_builder,
                         pl,
                     )
                 },
@@ -605,6 +612,8 @@ where
         // Save builder settings before the short VFunc consumes it.
         let saved_max_num_threads = builder.max_num_threads;
         let saved_eps = builder.eps;
+        let saved_offline = builder.offline;
+        let saved_low_mem = builder.low_mem;
 
         pl.info(format_args!(
             "Building key -> remapped index ({best_r} bits, escape={escape_usize})..."
@@ -671,9 +680,14 @@ where
             |sv: &SigVal<S, V>| inv_map.get(get_val(sv.val)) == escape,
             filtered_shard_sizes,
         );
-        let long = VBuilder::<BitFieldVec<Box<[W]>>, S, E1>::default()
+        let mut long_builder = VBuilder::<BitFieldVec<Box<[W]>>, S, E1>::default()
             .max_num_threads(saved_max_num_threads)
-            .try_build_func_with_store::<T, V>(
+            .offline(saved_offline);
+        long_builder.eps = saved_eps;
+        if let Some(low_mem) = saved_low_mem {
+            long_builder = long_builder.low_mem(low_mem);
+        }
+        let long = long_builder.try_build_func_with_store::<T, V>(
                 seed,
                 long_shard_edge,
                 max_value,
