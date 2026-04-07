@@ -20,7 +20,7 @@
 use anyhow::Result;
 use clap::Parser;
 use dsi_progress_logger::no_logging;
-use mem_dbg::{DbgFlags, MemDbg, MemSize};
+use mem_dbg::{MemSize, SizeFlags};
 use std::io::BufRead;
 use sux::bits::BitFieldVec;
 use sux::func::hollow_trie::{HtDistMmphfInt, HtDistMmphfStr};
@@ -28,7 +28,6 @@ use sux::func::lcp_mmphf::{LcpMmphf, LcpMmphfInt};
 use sux::func::shard_edge::FuseLge3Shards;
 use sux::traits::TryIntoUnaligned;
 use sux::utils::FromSlice;
-use std::io::BufRead;
 use std::time::Instant;
 
 type DefLcpStr = LcpMmphf<str, BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>;
@@ -235,60 +234,12 @@ fn main() -> Result<()> {
     if let Some(path) = &args.filename {
         bench_strings(path, args.n, args.repeats, args.ht_only)?;
     }
-    let n = keys.len();
-    eprintln!("Read {n} keys");
-
-    // Build
-    eprintln!("Building HtDistMmphf...");
-    let start = std::time::Instant::now();
-    let func = HtDistMmphfStr::try_new(FromSlice::new(&keys), n, no_logging![])?;
-    func.mem_dbg(DbgFlags::default())?;
-    let build_time = start.elapsed();
-    eprintln!(
-        "Build time: {:.3} s ({:.0} ns/key)",
-        build_time.as_secs_f64(),
-        build_time.as_nanos() as f64 / n as f64,
-    );
-
-    // Full verification
-    for i in 0..n {
-        let result = func.get(keys[i].as_str());
-        assert_eq!(result, i, "HtDistMmphf verification failed at key {i}");
+    if let Some(n) = args.int {
+        bench_integers(n, args.repeats)?;
     }
-    eprintln!("Verified all {n} keys");
-
-    // Query benchmark
-    bench("HtDist query", n, args.repeats, || {
-        let mut sum = 0usize;
-        for key in &keys {
-            sum = sum.wrapping_add(func.get(key.as_str()));
-        }
-        std::hint::black_box(sum);
-    });
-
-    let ht_bits = func.mem_size(mem_dbg::SizeFlags::default()) * 8;
-    eprintln!(
-        "HtDistMmphf: {:.2} bits/key ({ht_bits} bits)\n",
-        ht_bits as f64 / n as f64,
-    );
-
-    // ── LcpMmphfStr for comparison ─────────────────────────────────
-    eprintln!("Building LcpMmphfStr...");
-    let start = std::time::Instant::now();
-    let lcp = DefLcpStr::try_new(FromSlice::new(&keys), n, no_logging![])?;
-    let lcp_build = start.elapsed();
-    eprintln!(
-        "Build time: {:.3} s ({:.0} ns/key)",
-        lcp_build.as_secs_f64(),
-        lcp_build.as_nanos() as f64 / n as f64,
-    );
-
-    for i in 0..n {
-        assert_eq!(
-            lcp.get(keys[i].as_str()),
-            i,
-            "LcpMmphf verification failed at {i}"
-        );
+    if args.filename.is_none() && args.int.is_none() {
+        eprintln!("Usage: --int <N> or -f <file> [N]");
+        std::process::exit(1);
     }
 
     Ok(())

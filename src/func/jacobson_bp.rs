@@ -23,6 +23,68 @@ use crate::dict::{EfDict, EliasFanoBuilder};
 use crate::traits::indexed_dict::Pred;
 use mem_dbg::*;
 
+/// For each byte value b (interpreted as 8 balanced-parenthesis bits, LSB
+/// first, open=1 close=0), stores `(min_excess, match_position)` where:
+///  - `min_excess` (i8): the minimum running excess encountered scanning
+///    the 8 bits, assuming initial excess 0. This is stored negated for the
+///    broadword ≤₈ comparison.
+///  - `match_position` (u8): for each possible target excess (-1..=-8),
+///    the bit position within the byte where that excess is first reached.
+///    Encoded as: for target excess `e` (starting at -1), the position is
+///    `BYTE_MATCH[byte][(-e - 1) as usize]`. Value 8 means not reached.
+static BYTE_MIN_EXCESS: [i8; 256] = {
+    let mut table = [0i8; 256];
+    let mut b = 0usize;
+    while b < 256 {
+        let mut excess = 0i8;
+        let mut min_e = 0i8;
+        let mut i = 0;
+        while i < 8 {
+            if b & (1 << i) != 0 {
+                excess += 1;
+            } else {
+                excess -= 1;
+            }
+            if excess < min_e {
+                min_e = excess;
+            }
+            i += 1;
+        }
+        table[b] = min_e;
+        b += 1;
+    }
+    table
+};
+
+/// For each byte value b and target excess (0..8, meaning the first position
+/// where running excess reaches -(target+1)), the bit position (0..7) or 8 if
+/// not reached.
+static BYTE_FIND_CLOSE: [[u8; 8]; 256] = {
+    let mut table = [[8u8; 8]; 256];
+    let mut b = 0usize;
+    while b < 256 {
+        let mut excess = 0i8;
+        let mut i = 0u8;
+        while i < 8 {
+            if b & (1 << i) != 0 {
+                excess += 1;
+            } else {
+                excess -= 1;
+            }
+            // excess is -(target+1) when target = -excess - 1
+            if excess < 0 {
+                let target = (-excess - 1) as usize;
+                if target < 8 && table[b][target] == 8 {
+                    table[b][target] = i;
+                }
+            }
+            i += 1;
+        }
+        b += 1;
+    }
+    table
+};
+
 const ONES_STEP_4: u64 = 0x1111_1111_1111_1111;
 const MSBS_STEP_4: u64 = 0x8 * ONES_STEP_4;
 const ONES_STEP_8: u64 = 0x0101_0101_0101_0101;
@@ -31,7 +93,6 @@ const ONES_STEP_16: u64 = 0x0001_0001_0001_0001;
 const MSBS_STEP_16: u64 = 0x8000_8000_8000_8000;
 const ONES_STEP_32: u64 = 0x0000_0001_0000_0001;
 const MSBS_STEP_32: u64 = 0x8000_0000_8000_0000;
-const L: u64 = 0x4038_3028_2018_1008;
 
 /// Count the number of far open parentheses scanning `l` bits of `word`
 /// from MSB to LSB.
@@ -131,106 +192,43 @@ fn find_far_open(word: u64, l: usize, k: usize) -> usize {
 }
 
 /// Find the position of the matching close parenthesis within a single word,
-/// using broadword techniques.
+/// using byte-level lookup tables.
 ///
 /// The word is assumed to be shifted so that bit 0 is the first bit *after* the
 /// opening parenthesis (i.e., the initial excess is 1). Returns the bit
 /// position of the matching close within the word (0..63), or a value >= 64 if
 /// the match is not in this word.
+///
+/// This uses precomputed per-byte min-excess and match-position tables,
+/// requiring only ~15 operations to identify the target byte plus a single
+/// table lookup.
 pub fn find_near_close(word: u64) -> usize {
-    let mut byte_sums = word - ((word & (0xa * ONES_STEP_4)) >> 1);
-    byte_sums = (byte_sums & (3 * ONES_STEP_4)) + ((byte_sums >> 2) & (3 * ONES_STEP_4));
-    // Twice the number of open parentheses, cumulative by byte
-    byte_sums = ((byte_sums + (byte_sums >> 4)) & (0x0f * ONES_STEP_8))
-        .wrapping_mul(ONES_STEP_8 << 1);
-    // Closed excess per byte
-    byte_sums = ((L | MSBS_STEP_8).wrapping_sub(byte_sums)) ^ ((L ^ !byte_sums) & MSBS_STEP_8);
-
-    // Set up flags for excess values that are already zero
-    let mut update =
-        (!(byte_sums | ((byte_sums | MSBS_STEP_8).wrapping_sub(ONES_STEP_8))) & MSBS_STEP_8) >> 7;
-    update = ((update | MSBS_STEP_8).wrapping_sub(ONES_STEP_8))
-        ^ ((update ^ ONES_STEP_8) | !MSBS_STEP_8);
-    let mut zeroes = (MSBS_STEP_8 | (ONES_STEP_8 * 7)) & update;
-
-    // Round for bit 7 (shift = 7)
-    byte_sums = byte_sums.wrapping_add(word >> 7 & ONES_STEP_8);
-    byte_sums = ((byte_sums | MSBS_STEP_8).wrapping_sub(!(word >> 7) & ONES_STEP_8))
-        ^ ((byte_sums ^ MSBS_STEP_8) & MSBS_STEP_8);
-    update =
-        (!(byte_sums | ((byte_sums | MSBS_STEP_8).wrapping_sub(ONES_STEP_8))) & MSBS_STEP_8) >> 7;
-    update = ((update | MSBS_STEP_8).wrapping_sub(ONES_STEP_8))
-        ^ ((update ^ ONES_STEP_8) | !MSBS_STEP_8);
-    zeroes = (zeroes & !update) | ((MSBS_STEP_8 | (ONES_STEP_8 * 6)) & update);
-
-    // Round for bit 6 (shift = 6)
-    byte_sums = byte_sums.wrapping_add(word >> 6 & ONES_STEP_8);
-    byte_sums = ((byte_sums | MSBS_STEP_8).wrapping_sub(!(word >> 6) & ONES_STEP_8))
-        ^ ((byte_sums ^ MSBS_STEP_8) & MSBS_STEP_8);
-    update =
-        (!(byte_sums | ((byte_sums | MSBS_STEP_8).wrapping_sub(ONES_STEP_8))) & MSBS_STEP_8) >> 7;
-    update = ((update | MSBS_STEP_8).wrapping_sub(ONES_STEP_8))
-        ^ ((update ^ ONES_STEP_8) | !MSBS_STEP_8);
-    zeroes = (zeroes & !update) | ((MSBS_STEP_8 | (ONES_STEP_8 * 5)) & update);
-
-    // Round for bit 5 (shift = 5)
-    byte_sums = byte_sums.wrapping_add(word >> 5 & ONES_STEP_8);
-    byte_sums = ((byte_sums | MSBS_STEP_8).wrapping_sub(!(word >> 5) & ONES_STEP_8))
-        ^ ((byte_sums ^ MSBS_STEP_8) & MSBS_STEP_8);
-    update =
-        (!(byte_sums | ((byte_sums | MSBS_STEP_8).wrapping_sub(ONES_STEP_8))) & MSBS_STEP_8) >> 7;
-    update = ((update | MSBS_STEP_8).wrapping_sub(ONES_STEP_8))
-        ^ ((update ^ ONES_STEP_8) | !MSBS_STEP_8);
-    zeroes = (zeroes & !update) | ((MSBS_STEP_8 | (ONES_STEP_8 * 4)) & update);
-
-    // Round for bit 4 (shift = 4)
-    byte_sums = byte_sums.wrapping_add(word >> 4 & ONES_STEP_8);
-    byte_sums = ((byte_sums | MSBS_STEP_8).wrapping_sub(!(word >> 4) & ONES_STEP_8))
-        ^ ((byte_sums ^ MSBS_STEP_8) & MSBS_STEP_8);
-    update =
-        (!(byte_sums | ((byte_sums | MSBS_STEP_8).wrapping_sub(ONES_STEP_8))) & MSBS_STEP_8) >> 7;
-    update = ((update | MSBS_STEP_8).wrapping_sub(ONES_STEP_8))
-        ^ ((update ^ ONES_STEP_8) | !MSBS_STEP_8);
-    zeroes = (zeroes & !update) | ((MSBS_STEP_8 | (ONES_STEP_8 * 3)) & update);
-
-    // Round for bit 3 (shift = 3)
-    byte_sums = byte_sums.wrapping_add(word >> 3 & ONES_STEP_8);
-    byte_sums = ((byte_sums | MSBS_STEP_8).wrapping_sub(!(word >> 3) & ONES_STEP_8))
-        ^ ((byte_sums ^ MSBS_STEP_8) & MSBS_STEP_8);
-    update =
-        (!(byte_sums | ((byte_sums | MSBS_STEP_8).wrapping_sub(ONES_STEP_8))) & MSBS_STEP_8) >> 7;
-    update = ((update | MSBS_STEP_8).wrapping_sub(ONES_STEP_8))
-        ^ ((update ^ ONES_STEP_8) | !MSBS_STEP_8);
-    zeroes = (zeroes & !update) | ((MSBS_STEP_8 | (ONES_STEP_8 * 2)) & update);
-
-    // Round for bit 2 (shift = 2)
-    byte_sums = byte_sums.wrapping_add(word >> 2 & ONES_STEP_8);
-    byte_sums = ((byte_sums | MSBS_STEP_8).wrapping_sub(!(word >> 2) & ONES_STEP_8))
-        ^ ((byte_sums ^ MSBS_STEP_8) & MSBS_STEP_8);
-    update =
-        (!(byte_sums | ((byte_sums | MSBS_STEP_8).wrapping_sub(ONES_STEP_8))) & MSBS_STEP_8) >> 7;
-    update = ((update | MSBS_STEP_8).wrapping_sub(ONES_STEP_8))
-        ^ ((update ^ ONES_STEP_8) | !MSBS_STEP_8);
-    zeroes = (zeroes & !update) | ((MSBS_STEP_8 | ONES_STEP_8) & update);
-
-    // Round for bit 1 (shift = 1)
-    byte_sums = byte_sums.wrapping_add(word >> 1 & ONES_STEP_8);
-    byte_sums = ((byte_sums | MSBS_STEP_8).wrapping_sub(!(word >> 1) & ONES_STEP_8))
-        ^ ((byte_sums ^ MSBS_STEP_8) & MSBS_STEP_8);
-    update =
-        (!(byte_sums | ((byte_sums | MSBS_STEP_8).wrapping_sub(ONES_STEP_8))) & MSBS_STEP_8) >> 7;
-    update = ((update | MSBS_STEP_8).wrapping_sub(ONES_STEP_8))
-        ^ ((update ^ ONES_STEP_8) | !MSBS_STEP_8);
-    zeroes = (zeroes & !update) | (MSBS_STEP_8 & update);
-
-    let block = (zeroes >> 7 & ONES_STEP_8).trailing_zeros();
-    if block >= 64 {
-        // No match found in this word
-        return 127;
+    // The word is shifted so bit 0 is the open paren that we already consumed
+    // (initial excess = 1). We scan from bit 1 onward looking for excess = 0.
+    //
+    // Shift right by 1 so that bit 0 is the first bit to scan. The initial
+    // excess from the open paren at the original bit 0 is 1.
+    let scan_word = word >> 1;
+    let bytes = scan_word.to_le_bytes();
+    let mut excess: i8 = 1; // starting excess (the open paren we consumed)
+    for (i, &b) in bytes.iter().enumerate() {
+        let min_e = BYTE_MIN_EXCESS[b as usize];
+        // Check if excess can drop to 0 in this byte:
+        // excess + min_e <= 0
+        if excess + min_e <= 0 {
+            // The match is in this byte. We want the first position where
+            // byte running excess = -excess, i.e., drops by `excess`.
+            // Table index: excess - 1 (0-based: target 0 means drop by 1).
+            let target = (excess - 1) as usize;
+            debug_assert!(target < 8);
+            let bit_in_byte = BYTE_FIND_CLOSE[b as usize][target] as usize;
+            return i * 8 + bit_in_byte + 1; // +1 for the original shift
+        }
+        // Update excess: byte excess delta = 2*popcount(b) - 8
+        excess += 2 * b.count_ones() as i8 - 8;
     }
-    // A simple trick to return 127 if block >= 64 (i.e., no match)
-    ((block as usize).wrapping_add((zeroes >> block) as usize & 0x7F) | (block as usize >> 8))
-        & 0x7F
+    // Not found in this word
+    127
 }
 
 /// Find the k-th (0-based) far close parenthesis in a 64-bit word using
@@ -761,6 +759,30 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_find_near_close_vs_naive_16bit() {
+        for w in (0u64..=0xFFFF).filter(|w| w & 1 == 1) {
+            let fast = find_near_close(w);
+            let naive = find_near_close_naive(w);
+            assert_eq!(
+                fast.min(64),
+                naive.min(64),
+                "mismatch for word {w:#018b}: fast={fast}, naive={naive}"
+            );
+        }
+    }
+
+    /// Helper: count total far closes in a word
+    fn count_far_closes(word: u64) -> usize {
+        let mut e = 0i32;
+        let mut c = 0usize;
+        for i in 0..64 {
+            if word & (1u64 << i) != 0 { if e > 0 { e = -1; } else { e -= 1; } }
+            else { e += 1; if e > 0 { c += 1; } }
+        }
+        c
     }
 
     #[test]
