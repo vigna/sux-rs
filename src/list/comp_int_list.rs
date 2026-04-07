@@ -60,6 +60,10 @@ use crate::utils::PrimitiveUnsignedExt;
 /// After construction, the delimiter structure can be replaced using
 /// [`map_delimiters`](CompIntList::map_delimiters).
 ///
+/// This structure implements the [`TryIntoUnaligned`]
+/// trait, allowing it to be converted into (usually faster) structures using
+/// unaligned access.
+///
 /// # Type Parameters
 ///
 /// - `V`: The value type. Must be a [`Word`] type. Defaults to `usize`.

@@ -1002,9 +1002,15 @@ where
 }
 
 /// A [`Lcp2Mmphf`] for `str` keys.
+///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
 pub type Lcp2MmphfStr<D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
     Lcp2Mmphf<str, D, S, E>;
 /// A [`Lcp2Mmphf`] for `[u8]` keys.
+///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
 pub type Lcp2MmphfSliceU8<D = BitFieldVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> =
     Lcp2Mmphf<[u8], D, S, E>;
 
