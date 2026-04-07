@@ -129,10 +129,6 @@ name = "mem_usage"
 required-features = ["cli"]
 
 [[example]]
-name = "bench_bit_field_vec"
-required-features = ["cli"]
-
-[[example]]
 name = "bench_rear_coded_list"
 required-features = ["cli"]
 
@@ -145,7 +141,11 @@ name = "bench_vfilter"
 required-features = ["epserde", "clap"]
 
 [[bench]]
-name = "sux"
+name = "rank_sel"
+harness = false
+
+[[bench]]
+name = "bit_field_vec"
 harness = false
 
 [[bench]]

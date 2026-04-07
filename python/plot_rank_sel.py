@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Plot benchmark results for the sux rank/select structures.
+"""Plot benchmark results for rank/select structures.
 
 This script reads criterion's JSON output (stored under
 ``target/criterion/``) and produces comparison plots for the rank and
-select structures benchmarked by ``benches/sux/``.
+select structures benchmarked by ``benches/rank_sel/``.
 
 Prerequisites
 -------------
@@ -12,14 +12,14 @@ Prerequisites
 
 Usage
 -----
-First, run the benchmarks.  The ``sux`` benchmark binary has its own CLI
-(see ``cargo bench --bench sux -- --help``); typical invocations::
+First, run the benchmarks.  The ``rank_sel`` benchmark binary has its own CLI
+(see ``cargo bench --bench rank_sel -- --help``); typical invocations::
 
     # Benchmark Rank9 at density 0.5
-    cargo bench --bench sux -- Rank9 -d 0.5
+    cargo bench --bench rank_sel -- Rank9 -d 0.5
 
     # Compare several select structures
-    cargo bench --bench sux -- SelectSmall SelectAdapt0 -d 0.5 \\
+    cargo bench --bench rank_sel -- SelectSmall SelectAdapt0 -d 0.5 \\
         -l 100000,1000000,10000000
 
 Then generate plots::

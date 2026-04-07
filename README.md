@@ -141,17 +141,17 @@ A few benchmarks are available in the `benches` directory. The ones starting wit
 cargo bench --bench bench_vfunc
 ```
 
-The `sux` benchmark, which tests rank and select structures, is instead a CLI
+The `rank_sel` benchmark, which tests rank and select structures, is instead a CLI
 command with options. Try
 
 ```bash
-cargo bench --bench sux -- --help
+cargo bench --bench rank_sel -- --help
 ```
 
 to see the available tests. For example, with
 
 ```bash
-cargo bench --bench sux -- Rank9 -d 0.5 -l 100000,1000000,10000000
+cargo bench --bench rank_sel -- Rank9 -d 0.5 -l 100000,1000000,10000000
 ```
 
 you can test the [`Rank9`] structure with a density of 0.5 on a few bit sizes.
@@ -171,11 +171,33 @@ By specifying multiple structures (using also substring matching), you can
 compare the behavior of different structures. For example,
 
 ```bash
-cargo bench --bench sux -- SelectSmall SelectAdapt0 -d 0.5 -l 100000,1000000,10000000
+cargo bench --bench rank_sel -- SelectSmall SelectAdapt0 -d 0.5 -l 100000,1000000,10000000
 ```
 
 will test all variants of [`SelectSmall`] against a [`SelectAdapt`] with one (2⁰)
-`u64` per subinventory. The plot will highlight the differences in performance:
+`u64` per subinventory.
+
+Similarly, the `bit_field_vec` benchmark tests [`BitFieldVec`](crate::bits::BitFieldVec)
+operations with configurable bit widths and vector sizes:
+
+```bash
+cargo bench --bench bit_field_vec -- --help
+```
+
+For example, to benchmark 12-bit and 32-bit widths on vectors of size 2²⁰:
+
+```bash
+cargo bench --bench bit_field_vec -- -w 12,32 -l 20
+```
+
+Use `--unaligned` to benchmark the [`BitFieldVecU`](crate::bits::BitFieldVecU) variant
+with branchless unaligned reads:
+
+```bash
+cargo bench --bench bit_field_vec -- -w 12,32 -l 20 --unaligned
+```
+
+You can generate plots from any benchmark results with:
 
 ```bash
 ./python/plot_benches.py --benches-path ./target/criterion/ --plot-dir plots
