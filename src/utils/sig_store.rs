@@ -53,6 +53,7 @@
 #![allow(clippy::comparison_chain)]
 #![allow(clippy::type_complexity)]
 use anyhow::Result;
+#[cfg(feature = "rayon")]
 use arrayvec::ArrayVec;
 use mem_dbg::{MemDbg, MemSize};
 
