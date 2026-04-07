@@ -2205,8 +2205,9 @@ where
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    /// let func: SignedFunc<Lcp2MmphfInt<u64>, BitFieldVec<Box<[usize]>>> =
-    ///     SignedFunc::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
+    /// let func =
+    ///     <SignedFunc<Lcp2MmphfInt<u64>, BitFieldVec<Box<[usize]>>>>::try_new(
+    ///         FromSlice::new(&keys), 5, 8, no_logging![])?;
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
     /// }
@@ -2384,8 +2385,9 @@ where
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromSlice;
     /// let keys = vec!["alpha", "beta", "delta", "gamma"];
-    /// let func: SignedFunc<Lcp2MmphfStr, BitFieldVec<Box<[usize]>>> =
-    ///     SignedFunc::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
+    /// let func =
+    ///     <SignedFunc<Lcp2MmphfStr, BitFieldVec<Box<[usize]>>>>::try_new(
+    ///         FromSlice::new(&keys), 4, 8, no_logging![])?;
     /// for (i, &key) in keys.iter().enumerate() {
     ///     assert_eq!(func.get(key), Some(i));
     /// }

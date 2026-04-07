@@ -16,6 +16,7 @@ rust-version = "1.85"
 
 [dependencies]
 anyhow = "1.0.79"
+arrayvec = "0.7"
 bitflags = "2.4.2"
 atomic-primitive = "0.1.1"
 num-primitive = "=0.2.1"

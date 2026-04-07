@@ -812,3 +812,122 @@ fn test_word_u64() {
 fn test_word_u128() {
     test_word_type!(u128);
 }
+
+/// Test [`BitVec::append`] with all word types using a macro.
+macro_rules! test_append_word_type {
+    ($W:ty) => {{
+        let bpw = <$W>::BITS as usize;
+
+        // Test many combinations of self_len and other_len to exercise
+        // aligned, unaligned, single-word, multi-word, and empty cases.
+        let lengths = [0, 1, bpw / 2 - 1, bpw / 2, bpw - 1, bpw, bpw + 1, 2 * bpw - 1, 2 * bpw, 2 * bpw + 1, 3 * bpw + 7];
+
+        for &self_len in &lengths {
+            for &other_len in &lengths {
+                // Create self with a known pattern
+                let mut a: BitVec<Vec<$W>> = BitVec::new(0);
+                for i in 0..self_len {
+                    a.push(i % 3 == 0);
+                }
+
+                // Create other with a different pattern
+                let mut b: BitVec<Vec<$W>> = BitVec::new(0);
+                for i in 0..other_len {
+                    b.push(i % 5 == 0);
+                }
+
+                // Reference: push bit by bit
+                let mut expected = a.clone();
+                for i in 0..other_len {
+                    expected.push(b[i]);
+                }
+
+                // Test append
+                a.append(&b);
+
+                assert_eq!(
+                    a.len(),
+                    expected.len(),
+                    "length mismatch for self_len={self_len}, other_len={other_len}"
+                );
+                assert_eq!(
+                    a, expected,
+                    "content mismatch for self_len={self_len}, other_len={other_len}"
+                );
+            }
+        }
+    }};
+}
+
+#[test]
+fn test_append_usize() {
+    test_append_word_type!(usize);
+}
+
+#[test]
+fn test_append_u8() {
+    test_append_word_type!(u8);
+}
+
+#[test]
+fn test_append_u16() {
+    test_append_word_type!(u16);
+}
+
+#[test]
+fn test_append_u32() {
+    test_append_word_type!(u32);
+}
+
+#[test]
+fn test_append_u64() {
+    test_append_word_type!(u64);
+}
+
+#[test]
+fn test_append_u128() {
+    test_append_word_type!(u128);
+}
+
+#[test]
+fn test_append_cross_backend() {
+    // Append from a Box<[usize]>-backed BitVec to a Vec<usize>-backed one.
+    let mut a: BitVec = BitVec::new(0);
+    for i in 0..50 {
+        a.push(i % 2 == 0);
+    }
+    let mut b: BitVec = BitVec::new(0);
+    for i in 0..70 {
+        b.push(i % 3 == 0);
+    }
+    let b_boxed: BitVec<Box<[usize]>> = b.clone().into();
+
+    let mut expected = a.clone();
+    for i in 0..70 {
+        expected.push(b[i]);
+    }
+
+    a.append(&b_boxed);
+    assert_eq!(a, expected);
+}
+
+#[test]
+fn test_reserve() {
+    let mut b: BitVec = BitVec::new(0);
+    b.reserve(100);
+    assert!(b.capacity() >= 100);
+    assert_eq!(b.len(), 0);
+
+    let mut b: BitVec = BitVec::new(50);
+    b.reserve(100);
+    assert!(b.capacity() >= 150);
+
+    let mut b: BitVec = BitVec::new(0);
+    b.reserve_exact(100);
+    assert!(b.capacity() >= 100);
+    assert_eq!(b.len(), 0);
+
+    let mut b: BitVec = BitVec::new(50);
+    b.reserve_exact(100);
+    assert!(b.capacity() >= 150);
+}

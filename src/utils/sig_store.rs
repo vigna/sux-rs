@@ -53,6 +53,7 @@
 #![allow(clippy::comparison_chain)]
 #![allow(clippy::type_complexity)]
 use anyhow::Result;
+use arrayvec::ArrayVec;
 use mem_dbg::{MemDbg, MemSize};
 
 use rdst::RadixKey;
@@ -637,15 +638,17 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
     /// Thread-local buffers (one per bucket) batch insertions to reduce
     /// lock acquisitions. Returns the maximum value seen (for bit-width
     /// computation).
-    pub fn par_populate(&mut self, n: usize, f: impl Fn(usize) -> SigVal<S, V> + Send + Sync) -> V
+    pub fn par_populate(
+        &mut self,
+        n: usize,
+        max_num_threads: usize,
+        f: impl Fn(usize) -> SigVal<S, V> + Send + Sync,
+    ) -> V
     where
         V: Default + Ord + Send,
     {
         use rayon::prelude::*;
         use std::sync::Mutex;
-        use std::sync::atomic::{AtomicUsize, Ordering};
-
-        const BATCH: usize = 32;
 
         let num_buckets = 1usize << self.buckets_high_bits;
         let num_shards = 1usize << self.max_shard_high_bits;
@@ -658,64 +661,85 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
         let mutexed_buckets: Vec<Mutex<Vec<SigVal<S, V>>>> =
             self.buckets.drain(..).map(Mutex::new).collect();
 
-        // Atomic counters for bucket sizes and shard sizes.
-        let bucket_counts: Vec<AtomicUsize> = (0..num_buckets)
-            .map(|i| AtomicUsize::new(self.bucket_sizes[i]))
-            .collect();
-        let shard_counts: Vec<AtomicUsize> = (0..num_shards)
-            .map(|i| AtomicUsize::new(self.shard_sizes[i]))
-            .collect();
+        // Each rayon task uses thread-local per-bucket mini-buffers
+        // (ArrayVec, stack-allocated) to batch mutex acquisitions, and
+        // thread-local counters for bucket/shard sizes (merged at the
+        // end, avoiding all atomic operations in the hot loop).
+        const CAP: usize = 48;
 
-        // Each rayon fold task gets a range of indices and uses thread-local
-        // per-bucket mini-buffers to batch mutex acquisitions.
         let max_val = (0..n)
             .into_par_iter()
+            .with_min_len((n / max_num_threads).max(1_000_000))
             .fold(
                 || {
-                    (
-                        V::default(),
-                        (0..num_buckets)
-                            .map(|_| Vec::with_capacity(BATCH))
-                            .collect::<Vec<_>>(),
-                    )
+                    let bufs: Box<[ArrayVec<SigVal<S, V>, CAP>]> = (0..num_buckets)
+                        .map(|_| ArrayVec::new())
+                        .collect();
+                    let bc: Box<[usize]> = vec![0usize; num_buckets].into();
+                    let sc: Box<[usize]> = vec![0usize; num_shards].into();
+                    (V::default(), bufs, bc, sc)
                 },
-                |(mut local_max, mut local_bufs): (V, Vec<Vec<SigVal<S, V>>>), i| {
+                |(mut local_max, mut local_bufs, mut bc, mut sc): (
+                    V,
+                    Box<[ArrayVec<SigVal<S, V>, CAP>]>,
+                    Box<[usize]>,
+                    Box<[usize]>,
+                ),
+                 i| {
                     let sv = f(i);
                     local_max = Ord::max(local_max, sv.val);
                     let bucket = sv.sig.high_bits(bhb, bmask) as usize;
                     let shard = sv.sig.high_bits(shb, smask) as usize;
-                    bucket_counts[bucket].fetch_add(1, Ordering::Relaxed);
-                    shard_counts[shard].fetch_add(1, Ordering::Relaxed);
+                    bc[bucket] += 1;
+                    sc[shard] += 1;
                     local_bufs[bucket].push(sv);
-                    if local_bufs[bucket].len() >= BATCH {
-                        let buf =
-                            std::mem::replace(&mut local_bufs[bucket], Vec::with_capacity(BATCH));
-                        mutexed_buckets[bucket].lock().unwrap().extend(buf);
+                    if local_bufs[bucket].is_full() {
+                        mutexed_buckets[bucket]
+                            .lock()
+                            .unwrap()
+                            .extend(local_bufs[bucket].drain(..));
                     }
-                    (local_max, local_bufs)
+                    (local_max, local_bufs, bc, sc)
                 },
             )
-            .map(|(local_max, local_bufs)| {
-                // Flush remaining buffers for this fold task.
-                for (bucket, buf) in local_bufs.into_iter().enumerate() {
+            .map(|(local_max, local_bufs, bc, sc)| {
+                for (bucket, buf) in local_bufs.into_vec().into_iter().enumerate() {
                     if !buf.is_empty() {
                         mutexed_buckets[bucket].lock().unwrap().extend(buf);
                     }
                 }
-                local_max
+                (local_max, bc, sc)
             })
-            .reduce(V::default, Ord::max);
+            .reduce(
+                || {
+                    let bc: Box<[usize]> = vec![0usize; num_buckets].into();
+                    let sc: Box<[usize]> = vec![0usize; num_shards].into();
+                    (V::default(), bc, sc)
+                },
+                |(max_a, mut bc_a, mut sc_a), (max_b, bc_b, sc_b)| {
+                    let m = Ord::max(max_a, max_b);
+                    for (a, b) in bc_a.iter_mut().zip(bc_b.iter()) {
+                        *a += b;
+                    }
+                    for (a, b) in sc_a.iter_mut().zip(sc_b.iter()) {
+                        *a += b;
+                    }
+                    (m, bc_a, sc_a)
+                },
+            );
+
+        let (max_val, local_bc, local_sc) = max_val;
 
         // Move Vecs back out of Mutexes.
         self.buckets
             .extend(mutexed_buckets.into_iter().map(|m| m.into_inner().unwrap()));
 
-        // Read atomic counters back.
-        for (i, c) in bucket_counts.iter().enumerate() {
-            self.bucket_sizes[i] = c.load(Ordering::Relaxed);
+        // Merge local counters into the store's counts.
+        for (i, c) in local_bc.iter().enumerate() {
+            self.bucket_sizes[i] += c;
         }
-        for (i, c) in shard_counts.iter().enumerate() {
-            self.shard_sizes[i] = c.load(Ordering::Relaxed);
+        for (i, c) in local_sc.iter().enumerate() {
+            self.shard_sizes[i] += c;
         }
 
         self.len += n;
