@@ -70,6 +70,12 @@ use crate::utils::PrimitiveUnsignedExt;
 /// - `D`: The delimiter structure. Must implement `SliceByValue<Value = u64>`.
 ///   Defaults to [`EfSeq<u64>`](EfSeq).
 #[derive(Debug, Clone, MemDbg, MemSize)]
+#[cfg_attr(
+    feature = "epserde",
+    derive(epserde::Epserde),
+    epserde(bound(deser = "V: for<'a> epserde::deser::DeserInner<DeserType<'a> = V>"))
+)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CompIntList<V = usize, D = EfSeq<u64>> {
     /// Number of stored values.
     ///
