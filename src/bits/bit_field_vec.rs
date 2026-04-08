@@ -358,7 +358,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
 /// This struct is created by the
 /// [`try_chunks_mut`](crate::bits::bit_field_vec::BitFieldVec#impl-BitFieldSliceMut-for-BitFieldVec<B>)
 /// method.
-pub struct ChunksMut<'a, W> {
+pub struct ChunksMut<'a, W: Word> {
     remaining: usize,
     bit_width: usize,
     chunk_size: usize,
@@ -614,7 +614,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> BitFieldSlice
 /// Error type returned when [`try_chunks_mut`](SliceByValueMut::try_chunks_mut)
 /// does not find sufficient alignment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ChunksMutError<W> {
+pub struct ChunksMutError<W: Word> {
     bit_width: usize,
     chunk_size: usize,
     _marker: core::marker::PhantomData<W>,

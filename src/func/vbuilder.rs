@@ -124,7 +124,7 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
 
     /// Use disk-based buckets to reduce core memory usage at construction time.
     #[setters(generate = true)]
-    pub(crate) offline: bool,
+    offline: bool,
 
     /// Check for duplicated signatures. This is not necessary in general,
     /// but if you suspect you might be feeding duplicate keys, you can
@@ -139,7 +139,7 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// than three threads and more than two shards.
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "None"))]
-    pub(crate) low_mem: Option<bool>,
+    low_mem: Option<bool>,
 
     /// The seed for the random number generator.
     #[setters(generate = true)]
@@ -926,7 +926,7 @@ impl<
     /// `build_fn` is called with `(&mut self, seed, store, max_value, num_keys,
     /// pl)`. The builder's `shard_edge`, `c`, and `lge` fields are already set
     /// up when `build_fn` is invoked, so it can call
-    /// `try_build_from_shard_iter` directly.
+    /// [`try_build_from_shard_iter`](Self::try_build_from_shard_iter) directly.
     ///
     /// Returns whatever `build_fn` returns on success.
     pub fn try_populate_and_build<
@@ -1054,10 +1054,11 @@ impl<
                     std::mem::size_of::<S>() * 8,
                 ));
 
-                let maybe_max_value = sig_store.par_populate(n, self.max_num_threads, |i| SigVal {
-                    sig: T::to_sig(keys[i].borrow(), seed),
-                    val: val_fn(i),
-                });
+                let maybe_max_value =
+                    sig_store.par_populate(n, self.max_num_threads, |i| SigVal {
+                        sig: T::to_sig(keys[i].borrow(), seed),
+                        val: val_fn(i),
+                    });
 
                 pl.done();
 

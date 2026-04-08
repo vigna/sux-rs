@@ -8,7 +8,8 @@ use rand::{RngExt, SeedableRng};
 use rand_distr::{Distribution, Geometric, Zipf};
 use std::hint::black_box;
 use sux::bits::BitFieldVec;
-use sux::func::{VBuilder, VFunc, VFunc2};
+use sux::func::vfunc2::VFunc2;
+use sux::func::{VBuilder, VFunc};
 use sux::traits::TryIntoUnaligned;
 use sux::utils::FromSlice;
 

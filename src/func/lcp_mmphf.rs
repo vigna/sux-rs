@@ -209,7 +209,7 @@ pub(crate) fn log2_bucket_size(n: usize) -> usize {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LcpMmphfInt<
     K,
-    D = BitFieldVec<Box<[usize]>>,
+    D: SliceByValue = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
     E0 = FuseLge3Shards,
     S1 = [u64; 1],
@@ -824,18 +824,6 @@ impl ToSig<[u64; 1]> for BitPrefix {
 ///
 /// See [`LcpMmphfStr`] and [`LcpMmphfSliceU8`] for common instantiations.
 ///
-/// # Type parameters
-///
-/// - `K`: the key type (e.g., `str` or `[u8]`).
-/// - `D`: the backing store for [`VFunc`] data (e.g.,
-///   [`BitFieldVec`]).
-/// - `S0`: the [signature type](`Sig`) for the key map
-///   (`offset_lcp_length`).
-/// - `E0`: the [`ShardEdge`] for the key map.
-/// - `S1`: the signature type for the prefix-to-bucket map
-///   (`lcp2bucket`).
-/// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
-///
 /// # Examples
 ///
 /// Build from sorted strings using the [`LcpMmphfStr`] alias:
@@ -870,7 +858,7 @@ impl ToSig<[u64; 1]> for BitPrefix {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LcpMmphf<
     K: ?Sized,
-    D = BitFieldVec<Box<[usize]>>,
+    D: SliceByValue = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
     E0 = FuseLge3Shards,
     S1 = [u64; 1],
@@ -1050,9 +1038,14 @@ pub(crate) fn mismatch(xs: &[u8], ys: &[u8]) -> usize {
 /// NUL (0x00) XOR the next byte of the longer string yields that byte
 /// itself, and `leading_zeros` gives the additional shared bits.
 ///
-/// The two strings must be distinct (the constructor enforces this).
+/// If `DISTINCT` is `true`, the two strings are assumed to be distinct
+/// and the identical-string case is skipped (calling with identical
+/// strings is undefined behavior in debug builds and an out-of-bounds
+/// access in release builds). If `DISTINCT` is `false`, identical
+/// strings return `len * 8 + 8` (all bits match, including the
+/// virtual NUL).
 #[cfg(feature = "rayon")]
-pub(crate) fn lcp_bits_nul(a: &[u8], b: &[u8]) -> usize {
+pub(crate) fn lcp_bits_nul<const DISTINCT: bool>(a: &[u8], b: &[u8]) -> usize {
     let min_len = a.len().min(b.len());
     let pos = mismatch(&a[..min_len], &b[..min_len]);
 
@@ -1061,13 +1054,17 @@ pub(crate) fn lcp_bits_nul(a: &[u8], b: &[u8]) -> usize {
         return pos * 8 + (a[pos] ^ b[pos]).leading_zeros() as usize;
     }
 
-    // One string is a proper prefix of the other (they cannot be
-    // identical because the constructor enforces strict ordering).
-    let longer = if a.len() >= b.len() { a } else { b };
-    debug_assert!(longer.len() > min_len);
+    if !DISTINCT && a.len() == b.len() {
+        // Identical keys (including virtual NUL). The virtual NUL is
+        // 0x00 for both, so all bits match.
+        return min_len * 8 + 8;
+    }
 
-    // The virtual NUL after the shorter string diverges from the next
-    // byte of the longer string (which is guaranteed non-NUL).
+    // One string is a proper prefix of the other. The virtual NUL
+    // after the shorter string diverges from the next byte of the
+    // longer string (which is guaranteed non-NUL).
+    let longer = if a.len() > b.len() { a } else { b };
+    debug_assert!(longer.len() > min_len);
     min_len * 8 + longer[min_len].leading_zeros() as usize
 }
 
@@ -1260,7 +1257,7 @@ where
                 curr_lcp_bits = (key_bytes.len() + 1) * 8;
             } else {
                 // Subsequent key: minimize LCP.
-                curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul(key_bytes, &prev_key));
+                curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul::<true>(key_bytes, &prev_key));
             }
 
             prev_key.clear();
@@ -1479,7 +1476,7 @@ where
                 bucket_first_keys.push(key_bytes.to_vec());
                 curr_lcp_bits = (key_bytes.len() + 1) * 8;
             } else {
-                curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul(key_bytes, &prev_key));
+                curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul::<true>(key_bytes, &prev_key));
             }
 
             prev_key.clear();
@@ -1564,7 +1561,8 @@ where
 
 // -- LcpMmphfInt --
 
-impl<K, S0, E0, S1, E1> From<LcpMmphfInt<K, BitFieldVecU<Box<[usize]>>, S0, E0, S1, E1>>
+impl<K, S0: Sig, E0: ShardEdge<S0, 3>, S1: Sig, E1: ShardEdge<S1, 3>>
+    From<LcpMmphfInt<K, BitFieldVecU<Box<[usize]>>, S0, E0, S1, E1>>
     for LcpMmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, S1, E1>
 {
     fn from(f: LcpMmphfInt<K, BitFieldVecU<Box<[usize]>>, S0, E0, S1, E1>) -> Self {
@@ -1577,7 +1575,7 @@ impl<K, S0, E0, S1, E1> From<LcpMmphfInt<K, BitFieldVecU<Box<[usize]>>, S0, E0, 
     }
 }
 
-impl<K, S0, E0, S1, E1> TryIntoUnaligned
+impl<K, S0: Sig, E0: ShardEdge<S0, 3>, S1: Sig, E1: ShardEdge<S1, 3>> TryIntoUnaligned
     for LcpMmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, S1, E1>
 {
     type Unaligned = LcpMmphfInt<K, BitFieldVecU<Box<[usize]>>, S0, E0, S1, E1>;
@@ -1595,7 +1593,8 @@ impl<K, S0, E0, S1, E1> TryIntoUnaligned
 
 // -- LcpMmphf --
 
-impl<K: ?Sized, S0, E0, S1, E1> From<LcpMmphf<K, BitFieldVecU<Box<[usize]>>, S0, E0, S1, E1>>
+impl<K: ?Sized, S0: Sig, E0: ShardEdge<S0, 3>, S1: Sig, E1: ShardEdge<S1, 3>>
+    From<LcpMmphf<K, BitFieldVecU<Box<[usize]>>, S0, E0, S1, E1>>
     for LcpMmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, S1, E1>
 {
     fn from(f: LcpMmphf<K, BitFieldVecU<Box<[usize]>>, S0, E0, S1, E1>) -> Self {
@@ -1608,7 +1607,7 @@ impl<K: ?Sized, S0, E0, S1, E1> From<LcpMmphf<K, BitFieldVecU<Box<[usize]>>, S0,
     }
 }
 
-impl<K: ?Sized, S0, E0, S1, E1> TryIntoUnaligned
+impl<K: ?Sized, S0: Sig, E0: ShardEdge<S0, 3>, S1: Sig, E1: ShardEdge<S1, 3>> TryIntoUnaligned
     for LcpMmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, S1, E1>
 {
     type Unaligned = LcpMmphf<K, BitFieldVecU<Box<[usize]>>, S0, E0, S1, E1>;

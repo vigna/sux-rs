@@ -52,7 +52,7 @@ use value_traits::slices::SliceByValue;
 /// * `S`: The signature type. The default is `[u64; 2]`.
 /// * `E0`: The sharding and edge logic type for the short (frequent-value)
 ///   function. The default is [`FuseLge3Shards`].
-/// * `F0`: The sharding and edge logic type for the long (escaped-value)
+/// * `E1`: The sharding and edge logic type for the long (escaped-value)
 ///   function. The default is `E0`.
 ///
 /// # References
@@ -73,18 +73,18 @@ use value_traits::slices::SliceByValue;
 #[cfg_attr(
     feature = "serde",
     serde(bound(
-        serialize = "D: serde::Serialize, D::Value: serde::Serialize, E0: serde::Serialize, F0: serde::Serialize",
-        deserialize = "D: serde::Deserialize<'de>, D::Value: serde::Deserialize<'de>, E0: serde::Deserialize<'de>, F0: serde::Deserialize<'de>"
+        serialize = "D: serde::Serialize, D::Value: serde::Serialize, E0: serde::Serialize, E1: serde::Serialize",
+        deserialize = "D: serde::Deserialize<'de>, D::Value: serde::Deserialize<'de>, E0: serde::Deserialize<'de>, E1: serde::Deserialize<'de>"
     ))
 )]
-pub struct VFunc2<T: ?Sized, D: SliceByValue, S = [u64; 2], E0 = FuseLge3Shards, F0 = E0> {
+pub struct VFunc2<T: ?Sized, D: SliceByValue, S = [u64; 2], E0 = FuseLge3Shards, E1 = E0> {
     /// First function: maps each key to a remapped index (*r* bits), or
     /// `escape` for infrequent values. When *r* = 0 this is an empty
     /// VFunc that always returns 0 = `escape`, so the long function is
     /// always queried.
     pub(crate) short: VFunc<T, D, S, E0>,
     /// Second function: maps escaped keys to their full value.
-    pub(crate) long: VFunc<T, D, S, F0>,
+    pub(crate) long: VFunc<T, D, S, E1>,
     /// Maps remapped indices (0 . . `escape` − 1) back to actual values.
     pub(crate) remap: Box<[D::Value]>,
     /// The escape value (2*ʳ* − 1). When *r* = 0, `escape` = 0 and the
@@ -92,11 +92,11 @@ pub struct VFunc2<T: ?Sized, D: SliceByValue, S = [u64; 2], E0 = FuseLge3Shards,
     pub(crate) escape: D::Value,
 }
 
-impl<T: ?Sized, D: SliceByValue, S, E0, F0> std::fmt::Debug for VFunc2<T, D, S, E0, F0>
+impl<T: ?Sized, D: SliceByValue, S, E0, E1> std::fmt::Debug for VFunc2<T, D, S, E0, E1>
 where
     D::Value: std::fmt::Debug,
     VFunc<T, D, S, E0>: std::fmt::Debug,
-    VFunc<T, D, S, F0>: std::fmt::Debug,
+    VFunc<T, D, S, E1>: std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VFunc2")
@@ -108,8 +108,8 @@ where
     }
 }
 
-impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, F0: ShardEdge<S, 3>>
-    VFunc2<T, BitFieldVec<Box<[W]>>, S, E0, F0>
+impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>>
+    VFunc2<T, BitFieldVec<Box<[W]>>, S, E0, E1>
 {
     /// Creates a VFunc2 with zero keys.
     ///
@@ -131,8 +131,8 @@ impl<
     D: SliceByValue<Value: Word + BinSafe + PrimitiveNumberAs<usize>>,
     S: Sig,
     E0: ShardEdge<S, 3>,
-    F0: ShardEdge<S, 3>,
-> VFunc2<T, D, S, E0, F0>
+    E1: ShardEdge<S, 3>,
+> VFunc2<T, D, S, E0, E1>
 {
     /// Retrieves the value for a key given its pre-computed signature.
     ///
@@ -175,10 +175,10 @@ impl<
 use crate::bits::BitFieldVecU;
 use crate::traits::TryIntoUnaligned;
 
-impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, F0: ShardEdge<S, 3>> TryIntoUnaligned
-    for VFunc2<T, BitFieldVec<Box<[W]>>, S, E0, F0>
+impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>> TryIntoUnaligned
+    for VFunc2<T, BitFieldVec<Box<[W]>>, S, E0, E1>
 {
-    type Unaligned = VFunc2<T, BitFieldVecU<Box<[W]>>, S, E0, F0>;
+    type Unaligned = VFunc2<T, BitFieldVecU<Box<[W]>>, S, E0, E1>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -191,13 +191,13 @@ impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, F0: ShardEdge<S, 3>> TryIn
     }
 }
 
-impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, F0: ShardEdge<S, 3>>
-    From<VFunc2<T, BitFieldVecU<Box<[W]>>, S, E0, F0>>
-    for VFunc2<T, BitFieldVec<Box<[W]>>, S, E0, F0>
+impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>>
+    From<VFunc2<T, BitFieldVecU<Box<[W]>>, S, E0, E1>>
+    for VFunc2<T, BitFieldVec<Box<[W]>>, S, E0, E1>
 {
     /// Converts a [`VFunc2`] with [`BitFieldVecU`] data back into
     /// one with [`BitFieldVec`] data.
-    fn from(vf: VFunc2<T, BitFieldVecU<Box<[W]>>, S, E0, F0>) -> Self {
+    fn from(vf: VFunc2<T, BitFieldVecU<Box<[W]>>, S, E0, E1>) -> Self {
         VFunc2 {
             short: VFunc::from(vf.short),
             long: VFunc::from(vf.long),
@@ -346,17 +346,17 @@ use {
 };
 
 #[cfg(feature = "rayon")]
-impl<T, W, S, E0, F0> VFunc2<T, BitFieldVec<Box<[W]>>, S, E0, F0>
+impl<T, W, S, E0, E1> VFunc2<T, BitFieldVec<Box<[W]>>, S, E0, E1>
 where
     T: ?Sized + ToSig<S> + std::fmt::Debug,
     W: Word + BinSafe + MemSize + mem_dbg::FlatType,
     S: Sig + Send + Sync,
     E0: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
-    F0: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
+    E1: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
     Box<[W]>: MemSize,
     SigVal<S, W>: RadixKey,
     SigVal<E0::LocalSig, W>: BitXor + BitXorAssign,
-    SigVal<F0::LocalSig, W>: BitXor + BitXorAssign,
+    SigVal<E1::LocalSig, W>: BitXor + BitXorAssign,
 {
     /// Builds a [`VFunc2`] from keys and values using default
     /// [`VBuilder`] settings.
@@ -377,15 +377,14 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::VFunc2;
     /// # use sux::bits::BitFieldVec;
-    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromCloneableIntoIterator;
-    /// let func = <VFunc2<usize, BitFieldVec<Box<[usize]>>>>::try_new(
+    /// let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> = VFunc2::try_new(
     ///     FromCloneableIntoIterator::new(0..100_usize),
     ///     FromCloneableIntoIterator::new(0..100_usize),
     ///     100,
     ///     no_logging![],
-    /// )?.try_into_unaligned()?;
+    /// )?;
     ///
     /// for i in 0..100 {
     ///     assert_eq!(func.get(&i), i);
@@ -428,16 +427,15 @@ where
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{VBuilder, VFunc2};
     /// # use sux::bits::BitFieldVec;
-    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromCloneableIntoIterator;
-    /// let func = <VFunc2<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
+    /// let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> = VFunc2::try_new_with_builder(
     ///     FromCloneableIntoIterator::new(0..100_usize),
     ///     FromCloneableIntoIterator::new(0..100_usize),
     ///     100,
     ///     VBuilder::default().offline(true),
     ///     no_logging![],
-    /// )?.try_into_unaligned()?;
+    /// )?;
     ///
     /// for i in 0..100 {
     ///     assert_eq!(func.get(&i), i);
@@ -466,13 +464,14 @@ where
                 keys,
                 values,
                 &mut |builder, seed, mut store, _max_value, _num_keys, pl, _state: &mut ()| {
-                    let inner_builder = VBuilder::default().set_from(builder);
                     Self::try_build_from_store::<W>(
                         seed,
                         builder.shard_edge,
                         &mut *store,
                         &|v| v,
-                        inner_builder,
+                        VBuilder::default()
+                            .max_num_threads(builder.max_num_threads)
+                            .eps(builder.eps),
                         pl,
                     )
                 },
@@ -518,7 +517,7 @@ where
     where
         SigVal<S, V>: RadixKey,
         SigVal<E0::LocalSig, V>: BitXor + BitXorAssign,
-        SigVal<F0::LocalSig, V>: BitXor + BitXorAssign,
+        SigVal<E1::LocalSig, V>: BitXor + BitXorAssign,
     {
         // -- Frequency analysis (single pass) --
 
@@ -554,7 +553,7 @@ where
     where
         SigVal<S, V>: RadixKey,
         SigVal<E0::LocalSig, V>: BitXor + BitXorAssign,
-        SigVal<F0::LocalSig, V>: BitXor + BitXorAssign,
+        SigVal<E1::LocalSig, V>: BitXor + BitXorAssign,
     {
         // -- Sort distinct values by descending frequency --
 
@@ -606,8 +605,6 @@ where
         // Save builder settings before the short VFunc consumes it.
         let saved_max_num_threads = builder.max_num_threads;
         let saved_eps = builder.eps;
-        let saved_offline = builder.offline;
-        let saved_low_mem = builder.low_mem;
 
         pl.info(format_args!(
             "Building key -> remapped index ({best_r} bits, escape={escape_usize})..."
@@ -647,7 +644,7 @@ where
             "inspect-counted escaped != freq-computed escaped"
         );
 
-        let mut long_shard_edge = F0::default();
+        let mut long_shard_edge = E1::default();
         long_shard_edge.set_up_shards(n_escaped, saved_eps);
         let long_shard_high_bits = long_shard_edge.shard_high_bits();
 
@@ -674,21 +671,16 @@ where
             |sv: &SigVal<S, V>| inv_map.get(get_val(sv.val)) == escape,
             filtered_shard_sizes,
         );
-        let mut long_builder = VBuilder::<BitFieldVec<Box<[W]>>, S, F0>::default()
+        let long = VBuilder::<BitFieldVec<Box<[W]>>, S, E1>::default()
             .max_num_threads(saved_max_num_threads)
-            .offline(saved_offline);
-        long_builder.eps = saved_eps;
-        if let Some(low_mem) = saved_low_mem {
-            long_builder = long_builder.low_mem(low_mem);
-        }
-        let long = long_builder.try_build_func_with_store::<T, V>(
-            seed,
-            long_shard_edge,
-            max_value,
-            &mut filtered_store,
-            &|_e, sig_val| get_val(sig_val.val),
-            pl,
-        )?;
+            .try_build_func_with_store::<T, V>(
+                seed,
+                long_shard_edge,
+                max_value,
+                &mut filtered_store,
+                &|_e, sig_val| get_val(sig_val.val),
+                pl,
+            )?;
 
         let result = Self {
             short,

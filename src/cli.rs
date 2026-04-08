@@ -56,9 +56,6 @@ pub struct BuilderArgs {
     /// Always use the high-mem peel-by-signature algorithm (slightly faster).​
     #[arg(long, conflicts_with = "low_mem")]
     pub high_mem: bool,
-    /// Convert the structure to use unaligned reads (usually faster queries).​
-    #[arg(long)]
-    pub unaligned: bool,
 }
 
 impl BuilderArgs {

@@ -42,7 +42,7 @@ pub use select_in_word::*;
 /// An error type raised when attempting to cast a non-atomic type to an atomic
 /// type with incompatible alignments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CannotCastToAtomicError<T>(core::marker::PhantomData<T>);
+pub struct CannotCastToAtomicError<T: AtomicPrimitive>(core::marker::PhantomData<T>);
 
 impl<T: AtomicPrimitive> Default for CannotCastToAtomicError<T> {
     fn default() -> Self {

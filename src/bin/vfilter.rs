@@ -18,7 +18,7 @@ use sux::dict::VFilter;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
 use sux::prelude::VBuilder;
-use sux::traits::{BitFieldSliceMut, TryIntoUnaligned, Word};
+use sux::traits::{BitFieldSliceMut, Word};
 use sux::utils::{
     BinSafe, DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig,
 };
@@ -76,9 +76,6 @@ struct Args {
     /// shards.​
     #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
     full_sigs: bool,
-    /// Convert the structure to use unaligned reads (usually faster queries).​
-    #[arg(long)]
-    unaligned: bool,
     /// Use 3-hypergraphs.​
     #[cfg(feature = "mwhc")]
     #[arg(long, conflicts_with_all = ["sig64", "full_sigs"])]
@@ -201,15 +198,8 @@ where
             builder,
             &mut pl,
         )?;
-        if args.unaligned {
-            let filter = filter.try_into_unaligned()?;
-            if let Some(filename) = args.filter {
-                unsafe { filter.store(filename) }?;
-            }
-        } else {
-            if let Some(filename) = args.filter {
-                unsafe { filter.store(filename) }?;
-            }
+        if let Some(filename) = args.filter {
+            unsafe { filter.store(filename) }?;
         }
     } else {
         let n = args.n.unwrap();
@@ -220,15 +210,8 @@ where
             builder,
             &mut pl,
         )?;
-        if args.unaligned {
-            let filter = filter.try_into_unaligned()?;
-            if let Some(filename) = args.filter {
-                unsafe { filter.store(filename) }?;
-            }
-        } else {
-            if let Some(filename) = args.filter {
-                unsafe { filter.store(filename) }?;
-            }
+        if let Some(filename) = args.filter {
+            unsafe { filter.store(filename) }?;
         }
     }
 
@@ -247,8 +230,6 @@ where
     SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>: Serialize,
     VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>: Serialize,
-    sux::traits::Unaligned<VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>>: Serialize,
-    sux::traits::Unaligned<VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>>: Serialize,
 {
     #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
@@ -265,15 +246,8 @@ where
             builder,
             &mut pl,
         )?;
-        if args.unaligned {
-            let filter = filter.try_into_unaligned()?;
-            if let Some(filename) = args.filter {
-                unsafe { filter.store(filename)? };
-            }
-        } else {
-            if let Some(filename) = args.filter {
-                unsafe { filter.store(filename)? };
-            }
+        if let Some(filename) = args.filter {
+            unsafe { filter.store(filename)? };
         }
     } else {
         let n = args.n.unwrap();
@@ -286,15 +260,8 @@ where
             builder,
             &mut pl,
         )?;
-        if args.unaligned {
-            let filter = filter.try_into_unaligned()?;
-            if let Some(filename) = args.filter {
-                unsafe { filter.store(filename)? };
-            }
-        } else {
-            if let Some(filename) = args.filter {
-                unsafe { filter.store(filename)? };
-            }
+        if let Some(filename) = args.filter {
+            unsafe { filter.store(filename)? };
         }
     }
 

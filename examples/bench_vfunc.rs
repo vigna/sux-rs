@@ -13,7 +13,7 @@ use lender::*;
 use sux::{
     bits::BitFieldVec,
     func::{shard_edge::*, *},
-    traits::Unaligned,
+    traits::TryIntoUnaligned,
     utils::{LineLender, Sig, ToSig, ZstdLineLender},
 };
 
@@ -111,8 +111,6 @@ where
     usize: ToSig<S>,
     VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>: Deserialize,
     VFunc<str, BitFieldVec<Box<[usize]>>, S, E>: Deserialize,
-    Unaligned<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>: Deserialize,
-    Unaligned<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>>: Deserialize,
 {
     if let Some(filename) = args.filename {
         let keys: Vec<_> = if args.zstd {
@@ -127,18 +125,15 @@ where
                 .collect()?
         };
 
+        let func = unsafe { VFunc::<str, BitFieldVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
         if args.unaligned {
-            let func = unsafe {
-                <Unaligned<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>>>::load_full(&args.func)
-            }?;
+            let func = func.try_into_unaligned().unwrap();
             bench(args.n, args.repeats, || {
                 for key in &keys {
                     std::hint::black_box(func.get(key.as_str()));
                 }
             });
         } else {
-            let func =
-                unsafe { VFunc::<str, BitFieldVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
             bench(args.n, args.repeats, || {
                 for key in &keys {
                     std::hint::black_box(func.get(key.as_str()));
@@ -146,10 +141,12 @@ where
             });
         }
     } else {
+        // No filename
+        let func =
+            unsafe { VFunc::<usize, BitFieldVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
+
         if args.unaligned {
-            let func = unsafe {
-                <Unaligned<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>>::load_full(&args.func)
-            }?;
+            let func = func.try_into_unaligned().unwrap();
             bench(args.n, args.repeats, || {
                 let mut key: usize = 0;
                 for _ in 0..args.n {
@@ -158,8 +155,6 @@ where
                 }
             });
         } else {
-            let func =
-                unsafe { VFunc::<usize, BitFieldVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
             bench(args.n, args.repeats, || {
                 let mut key: usize = 0;
                 for _ in 0..args.n {

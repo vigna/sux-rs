@@ -60,10 +60,6 @@ use crate::utils::PrimitiveUnsignedExt;
 /// After construction, the delimiter structure can be replaced using
 /// [`map_delimiters`](CompIntList::map_delimiters).
 ///
-/// This structure implements the [`TryIntoUnaligned`]
-/// trait, allowing it to be converted into (usually faster) structures using
-/// unaligned access.
-///
 /// # Type Parameters
 ///
 /// - `V`: The value type. Must be a [`Word`] type. Defaults to `usize`.
@@ -252,7 +248,10 @@ where
 
 use crate::traits::TryIntoUnaligned;
 
-impl<V: Word, D: TryIntoUnaligned> TryIntoUnaligned for CompIntList<V, D> {
+impl<V: Word, D: TryIntoUnaligned + SliceByValue<Value = u64>> TryIntoUnaligned for CompIntList<V, D>
+where
+    D::Unaligned: SliceByValue<Value = u64>,
+{
     type Unaligned = CompIntList<V, D::Unaligned>;
     fn try_into_unaligned(
         self,

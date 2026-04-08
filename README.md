@@ -42,27 +42,15 @@ provides the bit length, and on the traits [`AsRef<W>`]/[`AsMut<W>`], which
 provide concrete access to the underlying data. This approach makes it possible
 to use any structure that implements these traits as a bit vector, and to
 implement your own bit vector if you need specific features (e.g., support for
-unaligned access). On the other hand, you cannot have implicitly defined
-bit vectors, or bit vectors whose start is not aligned to a word boundary.
+unaligned access).
 
 Rank/select structures are built on backends implementing the [`Backend`] trait,
 providing via an associated type the word type, and on the traits above;
-moreover, the structures export the same traits by delegation, so you can use any
+moreover, the strutures export the same traits by delegation, so you can use any
 structure as a backend for (further) rank/select structures, making arbitrary
 nesting of structures simple, typesafe and zero-cost.
 
-Similarly, all structures with a base word (e.g., [`VFunc`]) use the [`Backend`]
-trait to provide the word type to wrappers such as [`SignedFunc`].
-
-## Slice-by-value support
-
-Wherever possible, we support the “slice by value” traits from the
-[`value-traits`] crate, which make it possible to treat structures such as
-bit-field vectors or succinct representations in a manner similar to slices.
-This approach is also used to make [vectors of bit fields] and slices (where the
-bit width of the fields is exactly that of the word type) interchangeable.
-
-## ε-serde support
+## ε-serde Support
 
 All structures in this crate are designed to work well with [ε-serde]: in
 particular, once you have created and serialized them, you can easily map them
@@ -70,12 +58,20 @@ into memory or load them in memory regions with specific `mmap()` attributes.
 Support for ε-serde is provided by the feature `epserde`, and support for
 memory mapping in ε-serde is provided by the `mmap` feature.
 
-## serde support
+## serde Support
 
 All structures in this crate support serialization with [serde]. Support is
 gated by the feature `serde`.
 
-## `MemDbg`/`MemSize` support
+## Slice by Value Support
+
+Wherever possible, we support the “slice by value” traits from the
+[`value-traits`] crate, which make it possible to treat structures such as
+bit-field vectors or succinct representations in a manner similar to slices.
+This approach is also used to make [vectors of bit fields] and slices (where the
+bit width of the fields is exactly that of the word type) interchangeable.
+
+## `MemDbg`/`MemSize` Support
 
 All structures in this crate support the [`MemDbg`] and [`MemSize`] traits from
 the [`mem_dbg`] crate, which provide convenient facilities for inspecting memory
@@ -141,17 +137,17 @@ A few benchmarks are available in the `benches` directory. The ones starting wit
 cargo bench --bench bench_vfunc
 ```
 
-The `rank_sel` benchmark, which tests rank and select structures, is instead a CLI
+The `sux` benchmark, which tests rank and select structures, is instead a CLI
 command with options. Try
 
 ```bash
-cargo bench --bench rank_sel -- --help
+cargo bench --bench sux -- --help
 ```
 
 to see the available tests. For example, with
 
 ```bash
-cargo bench --bench rank_sel -- Rank9 -d 0.5 -l 100000,1000000,10000000
+cargo bench --bench sux -- Rank9 -d 0.5 -l 100000,1000000,10000000
 ```
 
 you can test the [`Rank9`] structure with a density of 0.5 on a few bit sizes.
@@ -171,33 +167,11 @@ By specifying multiple structures (using also substring matching), you can
 compare the behavior of different structures. For example,
 
 ```bash
-cargo bench --bench rank_sel -- SelectSmall SelectAdapt0 -d 0.5 -l 100000,1000000,10000000
+cargo bench --bench sux -- SelectSmall SelectAdapt0 -d 0.5 -l 100000,1000000,10000000
 ```
 
 will test all variants of [`SelectSmall`] against a [`SelectAdapt`] with one (2⁰)
-`u64` per subinventory.
-
-Similarly, the `bit_field_vec` benchmark tests [`BitFieldVec`](crate::bits::BitFieldVec)
-operations with configurable bit widths and vector sizes:
-
-```bash
-cargo bench --bench bit_field_vec -- --help
-```
-
-For example, to benchmark 12-bit and 32-bit widths on vectors of size 2²⁰:
-
-```bash
-cargo bench --bench bit_field_vec -- -w 12,32 -l 20
-```
-
-Use `--unaligned` to benchmark the [`BitFieldVecU`](crate::bits::BitFieldVecU) variant
-with branchless unaligned reads:
-
-```bash
-cargo bench --bench bit_field_vec -- -w 12,32 -l 20 --unaligned
-```
-
-You can generate plots from any benchmark results with:
+`u64` per subinventory. The plot will highlight the differences in performance:
 
 ```bash
 ./python/plot_benches.py --benches-path ./target/criterion/ --plot-dir plots
@@ -229,21 +203,21 @@ Union nor the Italian MUR can be held responsible for them.
 [`SelectSmall`]: https://docs.rs/sux/latest/sux/rank_sel/struct.SelectSmall.html
 [`SelectAdapt`]: https://docs.rs/sux/latest/sux/rank_sel/struct.SelectAdapt.html
 [static functions]: https://docs.rs/sux/latest/sux/func/vfunc/struct.VFunc.html
-[`VFunc`]: https://docs.rs/sux/latest/sux/func/vfunc/struct.VFunc.html
 [monotone minimal perfect hash functions]: https://docs.rs/sux/latest/sux/func/lcp_mmphf/index.html
 [static filters]: https://docs.rs/sux/latest/sux/dict/vfilter/struct.VFilter.html
 [partial arrays]: https://docs.rs/sux/latest/sux/array/struct.PartialArray.html
-[operations on bit vectors]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
+[opertions on bit vectors]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
 [unaligned access]: https://docs.rs/sux/latest/sux/traits/trait.TryIntoUnaligned.html
 [`value-traits`]: https://crates.io/crates/value-traits
 [serde]: https://crates.io/crates/serde/
 [`deko`]: https://crates.io/crates/deko/
 [`lenders`]: https://docs.rs/sux/latest/sux/utils/lenders/
-[signed minimal perfect hash functions]: https://docs.rs/sux/latest/sux/func/signed/struct.SignedFunc.html
-[`SignedFunc`]: https://docs.rs/sux/latest/sux/func/signed/struct.SignedFunc.html
+[signed minimal perfect hash functions]: https://docs.rs/sux/latest/sux/dict/signed_vfunc/struct.SignedVFunc.html
 [lists]: https://docs.rs/sux/latest/sux/list/index.html
 [compressed lists of integers]: https://docs.rs/sux/latest/sux/list/comp_int_list/struct.CompIntList.html
+[`AsRef<Backend:Word>`]: https://doc.rust-lang.org/core/convert/trait.AsRef.html
+[`AsMut<Backend:Word>`]: https://doc.rust-lang.org/core/convert/trait.AsMut.html
 [`AsRef<W>`]: https://doc.rust-lang.org/core/convert/trait.AsRef.html
 [`AsMut<W>`]: https://doc.rust-lang.org/core/convert/trait.AsMut.html
-[vectors of bit fields]: https://docs.rs/sux/latest/sux/bits/bit_field_vec/index.html
+[`Word`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html#associatedtype.Word
 [`Backend`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html

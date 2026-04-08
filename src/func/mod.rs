@@ -29,6 +29,10 @@
 //!   [`LcpMmphfInt`]/[`LcpMmphf`] that use a [`VFunc2`] to reduce space usage, at
 //!   the cost of slightly slower queries.
 //!
+//! - [`HtDistMmphfInt`]/[`HtDistMmphf`] are *monotone minimal perfect hash
+//!   functions* based on a hollow trie distributor. See [`HtDistMmphfStr`] and
+//!   [`HtDistMmphfSliceU8`] for common instantiations.
+//!
 //! - [`SignedFunc`] wraps any of the above with per-key verification hashes,
 //!   returning `None` for keys outside the original set. Use `Box<[W]>` for
 //!   full-width hashes or [`BitFieldVec`](crate::bits::BitFieldVec) for
@@ -47,6 +51,7 @@
 //! | Same, skewed value distribution | [`VFunc2`] | less for skewed |
 //! | Map sorted keys → rank (monotone) | [`LcpMmphfInt`] / [`LcpMmphf`] | ~1.8 bits/key |
 //! | Same, less space, slower queries | [`Lcp2MmphfInt`] / [`Lcp2Mmphf`] | ~1.4 bits/key |
+//! | Same, hollow trie distributor | [`HtDistMmphfInt`] / [`HtDistMmphf`] | ~5.0 bits/key |
 //! | Approximate membership (Bloom-like) | [`VFilter`](crate::dict::VFilter) | ~1.13 × filter_bits per key |
 //! | Any of the above + reject unknown keys | [`SignedFunc`] | inner cost + hash bits |
 //!
@@ -57,7 +62,7 @@
 mod vfunc;
 pub use vfunc::*;
 
-mod vfunc2;
+pub mod vfunc2;
 pub use vfunc2::*;
 
 #[cfg(feature = "rayon")]
@@ -73,6 +78,9 @@ pub use lcp2_mmphf::*;
 
 pub mod signed;
 pub use signed::*;
+
+pub mod hollow_trie;
+pub use hollow_trie::*;
 
 pub mod shard_edge;
 

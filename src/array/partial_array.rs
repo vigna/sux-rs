@@ -240,9 +240,6 @@ impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
 ///
 /// For convenience, this structure implements [`SliceByValue`].
 ///
-/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
-/// converted into (usually faster) structures using unaligned access.
-///
 /// See [`PartialArrayBuilder`] for details on how to create a partial array.
 #[derive(Debug, Clone, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]

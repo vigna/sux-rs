@@ -20,7 +20,12 @@ use crate::traits::{IndexedSeq, IntoIteratorFrom, Types};
 /// While a blanket implementation of [`IndexedSeq`] could be more convenient,
 /// it would cause significant ambiguity problems.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SliceSeq<O, A>(A, std::marker::PhantomData<O>);
+pub struct SliceSeq<O: PartialEq<usize> + PartialEq + Copy, A: AsRef<[O]>>(
+    A,
+    std::marker::PhantomData<O>,
+)
+where
+    usize: PartialEq<O>;
 
 impl<O: PartialEq<usize> + PartialEq + Copy, A: AsRef<[O]>> SliceSeq<O, A>
 where

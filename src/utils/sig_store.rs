@@ -53,7 +53,6 @@
 #![allow(clippy::comparison_chain)]
 #![allow(clippy::type_complexity)]
 use anyhow::Result;
-#[cfg(feature = "rayon")]
 use arrayvec::ArrayVec;
 use mem_dbg::{MemDbg, MemSize};
 
@@ -122,7 +121,7 @@ impl Sig for [u64; 1] {
 
 /// A signature and a value.
 #[derive(Debug, Clone, Copy, Default, MemDbg, MemSize)]
-pub struct SigVal<S, V> {
+pub struct SigVal<S: BinSafe + Sig, V: BinSafe> {
     pub sig: S,
     pub val: V,
 }
@@ -315,7 +314,7 @@ macro_rules! to_sig_prim {
                 <[u64; 2]>::from_hasher(&hasher)
             }
         }
-        impl ToSig<[u64; 1]> for $ty {
+        impl ToSig<[u64;1]> for $ty {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
                 let bytes = key.borrow().to_ne_bytes();
                 let mut hasher = xxh3::Xxh3::with_seed(seed);
@@ -334,17 +333,17 @@ macro_rules! to_sig_slice {
     ($($ty:ty),*) => {$(
         impl ToSig<[u64; 2]> for &[$ty] {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
-                // Alignment to u8 never fails or leaves trailing/leading bytes
-                let bytes = unsafe { key.borrow().align_to::<u8>().1 };
+                // Alignment to u8 never fails or leave trailing/leading bytes
+                let bytes = unsafe {key.borrow().align_to::<u8>().1 };
                 let mut hasher = xxh3::Xxh3::with_seed(seed);
                 hasher.update(bytes);
                 <[u64; 2]>::from_hasher(&hasher)
             }
         }
-        impl ToSig<[u64; 1]> for &[$ty] {
+        impl ToSig<[u64;1]> for &[$ty] {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
-                // Alignment to u8 never fails or leaves trailing/leading bytes
-                let bytes = unsafe { key.borrow().align_to::<u8>().1 };
+                // Alignment to u8 never fails or leave trailing/leading bytes
+                let bytes = unsafe {key.borrow().align_to::<u8>().1 };
                 let mut hasher = xxh3::Xxh3::with_seed(seed);
                 hasher.update(bytes);
                 <[u64; 1]>::from_hasher(&hasher)
@@ -356,7 +355,7 @@ macro_rules! to_sig_slice {
                 <&[$ty]>::to_sig(key.borrow(), seed)
             }
         }
-        impl ToSig<[u64; 1]> for [$ty] {
+        impl ToSig<[u64;1]> for [$ty] {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
                 <&[$ty]>::to_sig(key.borrow(), seed)
             }
@@ -694,8 +693,9 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
             .with_min_len((n / max_num_threads).max(1_000_000))
             .fold(
                 || {
-                    let bufs: Box<[ArrayVec<SigVal<S, V>, CAP>]> =
-                        (0..num_buckets).map(|_| ArrayVec::new()).collect();
+                    let bufs: Box<[ArrayVec<SigVal<S, V>, CAP>]> = (0..num_buckets)
+                        .map(|_| ArrayVec::new())
+                        .collect();
                     let bc: Box<[usize]> = vec![0usize; num_buckets].into();
                     let sc: Box<[usize]> = vec![0usize; num_shards].into();
                     (V::default(), bufs, bc, sc)
@@ -878,7 +878,7 @@ where
 /// shard is made by one or more buckets, it will aggregate them as necessary;
 /// if a bucket contains several shards, it will split the bucket into shards.
 #[derive(Debug)]
-pub struct ShardIter<S, V, B, T> {
+pub struct ShardIter<S: BinSafe + Sig, V: BinSafe, B, T: BorrowMut<ShardStoreImpl<S, V, B>>> {
     store: T,
     /// Whether the store is borrowed.
     borrowed: bool,

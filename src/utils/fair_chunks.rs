@@ -87,7 +87,7 @@ use crate::traits::{IndexedSeq, Succ, SuccUnchecked};
 /// ```
 
 #[derive(Debug, Clone, Copy)]
-pub struct FairChunks<I> {
+pub struct FairChunks<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64>> {
     /// Cumulative weight function. This is used to generate chunks with
     /// approximately the same target weight.
     cwf: I,

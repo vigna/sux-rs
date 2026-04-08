@@ -191,15 +191,14 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// ```rust
 /// # use sux::rank_sel::{SelectAdaptConst, SelectZeroAdaptConst};
 /// # use sux::dict::{EliasFanoBuilder};
-/// # use sux::traits::{Types,IndexedSeq,IndexedDict,SuccUnchecked,Succ,TryIntoUnaligned};
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # use sux::traits::{Types,IndexedSeq,IndexedDict,SuccUnchecked,Succ};
 /// let mut efb = EliasFanoBuilder::new(4, 10u64);
 /// efb.push(0);
 /// efb.push(2);
 /// efb.push(8);
 /// efb.push(10);
 ///
-/// let ef = efb.build_with_seq().try_into_unaligned()?;
+/// let ef = efb.build_with_seq();
 ///
 /// assert_eq!(ef.get(0), 0);
 /// assert_eq!(ef.get(1), 2);
@@ -210,7 +209,7 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// efb.push(8);
 /// efb.push(10);
 ///
-/// let ef = efb.build_with_dict().try_into_unaligned()?;
+/// let ef = efb.build_with_dict();
 ///
 /// assert_eq!(unsafe { ef.succ_unchecked::<false>(6) }, (2, 8));
 /// // Calling unsafe { ef.succ_unchecked::<false>(11) } would be UB
@@ -221,13 +220,11 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// efb.push(8);
 /// efb.push(10);
 ///
-/// let ef = efb.build_with_seq_and_dict().try_into_unaligned()?;
+/// let ef = efb.build_with_seq_and_dict();
 /// assert_eq!(ef.get(0), 0);
 /// assert_eq!(ef.get(1), 2);
 /// assert_eq!(ef.succ(6), Some((2, 8)));
 /// assert_eq!(ef.succ(11), None);
-/// # Ok(())
-/// # }
 /// ```
 ///
 /// Enriching manually a base structure with
@@ -1766,7 +1763,12 @@ where
 /// This iterator is slightly slower than a [backward
 /// iterator](EliasFanoBackIter), but much faster than using selection.
 #[derive(MemDbg, MemSize)]
-pub struct EliasFanoBidiIter<'a, V, H, L> {
+pub struct EliasFanoBidiIter<
+    'a,
+    V: Word + PrimitiveNumberAs<usize>,
+    H: AsRef<[usize]>,
+    L: SliceByValue<Value = V>,
+> {
     ef: &'a EliasFano<V, H, L>,
     /// Cursor position: `next()` yields element `index`, `prev()` yields
     /// element `index - 1`.
@@ -2006,7 +2008,6 @@ impl<V: Word + PrimitiveNumberAs<usize>, A: AsRef<[V]>> From<A>
 ///
 /// ```rust
 /// # use sux::dict::EliasFanoBuilder;
-/// # use sux::traits::TryIntoUnaligned;
 /// let mut efb = EliasFanoBuilder::new(4, 10u64);
 ///
 /// efb.push(0);
@@ -2014,17 +2015,16 @@ impl<V: Word + PrimitiveNumberAs<usize>, A: AsRef<[V]>> From<A>
 /// efb.push(8);
 /// efb.push(10);
 ///
-/// let ef = efb.build().try_into_unaligned()?;
+/// let ef = efb.build();
 /// let mut iter = ef.iter();
 /// assert_eq!(iter.next(), Some(0u64));
 /// assert_eq!(iter.next(), Some(2u64));
 /// assert_eq!(iter.next(), Some(8u64));
 /// assert_eq!(iter.next(), Some(10u64));
 /// assert_eq!(iter.next(), None);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, MemDbg, MemSize)]
-pub struct EliasFanoBuilder<V = usize> {
+pub struct EliasFanoBuilder<V: Word = usize> {
     n: usize,
     u: V,
     l: usize,
@@ -2199,7 +2199,6 @@ impl<V: Word + PrimitiveNumberAs<usize>> Extend<V> for EliasFanoBuilder<V> {
 ///
 /// ```rust
 /// # use sux::dict::EliasFanoConcurrentBuilder;
-/// # use sux::traits::TryIntoUnaligned;
 /// let mut efcb = EliasFanoConcurrentBuilder::new(4, 10u64);
 /// std::thread::scope(|s| {
 ///     s.spawn(|| { unsafe { efcb.set(0, 0); } });
@@ -2208,14 +2207,13 @@ impl<V: Word + PrimitiveNumberAs<usize>> Extend<V> for EliasFanoBuilder<V> {
 ///     s.spawn(|| { unsafe { efcb.set(3, 10); } });
 /// });
 ///
-/// let ef = efcb.build().try_into_unaligned()?;
+/// let ef = efcb.build();
 /// let mut iter = ef.iter();
 /// assert_eq!(iter.next(), Some(0u64));
 /// assert_eq!(iter.next(), Some(2u64));
 /// assert_eq!(iter.next(), Some(8u64));
 /// assert_eq!(iter.next(), Some(10u64));
 /// assert_eq!(iter.next(), None);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 
 #[derive(MemDbg, MemSize)]

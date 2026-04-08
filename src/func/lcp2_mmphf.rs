@@ -130,7 +130,7 @@ type LcpLen = u16;
 )]
 pub struct Lcp2MmphfInt<
     K,
-    D = BitFieldVec<Box<[usize]>>,
+    D: SliceByValue = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
     E0 = FuseLge3Shards,
     F0 = E0,
@@ -1053,7 +1053,7 @@ where
 )]
 pub struct Lcp2Mmphf<
     K: ?Sized,
-    D = BitFieldVec<Box<[usize]>>,
+    D: SliceByValue = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
     E0 = FuseLge3Shards,
     F0 = E0,
@@ -1403,7 +1403,7 @@ where
                         } else if offset == 0 {
                             curr_lcp_bits = (key_bytes.len() + 1) * 8;
                         } else {
-                            curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul(key_bytes, &prev_key));
+                            curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul::<true>(key_bytes, &prev_key));
                         }
 
                         if offset == 0 {
@@ -1793,7 +1793,7 @@ where
                 bucket_first_keys.push(key_bytes.to_vec());
                 curr_lcp_bits = (key_bytes.len() + 1) * 8;
             } else {
-                curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul(key_bytes, &prev_key));
+                curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul::<true>(key_bytes, &prev_key));
             }
 
             prev_key.clear();
@@ -1996,7 +1996,8 @@ type Ubfv = BitFieldVecU<Box<[usize]>>;
 
 // -- Lcp2MmphfInt --
 
-impl<K, S0, E0, F0, S1, E1> From<Lcp2MmphfInt<K, Ubfv, S0, E0, F0, S1, E1>>
+impl<K, S0: Sig, E0: ShardEdge<S0, 3>, F0: ShardEdge<S0, 3>, S1: Sig, E1: ShardEdge<S1, 3>>
+    From<Lcp2MmphfInt<K, Ubfv, S0, E0, F0, S1, E1>>
     for Lcp2MmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>
 {
     fn from(f: Lcp2MmphfInt<K, Ubfv, S0, E0, F0, S1, E1>) -> Self {
@@ -2012,8 +2013,8 @@ impl<K, S0, E0, F0, S1, E1> From<Lcp2MmphfInt<K, Ubfv, S0, E0, F0, S1, E1>>
     }
 }
 
-impl<K, S0, E0, F0, S1, E1> TryIntoUnaligned
-    for Lcp2MmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>
+impl<K, S0: Sig, E0: ShardEdge<S0, 3>, F0: ShardEdge<S0, 3>, S1: Sig, E1: ShardEdge<S1, 3>>
+    TryIntoUnaligned for Lcp2MmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>
 {
     type Unaligned = Lcp2MmphfInt<K, Ubfv, S0, E0, F0, S1, E1>;
     fn try_into_unaligned(
@@ -2033,7 +2034,8 @@ impl<K, S0, E0, F0, S1, E1> TryIntoUnaligned
 
 // -- Lcp2Mmphf --
 
-impl<K: ?Sized, S0, E0, F0, S1, E1> From<Lcp2Mmphf<K, Ubfv, S0, E0, F0, S1, E1>>
+impl<K: ?Sized, S0: Sig, E0: ShardEdge<S0, 3>, F0: ShardEdge<S0, 3>, S1: Sig, E1: ShardEdge<S1, 3>>
+    From<Lcp2Mmphf<K, Ubfv, S0, E0, F0, S1, E1>>
     for Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>
 {
     fn from(f: Lcp2Mmphf<K, Ubfv, S0, E0, F0, S1, E1>) -> Self {
@@ -2049,8 +2051,8 @@ impl<K: ?Sized, S0, E0, F0, S1, E1> From<Lcp2Mmphf<K, Ubfv, S0, E0, F0, S1, E1>>
     }
 }
 
-impl<K: ?Sized, S0, E0, F0, S1, E1> TryIntoUnaligned
-    for Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>
+impl<K: ?Sized, S0: Sig, E0: ShardEdge<S0, 3>, F0: ShardEdge<S0, 3>, S1: Sig, E1: ShardEdge<S1, 3>>
+    TryIntoUnaligned for Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>
 {
     type Unaligned = Lcp2Mmphf<K, Ubfv, S0, E0, F0, S1, E1>;
     fn try_into_unaligned(

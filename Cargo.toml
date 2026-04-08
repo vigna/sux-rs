@@ -56,6 +56,7 @@ zerocopy = { version = "0.8.27", features = ["derive"] }
 jiff = "0.2.15"
 fallible-iterator = "0.3.0"
 sync-cell-slice = "0.9.12"
+succinctly = "0.6.0"
 
 [dev-dependencies]
 criterion = { version = "0.7.0", default-features = false, features = ["html_reports", "plotters", "cargo_bench_support"] }
@@ -129,6 +130,10 @@ name = "mem_usage"
 required-features = ["cli"]
 
 [[example]]
+name = "bench_bit_field_vec"
+required-features = ["cli"]
+
+[[example]]
 name = "bench_rear_coded_list"
 required-features = ["cli"]
 
@@ -141,11 +146,7 @@ name = "bench_vfilter"
 required-features = ["epserde", "clap"]
 
 [[bench]]
-name = "rank_sel"
-harness = false
-
-[[bench]]
-name = "bit_field_vec"
+name = "sux"
 harness = false
 
 [[bench]]
