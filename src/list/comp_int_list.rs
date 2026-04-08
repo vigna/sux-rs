@@ -272,7 +272,7 @@ where
             n: self.n,
             min: self.min,
             delimiters: self.delimiters.try_into_unaligned()?,
-            data: unsafe { BitVecU::new(self.data) },
+            data: self.data.try_into_unaligned()?,
             all_widths_unaligned: true,
         })
     }
@@ -288,7 +288,7 @@ where
             n: c.n,
             min: c.min,
             delimiters: c.delimiters.into(),
-            data: c.data.into_inner(),
+            data: c.data.into(),
             all_widths_unaligned: c.all_widths_unaligned,
         }
     }
