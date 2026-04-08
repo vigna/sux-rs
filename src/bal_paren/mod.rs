@@ -8,7 +8,9 @@
 //!
 //! This module provides succinct data structures for balanced parentheses
 //! sequences, where open parentheses are represented as 1-bits and close
-//! parentheses as 0-bits (LSB first within each `usize` word).
+//! parentheses as 0-bits (LSB first within each `usize` word). They are
+//! frequently used to represent structure such as binary trees, trees, forests,
+//! and planar graphs.
 //!
 //! The [`BalParen`] trait abstracts the query interface; currently, the only
 //! implementation is [`JacobsonBalParen`].

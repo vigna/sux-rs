@@ -15,14 +15,14 @@
 //!
 //! Guy Jacobson. [Space-efficient static trees and
 //! graphs](https://ieeexplore.ieee.org/abstract/document/63533). In *30th
-//! annual symposium on foundations of computer science*, pp. 549−554. IEEE,
-//! 1989.
+//! annual symposium on foundations of computer science (FOCS '89)*, pp.
+//! 549−554. IEEE, 1989.
 
 use crate::bits::BitFieldVec;
 use crate::dict::{EfDict, EliasFanoBuilder};
 use crate::list::comp_int_list::CompIntList;
 use crate::list::prefix_sum_int_list::PrefixSumIntList;
-use crate::traits::indexed_dict::Pred;
+use crate::traits::indexed_dict::PredUnchecked;
 use mem_dbg::*;
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
@@ -56,9 +56,9 @@ static BYTE_MIN_EXCESS: [i8; 256] = {
     table
 };
 
-/// For each byte value *b* and target excess *t* (0..8), the bit position
-/// (0..7) within the byte where the running excess first reaches −(*t* + 1),
-/// or 8 if the target is not reached within the byte.
+/// For each byte value *b* and target excess *t* (0 . . 8), the bit position (0
+/// . . 7) within the byte where the running excess first reaches −(*t* + 1), or
+/// 8 if the target is not reached within the byte.
 static BYTE_FIND_CLOSE: [[u8; 8]; 256] = {
     let mut table = [[8u8; 8]; 256];
     let mut b = 0usize;
@@ -206,26 +206,31 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 ///
 /// Open parentheses are represented as 1-bits and close parentheses as
 /// 0-bits, with bit 0 being the LSB.
+/// 
+/// # Implementation details
+/// 
+/// This implementation uses the pioneer technique from Jacobson: an opening
+/// parenthesis whose match falls in a different `usize` word is called *far*
+/// (the original paper uses blocks that are logarithmic in the number of
+/// parentheses).
+/// 
+/// Among the far opening parentheses, a subset called *pioneers* is selected: a
+/// far opening parenthesis is a pioneer if it is the first far opening
+/// parenthesis in its word, or if its match falls in a different word than the
+/// previous far opening parenthesis's match. Pioneer positions are stored in a
+/// structure supporting [predecessor
+/// queries](crate::traits::indexed_dict::PredUnchecked), and the offsets from
+/// each pioneer to its matching close parenthesis are stored in a
+/// [`SliceByValue`] structure. Three offset storage variants are available:
 ///
-/// A balanced parentheses sequence encodes a tree: open parentheses are
-/// represented as 1-bits and close parentheses as 0-bits, with bit 0 being the
-/// LSB. The [`find_close`](JacobsonBalParen::find_close) operation returns the
-/// position of the matching close parenthesis for a given open parenthesis.
-///
-/// The implementation uses the *pioneer* technique from Jacobson \[1989\]: an
-/// opening parenthesis whose match falls in a different `usize` word is called
-/// *far*. Among the far opening parentheses, a subset called *pioneers* is
-/// selected — a far opening parenthesis is a pioneer if it is the first far
-/// opening parenthesis in its word, or if its match falls in a different word
-/// than the previous far opening parenthesis's match. Pioneer positions are
-/// stored in an [Elias–Fano structure](crate::dict::EliasFano) supporting
-/// predecessor queries, and the offsets from each pioneer to its matching close
-/// parenthesis are stored in a [`SliceByValue`] structure. Three offset
-/// storage variants are available:
-///
-/// - [`CompIntList`] (default, best space).
-/// - [`PrefixSumIntList`] (faster queries, more space).
+/// - [`CompIntList`] (default, best space);
+/// - [`PrefixSumIntList`] (faster queries, more space);
 /// - [`BitFieldVec`] (fastest queries, largest space).
+/// 
+/// Both structures can be replaced with custom implementations as long as they
+/// return the same values, using
+/// [`map_pioneer_positions`](Self::map_pioneer_positions) and
+/// [`map_pioneer_match_offsets`](Self::map_pioneer_match_offsets).
 ///
 /// Queries work in two stages:
 /// 1. **In-word**: byte-level lookup tables are used to find the matching close
@@ -234,20 +239,16 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 ///    on the pioneer positions locates the relevant pioneer, whose stored match
 ///    offset is then adjusted using lookup tables.
 ///
-/// The structure stores the balanced parentheses bit vector together with
-/// auxiliary data for far matches: a predecessor-capable structure `P`
-/// (defaulting to an [Elias–Fano dictionary](crate::dict::EfDict)) for
-/// pioneer positions and the offsets from each pioneer to its matching close
-/// parenthesis, stored in a generic [`SliceByValue`] structure `O`.
-///
 /// # Type Parameters
 ///
 /// - `P`: The predecessor structure for pioneer positions. Must implement
-///   [`Pred<Input = usize>`](Pred). Defaults to [`EfDict<usize>`].
+///   [`PredUnchecked<Input = usize>`](PredUnchecked). Defaults to [`EfDict<usize>`].
+/// 
 /// - `O`: The storage for pioneer match offsets. Must implement
-///   `SliceByValue<Value = usize>`. Defaults to
-///   [`CompIntList`] for compact variable-length encoding. See the
-///   `new_with_bit_field_vec` and `new_with_prefix_sum` constructors for
+///   [`SliceByValue<Value = usize>`](SliceByValue). Defaults to [`CompIntList`]
+///   for compact variable-length encoding. See the
+///   [`new_with_bit_field_vec`](Self::new_with_bit_field_vec) and
+///   [`new_with_prefix_sum`](Self::new_with_prefix_sum) constructors for
 ///   alternative configurations.
 ///
 /// # Examples
@@ -266,8 +267,8 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 ///
 /// Guy Jacobson. [Space-efficient static trees and
 /// graphs](https://ieeexplore.ieee.org/abstract/document/63533). In *30th
-/// annual symposium on foundations of computer science*, pp. 549−554. IEEE,
-/// 1989.
+/// annual symposium on foundations of computer science (FOCS '89)*, pp.
+/// 549−554. IEEE, 1989.
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -468,7 +469,7 @@ impl JacobsonBalParen<EfDict<usize>, PrefixSumIntList> {
 
 impl<P, O: SliceByValue<Value = usize>> JacobsonBalParen<P, O>
 where
-    P: for<'a> Pred<Input = usize, Output<'a> = usize>,
+    P: for<'a> PredUnchecked<Input = usize, Output<'a> = usize>,
 {
     /// Returns the position of the matching close parenthesis for the open
     /// parenthesis at bit position `pos`, or `None` if `pos` is out of bounds
@@ -494,8 +495,7 @@ where
         // Far match: look up the pioneer using predecessor query
         let (pioneer_index, pioneer) = self
             .pioneer_positions
-            .pred(pos)
-            .expect("No pioneer found for far open paren");
+            .pred_unchecked(pos);
 
         let match_pos = pioneer
             + unsafe {
@@ -541,7 +541,7 @@ where
 
 impl<P, O: SliceByValue<Value = usize>> super::BalParen for JacobsonBalParen<P, O>
 where
-    P: for<'a> Pred<Input = usize, Output<'a> = usize>
+    P: for<'a> PredUnchecked<Input = usize, Output<'a> = usize>
         + MemSize
         + mem_dbg::FlatType
         + std::fmt::Debug,
@@ -760,10 +760,10 @@ mod tests {
             0b0101,                // ()()
             0b00001111,            // (((())))
             0b00110011,            // (())(())
-            0x5555_5555_5555_5555, // ()()()...
-            0x0000_0000_FFFF_FFFF, // 32 opens then 32 closes
+            usize::MAX / 3,        // ()()()...
+            0x0000_0000_FFFF_FFFF, // 32 opens then 32 closes (64-bit value fits in 32-bit usize too)
             1,                     // single open, close at bit 1
-            0xFFFF_FFFF_FFFF_FFFF, // all opens - no close in word
+            usize::MAX,            // all opens - no close in word
         ];
         for &w in &test_words {
             let naive = find_near_close_naive(w);
@@ -808,6 +808,7 @@ mod tests {
         assert_eq!(find_far_close(0, 2), 2);
     }
 
+    #[cfg(target_pointer_width = "64")]
     #[test]
     fn test_find_far_close_against_naive() {
         let test_words: Vec<usize> = vec![
@@ -854,6 +855,7 @@ mod tests {
         }
     }
 
+    #[cfg(target_pointer_width = "64")]
     #[test]
     fn test_find_close_far_match() {
         // Create a pattern where we have some opens in word 0 matching in word 1.
@@ -961,6 +963,7 @@ mod tests {
         }
     }
 
+    #[cfg(target_pointer_width = "64")]
     #[test]
     fn test_find_close_all_nested() {
         // ((((...))))  - 32 opens then 32 closes, fits in one word
@@ -997,11 +1000,11 @@ mod tests {
     #[test]
     fn test_count_far_open_close() {
         // All opens: count_far_open should count all of them
-        assert_eq!(count_far_open(0xFFFF_FFFF_FFFF_FFFF, WORD_BITS), WORD_BITS);
+        assert_eq!(count_far_open(usize::MAX, WORD_BITS), WORD_BITS);
         // All closes: count_far_close should count all of them
         assert_eq!(count_far_close(0, WORD_BITS), WORD_BITS);
         // "()" pairs: no far parens
-        assert_eq!(count_far_open(0x5555_5555_5555_5555, WORD_BITS), 0);
-        assert_eq!(count_far_close(0x5555_5555_5555_5555, WORD_BITS), 0);
+        assert_eq!(count_far_open(usize::MAX / 3, WORD_BITS), 0);
+        assert_eq!(count_far_close(usize::MAX / 3, WORD_BITS), 0);
     }
 }
