@@ -203,6 +203,24 @@ impl<D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync, S: Sig, E: ShardEdge
         }
         self.seed
     }
+
+    /// Copies behavioral configuration from another builder into `self`,
+    /// regardless of the other builder's type parameters.
+    ///
+    /// The copied fields are: [`max_num_threads`](Self::max_num_threads),
+    /// [`offline`](Self::offline), [`check_dups`](Self::check_dups),
+    /// [`low_mem`](Self::low_mem), and [`eps`](Self::eps).
+    /// Data-dependent fields ([`expected_num_keys`](Self::expected_num_keys),
+    /// [`seed`](Self::seed), [`log2_buckets`](Self::log2_buckets)) and
+    /// internal construction state are left at their defaults.
+    pub fn set_from<D2, S2, E2>(mut self, other: &VBuilder<D2, S2, E2>) -> Self {
+        self.max_num_threads = other.max_num_threads;
+        self.offline = other.offline;
+        self.check_dups = other.check_dups;
+        self.low_mem = other.low_mem;
+        self.eps = other.eps;
+        self
+    }
 }
 
 /// Fatal build errors.
@@ -469,7 +487,7 @@ where
     ///   times and different results for the same input would silently
     ///   corrupt the function.
     pub fn try_build_func_with_store<T: ?Sized + ToSig<S>, V: BinSafe + Default + Send + Sync>(
-        self,
+        &mut self,
         seed: u64,
         shard_edge: E,
         max_value: W,
@@ -504,7 +522,7 @@ where
         T: ?Sized + ToSig<S>,
         V: BinSafe + Default + Send + Sync,
     >(
-        mut self,
+        &mut self,
         seed: u64,
         shard_edge: E,
         max_value: W,

@@ -86,6 +86,10 @@ pub trait Sig: BinSafe + Default + PartialEq + Eq + std::fmt::Debug {
     /// In debug mode this method should panic if `mask` is not equal to `(1 <<
     /// high_bits) - 1`.
     fn high_bits(&self, high_bits: u32, mask: u64) -> u64;
+
+    /// Constructs a signature from the state of an [`Xxh3`](xxh3::Xxh3)
+    /// streaming hasher.
+    fn from_hasher(hasher: &xxh3::Xxh3) -> Self;
 }
 
 impl Sig for [u64; 2] {
@@ -94,6 +98,12 @@ impl Sig for [u64; 2] {
         debug_assert!(mask == (1 << high_bits) - 1);
         self[0].rotate_left(high_bits) & mask
     }
+
+    #[inline(always)]
+    fn from_hasher(hasher: &xxh3::Xxh3) -> Self {
+        let h = hasher.digest128();
+        [(h >> 64) as u64, h as u64]
+    }
 }
 
 impl Sig for [u64; 1] {
@@ -101,6 +111,11 @@ impl Sig for [u64; 1] {
     fn high_bits(&self, high_bits: u32, mask: u64) -> u64 {
         debug_assert!(mask == (1 << high_bits) - 1);
         self[0].rotate_left(high_bits) & mask
+    }
+
+    #[inline(always)]
+    fn from_hasher(hasher: &xxh3::Xxh3) -> Self {
+        [hasher.digest()]
     }
 }
 
@@ -294,14 +309,17 @@ macro_rules! to_sig_prim {
         impl ToSig<[u64; 2]> for $ty {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
                 let bytes = key.borrow().to_ne_bytes();
-                let hash128 = xxh3::xxh3_128_with_seed(bytes.as_slice(), seed);
-                [(hash128 >> 64) as u64, hash128 as u64]
-                }
+                let mut hasher = xxh3::Xxh3::with_seed(seed);
+                hasher.update(bytes.as_slice());
+                <[u64; 2]>::from_hasher(&hasher)
+            }
         }
         impl ToSig<[u64;1]> for $ty {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
                 let bytes = key.borrow().to_ne_bytes();
-                [xxh3::xxh3_64_with_seed(bytes.as_slice(), seed)]
+                let mut hasher = xxh3::Xxh3::with_seed(seed);
+                hasher.update(bytes.as_slice());
+                <[u64; 1]>::from_hasher(&hasher)
             }
         }
     )*};
@@ -317,15 +335,18 @@ macro_rules! to_sig_slice {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
                 // Alignment to u8 never fails or leave trailing/leading bytes
                 let bytes = unsafe {key.borrow().align_to::<u8>().1 };
-                let hash128 = xxh3::xxh3_128_with_seed(bytes, seed);
-                [(hash128 >> 64) as u64, hash128 as u64]
+                let mut hasher = xxh3::Xxh3::with_seed(seed);
+                hasher.update(bytes);
+                <[u64; 2]>::from_hasher(&hasher)
             }
         }
         impl ToSig<[u64;1]> for &[$ty] {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
                 // Alignment to u8 never fails or leave trailing/leading bytes
                 let bytes = unsafe {key.borrow().align_to::<u8>().1 };
-                [xxh3::xxh3_64_with_seed(bytes, seed)]
+                let mut hasher = xxh3::Xxh3::with_seed(seed);
+                hasher.update(bytes);
+                <[u64; 1]>::from_hasher(&hasher)
             }
         }
 

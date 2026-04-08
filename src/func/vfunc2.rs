@@ -547,7 +547,7 @@ where
         get_val: &(impl Fn(V) -> W + Send + Sync),
         max_value: W,
         counts: HybridMap<W, usize>,
-        builder: VBuilder<BitFieldVec<Box<[W]>>, S, E0>,
+        mut builder: VBuilder<BitFieldVec<Box<[W]>>, S, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<Self>
     where
