@@ -2637,7 +2637,7 @@ where
 // Aligned <-> Unaligned conversions
 // ═══════════════════════════════════════════════════════════════════
 
-use crate::traits::{TryIntoUnaligned, Word};
+use crate::traits::{TryIntoUnaligned, Unaligned, Word};
 
 impl<F: TryIntoUnaligned, H: TryIntoUnaligned> TryIntoUnaligned for SignedFunc<F, H> {
     type Unaligned = SignedFunc<F::Unaligned, H::Unaligned>;
@@ -2651,25 +2651,13 @@ impl<F: TryIntoUnaligned, H: TryIntoUnaligned> TryIntoUnaligned for SignedFunc<F
     }
 }
 
-impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, H>
-    From<SignedFunc<VFunc<K, BitFieldVecU<Box<[W]>>, S, E>, H>>
+impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, H: TryIntoUnaligned>
+    From<Unaligned<SignedFunc<VFunc<K, BitFieldVec<Box<[W]>>, S, E>, H>>>
     for SignedFunc<VFunc<K, BitFieldVec<Box<[W]>>, S, E>, H>
+where
+    H: From<H::Unaligned>,
 {
-    fn from(f: SignedFunc<VFunc<K, BitFieldVecU<Box<[W]>>, S, E>, H>) -> Self {
-        SignedFunc {
-            func: f.func.into(),
-            hashes: f.hashes,
-        }
-    }
-}
-
-impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, W2: Word>
-    From<SignedFunc<VFunc<K, BitFieldVecU<Box<[W]>>, S, E>, BitFieldVecU<Box<[W2]>>>>
-    for SignedFunc<VFunc<K, BitFieldVec<Box<[W]>>, S, E>, BitFieldVec<Box<[W2]>>>
-{
-    fn from(
-        f: SignedFunc<VFunc<K, BitFieldVecU<Box<[W]>>, S, E>, BitFieldVecU<Box<[W2]>>>,
-    ) -> Self {
+    fn from(f: Unaligned<SignedFunc<VFunc<K, BitFieldVec<Box<[W]>>, S, E>, H>>) -> Self {
         SignedFunc {
             func: f.func.into(),
             hashes: f.hashes.into(),

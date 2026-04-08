@@ -1987,9 +1987,8 @@ where
 
 // ── Aligned ↔ Unaligned conversions ──────────────────────────────────
 
-use crate::bits::BitFieldVecU;
-use crate::traits::TryIntoUnaligned;
-type Ubfv = BitFieldVecU<Box<[usize]>>;
+use crate::traits::{TryIntoUnaligned, Unaligned};
+type Ubfv = Unaligned<BitFieldVec<Box<[usize]>>>;
 
 // -- Lcp2MmphfInt --
 

@@ -172,13 +172,12 @@ impl<
 
 // ── Aligned ↔ Unaligned conversions ─────────────────────────────────
 
-use crate::bits::BitFieldVecU;
-use crate::traits::TryIntoUnaligned;
+use crate::traits::{TryIntoUnaligned, Unaligned};
 
 impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, F: ShardEdge<S, 3>> TryIntoUnaligned
     for VFunc2<K, BitFieldVec<Box<[W]>>, S, E, F>
 {
-    type Unaligned = VFunc2<K, BitFieldVecU<Box<[W]>>, S, E, F>;
+    type Unaligned = VFunc2<K, Unaligned<BitFieldVec<Box<[W]>>>, S, E, F>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -192,11 +191,10 @@ impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, F: ShardEdge<S, 3>> TryInto
 }
 
 impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, F: ShardEdge<S, 3>>
-    From<VFunc2<K, BitFieldVecU<Box<[W]>>, S, E, F>> for VFunc2<K, BitFieldVec<Box<[W]>>, S, E, F>
+    From<Unaligned<VFunc2<K, BitFieldVec<Box<[W]>>, S, E, F>>>
+    for VFunc2<K, BitFieldVec<Box<[W]>>, S, E, F>
 {
-    /// Converts a [`VFunc2`] with [`BitFieldVecU`] data back into
-    /// one with [`BitFieldVec`] data.
-    fn from(vf: VFunc2<K, BitFieldVecU<Box<[W]>>, S, E, F>) -> Self {
+    fn from(vf: Unaligned<VFunc2<K, BitFieldVec<Box<[W]>>, S, E, F>>) -> Self {
         VFunc2 {
             short: VFunc::from(vf.short),
             long: VFunc::from(vf.long),

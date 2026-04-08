@@ -2376,10 +2376,10 @@ where
 
 // ── Aligned ↔ Unaligned conversion ──────────────────────────────────
 
-use crate::bits::BitFieldVecU;
+use crate::traits::Unaligned;
 
 impl<V: Word, H> TryIntoUnaligned for EliasFano<V, H, BitFieldVec<Box<[V]>>> {
-    type Unaligned = EliasFano<V, H, BitFieldVecU<Box<[V]>>>;
+    type Unaligned = EliasFano<V, H, Unaligned<BitFieldVec<Box<[V]>>>>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -2395,10 +2395,10 @@ impl<V: Word, H> TryIntoUnaligned for EliasFano<V, H, BitFieldVec<Box<[V]>>> {
     }
 }
 
-impl<V: Word, H> From<EliasFano<V, H, BitFieldVecU<Box<[V]>>>>
+impl<V: Word, H> From<Unaligned<EliasFano<V, H, BitFieldVec<Box<[V]>>>>>
     for EliasFano<V, H, BitFieldVec<Box<[V]>>>
 {
-    fn from(ef: EliasFano<V, H, BitFieldVecU<Box<[V]>>>) -> Self {
+    fn from(ef: Unaligned<EliasFano<V, H, BitFieldVec<Box<[V]>>>>) -> Self {
         EliasFano {
             n: ef.n,
             u: ef.u,

@@ -207,7 +207,11 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 /// Open parentheses are represented as 1-bits and close parentheses as
 /// 0-bits, with bit 0 being the LSB.
 ///
-/// # Implementation details
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access. Due to
+/// genericity of all the type parameter involved, it is not possible to provide a
+/// [`From`] implementation for the unaligned version, but the conversion can be
+/// done using the map methods.
 ///
 /// This implementation uses the pioneer technique from Jacobson: an opening
 /// parenthesis whose match falls in a different `usize` word is called *far*

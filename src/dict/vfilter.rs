@@ -7,8 +7,9 @@
 
 //! Static filters (approximate membership structures with false positives).
 
-use crate::bits::{BitFieldVec, BitFieldVecU};
+use crate::bits::BitFieldVec;
 use crate::func::{VFunc, shard_edge::ShardEdge};
+use crate::traits::Unaligned;
 use crate::traits::{Backend, Word};
 use crate::utils::{BinSafe, Sig, ToSig};
 use mem_dbg::*;
@@ -171,7 +172,7 @@ where
 impl<K: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>> crate::traits::TryIntoUnaligned
     for VFilter<VFunc<K, BitFieldVec<Box<[W]>>, S, E>>
 {
-    type Unaligned = VFilter<VFunc<K, BitFieldVecU<Box<[W]>>, S, E>>;
+    type Unaligned = VFilter<VFunc<K, Unaligned<BitFieldVec<Box<[W]>>>, S, E>>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -182,11 +183,11 @@ impl<K: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>> crate::traits::Tr
     }
 }
 
-impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>>
-    From<VFilter<VFunc<K, BitFieldVecU<Box<[W]>>, S, E>>>
+impl<K: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>>
+    From<Unaligned<VFilter<VFunc<K, BitFieldVec<Box<[W]>>, S, E>>>>
     for VFilter<VFunc<K, BitFieldVec<Box<[W]>>, S, E>>
 {
-    fn from(f: VFilter<VFunc<K, BitFieldVecU<Box<[W]>>, S, E>>) -> Self {
+    fn from(f: Unaligned<VFilter<VFunc<K, BitFieldVec<Box<[W]>>, S, E>>>) -> Self {
         VFilter {
             func: f.func.into(),
             filter_mask: f.filter_mask,

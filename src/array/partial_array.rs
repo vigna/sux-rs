@@ -11,7 +11,8 @@ use std::marker::PhantomData;
 use mem_dbg::*;
 use value_traits::slices::SliceByValue;
 
-use crate::bits::{BitFieldVec, BitFieldVecU, BitVec};
+use crate::bits::{BitFieldVec, BitVec};
+use crate::traits::Unaligned;
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EliasFano;
 use crate::panic_if_out_of_bounds;
@@ -424,7 +425,7 @@ where
 // ── Aligned ↔ Unaligned conversion ──────────────────────────────────
 
 impl<D> TryIntoUnaligned for SparseIndex<D> {
-    type Unaligned = SparseIndex<D, BitFieldVecU<Box<[u64]>>>;
+    type Unaligned = SparseIndex<D, Unaligned<BitFieldVec<Box<[u64]>>>>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {

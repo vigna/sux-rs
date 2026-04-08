@@ -34,7 +34,6 @@
 use {
     crate::bal_paren::{BalParen, JacobsonBalParen},
     crate::bits::BitFieldVec,
-    crate::bits::BitFieldVecU,
     crate::bits::BitVec,
     crate::func::VFunc,
     crate::func::lcp_mmphf::{lcp_bits, lcp_bits_nul},
@@ -373,19 +372,15 @@ fn encode_behaviour_key(
     buf
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// HollowTrieDistributor — the main structure
-// ═══════════════════════════════════════════════════════════════════
-
-/// A hollow trie distributor that assigns sorted byte-sequence keys
-/// to bucket indices.
+/// A distributor that assigns sorted byte-sequence keys to bucket indices using
+/// a hollow trie.
 ///
 /// Built from sorted keys and a bucket size. Uses a hollow trie on
 /// the bucket delimiters combined with behaviour functions stored as
 /// [`VFunc`]s.
 #[cfg(feature = "rayon")]
 #[derive(Debug)]
-pub struct HollowTrieDistributor<D = BitFieldVec<Box<[usize]>>, B: BalParen = JacobsonBalParen> {
+pub struct HtDist<D = BitFieldVec<Box<[usize]>>, B: BalParen = JacobsonBalParen> {
     /// Balanced-parentheses support structure for the trie.
     bal_paren: B,
     /// Skip values stored as a prefix-sum list over Elias-Fano.
@@ -403,9 +398,7 @@ pub struct HollowTrieDistributor<D = BitFieldVec<Box<[usize]>>, B: BalParen = Ja
 }
 
 #[cfg(feature = "rayon")]
-impl<D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemSize
-    for HollowTrieDistributor<D, B>
-{
+impl<D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemSize for HtDist<D, B> {
     fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
         let mut size = core::mem::size_of::<Self>();
         size += self.bal_paren.mem_size_rec(flags, refs);
@@ -417,10 +410,7 @@ impl<D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemSize
 }
 
 #[cfg(feature = "rayon")]
-impl<D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemDbgImpl
-    for HollowTrieDistributor<D, B>
-{
-}
+impl<D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemDbgImpl for HtDist<D, B> {}
 
 /// Exit on the left (closer to left delimiter).
 #[cfg(feature = "rayon")]
@@ -433,7 +423,7 @@ const RIGHT: usize = 1;
 const FOLLOW: usize = 2;
 
 #[cfg(feature = "rayon")]
-impl HollowTrieDistributor {
+impl HtDist {
     /// Builds a hollow trie distributor from sorted keys.
     ///
     /// `keys` must be in strictly increasing lexicographic order.
@@ -732,7 +722,7 @@ impl HollowTrieDistributor {
 }
 
 #[cfg(feature = "rayon")]
-impl<D: SliceByValue<Value = usize> + MemSize, B: BalParen> HollowTrieDistributor<D, B> {
+impl<D: SliceByValue<Value = usize> + MemSize, B: BalParen> HtDist<D, B> {
     /// Returns the bucket index for the given key.
     ///
     /// The key is navigated through the hollow trie using the balanced
@@ -851,9 +841,8 @@ impl<D: SliceByValue<Value = usize> + MemSize, B: BalParen> HollowTrieDistributo
 // HtDistMmphf — Hollow Trie Distributor MMPHF
 // ═══════════════════════════════════════════════════════════════════
 
-/// A monotone minimal perfect hash function based on a
-/// [`HollowTrieDistributor`] and per-bucket offsets stored in a
-/// [`VFunc`].
+/// A monotone minimal perfect hash function based on a [`HtDist`] and
+/// per-bucket offsets stored in a [`VFunc`].
 ///
 /// Given *n* keys in sorted order, the structure maps each key to its
 /// rank (0 to *n* − 1). Querying a key not in the original set returns
@@ -895,7 +884,7 @@ impl<D: SliceByValue<Value = usize> + MemSize, B: BalParen> HollowTrieDistributo
 #[cfg(feature = "rayon")]
 pub struct HtDistMmphf<K: ?Sized, D = BitFieldVec<Box<[usize]>>, B: BalParen = JacobsonBalParen> {
     /// The hollow trie distributor.
-    distributor: HollowTrieDistributor<D, B>,
+    distributor: HtDist<D, B>,
     /// Per-key offset within the bucket.
     offset: VFunc<K, D>,
     /// Log2 of bucket size.
@@ -1007,7 +996,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
     ) -> Result<Self> {
         if n == 0 {
             return Ok(Self {
-                distributor: HollowTrieDistributor {
+                distributor: HtDist {
                     bal_paren: JacobsonBalParen::new(vec![0b10], 2),
                     skips: crate::list::PrefixSumIntList::new(&Vec::<usize>::new()),
                     num_nodes: 0,
@@ -1073,7 +1062,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
 
         if num_delimiters == 0 {
             return Ok(Self {
-                distributor: HollowTrieDistributor {
+                distributor: HtDist {
                     bal_paren,
                     skips,
                     num_nodes,
@@ -1281,7 +1270,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
                 pl,
             )?;
 
-        let distributor = HollowTrieDistributor {
+        let distributor = HtDist {
             bal_paren,
             skips,
             num_nodes,
@@ -1387,12 +1376,12 @@ impl<
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl TryIntoUnaligned for HollowTrieDistributor {
-    type Unaligned = HollowTrieDistributor<BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>;
+impl TryIntoUnaligned for HtDist {
+    type Unaligned = HtDist<Unaligned<BitFieldVec<Box<[usize]>>>, Unaligned<JacobsonBalParen>>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
-        Ok(HollowTrieDistributor {
+        Ok(HtDist {
             bal_paren: self.bal_paren.try_into_unaligned()?,
             skips: self.skips,
             num_nodes: self.num_nodes,
@@ -1404,12 +1393,8 @@ impl TryIntoUnaligned for HollowTrieDistributor {
 }
 
 #[cfg(feature = "rayon")]
-impl From<HollowTrieDistributor<BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>>
-    for HollowTrieDistributor
-{
-    fn from(
-        f: HollowTrieDistributor<BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>,
-    ) -> Self {
+impl From<Unaligned<HtDist>> for HtDist {
+    fn from(f: Unaligned<HtDist>) -> Self {
         // SAFETY: Into::into preserves the semantics of the pioneer
         // position and offset structures.
         let bal_paren = unsafe {
@@ -1430,7 +1415,8 @@ impl From<HollowTrieDistributor<BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBa
 
 #[cfg(feature = "rayon")]
 impl<K: ?Sized> TryIntoUnaligned for HtDistMmphf<K> {
-    type Unaligned = HtDistMmphf<K, BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>;
+    type Unaligned =
+        HtDistMmphf<K, Unaligned<BitFieldVec<Box<[usize]>>>, Unaligned<JacobsonBalParen>>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -1444,10 +1430,8 @@ impl<K: ?Sized> TryIntoUnaligned for HtDistMmphf<K> {
 }
 
 #[cfg(feature = "rayon")]
-impl<K: ?Sized> From<HtDistMmphf<K, BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>>
-    for HtDistMmphf<K>
-{
-    fn from(f: HtDistMmphf<K, BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>) -> Self {
+impl<K: ?Sized> From<Unaligned<HtDistMmphf<K>>> for HtDistMmphf<K> {
+    fn from(f: Unaligned<HtDistMmphf<K>>) -> Self {
         Self {
             distributor: f.distributor.into(),
             offset: f.offset.into(),
@@ -2163,7 +2147,8 @@ where
 
 #[cfg(feature = "rayon")]
 impl<K: PrimitiveInteger> TryIntoUnaligned for HtDistMmphfInt<K> {
-    type Unaligned = HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>;
+    type Unaligned =
+        HtDistMmphfInt<K, Unaligned<BitFieldVec<Box<[usize]>>>, Unaligned<JacobsonBalParen>>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -2182,11 +2167,8 @@ impl<K: PrimitiveInteger> TryIntoUnaligned for HtDistMmphfInt<K> {
 }
 
 #[cfg(feature = "rayon")]
-impl<K: PrimitiveInteger>
-    From<HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>>
-    for HtDistMmphfInt<K>
-{
-    fn from(f: HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>) -> Self {
+impl<K: PrimitiveInteger> From<Unaligned<HtDistMmphfInt<K>>> for HtDistMmphfInt<K> {
+    fn from(f: Unaligned<HtDistMmphfInt<K>>) -> Self {
         // SAFETY: Into::into preserves the semantics of the pioneer
         // position and offset structures.
         let bal_paren = unsafe {
@@ -2284,7 +2266,7 @@ mod tests {
         fn test_distributor_directly() {
             let keys: Vec<&str> = vec!["alpha", "beta", "delta", "gamma", "omega"];
             let log2_bs = 0;
-            let dist = HollowTrieDistributor::try_new(&keys, log2_bs, no_logging![]).unwrap();
+            let dist = HtDist::try_new(&keys, log2_bs, no_logging![]).unwrap();
             for (i, key) in keys.iter().enumerate() {
                 assert_eq!(
                     dist.get(key.as_bytes()),
