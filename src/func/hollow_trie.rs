@@ -912,15 +912,24 @@ impl<D: SliceByValue<Value = usize>, B: BalParen + AsRef<[usize]>, S: SliceByVal
 /// ```
 #[derive(Debug)]
 #[cfg(feature = "rayon")]
-pub struct HtDistMmphf<K: ?Sized, D = BitFieldVec<Box<[usize]>>, B: BalParen = JacobsonBalParen> {
+pub struct HtDistMmphf<
+    K: ?Sized,
+    E = VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+    F = VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+    O = VFunc<K, BitFieldVec<Box<[usize]>>>,
+    B: BalParen = JacobsonBalParen,
+    S = PrefixSumIntList,
+> {
     /// The hollow trie distributor.
-    distributor: HtDist<D, B>,
+    distributor: HtDist<E, F, B, S>,
     /// Per-key offset within the bucket.
-    offset: VFunc<K, D>,
+    offset: O,
     /// Log2 of bucket size.
     log2_bucket_size: usize,
     /// Number of keys.
     n: usize,
+    /// Phantom data for `K`.
+    _marker: std::marker::PhantomData<*const K>,
 }
 
 /// An [`HtDistMmphf`] for `str` keys.
@@ -951,7 +960,7 @@ pub struct HtDistMmphf<K: ?Sized, D = BitFieldVec<Box<[usize]>>, B: BalParen = J
 /// # fn main() {}
 /// ```
 #[cfg(feature = "rayon")]
-pub type HtDistMmphfStr<D = BitFieldVec<Box<[usize]>>> = HtDistMmphf<str, D>;
+pub type HtDistMmphfStr = HtDistMmphf<str>;
 
 /// An [`HtDistMmphf`] for `[u8]` keys.
 ///
@@ -990,14 +999,17 @@ pub type HtDistMmphfStr<D = BitFieldVec<Box<[usize]>>> = HtDistMmphf<str, D>;
 /// # fn main() {}
 /// ```
 #[cfg(feature = "rayon")]
-pub type HtDistMmphfSliceU8<D = BitFieldVec<Box<[usize]>>> = HtDistMmphf<[u8], D>;
+pub type HtDistMmphfSliceU8 = HtDistMmphf<[u8]>;
 
 #[cfg(feature = "rayon")]
 impl<
     K: ?Sized,
-    D: SliceByValue + MemSize + mem_dbg::FlatType,
+    E: MemSize + mem_dbg::FlatType,
+    F: MemSize + mem_dbg::FlatType,
+    O: MemSize + mem_dbg::FlatType,
     B: BalParen + MemSize + mem_dbg::FlatType,
-> MemSize for HtDistMmphf<K, D, B>
+    S: MemSize + mem_dbg::FlatType,
+> MemSize for HtDistMmphf<K, E, F, O, B, S>
 {
     fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
         let mut size = core::mem::size_of::<Self>();
@@ -1010,14 +1022,24 @@ impl<
 #[cfg(feature = "rayon")]
 impl<
     K: ?Sized,
-    D: SliceByValue + MemSize + mem_dbg::FlatType,
+    E: MemSize + mem_dbg::FlatType,
+    F: MemSize + mem_dbg::FlatType,
+    O: MemSize + mem_dbg::FlatType,
     B: BalParen + MemSize + mem_dbg::FlatType,
-> MemDbgImpl for HtDistMmphf<K, D, B>
+    S: MemSize + mem_dbg::FlatType,
+> MemDbgImpl for HtDistMmphf<K, E, F, O, B, S>
 {
 }
 
 #[cfg(feature = "rayon")]
-impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K> {
+impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug>
+    HtDistMmphf<
+        K,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<K, BitFieldVec<Box<[usize]>>>,
+    >
+{
     /// Builds a new hollow-trie-distributor-based monotone minimal
     /// perfect hash function from sorted byte-sequence keys.
     ///
@@ -1048,6 +1070,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
                 offset: VFunc::empty(),
                 log2_bucket_size: 0,
                 n: 0,
+                _marker: std::marker::PhantomData,
             });
         }
 
@@ -1114,6 +1137,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
                 offset: VFunc::empty(),
                 log2_bucket_size: log2_bs,
                 n,
+                _marker: std::marker::PhantomData,
             });
         }
 
@@ -1337,6 +1361,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
             offset,
             log2_bucket_size: log2_bs,
             n,
+            _marker: std::marker::PhantomData,
         };
 
         let flags = SizeFlags::default();
@@ -1386,7 +1411,15 @@ impl<
     K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]>,
     D: SliceByValue<Value = usize> + MemSize,
     B: BalParen + AsRef<[usize]>,
-> HtDistMmphf<K, D, B>
+    S: SliceByValue<Value = usize>,
+> HtDistMmphf<
+    K,
+    VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
+    VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
+    VFunc<K, D>,
+    B,
+    S,
+>
 {
     /// Returns the rank (0-based position) of the given key in the
     /// original sorted sequence.
@@ -1483,9 +1516,22 @@ impl
 }
 
 #[cfg(feature = "rayon")]
-impl<K: ?Sized> TryIntoUnaligned for HtDistMmphf<K> {
-    type Unaligned =
-        HtDistMmphf<K, Unaligned<BitFieldVec<Box<[usize]>>>, Unaligned<JacobsonBalParen>>;
+impl<K: ?Sized>
+    TryIntoUnaligned
+    for HtDistMmphf<
+        K,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<K, BitFieldVec<Box<[usize]>>>,
+    >
+{
+    type Unaligned = HtDistMmphf<
+        K,
+        VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<K, Unaligned<BitFieldVec<Box<[usize]>>>>,
+        Unaligned<JacobsonBalParen>,
+    >;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -1494,18 +1540,44 @@ impl<K: ?Sized> TryIntoUnaligned for HtDistMmphf<K> {
             offset: self.offset.try_into_unaligned()?,
             log2_bucket_size: self.log2_bucket_size,
             n: self.n,
+            _marker: std::marker::PhantomData,
         })
     }
 }
 
 #[cfg(feature = "rayon")]
-impl<K: ?Sized> From<Unaligned<HtDistMmphf<K>>> for HtDistMmphf<K> {
-    fn from(f: Unaligned<HtDistMmphf<K>>) -> Self {
+impl<K: ?Sized>
+    From<
+        HtDistMmphf<
+            K,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<K, Unaligned<BitFieldVec<Box<[usize]>>>>,
+            Unaligned<JacobsonBalParen>,
+        >,
+    >
+    for HtDistMmphf<
+        K,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<K, BitFieldVec<Box<[usize]>>>,
+    >
+{
+    fn from(
+        f: HtDistMmphf<
+            K,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<K, Unaligned<BitFieldVec<Box<[usize]>>>>,
+            Unaligned<JacobsonBalParen>,
+        >,
+    ) -> Self {
         Self {
             distributor: f.distributor.into(),
             offset: f.offset.into(),
             log2_bucket_size: f.log2_bucket_size,
             n: f.n,
+            _marker: std::marker::PhantomData,
         }
     }
 }
