@@ -8,10 +8,10 @@
 
 //! Two-step LCP-based monotone minimal perfect hash functions.
 //!
-//! This module contains structures analogous to those in [`lcp_mmphf`];
-//! however, they use a secondary [`VFunc`] for infrequent prefix lengths,
-//! similarly to a [`VFunc2`], providing some space savings at the cost
-//! of slightly slower queries.
+//! This module contains structures analogous to those in
+//! [`lcp_mmphf`](super::lcp_mmphf) however, they use a secondary [`VFunc`] for
+//! infrequent prefix lengths, similarly to a [`VFunc2`](crate::func::VFunc2),
+//! providing some space savings at the cost of slightly slower queries.
 //!
 //! [`Lcp2MmphfInt`] works with any primitive integer type, whereas
 //! [`Lcp2Mmphf`] works with any byte-sequence key type (`K: AsRef<[u8]>`). Type

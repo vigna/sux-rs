@@ -31,7 +31,7 @@
 //! offset`, where the bucket is determined by the LCP (computed from its
 //! length) and the offset is stored directly. The mapping from a key to the
 //! length of the prefix of its bucket and its offset within the bucket is
-//! stored in a [`VFunc`]. Another [`Vfunc`] maps each LCP bit-prefix to its
+//! stored in a [`VFunc`]. Another [`VFunc`] maps each LCP bit-prefix to its
 //! bucket index.
 //!
 //! # References

@@ -141,6 +141,14 @@ required-features = ["epserde", "clap"]
 name = "bench_vfilter"
 required-features = ["epserde", "clap"]
 
+[[example]]
+name = "example_vfunc"
+required-features = ["rayon"]
+
+[[example]]
+name = "example_vfilter"
+required-features = ["rayon"]
+
 [[bench]]
 name = "rank_sel"
 harness = false
