@@ -168,7 +168,7 @@ where
                 let (func, _) = builder.try_build_func(
                     DekoBufLineLender::from_path(filename)?.take(n),
                     FromCloneableIntoIterator::from(0_usize..),
-                    BitFieldVec::<Box<[usize]>>::new_unaligned,
+                    BitFieldVec::<Box<[usize]>>::new_padded,
                     &mut pl,
                 )?;
                 if let Some(filename) = args.func {

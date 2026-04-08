@@ -43,14 +43,13 @@
 //! assert_eq!(list.index_value(4), 100);
 //! ```
 
-use crate::bits::bit_vec::BitVec;
+use crate::bits::bit_vec::{BitVec, BitVecU};
 use crate::bits::test_unaligned;
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EfSeq;
 use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
-use crate::traits::{Backend, BitVecValueOps, TryIntoUnaligned, Word, ambassador_impl_Backend};
+use crate::traits::{Backend, BitVecValueOps, TryIntoUnaligned, Word};
 use crate::utils::PrimitiveUnsignedExt;
-use ambassador::Delegate;
 use mem_dbg::*;
 use value_traits::slices::SliceByValue;
 
@@ -151,9 +150,7 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
         unsafe { efb.push_unchecked(0) };
 
         let mut data: BitVec<Vec<V>> = BitVec::new(0);
-        // Reserve space for the data plus one padding word for safe two-word
-        // reads.
-        data.reserve(total_bits as usize + V::BITS as usize);
+        data.reserve(total_bits as usize);
 
         for &v in values {
             let offset = v - min + V::ONE;
@@ -165,15 +162,7 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
             unsafe { efb.push_unchecked(pos) };
         }
         let delimiters = efb.build_with_seq();
-
-        // Add one padding word so that two-word reads never go out of bounds.
-        let (mut vec_data, len) = data.into_raw_parts();
-        let needed = total_bits.div_ceil(V::BITS as u64) as usize;
-        if vec_data.len() <= needed {
-            vec_data.reserve_exact(1);
-            vec_data.push(V::ZERO);
-        }
-        let data = unsafe { BitVec::from_raw_parts(vec_data.into_boxed_slice(), len) };
+        let data = data.into_padded();
 
         CompIntList {
             n,
@@ -262,31 +251,6 @@ where
     }
 }
 
-/// A wrapper around [`BitVec`] that implements [`BitVecValueOps`] using
-/// unaligned reads.
-///
-/// This type is only constructed internally by [`CompIntList`]'s
-/// [`TryIntoUnaligned`] implementation, which guarantees that all bit widths
-/// satisfy the constraints for unaligned reads and that a padding word is
-/// present.
-#[derive(Debug, Clone, Delegate, MemDbg, MemSize)]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[delegate(crate::traits::Backend, target = "0")]
-pub struct BitVecU<B>(BitVec<B>);
-
-impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVecValueOps<B::Word> for BitVecU<B> {
-    #[inline(always)]
-    fn get_value(&self, pos: usize, width: usize) -> B::Word {
-        self.0.get_value_unaligned(pos, width)
-    }
-
-    #[inline(always)]
-    unsafe fn get_value_unchecked(&self, pos: usize, width: usize) -> B::Word {
-        unsafe { self.0.get_value_unaligned_unchecked(pos, width) }
-    }
-}
-
 impl<V: Word, D: TryIntoUnaligned + SliceByValue<Value = u64>> TryIntoUnaligned
     for CompIntList<BitVec<Box<[V]>>, D>
 where
@@ -303,25 +267,12 @@ where
                     .to_string(),
             ));
         }
-        // Ensure a padding word is present in the data backend. The
-        // constructor already adds one, but we check defensively.
-        let (raw_bits, len) = self.data.into_raw_parts();
-        let needed = len.div_ceil(V::BITS as usize);
-        let data = if raw_bits.len() > needed {
-            // Padding word already present.
-            unsafe { BitVec::from_raw_parts(raw_bits, len) }
-        } else {
-            let mut v = raw_bits.into_vec();
-            v.reserve_exact(1);
-            v.push(V::ZERO);
-            unsafe { BitVec::from_raw_parts(v.into_boxed_slice(), len) }
-        };
 
         Ok(CompIntList {
             n: self.n,
             min: self.min,
             delimiters: self.delimiters.try_into_unaligned()?,
-            data: BitVecU(data),
+            data: unsafe { BitVecU::new(self.data) },
             all_widths_unaligned: true,
         })
     }
@@ -337,7 +288,7 @@ where
             n: c.n,
             min: c.min,
             delimiters: c.delimiters.into(),
-            data: c.data.0,
+            data: c.data.into_inner(),
             all_widths_unaligned: c.all_widths_unaligned,
         }
     }

@@ -480,7 +480,7 @@ where
                 (0..n)
                     .map(|idx| (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)),
             ),
-            BitFieldVec::<Box<[usize]>>::new_unaligned,
+            BitFieldVec::<Box<[usize]>>::new_padded,
             pl,
         )?;
 
@@ -673,7 +673,7 @@ where
             &|i| (lcp_bit_lengths[i >> log2_bs] << log2_bs) | (i & bucket_mask),
             &mut |builder, seed, mut store, max_value, _num_keys, pl, _state: &mut ()| {
                 builder.bit_width = max_value.bit_len() as usize;
-                let data = BitFieldVec::<Box<[usize]>>::new_unaligned(
+                let data = BitFieldVec::<Box<[usize]>>::new_padded(
                     builder.bit_width,
                     builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
                 );
@@ -1280,7 +1280,7 @@ where
                 (0..n)
                     .map(|idx| (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)),
             ),
-            BitFieldVec::<Box<[usize]>>::new_unaligned,
+            BitFieldVec::<Box<[usize]>>::new_padded,
             pl,
         )?;
 
@@ -1496,7 +1496,7 @@ where
             &|i| (lcp_bit_lengths[i >> log2_bs] << log2_bs) | (i & bucket_mask),
             &mut |builder, seed, mut store, max_value, _num_keys, pl, _state: &mut ()| {
                 builder.bit_width = max_value.bit_len() as usize;
-                let data = BitFieldVec::<Box<[usize]>>::new_unaligned(
+                let data = BitFieldVec::<Box<[usize]>>::new_padded(
                     builder.bit_width,
                     builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
                 );

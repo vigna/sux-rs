@@ -552,7 +552,7 @@ where
             self.num_keys, self.bit_width,
         ));
 
-        let data: BitFieldVec<Box<[W]>> = BitFieldVec::<Box<[W]>>::new_unaligned(
+        let data: BitFieldVec<Box<[W]>> = BitFieldVec::<Box<[W]>>::new_padded(
             self.bit_width,
             self.shard_edge.num_vertices() * self.shard_edge.num_shards(),
         );

@@ -551,7 +551,7 @@ where
     L: FallibleLender<Error: std::error::Error + Send + Sync + 'static>,
     for<'lend> L: FallibleLending<'lend>,
 {
-    let mut hashes = BitFieldVec::<Box<[H]>>::new_unaligned(hash_width, n);
+    let mut hashes = BitFieldVec::<Box<[H]>>::new_padded(hash_width, n);
     for i in 0..n {
         let key = keys.next()?.expect("Not enough keys for hashes");
         let h = hashes.truncate_hash(shard_edge.remixed_hash(to_sig(&key, seed)));
@@ -621,7 +621,7 @@ where
     E: ShardEdge<S, 3>,
     u64: PrimitiveNumberAs<H>,
 {
-    let mut hashes = BitFieldVec::<Box<[H]>>::new_unaligned(hash_width, n);
+    let mut hashes = BitFieldVec::<Box<[H]>>::new_padded(hash_width, n);
     for (i, key) in keys.iter().enumerate().take(n) {
         let h = hashes.truncate_hash(shard_edge.remixed_hash(K::to_sig(key.borrow(), seed)));
         hashes.set_value(i, h);
@@ -750,7 +750,7 @@ where
         let (func, mut store, _) = builder.expected_num_keys(n).try_build_func_and_store(
             keys,
             FromCloneableIntoIterator::from(0..),
-            BitFieldVec::new_unaligned,
+            BitFieldVec::new_padded,
             pl,
         )?;
 
@@ -1021,7 +1021,7 @@ where
         let (func, mut store, _) = builder.expected_num_keys(n).try_build_func_and_store(
             keys,
             FromCloneableIntoIterator::from(0..),
-            BitFieldVec::<Box<[usize]>>::new_unaligned,
+            BitFieldVec::<Box<[usize]>>::new_padded,
             pl,
         )?;
 
@@ -1029,7 +1029,7 @@ where
 
         // Create the hash vector
         let mut hashes: BitFieldVec<Box<[H]>> =
-            BitFieldVec::<Box<[H]>>::new_unaligned(hash_width, num_keys);
+            BitFieldVec::<Box<[H]>>::new_padded(hash_width, num_keys);
 
         // Enumerate the store and extract hashes
         pl.item_name("hash");

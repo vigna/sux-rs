@@ -100,6 +100,7 @@
 
 use crate::bits::{assert_unaligned, debug_assert_unaligned, test_unaligned};
 use crate::traits::ambassador_impl_Backend;
+use crate::traits::ambassador_impl_BitLength;
 use crate::traits::{
     AtomicBitIter, AtomicBitVecOps, Backend, BitIter, BitVecOps, BitVecValueOps, Word,
 };
@@ -118,6 +119,7 @@ use core::borrow::BorrowMut;
 use core::fmt;
 use mem_dbg::*;
 use num_primitive::PrimitiveInteger;
+use std::mem::size_of;
 use std::{ops::Index, sync::atomic::Ordering};
 
 /// A bit vector.
@@ -484,6 +486,32 @@ impl<W: Word> BitVec<Vec<W>> {
             }
         }
         self.len = new_len;
+    }
+
+    /// Ensures a padding word is present at the end and converts the
+    /// backend to `Box<[W]>`.
+    ///
+    /// The extra word ensures that unaligned reads of `size_of::<W>()`
+    /// bytes starting at any byte offset within the data never exceed the
+    /// allocation. If the allocation already has more words than needed
+    /// for the data, no word is added.
+    pub fn into_padded(mut self) -> BitVec<Box<[W]>> {
+        let needed = self.len.div_ceil(W::BITS as usize);
+        if self.bits.len() <= needed {
+            self.bits.push(W::ZERO);
+        }
+        unsafe { BitVec::from_raw_parts(self.bits.into_boxed_slice(), self.len) }
+    }
+
+    /// Creates a new bit vector of length `len` initialized to `false`,
+    /// with a padding word at the end for safe unaligned reads.
+    ///
+    /// This constructor is useful for structures implementing
+    /// [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) that want to avoid
+    /// reallocations.
+    pub fn new_padded(len: usize) -> BitVec<Box<[W]>> {
+        let n_of_words = len.div_ceil(W::BITS as usize);
+        unsafe { BitVec::from_raw_parts(vec![W::ZERO; n_of_words + 1].into_boxed_slice(), len) }
     }
 }
 
@@ -1007,5 +1035,66 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
             word = unsafe { !*self.as_ref().get_unchecked(word_index) };
             residual -= bit_count;
         }
+    }
+}
+
+/// A wrapper around [`BitVec`] that implements [`BitVecValueOps`] using
+/// unaligned reads.
+///
+/// The [constructor is unsafe](Self::new) because the caller must ensure that
+/// all bit widths used with this wrapper satisfy the constraints for unaligned
+/// reads and that a padding word is present. For this reason we [`BitVec`]
+/// cannot implement [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned).
+///
+/// We delegate [`Backend`], [`AsRef<[B::Word]>`](AsRef), and [`BitLength`] to
+/// the inner [`BitVec`] to automatically implement [`BitVecOps`].
+#[derive(Debug, Clone, Delegate, MemDbg, MemSize)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[delegate(crate::traits::Backend, target = "0")]
+#[delegate(crate::traits::bit_vec_ops::BitLength, target = "0")]
+pub struct BitVecU<B>(BitVec<B>);
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVecU<B> {
+    /// Creates a new [`BitVecU`] from a padded [`BitVec`].
+    ///
+    /// # Safety
+    ///
+    /// - All bit widths used with this wrapper must satisfy the constraints
+    ///   for unaligned reads.
+    /// - The underlying storage must contain at least one padding word
+    ///   beyond the data (e.g., created via [`BitVec::into_padded`]).
+    pub unsafe fn new(data: BitVec<B>) -> Self {
+        debug_assert!(
+            data.as_ref().len() > data.len().div_ceil(B::Word::BITS as usize),
+            "BitVecU: missing padding word (storage has {} words, need > {})",
+            data.as_ref().len(),
+            data.len().div_ceil(B::Word::BITS as usize),
+        );
+        Self(data)
+    }
+
+    /// Consumes the wrapper and returns the inner [`BitVec`].
+    pub fn into_inner(self) -> BitVec<B> {
+        self.0
+    }
+}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVecValueOps<B::Word> for BitVecU<B> {
+    #[inline(always)]
+    fn get_value(&self, pos: usize, width: usize) -> B::Word {
+        self.0.get_value_unaligned(pos, width)
+    }
+
+    #[inline(always)]
+    unsafe fn get_value_unchecked(&self, pos: usize, width: usize) -> B::Word {
+        unsafe { self.0.get_value_unaligned_unchecked(pos, width) }
+    }
+}
+
+impl<B: Backend + AsRef<[B::Word]>> AsRef<[B::Word]> for BitVecU<B> {
+    #[inline(always)]
+    fn as_ref(&self) -> &[B::Word] {
+        self.0.bits.as_ref()
     }
 }

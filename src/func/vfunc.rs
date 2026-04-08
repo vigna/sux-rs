@@ -565,7 +565,7 @@ where
             .try_build_func(
                 keys,
                 values,
-                |bit_width, len| BitFieldVec::<Box<[W]>>::new_unaligned(bit_width, len),
+                |bit_width, len| BitFieldVec::<Box<[W]>>::new_padded(bit_width, len),
                 pl,
             )
             .map(|res| res.0)
@@ -671,7 +671,7 @@ where
             &|i| values[i],
             &mut |builder, seed, mut store, max_value, _num_keys, pl, _state: &mut ()| {
                 builder.bit_width = max_value.bit_len() as usize;
-                let data = BitFieldVec::<Box<[W]>>::new_unaligned(
+                let data = BitFieldVec::<Box<[W]>>::new_padded(
                     builder.bit_width,
                     builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
                 );

@@ -511,20 +511,35 @@ impl<W: Word> BitFieldVec<Vec<W>> {
         self.len -= 1;
         Some(value)
     }
+
+    /// Ensures a padding word is present at the end and converts the
+    /// backend to `Box<[W]>`.
+    ///
+    /// The extra word ensures that unaligned reads of `size_of::<W>()`
+    /// bytes starting at any byte offset within the data never exceed the
+    /// allocation. If the allocation already has more words than needed
+    /// for the data, no word is added.
+    pub fn into_padded(mut self) -> BitFieldVec<Box<[W]>> {
+        let needed = (self.len * self.bit_width).div_ceil(W::BITS as usize);
+        if self.bits.len() <= needed {
+            self.bits.push(W::ZERO);
+        }
+        unsafe {
+            BitFieldVec::from_raw_parts(self.bits.into_boxed_slice(), self.bit_width, self.len)
+        }
+    }
 }
 
 impl<W: Word> BitFieldVec<Box<[W]>> {
     /// Creates a new zero-initialized vector of given bit width and length,
-    /// adding padding bits to the end of the vector so that unaligned reads are
-    /// possible.
+    /// with a padding word at the end for safe unaligned reads.
     ///
-    /// Note that this convenience method is a one-off: if the vector is resized
-    /// or expanded (by replacing its boxed slice with a vector first), the
-    /// padding will be lost.
-    pub fn new_unaligned(bit_width: usize, len: usize) -> Self {
+    /// This constructor is useful for structures implementing
+    /// [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) that want to avoid
+    /// reallocations.
+    pub fn new_padded(bit_width: usize, len: usize) -> Self {
         let n_of_words = (len * bit_width).div_ceil(W::BITS as usize);
         Self {
-            // We add a word at the end
             bits: vec![W::ZERO; n_of_words + 1].into_boxed_slice(),
             bit_width,
             mask: mask(bit_width),
@@ -1931,7 +1946,7 @@ impl<W: Word> crate::traits::TryIntoUnaligned for BitFieldVec<Box<[W]>> {
         ensure_unaligned!(W, bw);
         let needed = (SliceByValue::len(&self) * bw).div_ceil(W::BITS as usize);
         if self.as_slice().len() > needed {
-            // Padding word already present (e.g., built with new_unaligned).
+            // Padding word already present (e.g., built with new_padded).
             Ok(BitFieldVecU(self))
         } else {
             // Add a padding word, reserving exactly one extra slot to

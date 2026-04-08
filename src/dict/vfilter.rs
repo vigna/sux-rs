@@ -591,7 +591,7 @@ where
         let func = builder.expected_num_keys(n).try_build_filter(
             keys,
             filter_bits,
-            BitFieldVec::new_unaligned,
+            BitFieldVec::new_padded,
             &|shard_edge, sig_val| {
                 W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig))) & filter_mask
             },
@@ -708,7 +708,7 @@ where
             &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
                 builder.bit_width = filter_bits;
 
-                let data = BitFieldVec::<Box<[W]>>::new_unaligned(
+                let data = BitFieldVec::<Box<[W]>>::new_padded(
                     builder.bit_width,
                     builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
                 );
