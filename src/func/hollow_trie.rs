@@ -382,7 +382,8 @@ fn encode_behaviour_key(
 #[cfg(feature = "rayon")]
 #[derive(Debug)]
 pub struct HtDist<
-    D = BitFieldVec<Box<[usize]>>,
+    E = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
+    F = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
     B: BalParen = JacobsonBalParen,
     S = PrefixSumIntList,
 > {
@@ -395,16 +396,20 @@ pub struct HtDist<
     num_nodes: usize,
     /// Number of delimiters.
     num_delimiters: usize,
+    /// External behaviour: maps (node, path) -> LEFT (0) or RIGHT (1).
+    external_behaviour: E,
     /// Detects false follows: maps (node, path) -> 0 (true follow) or
     /// 1 (false follow).
-    false_follows_detector: VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
-    /// External behaviour: maps (node, path) -> LEFT (0) or RIGHT (1).
-    external_behaviour: VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
+    false_follows_detector: F,
 }
 
 #[cfg(feature = "rayon")]
-impl<D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen + MemSize + mem_dbg::FlatType>
-    MemSize for HtDist<D, B>
+impl<
+        E: MemSize + mem_dbg::FlatType,
+        F: MemSize + mem_dbg::FlatType,
+        B: BalParen + MemSize + mem_dbg::FlatType,
+        S: MemSize + mem_dbg::FlatType,
+    > MemSize for HtDist<E, F, B, S>
 {
     fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
         let mut size = core::mem::size_of::<Self>();
@@ -417,8 +422,12 @@ impl<D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen + MemSize + mem_
 }
 
 #[cfg(feature = "rayon")]
-impl<D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen + MemSize + mem_dbg::FlatType>
-    MemDbgImpl for HtDist<D, B>
+impl<
+        E: MemSize + mem_dbg::FlatType,
+        F: MemSize + mem_dbg::FlatType,
+        B: BalParen + MemSize + mem_dbg::FlatType,
+        S: MemSize + mem_dbg::FlatType,
+    > MemDbgImpl for HtDist<E, F, B, S>
 {
 }
 
@@ -433,7 +442,12 @@ const RIGHT: usize = 1;
 const FOLLOW: usize = 2;
 
 #[cfg(feature = "rayon")]
-impl HtDist {
+impl
+    HtDist<
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+    >
+{
     /// Builds a hollow trie distributor from sorted keys.
     ///
     /// `keys` must be in strictly increasing lexicographic order.
@@ -732,7 +746,14 @@ impl HtDist {
 }
 
 #[cfg(feature = "rayon")]
-impl<D: SliceByValue<Value = usize> + MemSize, B: BalParen + AsRef<[usize]>> HtDist<D, B> {
+impl<D: SliceByValue<Value = usize>, B: BalParen + AsRef<[usize]>, S: SliceByValue<Value = usize>>
+    HtDist<
+        VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
+        B,
+        S,
+    >
+{
     /// Returns the bucket index for the given key.
     ///
     /// The key is navigated through the hollow trie using the balanced
@@ -768,7 +789,6 @@ impl<D: SliceByValue<Value = usize> + MemSize, B: BalParen + AsRef<[usize]>> HtD
         loop {
             let is_internal = get_bit(trie_words, p);
             let skip: usize = if is_internal {
-                use value_traits::slices::SliceByValue;
                 self.skips.index_value(r)
             } else {
                 0
@@ -1397,8 +1417,18 @@ impl<
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl TryIntoUnaligned for HtDist {
-    type Unaligned = HtDist<Unaligned<BitFieldVec<Box<[usize]>>>, Unaligned<JacobsonBalParen>>;
+impl
+    TryIntoUnaligned
+    for HtDist<
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+    >
+{
+    type Unaligned = HtDist<
+        VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+        Unaligned<JacobsonBalParen>,
+    >;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -1414,8 +1444,26 @@ impl TryIntoUnaligned for HtDist {
 }
 
 #[cfg(feature = "rayon")]
-impl From<Unaligned<HtDist>> for HtDist {
-    fn from(f: Unaligned<HtDist>) -> Self {
+impl
+    From<
+        HtDist<
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            Unaligned<JacobsonBalParen>,
+        >,
+    >
+    for HtDist<
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+    >
+{
+    fn from(
+        f: HtDist<
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            Unaligned<JacobsonBalParen>,
+        >,
+    ) -> Self {
         // SAFETY: Into::into preserves the semantics of the pioneer
         // position and offset structures.
         let bal_paren = unsafe {
