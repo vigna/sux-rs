@@ -69,6 +69,9 @@ type LcpLen = u16;
 /// [`VFunc2`](crate::func::VFunc2)-like two-step internal representation for
 /// the LCP-length component, trading query speed for ≈20–35% less space.
 ///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
+///
 /// # Implementation details
 ///
 /// Internally, the structure contains three [`VFunc`]s:
@@ -83,7 +86,7 @@ type LcpLen = u16;
 ///
 /// - `K`: the integer key type.
 /// - `D`: the backing store for [`VFunc`] data (e.g.,
-///   [`BitFieldVec`](crate::bits::BitFieldVec)).
+///   [`BitFieldVec`]).
 /// - `S0`: the [signature type](`Sig`) for the key maps (`fused` and
 ///   `lcp_long`).
 /// - `E0`: the [`ShardEdge`] for the key maps (`fused`).
@@ -92,9 +95,6 @@ type LcpLen = u16;
 /// - `S1`: the signature type for the prefix-to-bucket map
 ///   (`lcp2bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
-///
-/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
-/// converted into (usually faster) structures using unaligned access.
 ///
 /// # Examples
 ///
@@ -1011,6 +1011,9 @@ where
 /// [`VFunc2`](crate::func::VFunc2)-like two-step internal representation for
 /// the LCP-length component, trading query speed for ≈20–35% less space.
 ///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
+///
 /// # Implementation details
 ///
 /// Internally, the structure contains three [`VFunc`]s:
@@ -1025,7 +1028,7 @@ where
 ///
 /// - `K`: the key type (e.g., `str` or `[u8]`).
 /// - `D`: the backing store for [`VFunc`] data (e.g.,
-///   [`BitFieldVec`](crate::bits::BitFieldVec)).
+///   [`BitFieldVec`]).
 /// - `S0`: the [signature type](`Sig`) for the key maps (`fused` and
 ///   `lcp_long`).
 /// - `E0`: the [`ShardEdge`] for the key maps (`fused`).
@@ -1034,9 +1037,6 @@ where
 /// - `S1`: the signature type for the prefix-to-bucket map
 ///   (`lcp2bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
-///
-/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
-/// converted into (usually faster) structures using unaligned access.
 ///
 /// See [`Lcp2MmphfStr`] and [`Lcp2MmphfSliceU8`] for common instantiations.
 #[derive(MemDbg, MemSize)]

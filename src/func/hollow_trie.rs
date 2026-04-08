@@ -10,7 +10,7 @@
 //!
 //! A hollow trie is a compacted (Patricia) trie whose edge labels have been
 //! replaced with their lengths. Combined with behaviour functions (stored as
-//! [`VFunc`](crate::func::VFunc)s), it distributes sorted keys into
+//! [`VFunc`]s), it distributes sorted keys into
 //! equal-size buckets in O(log *u*) time per query, where *u* is the
 //! universe size.
 //!
@@ -20,9 +20,8 @@
 //! cases. For integer keys, [`HtDistMmphfInt`] provides a specialized
 //! implementation with direct bit-level operations.
 //!
-//! These structures implement the [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned)
-//! trait, allowing them to be converted into (usually faster) structures
-//! using unaligned access.
+//! These structures implement the [`TryIntoUnaligned`] trait, allowing them
+//! to be converted into (usually faster) structures using unaligned access.
 //!
 //! # References
 //!
@@ -33,7 +32,7 @@
 
 #[cfg(feature = "rayon")]
 use {
-    crate::bal_paren::JacobsonBP,
+    crate::bal_paren::JacobsonBalParen,
     crate::bits::BitFieldVec,
     crate::bits::BitFieldVecU,
     crate::bits::BitVec,
@@ -383,12 +382,12 @@ fn encode_behaviour_key(
 ///
 /// Built from sorted keys and a bucket size. Uses a hollow trie on
 /// the bucket delimiters combined with behaviour functions stored as
-/// [`VFunc`](crate::func::VFunc)s.
+/// [`VFunc`]s.
 #[cfg(feature = "rayon")]
 #[derive(Debug)]
 pub struct HollowTrieDistributor<D = BitFieldVec<Box<[usize]>>> {
     /// Balanced-parentheses support structure for the trie.
-    bal_paren: JacobsonBP,
+    bal_paren: JacobsonBalParen,
     /// Skip values stored as a prefix-sum list over Elias-Fano.
     skips: crate::list::PrefixSumIntList,
     /// Number of internal nodes (= number of delimiters - 1).
@@ -456,7 +455,7 @@ impl HollowTrieDistributor {
         }
 
         let (trie_words, trie_len, raw_skips, num_nodes) = builder.finish();
-        let bal_paren = JacobsonBP::new(trie_words, trie_len);
+        let bal_paren = JacobsonBalParen::new(trie_words, trie_len);
 
         // Store skips as a prefix-sum list over Elias-Fano.
         let skips = crate::list::PrefixSumIntList::new(&raw_skips);
@@ -864,7 +863,7 @@ impl<D: SliceByValue<Value = usize> + MemSize> HollowTrieDistributor<D> {
 /// instantiations. For integer keys, use [`HtDistMmphfInt`].
 ///
 /// This structure implements the
-/// [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing
+/// [`TryIntoUnaligned`] trait, allowing
 /// it to be converted into (usually faster) structures using unaligned
 /// access.
 ///
@@ -903,7 +902,7 @@ pub struct HtDistMmphf<K: ?Sized, D = BitFieldVec<Box<[usize]>>> {
 /// An [`HtDistMmphf`] for `str` keys.
 ///
 /// This structure implements the
-/// [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing
+/// [`TryIntoUnaligned`] trait, allowing
 /// it to be converted into (usually faster) structures using unaligned
 /// access.
 ///
@@ -933,7 +932,7 @@ pub type HtDistMmphfStr<D = BitFieldVec<Box<[usize]>>> = HtDistMmphf<str, D>;
 /// An [`HtDistMmphf`] for `[u8]` keys.
 ///
 /// This structure implements the
-/// [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing
+/// [`TryIntoUnaligned`] trait, allowing
 /// it to be converted into (usually faster) structures using unaligned
 /// access.
 ///
@@ -999,7 +998,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
         if n == 0 {
             return Ok(Self {
                 distributor: HollowTrieDistributor {
-                    bal_paren: JacobsonBP::new(vec![0b10], 2),
+                    bal_paren: JacobsonBalParen::new(vec![0b10], 2),
                     skips: crate::list::PrefixSumIntList::new(&Vec::<usize>::new()),
                     num_nodes: 0,
                     num_delimiters: 0,
@@ -1059,7 +1058,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
         debug_assert_eq!(delimiters.len(), num_delimiters);
 
         let (trie_words, trie_len, raw_skips, num_nodes) = builder.finish();
-        let bal_paren = JacobsonBP::new(trie_words, trie_len);
+        let bal_paren = JacobsonBalParen::new(trie_words, trie_len);
         let skips = crate::list::PrefixSumIntList::new(&raw_skips);
 
         if num_delimiters == 0 {
@@ -1642,7 +1641,7 @@ fn encode_int_behaviour_key<K: PrimitiveInteger>(
 /// a no-op).
 ///
 /// This structure implements the
-/// [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing
+/// [`TryIntoUnaligned`] trait, allowing
 /// it to be converted into (usually faster) structures using unaligned
 /// access.
 ///
@@ -1670,7 +1669,7 @@ fn encode_int_behaviour_key<K: PrimitiveInteger>(
 #[derive(Debug)]
 #[cfg(feature = "rayon")]
 pub struct HtDistMmphfInt<K, D = BitFieldVec<Box<[usize]>>> {
-    bal_paren: JacobsonBP,
+    bal_paren: JacobsonBalParen,
     skips: crate::list::PrefixSumIntList,
     #[allow(dead_code)]
     num_nodes: usize,
@@ -1724,7 +1723,7 @@ where
 
         if n == 0 {
             return Ok(Self {
-                bal_paren: JacobsonBP::new(vec![0b10], 2),
+                bal_paren: JacobsonBalParen::new(vec![0b10], 2),
                 skips: crate::list::PrefixSumIntList::new(&Vec::<usize>::new()),
                 num_nodes: 0,
                 num_delimiters: 0,
@@ -1774,7 +1773,7 @@ where
         debug_assert_eq!(delimiters.len(), num_delimiters);
 
         let (trie_words, trie_len, raw_skips, num_nodes) = builder.finish();
-        let bal_paren = JacobsonBP::new(trie_words, trie_len);
+        let bal_paren = JacobsonBalParen::new(trie_words, trie_len);
         let skips = crate::list::PrefixSumIntList::new(&raw_skips);
 
         if num_delimiters == 0 {

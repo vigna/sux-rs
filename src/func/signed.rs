@@ -282,7 +282,7 @@ impl<K: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableFunc for VF
 /// # fn main() {}
 /// ```
 ///
-/// Wrapping an [`LcpMmphfStr`] for sorted string keys:
+/// Wrapping an [`LcpMmphfStr`](crate::func::LcpMmphfStr) for sorted string keys:
 ///
 /// ```rust
 /// # #[cfg(feature = "rayon")]

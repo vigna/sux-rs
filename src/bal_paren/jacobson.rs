@@ -4,47 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! An implementation of Jacobson's balanced parentheses data structure
-//! supporting [`find_close`](JacobsonBP::find_close) queries.
-//!
-//! A balanced parentheses sequence encodes a tree: open parentheses are
-//! represented as 1-bits and close parentheses as 0-bits, with bit 0 being the
-//! LSB. The [`find_close`](JacobsonBP::find_close) operation returns the
-//! position of the matching close parenthesis for a given open parenthesis.
-//!
-//! The implementation uses the *pioneer* technique from Jacobson \[1989\]: an
-//! opening parenthesis whose match falls in a different 64-bit word is called
-//! *far*. Among the far opening parentheses, a subset called *pioneers* is
-//! selected — a far opening parenthesis is a pioneer if it is the first far
-//! opening parenthesis in its word, or if its match falls in a different word
-//! than the previous far opening parenthesis's match. Pioneer positions are
-//! stored in an [Elias–Fano structure](crate::dict::EliasFano) supporting
-//! predecessor queries, and the offsets from each pioneer to its matching close
-//! parenthesis are stored in a [`SliceByValue`](value_traits::slices::SliceByValue)
-//! structure. Three offset storage variants are available as type aliases:
-//!
-//! - [`JacobsonBPCompInt`]: uses a [`CompIntList`](crate::list::CompIntList)
-//!   (default, best space).
-//! - [`JacobsonBPPrefixSum`]: uses a
-//!   [`PrefixSumIntList`](crate::list::PrefixSumIntList) (faster queries, more space).
-//! - [`JacobsonBPBitFieldVec`]: uses a [`BitFieldVec`](crate::bits::BitFieldVec)
-//!   (fastest queries, largest space).
-//!
-//! Queries work in two stages:
-//! 1. **In-word**: byte-level lookup tables are used to find the matching close
-//!    parenthesis within the same 64-bit word (the common case).
-//! 2. **Far match**: if the match is in a different word, a predecessor query
-//!    on the pioneer positions locates the relevant pioneer, whose stored match
-//!    offset is then adjusted using lookup tables.
+//! An implementation of Jacobson's balanced parentheses data structure.
+//! 
+//! See [`JacobsonBalParen`] for details.
 //!
 //! The in-word [`find_near_close`] and far-match [`find_far_close`] functions
 //! are also available as standalone public functions for use in other contexts.
 //!
 //! # References
 //!
-//! Guy Jacobson. 1989. Space-efficient static trees and graphs. In *Proceedings
-//! of the 30th Annual Symposium on Foundations of Computer Science (FOCS '89)*.
-//! 549–554.
+//! Guy Jacobson. [Space-efficient static trees and
+//! graphs](https://ieeexplore.ieee.org/abstract/document/63533). In *30th
+//! annual symposium on foundations of computer science*, pp. 549−554. IEEE,
+//! 1989.
 
 use crate::bits::BitFieldVec;
 use crate::dict::{EfDict, EliasFanoBuilder};
@@ -199,7 +171,7 @@ pub fn find_near_close(word: u64) -> usize {
 /// position where the running excess (open = +1, close = −1, starting
 /// at 0) reaches −(*k* + 1).
 ///
-/// This uses the same [`BYTE_MIN_EXCESS`] and [`BYTE_FIND_CLOSE`] tables
+/// This uses the same `BYTE_MIN_EXCESS` and `BYTE_FIND_CLOSE` tables
 /// as [`find_near_close`].
 #[inline]
 pub fn find_far_close(word: u64, k: i64) -> usize {
@@ -232,35 +204,70 @@ pub fn find_far_close(word: u64, k: i64) -> usize {
 /// Open parentheses are represented as 1-bits and close parentheses as
 /// 0-bits, with bit 0 being the LSB.
 ///
+/// A balanced parentheses sequence encodes a tree: open parentheses are
+/// represented as 1-bits and close parentheses as 0-bits, with bit 0 being the
+/// LSB. The [`find_close`](JacobsonBalParen::find_close) operation returns the
+/// position of the matching close parenthesis for a given open parenthesis.
+///
+/// The implementation uses the *pioneer* technique from Jacobson \[1989\]: an
+/// opening parenthesis whose match falls in a different 64-bit word is called
+/// *far*. Among the far opening parentheses, a subset called *pioneers* is
+/// selected — a far opening parenthesis is a pioneer if it is the first far
+/// opening parenthesis in its word, or if its match falls in a different word
+/// than the previous far opening parenthesis's match. Pioneer positions are
+/// stored in an [Elias–Fano structure](crate::dict::EliasFano) supporting
+/// predecessor queries, and the offsets from each pioneer to its matching close
+/// parenthesis are stored in a [`SliceByValue`] structure. Three offset
+/// storage variants are available:
+///
+/// - [`CompIntList`] (default, best space).
+/// - [`PrefixSumIntList`] (faster queries, more space).
+/// - [`BitFieldVec`] (fastest queries, largest space).
+///
+/// Queries work in two stages:
+/// 1. **In-word**: byte-level lookup tables are used to find the matching close
+///    parenthesis within the same 64-bit word (the common case).
+/// 2. **Far match**: if the match is in a different word, a predecessor query
+///    on the pioneer positions locates the relevant pioneer, whose stored match
+///    offset is then adjusted using lookup tables.
+///
 /// The structure stores the balanced parentheses bit vector together with
 /// auxiliary data for far matches: an [Elias–Fano](crate::dict::EliasFano)
 /// dictionary of pioneer positions (supporting predecessor queries) and the
 /// offsets from each pioneer to its matching close parenthesis, stored in a
-/// generic [`SliceByValue`](value_traits::slices::SliceByValue) structure `O`.
+/// generic [`SliceByValue`] structure `O`.
 ///
 /// # Type Parameters
 ///
 /// - `O`: The storage for pioneer match offsets. Must implement
 ///   `SliceByValue<Value = usize>`. Defaults to
-///   [`CompIntList`](crate::list::CompIntList) for compact variable-length
-///   encoding. See [`JacobsonBPBitFieldVec`] and [`JacobsonBPPrefixSum`] for
-///   alternative configurations.
+///   [`CompIntList`] for compact variable-length encoding. See
+///   [`new_with_bit_field_vec`](JacobsonBalParen::<BitFieldVec<Box<[usize]>>>::new_with_bit_field_vec)
+///   and
+///   [`new_with_prefix_sum`](JacobsonBalParen::<PrefixSumIntList>::new_with_prefix_sum)
+///   for alternative configurations.
 ///
 /// # Examples
 ///
 /// ```rust
-/// use sux::bal_paren::JacobsonBP;
+/// use sux::bal_paren::JacobsonBalParen;
 ///
 /// // Sequence "(()())" = bits 1,1,0,1,0,0 → word 0b00_1011 = 0x0B
-/// let bp = JacobsonBP::new(vec![0x0B], 6);
+/// let bp = JacobsonBalParen::new(vec![0x0B], 6);
 /// assert_eq!(bp.find_close(0), Some(5)); // outermost pair
 /// assert_eq!(bp.find_close(1), Some(2)); // first inner pair
 /// assert_eq!(bp.find_close(3), Some(4)); // second inner pair
 /// ```
+/// # References
+///
+/// Guy Jacobson. [Space-efficient static trees and
+/// graphs](https://ieeexplore.ieee.org/abstract/document/63533). In *30th
+/// annual symposium on foundations of computer science*, pp. 549−554. IEEE,
+/// 1989.
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct JacobsonBP<O: SliceByValue<Value = usize> = CompIntList<usize>> {
+pub struct JacobsonBalParen<O: SliceByValue<Value = usize> = CompIntList<usize>> {
     /// The balanced parentheses bit vector, packed in 64-bit words.
     words: Vec<u64>,
     /// Total number of valid bits in [`words`](Self::words).
@@ -272,25 +279,7 @@ pub struct JacobsonBP<O: SliceByValue<Value = usize> = CompIntList<usize>> {
     pioneer_match_offsets: O,
 }
 
-/// [`JacobsonBP`] using a [`CompIntList`] for pioneer match offsets.
-///
-/// This is the default configuration, offering the best space.
-pub type JacobsonBPCompInt = JacobsonBP;
-
-/// [`JacobsonBP`] using a [`PrefixSumIntList`] for pioneer match offsets.
-///
-/// This variant stores pioneer offsets as prefix-sum differences over
-/// Elias–Fano.
-pub type JacobsonBPPrefixSum = JacobsonBP<PrefixSumIntList>;
-
-/// [`JacobsonBP`] using a [`BitFieldVec`] for pioneer match offsets.
-///
-/// This variant uses more space but provides faster queries, since the
-/// fixed-width encoding avoids the variable-length decoding overhead of
-/// [`CompIntList`].
-pub type JacobsonBPBitFieldVec = JacobsonBP<BitFieldVec<Box<[usize]>>>;
-
-impl<O: SliceByValue<Value = usize>> JacobsonBP<O> {
+impl<O: SliceByValue<Value = usize>> JacobsonBalParen<O> {
     /// Identifies pioneers and builds the Elias–Fano position index.
     ///
     /// Returns `(ef_positions, pioneer_match_offsets)` where the offsets are
@@ -384,8 +373,8 @@ impl<O: SliceByValue<Value = usize>> JacobsonBP<O> {
     }
 }
 
-impl JacobsonBP {
-    /// Constructs a new [`JacobsonBP`] from a packed bit vector and the
+impl JacobsonBalParen {
+    /// Constructs a new [`JacobsonBalParen`] from a packed bit vector and the
     /// number of valid bits.
     ///
     /// The bit vector is given as a `Vec<u64>` of 64-bit words, with open
@@ -394,11 +383,10 @@ impl JacobsonBP {
     /// are valid.
     ///
     /// Pioneer match offsets are stored in a
-    /// [`CompIntList`](crate::list::CompIntList) for compact variable-length
-    /// encoding. See also
-    /// [`new_with_bit_field_vec`](JacobsonBPBitFieldVec::new_with_bit_field_vec)
+    /// [`CompIntList`] for compact variable-length encoding. See also
+    /// [`new_with_bit_field_vec`](JacobsonBalParen::<BitFieldVec<Box<[usize]>>>::new_with_bit_field_vec)
     /// (faster queries, more space) and
-    /// [`new_with_prefix_sum`](JacobsonBPPrefixSum::new_with_prefix_sum).
+    /// [`new_with_prefix_sum`](JacobsonBalParen::<PrefixSumIntList>::new_with_prefix_sum).
     ///
     /// # Panics
     ///
@@ -408,7 +396,7 @@ impl JacobsonBP {
         let min_offset = matches.iter().copied().min().unwrap_or(0);
         let offsets = CompIntList::new(min_offset, &matches);
 
-        JacobsonBP {
+        JacobsonBalParen {
             words,
             len,
             pioneer_positions: ef_positions,
@@ -417,20 +405,20 @@ impl JacobsonBP {
     }
 }
 
-impl JacobsonBP<BitFieldVec<Box<[usize]>>> {
-    /// Constructs a new [`JacobsonBP`] using a [`BitFieldVec`] for pioneer
+impl JacobsonBalParen<BitFieldVec<Box<[usize]>>> {
+    /// Constructs a new [`JacobsonBalParen`] using a [`BitFieldVec`] for pioneer
     /// match offsets.
     ///
     /// This variant uses fixed-width encoding for the offsets, which is
     /// faster to query but uses more space than the default
-    /// [`CompIntList`]-based [`new`](JacobsonBP::new).
+    /// [`CompIntList`]-based [`new`](JacobsonBalParen::new).
     ///
     /// # Panics
     ///
     /// Panics if the parentheses are not balanced.
     pub fn new_with_bit_field_vec(words: Vec<u64>, len: usize) -> Self {
         let (ef_positions, opening_pioneer_matches) =
-            JacobsonBP::<BitFieldVec<Box<[usize]>>>::build_pioneers(&words, len);
+            JacobsonBalParen::<BitFieldVec<Box<[usize]>>>::build_pioneers(&words, len);
 
         let max_offset = opening_pioneer_matches.iter().copied().max().unwrap_or(0);
         let bit_width = if max_offset == 0 {
@@ -444,7 +432,7 @@ impl JacobsonBP<BitFieldVec<Box<[usize]>>> {
             unsafe { offsets.set_value_unchecked(i, off) };
         }
 
-        JacobsonBP {
+        JacobsonBalParen {
             words,
             len,
             pioneer_positions: ef_positions,
@@ -453,24 +441,25 @@ impl JacobsonBP<BitFieldVec<Box<[usize]>>> {
     }
 }
 
-impl JacobsonBP<PrefixSumIntList> {
-    /// Constructs a new [`JacobsonBP`] using a [`PrefixSumIntList`] for
+impl JacobsonBalParen<PrefixSumIntList> {
+    /// Constructs a new [`JacobsonBalParen`] using a [`PrefixSumIntList`] for
     /// pioneer match offsets.
     ///
     /// This variant stores the offsets as prefix-sum differences over
-    /// Elias–Fano. See also [`new`](JacobsonBP::new) (default, best space)
+    /// Elias–Fano. See also [`new`](JacobsonBalParen::new) (default, best space)
     /// and
-    /// [`new_with_bit_field_vec`](JacobsonBPBitFieldVec::new_with_bit_field_vec)
+    /// [`new_with_bit_field_vec`](JacobsonBalParen::<BitFieldVec<Box<[usize]>>>::new_with_bit_field_vec)
     /// (fastest queries).
     ///
     /// # Panics
     ///
     /// Panics if the parentheses are not balanced.
     pub fn new_with_prefix_sum(words: Vec<u64>, len: usize) -> Self {
-        let (ef_positions, matches) = JacobsonBP::<PrefixSumIntList>::build_pioneers(&words, len);
+        let (ef_positions, matches) =
+            JacobsonBalParen::<PrefixSumIntList>::build_pioneers(&words, len);
         let offsets = PrefixSumIntList::new(&matches);
 
-        JacobsonBP {
+        JacobsonBalParen {
             words,
             len,
             pioneer_positions: ef_positions,
@@ -479,7 +468,7 @@ impl JacobsonBP<PrefixSumIntList> {
     }
 }
 
-impl<O: SliceByValue<Value = usize>> JacobsonBP<O> {
+impl<O: SliceByValue<Value = usize>> JacobsonBalParen<O> {
     /// Returns the position of the matching close parenthesis for the open
     /// parenthesis at bit position `pos`, or `None` if `pos` is out of bounds
     /// or is not an open parenthesis.
@@ -804,7 +793,7 @@ mod tests {
         // Word 1: bits 0-3 = 0000 (4 closes). Length = 68.
         let words = vec![0x5555_5555_5555_555F, 0x0000_0000_0000_0000];
         let len = 68;
-        let bp = JacobsonBP::new(words.clone(), len);
+        let bp = JacobsonBalParen::new(words.clone(), len);
 
         // Check all opens against naive
         for pos in 0..len {
@@ -862,7 +851,7 @@ mod tests {
     fn test_find_close_random_small() {
         for size in (2..=40).step_by(2) {
             let (words, len) = random_balanced(size);
-            let bp = JacobsonBP::new(words.clone(), len);
+            let bp = JacobsonBalParen::new(words.clone(), len);
             for pos in 0..len {
                 if words[pos / 64] & (1u64 << (pos % 64)) != 0 {
                     let expected = find_close_naive(&words, pos, len);
@@ -880,7 +869,7 @@ mod tests {
     fn test_find_close_random_large() {
         for &size in &[128, 256, 512, 1024, 2048] {
             let (words, len) = random_balanced(size);
-            let bp = JacobsonBP::new(words.clone(), len);
+            let bp = JacobsonBalParen::new(words.clone(), len);
             for pos in 0..len {
                 if words[pos / 64] & (1u64 << (pos % 64)) != 0 {
                     let expected = find_close_naive(&words, pos, len);
@@ -899,7 +888,7 @@ mod tests {
         // ((((...))))  - 32 opens then 32 closes, fits in one word
         // word = 0x0000_0000_FFFF_FFFF
         let word = 0x0000_0000_FFFF_FFFFu64;
-        let bp = JacobsonBP::new(vec![word], 64);
+        let bp = JacobsonBalParen::new(vec![word], 64);
         for i in 0..32 {
             assert_eq!(bp.find_close(i), Some(63 - i), "pos={i}");
         }
@@ -914,7 +903,7 @@ mod tests {
         // Word 2: 64 closes
         // Actually this won't be balanced easily. Let me use random_balanced.
         let (words, len) = random_balanced(192);
-        let bp = JacobsonBP::new(words.clone(), len);
+        let bp = JacobsonBalParen::new(words.clone(), len);
         for pos in 0..len {
             if words[pos / 64] & (1u64 << (pos % 64)) != 0 {
                 let expected = find_close_naive(&words, pos, len);

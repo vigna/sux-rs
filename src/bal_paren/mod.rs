@@ -10,9 +10,8 @@
 //! sequences, where open parentheses are represented as 1-bits and close
 //! parentheses as 0-bits (LSB first within each 64-bit word).
 //!
-//! Currently, the only implementation is [`JacobsonBP`], which supports
-//! [`find_close`](JacobsonBP::find_close) queries using Jacobson's pioneer
-//! technique.
+//! Currently, the only implementation is [`JacobsonBalParen`], which supports
+//! [`find_close`](JacobsonBalParen::find_close).
 
 pub mod jacobson;
 pub use jacobson::*;

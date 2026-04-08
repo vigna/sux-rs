@@ -46,6 +46,10 @@ use {
 /// This structure implements the [`Index`] trait for convenient
 /// `filter[key]` syntax (returning `&bool`).
 ///
+/// This structure implements the [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned)
+/// trait, allowing it to be converted into (usually faster) structures using
+/// unaligned access.
+///
 /// Please see the documentation of [`VBuilder`] for construction examples.
 ///
 /// # Generics

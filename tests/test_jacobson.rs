@@ -1,4 +1,6 @@
-use sux::bal_paren::jacobson::{JacobsonBP, JacobsonBPBitFieldVec};
+use sux::bal_paren::jacobson::JacobsonBalParen;
+use sux::bits::BitFieldVec;
+use sux::list::prefix_sum_int_list::PrefixSumIntList;
 
 /// Helper: build a balanced parentheses sequence from a pattern string
 /// where '(' = open (1-bit) and ')' = close (0-bit).
@@ -15,7 +17,7 @@ fn from_pattern(pattern: &str) -> (Vec<u64>, usize) {
 
 /// Verifies that `find_close` is correct for all open parens in a pattern.
 fn verify_find_close<O: value_traits::slices::SliceByValue<Value = usize>>(
-    bp: &JacobsonBP<O>,
+    bp: &JacobsonBalParen<O>,
     pattern: &str,
 ) {
     let mut stack = Vec::new();
@@ -54,10 +56,10 @@ fn test_small_patterns() {
         "((((()))))",
     ] {
         let (words, len) = from_pattern(pattern);
-        let bp = JacobsonBP::new(words.clone(), len);
+        let bp = JacobsonBalParen::new(words.clone(), len);
         verify_find_close(&bp, pattern);
 
-        let bp_bfv = JacobsonBPBitFieldVec::new_with_bit_field_vec(words, len);
+        let bp_bfv = <JacobsonBalParen<BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(words, len);
         verify_find_close(&bp_bfv, pattern);
     }
 }
@@ -70,10 +72,10 @@ fn test_cross_word_boundary() {
     let pattern: String = "(".repeat(n) + &")".repeat(n);
     let (words, len) = from_pattern(&pattern);
 
-    let bp = JacobsonBP::new(words.clone(), len);
+    let bp = JacobsonBalParen::new(words.clone(), len);
     verify_find_close(&bp, &pattern);
 
-    let bp_bfv = JacobsonBPBitFieldVec::new_with_bit_field_vec(words, len);
+    let bp_bfv = <JacobsonBalParen<BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(words, len);
     verify_find_close(&bp_bfv, &pattern);
 }
 
@@ -108,10 +110,10 @@ fn test_large_random() {
 
     let (words, len) = from_pattern(&pattern);
 
-    let bp = JacobsonBP::new(words.clone(), len);
+    let bp = JacobsonBalParen::new(words.clone(), len);
     verify_find_close(&bp, &pattern);
 
-    let bp_bfv = JacobsonBPBitFieldVec::new_with_bit_field_vec(words, len);
+    let bp_bfv = <JacobsonBalParen<BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(words, len);
     verify_find_close(&bp_bfv, &pattern);
 }
 
@@ -121,7 +123,6 @@ fn test_large_random() {
 fn test_comp_int_and_bfv_agree() {
     use rand::rngs::SmallRng;
     use rand::{RngExt, SeedableRng};
-    use sux::bal_paren::jacobson::JacobsonBPPrefixSum;
 
     let n = 500;
     let mut rng = SmallRng::seed_from_u64(42);
@@ -143,9 +144,9 @@ fn test_comp_int_and_bfv_agree() {
 
     let (words, len) = from_pattern(&bal);
 
-    let bp_ci = JacobsonBP::new(words.clone(), len);
-    let bp_bfv = JacobsonBPBitFieldVec::new_with_bit_field_vec(words.clone(), len);
-    let bp_ps = JacobsonBPPrefixSum::new_with_prefix_sum(words, len);
+    let bp_ci = JacobsonBalParen::new(words.clone(), len);
+    let bp_bfv = <JacobsonBalParen<BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(words.clone(), len);
+    let bp_ps = <JacobsonBalParen<PrefixSumIntList>>::new_with_prefix_sum(words, len);
 
     for i in 0..len {
         let ci = bp_ci.find_close(i);
@@ -161,7 +162,7 @@ fn test_comp_int_and_bfv_agree() {
 #[test]
 fn test_accessors() {
     let (words, len) = from_pattern("(())()");
-    let bp = JacobsonBP::new(words, len);
+    let bp = JacobsonBalParen::new(words, len);
     assert_eq!(bp.len(), 6);
     assert!(!bp.is_empty());
     assert_eq!(bp.words().len(), 1);
@@ -169,7 +170,7 @@ fn test_accessors() {
 
 #[test]
 fn test_empty() {
-    let bp = JacobsonBP::new(vec![], 0);
+    let bp = JacobsonBalParen::new(vec![], 0);
     assert!(bp.is_empty());
     assert_eq!(bp.len(), 0);
     assert_eq!(bp.find_close(0), None);
@@ -179,7 +180,7 @@ fn test_empty() {
 
 #[test]
 fn test_find_close_not_open() {
-    let bp = JacobsonBP::new(vec![0b0011], 4);
+    let bp = JacobsonBalParen::new(vec![0b0011], 4);
     assert_eq!(bp.find_close(2), None); // close paren
     assert_eq!(bp.find_close(4), None); // out of bounds
 }
@@ -187,7 +188,7 @@ fn test_find_close_not_open() {
 #[test]
 fn test_find_close_sequential_pairs_across_words() {
     // 32 "()" pairs per word, two words — all matches are in-word.
-    let bp = JacobsonBP::new(vec![0x5555_5555_5555_5555, 0x5555_5555_5555_5555], 128);
+    let bp = JacobsonBalParen::new(vec![0x5555_5555_5555_5555, 0x5555_5555_5555_5555], 128);
     for i in 0..64 {
         let pos = i * 2;
         assert_eq!(bp.find_close(pos), Some(pos + 1), "Failed for pos={pos}");
@@ -206,7 +207,7 @@ fn test_epserde() {
     let n = 200;
     let pattern: String = "(".repeat(n) + &")".repeat(n);
     let (words, len) = from_pattern(&pattern);
-    let bp = JacobsonBP::new(words, len);
+    let bp = JacobsonBalParen::new(words, len);
 
     // Serialize
     let mut cursor = <AlignedCursor<Aligned64>>::new();
@@ -221,7 +222,7 @@ fn test_epserde() {
     // Deserialize
     let bp2 = unsafe {
         use epserde::deser::Deserialize;
-        <JacobsonBP>::read_mem(&mut cursor, buf_len).expect("Could not deserialize")
+        <JacobsonBalParen>::read_mem(&mut cursor, buf_len).expect("Could not deserialize")
     };
     let bp2 = bp2.uncase();
 

@@ -41,6 +41,7 @@ pub mod fuzz;
 /// prelude, as they may cause ambiguities in some contexts.
 pub mod prelude {
     pub use crate::array::*;
+    pub use crate::bal_paren::*;
     pub use crate::bit_field_vec;
     pub use crate::bit_vec;
     pub use crate::bits::*;

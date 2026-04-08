@@ -61,6 +61,10 @@ use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
 /// After construction, the prefix-sum structure can be replaced using
 /// [`map_prefix_sums`](PrefixSumIntList::map_prefix_sums).
 ///
+/// This structure implements the [`TryIntoUnaligned`]
+/// trait, allowing it to be converted into (usually faster) structures using
+/// unaligned access.
+///
 /// # Type Parameters
 ///
 /// - `D`: The prefix-sum structure. Must implement `SliceByValue<Value = usize>`.

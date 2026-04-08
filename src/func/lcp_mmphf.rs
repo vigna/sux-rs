@@ -159,6 +159,9 @@ pub(crate) fn log2_bucket_size(n: usize) -> usize {
 /// where the bucket is determined by the bit-prefix and the offset is stored
 /// directly.
 ///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
+///
 /// # Implementation details
 ///
 /// Internally, the structure contains two [`VFunc`]s:
@@ -166,9 +169,6 @@ pub(crate) fn log2_bucket_size(n: usize) -> usize {
 ///   the LCP bit-length and the offset within the bucket;
 /// - `lcp2bucket`: maps each LCP bit-prefix ([`IntBitPrefix`]) to its
 ///   bucket index.
-///
-/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
-/// converted into (usually faster) structures using unaligned access.
 ///
 /// # Type parameters
 ///

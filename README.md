@@ -27,7 +27,8 @@ from [the DSI Utilities] and new structures.
 - support for [signed minimal perfect hash functions];
 - [partial arrays], that is, “arrays with holes”, implemented using ranking or
   Elias–Fano;
-- [lists] (e.g., [compressed lists of integers]).
+- [lists] (e.g., [compressed lists of integers]);
+- basic structures for [balanced parantheses].
 
 The focus is on performance (e.g., there are unchecked versions of all methods
 and support for [unaligned access]) and on flexible composability (e.g., you can
@@ -221,3 +222,4 @@ Union nor the Italian MUR can be held responsible for them.
 [`AsMut<W>`]: https://doc.rust-lang.org/core/convert/trait.AsMut.html
 [`Word`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html#associatedtype.Word
 [`Backend`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html
+[balanced parantheses]: https://docs.rs/sux/latest/sux/bal_paren/index.html
