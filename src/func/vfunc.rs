@@ -218,11 +218,6 @@ where
     ///
     /// # Examples
     ///
-    ///
-    ///
-    ///
-    /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
-    /// parallelizes the hash computation for faster construction.
     /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
     /// parallelizes the hash computation for faster construction.
     /// ```rust
@@ -279,13 +274,7 @@ where
     ///
     /// # Examples
     ///
-    ///
-    ///
-    ///
     /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-    /// for parallel hash computation from slices.
-    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-    /// for parallel hash computation from slices.
     /// for parallel hash computation from slices.
     /// ```rust
     /// # #[cfg(feature = "rayon")]
@@ -352,13 +341,7 @@ where
     ///
     /// # Examples
     ///
-    ///
-    ///
-    ///
     /// If keys are produced sequentially (e.g., from a file), use
-    /// [`try_new`](Self::try_new) instead.
-    /// If keys are produced sequentially (e.g., from a file), use
-    /// [`try_new`](Self::try_new) instead.
     /// [`try_new`](Self::try_new) instead.
     /// ```rust
     /// # #[cfg(feature = "rayon")]
@@ -407,13 +390,7 @@ where
     ///
     /// # Examples
     ///
-    ///
-    ///
-    ///
     /// If keys are produced sequentially (e.g., from a file), use
-    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
-    /// If keys are produced sequentially (e.g., from a file), use
-    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
     /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
     /// ```rust
     /// # #[cfg(feature = "rayon")]
@@ -497,11 +474,6 @@ where
     ///
     /// # Examples
     ///
-    ///
-    ///
-    ///
-    /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
-    /// parallelizes the hash computation for faster construction.
     /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
     /// parallelizes the hash computation for faster construction.
     /// ```rust
@@ -512,7 +484,6 @@ where
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromCloneableIntoIterator;
     /// let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new(
-    ///     FromCloneableIntoIterator::new(0..100),
     ///     FromCloneableIntoIterator::new(0..100),
     ///     100,
     ///     no_logging![],
@@ -554,13 +525,7 @@ where
     ///
     /// # Examples
     ///
-    ///
-    ///
-    ///
     /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-    /// for parallel hash computation from slices.
-    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-    /// for parallel hash computation from slices.
     /// for parallel hash computation from slices.
     /// ```rust
     /// # #[cfg(feature = "rayon")]
@@ -570,7 +535,6 @@ where
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromCloneableIntoIterator;
     /// let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
-    ///     FromCloneableIntoIterator::new(0..100),
     ///     FromCloneableIntoIterator::new(0..100),
     ///     100,
     ///     VBuilder::default().offline(true),
@@ -623,13 +587,7 @@ where
     ///
     /// # Examples
     ///
-    ///
-    ///
-    ///
     /// If keys are produced sequentially (e.g., from a file), use
-    /// [`try_new`](Self::try_new) instead.
-    /// If keys are produced sequentially (e.g., from a file), use
-    /// [`try_new`](Self::try_new) instead.
     /// [`try_new`](Self::try_new) instead.
     /// ```rust
     /// # #[cfg(feature = "rayon")]
@@ -676,13 +634,7 @@ where
     ///
     /// # Examples
     ///
-    ///
-    ///
-    ///
     /// If keys are produced sequentially (e.g., from a file), use
-    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
-    /// If keys are produced sequentially (e.g., from a file), use
-    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
     /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
     /// ```rust
     /// # #[cfg(feature = "rayon")]
