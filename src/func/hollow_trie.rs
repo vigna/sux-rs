@@ -382,8 +382,8 @@ fn encode_behaviour_key(
 #[cfg(feature = "rayon")]
 #[derive(Debug)]
 pub struct HtDist<
-    E = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
-    F = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
+    E = VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+    F = VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
     B: BalParen = JacobsonBalParen,
     S = PrefixSumIntList,
 > {
@@ -401,34 +401,6 @@ pub struct HtDist<
     /// Detects false follows: maps (node, path) -> 0 (true follow) or
     /// 1 (false follow).
     false_follows_detector: F,
-}
-
-#[cfg(feature = "rayon")]
-impl<
-        E: MemSize + mem_dbg::FlatType,
-        F: MemSize + mem_dbg::FlatType,
-        B: BalParen + MemSize + mem_dbg::FlatType,
-        S: MemSize + mem_dbg::FlatType,
-    > MemSize for HtDist<E, F, B, S>
-{
-    fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
-        let mut size = core::mem::size_of::<Self>();
-        size += self.bal_paren.mem_size_rec(flags, refs);
-        size += self.skips.mem_size_rec(flags, refs);
-        size += self.false_follows_detector.mem_size_rec(flags, refs);
-        size += self.external_behaviour.mem_size_rec(flags, refs);
-        size
-    }
-}
-
-#[cfg(feature = "rayon")]
-impl<
-        E: MemSize + mem_dbg::FlatType,
-        F: MemSize + mem_dbg::FlatType,
-        B: BalParen + MemSize + mem_dbg::FlatType,
-        S: MemSize + mem_dbg::FlatType,
-    > MemDbgImpl for HtDist<E, F, B, S>
-{
 }
 
 /// Exit on the left (closer to left delimiter).
@@ -1002,36 +974,6 @@ pub type HtDistMmphfStr = HtDistMmphf<str>;
 pub type HtDistMmphfSliceU8 = HtDistMmphf<[u8]>;
 
 #[cfg(feature = "rayon")]
-impl<
-    K: ?Sized,
-    E: MemSize + mem_dbg::FlatType,
-    F: MemSize + mem_dbg::FlatType,
-    O: MemSize + mem_dbg::FlatType,
-    B: BalParen + MemSize + mem_dbg::FlatType,
-    S: MemSize + mem_dbg::FlatType,
-> MemSize for HtDistMmphf<K, E, F, O, B, S>
-{
-    fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
-        let mut size = core::mem::size_of::<Self>();
-        size += self.distributor.mem_size_rec(flags, refs);
-        size += self.offset.mem_size_rec(flags, refs);
-        size
-    }
-}
-
-#[cfg(feature = "rayon")]
-impl<
-    K: ?Sized,
-    E: MemSize + mem_dbg::FlatType,
-    F: MemSize + mem_dbg::FlatType,
-    O: MemSize + mem_dbg::FlatType,
-    B: BalParen + MemSize + mem_dbg::FlatType,
-    S: MemSize + mem_dbg::FlatType,
-> MemDbgImpl for HtDistMmphf<K, E, F, O, B, S>
-{
-}
-
-#[cfg(feature = "rayon")]
 impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug>
     HtDistMmphf<
         K,
@@ -1471,6 +1413,34 @@ where
 }
 
 #[cfg(feature = "rayon")]
+impl<
+        E: MemSize + mem_dbg::FlatType,
+        F: MemSize + mem_dbg::FlatType,
+        B: BalParen + MemSize + mem_dbg::FlatType,
+        S: MemSize + mem_dbg::FlatType,
+    > MemSize for HtDist<E, F, B, S>
+{
+    fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
+        let mut size = core::mem::size_of::<Self>();
+        size += self.bal_paren.mem_size_rec(flags, refs);
+        size += self.skips.mem_size_rec(flags, refs);
+        size += self.false_follows_detector.mem_size_rec(flags, refs);
+        size += self.external_behaviour.mem_size_rec(flags, refs);
+        size
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<
+        E: MemSize + mem_dbg::FlatType,
+        F: MemSize + mem_dbg::FlatType,
+        B: BalParen + MemSize + mem_dbg::FlatType,
+        S: MemSize + mem_dbg::FlatType,
+    > MemDbgImpl for HtDist<E, F, B, S>
+{
+}
+
+#[cfg(feature = "rayon")]
 impl
     From<
         HtDist<
@@ -1534,6 +1504,36 @@ where
             _marker: std::marker::PhantomData,
         })
     }
+}
+
+#[cfg(feature = "rayon")]
+impl<
+    K: ?Sized,
+    E: MemSize + mem_dbg::FlatType,
+    F: MemSize + mem_dbg::FlatType,
+    O: MemSize + mem_dbg::FlatType,
+    B: BalParen + MemSize + mem_dbg::FlatType,
+    S: MemSize + mem_dbg::FlatType,
+> MemSize for HtDistMmphf<K, E, F, O, B, S>
+{
+    fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
+        let mut size = core::mem::size_of::<Self>();
+        size += self.distributor.mem_size_rec(flags, refs);
+        size += self.offset.mem_size_rec(flags, refs);
+        size
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<
+    K: ?Sized,
+    E: MemSize + mem_dbg::FlatType,
+    F: MemSize + mem_dbg::FlatType,
+    O: MemSize + mem_dbg::FlatType,
+    B: BalParen + MemSize + mem_dbg::FlatType,
+    S: MemSize + mem_dbg::FlatType,
+> MemDbgImpl for HtDistMmphf<K, E, F, O, B, S>
+{
 }
 
 #[cfg(feature = "rayon")]
@@ -1802,36 +1802,6 @@ pub struct HtDistInt<
     false_follows_detector: F,
     /// Phantom data for `K`.
     _marker: std::marker::PhantomData<K>,
-}
-
-#[cfg(feature = "rayon")]
-impl<
-        K,
-        E: MemSize + mem_dbg::FlatType,
-        F: MemSize + mem_dbg::FlatType,
-        B: BalParen + MemSize + mem_dbg::FlatType,
-        S: MemSize + mem_dbg::FlatType,
-    > MemSize for HtDistInt<K, E, F, B, S>
-{
-    fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
-        let mut size = core::mem::size_of::<Self>();
-        size += self.bal_paren.mem_size_rec(flags, refs);
-        size += self.skips.mem_size_rec(flags, refs);
-        size += self.false_follows_detector.mem_size_rec(flags, refs);
-        size += self.external_behaviour.mem_size_rec(flags, refs);
-        size
-    }
-}
-
-#[cfg(feature = "rayon")]
-impl<
-        K,
-        E: MemSize + mem_dbg::FlatType,
-        F: MemSize + mem_dbg::FlatType,
-        B: BalParen + MemSize + mem_dbg::FlatType,
-        S: MemSize + mem_dbg::FlatType,
-    > MemDbgImpl for HtDistInt<K, E, F, B, S>
-{
 }
 
 #[cfg(feature = "rayon")]
@@ -2232,6 +2202,36 @@ where
 }
 
 #[cfg(feature = "rayon")]
+impl<
+        K,
+        E: MemSize + mem_dbg::FlatType,
+        F: MemSize + mem_dbg::FlatType,
+        B: BalParen + MemSize + mem_dbg::FlatType,
+        S: MemSize + mem_dbg::FlatType,
+    > MemSize for HtDistInt<K, E, F, B, S>
+{
+    fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
+        let mut size = core::mem::size_of::<Self>();
+        size += self.bal_paren.mem_size_rec(flags, refs);
+        size += self.skips.mem_size_rec(flags, refs);
+        size += self.false_follows_detector.mem_size_rec(flags, refs);
+        size += self.external_behaviour.mem_size_rec(flags, refs);
+        size
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<
+        K,
+        E: MemSize + mem_dbg::FlatType,
+        F: MemSize + mem_dbg::FlatType,
+        B: BalParen + MemSize + mem_dbg::FlatType,
+        S: MemSize + mem_dbg::FlatType,
+    > MemDbgImpl for HtDistInt<K, E, F, B, S>
+{
+}
+
+#[cfg(feature = "rayon")]
 impl<K: PrimitiveInteger>
     From<
         HtDistInt<
@@ -2340,36 +2340,6 @@ pub struct HtDistMmphfInt<
     log2_bucket_size: usize,
     /// Number of keys.
     n: usize,
-}
-
-#[cfg(feature = "rayon")]
-impl<
-        K,
-        E: MemSize + mem_dbg::FlatType,
-        F: MemSize + mem_dbg::FlatType,
-        O: MemSize + mem_dbg::FlatType,
-        B: BalParen + MemSize + mem_dbg::FlatType,
-        S: MemSize + mem_dbg::FlatType,
-    > MemSize for HtDistMmphfInt<K, E, F, O, B, S>
-{
-    fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
-        let mut size = core::mem::size_of::<Self>();
-        size += self.distributor.mem_size_rec(flags, refs);
-        size += self.offset.mem_size_rec(flags, refs);
-        size
-    }
-}
-
-#[cfg(feature = "rayon")]
-impl<
-        K,
-        E: MemSize + mem_dbg::FlatType,
-        F: MemSize + mem_dbg::FlatType,
-        O: MemSize + mem_dbg::FlatType,
-        B: BalParen + MemSize + mem_dbg::FlatType,
-        S: MemSize + mem_dbg::FlatType,
-    > MemDbgImpl for HtDistMmphfInt<K, E, F, O, B, S>
-{
 }
 
 #[cfg(feature = "rayon")]
@@ -2777,6 +2747,36 @@ where
             n: self.n,
         })
     }
+}
+
+#[cfg(feature = "rayon")]
+impl<
+        K,
+        E: MemSize + mem_dbg::FlatType,
+        F: MemSize + mem_dbg::FlatType,
+        O: MemSize + mem_dbg::FlatType,
+        B: BalParen + MemSize + mem_dbg::FlatType,
+        S: MemSize + mem_dbg::FlatType,
+    > MemSize for HtDistMmphfInt<K, E, F, O, B, S>
+{
+    fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
+        let mut size = core::mem::size_of::<Self>();
+        size += self.distributor.mem_size_rec(flags, refs);
+        size += self.offset.mem_size_rec(flags, refs);
+        size
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<
+        K,
+        E: MemSize + mem_dbg::FlatType,
+        F: MemSize + mem_dbg::FlatType,
+        O: MemSize + mem_dbg::FlatType,
+        B: BalParen + MemSize + mem_dbg::FlatType,
+        S: MemSize + mem_dbg::FlatType,
+    > MemDbgImpl for HtDistMmphfInt<K, E, F, O, B, S>
+{
 }
 
 #[cfg(feature = "rayon")]
