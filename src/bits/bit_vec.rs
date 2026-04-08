@@ -99,7 +99,10 @@
 //! ```
 
 use crate::traits::ambassador_impl_Backend;
-use crate::traits::{AtomicBitIter, AtomicBitVecOps, Backend, BitIter, BitVecOps, Word};
+use crate::bits::{assert_unaligned, debug_assert_unaligned, test_unaligned};
+use crate::traits::{
+    AtomicBitIter, AtomicBitVecOps, Backend, BitIter, BitVecOps, BitVecValueOps, Word,
+};
 use crate::utils::SelectInWord;
 use crate::{
     traits::{bit_vec_ops::BitLength, rank_sel::*},
@@ -343,6 +346,40 @@ impl<W: Word> BitVec<Vec<W>> {
         self.len += 1;
     }
 
+    /// Appends the lower `width` bits of `value` to the end of this bit
+    /// vector.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `width` > `W::BITS`.
+    pub fn append_value(&mut self, value: W, width: usize) {
+        assert!(
+            width <= W::BITS as usize,
+            "width {} must be at most W::BITS ({})",
+            width,
+            W::BITS
+        );
+        if width == 0 {
+            return;
+        }
+        let bits_per_word = W::BITS as usize;
+        let l = bits_per_word - width;
+        let value = (value << l) >> l;
+        let new_len = self.len + width;
+        let needed_words = new_len.div_ceil(bits_per_word);
+        // Grow the backing storage if necessary.
+        self.bits.resize(needed_words, W::ZERO);
+
+        let word_idx = self.len / bits_per_word;
+        let bit_idx = self.len % bits_per_word;
+
+        self.bits[word_idx] |= value << bit_idx;
+        if bit_idx + width > bits_per_word {
+            self.bits[word_idx + 1] = value.wrapping_shr(bit_idx.wrapping_neg() as u32);
+        }
+        self.len = new_len;
+    }
+
     /// Removes the last bit from the bit vector and returns it, or `None` if it
     /// is empty.
     pub fn pop(&mut self) -> Option<bool> {
@@ -473,6 +510,110 @@ impl<B: ToOwned> BitVec<B> {
             bits: self.bits.to_owned(),
             len: self.len,
         }
+    }
+}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVecValueOps<B::Word> for BitVec<B> {
+    fn get_value(&self, pos: usize, width: usize) -> B::Word {
+        assert!(
+            width <= B::Word::BITS as usize,
+            "width {} must be at most W::BITS ({})",
+            width,
+            B::Word::BITS
+        );
+        assert!(
+            pos + width <= self.len,
+            "bit range {}..{} out of bounds for length {}",
+            pos,
+            pos + width,
+            self.len
+        );
+        unsafe { self.get_value_unchecked(pos, width) }
+    }
+
+    #[inline]
+    unsafe fn get_value_unchecked(&self, pos: usize, width: usize) -> B::Word {
+        let bits = B::Word::BITS as usize;
+        let word_index = pos / bits;
+        let bit_index = pos % bits;
+        let l = bits - width;
+        let data = self.bits.as_ref();
+
+        if width == 0 {
+            return B::Word::ZERO;
+        }
+
+        unsafe {
+            if bit_index <= l {
+                (*data.get_unchecked(word_index) << (l - bit_index)) >> l
+            } else {
+                (*data.get_unchecked(word_index) >> bit_index)
+                    | ((*data.get_unchecked(word_index + 1))
+                        .wrapping_shl(l.wrapping_sub(bit_index) as u32)
+                        >> l)
+            }
+        }
+    }
+}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVec<B> {
+    /// Like [`BitVecValueOps::get_value`], but using unaligned reads.
+    ///
+    /// This avoids a branch at the cost of requiring the bit width to satisfy
+    /// the constraints of
+    /// [`BitFieldVec::get_unaligned`](crate::bits::BitFieldVec::get_unaligned):
+    /// `width` must be at most `W::BITS - 6`, or exactly `W::BITS - 4`, or
+    /// exactly `W::BITS` (where `W` is the word type of the backend).
+    ///
+    /// Additionally, a padding word must be present at the end of the
+    /// underlying storage.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `pos + width` exceeds the bit length, if `width` does not
+    /// satisfy the unaligned constraints, or if the read would exceed the
+    /// allocation.
+    pub fn get_value_unaligned(&self, pos: usize, width: usize) -> B::Word {
+        assert_unaligned!(B::Word, width);
+        assert!(
+            pos + width <= self.len,
+            "bit range {}..{} out of bounds for length {}",
+            pos,
+            pos + width,
+            self.len
+        );
+        assert!(
+            pos / 8 + size_of::<B::Word>() <= std::mem::size_of_val(self.bits.as_ref()),
+            "unaligned read at bit position {} would exceed allocation",
+            pos,
+        );
+        unsafe { self.get_value_unaligned_unchecked(pos, width) }
+    }
+
+    /// Like [`BitVecValueOps::get_value_unchecked`], but using unaligned
+    /// reads.
+    ///
+    /// # Safety
+    ///
+    /// - `width` must satisfy the unaligned constraints: at most `W::BITS -
+    ///   6`, or exactly `W::BITS - 4`, or exactly `W::BITS`.
+    /// - `pos + width` must not exceed the bit length.
+    /// - A padding word must be present at the end of the underlying storage so
+    ///   that reading `size_of::<W>()` bytes starting at byte offset `pos / 8`
+    ///   does not exceed the allocation.
+    #[inline]
+    pub unsafe fn get_value_unaligned_unchecked(&self, pos: usize, width: usize) -> B::Word {
+        debug_assert_unaligned!(B::Word, width);
+        let base_ptr = self.bits.as_ref().as_ptr() as *const u8;
+        debug_assert!(
+            pos / 8 + size_of::<B::Word>() <= std::mem::size_of_val(self.bits.as_ref()),
+            "unaligned read at bit position {} would exceed allocation",
+            pos,
+        );
+        let ptr = unsafe { base_ptr.add(pos / 8) } as *const B::Word;
+        let word = unsafe { core::ptr::read_unaligned(ptr) };
+        let l = B::Word::BITS as usize - width;
+        ((word >> (pos % 8)) << l) >> l
     }
 }
 

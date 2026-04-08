@@ -3,6 +3,7 @@ use rand::distr::Distribution;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
+use sux::bits::BitVec;
 use sux::prelude::*;
 use sux::traits::Word;
 use value_traits::slices::SliceByValue;
@@ -15,7 +16,7 @@ const SIZES: [(&str, usize); 2] = [("2^20", 1 << 20), ("2^30", 1 << 30)];
 /// Builds a `CompIntList` of `n` elements drawn from a geometric
 /// distribution: each value is `trailing_zeros(random_u64())`,
 /// giving values in [0 . . 63] with *P*(*k*) = 2⁻*ᴷ*.
-fn build_geometric(n: usize) -> CompIntList<u64> {
+fn build_geometric(n: usize) -> CompIntList<BitVec<Box<[u64]>>> {
     let mut rng = SmallRng::seed_from_u64(0);
     let values: Vec<u64> = (0..n)
         .map(|_| {
@@ -28,7 +29,7 @@ fn build_geometric(n: usize) -> CompIntList<u64> {
 
 /// Builds a `CompIntList` of `n` elements drawn from a Zipf distribution
 /// on the first billion integers with exponent 1 (≈1/*x*).
-fn build_zipf(n: usize) -> CompIntList<u64> {
+fn build_zipf(n: usize) -> CompIntList<BitVec<Box<[u64]>>> {
     let mut rng = SmallRng::seed_from_u64(42);
     let distr = rand_distr::Zipf::new(1E9_f64, 1.0).unwrap();
     let values: Vec<u64> = (0..n)
@@ -76,7 +77,9 @@ fn bench_zipf(c: &mut Criterion) {
     group.finish();
 }
 
-fn to_vec_delimiters<V: Word>(list: CompIntList<V>) -> CompIntList<V, Vec<u64>> {
+fn to_vec_delimiters<V: Word>(
+    list: CompIntList<BitVec<Box<[V]>>>,
+) -> CompIntList<BitVec<Box<[V]>>, Vec<u64>> {
     unsafe {
         list.map_delimiters(|d| {
             let n = d.len();

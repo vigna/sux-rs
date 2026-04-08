@@ -22,6 +22,9 @@
 //! implementing `UncheckedIterator<Item = u64>`, as long as it returns the same
 //! cumulative bit positions.
 //!
+//! The data structure can be [replaced](CompIntList::map_data) with any
+//! structure implementing [`BitVecValueOps`].
+//!
 //! This structure implements [`SliceByValue`] for random access.
 //!
 //! # Examples
@@ -40,14 +43,16 @@
 //! assert_eq!(list.index_value(4), 100);
 //! ```
 
-use mem_dbg::*;
-use value_traits::slices::SliceByValue;
-
+use crate::bits::bit_vec::BitVec;
+use crate::bits::test_unaligned;
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EfSeq;
-use crate::traits::Word;
 use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
+use ambassador::Delegate;
+use crate::traits::{ambassador_impl_Backend, Backend, BitVecValueOps, TryIntoUnaligned, Word};
 use crate::utils::PrimitiveUnsignedExt;
+use mem_dbg::*;
+use value_traits::slices::SliceByValue;
 
 /// A compact list of integers not less than a given lower bound.
 ///
@@ -58,7 +63,8 @@ use crate::utils::PrimitiveUnsignedExt;
 /// sequence](EfSeq)), enabling efficient random access.
 ///
 /// After construction, the delimiter structure can be replaced using
-/// [`map_delimiters`](CompIntList::map_delimiters).
+/// [`map_delimiters`](CompIntList::map_delimiters), and the data structure
+/// using [`map_data`](CompIntList::map_data).
 ///
 /// This structure implements the [`TryIntoUnaligned`]
 /// trait, allowing it to be converted into (usually faster) structures using
@@ -66,32 +72,36 @@ use crate::utils::PrimitiveUnsignedExt;
 ///
 /// # Type Parameters
 ///
-/// - `V`: The value type. Must be a [`Word`] type. Defaults to `usize`.
+/// - `B`: The data backend. Must implement [`Backend`] and
+///   [`BitVecValueOps<B::Word>`]. Defaults to
+///   [`BitVec<Box<[usize]>>`].
 /// - `D`: The delimiter structure. Must implement `SliceByValue<Value = u64>`.
 ///   Defaults to [`EfSeq<u64>`](EfSeq).
 #[derive(Debug, Clone, MemDbg, MemSize)]
 #[cfg_attr(
     feature = "epserde",
     derive(epserde::Epserde),
-    epserde(bound(deser = "V: for<'a> epserde::deser::DeserInner<DeserType<'a> = V>"))
+    epserde(bound(deser = "B::Word: for<'a> epserde::deser::DeserInner<DeserType<'a> = B::Word>"))
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct CompIntList<V = usize, D = EfSeq<u64>> {
+pub struct CompIntList<B: Backend = BitVec<Box<[usize]>>, D = EfSeq<u64>> {
     /// Number of stored values.
     ///
     /// Note that this is identical to `delimiters.len() - 1`, but we have no
     /// guarantee that calling `delimiters.len()` is O(1).
     n: usize,
     /// Lower bound on the values.
-    min: V,
+    min: B::Word,
     /// Structure storing `n + 1` cumulative bit-position delimiters.
     delimiters: D,
-    /// Concatenated binary representations (MSB removed), backed by
-    /// `V`-sized words.
-    data: Box<[V]>,
+    /// Concatenated binary representations (MSB removed).
+    data: B,
+    /// Whether all stored bit widths satisfy the constraints for unaligned
+    /// reads.
+    all_widths_unaligned: bool,
 }
 
-impl<V: Word> CompIntList<V> {
+impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
     /// Creates a new `CompIntList` from a lower bound and a reference to a
     /// collection of values not less than `min`.
     ///
@@ -119,11 +129,16 @@ impl<V: Word> CompIntList<V> {
     {
         // First pass: count elements and total bits
         let mut n = 0;
-        let mut total_bits = 0;
+        let mut total_bits = 0u64;
+        let mut all_widths_unaligned = true;
         for &v in values {
             assert!(v >= min, "CompIntList: value must be >= the lower bound");
             let offset = v - min + V::ONE;
-            total_bits += (offset.bit_len() - 1) as u64;
+            let width = (offset.bit_len() - 1) as usize;
+            total_bits += width as u64;
+            if !test_unaligned!(V, width) {
+                all_widths_unaligned = false;
+            }
             n += 1;
         }
 
@@ -133,54 +148,51 @@ impl<V: Word> CompIntList<V> {
         // SAFETY: pos = 0 ≤ total_bits and is the first push
         unsafe { efb.push_unchecked(0) };
 
-        // Allocate data buffer (at least one word for safe two-word reads)
-        let n_words = total_bits.div_ceil(V::BITS as u64) as usize + 1;
-        let mut data = vec![V::ZERO; n_words];
-        let mut bit_pos = 0;
+        let mut data: BitVec<Vec<V>> = BitVec::new(0);
+        // Reserve space for the data plus one padding word for safe two-word
+        // reads.
+        data.reserve(total_bits as usize + V::BITS as usize);
 
         for &v in values {
             let offset = v - min + V::ONE;
             let width = (offset.bit_len() - 1) as usize;
             let bits = offset ^ (V::ONE << width);
-            Self::write_bits(&mut data, bit_pos, bits, width);
-            bit_pos += width;
+            data.append_value(bits, width);
             pos += width as u64;
             // SAFETY: pos is non-decreasing and ≤ total_bits
             unsafe { efb.push_unchecked(pos) };
         }
         let delimiters = efb.build_with_seq();
 
+        // Add one padding word so that two-word reads never go out of bounds.
+        let (mut vec_data, len) = data.into_raw_parts();
+        let needed = total_bits.div_ceil(V::BITS as u64) as usize;
+        if vec_data.len() <= needed {
+            vec_data.reserve_exact(1);
+            vec_data.push(V::ZERO);
+        }
+        let data = unsafe { BitVec::from_raw_parts(vec_data.into_boxed_slice(), len) };
+
         CompIntList {
             n,
             min,
             delimiters,
-            data: data.into_boxed_slice(),
-        }
-    }
-
-    /// Writes `width` low bits of `value` into `data` starting at bit
-    /// position `start`. The value must fit in `width` bits and `width`
-    /// must be less than `V::BITS`.
-    fn write_bits(data: &mut [V], start: usize, value: V, width: usize) {
-        let v_bits = V::BITS as usize;
-        let word_idx = start / v_bits;
-        let bit_idx = start % v_bits;
-
-        data[word_idx] |= value << bit_idx;
-        if bit_idx + width > v_bits {
-            data[word_idx + 1] |= value >> (v_bits - bit_idx);
+            data,
+            all_widths_unaligned,
         }
     }
 }
 
-impl<V: Word, D: SliceByValue<Value = u64>> CompIntList<V, D> {
+impl<B: Backend<Word: Word> + BitVecValueOps<B::Word>, D: SliceByValue<Value = u64>>
+    CompIntList<B, D>
+{
     /// Replaces the delimiter structure.
     ///
     /// # Safety
     ///
     /// This method is unsafe because it is not possible to guarantee that the
     /// new delimiters return the same values as the old ones.
-    pub unsafe fn map_delimiters<F, D2>(self, func: F) -> CompIntList<V, D2>
+    pub unsafe fn map_delimiters<F, D2>(self, func: F) -> CompIntList<B, D2>
     where
         F: FnOnce(D) -> D2,
         D2: SliceByValue<Value = u64>,
@@ -190,6 +202,27 @@ impl<V: Word, D: SliceByValue<Value = u64>> CompIntList<V, D> {
             min: self.min,
             delimiters: func(self.delimiters),
             data: self.data,
+            all_widths_unaligned: self.all_widths_unaligned,
+        }
+    }
+
+    /// Replaces the data structure.
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe because it is not possible to guarantee that the
+    /// new data returns the same values as the old one.
+    pub unsafe fn map_data<F, B2>(self, func: F) -> CompIntList<B2, D>
+    where
+        F: FnOnce(B) -> B2,
+        B2: Backend<Word = B::Word> + BitVecValueOps<B2::Word>,
+    {
+        CompIntList {
+            n: self.n,
+            min: self.min,
+            delimiters: self.delimiters,
+            data: func(self.data),
+            all_widths_unaligned: self.all_widths_unaligned,
         }
     }
 
@@ -197,38 +230,15 @@ impl<V: Word, D: SliceByValue<Value = u64>> CompIntList<V, D> {
     pub fn into_inner(self) -> D {
         self.delimiters
     }
-
-    /// Reads `width` bits from `data` starting at bit position `start`.
-    ///
-    /// # Safety
-    ///
-    /// - `start + width` must not exceed the total number of bits in `data`.
-    /// - `width` must be less than `V::BITS`.
-    #[inline]
-    unsafe fn read_bits(data: &[V], start: usize, width: usize) -> V {
-        let v_bits = V::BITS as usize;
-        let word_idx = start / v_bits;
-        let bit_idx = start % v_bits;
-        let mask = (V::ONE << width) - V::ONE;
-
-        unsafe {
-            if bit_idx + width <= v_bits {
-                (*data.get_unchecked(word_idx) >> bit_idx) & mask
-            } else {
-                ((*data.get_unchecked(word_idx) >> bit_idx)
-                    | (*data.get_unchecked(word_idx + 1) << (v_bits - bit_idx)))
-                    & mask
-            }
-        }
-    }
 }
 
-impl<V: Word, D: SliceByValue<Value = u64>> SliceByValue for CompIntList<V, D>
+impl<B: Backend<Word: Word> + BitVecValueOps<B::Word>, D: SliceByValue<Value = u64>> SliceByValue
+    for CompIntList<B, D>
 where
     for<'a> &'a D: IntoIteratorFrom,
     for<'a> <&'a D as IntoIteratorFrom>::IntoIterFrom: UncheckedIterator<Item = u64>,
 {
-    type Value = V;
+    type Value = B::Word;
 
     #[inline(always)]
     fn len(&self) -> usize {
@@ -236,54 +246,97 @@ where
     }
 
     #[inline]
-    unsafe fn get_value_unchecked(&self, index: usize) -> V {
+    unsafe fn get_value_unchecked(&self, index: usize) -> B::Word {
         let mut iter = (&self.delimiters).into_iter_from(index);
         let start = unsafe { iter.next_unchecked() } as usize;
         let end = unsafe { iter.next_unchecked() } as usize;
         let width = end - start;
 
-        let bits = unsafe { Self::read_bits(&self.data, start, width) };
-        let stored = (V::ONE << width) | bits;
+        let bits = unsafe { self.data.get_value_unchecked(start, width) };
+        let stored = (B::Word::ONE << width) | bits;
 
         // stored = value - min + 1, so value = (stored - 1) + min
-        (stored - V::ONE) + self.min
+        (stored - B::Word::ONE) + self.min
     }
 }
 
-use crate::bits::BitFieldVecU;
-use crate::dict::EliasFano;
-use crate::traits::TryIntoUnaligned;
+/// A wrapper around [`BitVec`] that implements [`BitVecValueOps`] using
+/// unaligned reads.
+///
+/// This type is only constructed internally by [`CompIntList`]'s
+/// [`TryIntoUnaligned`] implementation, which guarantees that all bit widths
+/// satisfy the constraints for unaligned reads and that a padding word is
+/// present.
+#[derive(Debug, Clone, Delegate, MemDbg, MemSize)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[delegate(crate::traits::Backend, target = "0")]
+pub struct BitVecU<B>(BitVec<B>);
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVecValueOps<B::Word> for BitVecU<B> {
+    #[inline(always)]
+    fn get_value(&self, pos: usize, width: usize) -> B::Word {
+        self.0.get_value_unaligned(pos, width)
+    }
+
+    #[inline(always)]
+    unsafe fn get_value_unchecked(&self, pos: usize, width: usize) -> B::Word {
+        unsafe { self.0.get_value_unaligned_unchecked(pos, width) }
+    }
+}
 
 impl<V: Word, D: TryIntoUnaligned + SliceByValue<Value = u64>> TryIntoUnaligned
-    for CompIntList<V, D>
+    for CompIntList<BitVec<Box<[V]>>, D>
 where
     D::Unaligned: SliceByValue<Value = u64>,
 {
-    type Unaligned = CompIntList<V, D::Unaligned>;
+    type Unaligned = CompIntList<BitVecU<Box<[V]>>, D::Unaligned>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+        if !self.all_widths_unaligned {
+            return Err(crate::traits::UnalignedConversionError(
+                "CompIntList contains values whose bit widths do not satisfy the \
+                 constraints for unaligned reads"
+                    .to_string(),
+            ));
+        }
+        // Ensure a padding word is present in the data backend. The
+        // constructor already adds one, but we check defensively.
+        let (raw_bits, len) = self.data.into_raw_parts();
+        let needed = len.div_ceil(V::BITS as usize);
+        let data = if raw_bits.len() > needed {
+            // Padding word already present.
+            unsafe { BitVec::from_raw_parts(raw_bits, len) }
+        } else {
+            let mut v = raw_bits.into_vec();
+            v.reserve_exact(1);
+            v.push(V::ZERO);
+            unsafe { BitVec::from_raw_parts(v.into_boxed_slice(), len) }
+        };
+
         Ok(CompIntList {
             n: self.n,
             min: self.min,
             delimiters: self.delimiters.try_into_unaligned()?,
-            data: self.data,
+            data: BitVecU(data),
+            all_widths_unaligned: true,
         })
     }
 }
 
-impl<V: Word, W: Word, H> From<CompIntList<V, EliasFano<W, H, BitFieldVecU<Box<[W]>>>>>
-    for CompIntList<V, EliasFano<W, H, crate::bits::BitFieldVec<Box<[W]>>>>
+impl<V: Word, D, D2: SliceByValue<Value = u64>> From<CompIntList<BitVecU<Box<[V]>>, D>>
+    for CompIntList<BitVec<Box<[V]>>, D2>
 where
-    EliasFano<W, H, crate::bits::BitFieldVec<Box<[W]>>>:
-        From<EliasFano<W, H, BitFieldVecU<Box<[W]>>>>,
+    D: Into<D2>,
 {
-    fn from(c: CompIntList<V, EliasFano<W, H, BitFieldVecU<Box<[W]>>>>) -> Self {
+    fn from(c: CompIntList<BitVecU<Box<[V]>>, D>) -> Self {
         CompIntList {
             n: c.n,
             min: c.min,
             delimiters: c.delimiters.into(),
-            data: c.data,
+            data: c.data.0,
+            all_widths_unaligned: c.all_widths_unaligned,
         }
     }
 }

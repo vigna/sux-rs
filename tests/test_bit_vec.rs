@@ -14,6 +14,7 @@ use rand::seq::SliceRandom;
 use sux::prelude::*;
 
 use sux::traits::bit_vec_ops::*;
+use sux::traits::BitVecValueOps;
 
 #[test]
 fn test() {
@@ -942,4 +943,196 @@ fn test_reserve() {
     let mut b: BitVec = BitVec::new(50);
     b.reserve_exact(100);
     assert!(b.capacity() >= 150);
+}
+
+/// Test get_value / get_value_unchecked / append_value with a given word type.
+macro_rules! test_value_ops_word_type {
+    ($W:ty) => {{
+        let bpw = <$W>::BITS as usize;
+
+        // width == 0 returns 0
+        {
+            let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
+            bv.push(true);
+            assert_eq!(bv.get_value(0, 0), (0 as $W));
+        }
+
+        // width == W::BITS, word-aligned (bit_index == 0)
+        {
+            let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
+            let val: $W = !(0 as $W) / 3; // alternating bits
+            bv.append_value(val, bpw);
+            assert_eq!(bv.len(), bpw);
+            assert_eq!(bv.get_value(0, bpw), val);
+            assert_eq!(unsafe { bv.get_value_unchecked(0, bpw) }, val);
+        }
+
+        // width == W::BITS, not word-aligned (bit_index > 0, spans two words)
+        {
+            for offset in 1..bpw {
+                let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
+                // Prepend `offset` zero bits
+                for _ in 0..offset {
+                    bv.push(false);
+                }
+                let val: $W = !(0 as $W) / 5; // known pattern
+                bv.append_value(val, bpw);
+                assert_eq!(
+                    bv.get_value(offset, bpw),
+                    val,
+                    "width={bpw}, offset={offset}"
+                );
+                assert_eq!(
+                    unsafe { bv.get_value_unchecked(offset, bpw) },
+                    val,
+                    "width={bpw}, offset={offset}"
+                );
+            }
+        }
+
+        // Single-word case: bit_index + width <= W::BITS
+        {
+            let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
+            // Write a known full word, then read sub-fields from it
+            let val: $W = !(0 as $W) / 3;
+            bv.append_value(val, bpw);
+
+            for width in 1..bpw {
+                for pos in 0..=(bpw - width) {
+                    let mask = if width == bpw {
+                        !(0 as $W)
+                    } else {
+                        ((1 as $W) << width) - (1 as $W)
+                    };
+                    let expected = (val >> pos) & mask;
+                    assert_eq!(
+                        bv.get_value(pos, width),
+                        expected,
+                        "single-word: pos={pos}, width={width}"
+                    );
+                }
+            }
+        }
+
+        // Two-word (spanning) case: bit_index + width > W::BITS
+        {
+            let val0: $W = !(0 as $W) / 3;
+            let val1: $W = !(0 as $W) / 5;
+            let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
+            bv.append_value(val0, bpw);
+            bv.append_value(val1, bpw);
+
+            for width in 2..=bpw {
+                // Only positions where the read spans a word boundary
+                let lo = bpw - width + 1;
+                let hi = bpw - 1;
+                for pos in lo..=hi {
+                    let mask = if width == bpw {
+                        !(0 as $W)
+                    } else {
+                        ((1 as $W) << width) - (1 as $W)
+                    };
+                    let expected = ((val0 >> pos) | (val1 << (bpw - pos))) & mask;
+                    assert_eq!(
+                        bv.get_value(pos, width),
+                        expected,
+                        "spanning: pos={pos}, width={width}"
+                    );
+                }
+            }
+        }
+
+        // append_value: width == 0 is a no-op
+        {
+            let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
+            bv.append_value(!(0 as $W), 0);
+            assert_eq!(bv.len(), 0);
+        }
+
+        // append_value: round-trip for every width at various offsets
+        {
+            for width in 1..=bpw {
+                for offset in 0..bpw {
+                    let val: $W = if width == bpw {
+                        !(0 as $W)
+                    } else {
+                        (((1 as $W) << width) - (1 as $W)) & (!(0 as $W) / 7)
+                    };
+                    let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
+                    // Prepend `offset` bits to misalign
+                    for _ in 0..offset {
+                        bv.push(true);
+                    }
+                    bv.append_value(val, width);
+                    assert_eq!(
+                        bv.get_value(offset, width),
+                        val,
+                        "append round-trip: width={width}, offset={offset}"
+                    );
+                }
+            }
+        }
+
+        // append_value masks excess bits in `value`
+        {
+            for width in 1..bpw {
+                let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
+                bv.append_value(!(0 as $W), width); // all bits set, but only `width` should survive
+                let mask = ((1 as $W) << width) - (1 as $W);
+                assert_eq!(
+                    bv.get_value(0, width),
+                    mask,
+                    "masking: width={width}"
+                );
+            }
+            // width == W::BITS: all bits survive
+            let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
+            bv.append_value(!(0 as $W), bpw);
+            assert_eq!(bv.get_value(0, bpw), !(0 as $W));
+        }
+
+        // Multiple appends at sequential positions
+        {
+            let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
+            let width = bpw / 2;
+            let mask = ((1 as $W) << width) - (1 as $W);
+            let n = 20;
+            let vals: Vec<$W> = (0..n).map(|i| (i as $W).wrapping_mul(17) & mask).collect();
+            for &v in &vals {
+                bv.append_value(v, width);
+            }
+            for (i, &v) in vals.iter().enumerate() {
+                assert_eq!(
+                    bv.get_value(i * width, width),
+                    v,
+                    "sequential: i={i}, width={width}"
+                );
+            }
+        }
+    }};
+}
+
+#[test]
+fn test_value_ops_u8() {
+    test_value_ops_word_type!(u8);
+}
+
+#[test]
+fn test_value_ops_u16() {
+    test_value_ops_word_type!(u16);
+}
+
+#[test]
+fn test_value_ops_u32() {
+    test_value_ops_word_type!(u32);
+}
+
+#[test]
+fn test_value_ops_u64() {
+    test_value_ops_word_type!(u64);
+}
+
+#[test]
+fn test_value_ops_usize() {
+    test_value_ops_word_type!(usize);
 }

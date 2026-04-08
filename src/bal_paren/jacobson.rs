@@ -325,7 +325,7 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "paren")]
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "paren")]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "paren")]
-pub struct JacobsonBalParen<B = BitVec<Box<[usize]>>, P = EfDict<usize>, O = CompIntList<usize>> {
+pub struct JacobsonBalParen<B = BitVec<Box<[usize]>>, P = EfDict<usize>, O = CompIntList> {
     /// The balanced parentheses bit vector.
     paren: B,
     /// Positions of opening pioneers in a predecessor-capable structure.

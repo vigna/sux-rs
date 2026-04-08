@@ -68,6 +68,32 @@ macro_rules! panic_if_out_of_bounds {
     };
 }
 
+/// Operations for reading multi-bit values from a bit vector at arbitrary
+/// bit positions.
+///
+/// Unlike [`BitVecOps`] and [`BitVecOpsMut`], this trait does not have a
+/// blanket implementation, allowing different types to provide specialized
+/// implementations (e.g., using unaligned reads).
+pub trait BitVecValueOps<W: Word> {
+    /// Reads `width` bits starting at bit position `pos`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `pos + width` exceeds the bit length or if `width` >
+    /// `W::BITS`.
+    fn get_value(&self, pos: usize, width: usize) -> W;
+
+    /// Reads `width` bits starting at bit position `pos`, without bounds
+    /// checks.
+    ///
+    /// # Safety
+    ///
+    /// - `pos + width` must not exceed the bit length of the underlying
+    ///   storage.
+    /// - `width` must be at most `W::BITS`.
+    unsafe fn get_value_unchecked(&self, pos: usize, width: usize) -> W;
+}
+
 impl<W: Word, T: ?Sized + AsRef<[W]> + BitLength> BitVecOps<W> for T {}
 
 /// Read-only operations on bit vectors.

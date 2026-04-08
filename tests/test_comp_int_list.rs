@@ -1,10 +1,13 @@
+use sux::bits::BitVec;
 use sux::prelude::*;
 use sux::traits::Word;
 use value_traits::slices::SliceByValue;
 
 /// Converts a `CompIntList` with default (EfSeq) delimiters to one backed by
 /// `Vec<usize>`, for testing with a different delimiter type.
-fn to_vec_delimiters<V: Word>(list: CompIntList<V>) -> CompIntList<V, Vec<u64>> {
+fn to_vec_delimiters<V: Word>(
+    list: CompIntList<BitVec<Box<[V]>>>,
+) -> CompIntList<BitVec<Box<[V]>>, Vec<u64>> {
     unsafe {
         list.map_delimiters(|d| {
             let n = d.len();
