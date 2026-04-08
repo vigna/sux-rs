@@ -615,11 +615,6 @@ impl<P, O> JacobsonBalParen<P, O> {
 
 use crate::traits::TryIntoUnaligned;
 
-/// The unaligned variant of the default [`JacobsonBalParen`], obtained
-/// via [`TryIntoUnaligned`].
-pub type JacobsonBalParenU =
-    <JacobsonBalParen as TryIntoUnaligned>::Unaligned;
-
 impl<P: TryIntoUnaligned, O: TryIntoUnaligned> TryIntoUnaligned for JacobsonBalParen<P, O> {
     type Unaligned = JacobsonBalParen<P::Unaligned, O::Unaligned>;
     fn try_into_unaligned(

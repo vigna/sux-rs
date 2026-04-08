@@ -32,14 +32,14 @@
 
 #[cfg(feature = "rayon")]
 use {
-    crate::bal_paren::{BalParen, JacobsonBalParen, JacobsonBalParenU},
+    crate::bal_paren::{BalParen, JacobsonBalParen},
     crate::bits::BitFieldVec,
     crate::bits::BitFieldVecU,
     crate::bits::BitVec,
     crate::func::VFunc,
     crate::func::lcp_mmphf::{lcp_bits, lcp_bits_nul},
     crate::func::shard_edge::FuseLge3NoShards,
-    crate::traits::TryIntoUnaligned,
+    crate::traits::{TryIntoUnaligned, Unaligned},
     crate::utils::*,
     anyhow::Result,
     dsi_progress_logger::ProgressLog,
@@ -1385,7 +1385,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]>, D: SliceByValue<Value = usize> +
 
 #[cfg(feature = "rayon")]
 impl TryIntoUnaligned for HollowTrieDistributor {
-    type Unaligned = HollowTrieDistributor<BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>;
+    type Unaligned = HollowTrieDistributor<BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -1401,10 +1401,10 @@ impl TryIntoUnaligned for HollowTrieDistributor {
 }
 
 #[cfg(feature = "rayon")]
-impl From<HollowTrieDistributor<BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>>
+impl From<HollowTrieDistributor<BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>>
     for HollowTrieDistributor
 {
-    fn from(f: HollowTrieDistributor<BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>) -> Self {
+    fn from(f: HollowTrieDistributor<BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>) -> Self {
         // SAFETY: Into::into preserves the semantics of the pioneer
         // position and offset structures.
         let bal_paren = unsafe {
@@ -1425,7 +1425,7 @@ impl From<HollowTrieDistributor<BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>>
 
 #[cfg(feature = "rayon")]
 impl<K: ?Sized> TryIntoUnaligned for HtDistMmphf<K> {
-    type Unaligned = HtDistMmphf<K, BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>;
+    type Unaligned = HtDistMmphf<K, BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -1439,10 +1439,10 @@ impl<K: ?Sized> TryIntoUnaligned for HtDistMmphf<K> {
 }
 
 #[cfg(feature = "rayon")]
-impl<K: ?Sized> From<HtDistMmphf<K, BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>>
+impl<K: ?Sized> From<HtDistMmphf<K, BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>>
     for HtDistMmphf<K>
 {
-    fn from(f: HtDistMmphf<K, BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>) -> Self {
+    fn from(f: HtDistMmphf<K, BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>) -> Self {
         Self {
             distributor: f.distributor.into(),
             offset: f.offset.into(),
@@ -2158,7 +2158,7 @@ where
 
 #[cfg(feature = "rayon")]
 impl<K: PrimitiveInteger> TryIntoUnaligned for HtDistMmphfInt<K> {
-    type Unaligned = HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>;
+    type Unaligned = HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -2177,10 +2177,10 @@ impl<K: PrimitiveInteger> TryIntoUnaligned for HtDistMmphfInt<K> {
 }
 
 #[cfg(feature = "rayon")]
-impl<K: PrimitiveInteger> From<HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>>
+impl<K: PrimitiveInteger> From<HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>>
     for HtDistMmphfInt<K>
 {
-    fn from(f: HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>) -> Self {
+    fn from(f: HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>) -> Self {
         // SAFETY: Into::into preserves the semantics of the pioneer
         // position and offset structures.
         let bal_paren = unsafe {

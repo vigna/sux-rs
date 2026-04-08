@@ -190,8 +190,9 @@ fn test_find_close_not_open() {
 
 #[test]
 fn test_find_close_sequential_pairs_across_words() {
-    // 32 "()" pairs per word, two words — all matches are in-word.
-    let bp = JacobsonBalParen::new(vec![0x5555_5555_5555_5555, 0x5555_5555_5555_5555], 128);
+    // Pattern 0b...0101_0101: each "()" pair is in-word.
+    let alternating: usize = usize::MAX / 3; // 0x5555...5555
+    let bp = JacobsonBalParen::new(vec![alternating; 2], 2 * usize::BITS as usize);
     for i in 0..usize::BITS as usize {
         let pos = i * 2;
         assert_eq!(bp.find_close(pos), Some(pos + 1), "Failed for pos={pos}");
