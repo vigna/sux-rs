@@ -32,7 +32,7 @@
 
 #[cfg(feature = "rayon")]
 use {
-    crate::bal_paren::JacobsonBalParen,
+    crate::bal_paren::{BalParen, JacobsonBalParen, JacobsonBalParenU},
     crate::bits::BitFieldVec,
     crate::bits::BitFieldVecU,
     crate::bits::BitVec,
@@ -80,8 +80,8 @@ fn get_key_bit(key: &[u8], i: usize) -> bool {
 /// Read bit `i` from a word-packed bit vector (LSB-first within each word).
 #[cfg(feature = "rayon")]
 #[inline]
-fn get_bit(words: &[u64], i: usize) -> bool {
-    (words[i / 64] >> (i % 64)) & 1 != 0
+fn get_bit(words: &[usize], i: usize) -> bool {
+    (words[i / usize::BITS as usize] >> (i % usize::BITS as usize)) & 1 != 0
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -99,7 +99,7 @@ struct SpineNode {
     /// Skip value (compacted path length in bits).
     skip: usize,
     /// Balanced-parentheses representation of the left subtree.
-    repr: BitVec<Vec<u64>>,
+    repr: BitVec,
     /// Skip values for internal nodes in the left subtree (DFS order).
     repr_skips: Vec<usize>,
 }
@@ -152,8 +152,8 @@ impl HollowTrieBuilder {
     ///
     /// Each node is wrapped in `1 [node.repr] 0` and its skip is
     /// prepended to the skip list.
-    fn serialize_chain(nodes: &[SpineNode]) -> (BitVec<Vec<u64>>, Vec<usize>) {
-        let mut repr: BitVec<Vec<u64>> = BitVec::new(0);
+    fn serialize_chain(nodes: &[SpineNode]) -> (BitVec, Vec<usize>) {
+        let mut repr: BitVec = BitVec::new(0);
         let mut skips = Vec::new();
 
         for node in nodes {
@@ -248,9 +248,9 @@ impl HollowTrieBuilder {
     /// - `trie_len`: number of bits in the trie
     /// - `skips`: skip values in DFS preorder
     /// - `num_nodes`: number of internal nodes
-    pub fn finish(self) -> (Vec<u64>, usize, Vec<usize>, usize) {
+    pub fn finish(self) -> (Vec<usize>, usize, Vec<usize>, usize) {
         if self.count <= 1 {
-            let mut trie: BitVec<Vec<u64>> = BitVec::new(0);
+            let mut trie: BitVec = BitVec::new(0);
             trie.push(true);
             trie.push(false);
             let (words, len) = trie.into_raw_parts();
@@ -261,7 +261,7 @@ impl HollowTrieBuilder {
         let (chain_repr, chain_skips) = Self::serialize_chain(&self.stack);
 
         // Wrap in fake root brackets: 1 [chain] 0
-        let mut trie: BitVec<Vec<u64>> = BitVec::new(0);
+        let mut trie: BitVec = BitVec::new(0);
         trie.push(true);
         trie.append(&chain_repr);
         trie.push(false);
@@ -385,9 +385,9 @@ fn encode_behaviour_key(
 /// [`VFunc`]s.
 #[cfg(feature = "rayon")]
 #[derive(Debug)]
-pub struct HollowTrieDistributor<D = BitFieldVec<Box<[usize]>>> {
+pub struct HollowTrieDistributor<D = BitFieldVec<Box<[usize]>>, B: BalParen = JacobsonBalParen> {
     /// Balanced-parentheses support structure for the trie.
-    bal_paren: JacobsonBalParen,
+    bal_paren: B,
     /// Skip values stored as a prefix-sum list over Elias-Fano.
     skips: crate::list::PrefixSumIntList,
     /// Number of internal nodes (= number of delimiters - 1).
@@ -403,7 +403,9 @@ pub struct HollowTrieDistributor<D = BitFieldVec<Box<[usize]>>> {
 }
 
 #[cfg(feature = "rayon")]
-impl<D: SliceByValue + MemSize + mem_dbg::FlatType> MemSize for HollowTrieDistributor<D> {
+impl<D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemSize
+    for HollowTrieDistributor<D, B>
+{
     fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
         let mut size = core::mem::size_of::<Self>();
         size += self.bal_paren.mem_size_rec(flags, refs);
@@ -415,7 +417,10 @@ impl<D: SliceByValue + MemSize + mem_dbg::FlatType> MemSize for HollowTrieDistri
 }
 
 #[cfg(feature = "rayon")]
-impl<D: SliceByValue + MemSize + mem_dbg::FlatType> MemDbgImpl for HollowTrieDistributor<D> {}
+impl<D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemDbgImpl
+    for HollowTrieDistributor<D, B>
+{
+}
 
 /// Exit on the left (closer to left delimiter).
 #[cfg(feature = "rayon")]
@@ -727,7 +732,7 @@ impl HollowTrieDistributor {
 }
 
 #[cfg(feature = "rayon")]
-impl<D: SliceByValue<Value = usize> + MemSize> HollowTrieDistributor<D> {
+impl<D: SliceByValue<Value = usize> + MemSize, B: BalParen> HollowTrieDistributor<D, B> {
     /// Returns the bucket index for the given key.
     ///
     /// The key is navigated through the hollow trie using the balanced
@@ -888,9 +893,9 @@ impl<D: SliceByValue<Value = usize> + MemSize> HollowTrieDistributor<D> {
 /// ```
 #[derive(Debug)]
 #[cfg(feature = "rayon")]
-pub struct HtDistMmphf<K: ?Sized, D = BitFieldVec<Box<[usize]>>> {
+pub struct HtDistMmphf<K: ?Sized, D = BitFieldVec<Box<[usize]>>, B: BalParen = JacobsonBalParen> {
     /// The hollow trie distributor.
-    distributor: HollowTrieDistributor<D>,
+    distributor: HollowTrieDistributor<D, B>,
     /// Per-key offset within the bucket.
     offset: VFunc<K, D>,
     /// Log2 of bucket size.
@@ -969,7 +974,9 @@ pub type HtDistMmphfStr<D = BitFieldVec<Box<[usize]>>> = HtDistMmphf<str, D>;
 pub type HtDistMmphfSliceU8<D = BitFieldVec<Box<[usize]>>> = HtDistMmphf<[u8], D>;
 
 #[cfg(feature = "rayon")]
-impl<K: ?Sized, D: SliceByValue + MemSize + mem_dbg::FlatType> MemSize for HtDistMmphf<K, D> {
+impl<K: ?Sized, D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemSize
+    for HtDistMmphf<K, D, B>
+{
     fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
         let mut size = core::mem::size_of::<Self>();
         size += self.distributor.mem_size_rec(flags, refs);
@@ -979,7 +986,10 @@ impl<K: ?Sized, D: SliceByValue + MemSize + mem_dbg::FlatType> MemSize for HtDis
 }
 
 #[cfg(feature = "rayon")]
-impl<K: ?Sized, D: SliceByValue + MemSize + mem_dbg::FlatType> MemDbgImpl for HtDistMmphf<K, D> {}
+impl<K: ?Sized, D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemDbgImpl
+    for HtDistMmphf<K, D, B>
+{
+}
 
 #[cfg(feature = "rayon")]
 impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K> {
@@ -1342,8 +1352,8 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
 }
 
 #[cfg(feature = "rayon")]
-impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]>, D: SliceByValue<Value = usize> + MemSize>
-    HtDistMmphf<K, D>
+impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]>, D: SliceByValue<Value = usize> + MemSize, B: BalParen>
+    HtDistMmphf<K, D, B>
 {
     /// Returns the rank (0-based position) of the given key in the
     /// original sorted sequence.
@@ -1375,12 +1385,12 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]>, D: SliceByValue<Value = usize> +
 
 #[cfg(feature = "rayon")]
 impl TryIntoUnaligned for HollowTrieDistributor {
-    type Unaligned = HollowTrieDistributor<BitFieldVecU<Box<[usize]>>>;
+    type Unaligned = HollowTrieDistributor<BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(HollowTrieDistributor {
-            bal_paren: self.bal_paren,
+            bal_paren: self.bal_paren.try_into_unaligned()?,
             skips: self.skips,
             num_nodes: self.num_nodes,
             num_delimiters: self.num_delimiters,
@@ -1391,10 +1401,19 @@ impl TryIntoUnaligned for HollowTrieDistributor {
 }
 
 #[cfg(feature = "rayon")]
-impl From<HollowTrieDistributor<BitFieldVecU<Box<[usize]>>>> for HollowTrieDistributor {
-    fn from(f: HollowTrieDistributor<BitFieldVecU<Box<[usize]>>>) -> Self {
+impl From<HollowTrieDistributor<BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>>
+    for HollowTrieDistributor
+{
+    fn from(f: HollowTrieDistributor<BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>) -> Self {
+        // SAFETY: Into::into preserves the semantics of the pioneer
+        // position and offset structures.
+        let bal_paren = unsafe {
+            f.bal_paren
+                .map_pioneer_positions(Into::into)
+                .map_pioneer_match_offsets(Into::into)
+        };
         Self {
-            bal_paren: f.bal_paren,
+            bal_paren,
             skips: f.skips,
             num_nodes: f.num_nodes,
             num_delimiters: f.num_delimiters,
@@ -1406,7 +1425,7 @@ impl From<HollowTrieDistributor<BitFieldVecU<Box<[usize]>>>> for HollowTrieDistr
 
 #[cfg(feature = "rayon")]
 impl<K: ?Sized> TryIntoUnaligned for HtDistMmphf<K> {
-    type Unaligned = HtDistMmphf<K, BitFieldVecU<Box<[usize]>>>;
+    type Unaligned = HtDistMmphf<K, BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -1420,8 +1439,10 @@ impl<K: ?Sized> TryIntoUnaligned for HtDistMmphf<K> {
 }
 
 #[cfg(feature = "rayon")]
-impl<K: ?Sized> From<HtDistMmphf<K, BitFieldVecU<Box<[usize]>>>> for HtDistMmphf<K> {
-    fn from(f: HtDistMmphf<K, BitFieldVecU<Box<[usize]>>>) -> Self {
+impl<K: ?Sized> From<HtDistMmphf<K, BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>>
+    for HtDistMmphf<K>
+{
+    fn from(f: HtDistMmphf<K, BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>) -> Self {
         Self {
             distributor: f.distributor.into(),
             offset: f.offset.into(),
@@ -1465,8 +1486,8 @@ impl<K: PrimitiveInteger> HollowTrieBuilderInt<K> {
         }
     }
 
-    fn serialize_chain(nodes: &[SpineNode]) -> (BitVec<Vec<u64>>, Vec<usize>) {
-        let mut repr: BitVec<Vec<u64>> = BitVec::new(0);
+    fn serialize_chain(nodes: &[SpineNode]) -> (BitVec, Vec<usize>) {
+        let mut repr: BitVec = BitVec::new(0);
         let mut skips = Vec::new();
         for node in nodes {
             repr.push(true);
@@ -1541,9 +1562,9 @@ impl<K: PrimitiveInteger> HollowTrieBuilderInt<K> {
         self.count += 1;
     }
 
-    fn finish(self) -> (Vec<u64>, usize, Vec<usize>, usize) {
+    fn finish(self) -> (Vec<usize>, usize, Vec<usize>, usize) {
         if self.count <= 1 {
-            let mut trie: BitVec<Vec<u64>> = BitVec::new(0);
+            let mut trie: BitVec = BitVec::new(0);
             trie.push(true);
             trie.push(false);
             let (words, len) = trie.into_raw_parts();
@@ -1551,7 +1572,7 @@ impl<K: PrimitiveInteger> HollowTrieBuilderInt<K> {
         }
 
         let (chain_repr, chain_skips) = Self::serialize_chain(&self.stack);
-        let mut trie: BitVec<Vec<u64>> = BitVec::new(0);
+        let mut trie: BitVec = BitVec::new(0);
         trie.push(true);
         trie.append(&chain_repr);
         trie.push(false);
@@ -1668,8 +1689,8 @@ fn encode_int_behaviour_key<K: PrimitiveInteger>(
 /// ```
 #[derive(Debug)]
 #[cfg(feature = "rayon")]
-pub struct HtDistMmphfInt<K, D = BitFieldVec<Box<[usize]>>> {
-    bal_paren: JacobsonBalParen,
+pub struct HtDistMmphfInt<K, D = BitFieldVec<Box<[usize]>>, B: BalParen = JacobsonBalParen> {
+    bal_paren: B,
     skips: crate::list::PrefixSumIntList,
     #[allow(dead_code)]
     num_nodes: usize,
@@ -1682,8 +1703,8 @@ pub struct HtDistMmphfInt<K, D = BitFieldVec<Box<[usize]>>> {
 }
 
 #[cfg(feature = "rayon")]
-impl<K: PrimitiveInteger, D: SliceByValue + MemSize + mem_dbg::FlatType> MemSize
-    for HtDistMmphfInt<K, D>
+impl<K: PrimitiveInteger, D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemSize
+    for HtDistMmphfInt<K, D, B>
 {
     fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
         let mut size = core::mem::size_of::<Self>();
@@ -1697,8 +1718,8 @@ impl<K: PrimitiveInteger, D: SliceByValue + MemSize + mem_dbg::FlatType> MemSize
 }
 
 #[cfg(feature = "rayon")]
-impl<K: PrimitiveInteger, D: SliceByValue + MemSize + mem_dbg::FlatType> MemDbgImpl
-    for HtDistMmphfInt<K, D>
+impl<K: PrimitiveInteger, D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemDbgImpl
+    for HtDistMmphfInt<K, D, B>
 {
 }
 
@@ -2027,7 +2048,7 @@ where
 }
 
 #[cfg(feature = "rayon")]
-impl<K, D> HtDistMmphfInt<K, D>
+impl<K, D, B: BalParen> HtDistMmphfInt<K, D, B>
 where
     K: PrimitiveInteger + ToSig<[u64; 2]>,
     D: SliceByValue<Value = usize> + MemSize + mem_dbg::FlatType,
@@ -2137,12 +2158,12 @@ where
 
 #[cfg(feature = "rayon")]
 impl<K: PrimitiveInteger> TryIntoUnaligned for HtDistMmphfInt<K> {
-    type Unaligned = HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>>;
+    type Unaligned = HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(HtDistMmphfInt {
-            bal_paren: self.bal_paren,
+            bal_paren: self.bal_paren.try_into_unaligned()?,
             skips: self.skips,
             num_nodes: self.num_nodes,
             num_delimiters: self.num_delimiters,
@@ -2156,12 +2177,19 @@ impl<K: PrimitiveInteger> TryIntoUnaligned for HtDistMmphfInt<K> {
 }
 
 #[cfg(feature = "rayon")]
-impl<K: PrimitiveInteger> From<HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>>>
+impl<K: PrimitiveInteger> From<HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>>
     for HtDistMmphfInt<K>
 {
-    fn from(f: HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>>) -> Self {
+    fn from(f: HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>, JacobsonBalParenU>) -> Self {
+        // SAFETY: Into::into preserves the semantics of the pioneer
+        // position and offset structures.
+        let bal_paren = unsafe {
+            f.bal_paren
+                .map_pioneer_positions(Into::into)
+                .map_pioneer_match_offsets(Into::into)
+        };
         Self {
-            bal_paren: f.bal_paren,
+            bal_paren,
             skips: f.skips,
             num_nodes: f.num_nodes,
             num_delimiters: f.num_delimiters,

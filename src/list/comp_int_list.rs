@@ -250,6 +250,8 @@ where
     }
 }
 
+use crate::bits::BitFieldVecU;
+use crate::dict::EliasFano;
 use crate::traits::TryIntoUnaligned;
 
 impl<V: Word, D: TryIntoUnaligned + SliceByValue<Value = u64>> TryIntoUnaligned
@@ -267,5 +269,21 @@ where
             delimiters: self.delimiters.try_into_unaligned()?,
             data: self.data,
         })
+    }
+}
+
+impl<V: Word, W: Word, H> From<CompIntList<V, EliasFano<W, H, BitFieldVecU<Box<[W]>>>>>
+    for CompIntList<V, EliasFano<W, H, crate::bits::BitFieldVec<Box<[W]>>>>
+where
+    EliasFano<W, H, crate::bits::BitFieldVec<Box<[W]>>>:
+        From<EliasFano<W, H, BitFieldVecU<Box<[W]>>>>,
+{
+    fn from(c: CompIntList<V, EliasFano<W, H, BitFieldVecU<Box<[W]>>>>) -> Self {
+        CompIntList {
+            n: c.n,
+            min: c.min,
+            delimiters: c.delimiters.into(),
+            data: c.data,
+        }
     }
 }

@@ -26,6 +26,9 @@ use crate::traits::indexed_dict::Pred;
 use mem_dbg::*;
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
+/// Number of bits in a `usize` word.
+const WORD_BITS: usize = usize::BITS as usize;
+
 /// For each byte value *b* (interpreted as 8 balanced-parentheses bits, LSB
 /// first, 1 = open, 0 = close), the minimum running excess encountered when
 /// scanning the 8 bits with initial excess 0.
@@ -87,11 +90,11 @@ static BYTE_FIND_CLOSE: [[u8; 8]; 256] = {
 ///
 /// A "far open" parenthesis is an open parenthesis (1-bit) that, when scanning
 /// from MSB to LSB, causes the excess to become positive.
-fn count_far_open(word: u64, l: usize) -> usize {
+fn count_far_open(word: usize, l: usize) -> usize {
     let mut c = 0usize;
     let mut e = 0i32;
     for i in (0..l).rev() {
-        if word & (1u64 << i) != 0 {
+        if word & (1usize << i) != 0 {
             e += 1;
             if e > 0 {
                 c += 1;
@@ -107,11 +110,11 @@ fn count_far_open(word: u64, l: usize) -> usize {
 
 /// Count the number of far close parentheses scanning `l` bits of `word`
 /// from LSB to MSB.
-fn count_far_close(word: u64, l: usize) -> usize {
+fn count_far_close(word: usize, l: usize) -> usize {
     let mut c = 0usize;
     let mut e = 0i32;
     for i in 0..l {
-        if word & (1u64 << i) != 0 {
+        if word & (1usize << i) != 0 {
             if e > 0 {
                 e = -1;
             } else {
@@ -128,15 +131,15 @@ fn count_far_close(word: u64, l: usize) -> usize {
 }
 
 /// Finds the position of the matching close parenthesis within a single
-/// 64-bit word, using byte-level lookup tables.
+/// `usize` word, using byte-level lookup tables.
 ///
 /// The `word` is assumed to be shifted so that bit 0 is the first bit
 /// *after* the opening parenthesis (i.e., the initial excess is 1).
 ///
-/// Returns the bit position of the matching close (0..63), or a value ≥ 64
+/// Returns the bit position of the matching close, or a value ≥ `WORD_BITS`
 /// if the match is not in this word.
 #[inline]
-pub fn find_near_close(word: u64) -> usize {
+pub fn find_near_close(word: usize) -> usize {
     // The input word has the open paren at bit 0. We shift right by 1 to
     // skip it, so bit 0 of `scan_word` is the first bit after the open.
     // The initial excess is 1 (from the consumed open paren).
@@ -160,10 +163,10 @@ pub fn find_near_close(word: u64) -> usize {
         excess += 2 * b.count_ones() as i8 - 8;
     }
     // Not found in this word
-    127
+    WORD_BITS
 }
 
-/// Finds the *k*-th (0-based) far close parenthesis in a 64-bit word using
+/// Finds the *k*-th (0-based) far close parenthesis in a `usize` word using
 /// byte-level lookup tables.
 ///
 /// A *far close* parenthesis is an unmatched close parenthesis (0-bit)
@@ -174,7 +177,7 @@ pub fn find_near_close(word: u64) -> usize {
 /// This uses the same `BYTE_MIN_EXCESS` and `BYTE_FIND_CLOSE` tables
 /// as [`find_near_close`].
 #[inline]
-pub fn find_far_close(word: u64, k: i64) -> usize {
+pub fn find_far_close(word: usize, k: i64) -> usize {
     let bytes = word.to_le_bytes();
     let target = -(k + 1) as i32; // target global excess
     let mut excess: i32 = 0; // cumulative excess at byte boundary
@@ -194,7 +197,7 @@ pub fn find_far_close(word: u64, k: i64) -> usize {
         // Update cumulative excess: 2*popcount - 8
         excess += 2 * b.count_ones() as i32 - 8;
     }
-    panic!("find_far_close: k={k} not found in word {word:#018x}")
+    panic!("find_far_close: k={k} not found in word {word:#x}")
 }
 
 /// A balanced parentheses structure supporting
@@ -210,7 +213,7 @@ pub fn find_far_close(word: u64, k: i64) -> usize {
 /// position of the matching close parenthesis for a given open parenthesis.
 ///
 /// The implementation uses the *pioneer* technique from Jacobson \[1989\]: an
-/// opening parenthesis whose match falls in a different 64-bit word is called
+/// opening parenthesis whose match falls in a different `usize` word is called
 /// *far*. Among the far opening parentheses, a subset called *pioneers* is
 /// selected — a far opening parenthesis is a pioneer if it is the first far
 /// opening parenthesis in its word, or if its match falls in a different word
@@ -226,26 +229,26 @@ pub fn find_far_close(word: u64, k: i64) -> usize {
 ///
 /// Queries work in two stages:
 /// 1. **In-word**: byte-level lookup tables are used to find the matching close
-///    parenthesis within the same 64-bit word (the common case).
+///    parenthesis within the same `usize` word (the common case).
 /// 2. **Far match**: if the match is in a different word, a predecessor query
 ///    on the pioneer positions locates the relevant pioneer, whose stored match
 ///    offset is then adjusted using lookup tables.
 ///
 /// The structure stores the balanced parentheses bit vector together with
-/// auxiliary data for far matches: an [Elias–Fano](crate::dict::EliasFano)
-/// dictionary of pioneer positions (supporting predecessor queries) and the
-/// offsets from each pioneer to its matching close parenthesis, stored in a
-/// generic [`SliceByValue`] structure `O`.
+/// auxiliary data for far matches: a predecessor-capable structure `P`
+/// (defaulting to an [Elias–Fano dictionary](crate::dict::EfDict)) for
+/// pioneer positions and the offsets from each pioneer to its matching close
+/// parenthesis, stored in a generic [`SliceByValue`] structure `O`.
 ///
 /// # Type Parameters
 ///
+/// - `P`: The predecessor structure for pioneer positions. Must implement
+///   [`Pred<Input = usize>`](Pred). Defaults to [`EfDict<usize>`].
 /// - `O`: The storage for pioneer match offsets. Must implement
 ///   `SliceByValue<Value = usize>`. Defaults to
-///   [`CompIntList`] for compact variable-length encoding. See
-///   [`new_with_bit_field_vec`](JacobsonBalParen::<BitFieldVec<Box<[usize]>>>::new_with_bit_field_vec)
-///   and
-///   [`new_with_prefix_sum`](JacobsonBalParen::<PrefixSumIntList>::new_with_prefix_sum)
-///   for alternative configurations.
+///   [`CompIntList`] for compact variable-length encoding. See the
+///   `new_with_bit_field_vec` and `new_with_prefix_sum` constructors for
+///   alternative configurations.
 ///
 /// # Examples
 ///
@@ -258,6 +261,7 @@ pub fn find_far_close(word: u64, k: i64) -> usize {
 /// assert_eq!(bp.find_close(1), Some(2)); // first inner pair
 /// assert_eq!(bp.find_close(3), Some(4)); // second inner pair
 /// ```
+///
 /// # References
 ///
 /// Guy Jacobson. [Space-efficient static trees and
@@ -267,132 +271,128 @@ pub fn find_far_close(word: u64, k: i64) -> usize {
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct JacobsonBalParen<O: SliceByValue<Value = usize> = CompIntList<usize>> {
-    /// The balanced parentheses bit vector, packed in 64-bit words.
-    words: Vec<u64>,
+pub struct JacobsonBalParen<P = EfDict<usize>, O = CompIntList<usize>> {
+    /// The balanced parentheses bit vector, packed in `usize` words.
+    words: Vec<usize>,
     /// Total number of valid bits in [`words`](Self::words).
     len: usize,
-    /// Positions of opening pioneers in an Elias–Fano structure supporting
-    /// predecessor queries.
-    pioneer_positions: EfDict<usize>,
+    /// Positions of opening pioneers in a predecessor-capable structure.
+    pioneer_positions: P,
     /// Offset from each pioneer to its matching close parenthesis.
     pioneer_match_offsets: O,
 }
 
-impl<O: SliceByValue<Value = usize>> JacobsonBalParen<O> {
-    /// Identifies pioneers and builds the Elias–Fano position index.
-    ///
-    /// Returns `(ef_positions, pioneer_match_offsets)` where the offsets are
-    /// raw `Vec<usize>` values to be stored in the chosen offset structure.
-    fn build_pioneers(words: &[u64], len: usize) -> (EfDict<usize>, Vec<usize>) {
-        let num_words = len.div_ceil(64);
-        debug_assert!(words.len() >= num_words);
+/// Identifies pioneers and builds the Elias–Fano position index.
+///
+/// Returns `(ef_positions, pioneer_match_offsets)` where the offsets are
+/// raw `Vec<usize>` values to be stored in the chosen offset structure.
+fn build_pioneers(words: &[usize], len: usize) -> (EfDict<usize>, Vec<usize>) {
+    let num_words = len.div_ceil(WORD_BITS);
+    debug_assert!(words.len() >= num_words);
 
-        let bits = words;
-        let mut count = vec![0i32; num_words];
-        let mut residual = vec![0usize; num_words];
+    let bits = words;
+    let mut count = vec![0i32; num_words];
+    let mut residual = vec![0usize; num_words];
 
-        let mut opening_pioneers = Vec::new();
-        let mut opening_pioneer_matches = Vec::new();
+    let mut opening_pioneers = Vec::new();
+    let mut opening_pioneer_matches = Vec::new();
 
-        // Scan words right-to-left to identify far opening parentheses
-        // and select pioneers among them.
-        for block in (0..num_words).rev() {
-            let l = std::cmp::min(64, len - block * 64);
+    // Scan words right-to-left to identify far opening parentheses
+    // and select pioneers among them.
+    for block in (0..num_words).rev() {
+        let l = std::cmp::min(WORD_BITS, len - block * WORD_BITS);
 
-            // The last word has no words to its right, so it cannot
-            // contain far opening parentheses.
-            if block != num_words - 1 {
-                let mut excess = 0i32;
-                let mut count_far_opening = count_far_open(bits[block], l) as i32;
+        // The last word has no words to its right, so it cannot
+        // contain far opening parentheses.
+        if block != num_words - 1 {
+            let mut excess = 0i32;
+            let mut count_far_opening = count_far_open(bits[block], l) as i32;
 
-                for j in (0..l).rev() {
-                    if bits[block] & (1u64 << j) == 0 {
-                        if excess > 0 {
-                            excess = -1;
-                        } else {
-                            excess -= 1;
-                        }
+            for j in (0..l).rev() {
+                if bits[block] & (1usize << j) == 0 {
+                    if excess > 0 {
+                        excess = -1;
                     } else {
-                        excess += 1;
-                        if excess > 0 {
-                            let mut matching_block = block;
-                            loop {
-                                matching_block += 1;
-                                if count[matching_block] != 0 {
-                                    break;
-                                }
+                        excess -= 1;
+                    }
+                } else {
+                    excess += 1;
+                    if excess > 0 {
+                        let mut matching_block = block;
+                        loop {
+                            matching_block += 1;
+                            if count[matching_block] != 0 {
+                                break;
                             }
-                            count_far_opening -= 1;
-
-                            if {
-                                count[matching_block] -= 1;
-                                count[matching_block]
-                            } == 0
-                                || count_far_opening == 0
-                            {
-                                let pos = block * 64 + j;
-                                let match_pos = matching_block * 64
-                                    + find_far_close(
-                                        bits[matching_block],
-                                        residual[matching_block] as i64,
-                                    );
-                                opening_pioneers.push(pos);
-                                opening_pioneer_matches.push(match_pos - pos);
-                            }
-                            residual[matching_block] += 1;
                         }
+                        count_far_opening -= 1;
+
+                        if {
+                            count[matching_block] -= 1;
+                            count[matching_block]
+                        } == 0
+                            || count_far_opening == 0
+                        {
+                            let pos = block * WORD_BITS + j;
+                            let match_pos = matching_block * WORD_BITS
+                                + find_far_close(
+                                    bits[matching_block],
+                                    residual[matching_block] as i64,
+                                );
+                            opening_pioneers.push(pos);
+                            opening_pioneer_matches.push(match_pos - pos);
+                        }
+                        residual[matching_block] += 1;
                     }
                 }
             }
-            count[block] = count_far_close(bits[block], l) as i32;
         }
-
-        for &c in &count {
-            assert!(c == 0, "Unbalanced parentheses");
-        }
-
-        // Reverse to get increasing order.
-        opening_pioneers.reverse();
-        opening_pioneer_matches.reverse();
-
-        // Build Elias–Fano for pioneer positions.
-        let num_pioneers = opening_pioneers.len();
-        let ef_positions = if num_pioneers > 0 {
-            let max_pos = *opening_pioneers.last().unwrap();
-            let mut builder = EliasFanoBuilder::new(num_pioneers, max_pos);
-            for &p in &opening_pioneers {
-                builder.push(p);
-            }
-            builder.build_with_dict()
-        } else {
-            EliasFanoBuilder::new(0, 0usize).build_with_dict()
-        };
-
-        (ef_positions, opening_pioneer_matches)
+        count[block] = count_far_close(bits[block], l) as i32;
     }
+
+    for &c in &count {
+        assert!(c == 0, "Unbalanced parentheses");
+    }
+
+    // Reverse to get increasing order.
+    opening_pioneers.reverse();
+    opening_pioneer_matches.reverse();
+
+    // Build Elias–Fano for pioneer positions.
+    let num_pioneers = opening_pioneers.len();
+    let ef_positions = if num_pioneers > 0 {
+        let max_pos = *opening_pioneers.last().unwrap();
+        let mut builder = EliasFanoBuilder::new(num_pioneers, max_pos);
+        for &p in &opening_pioneers {
+            builder.push(p);
+        }
+        builder.build_with_dict()
+    } else {
+        EliasFanoBuilder::new(0, 0usize).build_with_dict()
+    };
+
+    (ef_positions, opening_pioneer_matches)
 }
 
 impl JacobsonBalParen {
     /// Constructs a new [`JacobsonBalParen`] from a packed bit vector and the
     /// number of valid bits.
     ///
-    /// The bit vector is given as a `Vec<u64>` of 64-bit words, with open
+    /// The bit vector is given as a `Vec<usize>` of words, with open
     /// parentheses represented as 1-bits and close parentheses as 0-bits
     /// (LSB first). The `len` parameter specifies how many bits in `words`
     /// are valid.
     ///
     /// Pioneer match offsets are stored in a
     /// [`CompIntList`] for compact variable-length encoding. See also
-    /// [`new_with_bit_field_vec`](JacobsonBalParen::<BitFieldVec<Box<[usize]>>>::new_with_bit_field_vec)
-    /// (faster queries, more space) and
-    /// [`new_with_prefix_sum`](JacobsonBalParen::<PrefixSumIntList>::new_with_prefix_sum).
+    /// `new_with_bit_field_vec` (faster queries, more space) and
+    /// `new_with_prefix_sum`.
     ///
     /// # Panics
     ///
     /// Panics if the parentheses are not balanced.
-    pub fn new(words: Vec<u64>, len: usize) -> Self {
-        let (ef_positions, matches) = Self::build_pioneers(&words, len);
+    pub fn new(words: Vec<usize>, len: usize) -> Self {
+        let (ef_positions, matches) = build_pioneers(&words, len);
         let min_offset = matches.iter().copied().min().unwrap_or(0);
         let offsets = CompIntList::new(min_offset, &matches);
 
@@ -405,7 +405,7 @@ impl JacobsonBalParen {
     }
 }
 
-impl JacobsonBalParen<BitFieldVec<Box<[usize]>>> {
+impl JacobsonBalParen<EfDict<usize>, BitFieldVec<Box<[usize]>>> {
     /// Constructs a new [`JacobsonBalParen`] using a [`BitFieldVec`] for pioneer
     /// match offsets.
     ///
@@ -416,9 +416,8 @@ impl JacobsonBalParen<BitFieldVec<Box<[usize]>>> {
     /// # Panics
     ///
     /// Panics if the parentheses are not balanced.
-    pub fn new_with_bit_field_vec(words: Vec<u64>, len: usize) -> Self {
-        let (ef_positions, opening_pioneer_matches) =
-            JacobsonBalParen::<BitFieldVec<Box<[usize]>>>::build_pioneers(&words, len);
+    pub fn new_with_bit_field_vec(words: Vec<usize>, len: usize) -> Self {
+        let (ef_positions, opening_pioneer_matches) = build_pioneers(&words, len);
 
         let max_offset = opening_pioneer_matches.iter().copied().max().unwrap_or(0);
         let bit_width = if max_offset == 0 {
@@ -441,22 +440,19 @@ impl JacobsonBalParen<BitFieldVec<Box<[usize]>>> {
     }
 }
 
-impl JacobsonBalParen<PrefixSumIntList> {
+impl JacobsonBalParen<EfDict<usize>, PrefixSumIntList> {
     /// Constructs a new [`JacobsonBalParen`] using a [`PrefixSumIntList`] for
     /// pioneer match offsets.
     ///
     /// This variant stores the offsets as prefix-sum differences over
     /// Elias–Fano. See also [`new`](JacobsonBalParen::new) (default, best space)
-    /// and
-    /// [`new_with_bit_field_vec`](JacobsonBalParen::<BitFieldVec<Box<[usize]>>>::new_with_bit_field_vec)
-    /// (fastest queries).
+    /// and `new_with_bit_field_vec` (fastest queries).
     ///
     /// # Panics
     ///
     /// Panics if the parentheses are not balanced.
-    pub fn new_with_prefix_sum(words: Vec<u64>, len: usize) -> Self {
-        let (ef_positions, matches) =
-            JacobsonBalParen::<PrefixSumIntList>::build_pioneers(&words, len);
+    pub fn new_with_prefix_sum(words: Vec<usize>, len: usize) -> Self {
+        let (ef_positions, matches) = build_pioneers(&words, len);
         let offsets = PrefixSumIntList::new(&matches);
 
         JacobsonBalParen {
@@ -468,7 +464,12 @@ impl JacobsonBalParen<PrefixSumIntList> {
     }
 }
 
-impl<O: SliceByValue<Value = usize>> JacobsonBalParen<O> {
+// ── Queries ────────────────────────────────────────────────────────────
+
+impl<P, O: SliceByValue<Value = usize>> JacobsonBalParen<P, O>
+where
+    P: for<'a> Pred<Input = usize, Output<'a> = usize>,
+{
     /// Returns the position of the matching close parenthesis for the open
     /// parenthesis at bit position `pos`, or `None` if `pos` is out of bounds
     /// or is not an open parenthesis.
@@ -476,21 +477,21 @@ impl<O: SliceByValue<Value = usize>> JacobsonBalParen<O> {
         if pos >= self.len {
             return None;
         }
-        let word_idx = pos / 64;
-        let bit_idx = pos % 64;
+        let word_idx = pos / WORD_BITS;
+        let bit_idx = pos % WORD_BITS;
 
         // Check that it's an open paren
-        if self.words[word_idx] & (1u64 << bit_idx) == 0 {
+        if self.words[word_idx] & (1usize << bit_idx) == 0 {
             return None;
         }
 
         // Try to find the close within the same word
         let result = find_near_close(self.words[word_idx] >> bit_idx);
-        if result < 64 - bit_idx {
-            return Some(word_idx * 64 + bit_idx + result);
+        if result < WORD_BITS - bit_idx {
+            return Some(word_idx * WORD_BITS + bit_idx + result);
         }
 
-        // Far match: look up the pioneer using Elias-Fano predecessor query
+        // Far match: look up the pioneer using predecessor query
         let (pioneer_index, pioneer) = self
             .pioneer_positions
             .pred(pos)
@@ -506,20 +507,20 @@ impl<O: SliceByValue<Value = usize>> JacobsonBalParen<O> {
             return Some(match_pos);
         }
 
-        debug_assert_eq!(word_idx, pioneer / 64);
+        debug_assert_eq!(word_idx, pioneer / WORD_BITS);
 
-        let pioneer_bit = pioneer % 64;
+        let pioneer_bit = pioneer % WORD_BITS;
         let dist = pos - pioneer;
 
         // Compute excess difference between pioneer and pos:
         // 2 * popcount(bits from pioneer to pos-1) - dist.
-        // dist < 64 is guaranteed because both are in the same word.
-        debug_assert!(dist < 64);
-        let mask_bits = (self.words[word_idx] >> pioneer_bit) & ((1u64 << dist) - 1);
+        // dist < WORD_BITS is guaranteed because both are in the same word.
+        debug_assert!(dist < WORD_BITS);
+        let mask_bits = (self.words[word_idx] >> pioneer_bit) & ((1usize << dist) - 1);
         let e = 2 * mask_bits.count_ones() as i64 - dist as i64;
 
-        let match_word = match_pos / 64;
-        let match_bit = match_pos % 64;
+        let match_word = match_pos / WORD_BITS;
+        let match_bit = match_pos % WORD_BITS;
 
         // Number of far close parens before match_bit in match_word:
         // match_bit - 2 * popcount(match_word_bits & ((1 << match_bit) - 1))
@@ -527,16 +528,39 @@ impl<O: SliceByValue<Value = usize>> JacobsonBalParen<O> {
         let mask_before_match = if match_bit == 0 {
             0
         } else {
-            (1u64 << match_bit) - 1
+            (1usize << match_bit) - 1
         };
         let num_far_close =
             match_bit as i64 - ((match_word_bits & mask_before_match).count_ones() as i64) * 2;
 
-        Some(match_word * 64 + find_far_close(match_word_bits, num_far_close - e))
+        Some(match_word * WORD_BITS + find_far_close(match_word_bits, num_far_close - e))
+    }
+}
+
+// ── BalParen trait implementation ──────────────────────────────────────
+
+impl<P, O: SliceByValue<Value = usize>> super::BalParen for JacobsonBalParen<P, O>
+where
+    P: for<'a> Pred<Input = usize, Output<'a> = usize>
+        + MemSize
+        + mem_dbg::FlatType
+        + std::fmt::Debug,
+    O: MemSize + mem_dbg::FlatType + std::fmt::Debug,
+{
+    fn words(&self) -> &[usize] {
+        &self.words
     }
 
-    /// Returns the underlying 64-bit words of the bit vector.
-    pub fn words(&self) -> &[u64] {
+    fn find_close(&self, pos: usize) -> Option<usize> {
+        self.find_close(pos)
+    }
+}
+
+// ── Accessors and map methods ──────────────────────────────────────────
+
+impl<P, O> JacobsonBalParen<P, O> {
+    /// Returns the underlying words of the bit vector.
+    pub fn words(&self) -> &[usize] {
         &self.words
     }
 
@@ -549,6 +573,65 @@ impl<O: SliceByValue<Value = usize>> JacobsonBalParen<O> {
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
+
+    /// Replaces the pioneer position structure with a new one obtained by
+    /// applying `func` to the current one.
+    ///
+    /// # Safety
+    ///
+    /// The new structure must return the same values as the old one.
+    pub unsafe fn map_pioneer_positions<F, P2>(self, func: F) -> JacobsonBalParen<P2, O>
+    where
+        F: FnOnce(P) -> P2,
+    {
+        JacobsonBalParen {
+            words: self.words,
+            len: self.len,
+            pioneer_positions: func(self.pioneer_positions),
+            pioneer_match_offsets: self.pioneer_match_offsets,
+        }
+    }
+
+    /// Replaces the pioneer match offset structure with a new one obtained by
+    /// applying `func` to the current one.
+    ///
+    /// # Safety
+    ///
+    /// The new structure must return the same values as the old one.
+    pub unsafe fn map_pioneer_match_offsets<F, O2>(self, func: F) -> JacobsonBalParen<P, O2>
+    where
+        F: FnOnce(O) -> O2,
+    {
+        JacobsonBalParen {
+            words: self.words,
+            len: self.len,
+            pioneer_positions: self.pioneer_positions,
+            pioneer_match_offsets: func(self.pioneer_match_offsets),
+        }
+    }
+}
+
+// ── Aligned ↔ Unaligned conversion ──────────────────────────────────
+
+use crate::traits::TryIntoUnaligned;
+
+/// The unaligned variant of the default [`JacobsonBalParen`], obtained
+/// via [`TryIntoUnaligned`].
+pub type JacobsonBalParenU =
+    <JacobsonBalParen as TryIntoUnaligned>::Unaligned;
+
+impl<P: TryIntoUnaligned, O: TryIntoUnaligned> TryIntoUnaligned for JacobsonBalParen<P, O> {
+    type Unaligned = JacobsonBalParen<P::Unaligned, O::Unaligned>;
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+        Ok(JacobsonBalParen {
+            words: self.words,
+            len: self.len,
+            pioneer_positions: self.pioneer_positions.try_into_unaligned()?,
+            pioneer_match_offsets: self.pioneer_match_offsets.try_into_unaligned()?,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -556,12 +639,12 @@ mod tests {
     use super::*;
 
     /// Naive find_near_close for testing: scans bit by bit starting after the
-    /// open paren (at bit 0 of the shifted word), returns position or 64+ if
-    /// not found.
-    fn find_near_close_naive(word: u64) -> usize {
+    /// open paren (at bit 0 of the shifted word), returns position or
+    /// `WORD_BITS`+ if not found.
+    fn find_near_close_naive(word: usize) -> usize {
         let mut c = 1i32;
-        for i in 1..64 {
-            if word & (1u64 << i) != 0 {
+        for i in 1..WORD_BITS {
+            if word & (1usize << i) != 0 {
                 c += 1;
             } else {
                 c -= 1;
@@ -570,16 +653,16 @@ mod tests {
                 return i;
             }
         }
-        64
+        WORD_BITS
     }
 
     /// Naive find_far_close for testing: returns the position of the k-th
     /// (0-based) unmatched close.
-    fn find_far_close_reference(word: u64, k: i64) -> usize {
+    fn find_far_close_reference(word: usize, k: i64) -> usize {
         let mut e = 0i32;
         let mut remaining = k;
-        for i in 0..64 {
-            if word & (1u64 << i) != 0 {
+        for i in 0..WORD_BITS {
+            if word & (1usize << i) != 0 {
                 if e > 0 {
                     e = -1;
                 } else {
@@ -599,16 +682,16 @@ mod tests {
     }
 
     /// Naive find_close by scanning the whole bit vector.
-    fn find_close_naive(words: &[u64], pos: usize, len: usize) -> usize {
+    fn find_close_naive(words: &[usize], pos: usize, len: usize) -> usize {
         assert!(pos < len);
         assert!(
-            words[pos / 64] & (1u64 << (pos % 64)) != 0,
+            words[pos / WORD_BITS] & (1usize << (pos % WORD_BITS)) != 0,
             "Not an open paren"
         );
         let mut c = 1i32;
         for i in (pos + 1)..len {
-            let w = words[i / 64];
-            if w & (1u64 << (i % 64)) != 0 {
+            let w = words[i / WORD_BITS];
+            if w & (1usize << (i % WORD_BITS)) != 0 {
                 c += 1;
             } else {
                 c -= 1;
@@ -643,7 +726,7 @@ mod tests {
     fn test_find_near_close_exhaustive_byte() {
         // Test all possible 8-bit words where bit 0 is set (valid input:
         // bit 0 is the open paren we are matching).
-        for w in (1u64..256).step_by(2) {
+        for w in (1usize..256).step_by(2) {
             let naive = find_near_close_naive(w);
             let fast = find_near_close(w);
             assert_eq!(
@@ -657,17 +740,17 @@ mod tests {
     #[test]
     fn test_find_near_close_exhaustive_16bit() {
         // Test all 16-bit odd words (bit 0 set)
-        for w in (1u64..65536).step_by(2) {
+        for w in (1usize..65536).step_by(2) {
             let naive = find_near_close_naive(w);
             let fast = find_near_close(w);
-            if naive < 64 {
+            if naive < WORD_BITS {
                 assert_eq!(
                     fast, naive,
                     "find_near_close mismatch for word 0x{:04x}: fast={}, naive={}",
                     w, fast, naive
                 );
             } else {
-                assert!(fast >= 64);
+                assert!(fast >= WORD_BITS);
             }
         }
     }
@@ -675,7 +758,7 @@ mod tests {
     #[test]
     fn test_find_near_close_against_naive() {
         // Test a variety of words. Bit 0 must be set (it's the open paren).
-        let test_words: Vec<u64> = vec![
+        let test_words: Vec<usize> = vec![
             0b01,                  // ()
             0b0011,                // (())
             0b001011,              // ()(())
@@ -690,7 +773,7 @@ mod tests {
         for &w in &test_words {
             let naive = find_near_close_naive(w);
             let fast = find_near_close(w);
-            if naive < 64 {
+            if naive < WORD_BITS {
                 assert_eq!(
                     fast, naive,
                     "find_near_close mismatch for word 0x{:016x}: fast={}, naive={}",
@@ -699,7 +782,7 @@ mod tests {
             } else {
                 // Both should indicate "not found in this word" (>= 64)
                 assert!(
-                    fast >= 64,
+                    fast >= WORD_BITS,
                     "find_near_close false positive for word 0x{:016x}: fast={}, naive={}",
                     w,
                     fast,
@@ -711,12 +794,12 @@ mod tests {
 
     #[test]
     fn test_find_near_close_vs_naive_16bit() {
-        for w in (0u64..=0xFFFF).filter(|w| w & 1 == 1) {
+        for w in (0usize..=0xFFFF).filter(|w| w & 1 == 1) {
             let fast = find_near_close(w);
             let naive = find_near_close_naive(w);
             assert_eq!(
-                fast.min(64),
-                naive.min(64),
+                fast.min(WORD_BITS),
+                naive.min(WORD_BITS),
                 "mismatch for word {w:#018b}: fast={fast}, naive={naive}"
             );
         }
@@ -732,7 +815,7 @@ mod tests {
 
     #[test]
     fn test_find_far_close_against_naive() {
-        let test_words: Vec<u64> = vec![
+        let test_words: Vec<usize> = vec![
             0,
             0b0010, // open at 1, close at 0 and 2,3
             0b1010, // opens at 1,3; close at 0,2
@@ -747,7 +830,7 @@ mod tests {
             0xDEAD_BEEF_CAFE_BABE,
         ];
         for &w in &test_words {
-            let n_far = count_far_close(w, 64);
+            let n_far = count_far_close(w, WORD_BITS);
             for k in 0..n_far {
                 let naive = find_far_close_reference(w, k as i64);
                 let fast = find_far_close(w, k as i64);
@@ -762,8 +845,8 @@ mod tests {
 
     #[test]
     fn test_find_far_close_exhaustive_8bit() {
-        for w in 0u64..256 {
-            let n_far = count_far_close(w, 64);
+        for w in 0usize..256 {
+            let n_far = count_far_close(w, WORD_BITS);
             for k in 0..n_far {
                 let naive = find_far_close_reference(w, k as i64);
                 let fast = find_far_close(w, k as i64);
@@ -797,7 +880,7 @@ mod tests {
 
         // Check all opens against naive
         for pos in 0..len {
-            if words[pos / 64] & (1u64 << (pos % 64)) != 0 {
+            if words[pos / WORD_BITS] & (1usize << (pos % WORD_BITS)) != 0 {
                 let expected = find_close_naive(&words, pos, len);
                 let actual = bp.find_close(pos).unwrap();
                 assert_eq!(
@@ -810,7 +893,7 @@ mod tests {
 
     /// Generate a random balanced parentheses sequence of given length using a
     /// simple stack-based approach.
-    fn random_balanced(n: usize) -> (Vec<u64>, usize) {
+    fn random_balanced(n: usize) -> (Vec<usize>, usize) {
         use rand::rngs::SmallRng;
         use rand::{RngExt, SeedableRng};
 
@@ -819,7 +902,7 @@ mod tests {
         let mut rng = SmallRng::seed_from_u64(n as u64);
 
         let half = n / 2;
-        let mut bits = vec![0u64; n.div_ceil(64)];
+        let mut bits = vec![0usize; n.div_ceil(WORD_BITS)];
         // We need to place n/2 opens and n/2 closes in a balanced way.
         // Use the ballot problem approach: at each position, we can place an
         // open if opens_remaining > 0, and a close if excess > 0.
@@ -835,7 +918,7 @@ mod tests {
             };
 
             if place_open {
-                bits[i / 64] |= 1u64 << (i % 64);
+                bits[i / WORD_BITS] |= 1usize << (i % WORD_BITS);
                 opens_remaining -= 1;
                 excess += 1;
             } else {
@@ -853,7 +936,7 @@ mod tests {
             let (words, len) = random_balanced(size);
             let bp = JacobsonBalParen::new(words.clone(), len);
             for pos in 0..len {
-                if words[pos / 64] & (1u64 << (pos % 64)) != 0 {
+                if words[pos / WORD_BITS] & (1usize << (pos % WORD_BITS)) != 0 {
                     let expected = find_close_naive(&words, pos, len);
                     let actual = bp.find_close(pos).unwrap();
                     assert_eq!(
@@ -871,7 +954,7 @@ mod tests {
             let (words, len) = random_balanced(size);
             let bp = JacobsonBalParen::new(words.clone(), len);
             for pos in 0..len {
-                if words[pos / 64] & (1u64 << (pos % 64)) != 0 {
+                if words[pos / WORD_BITS] & (1usize << (pos % WORD_BITS)) != 0 {
                     let expected = find_close_naive(&words, pos, len);
                     let actual = bp.find_close(pos).unwrap();
                     assert_eq!(
@@ -887,8 +970,8 @@ mod tests {
     fn test_find_close_all_nested() {
         // ((((...))))  - 32 opens then 32 closes, fits in one word
         // word = 0x0000_0000_FFFF_FFFF
-        let word = 0x0000_0000_FFFF_FFFFu64;
-        let bp = JacobsonBalParen::new(vec![word], 64);
+        let word = 0x0000_0000_FFFF_FFFFusize;
+        let bp = JacobsonBalParen::new(vec![word], WORD_BITS);
         for i in 0..32 {
             assert_eq!(bp.find_close(i), Some(63 - i), "pos={i}");
         }
@@ -905,7 +988,7 @@ mod tests {
         let (words, len) = random_balanced(192);
         let bp = JacobsonBalParen::new(words.clone(), len);
         for pos in 0..len {
-            if words[pos / 64] & (1u64 << (pos % 64)) != 0 {
+            if words[pos / WORD_BITS] & (1usize << (pos % WORD_BITS)) != 0 {
                 let expected = find_close_naive(&words, pos, len);
                 let actual = bp.find_close(pos).unwrap();
                 assert_eq!(
@@ -919,11 +1002,11 @@ mod tests {
     #[test]
     fn test_count_far_open_close() {
         // All opens: count_far_open should count all of them
-        assert_eq!(count_far_open(0xFFFF_FFFF_FFFF_FFFF, 64), 64);
+        assert_eq!(count_far_open(0xFFFF_FFFF_FFFF_FFFF, WORD_BITS), WORD_BITS);
         // All closes: count_far_close should count all of them
-        assert_eq!(count_far_close(0, 64), 64);
+        assert_eq!(count_far_close(0, WORD_BITS), WORD_BITS);
         // "()" pairs: no far parens
-        assert_eq!(count_far_open(0x5555_5555_5555_5555, 64), 0);
-        assert_eq!(count_far_close(0x5555_5555_5555_5555, 64), 0);
+        assert_eq!(count_far_open(0x5555_5555_5555_5555, WORD_BITS), 0);
+        assert_eq!(count_far_close(0x5555_5555_5555_5555, WORD_BITS), 0);
     }
 }
