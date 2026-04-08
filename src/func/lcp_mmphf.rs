@@ -25,10 +25,10 @@
 //! 785−794, New York, 2009. ACM Press.
 
 use crate::bits::BitFieldVec;
-use crate::traits::Unaligned;
 use crate::func::VFunc;
 use crate::func::shard_edge::{Fuse3NoShards, FuseLge3Shards, ShardEdge};
 use crate::traits::TryIntoUnaligned;
+use crate::traits::Unaligned;
 use crate::utils::*;
 use mem_dbg::*;
 use num_primitive::PrimitiveInteger;

@@ -12,13 +12,13 @@ use mem_dbg::*;
 use value_traits::slices::SliceByValue;
 
 use crate::bits::{BitFieldVec, BitVec};
-use crate::traits::Unaligned;
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EliasFano;
 use crate::panic_if_out_of_bounds;
 use crate::rank_sel::{Rank9, SelectZeroAdaptConst};
 use crate::traits::Backend;
 use crate::traits::TryIntoUnaligned;
+use crate::traits::Unaligned;
 use crate::traits::{BitVecOps, BitVecOpsMut};
 use crate::traits::{RankUnchecked, SuccUnchecked};
 
