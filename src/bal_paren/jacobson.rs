@@ -411,18 +411,17 @@ fn build_pioneers(words: impl AsRef<[usize]> + BitLength) -> (EfDict<usize>, Vec
     opening_pioneers.reverse();
     opening_pioneer_matches.reverse();
 
-    // Build Elias–Fano for pioneer positions.
+    // Build Elias–Fano for pioneer positions. The upper bound must be
+    // the maximum possible query position (len - 1), not just the last
+    // pioneer, because pred_unchecked may be called with any far-open
+    // position in the parentheses.
     let num_pioneers = opening_pioneers.len();
-    let ef_positions = if num_pioneers > 0 {
-        let max_pos = *opening_pioneers.last().unwrap();
-        let mut builder = EliasFanoBuilder::new(num_pioneers, max_pos);
-        for &p in &opening_pioneers {
-            builder.push(p);
-        }
-        builder.build_with_dict()
-    } else {
-        EliasFanoBuilder::new(0, 0usize).build_with_dict()
-    };
+    let upper_bound = if num_pioneers > 0 { len - 1 } else { 0 };
+    let mut builder = EliasFanoBuilder::new(num_pioneers, upper_bound);
+    for &p in &opening_pioneers {
+        builder.push(p);
+    }
+    let ef_positions = builder.build_with_dict();
 
     (ef_positions, opening_pioneer_matches)
 }

@@ -13,26 +13,33 @@
 //! original set returns an arbitrary value (same contract as
 //! [`VFunc::get`]).
 //!
-//! The keys are divided into equal-size buckets. A hollow trie — a compacted
-//! (Patricia) trie whose edge labels have been replaced with their lengths —
-//! built on the bucket delimiters (last key of each full bucket) distributes
-//! each key to its bucket in O(log *u*) time, where *u* is the universe
-//! size. Then a per-key offset within the bucket is stored in a [`VFunc`].
-//! The rank of a key is `bucket * bucket_size + offset`.
+//! [`HtDistMmphfInt`] works with any primitive integer type, whereas
+//! [`HtDistMmphf`] works with any byte-sequence key type (`K: AsRef<[u8]>`).
+//! Type aliases [`HtDistMmphfStr`] and [`HtDistMmphfSliceU8`] are provided for
+//! convenience. For the byte-sequence variant, keys must not contain zeros, as
+//! a virtual zero byte is appended internally to ensure prefix-freeness.
+//! Alternatively, they must be prefix-free, in which case they can contain
+//! zeros.
 //!
-//! The trie walk uses behaviour functions (stored as [`VFunc`]s) to determine
-//! the exit direction and detect false follows.
-//!
-//! [`HtDistMmphf`] supports arbitrary byte-representable key types via the
-//! `K` parameter; convenience aliases [`HtDistMmphfStr`] and
-//! [`HtDistMmphfSliceU8`] are provided for common cases. For integer keys,
-//! [`HtDistMmphfInt`] provides a specialized implementation with direct
-//! bit-level operations (keys are XOR-mapped with `K::MIN` so that numeric
-//! order matches bit-lexicographic order; for unsigned types this is a
-//! no-op).
+//! These type of monotone minimal perfect hash functions are extremely compact
+//! (in fact, provably optimal, as the use log log log *u* bits per key), but
+//! they are very slow. Usually, an LCP-based solution ([`lcp_mmphf`] or
+//! [`lcp2_mmphf`]) is more practical.
 //!
 //! These structures implement the [`TryIntoUnaligned`] trait, allowing them
 //! to be converted into (usually faster) structures using unaligned access.
+//!
+//! # Implementation details
+//!
+//! The keys are divided into equal-size buckets. A hollow trie (a compacted
+//! trie whose edge labels have been replaced with their lengths) built on the
+//! bucket delimiters (last key of each full bucket) distributes each key to its
+//! bucket in +O*(log *u*) time, where *u* is the universe size. Then a per-key
+//! offset within the bucket is stored in a [`VFunc`]. The rank of a key is
+//! `bucket * bucket_size + offset`.
+//!
+//! The trie walk uses behaviour functions (stored as [`VFunc`]s) to determine
+//! the exit direction and detect false follows.
 //!
 //! # References
 //!
@@ -49,7 +56,6 @@ use {
         func::{
             VFunc,
             lcp_mmphf::{lcp_bits, lcp_bits_nul},
-            shard_edge::FuseLge3NoShards,
         },
         list::PrefixSumIntList,
         traits::{TryIntoUnaligned, Unaligned},
@@ -393,8 +399,8 @@ fn encode_behaviour_key(
 #[cfg(feature = "rayon")]
 #[derive(Debug)]
 pub struct HtDist<
-    E = VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-    F = VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+    E = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
+    F = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
     B: BalParen = JacobsonBalParen,
     S = PrefixSumIntList,
 > {
@@ -425,12 +431,7 @@ const RIGHT: usize = 1;
 const FOLLOW: usize = 2;
 
 #[cfg(feature = "rayon")]
-impl
-    HtDist<
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-    >
-{
+impl HtDist<VFunc<[u8], BitFieldVec<Box<[usize]>>>, VFunc<[u8], BitFieldVec<Box<[usize]>>>> {
     /// Builds a hollow trie distributor from sorted keys.
     ///
     /// `keys` must be in strictly increasing lexicographic order.
@@ -685,26 +686,24 @@ impl
             ff_keys.len()
         ));
 
-        let false_follows_detector =
-            <VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>>::try_new(
-                FromSlice::new(&ff_keys),
-                FromCloneableIntoIterator::new(ff_values.iter().copied()),
-                ff_keys.len(),
-                pl,
-            )?;
+        let false_follows_detector = <VFunc<[u8], BitFieldVec<Box<[usize]>>>>::try_new(
+            FromSlice::new(&ff_keys),
+            FromCloneableIntoIterator::new(ff_values.iter().copied()),
+            ff_keys.len(),
+            pl,
+        )?;
 
         pl.info(format_args!(
             "Building external behaviour ({} keys)...",
             ext_keys.len()
         ));
 
-        let external_behaviour =
-            <VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>>::try_new(
-                FromSlice::new(&ext_keys),
-                FromCloneableIntoIterator::new(ext_values.iter().copied()),
-                ext_keys.len(),
-                pl,
-            )?;
+        let external_behaviour = <VFunc<[u8], BitFieldVec<Box<[usize]>>>>::try_new(
+            FromSlice::new(&ext_keys),
+            FromCloneableIntoIterator::new(ext_values.iter().copied()),
+            ext_keys.len(),
+            pl,
+        )?;
 
         Ok(Self {
             bal_paren,
@@ -719,12 +718,7 @@ impl
 
 #[cfg(feature = "rayon")]
 impl<D: SliceByValue<Value = usize>, B: BalParen + AsRef<[usize]>, S: SliceByValue<Value = usize>>
-    HtDist<
-        VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
-        B,
-        S,
-    >
+    HtDist<VFunc<[u8], D>, VFunc<[u8], D>, B, S>
 {
     /// Returns the bucket index for the given key.
     ///
@@ -877,8 +871,8 @@ impl<D: SliceByValue<Value = usize>, B: BalParen + AsRef<[usize]>, S: SliceByVal
 #[cfg(feature = "rayon")]
 pub struct HtDistMmphf<
     K: ?Sized,
-    E = VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-    F = VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+    E = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
+    F = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
     O = VFunc<K, BitFieldVec<Box<[usize]>>>,
     B: BalParen = JacobsonBalParen,
     S = PrefixSumIntList,
@@ -968,8 +962,8 @@ pub type HtDistMmphfSliceU8 = HtDistMmphf<[u8]>;
 impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug>
     HtDistMmphf<
         K,
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>>,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>>,
         VFunc<K, BitFieldVec<Box<[usize]>>>,
     >
 {
@@ -1231,26 +1225,24 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug>
             ff_keys.len()
         ));
 
-        let false_follows_detector =
-            <VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>>::try_new(
-                FromSlice::new(&ff_keys),
-                FromCloneableIntoIterator::new(ff_values.iter().copied()),
-                ff_keys.len(),
-                pl,
-            )?;
+        let false_follows_detector = <VFunc<[u8], BitFieldVec<Box<[usize]>>>>::try_new(
+            FromSlice::new(&ff_keys),
+            FromCloneableIntoIterator::new(ff_values.iter().copied()),
+            ff_keys.len(),
+            pl,
+        )?;
 
         pl.info(format_args!(
             "Building external behaviour ({} keys)...",
             ext_keys.len()
         ));
 
-        let external_behaviour =
-            <VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>>::try_new(
-                FromSlice::new(&ext_keys),
-                FromCloneableIntoIterator::new(ext_values.iter().copied()),
-                ext_keys.len(),
-                pl,
-            )?;
+        let external_behaviour = <VFunc<[u8], BitFieldVec<Box<[usize]>>>>::try_new(
+            FromSlice::new(&ext_keys),
+            FromCloneableIntoIterator::new(ext_values.iter().copied()),
+            ext_keys.len(),
+            pl,
+        )?;
 
         let distributor = HtDist {
             bal_paren,
@@ -1329,15 +1321,7 @@ impl<
     D: SliceByValue<Value = usize> + MemSize,
     B: BalParen + AsRef<[usize]>,
     S: SliceByValue<Value = usize>,
->
-    HtDistMmphf<
-        K,
-        VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
-        VFunc<K, D>,
-        B,
-        S,
-    >
+> HtDistMmphf<K, VFunc<[u8], D>, VFunc<[u8], D>, VFunc<K, D>, B, S>
 {
     /// Returns the rank (0-based position) of the given key in the
     /// original sorted sequence.
@@ -1420,20 +1404,16 @@ impl<
 impl
     From<
         HtDist<
-            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
-            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>>,
             Unaligned<JacobsonBalParen>,
         >,
-    >
-    for HtDist<
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-    >
+    > for HtDist<VFunc<[u8], BitFieldVec<Box<[usize]>>>, VFunc<[u8], BitFieldVec<Box<[usize]>>>>
 {
     fn from(
         f: HtDist<
-            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
-            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>>,
             Unaligned<JacobsonBalParen>,
         >,
     ) -> Self {
@@ -1516,24 +1496,24 @@ impl<K: ?Sized>
     From<
         HtDistMmphf<
             K,
-            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
-            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>>,
             VFunc<K, Unaligned<BitFieldVec<Box<[usize]>>>>,
             Unaligned<JacobsonBalParen>,
         >,
     >
     for HtDistMmphf<
         K,
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>>,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>>,
         VFunc<K, BitFieldVec<Box<[usize]>>>,
     >
 {
     fn from(
         f: HtDistMmphf<
             K,
-            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
-            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>>,
             VFunc<K, Unaligned<BitFieldVec<Box<[usize]>>>>,
             Unaligned<JacobsonBalParen>,
         >,
@@ -1750,8 +1730,8 @@ fn encode_int_behaviour_key<K: PrimitiveInteger>(
 #[derive(Debug)]
 pub struct HtDistInt<
     K,
-    E = VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-    F = VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+    E = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
+    F = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
     B: BalParen = JacobsonBalParen,
     S = PrefixSumIntList,
 > {
@@ -1774,12 +1754,7 @@ pub struct HtDistInt<
 }
 
 #[cfg(feature = "rayon")]
-impl<K>
-    HtDistInt<
-        K,
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-    >
+impl<K> HtDistInt<K, VFunc<[u8], BitFieldVec<Box<[usize]>>>, VFunc<[u8], BitFieldVec<Box<[usize]>>>>
 where
     K: PrimitiveInteger + Copy + Ord + Send + Sync + std::fmt::Debug,
 {
@@ -1994,26 +1969,24 @@ where
             ff_keys.len()
         ));
 
-        let false_follows_detector =
-            <VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>>::try_new(
-                FromSlice::new(&ff_keys),
-                FromCloneableIntoIterator::new(ff_values.iter().copied()),
-                ff_keys.len(),
-                pl,
-            )?;
+        let false_follows_detector = <VFunc<[u8], BitFieldVec<Box<[usize]>>>>::try_new(
+            FromSlice::new(&ff_keys),
+            FromCloneableIntoIterator::new(ff_values.iter().copied()),
+            ff_keys.len(),
+            pl,
+        )?;
 
         pl.info(format_args!(
             "Building external behaviour ({} keys)...",
             ext_keys.len()
         ));
 
-        let external_behaviour =
-            <VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>>::try_new(
-                FromSlice::new(&ext_keys),
-                FromCloneableIntoIterator::new(ext_values.iter().copied()),
-                ext_keys.len(),
-                pl,
-            )?;
+        let external_behaviour = <VFunc<[u8], BitFieldVec<Box<[usize]>>>>::try_new(
+            FromSlice::new(&ext_keys),
+            FromCloneableIntoIterator::new(ext_values.iter().copied()),
+            ext_keys.len(),
+            pl,
+        )?;
 
         Ok(Self {
             bal_paren,
@@ -2033,14 +2006,7 @@ impl<
     D: SliceByValue<Value = usize>,
     B: BalParen + AsRef<[usize]>,
     S: SliceByValue<Value = usize>,
->
-    HtDistInt<
-        K,
-        VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
-        B,
-        S,
-    >
+> HtDistInt<K, VFunc<[u8], D>, VFunc<[u8], D>, B, S>
 {
     /// Returns the bucket index for the given integer key.
     ///
@@ -2190,22 +2156,18 @@ impl<K: PrimitiveInteger>
     From<
         HtDistInt<
             K,
-            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
-            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>>,
             Unaligned<JacobsonBalParen>,
         >,
     >
-    for HtDistInt<
-        K,
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-    >
+    for HtDistInt<K, VFunc<[u8], BitFieldVec<Box<[usize]>>>, VFunc<[u8], BitFieldVec<Box<[usize]>>>>
 {
     fn from(
         f: HtDistInt<
             K,
-            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
-            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>>,
             Unaligned<JacobsonBalParen>,
         >,
     ) -> Self {
@@ -2266,8 +2228,8 @@ impl<K: PrimitiveInteger>
 #[cfg(feature = "rayon")]
 pub struct HtDistMmphfInt<
     K,
-    E = VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-    F = VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+    E = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
+    F = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
     O = VFunc<K, BitFieldVec<Box<[usize]>>>,
     B: BalParen = JacobsonBalParen,
     S = PrefixSumIntList,
@@ -2545,26 +2507,24 @@ where
             ff_keys.len()
         ));
 
-        let false_follows_detector =
-            <VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>>::try_new(
-                FromSlice::new(&ff_keys),
-                FromCloneableIntoIterator::new(ff_values.iter().copied()),
-                ff_keys.len(),
-                pl,
-            )?;
+        let false_follows_detector = <VFunc<[u8], BitFieldVec<Box<[usize]>>>>::try_new(
+            FromSlice::new(&ff_keys),
+            FromCloneableIntoIterator::new(ff_values.iter().copied()),
+            ff_keys.len(),
+            pl,
+        )?;
 
         pl.info(format_args!(
             "Building external behaviour ({} keys)...",
             ext_keys.len()
         ));
 
-        let external_behaviour =
-            <VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>>::try_new(
-                FromSlice::new(&ext_keys),
-                FromCloneableIntoIterator::new(ext_values.iter().copied()),
-                ext_keys.len(),
-                pl,
-            )?;
+        let external_behaviour = <VFunc<[u8], BitFieldVec<Box<[usize]>>>>::try_new(
+            FromSlice::new(&ext_keys),
+            FromCloneableIntoIterator::new(ext_values.iter().copied()),
+            ext_keys.len(),
+            pl,
+        )?;
 
         let distributor = HtDistInt {
             bal_paren,
@@ -2613,15 +2573,7 @@ impl<
     D: SliceByValue<Value = usize> + MemSize + mem_dbg::FlatType,
     B: BalParen + AsRef<[usize]>,
     S: SliceByValue<Value = usize>,
->
-    HtDistMmphfInt<
-        K,
-        VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
-        VFunc<K, D>,
-        B,
-        S,
-    >
+> HtDistMmphfInt<K, VFunc<[u8], D>, VFunc<[u8], D>, VFunc<K, D>, B, S>
 {
     /// Returns the rank (0-based position) of the given key.
     ///
@@ -2708,24 +2660,24 @@ impl<K: PrimitiveInteger>
     From<
         HtDistMmphfInt<
             K,
-            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
-            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>>,
             VFunc<K, Unaligned<BitFieldVec<Box<[usize]>>>>,
             Unaligned<JacobsonBalParen>,
         >,
     >
     for HtDistMmphfInt<
         K,
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>>,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>>,
         VFunc<K, BitFieldVec<Box<[usize]>>>,
     >
 {
     fn from(
         f: HtDistMmphfInt<
             K,
-            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
-            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>>,
             VFunc<K, Unaligned<BitFieldVec<Box<[usize]>>>>,
             Unaligned<JacobsonBalParen>,
         >,
