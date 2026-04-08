@@ -26,8 +26,9 @@ use std::{
 
 use crate::ambassador_impl_Index;
 use crate::traits::ambassador_impl_Backend;
+use crate::traits::bal_paren::{BalParen, ambassador_impl_BalParen};
+use crate::traits::bit_vec_ops::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
-use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
 use crate::traits::rank_sel::ambassador_impl_Rank;
 use crate::traits::rank_sel::ambassador_impl_RankHinted;
@@ -141,7 +142,7 @@ use std::ops::Index;
 #[delegate(crate::traits::Backend, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
-#[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
+#[delegate(crate::traits::bit_vec_ops::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankHinted, target = "bits")]
@@ -151,6 +152,7 @@ use std::ops::Index;
 #[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
+#[delegate(crate::bal_paren::BalParen, target = "bits")]
 pub struct SelectZeroAdaptConst<
     B,
     I = Box<[usize]>,

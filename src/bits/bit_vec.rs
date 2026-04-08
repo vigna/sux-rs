@@ -102,7 +102,7 @@ use crate::traits::ambassador_impl_Backend;
 use crate::traits::{AtomicBitIter, AtomicBitVecOps, Backend, BitIter, BitVecOps, Word};
 use crate::utils::SelectInWord;
 use crate::{
-    traits::rank_sel::*,
+    traits::{bit_vec_ops::BitLength, rank_sel::*},
     utils::{
         CannotCastToAtomicError, transmute_boxed_slice_from_atomic,
         transmute_boxed_slice_into_atomic, transmute_vec_from_atomic, transmute_vec_into_atomic,

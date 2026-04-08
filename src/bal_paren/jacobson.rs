@@ -18,12 +18,35 @@
 //! annual symposium on foundations of computer science (FOCS '89)*, pp.
 //! 549−554. IEEE, 1989.
 
+use std::ops::Index;
+
+use crate::ambassador_impl_Index;
+use crate::traits::ambassador_impl_Backend;
+use crate::traits::bit_vec_ops::ambassador_impl_BitLength;
+use crate::traits::rank_sel::ambassador_impl_BitCount;
+use crate::traits::rank_sel::ambassador_impl_NumBits;
+use crate::traits::rank_sel::ambassador_impl_Rank;
+use crate::traits::rank_sel::ambassador_impl_RankHinted;
+use crate::traits::rank_sel::ambassador_impl_RankUnchecked;
+use crate::traits::rank_sel::ambassador_impl_RankZero;
+use crate::traits::rank_sel::ambassador_impl_Select;
+use crate::traits::rank_sel::ambassador_impl_SelectHinted;
+use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
+use crate::traits::rank_sel::ambassador_impl_SelectZero;
+use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
+use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+
 use crate::bits::{BitFieldVec, BitVec};
 use crate::dict::{EfDict, EliasFanoBuilder};
 use crate::list::comp_int_list::CompIntList;
 use crate::list::prefix_sum_int_list::PrefixSumIntList;
-use crate::prelude::BalParen;
+use crate::prelude::{
+    BitCount, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
+    SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked,
+};
+use crate::traits::bal_paren::BalParen;
 use crate::traits::indexed_dict::PredUnchecked;
+use ambassador::Delegate;
 use mem_dbg::*;
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
@@ -215,6 +238,8 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 /// be done using the map methods (see [this
 /// example](crate::func::HtDist#impl-From<<HtDist+as+TryIntoUnaligned>::Unaligned>-for-HtDist)).
 ///
+/// # Implementation details
+///
 /// This implementation uses the pioneer technique from Jacobson: an opening
 /// parenthesis whose match falls in a different `usize` word is called *far*
 /// (the original paper uses blocks that are logarithmic in the number of
@@ -247,8 +272,12 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 ///
 /// # Type Parameters
 ///
+/// - `B`: The balanced parentheses bit vector. Must implement `AsRef<[usize]>` and
+///  `BitLength`.
+///
 /// - `P`: The predecessor structure for pioneer positions. Must implement
-///   [`PredUnchecked<Input = usize, Output<'_> = usize>`](PredUnchecked). Defaults to [`EfDict<usize>`].
+///   [`PredUnchecked<Input = usize, Output<'_> = usize>`](PredUnchecked).
+///   Defaults to [`EfDict<usize>`].
 ///
 /// - `O`: The storage for pioneer match offsets. Must implement
 ///   [`SliceByValue<Value = usize>`](SliceByValue). Defaults to [`CompIntList`]
@@ -275,9 +304,24 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 /// graphs](https://ieeexplore.ieee.org/abstract/document/63533). In *30th
 /// annual symposium on foundations of computer science (FOCS '89)*, pp.
 /// 549−554. IEEE, 1989.
-#[derive(Debug, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemDbg, MemSize, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[delegate(Index<usize>, target = "paren")]
+#[delegate(crate::traits::Backend, target = "paren")]
+#[delegate(crate::traits::bit_vec_ops::BitLength, target = "paren")]
+#[delegate(crate::traits::rank_sel::BitCount, target = "paren")]
+#[delegate(crate::traits::rank_sel::NumBits, target = "paren")]
+#[delegate(crate::traits::rank_sel::RankHinted, target = "paren")]
+#[delegate(crate::traits::rank_sel::RankUnchecked, target = "paren")]
+#[delegate(crate::traits::rank_sel::Rank, target = "paren")]
+#[delegate(crate::traits::rank_sel::RankZero, target = "paren")]
+#[delegate(crate::traits::rank_sel::SelectHinted, target = "paren")]
+#[delegate(crate::traits::rank_sel::SelectUnchecked, target = "paren")]
+#[delegate(crate::traits::rank_sel::Select, target = "paren")]
+#[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "paren")]
+#[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "paren")]
+#[delegate(crate::traits::rank_sel::SelectZero, target = "paren")]
 pub struct JacobsonBalParen<B = BitVec<Box<[usize]>>, P = EfDict<usize>, O = CompIntList<usize>> {
     /// The balanced parentheses bit vector.
     paren: B,
@@ -285,6 +329,12 @@ pub struct JacobsonBalParen<B = BitVec<Box<[usize]>>, P = EfDict<usize>, O = Com
     pioneer_positions: P,
     /// Offset from each pioneer to its matching close parenthesis.
     pioneer_match_offsets: O,
+}
+
+impl<W, B: AsRef<[W]>, P, O> AsRef<[W]> for JacobsonBalParen<B, P, O> {
+    fn as_ref(&self) -> &[W] {
+        self.paren.as_ref()
+    }
 }
 
 /// Identifies pioneers and builds the Elias–Fano position index.
@@ -537,22 +587,6 @@ impl<
 
         Some(match_word * WORD_BITS + find_far_close(match_word_bits, num_far_close - e))
     }
-}
-
-impl<B: AsRef<[usize]>, P, O> AsRef<[usize]> for JacobsonBalParen<B, P, O> {
-    fn as_ref(&self) -> &[usize] {
-        self.paren.as_ref()
-    }
-}
-
-impl<B: BitLength, P, O> BitLength for JacobsonBalParen<B, P, O> {
-    fn len(&self) -> usize {
-        self.paren.len()
-    }
-}
-
-impl<B: AsRef<[usize]>, P, O> Backend for JacobsonBalParen<B, P, O> {
-    type Word = usize;
 }
 
 impl<B, P, O> JacobsonBalParen<B, P, O> {

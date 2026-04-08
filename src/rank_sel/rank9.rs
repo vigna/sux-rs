@@ -14,7 +14,8 @@ use num_primitive::PrimitiveInteger;
 
 use crate::ambassador_impl_Index;
 use crate::traits::ambassador_impl_Backend;
-use crate::traits::rank_sel::ambassador_impl_BitLength;
+use crate::traits::bal_paren::ambassador_impl_BalParen;
+use crate::traits::bit_vec_ops::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_RankHinted;
 use crate::traits::rank_sel::ambassador_impl_Select;
 use crate::traits::rank_sel::ambassador_impl_SelectHinted;
@@ -85,7 +86,7 @@ use std::ops::Index;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::Backend, target = "bits")]
-#[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
+#[delegate(crate::traits::bit_vec_ops::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
@@ -101,6 +102,7 @@ use std::ops::Index;
     where = "C: AsRef<[BlockCounters]>"
 )]
 #[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
+#[delegate(crate::bal_paren::BalParen, target = "bits")]
 pub struct Rank9<B = BitVec, C = Box<[BlockCounters]>> {
     pub(super) bits: B,
     pub(super) counts: C,

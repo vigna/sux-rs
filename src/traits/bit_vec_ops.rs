@@ -37,7 +37,21 @@
 //! [`BitVec`](crate::bits::BitVec) and
 //! [`AtomicBitVec`](crate::bits::AtomicBitVec).
 
-use crate::traits::BitLength;
+use ambassador::delegatable_trait;
+use impl_tools::autoimpl;
+
+/// A trait expressing a length in bits.
+///
+/// This trait is typically used in conjunction with [`Backend`](crate::traits::Backend) and
+/// [`AsRef<[Backend::Word]>`](std::convert::AsRef) to provide word-based access
+/// to a bit vector.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
+pub trait BitLength {
+    /// Returns a length in bits.
+    fn len(&self) -> usize;
+}
+
 use crate::traits::Word;
 use atomic_primitive::PrimitiveAtomicUnsigned;
 use mem_dbg::{MemDbg, MemSize};

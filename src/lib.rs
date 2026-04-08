@@ -53,7 +53,7 @@ pub mod prelude {
     pub use crate::traits::bit_field_slice;
     pub use crate::traits::bit_vec_ops;
     pub use crate::traits::indexed_dict;
-    pub use crate::traits::{iter::*, rank_sel::*};
+    pub use crate::traits::{bit_vec_ops::BitLength, iter::*, rank_sel::*};
 }
 
 #[ambassador::delegatable_trait_remote]

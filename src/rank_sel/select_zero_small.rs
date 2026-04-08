@@ -17,8 +17,9 @@ use num_primitive::PrimitiveInteger;
 use crate::ambassador_impl_Index;
 use crate::rank_sel::ambassador_impl_SmallCounters;
 use crate::traits::ambassador_impl_Backend;
+use crate::traits::bal_paren::ambassador_impl_BalParen;
+use crate::traits::bit_vec_ops::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_BitCount;
-use crate::traits::rank_sel::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
 use crate::traits::rank_sel::ambassador_impl_Rank;
 use crate::traits::rank_sel::ambassador_impl_RankHinted;
@@ -79,7 +80,7 @@ use std::ops::Index;
 #[delegate(crate::traits::Backend, target = "small_counters")]
 #[delegate(Index<usize>, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::BitCount, target = "small_counters")]
-#[delegate(crate::traits::rank_sel::BitLength, target = "small_counters")]
+#[delegate(crate::traits::bit_vec_ops::BitLength, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::Rank, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::RankHinted, target = "small_counters")]
@@ -89,6 +90,7 @@ use std::ops::Index;
 #[delegate(crate::traits::rank_sel::SelectHinted, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "small_counters")]
+#[delegate(crate::bal_paren::BalParen, target = "small_counters")]
 #[delegate(crate::rank_sel::SmallCounters<NUM_U32S, COUNTER_WIDTH>, target = "small_counters")]
 pub struct SelectZeroSmall<
     const NUM_U32S: usize,

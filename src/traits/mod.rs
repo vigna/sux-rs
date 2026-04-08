@@ -10,6 +10,9 @@
 //!
 //! See the discussion in [`bit_field_slice`] about the re-export of its traits.
 
+pub mod bal_paren;
+pub use bal_paren::*;
+
 pub mod bit_field_slice;
 use std::{rc::Rc, sync::Arc};
 

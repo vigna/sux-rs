@@ -22,16 +22,7 @@ use std::ops::Index;
 
 use crate::traits::ambassador_impl_Backend;
 
-/// A trait expressing a length in bits.
-///
-/// This trait is typically used in conjunction with `AsRef<[usize]>` to provide
-/// word-based access to a bit vector.
-#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
-pub trait BitLength {
-    /// Returns a length in bits.
-    fn len(&self) -> usize;
-}
+use crate::traits::bit_vec_ops::{BitLength, ambassador_impl_BitLength};
 
 /// Potentially expensive bit-counting methods.
 ///
@@ -372,7 +363,7 @@ pub trait SelectZeroHinted {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::Backend, target = "bits")]
-#[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
+#[delegate(crate::traits::bit_vec_ops::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "bits")]

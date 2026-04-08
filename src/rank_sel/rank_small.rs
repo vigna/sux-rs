@@ -24,7 +24,8 @@ use crate::{
 
 use crate::ambassador_impl_Index;
 use crate::traits::ambassador_impl_Backend;
-use crate::traits::rank_sel::ambassador_impl_BitLength;
+use crate::traits::bal_paren::{BalParen, ambassador_impl_BalParen};
+use crate::traits::bit_vec_ops::ambassador_impl_BitLength;
 use crate::traits::rank_sel::ambassador_impl_RankHinted;
 use crate::traits::rank_sel::ambassador_impl_Select;
 use crate::traits::rank_sel::ambassador_impl_SelectHinted;
@@ -157,7 +158,7 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::Backend, target = "bits")]
-#[delegate(crate::traits::rank_sel::BitLength, target = "bits")]
+#[delegate(crate::traits::bit_vec_ops::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::RankHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
@@ -165,6 +166,7 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 #[delegate(crate::traits::rank_sel::SelectZeroUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZero, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectHinted, target = "bits")]
+#[delegate(crate::bal_paren::BalParen, target = "bits")]
 pub struct RankSmall<
     const WORD_BITS: usize,
     const NUM_U32S: usize,
