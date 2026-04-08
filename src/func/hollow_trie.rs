@@ -243,17 +243,15 @@ impl HollowTrieBuilder {
     }
 
     /// Finalize the trie and return:
-    /// - `trie_words`: word-packed balanced-parentheses bit vector
-    /// - `trie_len`: number of bits in the trie
+    /// - balanced-parentheses bit vector as `BitVec<Box<[usize]>>`
     /// - `skips`: skip values in DFS preorder
     /// - `num_nodes`: number of internal nodes
-    pub fn finish(self) -> (Vec<usize>, usize, Vec<usize>, usize) {
+    pub fn finish(self) -> (BitVec<Box<[usize]>>, Vec<usize>, usize) {
         if self.count <= 1 {
             let mut trie: BitVec = BitVec::new(0);
             trie.push(true);
             trie.push(false);
-            let (words, len) = trie.into_raw_parts();
-            return (words, len, Vec::new(), 0);
+            return (trie.into(), Vec::new(), 0);
         }
 
         // Serialize the remaining right spine.
@@ -273,8 +271,7 @@ impl HollowTrieBuilder {
             trie.len()
         );
 
-        let (words, len) = trie.into_raw_parts();
-        (words, len, chain_skips, self.num_nodes)
+        (trie.into(), chain_skips, self.num_nodes)
     }
 }
 
@@ -398,7 +395,9 @@ pub struct HtDist<D = BitFieldVec<Box<[usize]>>, B: BalParen = JacobsonBalParen>
 }
 
 #[cfg(feature = "rayon")]
-impl<D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemSize for HtDist<D, B> {
+impl<D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen + MemSize + mem_dbg::FlatType>
+    MemSize for HtDist<D, B>
+{
     fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
         let mut size = core::mem::size_of::<Self>();
         size += self.bal_paren.mem_size_rec(flags, refs);
@@ -410,7 +409,10 @@ impl<D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemSize for HtD
 }
 
 #[cfg(feature = "rayon")]
-impl<D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemDbgImpl for HtDist<D, B> {}
+impl<D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen + MemSize + mem_dbg::FlatType>
+    MemDbgImpl for HtDist<D, B>
+{
+}
 
 /// Exit on the left (closer to left delimiter).
 #[cfg(feature = "rayon")]
@@ -449,8 +451,8 @@ impl HtDist {
             builder.push(keys[last_idx].as_ref());
         }
 
-        let (trie_words, trie_len, raw_skips, num_nodes) = builder.finish();
-        let bal_paren = JacobsonBalParen::new(trie_words, trie_len);
+        let (trie, raw_skips, num_nodes) = builder.finish();
+        let bal_paren = JacobsonBalParen::new(trie);
 
         // Store skips as a prefix-sum list over Elias-Fano.
         let skips = crate::list::PrefixSumIntList::new(&raw_skips);
@@ -588,7 +590,7 @@ impl HtDist {
                 let mut skip = 0usize;
 
                 loop {
-                    is_internal = get_bit(bal_paren.words(), p);
+                    is_internal = get_bit(bal_paren.as_ref(), p);
                     if is_internal {
                         use value_traits::slices::SliceByValue;
                         skip = skips.index_value(r);
@@ -722,7 +724,7 @@ impl HtDist {
 }
 
 #[cfg(feature = "rayon")]
-impl<D: SliceByValue<Value = usize> + MemSize, B: BalParen> HtDist<D, B> {
+impl<D: SliceByValue<Value = usize> + MemSize, B: BalParen + AsRef<[usize]>> HtDist<D, B> {
     /// Returns the bucket index for the given key.
     ///
     /// The key is navigated through the hollow trie using the balanced
@@ -734,7 +736,7 @@ impl<D: SliceByValue<Value = usize> + MemSize, B: BalParen> HtDist<D, B> {
             return 0;
         }
 
-        let trie_words = self.bal_paren.words();
+        let trie_words = self.bal_paren.as_ref();
         let length = key.len() * 8 + 8; // including virtual NUL terminator
         let mut p: usize = 1;
         let mut index: usize = 0;
@@ -963,8 +965,11 @@ pub type HtDistMmphfStr<D = BitFieldVec<Box<[usize]>>> = HtDistMmphf<str, D>;
 pub type HtDistMmphfSliceU8<D = BitFieldVec<Box<[usize]>>> = HtDistMmphf<[u8], D>;
 
 #[cfg(feature = "rayon")]
-impl<K: ?Sized, D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemSize
-    for HtDistMmphf<K, D, B>
+impl<
+    K: ?Sized,
+    D: SliceByValue + MemSize + mem_dbg::FlatType,
+    B: BalParen + MemSize + mem_dbg::FlatType,
+> MemSize for HtDistMmphf<K, D, B>
 {
     fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
         let mut size = core::mem::size_of::<Self>();
@@ -975,8 +980,11 @@ impl<K: ?Sized, D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemS
 }
 
 #[cfg(feature = "rayon")]
-impl<K: ?Sized, D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemDbgImpl
-    for HtDistMmphf<K, D, B>
+impl<
+    K: ?Sized,
+    D: SliceByValue + MemSize + mem_dbg::FlatType,
+    B: BalParen + MemSize + mem_dbg::FlatType,
+> MemDbgImpl for HtDistMmphf<K, D, B>
 {
 }
 
@@ -997,7 +1005,12 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
         if n == 0 {
             return Ok(Self {
                 distributor: HtDist {
-                    bal_paren: JacobsonBalParen::new(vec![0b10], 2),
+                    bal_paren: JacobsonBalParen::new({
+                        let mut bv: BitVec = BitVec::new(0);
+                        bv.push(true);
+                        bv.push(false);
+                        bv.into()
+                    }),
                     skips: crate::list::PrefixSumIntList::new(&Vec::<usize>::new()),
                     num_nodes: 0,
                     num_delimiters: 0,
@@ -1056,8 +1069,8 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
         }
         debug_assert_eq!(delimiters.len(), num_delimiters);
 
-        let (trie_words, trie_len, raw_skips, num_nodes) = builder.finish();
-        let bal_paren = JacobsonBalParen::new(trie_words, trie_len);
+        let (trie, raw_skips, num_nodes) = builder.finish();
+        let bal_paren = JacobsonBalParen::new(trie);
         let skips = crate::list::PrefixSumIntList::new(&raw_skips);
 
         if num_delimiters == 0 {
@@ -1159,7 +1172,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
                 let mut skip = 0usize;
 
                 loop {
-                    is_internal = get_bit(bal_paren.words(), p);
+                    is_internal = get_bit(bal_paren.as_ref(), p);
                     if is_internal {
                         use value_traits::slices::SliceByValue;
                         skip = skips.index_value(r);
@@ -1302,7 +1315,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
         let total_bits = result.mem_size(flags) * 8;
         let mut refs = mem_dbg::HashMap::default();
         let dist_bp = result.distributor.bal_paren.mem_size_rec(flags, &mut refs) * 8;
-        let dist_bp_words = result.distributor.bal_paren.words().len() * 8 * 8;
+        let dist_bp_words = result.distributor.bal_paren.as_ref().len() * 8 * 8;
         let dist_bp_pioneers = dist_bp - dist_bp_words;
         let dist_skips = result.distributor.skips.mem_size(flags) * 8;
         let dist_ff = result.distributor.false_follows_detector.mem_size(flags) * 8;
@@ -1344,7 +1357,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
 impl<
     K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]>,
     D: SliceByValue<Value = usize> + MemSize,
-    B: BalParen,
+    B: BalParen + AsRef<[usize]>,
 > HtDistMmphf<K, D, B>
 {
     /// Returns the rank (0-based position) of the given key in the
@@ -1551,13 +1564,12 @@ impl<K: PrimitiveInteger> HollowTrieBuilderInt<K> {
         self.count += 1;
     }
 
-    fn finish(self) -> (Vec<usize>, usize, Vec<usize>, usize) {
+    fn finish(self) -> (BitVec<Box<[usize]>>, Vec<usize>, usize) {
         if self.count <= 1 {
             let mut trie: BitVec = BitVec::new(0);
             trie.push(true);
             trie.push(false);
-            let (words, len) = trie.into_raw_parts();
-            return (words, len, Vec::new(), 0);
+            return (trie.into(), Vec::new(), 0);
         }
 
         let (chain_repr, chain_skips) = Self::serialize_chain(&self.stack);
@@ -1574,8 +1586,7 @@ impl<K: PrimitiveInteger> HollowTrieBuilderInt<K> {
             trie.len()
         );
 
-        let (words, len) = trie.into_raw_parts();
-        (words, len, chain_skips, self.num_nodes)
+        (trie.into(), chain_skips, self.num_nodes)
     }
 }
 
@@ -1692,12 +1703,15 @@ pub struct HtDistMmphfInt<K, D = BitFieldVec<Box<[usize]>>, B: BalParen = Jacobs
 }
 
 #[cfg(feature = "rayon")]
-impl<K: PrimitiveInteger, D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemSize
-    for HtDistMmphfInt<K, D, B>
+impl<
+    K: PrimitiveInteger,
+    D: SliceByValue + MemSize + mem_dbg::FlatType,
+    B: BalParen + MemSize + mem_dbg::FlatType,
+> MemSize for HtDistMmphfInt<K, D, B>
 {
     fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
         let mut size = core::mem::size_of::<Self>();
-        size += self.bal_paren.words().len() * 8;
+        size += self.bal_paren.mem_size_rec(flags, refs);
         size += self.skips.mem_size_rec(flags, refs);
         size += self.false_follows_detector.mem_size_rec(flags, refs);
         size += self.external_behaviour.mem_size_rec(flags, refs);
@@ -1707,8 +1721,11 @@ impl<K: PrimitiveInteger, D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalP
 }
 
 #[cfg(feature = "rayon")]
-impl<K: PrimitiveInteger, D: SliceByValue + MemSize + mem_dbg::FlatType, B: BalParen> MemDbgImpl
-    for HtDistMmphfInt<K, D, B>
+impl<
+    K: PrimitiveInteger,
+    D: SliceByValue + MemSize + mem_dbg::FlatType,
+    B: BalParen + MemSize + mem_dbg::FlatType,
+> MemDbgImpl for HtDistMmphfInt<K, D, B>
 {
 }
 
@@ -1733,7 +1750,12 @@ where
 
         if n == 0 {
             return Ok(Self {
-                bal_paren: JacobsonBalParen::new(vec![0b10], 2),
+                bal_paren: JacobsonBalParen::new({
+                    let mut bv: BitVec = BitVec::new(0);
+                    bv.push(true);
+                    bv.push(false);
+                    bv.into()
+                }),
                 skips: crate::list::PrefixSumIntList::new(&Vec::<usize>::new()),
                 num_nodes: 0,
                 num_delimiters: 0,
@@ -1782,8 +1804,8 @@ where
         anyhow::ensure!(i == n, "Expected {n} keys but got {i}");
         debug_assert_eq!(delimiters.len(), num_delimiters);
 
-        let (trie_words, trie_len, raw_skips, num_nodes) = builder.finish();
-        let bal_paren = JacobsonBalParen::new(trie_words, trie_len);
+        let (trie, raw_skips, num_nodes) = builder.finish();
+        let bal_paren = JacobsonBalParen::new(trie);
         let skips = crate::list::PrefixSumIntList::new(&raw_skips);
 
         if num_delimiters == 0 {
@@ -1890,7 +1912,7 @@ where
                 let mut skip = 0usize;
 
                 loop {
-                    is_internal = get_bit(bal_paren.words(), p);
+                    is_internal = get_bit(bal_paren.as_ref(), p);
                     if is_internal {
                         use value_traits::slices::SliceByValue;
                         skip = skips.index_value(r);
@@ -2037,7 +2059,7 @@ where
 }
 
 #[cfg(feature = "rayon")]
-impl<K, D, B: BalParen> HtDistMmphfInt<K, D, B>
+impl<K, D, B: BalParen + AsRef<[usize]>> HtDistMmphfInt<K, D, B>
 where
     K: PrimitiveInteger + ToSig<[u64; 2]>,
     D: SliceByValue<Value = usize> + MemSize + mem_dbg::FlatType,
@@ -2054,7 +2076,7 @@ where
         let mapped = key ^ K::MIN;
         let length = K::BITS as usize;
 
-        let trie_words = self.bal_paren.words();
+        let trie_words = self.bal_paren.as_ref();
         let mut p: usize = 1;
         let mut index: usize = 0;
         let mut r: usize = 0;
@@ -2198,8 +2220,8 @@ mod tests {
     #[test]
     fn test_trie_builder_empty() {
         let builder = HollowTrieBuilder::new();
-        let (_words, len, skips, num_nodes) = builder.finish();
-        assert_eq!(len, 2); // just ()
+        let (trie, skips, num_nodes) = builder.finish();
+        assert_eq!(trie.len(), 2); // just ()
         assert_eq!(num_nodes, 0);
         assert!(skips.is_empty());
     }
@@ -2208,8 +2230,8 @@ mod tests {
     fn test_trie_builder_single() {
         let mut builder = HollowTrieBuilder::new();
         builder.push(b"hello");
-        let (_words, len, _skips, num_nodes) = builder.finish();
-        assert_eq!(len, 2); // just ()
+        let (trie, _skips, num_nodes) = builder.finish();
+        assert_eq!(trie.len(), 2); // just ()
         assert_eq!(num_nodes, 0);
     }
 
@@ -2218,10 +2240,10 @@ mod tests {
         let mut builder = HollowTrieBuilder::new();
         builder.push(b"abc");
         builder.push(b"abd");
-        let (_words, len, skips, num_nodes) = builder.finish();
+        let (trie, skips, num_nodes) = builder.finish();
         // Two keys = one internal node = 1()0 + fake = 1 1 0 0 = 4 bits
         assert_eq!(num_nodes, 1);
-        assert_eq!(len, 4);
+        assert_eq!(trie.len(), 4);
         assert_eq!(skips.len(), 1);
         // The LCP of "abc" and "abd" is 2 bytes + some bits.
         // "abc" = 01100001 01100010 01100011
@@ -2236,10 +2258,10 @@ mod tests {
         builder.push(b"a");
         builder.push(b"b");
         builder.push(b"c");
-        let (_words, len, skips, num_nodes) = builder.finish();
+        let (trie, skips, num_nodes) = builder.finish();
         // Three keys = two internal nodes
         assert_eq!(num_nodes, 2);
-        assert_eq!(len, 6); // 1 (1()0) (1()0) 0 = but actually nested
+        assert_eq!(trie.len(), 6); // 1 (1()0) (1()0) 0 = but actually nested
         assert_eq!(skips.len(), 2);
     }
 
@@ -2250,10 +2272,10 @@ mod tests {
         for key in &keys {
             builder.push(key.as_bytes());
         }
-        let (_words, len, skips, num_nodes) = builder.finish();
+        let (trie, skips, num_nodes) = builder.finish();
         // 100 keys = 99 internal nodes
         assert_eq!(num_nodes, 99);
-        assert_eq!(len, 2 * 99 + 2);
+        assert_eq!(trie.len(), 2 * 99 + 2);
         assert_eq!(skips.len(), 99);
     }
 

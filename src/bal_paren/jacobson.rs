@@ -18,10 +18,11 @@
 //! annual symposium on foundations of computer science (FOCS '89)*, pp.
 //! 549−554. IEEE, 1989.
 
-use crate::bits::BitFieldVec;
+use crate::bits::{BitFieldVec, BitVec};
 use crate::dict::{EfDict, EliasFanoBuilder};
 use crate::list::comp_int_list::CompIntList;
 use crate::list::prefix_sum_int_list::PrefixSumIntList;
+use crate::prelude::BalParen;
 use crate::traits::indexed_dict::PredUnchecked;
 use mem_dbg::*;
 use value_traits::slices::{SliceByValue, SliceByValueMut};
@@ -209,9 +210,10 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access. Due to
-/// genericity of all the type parameter involved, it is not possible to provide a
-/// [`From`] implementation for the unaligned version, but the conversion can be
-/// done using the map methods.
+/// genericity of all the type parameter involved, it is not possible to provide
+/// a [`From`] implementation for the unaligned version, but the conversion can
+/// be done using the map methods (see [this
+/// example](crate::func::HtDist#impl-From<<HtDist+as+TryIntoUnaligned>::Unaligned>-for-HtDist)).
 ///
 /// This implementation uses the pioneer technique from Jacobson: an opening
 /// parenthesis whose match falls in a different `usize` word is called *far*
@@ -246,7 +248,7 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 /// # Type Parameters
 ///
 /// - `P`: The predecessor structure for pioneer positions. Must implement
-///   [`PredUnchecked<Input = usize>`](PredUnchecked). Defaults to [`EfDict<usize>`].
+///   [`PredUnchecked<Input = usize, Output<'_> = usize>`](PredUnchecked). Defaults to [`EfDict<usize>`].
 ///
 /// - `O`: The storage for pioneer match offsets. Must implement
 ///   [`SliceByValue<Value = usize>`](SliceByValue). Defaults to [`CompIntList`]
@@ -276,11 +278,9 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct JacobsonBalParen<P = EfDict<usize>, O = CompIntList<usize>> {
-    /// The balanced parentheses bit vector, packed in `usize` words.
-    words: Vec<usize>,
-    /// Total number of valid bits in [`words`](Self::words).
-    len: usize,
+pub struct JacobsonBalParen<B = BitVec<Box<[usize]>>, P = EfDict<usize>, O = CompIntList<usize>> {
+    /// The balanced parentheses bit vector.
+    paren: B,
     /// Positions of opening pioneers in a predecessor-capable structure.
     pioneer_positions: P,
     /// Offset from each pioneer to its matching close parenthesis.
@@ -291,7 +291,9 @@ pub struct JacobsonBalParen<P = EfDict<usize>, O = CompIntList<usize>> {
 ///
 /// Returns `(ef_positions, pioneer_match_offsets)` where the offsets are
 /// raw `Vec<usize>` values to be stored in the chosen offset structure.
-fn build_pioneers(words: &[usize], len: usize) -> (EfDict<usize>, Vec<usize>) {
+fn build_pioneers(words: impl AsRef<[usize]> + BitLength) -> (EfDict<usize>, Vec<usize>) {
+    let len = words.len();
+    let words = words.as_ref();
     let num_words = len.div_ceil(WORD_BITS);
     debug_assert!(words.len() >= num_words);
 
@@ -379,50 +381,45 @@ fn build_pioneers(words: &[usize], len: usize) -> (EfDict<usize>, Vec<usize>) {
     (ef_positions, opening_pioneer_matches)
 }
 
-impl JacobsonBalParen {
-    /// Constructs a new [`JacobsonBalParen`] from a packed bit vector and the
-    /// number of valid bits.
+impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B> {
+    /// Builds a new [`JacobsonBalParen`] using a [`CompIntList`] for pioneer
+    /// match offsets.
     ///
-    /// The bit vector is given as a `Vec<usize>` of words, with open
-    /// parentheses represented as 1-bits and close parentheses as 0-bits
-    /// (LSB first). The `len` parameter specifies how many bits in `words`
-    /// are valid.
-    ///
-    /// Pioneer match offsets are stored in a
-    /// [`CompIntList`] for compact variable-length encoding. See also
-    /// `new_with_bit_field_vec` (faster queries, more space) and
-    /// `new_with_prefix_sum`.
+    /// Pioneer match offsets are stored in a [`CompIntList`] for compact
+    /// variable-length encoding. See also
+    /// [`new_with_prefix_sum`](Self::new_with_prefix_sum). and
+    /// [`new_with_bit_field_vec`](Self::new_with_bit_field_vec).
     ///
     /// # Panics
     ///
     /// Panics if the parentheses are not balanced.
-    pub fn new(words: Vec<usize>, len: usize) -> Self {
-        let (ef_positions, matches) = build_pioneers(&words, len);
+    pub fn new(paren: B) -> Self {
+        let (ef_positions, matches) = build_pioneers(&paren);
         let min_offset = matches.iter().copied().min().unwrap_or(0);
         let offsets = CompIntList::new(min_offset, &matches);
 
         JacobsonBalParen {
-            words,
-            len,
+            paren,
             pioneer_positions: ef_positions,
             pioneer_match_offsets: offsets,
         }
     }
 }
 
-impl JacobsonBalParen<EfDict<usize>, BitFieldVec<Box<[usize]>>> {
-    /// Constructs a new [`JacobsonBalParen`] using a [`BitFieldVec`] for pioneer
+impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B, EfDict<usize>, BitFieldVec<Box<[usize]>>> {
+    /// Builds a new [`JacobsonBalParen`] using a [`BitFieldVec`] for pioneer
     /// match offsets.
     ///
-    /// This variant uses fixed-width encoding for the offsets, which is
-    /// faster to query but uses more space than the default
-    /// [`CompIntList`]-based [`new`](JacobsonBalParen::new).
+    /// This variant uses fixed-width encoding for the offsets, which is faster
+    /// to query but uses more space than the default [`CompIntList`]-based
+    /// [`new`](JacobsonBalParen::new) or the [`PrefixSumIntList`]-based
+    /// [`new_with_prefix_sum`](Self::new_with_prefix_sum).
     ///
     /// # Panics
     ///
     /// Panics if the parentheses are not balanced.
-    pub fn new_with_bit_field_vec(words: Vec<usize>, len: usize) -> Self {
-        let (ef_positions, opening_pioneer_matches) = build_pioneers(&words, len);
+    pub fn new_with_bit_field_vec(paren: B) -> Self {
+        let (ef_positions, opening_pioneer_matches) = build_pioneers(&paren);
 
         let max_offset = opening_pioneer_matches.iter().copied().max().unwrap_or(0);
         let bit_width = if max_offset == 0 {
@@ -437,32 +434,31 @@ impl JacobsonBalParen<EfDict<usize>, BitFieldVec<Box<[usize]>>> {
         }
 
         JacobsonBalParen {
-            words,
-            len,
+            paren,
             pioneer_positions: ef_positions,
             pioneer_match_offsets: offsets.into(),
         }
     }
 }
 
-impl JacobsonBalParen<EfDict<usize>, PrefixSumIntList> {
-    /// Constructs a new [`JacobsonBalParen`] using a [`PrefixSumIntList`] for
+impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B, EfDict<usize>, PrefixSumIntList> {
+    /// Builds a new [`JacobsonBalParen`] using a [`PrefixSumIntList`] for
     /// pioneer match offsets.
     ///
     /// This variant stores the offsets as prefix-sum differences over
-    /// Elias–Fano. See also [`new`](JacobsonBalParen::new) (default, best space)
-    /// and `new_with_bit_field_vec` (fastest queries).
+    /// Elias–Fano. The space usage is between the default [`CompIntList`]-based
+    /// returned by [`new`](JacobsonBalParen::new) and the [`BitFieldVec`]-based
+    /// returned by [`new_with_bit_field_vec`](Self::new_with_bit_field_vec).
     ///
     /// # Panics
     ///
     /// Panics if the parentheses are not balanced.
-    pub fn new_with_prefix_sum(words: Vec<usize>, len: usize) -> Self {
-        let (ef_positions, matches) = build_pioneers(&words, len);
+    pub fn new_with_prefix_sum(paren: B) -> Self {
+        let (ef_positions, matches) = build_pioneers(&paren);
         let offsets = PrefixSumIntList::new(&matches);
 
         JacobsonBalParen {
-            words,
-            len,
+            paren,
             pioneer_positions: ef_positions,
             pioneer_match_offsets: offsets,
         }
@@ -471,27 +467,30 @@ impl JacobsonBalParen<EfDict<usize>, PrefixSumIntList> {
 
 // ── Queries ────────────────────────────────────────────────────────────
 
-impl<P, O: SliceByValue<Value = usize>> JacobsonBalParen<P, O>
-where
+impl<
+    B: AsRef<[usize]> + BitLength,
     P: for<'a> PredUnchecked<Input = usize, Output<'a> = usize>,
+    O: SliceByValue<Value = usize>,
+> BalParen for JacobsonBalParen<B, P, O>
 {
     /// Returns the position of the matching close parenthesis for the open
     /// parenthesis at bit position `pos`, or `None` if `pos` is out of bounds
     /// or is not an open parenthesis.
-    pub fn find_close(&self, pos: usize) -> Option<usize> {
-        if pos >= self.len {
+    fn find_close(&self, pos: usize) -> Option<usize> {
+        if pos >= self.paren.len() {
             return None;
         }
         let word_idx = pos / WORD_BITS;
         let bit_idx = pos % WORD_BITS;
 
         // Check that it's an open paren
-        if self.words[word_idx] & (1usize << bit_idx) == 0 {
+        let words = self.paren.as_ref();
+        if words[word_idx] & (1usize << bit_idx) == 0 {
             return None;
         }
 
         // Try to find the close within the same word
-        let result = find_near_close(self.words[word_idx] >> bit_idx);
+        let result = find_near_close(words[word_idx] >> bit_idx);
         if result < WORD_BITS - bit_idx {
             return Some(word_idx * WORD_BITS + bit_idx + result);
         }
@@ -519,7 +518,7 @@ where
         // 2 * popcount(bits from pioneer to pos-1) - dist.
         // dist < WORD_BITS is guaranteed because both are in the same word.
         debug_assert!(dist < WORD_BITS);
-        let mask_bits = (self.words[word_idx] >> pioneer_bit) & ((1usize << dist) - 1);
+        let mask_bits = (words[word_idx] >> pioneer_bit) & ((1usize << dist) - 1);
         let e = 2 * mask_bits.count_ones() as i64 - dist as i64;
 
         let match_word = match_pos / WORD_BITS;
@@ -527,7 +526,7 @@ where
 
         // Number of far close parens before match_bit in match_word:
         // match_bit - 2 * popcount(match_word_bits & ((1 << match_bit) - 1))
-        let match_word_bits = self.words[match_word];
+        let match_word_bits = words[match_word];
         let mask_before_match = if match_bit == 0 {
             0
         } else {
@@ -540,56 +539,35 @@ where
     }
 }
 
-// ── BalParen trait implementation ──────────────────────────────────────
-
-impl<P, O: SliceByValue<Value = usize>> super::BalParen for JacobsonBalParen<P, O>
-where
-    P: for<'a> PredUnchecked<Input = usize, Output<'a> = usize>
-        + MemSize
-        + mem_dbg::FlatType
-        + std::fmt::Debug,
-    O: MemSize + mem_dbg::FlatType + std::fmt::Debug,
-{
-    fn words(&self) -> &[usize] {
-        &self.words
-    }
-
-    fn find_close(&self, pos: usize) -> Option<usize> {
-        self.find_close(pos)
+impl<B: AsRef<[usize]>, P, O> AsRef<[usize]> for JacobsonBalParen<B, P, O> {
+    fn as_ref(&self) -> &[usize] {
+        self.paren.as_ref()
     }
 }
 
-// ── Accessors and map methods ──────────────────────────────────────────
-
-impl<P, O> JacobsonBalParen<P, O> {
-    /// Returns the underlying words of the bit vector.
-    pub fn words(&self) -> &[usize] {
-        &self.words
+impl<B: BitLength, P, O> BitLength for JacobsonBalParen<B, P, O> {
+    fn len(&self) -> usize {
+        self.paren.len()
     }
+}
 
-    /// Returns the total number of bits in the balanced parentheses sequence.
-    pub fn len(&self) -> usize {
-        self.len
-    }
+impl<B: AsRef<[usize]>, P, O> Backend for JacobsonBalParen<B, P, O> {
+    type Word = usize;
+}
 
-    /// Returns `true` if the balanced parentheses sequence is empty.
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
+impl<B, P, O> JacobsonBalParen<B, P, O> {
     /// Replaces the pioneer position structure with a new one obtained by
     /// applying `func` to the current one.
     ///
     /// # Safety
     ///
     /// The new structure must return the same values as the old one.
-    pub unsafe fn map_pioneer_positions<F, P2>(self, func: F) -> JacobsonBalParen<P2, O>
-    where
-        F: FnOnce(P) -> P2,
-    {
+    pub unsafe fn map_pioneer_positions<P2>(
+        self,
+        func: impl FnOnce(P) -> P2,
+    ) -> JacobsonBalParen<B, P2, O> {
         JacobsonBalParen {
-            words: self.words,
-            len: self.len,
+            paren: self.paren,
             pioneer_positions: func(self.pioneer_positions),
             pioneer_match_offsets: self.pioneer_match_offsets,
         }
@@ -601,13 +579,12 @@ impl<P, O> JacobsonBalParen<P, O> {
     /// # Safety
     ///
     /// The new structure must return the same values as the old one.
-    pub unsafe fn map_pioneer_match_offsets<F, O2>(self, func: F) -> JacobsonBalParen<P, O2>
-    where
-        F: FnOnce(O) -> O2,
-    {
+    pub unsafe fn map_pioneer_match_offsets<O2>(
+        self,
+        func: impl FnOnce(O) -> O2,
+    ) -> JacobsonBalParen<B, P, O2> {
         JacobsonBalParen {
-            words: self.words,
-            len: self.len,
+            paren: self.paren,
             pioneer_positions: self.pioneer_positions,
             pioneer_match_offsets: func(self.pioneer_match_offsets),
         }
@@ -616,16 +593,15 @@ impl<P, O> JacobsonBalParen<P, O> {
 
 // ── Aligned ↔ Unaligned conversion ──────────────────────────────────
 
-use crate::traits::TryIntoUnaligned;
+use crate::traits::{Backend, BitLength, TryIntoUnaligned};
 
-impl<P: TryIntoUnaligned, O: TryIntoUnaligned> TryIntoUnaligned for JacobsonBalParen<P, O> {
-    type Unaligned = JacobsonBalParen<P::Unaligned, O::Unaligned>;
+impl<B, P: TryIntoUnaligned, O: TryIntoUnaligned> TryIntoUnaligned for JacobsonBalParen<B, P, O> {
+    type Unaligned = JacobsonBalParen<B, P::Unaligned, O::Unaligned>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(JacobsonBalParen {
-            words: self.words,
-            len: self.len,
+            paren: self.paren,
             pioneer_positions: self.pioneer_positions.try_into_unaligned()?,
             pioneer_match_offsets: self.pioneer_match_offsets.try_into_unaligned()?,
         })
@@ -634,6 +610,8 @@ impl<P: TryIntoUnaligned, O: TryIntoUnaligned> TryIntoUnaligned for JacobsonBalP
 
 #[cfg(test)]
 mod tests {
+    use crate::traits::BitVecOpsMut;
+
     use super::*;
 
     /// Naive find_near_close for testing: scans bit by bit starting after the
@@ -874,14 +852,19 @@ mod tests {
         // Word 0: bits 0-3 = 1111 (4 opens), bits 4-63 = 01 repeated 30 times
         //   = 0x5555_5555_5555_555F
         // Word 1: bits 0-3 = 0000 (4 closes). Length = 68.
-        let words = vec![0x5555_5555_5555_555F, 0x0000_0000_0000_0000];
-        let len = 68;
-        let bp = JacobsonBalParen::new(words.clone(), len);
+        let bp = JacobsonBalParen::new(unsafe {
+            BitVec::from_raw_parts(
+                vec![0x5555_5555_5555_555Fusize, 0x0000_0000_0000_0000usize].into_boxed_slice(),
+                68,
+            )
+        });
+        let words = bp.as_ref();
+        let len = bp.len();
 
         // Check all opens against naive
         for pos in 0..len {
             if words[pos / WORD_BITS] & (1usize << (pos % WORD_BITS)) != 0 {
-                let expected = find_close_naive(&words, pos, len);
+                let expected = find_close_naive(words, pos, len);
                 let actual = bp.find_close(pos).unwrap();
                 assert_eq!(
                     actual, expected,
@@ -893,7 +876,7 @@ mod tests {
 
     /// Generate a random balanced parentheses sequence of given length using a
     /// simple stack-based approach.
-    fn random_balanced(n: usize) -> (Vec<usize>, usize) {
+    fn random_balanced(n: usize) -> BitVec<Box<[usize]>> {
         use rand::rngs::SmallRng;
         use rand::{RngExt, SeedableRng};
 
@@ -902,7 +885,7 @@ mod tests {
         let mut rng = SmallRng::seed_from_u64(n as u64);
 
         let half = n / 2;
-        let mut bits = vec![0usize; n.div_ceil(WORD_BITS)];
+        let mut bv: BitVec = BitVec::new(n);
         // We need to place n/2 opens and n/2 closes in a balanced way.
         // Use the ballot problem approach: at each position, we can place an
         // open if opens_remaining > 0, and a close if excess > 0.
@@ -918,7 +901,7 @@ mod tests {
             };
 
             if place_open {
-                bits[i / WORD_BITS] |= 1usize << (i % WORD_BITS);
+                bv.set(i, true);
                 opens_remaining -= 1;
                 excess += 1;
             } else {
@@ -927,17 +910,18 @@ mod tests {
         }
         assert_eq!(excess, 0);
         assert_eq!(opens_remaining, 0);
-        (bits, n)
+        bv.into()
     }
 
     #[test]
     fn test_find_close_random_small() {
         for size in (2..=40).step_by(2) {
-            let (words, len) = random_balanced(size);
-            let bp = JacobsonBalParen::new(words.clone(), len);
+            let bp = JacobsonBalParen::new(random_balanced(size));
+            let words = bp.as_ref();
+            let len = bp.len();
             for pos in 0..len {
                 if words[pos / WORD_BITS] & (1usize << (pos % WORD_BITS)) != 0 {
-                    let expected = find_close_naive(&words, pos, len);
+                    let expected = find_close_naive(words, pos, len);
                     let actual = bp.find_close(pos).unwrap();
                     assert_eq!(
                         actual, expected,
@@ -951,11 +935,12 @@ mod tests {
     #[test]
     fn test_find_close_random_large() {
         for &size in &[128, 256, 512, 1024, 2048] {
-            let (words, len) = random_balanced(size);
-            let bp = JacobsonBalParen::new(words.clone(), len);
+            let bp = JacobsonBalParen::new(random_balanced(size));
+            let words = bp.as_ref();
+            let len = bp.len();
             for pos in 0..len {
                 if words[pos / WORD_BITS] & (1usize << (pos % WORD_BITS)) != 0 {
-                    let expected = find_close_naive(&words, pos, len);
+                    let expected = find_close_naive(words, pos, len);
                     let actual = bp.find_close(pos).unwrap();
                     assert_eq!(
                         actual, expected,
@@ -970,11 +955,21 @@ mod tests {
     #[test]
     fn test_find_close_all_nested() {
         // ((((...))))  - 32 opens then 32 closes, fits in one word
-        // word = 0x0000_0000_FFFF_FFFF
-        let word = 0x0000_0000_FFFF_FFFFusize;
-        let bp = JacobsonBalParen::new(vec![word], WORD_BITS);
+        let word = [0x0000_0000_FFFF_FFFFusize];
+        let bp = JacobsonBalParen::new(unsafe { BitVec::from_raw_parts(&word, WORD_BITS) });
         for i in 0..32 {
             assert_eq!(bp.find_close(i), Some(63 - i), "pos={i}");
+        }
+    }
+
+    #[cfg(not(target_pointer_width = "64"))]
+    #[test]
+    fn test_find_close_all_nested() {
+        // ((((...))))  - 16 opens then 16 closes, fits in one word
+        let word = [0x0000_FFFFusize];
+        let bp = JacobsonBalParen::new(BitVec::from_raw_parts(&word, WORD_BITS));
+        for i in 0..16 {
+            assert_eq!(bp.find_close(i), Some(31 - i), "pos={i}");
         }
     }
 
@@ -986,11 +981,12 @@ mod tests {
         // Word 1: 32 closes then 32 opens (to close inner and reopen)
         // Word 2: 64 closes
         // Actually this won't be balanced easily. Let me use random_balanced.
-        let (words, len) = random_balanced(192);
-        let bp = JacobsonBalParen::new(words.clone(), len);
+        let bp = JacobsonBalParen::new(random_balanced(192));
+        let words = bp.as_ref();
+        let len = bp.len();
         for pos in 0..len {
             if words[pos / WORD_BITS] & (1usize << (pos % WORD_BITS)) != 0 {
-                let expected = find_close_naive(&words, pos, len);
+                let expected = find_close_naive(words, pos, len);
                 let actual = bp.find_close(pos).unwrap();
                 assert_eq!(
                     actual, expected,

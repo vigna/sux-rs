@@ -1,10 +1,13 @@
 use sux::bal_paren::jacobson::JacobsonBalParen;
-use sux::bits::BitFieldVec;
+use sux::bits::{BitFieldVec, BitVec};
 use sux::list::prefix_sum_int_list::PrefixSumIntList;
+use sux::prelude::BalParen;
+use sux::traits::{BitLength, PredUnchecked};
+use value_traits::slices::SliceByValue;
 
 /// Helper: build a balanced parentheses sequence from a pattern string
 /// where '(' = open (1-bit) and ')' = close (0-bit).
-fn from_pattern(pattern: &str) -> (Vec<usize>, usize) {
+fn from_pattern(pattern: &str) -> BitVec<Box<[usize]>> {
     let len = pattern.len();
     let mut words = vec![0usize; len.div_ceil(usize::BITS as usize)];
     for (i, c) in pattern.chars().enumerate() {
@@ -12,15 +15,16 @@ fn from_pattern(pattern: &str) -> (Vec<usize>, usize) {
             words[i / usize::BITS as usize] |= 1usize << (i % usize::BITS as usize);
         }
     }
-    (words, len)
+    unsafe { BitVec::from_raw_parts(words.into_boxed_slice(), len) }
 }
 
 /// Verifies that `find_close` is correct for all open parens in a pattern.
 fn verify_find_close<
-    P: for<'a> sux::traits::Pred<Input = usize, Output<'a> = usize>,
-    O: value_traits::slices::SliceByValue<Value = usize>,
+    B: AsRef<[usize]> + BitLength,
+    P: for<'a> PredUnchecked<Input = usize, Output<'a> = usize>,
+    O: SliceByValue<Value = usize>,
 >(
-    bp: &JacobsonBalParen<P, O>,
+    bp: &JacobsonBalParen<B, P, O>,
     pattern: &str,
 ) {
     let mut stack = Vec::new();
@@ -58,12 +62,12 @@ fn test_small_patterns() {
         "(())(())",
         "((((()))))",
     ] {
-        let (words, len) = from_pattern(pattern);
-        let bp = JacobsonBalParen::new(words.clone(), len);
+        let paren = from_pattern(pattern);
+        let bp = JacobsonBalParen::new(&paren);
         verify_find_close(&bp, pattern);
 
         let bp_bfv =
-            <JacobsonBalParen<_, BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(words, len);
+            <JacobsonBalParen<_, _, BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(paren);
         verify_find_close(&bp_bfv, pattern);
     }
 }
@@ -74,13 +78,13 @@ fn test_cross_word_boundary() {
     // 40 nested pairs = 80 bits, forcing far matches.
     let n = 40;
     let pattern: String = "(".repeat(n) + &")".repeat(n);
-    let (words, len) = from_pattern(&pattern);
+    let paren = from_pattern(&pattern);
 
-    let bp = JacobsonBalParen::new(words.clone(), len);
+    let bp = JacobsonBalParen::new(&paren);
     verify_find_close(&bp, &pattern);
 
     let bp_bfv =
-        <JacobsonBalParen<_, BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(words, len);
+        <JacobsonBalParen<_, _, BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(&paren);
     verify_find_close(&bp_bfv, &pattern);
 }
 
@@ -113,13 +117,12 @@ fn test_large_random() {
     }
     let pattern: String = pattern.into_iter().collect();
 
-    let (words, len) = from_pattern(&pattern);
+    let paren = from_pattern(&pattern);
 
-    let bp = JacobsonBalParen::new(words.clone(), len);
+    let bp = JacobsonBalParen::new(&paren);
     verify_find_close(&bp, &pattern);
 
-    let bp_bfv =
-        <JacobsonBalParen<_, BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(words, len);
+    let bp_bfv = <JacobsonBalParen<_, _, BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(paren);
     verify_find_close(&bp_bfv, &pattern);
 }
 
@@ -148,16 +151,14 @@ fn test_comp_int_and_bfv_agree() {
         depth -= 1;
     }
 
-    let (words, len) = from_pattern(&bal);
+    let paren = from_pattern(&bal);
 
-    let bp_ci = JacobsonBalParen::new(words.clone(), len);
-    let bp_bfv = <JacobsonBalParen<_, BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(
-        words.clone(),
-        len,
-    );
-    let bp_ps = <JacobsonBalParen<_, PrefixSumIntList>>::new_with_prefix_sum(words, len);
+    let bp_ci = JacobsonBalParen::new(&paren);
+    let bp_bfv =
+        <JacobsonBalParen<_, _, BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(&paren);
+    let bp_ps = <JacobsonBalParen<_, _, PrefixSumIntList>>::new_with_prefix_sum(&paren);
 
-    for i in 0..len {
+    for i in 0..paren.len() {
         let ci = bp_ci.find_close(i);
         let bfv = bp_bfv.find_close(i);
         let ps = bp_ps.find_close(i);
@@ -170,17 +171,15 @@ fn test_comp_int_and_bfv_agree() {
 
 #[test]
 fn test_accessors() {
-    let (words, len) = from_pattern("(())()");
-    let bp = JacobsonBalParen::new(words, len);
+    let paren = from_pattern("(())()");
+    let bp = JacobsonBalParen::new(paren);
     assert_eq!(bp.len(), 6);
-    assert!(!bp.is_empty());
-    assert_eq!(bp.words().len(), 1);
+    assert_eq!(bp.as_ref().len(), 1);
 }
 
 #[test]
 fn test_empty() {
-    let bp = JacobsonBalParen::new(vec![], 0);
-    assert!(bp.is_empty());
+    let bp = JacobsonBalParen::new(BitVec::new(0));
     assert_eq!(bp.len(), 0);
     assert_eq!(bp.find_close(0), None);
 }
@@ -189,7 +188,7 @@ fn test_empty() {
 
 #[test]
 fn test_find_close_not_open() {
-    let bp = JacobsonBalParen::new(vec![0b0011], 4);
+    let bp = JacobsonBalParen::new(unsafe { BitVec::from_raw_parts(vec![0b0011], 4) });
     assert_eq!(bp.find_close(2), None); // close paren
     assert_eq!(bp.find_close(4), None); // out of bounds
 }
@@ -198,7 +197,9 @@ fn test_find_close_not_open() {
 fn test_find_close_sequential_pairs_across_words() {
     // Pattern 0b...0101_0101: each "()" pair is in-word.
     let alternating: usize = usize::MAX / 3; // 0x5555...5555
-    let bp = JacobsonBalParen::new(vec![alternating; 2], 2 * usize::BITS as usize);
+    let bp = JacobsonBalParen::new(unsafe {
+        BitVec::from_raw_parts(vec![alternating; 2], 2 * usize::BITS as usize)
+    });
     for i in 0..usize::BITS as usize {
         let pos = i * 2;
         assert_eq!(bp.find_close(pos), Some(pos + 1), "Failed for pos={pos}");
@@ -216,8 +217,8 @@ fn test_epserde() {
     // Build a non-trivial BP sequence crossing word boundaries.
     let n = 200;
     let pattern: String = "(".repeat(n) + &")".repeat(n);
-    let (words, len) = from_pattern(&pattern);
-    let bp = JacobsonBalParen::new(words, len);
+    let paren = from_pattern(&pattern);
+    let bp = JacobsonBalParen::new(&paren);
 
     // Serialize
     let mut cursor = <AlignedCursor<Aligned64>>::new();
