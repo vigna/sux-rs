@@ -1041,13 +1041,18 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 /// A wrapper around [`BitVec`] that implements [`BitVecValueOps`] using
 /// unaligned reads.
 ///
-/// The [constructor is unsafe](Self::new) because the caller must ensure that
-/// all bit widths used with this wrapper satisfy the constraints for unaligned
-/// reads and that a padding word is present. For this reason we [`BitVec`]
-/// cannot implement [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned).
+/// Obtain an instance via [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned)
+/// on a `BitVec<Box<[W]>>`, which adds a padding word if one is not already
+/// present. You can recover the original [`BitFieldVec`] using a [`From`
+/// implementation](#impl-From<BitVecU<Box<%5BW%5D>>>-for-BitVec<Box<%5BW%5D>>)
 ///
-/// We delegate [`Backend`], [`AsRef<[B::Word]>`](AsRef), and [`BitLength`] to
-/// the inner [`BitVec`] to automatically implement [`BitVecOps`].
+/// Note that unaligned reads give correct results only when the bit width
+/// satisfies the unaligned constraints (at most `W::BITS - 6`, or exactly
+/// `W::BITS - 4`, or exactly `W::BITS`). Using other widths will not
+/// cause undefined behavior, but may return incorrect values.
+///
+/// We delegate [`Backend`], [`BitLength`], and [`AsRef<[Backend::Word]>`](AsRef)
+/// to make [`BitVecOps`] methods available.
 #[derive(Debug, Clone, Delegate, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1055,28 +1060,35 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 #[delegate(crate::traits::bit_vec_ops::BitLength, target = "0")]
 pub struct BitVecU<B>(BitVec<B>);
 
-impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVecU<B> {
-    /// Creates a new [`BitVecU`] from a padded [`BitVec`].
+impl<W: Word> From<BitVecU<Box<[W]>>> for BitVec<Box<[W]>> {
+    /// Converts a [`BitVecU`] back into a [`BitVec`].
     ///
-    /// # Safety
-    ///
-    /// - All bit widths used with this wrapper must satisfy the constraints
-    ///   for unaligned reads.
-    /// - The underlying storage must contain at least one padding word
-    ///   beyond the data (e.g., created via [`BitVec::into_padded`]).
-    pub unsafe fn new(data: BitVec<B>) -> Self {
-        debug_assert!(
-            data.as_ref().len() > data.len().div_ceil(B::Word::BITS as usize),
-            "BitVecU: missing padding word (storage has {} words, need > {})",
-            data.as_ref().len(),
-            data.len().div_ceil(B::Word::BITS as usize),
-        );
-        Self(data)
+    /// The padding word is kept in the backing storage so that a subsequent
+    /// [`try_into_unaligned`](crate::traits::TryIntoUnaligned::try_into_unaligned)
+    /// does not need to reallocate.
+    fn from(unaligned: BitVecU<Box<[W]>>) -> Self {
+        unaligned.0
     }
+}
 
-    /// Consumes the wrapper and returns the inner [`BitVec`].
-    pub fn into_inner(self) -> BitVec<B> {
-        self.0
+impl<W: Word> crate::traits::TryIntoUnaligned for BitVec<Box<[W]>> {
+    type Unaligned = BitVecU<Box<[W]>>;
+
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+        let needed = self.len().div_ceil(W::BITS as usize);
+        if self.as_ref().len() > needed {
+            Ok(BitVecU(self))
+        } else {
+            let (raw, len) = self.into_raw_parts();
+            let mut v = raw.into_vec();
+            v.reserve_exact(1);
+            v.push(W::ZERO);
+            Ok(BitVecU(unsafe {
+                BitVec::from_raw_parts(v.into_boxed_slice(), len)
+            }))
+        }
     }
 }
 

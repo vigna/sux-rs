@@ -1834,11 +1834,12 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateB
 /// access patterns.
 ///
 /// The [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait converts a
-/// [`BitFieldVec`] into an [`BitFieldVecU`] after adding a padding word
-/// at the end, which is required for unaligned reads to work correctly. The
-/// conversion will fail if the bit width does not satisfy the constraints of
+/// [`BitFieldVec`] into an [`BitFieldVecU`] after adding a padding word at the
+/// end, which is required for unaligned reads to work correctly. The conversion
+/// will fail if the bit width does not satisfy the constraints of
 /// [`BitFieldVec::get_unaligned_unchecked`]. You can recover the original
-/// [`BitFieldVec`] using [`into_inner`](Self::into_inner).
+/// [`BitFieldVec`] using a [`From`
+/// implementation](#impl-From<BitFieldVecU<Box<%5BW%5D>>>-for-BitFieldVec<Box<%5BW%5D>>).
 ///
 /// # Safety
 ///
@@ -1866,11 +1867,6 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateB
 pub struct BitFieldVecU<B: Backend<Word: Word> = Vec<usize>>(BitFieldVec<B>);
 
 impl<B: Backend<Word: Word>> BitFieldVecU<B> {
-    /// Consumes the wrapper and returns the inner [`BitFieldVec`].
-    pub fn into_inner(self) -> BitFieldVec<B> {
-        self.0
-    }
-
     /// Returns the mask used to extract values from the vector.
     /// This will keep the lowest `bit_width` bits.
     pub const fn mask(&self) -> B::Word {
