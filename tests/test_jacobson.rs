@@ -62,7 +62,8 @@ fn test_small_patterns() {
         let bp = JacobsonBalParen::new(words.clone(), len);
         verify_find_close(&bp, pattern);
 
-        let bp_bfv = <JacobsonBalParen<_, BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(words, len);
+        let bp_bfv =
+            <JacobsonBalParen<_, BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(words, len);
         verify_find_close(&bp_bfv, pattern);
     }
 }
@@ -78,7 +79,8 @@ fn test_cross_word_boundary() {
     let bp = JacobsonBalParen::new(words.clone(), len);
     verify_find_close(&bp, &pattern);
 
-    let bp_bfv = <JacobsonBalParen<_, BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(words, len);
+    let bp_bfv =
+        <JacobsonBalParen<_, BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(words, len);
     verify_find_close(&bp_bfv, &pattern);
 }
 
@@ -116,7 +118,8 @@ fn test_large_random() {
     let bp = JacobsonBalParen::new(words.clone(), len);
     verify_find_close(&bp, &pattern);
 
-    let bp_bfv = <JacobsonBalParen<_, BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(words, len);
+    let bp_bfv =
+        <JacobsonBalParen<_, BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(words, len);
     verify_find_close(&bp_bfv, &pattern);
 }
 
@@ -148,7 +151,10 @@ fn test_comp_int_and_bfv_agree() {
     let (words, len) = from_pattern(&bal);
 
     let bp_ci = JacobsonBalParen::new(words.clone(), len);
-    let bp_bfv = <JacobsonBalParen<_, BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(words.clone(), len);
+    let bp_bfv = <JacobsonBalParen<_, BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(
+        words.clone(),
+        len,
+    );
     let bp_ps = <JacobsonBalParen<_, PrefixSumIntList>>::new_with_prefix_sum(words, len);
 
     for i in 0..len {

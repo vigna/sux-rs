@@ -53,7 +53,6 @@
 #![allow(clippy::comparison_chain)]
 #![allow(clippy::type_complexity)]
 use anyhow::Result;
-use arrayvec::ArrayVec;
 use mem_dbg::{MemDbg, MemSize};
 
 use rdst::RadixKey;
@@ -687,6 +686,8 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
         // thread-local counters for bucket/shard sizes (merged at the
         // end, avoiding all atomic operations in the hot loop).
         const CAP: usize = 48;
+
+        use arrayvec::ArrayVec;
 
         let max_val = (0..n)
             .into_par_iter()

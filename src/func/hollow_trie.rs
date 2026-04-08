@@ -1352,8 +1352,11 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
 }
 
 #[cfg(feature = "rayon")]
-impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]>, D: SliceByValue<Value = usize> + MemSize, B: BalParen>
-    HtDistMmphf<K, D, B>
+impl<
+    K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]>,
+    D: SliceByValue<Value = usize> + MemSize,
+    B: BalParen,
+> HtDistMmphf<K, D, B>
 {
     /// Returns the rank (0-based position) of the given key in the
     /// original sorted sequence.
@@ -1404,7 +1407,9 @@ impl TryIntoUnaligned for HollowTrieDistributor {
 impl From<HollowTrieDistributor<BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>>
     for HollowTrieDistributor
 {
-    fn from(f: HollowTrieDistributor<BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>) -> Self {
+    fn from(
+        f: HollowTrieDistributor<BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>,
+    ) -> Self {
         // SAFETY: Into::into preserves the semantics of the pioneer
         // position and offset structures.
         let bal_paren = unsafe {
@@ -2177,7 +2182,8 @@ impl<K: PrimitiveInteger> TryIntoUnaligned for HtDistMmphfInt<K> {
 }
 
 #[cfg(feature = "rayon")]
-impl<K: PrimitiveInteger> From<HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>>
+impl<K: PrimitiveInteger>
+    From<HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>>
     for HtDistMmphfInt<K>
 {
     fn from(f: HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>, Unaligned<JacobsonBalParen>>) -> Self {

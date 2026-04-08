@@ -5,7 +5,7 @@
  */
 
 //! An implementation of Jacobson's balanced parentheses data structure.
-//! 
+//!
 //! See [`JacobsonBalParen`] for details.
 //!
 //! The in-word [`find_near_close`] and far-match [`find_far_close`] functions
@@ -206,14 +206,14 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 ///
 /// Open parentheses are represented as 1-bits and close parentheses as
 /// 0-bits, with bit 0 being the LSB.
-/// 
+///
 /// # Implementation details
-/// 
+///
 /// This implementation uses the pioneer technique from Jacobson: an opening
 /// parenthesis whose match falls in a different `usize` word is called *far*
 /// (the original paper uses blocks that are logarithmic in the number of
 /// parentheses).
-/// 
+///
 /// Among the far opening parentheses, a subset called *pioneers* is selected: a
 /// far opening parenthesis is a pioneer if it is the first far opening
 /// parenthesis in its word, or if its match falls in a different word than the
@@ -226,7 +226,7 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 /// - [`CompIntList`] (default, best space);
 /// - [`PrefixSumIntList`] (faster queries, more space);
 /// - [`BitFieldVec`] (fastest queries, largest space).
-/// 
+///
 /// Both structures can be replaced with custom implementations as long as they
 /// return the same values, using
 /// [`map_pioneer_positions`](Self::map_pioneer_positions) and
@@ -243,7 +243,7 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 ///
 /// - `P`: The predecessor structure for pioneer positions. Must implement
 ///   [`PredUnchecked<Input = usize>`](PredUnchecked). Defaults to [`EfDict<usize>`].
-/// 
+///
 /// - `O`: The storage for pioneer match offsets. Must implement
 ///   [`SliceByValue<Value = usize>`](SliceByValue). Defaults to [`CompIntList`]
 ///   for compact variable-length encoding. See the
@@ -493,9 +493,9 @@ where
         }
 
         // Far match: look up the pioneer using predecessor query
-        let (pioneer_index, pioneer) = self
-            .pioneer_positions
-            .pred_unchecked(pos);
+        let (pioneer_index, pioneer) = unsafe {
+            self.pioneer_positions.pred_unchecked::<false>(pos);
+        };
 
         let match_pos = pioneer
             + unsafe {
