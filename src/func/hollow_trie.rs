@@ -1583,7 +1583,7 @@ impl<K: ?Sized>
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// HtDistMmphfInt — Integer variant
+// Integer variant — helpers, HtDistInt, HtDistMmphfInt
 // ═══════════════════════════════════════════════════════════════════
 
 /// Read bit `i` (MSB-first) from an integer.
@@ -1772,8 +1772,532 @@ fn encode_int_behaviour_key<K: PrimitiveInteger>(
     buf
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// HtDistInt — Integer Hollow Trie Distributor
+// ═══════════════════════════════════════════════════════════════════
+
+/// A hollow trie distributor for sorted integer keys.
+///
+/// This is the integer-key analogue of [`HtDist`]. It assigns each
+/// key to a bucket index using a compacted trie built on
+/// the bucket delimiters combined with behaviour functions stored as
+/// [`VFunc`]s.
+///
+/// Internally, keys are XOR-mapped with `K::MIN` so that numeric
+/// order matches bit-lexicographic order (for unsigned types this is
+/// a no-op).
+#[cfg(feature = "rayon")]
+#[derive(Debug)]
+pub struct HtDistInt<
+    K,
+    E = VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+    F = VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+    B: BalParen = JacobsonBalParen,
+    S = PrefixSumIntList,
+> {
+    /// Balanced-parentheses support structure for the trie.
+    bal_paren: B,
+    /// Skip values stored as a prefix-sum list over Elias-Fano.
+    skips: S,
+    /// Number of internal nodes (= number of delimiters - 1).
+    #[allow(dead_code)]
+    num_nodes: usize,
+    /// Number of delimiters.
+    num_delimiters: usize,
+    /// External behaviour: maps (node, path) -> LEFT (0) or RIGHT (1).
+    external_behaviour: E,
+    /// Detects false follows: maps (node, path) -> 0 (true follow) or
+    /// 1 (false follow).
+    false_follows_detector: F,
+    /// Phantom data for `K`.
+    _marker: std::marker::PhantomData<K>,
+}
+
+#[cfg(feature = "rayon")]
+impl<
+        K,
+        E: MemSize + mem_dbg::FlatType,
+        F: MemSize + mem_dbg::FlatType,
+        B: BalParen + MemSize + mem_dbg::FlatType,
+        S: MemSize + mem_dbg::FlatType,
+    > MemSize for HtDistInt<K, E, F, B, S>
+{
+    fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
+        let mut size = core::mem::size_of::<Self>();
+        size += self.bal_paren.mem_size_rec(flags, refs);
+        size += self.skips.mem_size_rec(flags, refs);
+        size += self.false_follows_detector.mem_size_rec(flags, refs);
+        size += self.external_behaviour.mem_size_rec(flags, refs);
+        size
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<
+        K,
+        E: MemSize + mem_dbg::FlatType,
+        F: MemSize + mem_dbg::FlatType,
+        B: BalParen + MemSize + mem_dbg::FlatType,
+        S: MemSize + mem_dbg::FlatType,
+    > MemDbgImpl for HtDistInt<K, E, F, B, S>
+{
+}
+
+#[cfg(feature = "rayon")]
+impl<K>
+    HtDistInt<
+        K,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+    >
+where
+    K: PrimitiveInteger + Copy + Ord + Send + Sync + std::fmt::Debug,
+{
+    /// Builds a hollow trie distributor from sorted integer keys.
+    ///
+    /// `keys` must be in strictly increasing order. `n` is the total
+    /// number of keys and `log2_bucket_size` the base-2 log of the
+    /// bucket size.
+    ///
+    /// The constructor iterates over all keys twice: once to collect
+    /// delimiters and build the trie, and once to compute behaviour
+    /// keys. The lender is rewound between passes.
+    pub fn try_new(
+        mut keys: impl FallibleRewindableLender<
+            RewindError: std::error::Error + Send + Sync + 'static,
+            Error: std::error::Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend K>,
+        n: usize,
+        log2_bucket_size: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        let bit_length = K::BITS as usize;
+        let bucket_size = 1usize << log2_bucket_size;
+        let num_full_buckets = n / bucket_size;
+        let num_delimiters = num_full_buckets;
+        let num_buckets = n.div_ceil(bucket_size);
+
+        // ── Pass 1: collect delimiters, build trie ────────────────
+        let mut builder = HollowTrieBuilderInt::<K>::new();
+        let mut delimiters: Vec<K> = Vec::with_capacity(num_delimiters);
+        let mut i = 0usize;
+        while let Some(key) = keys.next()? {
+            let mapped = *key ^ K::MIN;
+            if i % bucket_size == bucket_size - 1 && delimiters.len() < num_delimiters {
+                builder.push(mapped);
+                delimiters.push(mapped);
+            }
+            i += 1;
+        }
+        anyhow::ensure!(i == n, "Expected {n} keys but got {i}");
+        debug_assert_eq!(delimiters.len(), num_delimiters);
+
+        let (trie, raw_skips, num_nodes) = builder.finish();
+        let bal_paren = JacobsonBalParen::new(trie);
+        let skips = crate::list::PrefixSumIntList::new(&raw_skips);
+
+        if num_delimiters == 0 {
+            return Ok(Self {
+                bal_paren,
+                skips,
+                num_nodes,
+                num_delimiters,
+                false_follows_detector: VFunc::empty(),
+                external_behaviour: VFunc::empty(),
+                _marker: std::marker::PhantomData,
+            });
+        }
+
+        // ── Pass 2: compute behaviours from lender ────────────────
+        let mut keys = keys.rewind()?;
+
+        let mut emitted = vec![false; num_nodes];
+        let mut ff_keys: Vec<Vec<u8>> = Vec::new();
+        let mut ff_values: Vec<usize> = Vec::new();
+        let mut ext_keys: Vec<Vec<u8>> = Vec::new();
+        let mut ext_values: Vec<usize> = Vec::new();
+
+        pl.info(format_args!(
+            "Computing behaviour keys ({n} keys, {num_delimiters} delimiters, {num_nodes} internal nodes)..."
+        ));
+
+        let mut right_delim_idx: Option<usize> = None;
+        let mut delimiter_lcp: Option<usize>;
+
+        for b in 0..num_buckets {
+            let real_bucket_size = if b < num_full_buckets {
+                bucket_size
+            } else {
+                n - b * bucket_size
+            };
+
+            let left_delim_idx = right_delim_idx;
+            right_delim_idx = if real_bucket_size == bucket_size {
+                Some(b)
+            } else {
+                None
+            };
+            let left_delimiter: Option<K> = left_delim_idx.map(|i| delimiters[i]);
+            let right_delimiter: Option<K> = right_delim_idx.map(|i| delimiters[i]);
+            delimiter_lcp = match (left_delimiter, right_delimiter) {
+                (Some(l), Some(r)) => Some(lcp_bits(l, r)),
+                _ => None,
+            };
+
+            let mut stack_p: Vec<usize> = vec![1];
+            let mut stack_r: Vec<usize> = vec![0];
+            let mut stack_s: Vec<usize> = vec![0];
+            let mut stack_index: Vec<usize> = vec![0];
+            let mut depth: usize = 0;
+
+            let mut last_node: Option<usize> = None;
+            let mut last_path: Option<Vec<u8>> = None;
+            let mut prev_mapped: K = K::default();
+
+            for j in 0..real_bucket_size {
+                let key_ref = keys.next()?.expect("unexpected end of keys");
+                let mapped = *key_ref ^ K::MIN;
+
+                if j > 0 {
+                    let prefix = lcp_bits(prev_mapped, mapped);
+                    while depth > 0 && stack_s[depth] > prefix {
+                        depth -= 1;
+                    }
+                }
+
+                let mut p = stack_p[depth];
+                let mut r = stack_r[depth];
+                let mut s = stack_s[depth];
+                let mut index = stack_index[depth];
+
+                // For integers: identical keys yield lcp == K::BITS,
+                // so max_descent_length == K::BITS + 1 — correct.
+                let (exit_left, max_descent_length) = match (left_delimiter, right_delimiter) {
+                    (None, Some(rd)) => (true, lcp_bits(mapped, rd) + 1),
+                    (Some(ld), None) => (false, lcp_bits(mapped, ld) + 1),
+                    (Some(ld), Some(rd)) => {
+                        let dlcp = delimiter_lcp.unwrap();
+                        if get_int_bit(mapped, dlcp) {
+                            (true, lcp_bits(mapped, rd) + 1)
+                        } else {
+                            (false, lcp_bits(mapped, ld) + 1)
+                        }
+                    }
+                    (None, None) => (true, bit_length + 1),
+                };
+
+                let mut is_internal;
+                let mut skip = 0usize;
+
+                loop {
+                    is_internal = get_bit(bal_paren.as_ref(), p);
+                    if is_internal {
+                        use value_traits::slices::SliceByValue;
+                        skip = skips.index_value(r);
+                    }
+
+                    if is_internal && s + skip < max_descent_length && !emitted[r] {
+                        emitted[r] = true;
+                        let key =
+                            encode_int_behaviour_key(p - 1, mapped, s, (s + skip).min(bit_length));
+                        ff_keys.push(key);
+                        ff_values.push(0);
+                    }
+
+                    if !is_internal {
+                        break;
+                    }
+                    s += skip;
+                    if s >= max_descent_length {
+                        break;
+                    }
+
+                    if get_int_bit(mapped, s) {
+                        let q = bal_paren
+                            .find_close(p)
+                            .expect("balanced parentheses broken")
+                            + 1;
+                        index += (q - p) / 2;
+                        r += (q - p) / 2;
+                        p = q;
+                    } else {
+                        p += 1;
+                        r += 1;
+                    }
+
+                    s += 1;
+
+                    depth += 1;
+                    if depth >= stack_p.len() {
+                        stack_p.resize(depth + 1, 0);
+                        stack_r.resize(depth + 1, 0);
+                        stack_s.resize(depth + 1, 0);
+                        stack_index.resize(depth + 1, 0);
+                    }
+                    stack_p[depth] = p;
+                    stack_r[depth] = r;
+                    stack_s[depth] = s;
+                    stack_index[depth] = index;
+                }
+
+                let (start_path, end_path) = if is_internal {
+                    (s.saturating_sub(skip), s.min(bit_length))
+                } else {
+                    (s.min(bit_length), bit_length)
+                };
+                debug_assert!(
+                    start_path <= end_path,
+                    "bad path range: start={start_path}, end={end_path}, s={s}, skip={skip}, bit_length={bit_length}, is_internal={is_internal}"
+                );
+
+                if !is_internal {
+                    last_node = None;
+                }
+
+                let path_key = encode_int_behaviour_key(p - 1, mapped, start_path, end_path);
+
+                let is_dup =
+                    last_node == Some(p - 1) && last_path.as_deref() == Some(path_key.as_slice());
+
+                if !is_dup {
+                    ext_values.push(if exit_left { LEFT } else { RIGHT });
+                    if is_internal {
+                        last_path = Some(path_key.clone());
+                        last_node = Some(p - 1);
+                        ff_keys.push(path_key.clone());
+                        ff_values.push(1);
+                    }
+                    ext_keys.push(path_key);
+                }
+
+                prev_mapped = mapped;
+            }
+        }
+
+        pl.info(format_args!(
+            "Building false-follows detector ({} keys)...",
+            ff_keys.len()
+        ));
+
+        let false_follows_detector =
+            <VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>>::try_new(
+                FromSlice::new(&ff_keys),
+                FromCloneableIntoIterator::new(ff_values.iter().copied()),
+                ff_keys.len(),
+                pl,
+            )?;
+
+        pl.info(format_args!(
+            "Building external behaviour ({} keys)...",
+            ext_keys.len()
+        ));
+
+        let external_behaviour =
+            <VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>>::try_new(
+                FromSlice::new(&ext_keys),
+                FromCloneableIntoIterator::new(ext_values.iter().copied()),
+                ext_keys.len(),
+                pl,
+            )?;
+
+        Ok(Self {
+            bal_paren,
+            skips,
+            num_nodes,
+            num_delimiters,
+            false_follows_detector,
+            external_behaviour,
+            _marker: std::marker::PhantomData,
+        })
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<
+        K: PrimitiveInteger,
+        D: SliceByValue<Value = usize>,
+        B: BalParen + AsRef<[usize]>,
+        S: SliceByValue<Value = usize>,
+    >
+    HtDistInt<
+        K,
+        VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
+        B,
+        S,
+    >
+{
+    /// Returns the bucket index for the given integer key.
+    ///
+    /// The key is XOR-mapped with `K::MIN` and navigated through the
+    /// hollow trie using the balanced parentheses structure and skip
+    /// values. At each internal node, the behaviour functions determine
+    /// whether to follow the trie edge or exit left/right.
+    pub fn get(&self, key: K) -> usize {
+        if self.num_delimiters == 0 {
+            return 0;
+        }
+
+        let mapped = key ^ K::MIN;
+        let length = K::BITS as usize;
+
+        let trie_words = self.bal_paren.as_ref();
+        let mut p: usize = 1;
+        let mut index: usize = 0;
+        let mut r: usize = 0;
+        let mut s: usize = 0;
+        let mut last_left_turn: usize = 0;
+        let mut last_left_turn_index: usize = 0;
+        // Max: 2 * 8 (header) + 16 (u128) = 32 bytes.
+        let mut key_buf = [0u8; BEHAVIOUR_KEY_HEADER + 16];
+
+        loop {
+            let is_internal = get_bit(trie_words, p);
+            let skip: usize = if is_internal {
+                self.skips.index_value(r)
+            } else {
+                0
+            };
+
+            let behaviour = if is_internal {
+                let n = encode_int_behaviour_key_into(
+                    &mut key_buf,
+                    p - 1,
+                    mapped,
+                    s,
+                    (s + skip).min(length),
+                );
+                if self.false_follows_detector.get(&key_buf[..n]) == 0 {
+                    FOLLOW
+                } else {
+                    self.external_behaviour.get(&key_buf[..n])
+                }
+            } else {
+                let n = encode_int_behaviour_key_into(&mut key_buf, p - 1, mapped, s, length);
+                self.external_behaviour.get(&key_buf[..n])
+            };
+
+            if behaviour != FOLLOW || !is_internal || {
+                s += skip;
+                s >= length
+            } {
+                if behaviour == LEFT {
+                    return index;
+                } else if is_internal {
+                    let q = self
+                        .bal_paren
+                        .find_close(last_left_turn)
+                        .expect("balanced parentheses broken");
+                    #[allow(clippy::manual_div_ceil)]
+                    return ((q - last_left_turn + 1) / 2) + last_left_turn_index;
+                } else {
+                    return index + 1;
+                }
+            }
+
+            if get_int_bit(mapped, s) {
+                let q = self
+                    .bal_paren
+                    .find_close(p)
+                    .expect("balanced parentheses broken")
+                    + 1;
+                index += (q - p) / 2;
+                r += (q - p) / 2;
+                p = q;
+            } else {
+                last_left_turn = p;
+                last_left_turn_index = index;
+                p += 1;
+                r += 1;
+            }
+
+            s += 1;
+        }
+    }
+}
+
+// ── Integer TryIntoUnaligned conversions ──────────────────────────
+
+#[cfg(feature = "rayon")]
+impl<K: PrimitiveInteger>
+    TryIntoUnaligned
+    for HtDistInt<
+        K,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+    >
+{
+    type Unaligned = HtDistInt<
+        K,
+        VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+        Unaligned<JacobsonBalParen>,
+    >;
+    fn try_into_unaligned(
+        self,
+    ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
+        Ok(HtDistInt {
+            bal_paren: self.bal_paren.try_into_unaligned()?,
+            skips: self.skips,
+            num_nodes: self.num_nodes,
+            num_delimiters: self.num_delimiters,
+            false_follows_detector: self.false_follows_detector.try_into_unaligned()?,
+            external_behaviour: self.external_behaviour.try_into_unaligned()?,
+            _marker: std::marker::PhantomData,
+        })
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<K: PrimitiveInteger>
+    From<
+        HtDistInt<
+            K,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            Unaligned<JacobsonBalParen>,
+        >,
+    >
+    for HtDistInt<
+        K,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+    >
+{
+    fn from(
+        f: HtDistInt<
+            K,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            Unaligned<JacobsonBalParen>,
+        >,
+    ) -> Self {
+        // SAFETY: Into::into preserves the semantics of the pioneer
+        // position and offset structures.
+        let bal_paren = unsafe {
+            f.bal_paren
+                .map_pioneer_positions(Into::into)
+                .map_pioneer_match_offsets(Into::into)
+        };
+        Self {
+            bal_paren,
+            skips: f.skips,
+            num_nodes: f.num_nodes,
+            num_delimiters: f.num_delimiters,
+            false_follows_detector: f.false_follows_detector.into(),
+            external_behaviour: f.external_behaviour.into(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// HtDistMmphfInt — Integer variant
+// ═══════════════════════════════════════════════════════════════════
+
 /// A monotone minimal perfect hash function for sorted integers,
-/// based on a hollow trie distributor.
+/// based on a [`HtDistInt`] and per-bucket offsets stored in a
+/// [`VFunc`].
 ///
 /// Given *n* integers of type `K` in ascending order, the structure
 /// maps each integer to its rank (0 to *n* − 1). Querying an integer
@@ -1819,35 +2343,35 @@ fn encode_int_behaviour_key<K: PrimitiveInteger>(
 #[cfg(feature = "rayon")]
 pub struct HtDistMmphfInt<
     K,
-    D = BitFieldVec<Box<[usize]>>,
-    B = JacobsonBalParen,
+    E = VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+    F = VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+    O = VFunc<K, BitFieldVec<Box<[usize]>>>,
+    B: BalParen = JacobsonBalParen,
     S = PrefixSumIntList,
 > {
-    bal_paren: B,
-    skips: S,
-    #[allow(dead_code)]
-    num_nodes: usize,
-    num_delimiters: usize,
-    false_follows_detector: VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
-    external_behaviour: VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
-    offset: VFunc<K, D>,
+    /// The hollow trie distributor.
+    distributor: HtDistInt<K, E, F, B, S>,
+    /// Per-key offset within the bucket.
+    offset: O,
+    /// Log2 of bucket size.
     log2_bucket_size: usize,
+    /// Number of keys.
     n: usize,
 }
 
 #[cfg(feature = "rayon")]
 impl<
-    K: PrimitiveInteger,
-    D: SliceByValue + MemSize + mem_dbg::FlatType,
-    B: BalParen + MemSize + mem_dbg::FlatType,
-> MemSize for HtDistMmphfInt<K, D, B>
+        K,
+        E: MemSize + mem_dbg::FlatType,
+        F: MemSize + mem_dbg::FlatType,
+        O: MemSize + mem_dbg::FlatType,
+        B: BalParen + MemSize + mem_dbg::FlatType,
+        S: MemSize + mem_dbg::FlatType,
+    > MemSize for HtDistMmphfInt<K, E, F, O, B, S>
 {
     fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
         let mut size = core::mem::size_of::<Self>();
-        size += self.bal_paren.mem_size_rec(flags, refs);
-        size += self.skips.mem_size_rec(flags, refs);
-        size += self.false_follows_detector.mem_size_rec(flags, refs);
-        size += self.external_behaviour.mem_size_rec(flags, refs);
+        size += self.distributor.mem_size_rec(flags, refs);
         size += self.offset.mem_size_rec(flags, refs);
         size
     }
@@ -1855,10 +2379,13 @@ impl<
 
 #[cfg(feature = "rayon")]
 impl<
-    K: PrimitiveInteger,
-    D: SliceByValue + MemSize + mem_dbg::FlatType,
-    B: BalParen + MemSize + mem_dbg::FlatType,
-> MemDbgImpl for HtDistMmphfInt<K, D, B>
+        K,
+        E: MemSize + mem_dbg::FlatType,
+        F: MemSize + mem_dbg::FlatType,
+        O: MemSize + mem_dbg::FlatType,
+        B: BalParen + MemSize + mem_dbg::FlatType,
+        S: MemSize + mem_dbg::FlatType,
+    > MemDbgImpl for HtDistMmphfInt<K, E, F, O, B, S>
 {
 }
 
@@ -1883,17 +2410,20 @@ where
 
         if n == 0 {
             return Ok(Self {
-                bal_paren: JacobsonBalParen::new({
-                    let mut bv: BitVec = BitVec::new(0);
-                    bv.push(true);
-                    bv.push(false);
-                    bv.into()
-                }),
-                skips: crate::list::PrefixSumIntList::new(&Vec::<usize>::new()),
-                num_nodes: 0,
-                num_delimiters: 0,
-                false_follows_detector: VFunc::empty(),
-                external_behaviour: VFunc::empty(),
+                distributor: HtDistInt {
+                    bal_paren: JacobsonBalParen::new({
+                        let mut bv: BitVec = BitVec::new(0);
+                        bv.push(true);
+                        bv.push(false);
+                        bv.into()
+                    }),
+                    skips: crate::list::PrefixSumIntList::new(&Vec::<usize>::new()),
+                    num_nodes: 0,
+                    num_delimiters: 0,
+                    false_follows_detector: VFunc::empty(),
+                    external_behaviour: VFunc::empty(),
+                    _marker: std::marker::PhantomData,
+                },
                 offset: VFunc::empty(),
                 log2_bucket_size: 0,
                 n: 0,
@@ -1951,12 +2481,15 @@ where
                 pl,
             )?;
             return Ok(Self {
-                bal_paren,
-                skips,
-                num_nodes,
-                num_delimiters,
-                false_follows_detector: VFunc::empty(),
-                external_behaviour: VFunc::empty(),
+                distributor: HtDistInt {
+                    bal_paren,
+                    skips,
+                    num_nodes,
+                    num_delimiters,
+                    false_follows_detector: VFunc::empty(),
+                    external_behaviour: VFunc::empty(),
+                    _marker: std::marker::PhantomData,
+                },
                 offset,
                 log2_bucket_size: log2_bs,
                 n,
@@ -2155,6 +2688,16 @@ where
                 pl,
             )?;
 
+        let distributor = HtDistInt {
+            bal_paren,
+            skips,
+            num_nodes,
+            num_delimiters,
+            false_follows_detector,
+            external_behaviour,
+            _marker: std::marker::PhantomData,
+        };
+
         // ── Pass 3: build offset VFunc ────────────────────────────
         // Pass the lender directly to VFunc<K> — no collection needed.
         let keys = keys.rewind()?;
@@ -2169,12 +2712,7 @@ where
         )?;
 
         let result = Self {
-            bal_paren,
-            skips,
-            num_nodes,
-            num_delimiters,
-            false_follows_detector,
-            external_behaviour,
+            distributor,
             offset,
             log2_bucket_size: log2_bs,
             n,
@@ -2192,10 +2730,20 @@ where
 }
 
 #[cfg(feature = "rayon")]
-impl<K, D, B: BalParen + AsRef<[usize]>> HtDistMmphfInt<K, D, B>
-where
-    K: PrimitiveInteger + ToSig<[u64; 2]>,
-    D: SliceByValue<Value = usize> + MemSize + mem_dbg::FlatType,
+impl<
+        K: PrimitiveInteger + ToSig<[u64; 2]>,
+        D: SliceByValue<Value = usize> + MemSize + mem_dbg::FlatType,
+        B: BalParen + AsRef<[usize]>,
+        S: SliceByValue<Value = usize>,
+    >
+    HtDistMmphfInt<
+        K,
+        VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
+        VFunc<K, D>,
+        B,
+        S,
+    >
 {
     /// Returns the rank (0-based position) of the given key.
     ///
@@ -2205,86 +2753,8 @@ where
         if self.n <= 1 {
             return 0;
         }
-
-        let mapped = key ^ K::MIN;
-        let length = K::BITS as usize;
-
-        let trie_words = self.bal_paren.as_ref();
-        let mut p: usize = 1;
-        let mut index: usize = 0;
-        let mut r: usize = 0;
-        let mut s: usize = 0;
-        let mut last_left_turn: usize = 0;
-        let mut last_left_turn_index: usize = 0;
-        // Max: 2 * 8 (header) + 16 (u128) = 32 bytes.
-        let mut key_buf = [0u8; BEHAVIOUR_KEY_HEADER + 16];
-
-        loop {
-            let is_internal = get_bit(trie_words, p);
-            let skip: usize = if is_internal {
-                use value_traits::slices::SliceByValue;
-                self.skips.index_value(r)
-            } else {
-                0
-            };
-
-            let behaviour = if is_internal {
-                let n = encode_int_behaviour_key_into(
-                    &mut key_buf,
-                    p - 1,
-                    mapped,
-                    s,
-                    (s + skip).min(length),
-                );
-                if self.false_follows_detector.get(&key_buf[..n]) == 0 {
-                    FOLLOW
-                } else {
-                    self.external_behaviour.get(&key_buf[..n])
-                }
-            } else {
-                let n = encode_int_behaviour_key_into(&mut key_buf, p - 1, mapped, s, length);
-                self.external_behaviour.get(&key_buf[..n])
-            };
-
-            if behaviour != FOLLOW || !is_internal || {
-                s += skip;
-                s >= length
-            } {
-                let bucket = if behaviour == LEFT {
-                    index
-                } else if is_internal {
-                    let q = self
-                        .bal_paren
-                        .find_close(last_left_turn)
-                        .expect("balanced parentheses broken");
-                    #[allow(clippy::manual_div_ceil)]
-                    {
-                        ((q - last_left_turn + 1) / 2) + last_left_turn_index
-                    }
-                } else {
-                    index + 1
-                };
-                return (bucket << self.log2_bucket_size) + self.offset.get(&key);
-            }
-
-            if get_int_bit(mapped, s) {
-                let q = self
-                    .bal_paren
-                    .find_close(p)
-                    .expect("balanced parentheses broken")
-                    + 1;
-                index += (q - p) / 2;
-                r += (q - p) / 2;
-                p = q;
-            } else {
-                last_left_turn = p;
-                last_left_turn_index = index;
-                p += 1;
-                r += 1;
-            }
-
-            s += 1;
-        }
+        let bucket = self.distributor.get(key);
+        (bucket << self.log2_bucket_size) + self.offset.get(&key)
     }
 
     /// Returns the number of keys.
@@ -2298,22 +2768,22 @@ where
     }
 }
 
-// ── Integer TryIntoUnaligned conversions ──────────────────────────
+// ── Integer MMPHF TryIntoUnaligned conversions ────────────────────
 
 #[cfg(feature = "rayon")]
 impl<K: PrimitiveInteger> TryIntoUnaligned for HtDistMmphfInt<K> {
-    type Unaligned =
-        HtDistMmphfInt<K, Unaligned<BitFieldVec<Box<[usize]>>>, Unaligned<JacobsonBalParen>>;
+    type Unaligned = HtDistMmphfInt<
+        K,
+        VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<K, Unaligned<BitFieldVec<Box<[usize]>>>>,
+        Unaligned<JacobsonBalParen>,
+    >;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(HtDistMmphfInt {
-            bal_paren: self.bal_paren.try_into_unaligned()?,
-            skips: self.skips,
-            num_nodes: self.num_nodes,
-            num_delimiters: self.num_delimiters,
-            false_follows_detector: self.false_follows_detector.try_into_unaligned()?,
-            external_behaviour: self.external_behaviour.try_into_unaligned()?,
+            distributor: self.distributor.try_into_unaligned()?,
             offset: self.offset.try_into_unaligned()?,
             log2_bucket_size: self.log2_bucket_size,
             n: self.n,
@@ -2322,22 +2792,34 @@ impl<K: PrimitiveInteger> TryIntoUnaligned for HtDistMmphfInt<K> {
 }
 
 #[cfg(feature = "rayon")]
-impl<K: PrimitiveInteger> From<Unaligned<HtDistMmphfInt<K>>> for HtDistMmphfInt<K> {
-    fn from(f: Unaligned<HtDistMmphfInt<K>>) -> Self {
-        // SAFETY: Into::into preserves the semantics of the pioneer
-        // position and offset structures.
-        let bal_paren = unsafe {
-            f.bal_paren
-                .map_pioneer_positions(Into::into)
-                .map_pioneer_match_offsets(Into::into)
-        };
+impl<K: PrimitiveInteger>
+    From<
+        HtDistMmphfInt<
+            K,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<K, Unaligned<BitFieldVec<Box<[usize]>>>>,
+            Unaligned<JacobsonBalParen>,
+        >,
+    >
+    for HtDistMmphfInt<
+        K,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
+        VFunc<K, BitFieldVec<Box<[usize]>>>,
+    >
+{
+    fn from(
+        f: HtDistMmphfInt<
+            K,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
+            VFunc<K, Unaligned<BitFieldVec<Box<[usize]>>>>,
+            Unaligned<JacobsonBalParen>,
+        >,
+    ) -> Self {
         Self {
-            bal_paren,
-            skips: f.skips,
-            num_nodes: f.num_nodes,
-            num_delimiters: f.num_delimiters,
-            false_follows_detector: f.false_follows_detector.into(),
-            external_behaviour: f.external_behaviour.into(),
+            distributor: f.distributor.into(),
             offset: f.offset.into(),
             log2_bucket_size: f.log2_bucket_size,
             n: f.n,
