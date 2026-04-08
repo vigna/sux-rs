@@ -334,12 +334,6 @@ pub struct JacobsonBalParen<B = BitVec<Box<[usize]>>, P = EfDict<usize>, O = Com
     pioneer_match_offsets: O,
 }
 
-impl<W, B: AsRef<[W]>, P, O> AsRef<[W]> for JacobsonBalParen<B, P, O> {
-    fn as_ref(&self) -> &[W] {
-        self.paren.as_ref()
-    }
-}
-
 /// Identifies pioneers and builds the Elias–Fano position index.
 ///
 /// Returns `(ef_positions, pioneer_match_offsets)` where the offsets are
@@ -350,7 +344,6 @@ fn build_pioneers(words: impl AsRef<[usize]> + BitLength) -> (EfDict<usize>, Vec
     let num_words = len.div_ceil(WORD_BITS);
     debug_assert!(words.len() >= num_words);
 
-    let bits = words;
     let mut count = vec![0i32; num_words];
     let mut residual = vec![0usize; num_words];
 
@@ -366,10 +359,10 @@ fn build_pioneers(words: impl AsRef<[usize]> + BitLength) -> (EfDict<usize>, Vec
         // contain far opening parentheses.
         if block != num_words - 1 {
             let mut excess = 0i32;
-            let mut count_far_opening = count_far_open(bits[block], l) as i32;
+            let mut count_far_opening = count_far_open(words[block], l) as i32;
 
             for j in (0..l).rev() {
-                if bits[block] & (1usize << j) == 0 {
+                if words[block] & (1usize << j) == 0 {
                     if excess > 0 {
                         excess = -1;
                     } else {
@@ -396,7 +389,7 @@ fn build_pioneers(words: impl AsRef<[usize]> + BitLength) -> (EfDict<usize>, Vec
                             let pos = block * WORD_BITS + j;
                             let match_pos = matching_block * WORD_BITS
                                 + find_far_close(
-                                    bits[matching_block],
+                                    words[matching_block],
                                     residual[matching_block] as i64,
                                 );
                             opening_pioneers.push(pos);
@@ -407,7 +400,7 @@ fn build_pioneers(words: impl AsRef<[usize]> + BitLength) -> (EfDict<usize>, Vec
                 }
             }
         }
-        count[block] = count_far_close(bits[block], l) as i32;
+        count[block] = count_far_close(words[block], l) as i32;
     }
 
     for &c in &count {
@@ -518,6 +511,42 @@ impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B, EfDict<usize>, PrefixSum
     }
 }
 
+impl<B, P, O> JacobsonBalParen<B, P, O> {
+    /// Replaces the pioneer position structure with a new one obtained by
+    /// applying `func` to the current one.
+    ///
+    /// # Safety
+    ///
+    /// The new structure must return the same values as the old one.
+    pub unsafe fn map_pioneer_positions<P2>(
+        self,
+        func: impl FnOnce(P) -> P2,
+    ) -> JacobsonBalParen<B, P2, O> {
+        JacobsonBalParen {
+            paren: self.paren,
+            pioneer_positions: func(self.pioneer_positions),
+            pioneer_match_offsets: self.pioneer_match_offsets,
+        }
+    }
+
+    /// Replaces the pioneer match offset structure with a new one obtained by
+    /// applying `func` to the current one.
+    ///
+    /// # Safety
+    ///
+    /// The new structure must return the same values as the old one.
+    pub unsafe fn map_pioneer_match_offsets<O2>(
+        self,
+        func: impl FnOnce(O) -> O2,
+    ) -> JacobsonBalParen<B, P, O2> {
+        JacobsonBalParen {
+            paren: self.paren,
+            pioneer_positions: self.pioneer_positions,
+            pioneer_match_offsets: func(self.pioneer_match_offsets),
+        }
+    }
+}
+
 // ── Queries ────────────────────────────────────────────────────────────
 
 impl<
@@ -592,42 +621,6 @@ impl<
     }
 }
 
-impl<B, P, O> JacobsonBalParen<B, P, O> {
-    /// Replaces the pioneer position structure with a new one obtained by
-    /// applying `func` to the current one.
-    ///
-    /// # Safety
-    ///
-    /// The new structure must return the same values as the old one.
-    pub unsafe fn map_pioneer_positions<P2>(
-        self,
-        func: impl FnOnce(P) -> P2,
-    ) -> JacobsonBalParen<B, P2, O> {
-        JacobsonBalParen {
-            paren: self.paren,
-            pioneer_positions: func(self.pioneer_positions),
-            pioneer_match_offsets: self.pioneer_match_offsets,
-        }
-    }
-
-    /// Replaces the pioneer match offset structure with a new one obtained by
-    /// applying `func` to the current one.
-    ///
-    /// # Safety
-    ///
-    /// The new structure must return the same values as the old one.
-    pub unsafe fn map_pioneer_match_offsets<O2>(
-        self,
-        func: impl FnOnce(O) -> O2,
-    ) -> JacobsonBalParen<B, P, O2> {
-        JacobsonBalParen {
-            paren: self.paren,
-            pioneer_positions: self.pioneer_positions,
-            pioneer_match_offsets: func(self.pioneer_match_offsets),
-        }
-    }
-}
-
 // ── Aligned ↔ Unaligned conversion ──────────────────────────────────
 
 use crate::traits::{Backend, BitLength, TryIntoUnaligned};
@@ -642,6 +635,12 @@ impl<B, P: TryIntoUnaligned, O: TryIntoUnaligned> TryIntoUnaligned for JacobsonB
             pioneer_positions: self.pioneer_positions.try_into_unaligned()?,
             pioneer_match_offsets: self.pioneer_match_offsets.try_into_unaligned()?,
         })
+    }
+}
+
+impl<W, B: AsRef<[W]>, P, O> AsRef<[W]> for JacobsonBalParen<B, P, O> {
+    fn as_ref(&self) -> &[W] {
+        self.paren.as_ref()
     }
 }
 
@@ -960,12 +959,6 @@ mod tests {
 
     #[test]
     fn test_find_close_3_words() {
-        // 3 words: 192 bits. All opens in word 0, mixed in word 1, all closes
-        // in word 2.
-        // Word 0: 64 opens
-        // Word 1: 32 closes then 32 opens (to close inner and reopen)
-        // Word 2: 64 closes
-        // Actually this won't be balanced easily. Let me use random_balanced.
         let bp = JacobsonBalParen::new(random_balanced(192));
         let words = bp.as_ref();
         let len = bp.len();
