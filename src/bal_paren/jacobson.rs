@@ -493,9 +493,8 @@ where
         }
 
         // Far match: look up the pioneer using predecessor query
-        let (pioneer_index, pioneer) = unsafe {
-            self.pioneer_positions.pred_unchecked::<false>(pos);
-        };
+        let (pioneer_index, pioneer) =
+            unsafe { self.pioneer_positions.pred_unchecked::<false>(pos) };
 
         let match_pos = pioneer
             + unsafe {
