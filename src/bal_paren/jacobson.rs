@@ -906,11 +906,7 @@ mod tests {
             for pos in 0..len {
                 if words[pos / WORD_BITS] & (1usize << (pos % WORD_BITS)) != 0 {
                     let expected = find_close_naive(words, pos, len);
-                    assert_eq!(
-                        bp.find_close(pos),
-                        Some(expected),
-                        "size={size}, pos={pos}"
-                    );
+                    assert_eq!(bp.find_close(pos), Some(expected), "size={size}, pos={pos}");
                 }
             }
         }
@@ -925,11 +921,7 @@ mod tests {
             for pos in 0..len {
                 if words[pos / WORD_BITS] & (1usize << (pos % WORD_BITS)) != 0 {
                     let expected = find_close_naive(words, pos, len);
-                    assert_eq!(
-                        bp.find_close(pos),
-                        Some(expected),
-                        "size={size}, pos={pos}"
-                    );
+                    assert_eq!(bp.find_close(pos), Some(expected), "size={size}, pos={pos}");
                 }
             }
         }
@@ -965,11 +957,7 @@ mod tests {
         for pos in 0..len {
             if words[pos / WORD_BITS] & (1usize << (pos % WORD_BITS)) != 0 {
                 let expected = find_close_naive(words, pos, len);
-                assert_eq!(
-                    bp.find_close(pos),
-                    Some(expected),
-                    "3-word test, pos={pos}"
-                );
+                assert_eq!(bp.find_close(pos), Some(expected), "3-word test, pos={pos}");
             }
         }
     }

@@ -13,8 +13,8 @@ use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use sux::prelude::*;
 
-use sux::traits::bit_vec_ops::*;
 use sux::traits::BitVecValueOps;
+use sux::traits::bit_vec_ops::*;
 
 #[test]
 fn test() {
@@ -1079,11 +1079,7 @@ macro_rules! test_value_ops_word_type {
                 let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
                 bv.append_value(!(0 as $W), width); // all bits set, but only `width` should survive
                 let mask = ((1 as $W) << width) - (1 as $W);
-                assert_eq!(
-                    bv.get_value(0, width),
-                    mask,
-                    "masking: width={width}"
-                );
+                assert_eq!(bv.get_value(0, width), mask, "masking: width={width}");
             }
             // width == W::BITS: all bits survive
             let mut bv: BitVec<Vec<$W>> = BitVec::new(0);

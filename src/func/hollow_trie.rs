@@ -1354,14 +1354,15 @@ impl<
     D: SliceByValue<Value = usize> + MemSize,
     B: BalParen + AsRef<[usize]>,
     S: SliceByValue<Value = usize>,
-> HtDistMmphf<
-    K,
-    VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
-    VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
-    VFunc<K, D>,
-    B,
-    S,
 >
+    HtDistMmphf<
+        K,
+        VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
+        VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
+        VFunc<K, D>,
+        B,
+        S,
+    >
 {
     /// Returns the rank (0-based position) of the given key in the
     /// original sorted sequence.
@@ -1392,8 +1393,8 @@ impl<
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl<E: TryIntoUnaligned, F: TryIntoUnaligned, B: BalParen + TryIntoUnaligned, S>
-    TryIntoUnaligned for HtDist<E, F, B, S>
+impl<E: TryIntoUnaligned, F: TryIntoUnaligned, B: BalParen + TryIntoUnaligned, S> TryIntoUnaligned
+    for HtDist<E, F, B, S>
 where
     Unaligned<B>: BalParen,
 {
@@ -1414,11 +1415,11 @@ where
 
 #[cfg(feature = "rayon")]
 impl<
-        E: MemSize + mem_dbg::FlatType,
-        F: MemSize + mem_dbg::FlatType,
-        B: BalParen + MemSize + mem_dbg::FlatType,
-        S: MemSize + mem_dbg::FlatType,
-    > MemSize for HtDist<E, F, B, S>
+    E: MemSize + mem_dbg::FlatType,
+    F: MemSize + mem_dbg::FlatType,
+    B: BalParen + MemSize + mem_dbg::FlatType,
+    S: MemSize + mem_dbg::FlatType,
+> MemSize for HtDist<E, F, B, S>
 {
     fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
         let mut size = core::mem::size_of::<Self>();
@@ -1432,11 +1433,11 @@ impl<
 
 #[cfg(feature = "rayon")]
 impl<
-        E: MemSize + mem_dbg::FlatType,
-        F: MemSize + mem_dbg::FlatType,
-        B: BalParen + MemSize + mem_dbg::FlatType,
-        S: MemSize + mem_dbg::FlatType,
-    > MemDbgImpl for HtDist<E, F, B, S>
+    E: MemSize + mem_dbg::FlatType,
+    F: MemSize + mem_dbg::FlatType,
+    B: BalParen + MemSize + mem_dbg::FlatType,
+    S: MemSize + mem_dbg::FlatType,
+> MemDbgImpl for HtDist<E, F, B, S>
 {
 }
 
@@ -1491,8 +1492,7 @@ impl<
 where
     Unaligned<B>: BalParen,
 {
-    type Unaligned =
-        HtDistMmphf<K, Unaligned<E>, Unaligned<F>, Unaligned<O>, Unaligned<B>, S>;
+    type Unaligned = HtDistMmphf<K, Unaligned<E>, Unaligned<F>, Unaligned<O>, Unaligned<B>, S>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -2075,11 +2075,11 @@ where
 
 #[cfg(feature = "rayon")]
 impl<
-        K: PrimitiveInteger,
-        D: SliceByValue<Value = usize>,
-        B: BalParen + AsRef<[usize]>,
-        S: SliceByValue<Value = usize>,
-    >
+    K: PrimitiveInteger,
+    D: SliceByValue<Value = usize>,
+    B: BalParen + AsRef<[usize]>,
+    S: SliceByValue<Value = usize>,
+>
     HtDistInt<
         K,
         VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
@@ -2203,12 +2203,12 @@ where
 
 #[cfg(feature = "rayon")]
 impl<
-        K,
-        E: MemSize + mem_dbg::FlatType,
-        F: MemSize + mem_dbg::FlatType,
-        B: BalParen + MemSize + mem_dbg::FlatType,
-        S: MemSize + mem_dbg::FlatType,
-    > MemSize for HtDistInt<K, E, F, B, S>
+    K,
+    E: MemSize + mem_dbg::FlatType,
+    F: MemSize + mem_dbg::FlatType,
+    B: BalParen + MemSize + mem_dbg::FlatType,
+    S: MemSize + mem_dbg::FlatType,
+> MemSize for HtDistInt<K, E, F, B, S>
 {
     fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
         let mut size = core::mem::size_of::<Self>();
@@ -2222,12 +2222,12 @@ impl<
 
 #[cfg(feature = "rayon")]
 impl<
-        K,
-        E: MemSize + mem_dbg::FlatType,
-        F: MemSize + mem_dbg::FlatType,
-        B: BalParen + MemSize + mem_dbg::FlatType,
-        S: MemSize + mem_dbg::FlatType,
-    > MemDbgImpl for HtDistInt<K, E, F, B, S>
+    K,
+    E: MemSize + mem_dbg::FlatType,
+    F: MemSize + mem_dbg::FlatType,
+    B: BalParen + MemSize + mem_dbg::FlatType,
+    S: MemSize + mem_dbg::FlatType,
+> MemDbgImpl for HtDistInt<K, E, F, B, S>
 {
 }
 
@@ -2684,11 +2684,11 @@ where
 
 #[cfg(feature = "rayon")]
 impl<
-        K: PrimitiveInteger + ToSig<[u64; 2]>,
-        D: SliceByValue<Value = usize> + MemSize + mem_dbg::FlatType,
-        B: BalParen + AsRef<[usize]>,
-        S: SliceByValue<Value = usize>,
-    >
+    K: PrimitiveInteger + ToSig<[u64; 2]>,
+    D: SliceByValue<Value = usize> + MemSize + mem_dbg::FlatType,
+    B: BalParen + AsRef<[usize]>,
+    S: SliceByValue<Value = usize>,
+>
     HtDistMmphfInt<
         K,
         VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
@@ -2735,8 +2735,7 @@ impl<
 where
     Unaligned<B>: BalParen,
 {
-    type Unaligned =
-        HtDistMmphfInt<K, Unaligned<E>, Unaligned<F>, Unaligned<O>, Unaligned<B>, S>;
+    type Unaligned = HtDistMmphfInt<K, Unaligned<E>, Unaligned<F>, Unaligned<O>, Unaligned<B>, S>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -2751,13 +2750,13 @@ where
 
 #[cfg(feature = "rayon")]
 impl<
-        K,
-        E: MemSize + mem_dbg::FlatType,
-        F: MemSize + mem_dbg::FlatType,
-        O: MemSize + mem_dbg::FlatType,
-        B: BalParen + MemSize + mem_dbg::FlatType,
-        S: MemSize + mem_dbg::FlatType,
-    > MemSize for HtDistMmphfInt<K, E, F, O, B, S>
+    K,
+    E: MemSize + mem_dbg::FlatType,
+    F: MemSize + mem_dbg::FlatType,
+    O: MemSize + mem_dbg::FlatType,
+    B: BalParen + MemSize + mem_dbg::FlatType,
+    S: MemSize + mem_dbg::FlatType,
+> MemSize for HtDistMmphfInt<K, E, F, O, B, S>
 {
     fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
         let mut size = core::mem::size_of::<Self>();
@@ -2769,13 +2768,13 @@ impl<
 
 #[cfg(feature = "rayon")]
 impl<
-        K,
-        E: MemSize + mem_dbg::FlatType,
-        F: MemSize + mem_dbg::FlatType,
-        O: MemSize + mem_dbg::FlatType,
-        B: BalParen + MemSize + mem_dbg::FlatType,
-        S: MemSize + mem_dbg::FlatType,
-    > MemDbgImpl for HtDistMmphfInt<K, E, F, O, B, S>
+    K,
+    E: MemSize + mem_dbg::FlatType,
+    F: MemSize + mem_dbg::FlatType,
+    O: MemSize + mem_dbg::FlatType,
+    B: BalParen + MemSize + mem_dbg::FlatType,
+    S: MemSize + mem_dbg::FlatType,
+> MemDbgImpl for HtDistMmphfInt<K, E, F, O, B, S>
 {
 }
 

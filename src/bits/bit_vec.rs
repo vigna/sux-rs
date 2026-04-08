@@ -98,8 +98,8 @@
 //! assert_eq!(unsafe { BitVec::from_raw_parts(ones.as_slice(), 1) }.count_ones(), 1);
 //! ```
 
-use crate::traits::ambassador_impl_Backend;
 use crate::bits::{assert_unaligned, debug_assert_unaligned, test_unaligned};
+use crate::traits::ambassador_impl_Backend;
 use crate::traits::{
     AtomicBitIter, AtomicBitVecOps, Backend, BitIter, BitVecOps, BitVecValueOps, Word,
 };
@@ -604,6 +604,9 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVec<B> {
     #[inline]
     pub unsafe fn get_value_unaligned_unchecked(&self, pos: usize, width: usize) -> B::Word {
         debug_assert_unaligned!(B::Word, width);
+        if width == 0 {
+            return B::Word::ZERO;
+        }
         let base_ptr = self.bits.as_ref().as_ptr() as *const u8;
         debug_assert!(
             pos / 8 + size_of::<B::Word>() <= std::mem::size_of_val(self.bits.as_ref()),
