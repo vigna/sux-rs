@@ -830,7 +830,7 @@ mod tests {
         let mut rng = SmallRng::seed_from_u64(n as u64);
 
         let half = n / 2;
-        let mut bits = vec![0u64; (n + 63) / 64];
+        let mut bits = vec![0u64; n.div_ceil(64)];
         // We need to place n/2 opens and n/2 closes in a balanced way.
         // Use the ballot problem approach: at each position, we can place an
         // open if opens_remaining > 0, and a close if excess > 0.

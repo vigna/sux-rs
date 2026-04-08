@@ -146,7 +146,7 @@ name = "bench_vfilter"
 required-features = ["epserde", "clap"]
 
 [[bench]]
-name = "sux"
+name = "rank_sel"
 harness = false
 
 [[bench]]
