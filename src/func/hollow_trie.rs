@@ -506,10 +506,9 @@ impl
 
             // Stack for resuming the trie walk across keys in the same
             // bucket (keys are sorted, so we can skip the common prefix).
-            let mut stack_p: Vec<usize> = vec![1];
-            let mut stack_r: Vec<usize> = vec![0];
-            let mut stack_s: Vec<usize> = vec![0];
-            let mut stack_index: Vec<usize> = vec![0];
+            // Stack for resuming the trie walk across keys in the same
+            // bucket. Each entry is (p, r, s, index).
+            let mut stack: Vec<(usize, usize, usize, usize)> = vec![(1, 0, 0, 0)];
             let mut depth: usize = 0;
 
             let mut last_node: Option<usize> = None;
@@ -523,15 +522,12 @@ impl
                 // Adjust stack using LCP with previous key in bucket
                 if let Some(prev) = prev_key {
                     let prefix = lcp_bits_nul::<true>(prev, curr);
-                    while depth > 0 && stack_s[depth] > prefix {
+                    while depth > 0 && stack[depth].2 > prefix {
                         depth -= 1;
                     }
                 }
 
-                let mut p = stack_p[depth];
-                let mut r = stack_r[depth];
-                let mut s = stack_s[depth];
-                let mut index = stack_index[depth];
+                let (mut p, mut r, mut s, mut index) = stack[depth];
 
                 // Determine exit direction and max descent length.
                 //
@@ -628,16 +624,10 @@ impl
 
                     // Push to stack
                     depth += 1;
-                    if depth >= stack_p.len() {
-                        stack_p.resize(depth + 1, 0);
-                        stack_r.resize(depth + 1, 0);
-                        stack_s.resize(depth + 1, 0);
-                        stack_index.resize(depth + 1, 0);
+                    if depth >= stack.len() {
+                        stack.resize(depth + 1, (0, 0, 0, 0));
                     }
-                    stack_p[depth] = p;
-                    stack_r[depth] = r;
-                    stack_s[depth] = s;
-                    stack_index[depth] = index;
+                    stack[depth] = (p, r, s, index);
                 }
 
                 // Compute path fragment for the exit point
@@ -1119,10 +1109,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug>
                 _ => None,
             };
 
-            let mut stack_p: Vec<usize> = vec![1];
-            let mut stack_r: Vec<usize> = vec![0];
-            let mut stack_s: Vec<usize> = vec![0];
-            let mut stack_index: Vec<usize> = vec![0];
+            let mut stack: Vec<(usize, usize, usize, usize)> = vec![(1, 0, 0, 0)];
             let mut depth: usize = 0;
 
             let mut last_node: Option<usize> = None;
@@ -1137,15 +1124,12 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug>
                 // Adjust stack using LCP with previous key in bucket
                 if j > 0 {
                     let prefix = lcp_bits_nul::<true>(&prev_key_buf, curr);
-                    while depth > 0 && stack_s[depth] > prefix {
+                    while depth > 0 && stack[depth].2 > prefix {
                         depth -= 1;
                     }
                 }
 
-                let mut p = stack_p[depth];
-                let mut r = stack_r[depth];
-                let mut s = stack_s[depth];
-                let mut index = stack_index[depth];
+                let (mut p, mut r, mut s, mut index) = stack[depth];
 
                 let (exit_left, max_descent_length) = match (left_delimiter, right_delimiter) {
                     (None, Some(rd)) => (true, lcp_bits_nul::<false>(curr, rd) + 1),
@@ -1203,16 +1187,10 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug>
                     s += 1;
 
                     depth += 1;
-                    if depth >= stack_p.len() {
-                        stack_p.resize(depth + 1, 0);
-                        stack_r.resize(depth + 1, 0);
-                        stack_s.resize(depth + 1, 0);
-                        stack_index.resize(depth + 1, 0);
+                    if depth >= stack.len() {
+                        stack.resize(depth + 1, (0, 0, 0, 0));
                     }
-                    stack_p[depth] = p;
-                    stack_r[depth] = r;
-                    stack_s[depth] = s;
-                    stack_index[depth] = index;
+                    stack[depth] = (p, r, s, index);
                 }
 
                 let (start_path, end_path) = if is_internal {
@@ -1905,10 +1883,7 @@ where
                 _ => None,
             };
 
-            let mut stack_p: Vec<usize> = vec![1];
-            let mut stack_r: Vec<usize> = vec![0];
-            let mut stack_s: Vec<usize> = vec![0];
-            let mut stack_index: Vec<usize> = vec![0];
+            let mut stack: Vec<(usize, usize, usize, usize)> = vec![(1, 0, 0, 0)];
             let mut depth: usize = 0;
 
             let mut last_node: Option<usize> = None;
@@ -1921,15 +1896,12 @@ where
 
                 if j > 0 {
                     let prefix = lcp_bits(prev_mapped, mapped);
-                    while depth > 0 && stack_s[depth] > prefix {
+                    while depth > 0 && stack[depth].2 > prefix {
                         depth -= 1;
                     }
                 }
 
-                let mut p = stack_p[depth];
-                let mut r = stack_r[depth];
-                let mut s = stack_s[depth];
-                let mut index = stack_index[depth];
+                let (mut p, mut r, mut s, mut index) = stack[depth];
 
                 // For integers: identical keys yield lcp == K::BITS,
                 // so max_descent_length == K::BITS + 1 — correct.
@@ -1989,16 +1961,10 @@ where
                     s += 1;
 
                     depth += 1;
-                    if depth >= stack_p.len() {
-                        stack_p.resize(depth + 1, 0);
-                        stack_r.resize(depth + 1, 0);
-                        stack_s.resize(depth + 1, 0);
-                        stack_index.resize(depth + 1, 0);
+                    if depth >= stack.len() {
+                        stack.resize(depth + 1, (0, 0, 0, 0));
                     }
-                    stack_p[depth] = p;
-                    stack_r[depth] = r;
-                    stack_s[depth] = s;
-                    stack_index[depth] = index;
+                    stack[depth] = (p, r, s, index);
                 }
 
                 let (start_path, end_path) = if is_internal {
@@ -2485,10 +2451,7 @@ where
                 _ => None,
             };
 
-            let mut stack_p: Vec<usize> = vec![1];
-            let mut stack_r: Vec<usize> = vec![0];
-            let mut stack_s: Vec<usize> = vec![0];
-            let mut stack_index: Vec<usize> = vec![0];
+            let mut stack: Vec<(usize, usize, usize, usize)> = vec![(1, 0, 0, 0)];
             let mut depth: usize = 0;
 
             let mut last_node: Option<usize> = None;
@@ -2501,15 +2464,12 @@ where
 
                 if j > 0 {
                     let prefix = lcp_bits(prev_mapped, mapped);
-                    while depth > 0 && stack_s[depth] > prefix {
+                    while depth > 0 && stack[depth].2 > prefix {
                         depth -= 1;
                     }
                 }
 
-                let mut p = stack_p[depth];
-                let mut r = stack_r[depth];
-                let mut s = stack_s[depth];
-                let mut index = stack_index[depth];
+                let (mut p, mut r, mut s, mut index) = stack[depth];
 
                 // For integers: identical keys yield lcp == K::BITS,
                 // so max_descent_length == K::BITS + 1 — correct.
@@ -2569,16 +2529,10 @@ where
                     s += 1;
 
                     depth += 1;
-                    if depth >= stack_p.len() {
-                        stack_p.resize(depth + 1, 0);
-                        stack_r.resize(depth + 1, 0);
-                        stack_s.resize(depth + 1, 0);
-                        stack_index.resize(depth + 1, 0);
+                    if depth >= stack.len() {
+                        stack.resize(depth + 1, (0, 0, 0, 0));
                     }
-                    stack_p[depth] = p;
-                    stack_r[depth] = r;
-                    stack_s[depth] = s;
-                    stack_index[depth] = index;
+                    stack[depth] = (p, r, s, index);
                 }
 
                 let (start_path, end_path) = if is_internal {
