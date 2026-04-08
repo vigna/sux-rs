@@ -129,7 +129,7 @@ fn test_large_random() {
 // ── Both variants agree ─────────────────────────────────────────────
 
 #[test]
-fn test_comp_int_and_bfv_agree() {
+fn test_all_offset_variants_agree() {
     use rand::rngs::SmallRng;
     use rand::{RngExt, SeedableRng};
 

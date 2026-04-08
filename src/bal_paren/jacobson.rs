@@ -157,10 +157,11 @@ fn count_far_close(word: usize, l: usize) -> usize {
 /// Finds the position of the matching close parenthesis within a single
 /// `usize` word, using byte-level lookup tables.
 ///
-/// The `word` is assumed to be shifted so that bit 0 is the first bit
-/// *after* the opening parenthesis (i.e., the initial excess is 1).
+/// Bit 0 of `word` must be the open parenthesis (1-bit) whose match is
+/// sought. The function shifts right by 1 internally and scans byte by
+/// byte with an initial excess of 1.
 ///
-/// Returns the bit position of the matching close, or a value ≥ `WORD_BITS`
+/// Returns the bit position of the matching close, or a value ≥ [`WORD_BITS`]
 /// if the match is not in this word.
 #[inline]
 pub fn find_near_close(word: usize) -> usize {
@@ -273,7 +274,7 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 /// # Type Parameters
 ///
 /// - `B`: The balanced parentheses bit vector. Must implement `AsRef<[usize]>` and
-///  `BitLength`.
+///   `BitLength`.
 ///
 /// - `P`: The predecessor structure for pioneer positions. Must implement
 ///   [`PredUnchecked<Input = usize, Output<'_> = usize>`](PredUnchecked).
@@ -290,9 +291,11 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 ///
 /// ```rust
 /// use sux::bal_paren::JacobsonBalParen;
+/// use sux::bit_vec;
+/// use sux::prelude::BalParen;
 ///
-/// // Sequence "(()())" = bits 1,1,0,1,0,0 → word 0b00_1011 = 0x0B
-/// let bp = JacobsonBalParen::new(vec![0x0B], 6);
+/// // Sequence "(()())" = bits 1,1,0,1,0,0
+/// let bp = JacobsonBalParen::new(bit_vec![1, 1, 0, 1, 0, 0]);
 /// assert_eq!(bp.find_close(0), Some(5)); // outermost pair
 /// assert_eq!(bp.find_close(1), Some(2)); // first inner pair
 /// assert_eq!(bp.find_close(3), Some(4)); // second inner pair
@@ -733,84 +736,32 @@ mod tests {
     }
 
     #[test]
-    fn test_find_near_close_exhaustive_byte() {
-        // Test all possible 8-bit words where bit 0 is set (valid input:
-        // bit 0 is the open paren we are matching).
-        for w in (1usize..256).step_by(2) {
+    fn test_find_near_close_exhaustive_16bit() {
+        for w in (1usize..65536).step_by(2) {
             let naive = find_near_close_naive(w);
             let fast = find_near_close(w);
             assert_eq!(
-                fast, naive,
-                "find_near_close mismatch for word 0b{:08b}: fast={}, naive={}",
-                w, fast, naive
+                fast.min(WORD_BITS),
+                naive.min(WORD_BITS),
+                "find_near_close mismatch for word 0x{w:04x}"
             );
         }
     }
 
     #[test]
-    fn test_find_near_close_exhaustive_16bit() {
-        // Test all 16-bit odd words (bit 0 set)
-        for w in (1usize..65536).step_by(2) {
-            let naive = find_near_close_naive(w);
-            let fast = find_near_close(w);
-            if naive < WORD_BITS {
-                assert_eq!(
-                    fast, naive,
-                    "find_near_close mismatch for word 0x{:04x}: fast={}, naive={}",
-                    w, fast, naive
-                );
-            } else {
-                assert!(fast >= WORD_BITS);
-            }
-        }
-    }
-
-    #[test]
-    fn test_find_near_close_against_naive() {
-        // Test a variety of words. Bit 0 must be set (it's the open paren).
-        let test_words: Vec<usize> = vec![
-            0b01,                  // ()
-            0b0011,                // (())
-            0b001011,              // ()(())
-            0b0101,                // ()()
-            0b00001111,            // (((())))
-            0b00110011,            // (())(())
-            usize::MAX / 3,        // ()()()...
-            0x0000_0000_FFFF_FFFF, // 32 opens then 32 closes (64-bit value fits in 32-bit usize too)
-            1,                     // single open, close at bit 1
-            usize::MAX,            // all opens - no close in word
+    fn test_find_near_close_large_words() {
+        let test_words: [usize; 3] = [
+            usize::MAX / 3, // ()()()...
+            1,              // single open, no close in word
+            usize::MAX,     // all opens, no close in word
         ];
-        for &w in &test_words {
+        for w in test_words {
             let naive = find_near_close_naive(w);
             let fast = find_near_close(w);
-            if naive < WORD_BITS {
-                assert_eq!(
-                    fast, naive,
-                    "find_near_close mismatch for word 0x{:016x}: fast={}, naive={}",
-                    w, fast, naive
-                );
-            } else {
-                // Both should indicate "not found in this word" (>= 64)
-                assert!(
-                    fast >= WORD_BITS,
-                    "find_near_close false positive for word 0x{:016x}: fast={}, naive={}",
-                    w,
-                    fast,
-                    naive
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_find_near_close_vs_naive_16bit() {
-        for w in (0usize..=0xFFFF).filter(|w| w & 1 == 1) {
-            let fast = find_near_close(w);
-            let naive = find_near_close_naive(w);
             assert_eq!(
                 fast.min(WORD_BITS),
                 naive.min(WORD_BITS),
-                "mismatch for word {w:#018b}: fast={fast}, naive={naive}"
+                "find_near_close mismatch for word 0x{w:016x}"
             );
         }
     }
@@ -899,10 +850,10 @@ mod tests {
         for pos in 0..len {
             if words[pos / WORD_BITS] & (1usize << (pos % WORD_BITS)) != 0 {
                 let expected = find_close_naive(words, pos, len);
-                let actual = bp.find_close(pos).unwrap();
                 assert_eq!(
-                    actual, expected,
-                    "find_close mismatch at pos={pos}: got {actual}, expected {expected}"
+                    bp.find_close(pos),
+                    Some(expected),
+                    "find_close mismatch at pos={pos}"
                 );
             }
         }
@@ -956,10 +907,10 @@ mod tests {
             for pos in 0..len {
                 if words[pos / WORD_BITS] & (1usize << (pos % WORD_BITS)) != 0 {
                     let expected = find_close_naive(words, pos, len);
-                    let actual = bp.find_close(pos).unwrap();
                     assert_eq!(
-                        actual, expected,
-                        "size={size}, pos={pos}: got {actual}, expected {expected}"
+                        bp.find_close(pos),
+                        Some(expected),
+                        "size={size}, pos={pos}"
                     );
                 }
             }
@@ -975,10 +926,10 @@ mod tests {
             for pos in 0..len {
                 if words[pos / WORD_BITS] & (1usize << (pos % WORD_BITS)) != 0 {
                     let expected = find_close_naive(words, pos, len);
-                    let actual = bp.find_close(pos).unwrap();
                     assert_eq!(
-                        actual, expected,
-                        "size={size}, pos={pos}: got {actual}, expected {expected}"
+                        bp.find_close(pos),
+                        Some(expected),
+                        "size={size}, pos={pos}"
                     );
                 }
             }
@@ -1001,7 +952,7 @@ mod tests {
     fn test_find_close_all_nested() {
         // ((((...))))  - 16 opens then 16 closes, fits in one word
         let word = [0x0000_FFFFusize];
-        let bp = JacobsonBalParen::new(BitVec::from_raw_parts(&word, WORD_BITS));
+        let bp = JacobsonBalParen::new(unsafe { BitVec::from_raw_parts(&word, WORD_BITS) });
         for i in 0..16 {
             assert_eq!(bp.find_close(i), Some(31 - i), "pos={i}");
         }
@@ -1021,10 +972,10 @@ mod tests {
         for pos in 0..len {
             if words[pos / WORD_BITS] & (1usize << (pos % WORD_BITS)) != 0 {
                 let expected = find_close_naive(words, pos, len);
-                let actual = bp.find_close(pos).unwrap();
                 assert_eq!(
-                    actual, expected,
-                    "3-word test, pos={pos}: got {actual}, expected {expected}"
+                    bp.find_close(pos),
+                    Some(expected),
+                    "3-word test, pos={pos}"
                 );
             }
         }

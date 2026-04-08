@@ -32,14 +32,18 @@
 
 #[cfg(feature = "rayon")]
 use {
-    crate::bal_paren::{BalParen, JacobsonBalParen},
-    crate::bits::BitFieldVec,
-    crate::bits::BitVec,
-    crate::func::VFunc,
-    crate::func::lcp_mmphf::{lcp_bits, lcp_bits_nul},
-    crate::func::shard_edge::FuseLge3NoShards,
-    crate::traits::{TryIntoUnaligned, Unaligned},
-    crate::utils::*,
+    crate::{
+        bal_paren::{BalParen, JacobsonBalParen},
+        bits::{BitFieldVec, BitVec},
+        func::{
+            VFunc,
+            lcp_mmphf::{lcp_bits, lcp_bits_nul},
+            shard_edge::FuseLge3NoShards,
+        },
+        list::PrefixSumIntList,
+        traits::{TryIntoUnaligned, Unaligned},
+        utils::*,
+    },
     anyhow::Result,
     dsi_progress_logger::ProgressLog,
     lender::FallibleLending,
@@ -377,11 +381,15 @@ fn encode_behaviour_key(
 /// [`VFunc`]s.
 #[cfg(feature = "rayon")]
 #[derive(Debug)]
-pub struct HtDist<D = BitFieldVec<Box<[usize]>>, B: BalParen = JacobsonBalParen> {
+pub struct HtDist<
+    D = BitFieldVec<Box<[usize]>>,
+    B: BalParen = JacobsonBalParen,
+    S = PrefixSumIntList,
+> {
     /// Balanced-parentheses support structure for the trie.
     bal_paren: B,
     /// Skip values stored as a prefix-sum list over Elias-Fano.
-    skips: crate::list::PrefixSumIntList,
+    skips: S,
     /// Number of internal nodes (= number of delimiters - 1).
     #[allow(dead_code)]
     num_nodes: usize,
@@ -1689,9 +1697,14 @@ fn encode_int_behaviour_key<K: PrimitiveInteger>(
 /// ```
 #[derive(Debug)]
 #[cfg(feature = "rayon")]
-pub struct HtDistMmphfInt<K, D = BitFieldVec<Box<[usize]>>, B: BalParen = JacobsonBalParen> {
+pub struct HtDistMmphfInt<
+    K,
+    D = BitFieldVec<Box<[usize]>>,
+    B = JacobsonBalParen,
+    S = PrefixSumIntList,
+> {
     bal_paren: B,
-    skips: crate::list::PrefixSumIntList,
+    skips: S,
     #[allow(dead_code)]
     num_nodes: usize,
     num_delimiters: usize,
