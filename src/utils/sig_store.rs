@@ -693,9 +693,8 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
             .with_min_len((n / max_num_threads).max(1_000_000))
             .fold(
                 || {
-                    let bufs: Box<[ArrayVec<SigVal<S, V>, CAP>]> = (0..num_buckets)
-                        .map(|_| ArrayVec::new())
-                        .collect();
+                    let bufs: Box<[ArrayVec<SigVal<S, V>, CAP>]> =
+                        (0..num_buckets).map(|_| ArrayVec::new()).collect();
                     let bc: Box<[usize]> = vec![0usize; num_buckets].into();
                     let sc: Box<[usize]> = vec![0usize; num_shards].into();
                     (V::default(), bufs, bc, sc)

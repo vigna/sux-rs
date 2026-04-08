@@ -44,16 +44,16 @@ use value_traits::slices::SliceByValue;
 ///
 /// # Generics
 ///
-/// * `T`: The type of the keys.
+/// * `K`: The type of the keys.
 /// * `W`: The word used to store the data, which is also the output type. It
 ///   can be any unsigned type. Defaults to `usize`.
 /// * `D`: The backend storing the function data. Defaults to
 ///   `BitFieldVec<Box<[W]>>`.
 /// * `S`: The signature type. The default is `[u64; 2]`.
-/// * `E0`: The sharding and edge logic type for the short (frequent-value)
+/// * `E`: The sharding and edge logic type for the short (frequent-value)
 ///   function. The default is [`FuseLge3Shards`].
-/// * `E1`: The sharding and edge logic type for the long (escaped-value)
-///   function. The default is `E0`.
+/// * `F`: The sharding and edge logic type for the long (escaped-value)
+///   function. The default is `E`.
 ///
 /// # References
 ///
@@ -73,18 +73,18 @@ use value_traits::slices::SliceByValue;
 #[cfg_attr(
     feature = "serde",
     serde(bound(
-        serialize = "D: serde::Serialize, D::Value: serde::Serialize, E0: serde::Serialize, E1: serde::Serialize",
-        deserialize = "D: serde::Deserialize<'de>, D::Value: serde::Deserialize<'de>, E0: serde::Deserialize<'de>, E1: serde::Deserialize<'de>"
+        serialize = "D: serde::Serialize, D::Value: serde::Serialize, E: serde::Serialize, F: serde::Serialize",
+        deserialize = "D: serde::Deserialize<'de>, D::Value: serde::Deserialize<'de>, E: serde::Deserialize<'de>, F: serde::Deserialize<'de>"
     ))
 )]
-pub struct VFunc2<T: ?Sized, D: SliceByValue, S = [u64; 2], E0 = FuseLge3Shards, E1 = E0> {
+pub struct VFunc2<K: ?Sized, D: SliceByValue, S = [u64; 2], E = FuseLge3Shards, F = E> {
     /// First function: maps each key to a remapped index (*r* bits), or
     /// `escape` for infrequent values. When *r* = 0 this is an empty
     /// VFunc that always returns 0 = `escape`, so the long function is
     /// always queried.
-    pub(crate) short: VFunc<T, D, S, E0>,
+    pub(crate) short: VFunc<K, D, S, E>,
     /// Second function: maps escaped keys to their full value.
-    pub(crate) long: VFunc<T, D, S, E1>,
+    pub(crate) long: VFunc<K, D, S, F>,
     /// Maps remapped indices (0 . . `escape` − 1) back to actual values.
     pub(crate) remap: Box<[D::Value]>,
     /// The escape value (2*ʳ* − 1). When *r* = 0, `escape` = 0 and the
@@ -92,11 +92,11 @@ pub struct VFunc2<T: ?Sized, D: SliceByValue, S = [u64; 2], E0 = FuseLge3Shards,
     pub(crate) escape: D::Value,
 }
 
-impl<T: ?Sized, D: SliceByValue, S, E0, E1> std::fmt::Debug for VFunc2<T, D, S, E0, E1>
+impl<K: ?Sized, D: SliceByValue, S, E, F> std::fmt::Debug for VFunc2<K, D, S, E, F>
 where
     D::Value: std::fmt::Debug,
-    VFunc<T, D, S, E0>: std::fmt::Debug,
-    VFunc<T, D, S, E1>: std::fmt::Debug,
+    VFunc<K, D, S, E>: std::fmt::Debug,
+    VFunc<K, D, S, F>: std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VFunc2")
@@ -108,8 +108,8 @@ where
     }
 }
 
-impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>>
-    VFunc2<T, BitFieldVec<Box<[W]>>, S, E0, E1>
+impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, F: ShardEdge<S, 3>>
+    VFunc2<K, BitFieldVec<Box<[W]>>, S, E, F>
 {
     /// Creates a VFunc2 with zero keys.
     ///
@@ -127,17 +127,17 @@ impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>>
 }
 
 impl<
-    T: ?Sized + ToSig<S>,
+    K: ?Sized + ToSig<S>,
     D: SliceByValue<Value: Word + BinSafe + PrimitiveNumberAs<usize>>,
     S: Sig,
-    E0: ShardEdge<S, 3>,
-    E1: ShardEdge<S, 3>,
-> VFunc2<T, D, S, E0, E1>
+    E: ShardEdge<S, 3>,
+    F: ShardEdge<S, 3>,
+> VFunc2<K, D, S, E, F>
 {
     /// Retrieves the value for a key given its pre-computed signature.
     ///
     /// The signature must have been computed with `self.short.seed`
-    /// (i.e., `T::to_sig(key, self.short.seed)`). Both the short and
+    /// (i.e., `K::to_sig(key, self.short.seed)`). Both the short and
     /// long internal functions share the same seed.
     ///
     /// This method is mainly useful in the construction of compound
@@ -155,8 +155,8 @@ impl<
     /// Retrieves the value associated with the given key, or an arbitrary
     /// value if the key was not in the original set.
     #[inline(always)]
-    pub fn get(&self, key: impl Borrow<T>) -> D::Value {
-        self.get_by_sig(T::to_sig(key.borrow(), self.short.seed))
+    pub fn get(&self, key: impl Borrow<K>) -> D::Value {
+        self.get_by_sig(K::to_sig(key.borrow(), self.short.seed))
     }
 
     /// Returns the number of keys in the function.
@@ -175,10 +175,10 @@ impl<
 use crate::bits::BitFieldVecU;
 use crate::traits::TryIntoUnaligned;
 
-impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>> TryIntoUnaligned
-    for VFunc2<T, BitFieldVec<Box<[W]>>, S, E0, E1>
+impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, F: ShardEdge<S, 3>> TryIntoUnaligned
+    for VFunc2<K, BitFieldVec<Box<[W]>>, S, E, F>
 {
-    type Unaligned = VFunc2<T, BitFieldVecU<Box<[W]>>, S, E0, E1>;
+    type Unaligned = VFunc2<K, BitFieldVecU<Box<[W]>>, S, E, F>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -191,13 +191,12 @@ impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>> TryIn
     }
 }
 
-impl<T: ?Sized, W: Word, S: Sig, E0: ShardEdge<S, 3>, E1: ShardEdge<S, 3>>
-    From<VFunc2<T, BitFieldVecU<Box<[W]>>, S, E0, E1>>
-    for VFunc2<T, BitFieldVec<Box<[W]>>, S, E0, E1>
+impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, F: ShardEdge<S, 3>>
+    From<VFunc2<K, BitFieldVecU<Box<[W]>>, S, E, F>> for VFunc2<K, BitFieldVec<Box<[W]>>, S, E, F>
 {
     /// Converts a [`VFunc2`] with [`BitFieldVecU`] data back into
     /// one with [`BitFieldVec`] data.
-    fn from(vf: VFunc2<T, BitFieldVecU<Box<[W]>>, S, E0, E1>) -> Self {
+    fn from(vf: VFunc2<K, BitFieldVecU<Box<[W]>>, S, E, F>) -> Self {
         VFunc2 {
             short: VFunc::from(vf.short),
             long: VFunc::from(vf.long),
@@ -346,17 +345,17 @@ use {
 };
 
 #[cfg(feature = "rayon")]
-impl<T, W, S, E0, E1> VFunc2<T, BitFieldVec<Box<[W]>>, S, E0, E1>
+impl<K, W, S, E, F> VFunc2<K, BitFieldVec<Box<[W]>>, S, E, F>
 where
-    T: ?Sized + ToSig<S> + std::fmt::Debug,
+    K: ?Sized + ToSig<S> + std::fmt::Debug,
     W: Word + BinSafe + MemSize + mem_dbg::FlatType,
     S: Sig + Send + Sync,
-    E0: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
-    E1: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
+    E: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
+    F: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
     Box<[W]>: MemSize,
     SigVal<S, W>: RadixKey,
-    SigVal<E0::LocalSig, W>: BitXor + BitXorAssign,
-    SigVal<E1::LocalSig, W>: BitXor + BitXorAssign,
+    SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
+    SigVal<F::LocalSig, W>: BitXor + BitXorAssign,
 {
     /// Builds a [`VFunc2`] from keys and values using default
     /// [`VBuilder`] settings.
@@ -394,7 +393,7 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_new<B: ?Sized + std::borrow::Borrow<T>>(
+    pub fn try_new<B: ?Sized + std::borrow::Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -445,7 +444,7 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_new_with_builder<B: ?Sized + std::borrow::Borrow<T>>(
+    pub fn try_new_with_builder<B: ?Sized + std::borrow::Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -455,7 +454,7 @@ where
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         n: usize,
-        builder: VBuilder<BitFieldVec<Box<[W]>>, S, E0>,
+        builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<Self> {
         let mut builder = builder.expected_num_keys(n);
@@ -508,16 +507,16 @@ where
     /// * `pl` — a progress logger.
     pub fn try_build_from_store<V: BinSafe + Default + Send + Sync + Copy>(
         seed: u64,
-        shard_edge: E0,
+        shard_edge: E,
         store: &mut (impl ShardStore<S, V> + ?Sized),
         get_val: &(impl Fn(V) -> W + Send + Sync),
-        builder: VBuilder<BitFieldVec<Box<[W]>>, S, E0>,
+        builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<Self>
     where
         SigVal<S, V>: RadixKey,
-        SigVal<E0::LocalSig, V>: BitXor + BitXorAssign,
-        SigVal<E1::LocalSig, V>: BitXor + BitXorAssign,
+        SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
+        SigVal<F::LocalSig, V>: BitXor + BitXorAssign,
     {
         // -- Frequency analysis (single pass) --
 
@@ -542,18 +541,18 @@ where
     /// on common value ranges.
     fn build_from_hybrid_counts<V: BinSafe + Default + Send + Sync + Copy>(
         seed: u64,
-        shard_edge: E0,
+        shard_edge: E,
         store: &mut (impl ShardStore<S, V> + ?Sized),
         get_val: &(impl Fn(V) -> W + Send + Sync),
         max_value: W,
         counts: HybridMap<W, usize>,
-        mut builder: VBuilder<BitFieldVec<Box<[W]>>, S, E0>,
+        mut builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> anyhow::Result<Self>
     where
         SigVal<S, V>: RadixKey,
-        SigVal<E0::LocalSig, V>: BitXor + BitXorAssign,
-        SigVal<E1::LocalSig, V>: BitXor + BitXorAssign,
+        SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
+        SigVal<F::LocalSig, V>: BitXor + BitXorAssign,
     {
         // -- Sort distinct values by descending frequency --
 
@@ -609,7 +608,7 @@ where
         pl.info(format_args!(
             "Building key -> remapped index ({best_r} bits, escape={escape_usize})..."
         ));
-        let short = builder.try_build_func_with_store_and_inspect::<T, V>(
+        let short = builder.try_build_func_with_store_and_inspect::<K, V>(
             seed,
             shard_edge,
             escape,
@@ -644,7 +643,7 @@ where
             "inspect-counted escaped != freq-computed escaped"
         );
 
-        let mut long_shard_edge = E1::default();
+        let mut long_shard_edge = F::default();
         long_shard_edge.set_up_shards(n_escaped, saved_eps);
         let long_shard_high_bits = long_shard_edge.shard_high_bits();
 
@@ -671,9 +670,9 @@ where
             |sv: &SigVal<S, V>| inv_map.get(get_val(sv.val)) == escape,
             filtered_shard_sizes,
         );
-        let long = VBuilder::<BitFieldVec<Box<[W]>>, S, E1>::default()
+        let long = VBuilder::<BitFieldVec<Box<[W]>>, S, F>::default()
             .max_num_threads(saved_max_num_threads)
-            .try_build_func_with_store::<T, V>(
+            .try_build_func_with_store::<K, V>(
                 seed,
                 long_shard_edge,
                 max_value,

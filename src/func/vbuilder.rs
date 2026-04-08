@@ -486,7 +486,7 @@ where
     /// * `get_val` must be deterministic: the store is iterated multiple
     ///   times and different results for the same input would silently
     ///   corrupt the function.
-    pub fn try_build_func_with_store<T: ?Sized + ToSig<S>, V: BinSafe + Default + Send + Sync>(
+    pub fn try_build_func_with_store<K: ?Sized + ToSig<S>, V: BinSafe + Default + Send + Sync>(
         &mut self,
         seed: u64,
         shard_edge: E,
@@ -494,7 +494,7 @@ where
         shard_store: &mut (impl ShardStore<S, V> + ?Sized),
         get_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync),
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, BitFieldVec<Box<[W]>>, S, E>>
+    ) -> anyhow::Result<VFunc<K, BitFieldVec<Box<[W]>>, S, E>>
     where
         SigVal<S, V>: RadixKey,
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
@@ -519,7 +519,7 @@ where
     /// [`Lcp2MmphfInt`](crate::func::Lcp2MmphfInt) to count escaped keys
     /// per shard without a separate pass over the store.
     pub fn try_build_func_with_store_and_inspect<
-        T: ?Sized + ToSig<S>,
+        K: ?Sized + ToSig<S>,
         V: BinSafe + Default + Send + Sync,
     >(
         &mut self,
@@ -530,7 +530,7 @@ where
         get_val: &(impl Fn(&E, SigVal<E::LocalSig, V>) -> W + Send + Sync),
         inspect: &(impl Fn(&SigVal<S, V>) + Send + Sync),
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> anyhow::Result<VFunc<T, BitFieldVec<Box<[W]>>, S, E>>
+    ) -> anyhow::Result<VFunc<K, BitFieldVec<Box<[W]>>, S, E>>
     where
         SigVal<S, V>: RadixKey,
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
@@ -657,23 +657,23 @@ impl<
     /// [`try_build_func_and_store`](Self::try_build_func_and_store)
     /// instead.
     pub fn try_build_func<
-        T: ?Sized + ToSig<S> + std::fmt::Debug,
-        B: ?Sized + Borrow<T>,
+        K: ?Sized + ToSig<S> + std::fmt::Debug,
+        B: ?Sized + Borrow<K>,
         P: ProgressLog + Clone + Send + Sync,
-        K: FallibleRewindableLender<
+        L: FallibleRewindableLender<
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
     >(
         mut self,
-        keys: K,
+        keys: L,
         values: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend D::Value>,
         new_data: fn(usize, usize) -> D,
         pl: &mut P,
-    ) -> anyhow::Result<(VFunc<T, D, S, E>, K)>
+    ) -> anyhow::Result<(VFunc<K, D, S, E>, L)>
     where
         SigVal<S, D::Value>: RadixKey,
         SigVal<E::LocalSig, D::Value>: BitXor + BitXorAssign,
@@ -732,16 +732,16 @@ impl<
     /// [`try_build_func`](Self::try_build_func) instead, which drains
     /// the store to free memory during construction.
     pub fn try_build_func_and_store<
-        T: ?Sized + ToSig<S> + std::fmt::Debug,
-        B: ?Sized + Borrow<T>,
+        K: ?Sized + ToSig<S> + std::fmt::Debug,
+        B: ?Sized + Borrow<K>,
         P: ProgressLog + Clone + Send + Sync,
-        K: FallibleRewindableLender<
+        L: FallibleRewindableLender<
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
     >(
         mut self,
-        keys: K,
+        keys: L,
         values: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -749,9 +749,9 @@ impl<
         new_data: fn(usize, usize) -> D,
         pl: &mut P,
     ) -> anyhow::Result<(
-        VFunc<T, D, S, E>,
+        VFunc<K, D, S, E>,
         Box<dyn ShardStore<S, D::Value> + Send + Sync>,
-        K,
+        L,
     )>
     where
         SigVal<S, D::Value>: RadixKey,
@@ -803,8 +803,8 @@ impl<
     ///
     /// `new_data(bit_width, len)` allocates the backend storage.
     pub fn try_build_filter<
-        T: ?Sized + ToSig<S> + std::fmt::Debug,
-        B: ?Sized + Borrow<T>,
+        K: ?Sized + ToSig<S> + std::fmt::Debug,
+        B: ?Sized + Borrow<K>,
         P: ProgressLog + Clone + Send + Sync,
         G: Fn(&E, SigVal<E::LocalSig, EmptyVal>) -> D::Value + Send + Sync,
     >(
@@ -817,7 +817,7 @@ impl<
         new_data: fn(usize, usize) -> D,
         get_val: &G,
         pl: &mut P,
-    ) -> anyhow::Result<VFunc<T, D, S, E>>
+    ) -> anyhow::Result<VFunc<K, D, S, E>>
     where
         SigVal<S, EmptyVal>: RadixKey,
         SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
@@ -839,7 +839,7 @@ impl<
                         while let Some(key) = keys.next()? {
                             pl.light_update();
                             push(SigVal {
-                                sig: T::to_sig(key.borrow(), seed),
+                                sig: K::to_sig(key.borrow(), seed),
                                 val: EmptyVal::default(),
                             })?;
                         }
@@ -930,19 +930,19 @@ impl<
     ///
     /// Returns whatever `build_fn` returns on success.
     pub fn try_populate_and_build<
-        T: ?Sized + ToSig<S> + std::fmt::Debug,
-        B: ?Sized + Borrow<T>,
+        K: ?Sized + ToSig<S> + std::fmt::Debug,
+        B: ?Sized + Borrow<K>,
         V: BinSafe + Default + Send + Sync + Ord,
         R,
         P: ProgressLog + Clone + Send + Sync,
         C,
-        K: FallibleRewindableLender<
+        L: FallibleRewindableLender<
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
     >(
         &mut self,
-        mut keys: K,
+        mut keys: L,
         mut values: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -958,7 +958,7 @@ impl<
         ) -> anyhow::Result<R>,
         pl: &mut P,
         mut state: C,
-    ) -> anyhow::Result<(R, K)>
+    ) -> anyhow::Result<(R, L)>
     where
         SigVal<S, V>: RadixKey,
     {
@@ -978,7 +978,7 @@ impl<
                         let &maybe_val = values.next()?.expect("Not enough values");
                         maybe_max_value = Ord::max(maybe_max_value, maybe_val);
                         push(SigVal {
-                            sig: T::to_sig(key.borrow(), seed),
+                            sig: K::to_sig(key.borrow(), seed),
                             val: maybe_val,
                         })?;
                     }
@@ -1007,8 +1007,8 @@ impl<
     /// sets, because the expensive per-key hashing runs on all available
     /// cores.
     pub fn try_par_populate_and_build<
-        T: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
-        B: Borrow<T> + Sync,
+        K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
+        B: Borrow<K> + Sync,
         V: BinSafe + Default + Send + Sync + Ord + Copy,
         R,
         P: ProgressLog + Clone + Send + Sync,
@@ -1054,11 +1054,10 @@ impl<
                     std::mem::size_of::<S>() * 8,
                 ));
 
-                let maybe_max_value =
-                    sig_store.par_populate(n, self.max_num_threads, |i| SigVal {
-                        sig: T::to_sig(keys[i].borrow(), seed),
-                        val: val_fn(i),
-                    });
+                let maybe_max_value = sig_store.par_populate(n, self.max_num_threads, |i| SigVal {
+                    sig: K::to_sig(keys[i].borrow(), seed),
+                    val: val_fn(i),
+                });
 
                 pl.done();
 
@@ -1305,7 +1304,7 @@ impl<
     /// `self.low_mem`; see the [`low_mem`](VBuilder::low_mem) field
     /// documentation for the automatic selection heuristic.
     pub(crate) fn try_build_from_shard_iter<
-        T: ?Sized + ToSig<S>,
+        K: ?Sized + ToSig<S>,
         I,
         P,
         V: BinSafe + Default + Send + Sync,
@@ -1319,7 +1318,7 @@ impl<
         get_val: &G,
         inspect: &H,
         pl: &mut P,
-    ) -> Result<VFunc<T, D, S, E>, SolveError>
+    ) -> Result<VFunc<K, D, S, E>, SolveError>
     where
         SigVal<S, V>: RadixKey,
         SigVal<E::LocalSig, V>: BitXor + BitXorAssign,

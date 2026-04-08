@@ -59,7 +59,7 @@ use std::borrow::Borrow;
 ///
 /// # Generics
 ///
-/// * `T`: The type of the keys.
+/// * `K`: The type of the keys.
 /// * `W`: The word used to store the data, which is also the output type. It
 ///   can be any unsigned type.
 /// * `D`: The backend storing the function data. It can be a
@@ -85,19 +85,19 @@ use std::borrow::Borrow;
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct VFunc<T: ?Sized, D, S = [u64; 2], E = FuseLge3Shards> {
+pub struct VFunc<K: ?Sized, D, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) shard_edge: E,
     pub(crate) seed: u64,
     pub(crate) num_keys: usize,
     pub(crate) data: D,
-    pub(crate) _marker: std::marker::PhantomData<(*const T, S)>,
+    pub(crate) _marker: std::marker::PhantomData<(*const K, S)>,
 }
 
-impl<T: ?Sized, D: SliceByValue, S, E> Backend for VFunc<T, D, S, E> {
+impl<K: ?Sized, D: SliceByValue, S, E> Backend for VFunc<K, D, S, E> {
     type Word = D::Value;
 }
 
-impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc<T, BitFieldVec<Box<[W]>>, S, E> {
+impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc<K, BitFieldVec<Box<[W]>>, S, E> {
     /// Creates a VFunc with zero keys.
     ///
     /// The internal data has bit width 0, so `get` always returns zero.
@@ -115,8 +115,8 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc<T, BitFieldVec<Box<[W
     }
 }
 
-impl<T: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: ShardEdge<S, 3>>
-    VFunc<T, D, S, E>
+impl<K: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: ShardEdge<S, 3>>
+    VFunc<K, D, S, E>
 {
     /// Returns the value associated with the given signature, or a random value
     /// if the signature is not the signature of a key.
@@ -139,8 +139,8 @@ impl<T: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: Sh
     /// Returns the value associated with the given key, or a random value if the
     /// key is not present.
     #[inline(always)]
-    pub fn get(&self, key: impl Borrow<T>) -> D::Value {
-        self.get_by_sig(T::to_sig(key.borrow(), self.seed))
+    pub fn get(&self, key: impl Borrow<K>) -> D::Value {
+        self.get_by_sig(K::to_sig(key.borrow(), self.seed))
     }
 
     /// Returns the number of keys in the function.
@@ -159,10 +159,10 @@ impl<T: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: Sh
 use crate::bits::BitFieldVecU;
 use crate::traits::TryIntoUnaligned;
 
-impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned
-    for VFunc<T, BitFieldVec<Box<[W]>>, S, E>
+impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned
+    for VFunc<K, BitFieldVec<Box<[W]>>, S, E>
 {
-    type Unaligned = VFunc<T, BitFieldVecU<Box<[W]>>, S, E>;
+    type Unaligned = VFunc<K, BitFieldVecU<Box<[W]>>, S, E>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -176,12 +176,12 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> TryIntoUnaligned
     }
 }
 
-impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> From<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>>
-    for VFunc<T, BitFieldVec<Box<[W]>>, S, E>
+impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> From<VFunc<K, BitFieldVecU<Box<[W]>>, S, E>>
+    for VFunc<K, BitFieldVec<Box<[W]>>, S, E>
 {
     /// Converts a [`VFunc`] with [`BitFieldVecU`] data back into
     /// one with [`BitFieldVec`] data.
-    fn from(vf: VFunc<T, BitFieldVecU<Box<[W]>>, S, E>) -> Self {
+    fn from(vf: VFunc<K, BitFieldVecU<Box<[W]>>, S, E>) -> Self {
         VFunc {
             shard_edge: vf.shard_edge,
             seed: vf.seed,
@@ -195,9 +195,9 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> From<VFunc<T, BitFieldVecU<
 // ── Convenience constructors ───────────────────────────────────────
 
 #[cfg(feature = "rayon")]
-impl<T, W, S, E> VFunc<T, Box<[W]>, S, E>
+impl<K, W, S, E> VFunc<K, Box<[W]>, S, E>
 where
-    T: ?Sized + ToSig<S> + std::fmt::Debug,
+    K: ?Sized + ToSig<S> + std::fmt::Debug,
     W: Word + BinSafe,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
@@ -246,7 +246,7 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_new<B: ?Sized + Borrow<T>>(
+    pub fn try_new<B: ?Sized + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -309,7 +309,7 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_new_with_builder<B: ?Sized + Borrow<T>>(
+    pub fn try_new_with_builder<B: ?Sized + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -378,12 +378,12 @@ where
     /// # fn main() {}
     /// ```
     pub fn try_par_new(
-        keys: &[impl Borrow<T> + Sync],
+        keys: &[impl Borrow<K> + Sync],
         values: &[W],
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self>
     where
-        T: Sync,
+        K: Sync,
         S: Send,
         W: Copy,
         for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut,
@@ -433,13 +433,13 @@ where
     /// # fn main() {}
     /// ```
     pub fn try_par_new_with_builder(
-        keys: &[impl Borrow<T> + Sync],
+        keys: &[impl Borrow<K> + Sync],
         values: &[W],
         builder: VBuilder<Box<[W]>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self>
     where
-        T: Sync,
+        K: Sync,
         S: Send,
         W: Copy,
         for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: BitFieldSliceMut,
@@ -474,9 +474,9 @@ where
 }
 
 #[cfg(feature = "rayon")]
-impl<T, W, S, E> VFunc<T, BitFieldVec<Box<[W]>>, S, E>
+impl<K, W, S, E> VFunc<K, BitFieldVec<Box<[W]>>, S, E>
 where
-    T: ?Sized + ToSig<S> + std::fmt::Debug,
+    K: ?Sized + ToSig<S> + std::fmt::Debug,
     W: Word + BinSafe,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
@@ -526,7 +526,7 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_new<B: ?Sized + Borrow<T>>(
+    pub fn try_new<B: ?Sized + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -585,7 +585,7 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_new_with_builder<B: ?Sized + Borrow<T>>(
+    pub fn try_new_with_builder<B: ?Sized + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -650,12 +650,12 @@ where
     /// # fn main() {}
     /// ```
     pub fn try_par_new(
-        keys: &[impl Borrow<T> + Sync],
+        keys: &[impl Borrow<K> + Sync],
         values: &[W],
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self>
     where
-        T: Sync,
+        K: Sync,
         S: Send,
         W: Copy,
     {
@@ -705,13 +705,13 @@ where
     /// # fn main() {}
     /// ```
     pub fn try_par_new_with_builder(
-        keys: &[impl Borrow<T> + Sync],
+        keys: &[impl Borrow<K> + Sync],
         values: &[W],
         builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self>
     where
-        T: Sync,
+        K: Sync,
         S: Send,
         W: Copy,
     {

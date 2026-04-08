@@ -548,8 +548,7 @@ where
                             best_r + log2_bs
                         ));
 
-                        let fused = builder
-                            .try_build_func_with_store_and_inspect::<K, u64>(
+                        let fused = builder.try_build_func_with_store_and_inspect::<K, u64>(
                             seed,
                             shard_edge,
                             fused_max,
@@ -889,31 +888,30 @@ where
                 let mut escaped_counts = vec![0usize; num_shards_se];
                 let sync_counts = escaped_counts.as_sync_slice();
 
-                let fused = builder
-                    .try_build_func_with_store_and_inspect::<K, u64>(
-                        seed,
-                        shard_edge,
-                        fused_max,
-                        store,
-                        &|_, sig_val| {
-                            let lcp = (sig_val.val >> log2_bs) as usize;
-                            let offset = (sig_val.val as usize) & bucket_mask;
-                            (inv_map.get(lcp) << log2_bs) | offset
-                        },
-                        &|sv: &SigVal<S0, u64>| {
-                            let lcp = (sv.val >> log2_bs) as usize;
-                            if inv_map.get(lcp) == escape_usize {
-                                let shard_idx = sv.sig.high_bits(shb, shard_mask) as usize;
-                                // SAFETY: each shard is processed by
-                                // exactly one thread.
-                                unsafe {
-                                    let c = sync_counts[shard_idx].get();
-                                    sync_counts[shard_idx].set(c + 1);
-                                }
+                let fused = builder.try_build_func_with_store_and_inspect::<K, u64>(
+                    seed,
+                    shard_edge,
+                    fused_max,
+                    store,
+                    &|_, sig_val| {
+                        let lcp = (sig_val.val >> log2_bs) as usize;
+                        let offset = (sig_val.val as usize) & bucket_mask;
+                        (inv_map.get(lcp) << log2_bs) | offset
+                    },
+                    &|sv: &SigVal<S0, u64>| {
+                        let lcp = (sv.val >> log2_bs) as usize;
+                        if inv_map.get(lcp) == escape_usize {
+                            let shard_idx = sv.sig.high_bits(shb, shard_mask) as usize;
+                            // SAFETY: each shard is processed by
+                            // exactly one thread.
+                            unsafe {
+                                let c = sync_counts[shard_idx].get();
+                                sync_counts[shard_idx].set(c + 1);
                             }
-                        },
-                        pl,
-                    )?;
+                        }
+                    },
+                    pl,
+                )?;
 
                 // -- Build LCP long VFunc (escaped keys only) --
                 let lcp_long = if n_escaped > 0 {
@@ -1403,7 +1401,8 @@ where
                         } else if offset == 0 {
                             curr_lcp_bits = (key_bytes.len() + 1) * 8;
                         } else {
-                            curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul::<true>(key_bytes, &prev_key));
+                            curr_lcp_bits =
+                                curr_lcp_bits.min(lcp_bits_nul::<true>(key_bytes, &prev_key));
                         }
 
                         if offset == 0 {
@@ -1504,31 +1503,30 @@ where
                             best_r + log2_bs
                         ));
 
-                        let fused = builder
-                            .try_build_func_with_store_and_inspect::<K, u64>(
-                                seed,
-                                shard_edge,
-                                fused_max,
-                                store,
-                                &|_, sig_val| {
-                                    let lcp = (sig_val.val >> log2_bs) as usize;
-                                    let offset = (sig_val.val as usize) & bucket_mask;
-                                    (inv_map.get(lcp) << log2_bs) | offset
-                                },
-                                &|sv: &SigVal<S0, u64>| {
-                                    let lcp = (sv.val >> log2_bs) as usize;
-                                    if inv_map.get(lcp) == escape_usize {
-                                        let shard_idx = sv.sig.high_bits(shb, shard_mask) as usize;
-                                        // SAFETY: each shard is processed by
-                                        // exactly one thread.
-                                        unsafe {
-                                            let c = sync_counts[shard_idx].get();
-                                            sync_counts[shard_idx].set(c + 1);
-                                        }
+                        let fused = builder.try_build_func_with_store_and_inspect::<K, u64>(
+                            seed,
+                            shard_edge,
+                            fused_max,
+                            store,
+                            &|_, sig_val| {
+                                let lcp = (sig_val.val >> log2_bs) as usize;
+                                let offset = (sig_val.val as usize) & bucket_mask;
+                                (inv_map.get(lcp) << log2_bs) | offset
+                            },
+                            &|sv: &SigVal<S0, u64>| {
+                                let lcp = (sv.val >> log2_bs) as usize;
+                                if inv_map.get(lcp) == escape_usize {
+                                    let shard_idx = sv.sig.high_bits(shb, shard_mask) as usize;
+                                    // SAFETY: each shard is processed by
+                                    // exactly one thread.
+                                    unsafe {
+                                        let c = sync_counts[shard_idx].get();
+                                        sync_counts[shard_idx].set(c + 1);
                                     }
-                                },
-                                pl,
-                            )?;
+                                }
+                            },
+                            pl,
+                        )?;
 
                         // -- Build LCP long VFunc (escaped keys only) --
                         let lcp_long = if n_escaped > 0 {
@@ -1870,31 +1868,30 @@ where
                 let mut escaped_counts = vec![0usize; num_shards_se];
                 let sync_counts = escaped_counts.as_sync_slice();
 
-                let fused = builder
-                    .try_build_func_with_store_and_inspect::<K, u64>(
-                        seed,
-                        shard_edge,
-                        fused_max,
-                        store,
-                        &|_, sig_val| {
-                            let lcp = (sig_val.val >> log2_bs) as usize;
-                            let offset = (sig_val.val as usize) & bucket_mask;
-                            (inv_map.get(lcp) << log2_bs) | offset
-                        },
-                        &|sv: &SigVal<S0, u64>| {
-                            let lcp = (sv.val >> log2_bs) as usize;
-                            if inv_map.get(lcp) == escape_usize {
-                                let shard_idx = sv.sig.high_bits(shb, shard_mask) as usize;
-                                // SAFETY: each shard is processed by
-                                // exactly one thread.
-                                unsafe {
-                                    let c = sync_counts[shard_idx].get();
-                                    sync_counts[shard_idx].set(c + 1);
-                                }
+                let fused = builder.try_build_func_with_store_and_inspect::<K, u64>(
+                    seed,
+                    shard_edge,
+                    fused_max,
+                    store,
+                    &|_, sig_val| {
+                        let lcp = (sig_val.val >> log2_bs) as usize;
+                        let offset = (sig_val.val as usize) & bucket_mask;
+                        (inv_map.get(lcp) << log2_bs) | offset
+                    },
+                    &|sv: &SigVal<S0, u64>| {
+                        let lcp = (sv.val >> log2_bs) as usize;
+                        if inv_map.get(lcp) == escape_usize {
+                            let shard_idx = sv.sig.high_bits(shb, shard_mask) as usize;
+                            // SAFETY: each shard is processed by
+                            // exactly one thread.
+                            unsafe {
+                                let c = sync_counts[shard_idx].get();
+                                sync_counts[shard_idx].set(c + 1);
                             }
-                        },
-                        pl,
-                    )?;
+                        }
+                    },
+                    pl,
+                )?;
 
                 // -- Build LCP long VFunc (escaped keys only) --
                 let lcp_long = if n_escaped > 0 {

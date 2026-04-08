@@ -45,8 +45,8 @@ use value_traits::slices::SliceByValue;
 
 use crate::dict::elias_fano::EfSeq;
 use crate::dict::{EliasFano, EliasFanoBuilder};
-use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
 use crate::traits::SelectUnchecked;
+use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
 
 /// A compact list of nonnegative integers based on prefix sums.
 ///
@@ -250,8 +250,7 @@ where
 
 use crate::traits::TryIntoUnaligned;
 
-impl<D: TryIntoUnaligned + SliceByValue<Value = usize>> TryIntoUnaligned
-    for PrefixSumIntList<D>
+impl<D: TryIntoUnaligned + SliceByValue<Value = usize>> TryIntoUnaligned for PrefixSumIntList<D>
 where
     D::Unaligned: SliceByValue<Value = usize>,
 {

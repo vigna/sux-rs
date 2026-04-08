@@ -84,8 +84,8 @@ impl<F: Backend> VFilter<F> {
     }
 }
 
-impl<T: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: ShardEdge<S, 3>>
-    VFilter<VFunc<T, D, S, E>>
+impl<K: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: ShardEdge<S, 3>>
+    VFilter<VFunc<K, D, S, E>>
 where
     u64: PrimitiveNumberAs<D::Value>,
 {
@@ -116,8 +116,8 @@ where
     /// on match (false-positive rate 2⁻*ᵇ*), `false` on mismatch
     /// (definitely absent).
     #[inline]
-    pub fn contains(&self, key: impl Borrow<T>) -> bool {
-        self.contains_by_sig(T::to_sig(key.borrow(), self.func.seed))
+    pub fn contains(&self, key: impl Borrow<K>) -> bool {
+        self.contains_by_sig(K::to_sig(key.borrow(), self.func.seed))
     }
 
     /// Returns the number of keys in the filter.
@@ -139,12 +139,12 @@ where
 }
 
 impl<
-    T: ?Sized + ToSig<S>,
+    K: ?Sized + ToSig<S>,
     D: SliceByValue<Value: Word + BinSafe>,
     S: Sig,
     E: ShardEdge<S, 3>,
-    B: Borrow<T>,
-> Index<B> for VFilter<VFunc<T, D, S, E>>
+    B: Borrow<K>,
+> Index<B> for VFilter<VFunc<K, D, S, E>>
 where
     u64: PrimitiveNumberAs<D::Value>,
 {
@@ -164,10 +164,10 @@ where
 
 // ── Aligned ↔ Unaligned conversions ─────────────────────────────────
 
-impl<T: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>> crate::traits::TryIntoUnaligned
-    for VFilter<VFunc<T, BitFieldVec<Box<[W]>>, S, E>>
+impl<K: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>> crate::traits::TryIntoUnaligned
+    for VFilter<VFunc<K, BitFieldVec<Box<[W]>>, S, E>>
 {
-    type Unaligned = VFilter<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>>;
+    type Unaligned = VFilter<VFunc<K, BitFieldVecU<Box<[W]>>, S, E>>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -178,11 +178,11 @@ impl<T: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>> crate::traits::Tr
     }
 }
 
-impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>>
-    From<VFilter<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>>>
-    for VFilter<VFunc<T, BitFieldVec<Box<[W]>>, S, E>>
+impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>>
+    From<VFilter<VFunc<K, BitFieldVecU<Box<[W]>>, S, E>>>
+    for VFilter<VFunc<K, BitFieldVec<Box<[W]>>, S, E>>
 {
-    fn from(f: VFilter<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>>) -> Self {
+    fn from(f: VFilter<VFunc<K, BitFieldVecU<Box<[W]>>, S, E>>) -> Self {
         VFilter {
             func: f.func.into(),
             filter_mask: f.filter_mask,
@@ -193,9 +193,9 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>>
 // ── Convenience constructors ───────────────────────────────────────
 
 #[cfg(feature = "rayon")]
-impl<T, W, S, E> VFilter<VFunc<T, Box<[W]>, S, E>>
+impl<K, W, S, E> VFilter<VFunc<K, Box<[W]>, S, E>>
 where
-    T: ?Sized + ToSig<S> + std::fmt::Debug,
+    K: ?Sized + ToSig<S> + std::fmt::Debug,
     W: Word + BinSafe,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
@@ -249,7 +249,7 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_new<B: ?Sized + Borrow<T>>(
+    pub fn try_new<B: ?Sized + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -311,7 +311,7 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_new_with_builder<B: ?Sized + Borrow<T>, P: ProgressLog + Clone + Send + Sync>(
+    pub fn try_new_with_builder<B: ?Sized + Borrow<K>, P: ProgressLog + Clone + Send + Sync>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -382,11 +382,11 @@ where
     /// # fn main() {}
     /// ```
     pub fn try_par_new<P: ProgressLog + Clone + Send + Sync>(
-        keys: &[impl Borrow<T> + Sync],
+        keys: &[impl Borrow<K> + Sync],
         pl: &mut P,
     ) -> Result<Self>
     where
-        T: Sync,
+        K: Sync,
         S: Send,
     {
         Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
@@ -435,12 +435,12 @@ where
     /// # fn main() {}
     /// ```
     pub fn try_par_new_with_builder<P: ProgressLog + Clone + Send + Sync>(
-        keys: &[impl Borrow<T> + Sync],
+        keys: &[impl Borrow<K> + Sync],
         builder: VBuilder<Box<[W]>, S, E>,
         pl: &mut P,
     ) -> Result<Self>
     where
-        T: Sync,
+        K: Sync,
         S: Send,
     {
         let n = keys.len();
@@ -484,9 +484,9 @@ where
 }
 
 #[cfg(feature = "rayon")]
-impl<T, W, S, E> VFilter<VFunc<T, BitFieldVec<Box<[W]>>, S, E>>
+impl<K, W, S, E> VFilter<VFunc<K, BitFieldVec<Box<[W]>>, S, E>>
 where
-    T: ?Sized + ToSig<S> + std::fmt::Debug,
+    K: ?Sized + ToSig<S> + std::fmt::Debug,
     W: Word + BinSafe,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
@@ -538,7 +538,7 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_new<B: ?Sized + Borrow<T>>(
+    pub fn try_new<B: ?Sized + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -600,7 +600,7 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_new_with_builder<B: ?Sized + Borrow<T>, P: ProgressLog + Clone + Send + Sync>(
+    pub fn try_new_with_builder<B: ?Sized + Borrow<K>, P: ProgressLog + Clone + Send + Sync>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -674,12 +674,12 @@ where
     /// # fn main() {}
     /// ```
     pub fn try_par_new<P: ProgressLog + Clone + Send + Sync>(
-        keys: &[impl Borrow<T> + Sync],
+        keys: &[impl Borrow<K> + Sync],
         filter_bits: usize,
         pl: &mut P,
     ) -> Result<Self>
     where
-        T: Sync,
+        K: Sync,
         S: Send,
     {
         Self::try_par_new_with_builder(keys, filter_bits, VBuilder::default(), pl)
@@ -730,13 +730,13 @@ where
     /// # fn main() {}
     /// ```
     pub fn try_par_new_with_builder<P: ProgressLog + Clone + Send + Sync>(
-        keys: &[impl Borrow<T> + Sync],
+        keys: &[impl Borrow<K> + Sync],
         filter_bits: usize,
         builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
         pl: &mut P,
     ) -> Result<Self>
     where
-        T: Sync,
+        K: Sync,
         S: Send,
     {
         assert!(filter_bits > 0);

@@ -248,7 +248,8 @@ where
 
 use crate::traits::TryIntoUnaligned;
 
-impl<V: Word, D: TryIntoUnaligned + SliceByValue<Value = u64>> TryIntoUnaligned for CompIntList<V, D>
+impl<V: Word, D: TryIntoUnaligned + SliceByValue<Value = u64>> TryIntoUnaligned
+    for CompIntList<V, D>
 where
     D::Unaligned: SliceByValue<Value = u64>,
 {

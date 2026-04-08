@@ -76,11 +76,8 @@ fn main() -> Result<()> {
     let mut sorted_keys: Vec<String> = keys.iter().map(|s| s.to_string()).collect();
     sorted_keys.sort();
 
-    let mmphf = <SignedFunc<LcpMmphfStr, Box<[u64]>>>::try_new(
-        FromSlice::new(&sorted_keys),
-        n,
-        &mut pl,
-    )?;
+    let mmphf =
+        <SignedFunc<LcpMmphfStr, Box<[u64]>>>::try_new(FromSlice::new(&sorted_keys), n, &mut pl)?;
     let mmphf = mmphf.try_into_unaligned()?;
 
     for (rank, key) in sorted_keys.iter().enumerate() {

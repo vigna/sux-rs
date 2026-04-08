@@ -59,51 +59,51 @@ use {
 #[mem_size(flat)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct IntBitPrefix<T> {
+pub struct IntBitPrefix<K> {
     /// The original integer value.
-    value: T,
+    value: K,
     /// Number of significant leading bits.
     bit_length: usize,
 }
 
-impl<T: PrimitiveInteger> IntBitPrefix<T> {
+impl<K: PrimitiveInteger> IntBitPrefix<K> {
     /// Creates a new integer bit prefix.
     #[inline]
-    pub fn new(value: T, bit_length: usize) -> Self {
-        debug_assert!(bit_length <= T::BITS as usize);
+    pub fn new(value: K, bit_length: usize) -> Self {
+        debug_assert!(bit_length <= K::BITS as usize);
         Self { value, bit_length }
     }
 
-    /// Returns the value with the bottom `T::BITS - bit_length` bits
-    /// masked out. When `bit_length == 0` (shift by `T::BITS` would
-    /// overflow), returns `T::MIN`; this is harmless because the hash
+    /// Returns the value with the bottom `K::BITS - bit_length` bits
+    /// masked out. When `bit_length == 0` (shift by `K::BITS` would
+    /// overflow), returns `K::MIN`; this is harmless because the hash
     /// includes `bit_length` for disambiguation.
     ///
-    /// Uses `T::MIN | T::MAX` as the all-ones value so that the mask
-    /// is correct for both signed types (where `T::MAX` lacks the MSB)
-    /// and unsigned types (where `T::MIN | T::MAX == T::MAX`).
+    /// Uses `K::MIN | K::MAX` as the all-ones value so that the mask
+    /// is correct for both signed types (where `K::MAX` lacks the MSB)
+    /// and unsigned types (where `K::MIN | K::MAX == K::MAX`).
     ///
     /// The `match` on `checked_shl` should compile to a branchless
     /// conditional move.
     #[inline]
-    fn masked_value(&self) -> T {
-        let all_ones = T::MIN | T::MAX;
-        match all_ones.checked_shl(T::BITS - self.bit_length as u32) {
+    fn masked_value(&self) -> K {
+        let all_ones = K::MIN | K::MAX;
+        match all_ones.checked_shl(K::BITS - self.bit_length as u32) {
             Some(m) => self.value & m,
-            None => T::MIN, // bit_length == 0
+            None => K::MIN, // bit_length == 0
         }
     }
 }
 
 /// Packs significant bits and bit_length into a contiguous stack buffer
 /// for one-shot xxh3 hashing. Returns the number of bytes written.
-/// Buffer must be at least `size_of::<T>() + size_of::<usize>()` bytes.
+/// Buffer must be at least `size_of::<K>() + size_of::<usize>()` bytes.
 #[inline]
-pub(crate) fn pack_int_bit_prefix<T: PrimitiveInteger>(
-    bp: &IntBitPrefix<T>,
+pub(crate) fn pack_int_bit_prefix<K: PrimitiveInteger>(
+    bp: &IntBitPrefix<K>,
     buf: &mut [u8],
 ) -> usize {
-    let val: T::Bytes = bp.masked_value().to_ne_bytes();
+    let val: K::Bytes = bp.masked_value().to_ne_bytes();
     let val = val.borrow() as &[u8];
     let len = bp.bit_length.to_ne_bytes();
     let n = val.len() + len.len();
@@ -112,7 +112,7 @@ pub(crate) fn pack_int_bit_prefix<T: PrimitiveInteger>(
     n
 }
 
-impl<T: PrimitiveInteger> ToSig<[u64; 1]> for IntBitPrefix<T> {
+impl<K: PrimitiveInteger> ToSig<[u64; 1]> for IntBitPrefix<K> {
     #[inline]
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
         let mut buf = [0u8; 24];
@@ -129,7 +129,7 @@ impl<T: PrimitiveInteger> ToSig<[u64; 1]> for IntBitPrefix<T> {
 /// type, compared MSB-first (big-endian bit order).
 #[cfg(feature = "rayon")]
 #[inline(always)]
-pub(crate) fn lcp_bits<T: PrimitiveInteger>(a: T, b: T) -> usize {
+pub(crate) fn lcp_bits<K: PrimitiveInteger>(a: K, b: K) -> usize {
     (a ^ b).leading_zeros() as usize
 }
 

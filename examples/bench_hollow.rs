@@ -22,13 +22,13 @@ use clap::Parser;
 use dsi_progress_logger::no_logging;
 use mem_dbg::{MemSize, SizeFlags};
 use std::io::BufRead;
+use std::time::Instant;
 use sux::bits::BitFieldVec;
 use sux::func::hollow_trie::{HtDistMmphfInt, HtDistMmphfStr};
 use sux::func::lcp_mmphf::{LcpMmphf, LcpMmphfInt};
 use sux::func::shard_edge::FuseLge3Shards;
 use sux::traits::TryIntoUnaligned;
 use sux::utils::FromSlice;
-use std::time::Instant;
 
 type DefLcpStr = LcpMmphf<str, BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>;
 
@@ -78,7 +78,14 @@ fn bench_strings(path: &str, max_n: usize, repeats: usize, ht_only: bool) -> Res
         keys.dedup();
     }
     let n = keys.len();
-    eprintln!("{n} keys{}\n", if sorted { " (already sorted)" } else { " (sorted)" });
+    eprintln!(
+        "{n} keys{}\n",
+        if sorted {
+            " (already sorted)"
+        } else {
+            " (sorted)"
+        }
+    );
 
     // ── HtDistMmphf ──
     eprintln!("=== HtDistMmphf<str> ===");

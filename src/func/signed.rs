@@ -229,7 +229,7 @@ impl<
     }
 }
 
-impl<T: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableFunc for VFunc<T, D, S, E> {
+impl<K: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableFunc for VFunc<K, D, S, E> {
     type Sig = S;
     type Edge = E;
 
@@ -360,12 +360,12 @@ impl<F: SignableFunc, H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::
 // ── VFunc `get` ──────────────────────────────────────────────────
 
 impl<
-    T: ?Sized + ToSig<S>,
+    K: ?Sized + ToSig<S>,
     D: SliceByValue<Value: Word + BinSafe>,
     S: Sig,
     E: ShardEdge<S, 3>,
     H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::Value>,
-> SignedFunc<VFunc<T, D, S, E>, H>
+> SignedFunc<VFunc<K, D, S, E>, H>
 {
     /// Returns the index of a key associated with the given signature, if there
     /// was such a key in the list provided at construction time; otherwise,
@@ -384,8 +384,8 @@ impl<
     ///
     /// False positives happen with probability defined at construction time.
     #[inline(always)]
-    pub fn get(&self, key: impl Borrow<T>) -> Option<D::Value> {
-        self.get_by_sig(T::to_sig(key.borrow(), self.func.seed()))
+    pub fn get(&self, key: impl Borrow<K>) -> Option<D::Value> {
+        self.get_by_sig(K::to_sig(key.borrow(), self.func.seed()))
     }
 }
 
@@ -571,15 +571,15 @@ where
 ///
 /// Panics if `keys.len() < n`.
 #[cfg(feature = "rayon")]
-fn fill_hashes_from_slice<B, T, W, S, E>(
+fn fill_hashes_from_slice<B, K, W, S, E>(
     shard_edge: &E,
     seed: u64,
     n: usize,
     keys: &[B],
 ) -> Box<[W]>
 where
-    B: Borrow<T>,
-    T: ?Sized + ToSig<S>,
+    B: Borrow<K>,
+    K: ?Sized + ToSig<S>,
     W: Word,
     S: Sig,
     E: ShardEdge<S, 3>,
@@ -588,7 +588,7 @@ where
     let mut hashes = vec![W::MIN; n];
     for (hash, key) in hashes.iter_mut().zip(keys.iter()) {
         *hash = shard_edge
-            .remixed_hash(T::to_sig(key.borrow(), seed))
+            .remixed_hash(K::to_sig(key.borrow(), seed))
             .as_to::<W>();
     }
     hashes.into_boxed_slice()
@@ -606,7 +606,7 @@ where
 ///
 /// Panics if `keys.len() < n`.
 #[cfg(feature = "rayon")]
-fn fill_bit_hashes_from_slice<B, T, H, S, E>(
+fn fill_bit_hashes_from_slice<B, K, H, S, E>(
     shard_edge: &E,
     seed: u64,
     n: usize,
@@ -614,8 +614,8 @@ fn fill_bit_hashes_from_slice<B, T, H, S, E>(
     keys: &[B],
 ) -> BitFieldVec<Box<[H]>>
 where
-    B: Borrow<T>,
-    T: ?Sized + ToSig<S>,
+    B: Borrow<K>,
+    K: ?Sized + ToSig<S>,
     H: Word,
     S: Sig,
     E: ShardEdge<S, 3>,
@@ -623,7 +623,7 @@ where
 {
     let mut hashes = BitFieldVec::<Box<[H]>>::new_unaligned(hash_width, n);
     for (i, key) in keys.iter().enumerate().take(n) {
-        let h = hashes.truncate_hash(shard_edge.remixed_hash(T::to_sig(key.borrow(), seed)));
+        let h = hashes.truncate_hash(shard_edge.remixed_hash(K::to_sig(key.borrow(), seed)));
         hashes.set_value(i, h);
     }
     hashes
@@ -634,9 +634,9 @@ where
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl<T, S, E, H> SignedFunc<VFunc<T, BitFieldVec<Box<[usize]>>, S, E>, Box<[H]>>
+impl<K, S, E, H> SignedFunc<VFunc<K, BitFieldVec<Box<[usize]>>, S, E>, Box<[H]>>
 where
-    T: ?Sized + ToSig<S> + std::fmt::Debug,
+    K: ?Sized + ToSig<S> + std::fmt::Debug,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
     H: crate::traits::Word,
@@ -685,7 +685,7 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_new<B: ?Sized + Borrow<T>>(
+    pub fn try_new<B: ?Sized + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -738,7 +738,7 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_new_with_builder<B: ?Sized + Borrow<T>>(
+    pub fn try_new_with_builder<B: ?Sized + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -813,12 +813,12 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_par_new<B: Borrow<T> + Sync>(
+    pub fn try_par_new<B: Borrow<K> + Sync>(
         keys: &[B],
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self>
     where
-        T: Sync,
+        K: Sync,
         S: Send,
         u64: PrimitiveNumberAs<H>,
     {
@@ -864,18 +864,18 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_par_new_with_builder<B: Borrow<T> + Sync>(
+    pub fn try_par_new_with_builder<B: Borrow<K> + Sync>(
         keys: &[B],
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self>
     where
-        T: Sync,
+        K: Sync,
         S: Send,
         u64: PrimitiveNumberAs<H>,
     {
         let values: Vec<usize> = (0..keys.len()).collect();
-        let func = <VFunc<T, BitFieldVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
+        let func = <VFunc<K, BitFieldVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
             keys, &values, builder, pl,
         )?;
         let hashes = fill_hashes_from_slice(func.shard_edge(), func.seed(), func.len(), keys);
@@ -888,9 +888,9 @@ where
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl<T, S, E, H> SignedFunc<VFunc<T, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
+impl<K, S, E, H> SignedFunc<VFunc<K, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
 where
-    T: ?Sized + ToSig<S> + std::fmt::Debug,
+    K: ?Sized + ToSig<S> + std::fmt::Debug,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
     H: crate::traits::Word,
@@ -942,7 +942,7 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_new<B: ?Sized + Borrow<T>>(
+    pub fn try_new<B: ?Sized + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -1002,7 +1002,7 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_new_with_builder<B: ?Sized + Borrow<T>>(
+    pub fn try_new_with_builder<B: ?Sized + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -1085,13 +1085,13 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_par_new<B: Borrow<T> + Sync>(
+    pub fn try_par_new<B: Borrow<K> + Sync>(
         keys: &[B],
         hash_width: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self>
     where
-        T: Sync,
+        K: Sync,
         S: Send,
         u64: PrimitiveNumberAs<H>,
     {
@@ -1138,21 +1138,21 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
-    pub fn try_par_new_with_builder<B: Borrow<T> + Sync>(
+    pub fn try_par_new_with_builder<B: Borrow<K> + Sync>(
         keys: &[B],
         hash_width: usize,
         builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self>
     where
-        T: Sync,
+        K: Sync,
         S: Send,
         u64: PrimitiveNumberAs<H>,
     {
         assert!(hash_width > 0);
         assert!(hash_width <= H::BITS as usize);
         let values: Vec<usize> = (0..keys.len()).collect();
-        let func = <VFunc<T, BitFieldVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
+        let func = <VFunc<K, BitFieldVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
             keys, &values, builder, pl,
         )?;
         let hashes = fill_bit_hashes_from_slice(
@@ -2651,11 +2651,11 @@ impl<F: TryIntoUnaligned, H: TryIntoUnaligned> TryIntoUnaligned for SignedFunc<F
     }
 }
 
-impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, H>
-    From<SignedFunc<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>, H>>
-    for SignedFunc<VFunc<T, BitFieldVec<Box<[W]>>, S, E>, H>
+impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, H>
+    From<SignedFunc<VFunc<K, BitFieldVecU<Box<[W]>>, S, E>, H>>
+    for SignedFunc<VFunc<K, BitFieldVec<Box<[W]>>, S, E>, H>
 {
-    fn from(f: SignedFunc<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>, H>) -> Self {
+    fn from(f: SignedFunc<VFunc<K, BitFieldVecU<Box<[W]>>, S, E>, H>) -> Self {
         SignedFunc {
             func: f.func.into(),
             hashes: f.hashes,
@@ -2663,12 +2663,12 @@ impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, H>
     }
 }
 
-impl<T: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, W2: Word>
-    From<SignedFunc<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>, BitFieldVecU<Box<[W2]>>>>
-    for SignedFunc<VFunc<T, BitFieldVec<Box<[W]>>, S, E>, BitFieldVec<Box<[W2]>>>
+impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, W2: Word>
+    From<SignedFunc<VFunc<K, BitFieldVecU<Box<[W]>>, S, E>, BitFieldVecU<Box<[W2]>>>>
+    for SignedFunc<VFunc<K, BitFieldVec<Box<[W]>>, S, E>, BitFieldVec<Box<[W2]>>>
 {
     fn from(
-        f: SignedFunc<VFunc<T, BitFieldVecU<Box<[W]>>, S, E>, BitFieldVecU<Box<[W2]>>>,
+        f: SignedFunc<VFunc<K, BitFieldVecU<Box<[W]>>, S, E>, BitFieldVecU<Box<[W2]>>>,
     ) -> Self {
         SignedFunc {
             func: f.func.into(),

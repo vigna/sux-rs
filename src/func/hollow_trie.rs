@@ -33,12 +33,13 @@
 
 #[cfg(feature = "rayon")]
 use {
+    crate::bal_paren::JacobsonBP,
     crate::bits::BitFieldVec,
     crate::bits::BitFieldVecU,
     crate::bits::BitVec,
+    crate::func::VFunc,
     crate::func::lcp_mmphf::{lcp_bits, lcp_bits_nul},
     crate::func::shard_edge::FuseLge3NoShards,
-    crate::func::VFunc,
     crate::traits::TryIntoUnaligned,
     crate::utils::*,
     anyhow::Result,
@@ -48,7 +49,6 @@ use {
     mem_dbg::*,
     num_primitive::PrimitiveInteger,
     std::borrow::Borrow,
-    crate::bal_paren::JacobsonBP,
     value_traits::slices::SliceByValue,
 };
 
@@ -153,14 +153,12 @@ impl HollowTrieBuilder {
     ///
     /// Each node is wrapped in `1 [node.repr] 0` and its skip is
     /// prepended to the skip list.
-    fn serialize_chain(
-        nodes: &[SpineNode],
-    ) -> (BitVec<Vec<u64>>, Vec<usize>) {
+    fn serialize_chain(nodes: &[SpineNode]) -> (BitVec<Vec<u64>>, Vec<usize>) {
         let mut repr: BitVec<Vec<u64>> = BitVec::new(0);
         let mut skips = Vec::new();
 
         for node in nodes {
-            repr.push(true);  // (
+            repr.push(true); // (
             repr.append(&node.repr);
             repr.push(false); // )
             skips.push(node.skip);
@@ -261,8 +259,7 @@ impl HollowTrieBuilder {
         }
 
         // Serialize the remaining right spine.
-        let (chain_repr, chain_skips) =
-            Self::serialize_chain(&self.stack);
+        let (chain_repr, chain_skips) = Self::serialize_chain(&self.stack);
 
         // Wrap in fake root brackets: 1 [chain] 0
         let mut trie: BitVec<Vec<u64>> = BitVec::new(0);
@@ -408,11 +405,7 @@ pub struct HollowTrieDistributor<D = BitFieldVec<Box<[usize]>>> {
 
 #[cfg(feature = "rayon")]
 impl<D: SliceByValue + MemSize + mem_dbg::FlatType> MemSize for HollowTrieDistributor<D> {
-    fn mem_size_rec(
-        &self,
-        flags: SizeFlags,
-        refs: &mut mem_dbg::HashMap<usize, usize>,
-    ) -> usize {
+    fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
         let mut size = core::mem::size_of::<Self>();
         size += self.bal_paren.mem_size_rec(flags, refs);
         size += self.skips.mem_size_rec(flags, refs);
@@ -609,17 +602,9 @@ impl HollowTrieDistributor {
 
                     // If this is an internal node, first-time visit, and
                     // within the descent range: record true follow.
-                    if is_internal
-                        && s + skip < max_descent_length
-                        && !emitted[r]
-                    {
+                    if is_internal && s + skip < max_descent_length && !emitted[r] {
                         emitted[r] = true;
-                        let key = encode_behaviour_key(
-                            p - 1,
-                            curr,
-                            s,
-                            (s + skip).min(length),
-                        );
+                        let key = encode_behaviour_key(p - 1, curr, s, (s + skip).min(length));
                         ff_keys.push(key);
                         ff_values.push(0); // true follow
                     }
@@ -684,8 +669,8 @@ impl HollowTrieDistributor {
                 let path_key = encode_behaviour_key(p - 1, curr, start_path, end_path);
 
                 // Deduplicate: only emit if this is a new (node, path)
-                let is_dup = last_node == Some(p - 1)
-                    && last_path.as_deref() == Some(path_key.as_slice());
+                let is_dup =
+                    last_node == Some(p - 1) && last_path.as_deref() == Some(path_key.as_slice());
 
                 if !is_dup {
                     ext_values.push(if exit_left { LEFT } else { RIGHT });
@@ -786,18 +771,14 @@ impl<D: SliceByValue<Value = usize> + MemSize> HollowTrieDistributor<D> {
             };
 
             let behaviour = if is_internal {
-                let n = encode_behaviour_key_into(
-                    key_buf, p - 1, key, s, (s + skip).min(length),
-                );
+                let n = encode_behaviour_key_into(key_buf, p - 1, key, s, (s + skip).min(length));
                 if self.false_follows_detector.get(&key_buf[..n]) == 0 {
                     FOLLOW
                 } else {
                     self.external_behaviour.get(&key_buf[..n])
                 }
             } else {
-                let n = encode_behaviour_key_into(
-                    key_buf, p - 1, key, s, length,
-                );
+                let n = encode_behaviour_key_into(key_buf, p - 1, key, s, length);
                 self.external_behaviour.get(&key_buf[..n])
             };
 
@@ -990,11 +971,7 @@ pub type HtDistMmphfSliceU8<D = BitFieldVec<Box<[usize]>>> = HtDistMmphf<[u8], D
 
 #[cfg(feature = "rayon")]
 impl<K: ?Sized, D: SliceByValue + MemSize + mem_dbg::FlatType> MemSize for HtDistMmphf<K, D> {
-    fn mem_size_rec(
-        &self,
-        flags: SizeFlags,
-        refs: &mut mem_dbg::HashMap<usize, usize>,
-    ) -> usize {
+    fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
         let mut size = core::mem::size_of::<Self>();
         size += self.distributor.mem_size_rec(flags, refs);
         size += self.offset.mem_size_rec(flags, refs);
@@ -1003,10 +980,7 @@ impl<K: ?Sized, D: SliceByValue + MemSize + mem_dbg::FlatType> MemSize for HtDis
 }
 
 #[cfg(feature = "rayon")]
-impl<K: ?Sized, D: SliceByValue + MemSize + mem_dbg::FlatType> MemDbgImpl
-    for HtDistMmphf<K, D>
-{
-}
+impl<K: ?Sized, D: SliceByValue + MemSize + mem_dbg::FlatType> MemDbgImpl for HtDistMmphf<K, D> {}
 
 #[cfg(feature = "rayon")]
 impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K> {
@@ -1133,10 +1107,8 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
             } else {
                 None
             };
-            let left_delimiter: Option<&[u8]> =
-                left_delim_idx.map(|i| delimiters[i].as_slice());
-            let right_delimiter: Option<&[u8]> =
-                right_delim_idx.map(|i| delimiters[i].as_slice());
+            let left_delimiter: Option<&[u8]> = left_delim_idx.map(|i| delimiters[i].as_slice());
+            let right_delimiter: Option<&[u8]> = right_delim_idx.map(|i| delimiters[i].as_slice());
             delimiter_lcp = match (left_delimiter, right_delimiter) {
                 (Some(l), Some(r)) => Some(lcp_bits_nul::<true>(l, r)),
                 _ => None,
@@ -1170,24 +1142,19 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
                 let mut s = stack_s[depth];
                 let mut index = stack_index[depth];
 
-                let (exit_left, max_descent_length) =
-                    match (left_delimiter, right_delimiter) {
-                        (None, Some(rd)) => {
+                let (exit_left, max_descent_length) = match (left_delimiter, right_delimiter) {
+                    (None, Some(rd)) => (true, lcp_bits_nul::<false>(curr, rd) + 1),
+                    (Some(ld), None) => (false, lcp_bits_nul::<false>(curr, ld) + 1),
+                    (Some(ld), Some(rd)) => {
+                        let dlcp = delimiter_lcp.unwrap();
+                        if get_key_bit(curr, dlcp) {
                             (true, lcp_bits_nul::<false>(curr, rd) + 1)
-                        }
-                        (Some(ld), None) => {
+                        } else {
                             (false, lcp_bits_nul::<false>(curr, ld) + 1)
                         }
-                        (Some(ld), Some(rd)) => {
-                            let dlcp = delimiter_lcp.unwrap();
-                            if get_key_bit(curr, dlcp) {
-                                (true, lcp_bits_nul::<false>(curr, rd) + 1)
-                            } else {
-                                (false, lcp_bits_nul::<false>(curr, ld) + 1)
-                            }
-                        }
-                        (None, None) => (true, length + 1),
-                    };
+                    }
+                    (None, None) => (true, length + 1),
+                };
 
                 // Walk the trie
                 let mut is_internal;
@@ -1200,17 +1167,9 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
                         skip = skips.index_value(r);
                     }
 
-                    if is_internal
-                        && s + skip < max_descent_length
-                        && !emitted[r]
-                    {
+                    if is_internal && s + skip < max_descent_length && !emitted[r] {
                         emitted[r] = true;
-                        let key = encode_behaviour_key(
-                            p - 1,
-                            curr,
-                            s,
-                            (s + skip).min(length),
-                        );
+                        let key = encode_behaviour_key(p - 1, curr, s, (s + skip).min(length));
                         ff_keys.push(key);
                         ff_values.push(0); // true follow
                     }
@@ -1267,8 +1226,8 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
 
                 let path_key = encode_behaviour_key(p - 1, curr, start_path, end_path);
 
-                let is_dup = last_node == Some(p - 1)
-                    && last_path.as_deref() == Some(path_key.as_slice());
+                let is_dup =
+                    last_node == Some(p - 1) && last_path.as_deref() == Some(path_key.as_slice());
 
                 if !is_dup {
                     ext_values.push(if exit_left { LEFT } else { RIGHT });
@@ -1480,28 +1439,28 @@ impl<K: ?Sized> From<HtDistMmphf<K, BitFieldVecU<Box<[usize]>>>> for HtDistMmphf
 /// Read bit `i` (MSB-first) from an integer.
 #[cfg(feature = "rayon")]
 #[inline]
-fn get_int_bit<T: PrimitiveInteger>(key: T, i: usize) -> bool {
-    (key >> (T::BITS as usize - 1 - i)) & T::from(true) != T::default()
+fn get_int_bit<K: PrimitiveInteger>(key: K, i: usize) -> bool {
+    (key >> (K::BITS as usize - 1 - i)) & K::from(true) != K::default()
 }
 
 /// Builds the hollow trie from sorted integers (XOR-mapped with
-/// `T::MIN` so that numeric order matches bit-lexicographic order).
+/// `K::MIN` so that numeric order matches bit-lexicographic order).
 #[cfg(feature = "rayon")]
-struct HollowTrieBuilderInt<T: PrimitiveInteger> {
+struct HollowTrieBuilderInt<K: PrimitiveInteger> {
     stack: Vec<SpineNode>,
     lens: Vec<usize>,
-    prev: T,
+    prev: K,
     count: usize,
     num_nodes: usize,
 }
 
 #[cfg(feature = "rayon")]
-impl<T: PrimitiveInteger> HollowTrieBuilderInt<T> {
+impl<K: PrimitiveInteger> HollowTrieBuilderInt<K> {
     fn new() -> Self {
         Self {
             stack: Vec::new(),
             lens: Vec::new(),
-            prev: T::default(),
+            prev: K::default(),
             count: 0,
             num_nodes: 0,
         }
@@ -1522,7 +1481,7 @@ impl<T: PrimitiveInteger> HollowTrieBuilderInt<T> {
 
     /// Push a key (already XOR-mapped). Keys must be in strictly
     /// increasing order.
-    fn push(&mut self, key: T) {
+    fn push(&mut self, key: K) {
         if self.count == 0 {
             self.prev = key;
             self.count = 1;
@@ -1612,10 +1571,10 @@ impl<T: PrimitiveInteger> HollowTrieBuilderInt<T> {
 }
 
 /// Header size for integer behaviour keys: `node_pos`, `path_len`,
-/// and the extracted path bits as an integer of type `T`.
+/// and the extracted path bits as an integer of type `K`.
 #[cfg(feature = "rayon")]
-const fn int_behaviour_key_size<T>() -> usize {
-    2 * (usize::BITS as usize / 8) + std::mem::size_of::<T>()
+const fn int_behaviour_key_size<K>() -> usize {
+    2 * (usize::BITS as usize / 8) + std::mem::size_of::<K>()
 }
 
 /// Encode a behaviour key for an integer key into a pre-allocated
@@ -1629,10 +1588,10 @@ const fn int_behaviour_key_size<T>() -> usize {
 /// Returns the number of bytes written.
 #[cfg(feature = "rayon")]
 #[inline]
-fn encode_int_behaviour_key_into<T: PrimitiveInteger>(
+fn encode_int_behaviour_key_into<K: PrimitiveInteger>(
     buf: &mut [u8],
     node_pos: usize,
-    key: T,
+    key: K,
     bit_start: usize,
     bit_end: usize,
 ) -> usize {
@@ -1642,25 +1601,25 @@ fn encode_int_behaviour_key_into<T: PrimitiveInteger>(
     buf[w..2 * w].copy_from_slice(&path_len.to_ne_bytes());
     // Extract bits [bit_start . . bit_end) right-aligned.
     let extracted = if path_len == 0 {
-        T::default()
+        K::default()
     } else {
-        (key << bit_start) >> (T::BITS as usize - path_len)
+        (key << bit_start) >> (K::BITS as usize - path_len)
     };
-    let ext_bytes: T::Bytes = extracted.to_ne_bytes();
+    let ext_bytes: K::Bytes = extracted.to_ne_bytes();
     let ext_bytes: &[u8] = ext_bytes.borrow();
     buf[2 * w..2 * w + ext_bytes.len()].copy_from_slice(ext_bytes);
-    int_behaviour_key_size::<T>()
+    int_behaviour_key_size::<K>()
 }
 
 /// Convenience wrapper that allocates a `Vec`.
 #[cfg(feature = "rayon")]
-fn encode_int_behaviour_key<T: PrimitiveInteger>(
+fn encode_int_behaviour_key<K: PrimitiveInteger>(
     node_pos: usize,
-    key: T,
+    key: K,
     bit_start: usize,
     bit_end: usize,
 ) -> Vec<u8> {
-    let mut buf = vec![0u8; int_behaviour_key_size::<T>()];
+    let mut buf = vec![0u8; int_behaviour_key_size::<K>()];
     encode_int_behaviour_key_into(&mut buf, node_pos, key, bit_start, bit_end);
     buf
 }
@@ -1668,7 +1627,7 @@ fn encode_int_behaviour_key<T: PrimitiveInteger>(
 /// A monotone minimal perfect hash function for sorted integers,
 /// based on a hollow trie distributor.
 ///
-/// Given *n* integers of type `T` in ascending order, the structure
+/// Given *n* integers of type `K` in ascending order, the structure
 /// maps each integer to its rank (0 to *n* − 1). Querying an integer
 /// not in the original set returns an arbitrary value (same contract as
 /// [`VFunc::get`]).
@@ -1678,7 +1637,7 @@ fn encode_int_behaviour_key<T: PrimitiveInteger>(
 /// bit-level operations. Then a per-key offset is stored in a
 /// [`VFunc`]. The rank of a key is `bucket * bucket_size + offset`.
 ///
-/// Internally, keys are XOR-mapped with `T::MIN` so that numeric
+/// Internally, keys are XOR-mapped with `K::MIN` so that numeric
 /// order matches bit-lexicographic order (for unsigned types this is
 /// a no-op).
 ///
@@ -1710,7 +1669,7 @@ fn encode_int_behaviour_key<T: PrimitiveInteger>(
 /// ```
 #[derive(Debug)]
 #[cfg(feature = "rayon")]
-pub struct HtDistMmphfInt<T, D = BitFieldVec<Box<[usize]>>> {
+pub struct HtDistMmphfInt<K, D = BitFieldVec<Box<[usize]>>> {
     bal_paren: JacobsonBP,
     skips: crate::list::PrefixSumIntList,
     #[allow(dead_code)]
@@ -1718,20 +1677,16 @@ pub struct HtDistMmphfInt<T, D = BitFieldVec<Box<[usize]>>> {
     num_delimiters: usize,
     false_follows_detector: VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
     external_behaviour: VFunc<[u8], D, [u64; 1], FuseLge3NoShards>,
-    offset: VFunc<T, D>,
+    offset: VFunc<K, D>,
     log2_bucket_size: usize,
     n: usize,
 }
 
 #[cfg(feature = "rayon")]
-impl<T: PrimitiveInteger, D: SliceByValue + MemSize + mem_dbg::FlatType> MemSize
-    for HtDistMmphfInt<T, D>
+impl<K: PrimitiveInteger, D: SliceByValue + MemSize + mem_dbg::FlatType> MemSize
+    for HtDistMmphfInt<K, D>
 {
-    fn mem_size_rec(
-        &self,
-        flags: SizeFlags,
-        refs: &mut mem_dbg::HashMap<usize, usize>,
-    ) -> usize {
+    fn mem_size_rec(&self, flags: SizeFlags, refs: &mut mem_dbg::HashMap<usize, usize>) -> usize {
         let mut size = core::mem::size_of::<Self>();
         size += self.bal_paren.words().len() * 8;
         size += self.skips.mem_size_rec(flags, refs);
@@ -1743,15 +1698,15 @@ impl<T: PrimitiveInteger, D: SliceByValue + MemSize + mem_dbg::FlatType> MemSize
 }
 
 #[cfg(feature = "rayon")]
-impl<T: PrimitiveInteger, D: SliceByValue + MemSize + mem_dbg::FlatType> MemDbgImpl
-    for HtDistMmphfInt<T, D>
+impl<K: PrimitiveInteger, D: SliceByValue + MemSize + mem_dbg::FlatType> MemDbgImpl
+    for HtDistMmphfInt<K, D>
 {
 }
 
 #[cfg(feature = "rayon")]
-impl<T> HtDistMmphfInt<T>
+impl<K> HtDistMmphfInt<K>
 where
-    T: PrimitiveInteger + ToSig<[u64; 2]> + Copy + Ord + Send + Sync + std::fmt::Debug,
+    K: PrimitiveInteger + ToSig<[u64; 2]> + Copy + Ord + Send + Sync + std::fmt::Debug,
 {
     /// Builds a new hollow-trie-distributor-based monotone minimal
     /// perfect hash function from sorted integer keys.
@@ -1761,11 +1716,11 @@ where
         mut keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend K>,
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        let bit_length = T::BITS as usize;
+        let bit_length = K::BITS as usize;
 
         if n == 0 {
             return Ok(Self {
@@ -1800,15 +1755,15 @@ where
 
         pl.info(format_args!(
             "HtDistMmphfInt<{}>: {n} keys, bucket_size=2^{log2_bs}={bucket_size}, key_bits={bit_length}",
-            std::any::type_name::<T>()
+            std::any::type_name::<K>()
         ));
 
         // ── Pass 1: collect delimiters, build trie ────────────────
-        let mut builder = HollowTrieBuilderInt::<T>::new();
-        let mut delimiters: Vec<T> = Vec::with_capacity(num_delimiters);
+        let mut builder = HollowTrieBuilderInt::<K>::new();
+        let mut delimiters: Vec<K> = Vec::with_capacity(num_delimiters);
         let mut i = 0usize;
         while let Some(key) = keys.next()? {
-            let mapped = *key ^ T::MIN;
+            let mapped = *key ^ K::MIN;
             if i % bucket_size == bucket_size - 1 && delimiters.len() < num_delimiters {
                 builder.push(mapped);
                 delimiters.push(mapped);
@@ -1825,7 +1780,7 @@ where
         if num_delimiters == 0 {
             // Rewind for the offset VFunc pass.
             let keys = keys.rewind()?;
-            let offset = <VFunc<T, BitFieldVec<Box<[usize]>>>>::try_new(
+            let offset = <VFunc<K, BitFieldVec<Box<[usize]>>>>::try_new(
                 keys,
                 FromCloneableIntoIterator::new((0..n).map(|i| i & bucket_mask)),
                 n,
@@ -1873,8 +1828,8 @@ where
             } else {
                 None
             };
-            let left_delimiter: Option<T> = left_delim_idx.map(|i| delimiters[i]);
-            let right_delimiter: Option<T> = right_delim_idx.map(|i| delimiters[i]);
+            let left_delimiter: Option<K> = left_delim_idx.map(|i| delimiters[i]);
+            let right_delimiter: Option<K> = right_delim_idx.map(|i| delimiters[i]);
             delimiter_lcp = match (left_delimiter, right_delimiter) {
                 (Some(l), Some(r)) => Some(lcp_bits(l, r)),
                 _ => None,
@@ -1888,11 +1843,11 @@ where
 
             let mut last_node: Option<usize> = None;
             let mut last_path: Option<Vec<u8>> = None;
-            let mut prev_mapped: T = T::default();
+            let mut prev_mapped: K = K::default();
 
             for j in 0..real_bucket_size {
                 let key_ref = keys.next()?.expect("unexpected end of keys");
-                let mapped = *key_ref ^ T::MIN;
+                let mapped = *key_ref ^ K::MIN;
 
                 if j > 0 {
                     let prefix = lcp_bits(prev_mapped, mapped);
@@ -1906,26 +1861,21 @@ where
                 let mut s = stack_s[depth];
                 let mut index = stack_index[depth];
 
-                // For integers: identical keys yield lcp == T::BITS,
-                // so max_descent_length == T::BITS + 1 — correct.
-                let (exit_left, max_descent_length) =
-                    match (left_delimiter, right_delimiter) {
-                        (None, Some(rd)) => {
+                // For integers: identical keys yield lcp == K::BITS,
+                // so max_descent_length == K::BITS + 1 — correct.
+                let (exit_left, max_descent_length) = match (left_delimiter, right_delimiter) {
+                    (None, Some(rd)) => (true, lcp_bits(mapped, rd) + 1),
+                    (Some(ld), None) => (false, lcp_bits(mapped, ld) + 1),
+                    (Some(ld), Some(rd)) => {
+                        let dlcp = delimiter_lcp.unwrap();
+                        if get_int_bit(mapped, dlcp) {
                             (true, lcp_bits(mapped, rd) + 1)
-                        }
-                        (Some(ld), None) => {
+                        } else {
                             (false, lcp_bits(mapped, ld) + 1)
                         }
-                        (Some(ld), Some(rd)) => {
-                            let dlcp = delimiter_lcp.unwrap();
-                            if get_int_bit(mapped, dlcp) {
-                                (true, lcp_bits(mapped, rd) + 1)
-                            } else {
-                                (false, lcp_bits(mapped, ld) + 1)
-                            }
-                        }
-                        (None, None) => (true, bit_length + 1),
-                    };
+                    }
+                    (None, None) => (true, bit_length + 1),
+                };
 
                 let mut is_internal;
                 let mut skip = 0usize;
@@ -1937,17 +1887,10 @@ where
                         skip = skips.index_value(r);
                     }
 
-                    if is_internal
-                        && s + skip < max_descent_length
-                        && !emitted[r]
-                    {
+                    if is_internal && s + skip < max_descent_length && !emitted[r] {
                         emitted[r] = true;
-                        let key = encode_int_behaviour_key(
-                            p - 1,
-                            mapped,
-                            s,
-                            (s + skip).min(bit_length),
-                        );
+                        let key =
+                            encode_int_behaviour_key(p - 1, mapped, s, (s + skip).min(bit_length));
                         ff_keys.push(key);
                         ff_values.push(0);
                     }
@@ -2002,11 +1945,10 @@ where
                     last_node = None;
                 }
 
-                let path_key =
-                    encode_int_behaviour_key(p - 1, mapped, start_path, end_path);
+                let path_key = encode_int_behaviour_key(p - 1, mapped, start_path, end_path);
 
-                let is_dup = last_node == Some(p - 1)
-                    && last_path.as_deref() == Some(path_key.as_slice());
+                let is_dup =
+                    last_node == Some(p - 1) && last_path.as_deref() == Some(path_key.as_slice());
 
                 if !is_dup {
                     ext_values.push(if exit_left { LEFT } else { RIGHT });
@@ -2050,12 +1992,12 @@ where
             )?;
 
         // ── Pass 3: build offset VFunc ────────────────────────────
-        // Pass the lender directly to VFunc<T> — no collection needed.
+        // Pass the lender directly to VFunc<K> — no collection needed.
         let keys = keys.rewind()?;
 
         pl.info(format_args!("Building offset VFunc..."));
 
-        let offset = <VFunc<T, BitFieldVec<Box<[usize]>>>>::try_new(
+        let offset = <VFunc<K, BitFieldVec<Box<[usize]>>>>::try_new(
             keys,
             FromCloneableIntoIterator::new((0..n).map(|i| i & bucket_mask)),
             n,
@@ -2086,22 +2028,22 @@ where
 }
 
 #[cfg(feature = "rayon")]
-impl<T, D> HtDistMmphfInt<T, D>
+impl<K, D> HtDistMmphfInt<K, D>
 where
-    T: PrimitiveInteger + ToSig<[u64; 2]>,
+    K: PrimitiveInteger + ToSig<[u64; 2]>,
     D: SliceByValue<Value = usize> + MemSize + mem_dbg::FlatType,
 {
     /// Returns the rank (0-based position) of the given key.
     ///
     /// If the key was not in the original set, the result is arbitrary.
     #[inline]
-    pub fn get(&self, key: T) -> usize {
+    pub fn get(&self, key: K) -> usize {
         if self.n <= 1 {
             return 0;
         }
 
-        let mapped = key ^ T::MIN;
-        let length = T::BITS as usize;
+        let mapped = key ^ K::MIN;
+        let length = K::BITS as usize;
 
         let trie_words = self.bal_paren.words();
         let mut p: usize = 1;
@@ -2124,7 +2066,11 @@ where
 
             let behaviour = if is_internal {
                 let n = encode_int_behaviour_key_into(
-                    &mut key_buf, p - 1, mapped, s, (s + skip).min(length),
+                    &mut key_buf,
+                    p - 1,
+                    mapped,
+                    s,
+                    (s + skip).min(length),
                 );
                 if self.false_follows_detector.get(&key_buf[..n]) == 0 {
                     FOLLOW
@@ -2132,9 +2078,7 @@ where
                     self.external_behaviour.get(&key_buf[..n])
                 }
             } else {
-                let n = encode_int_behaviour_key_into(
-                    &mut key_buf, p - 1, mapped, s, length,
-                );
+                let n = encode_int_behaviour_key_into(&mut key_buf, p - 1, mapped, s, length);
                 self.external_behaviour.get(&key_buf[..n])
             };
 
@@ -2150,7 +2094,9 @@ where
                         .find_close(last_left_turn)
                         .expect("balanced parentheses broken");
                     #[allow(clippy::manual_div_ceil)]
-                    { ((q - last_left_turn + 1) / 2) + last_left_turn_index }
+                    {
+                        ((q - last_left_turn + 1) / 2) + last_left_turn_index
+                    }
                 } else {
                     index + 1
                 };
@@ -2191,8 +2137,8 @@ where
 // ── Integer TryIntoUnaligned conversions ──────────────────────────
 
 #[cfg(feature = "rayon")]
-impl<T: PrimitiveInteger> TryIntoUnaligned for HtDistMmphfInt<T> {
-    type Unaligned = HtDistMmphfInt<T, BitFieldVecU<Box<[usize]>>>;
+impl<K: PrimitiveInteger> TryIntoUnaligned for HtDistMmphfInt<K> {
+    type Unaligned = HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -2211,10 +2157,10 @@ impl<T: PrimitiveInteger> TryIntoUnaligned for HtDistMmphfInt<T> {
 }
 
 #[cfg(feature = "rayon")]
-impl<T: PrimitiveInteger> From<HtDistMmphfInt<T, BitFieldVecU<Box<[usize]>>>>
-    for HtDistMmphfInt<T>
+impl<K: PrimitiveInteger> From<HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>>>
+    for HtDistMmphfInt<K>
 {
-    fn from(f: HtDistMmphfInt<T, BitFieldVecU<Box<[usize]>>>) -> Self {
+    fn from(f: HtDistMmphfInt<K, BitFieldVecU<Box<[usize]>>>) -> Self {
         Self {
             bal_paren: f.bal_paren,
             skips: f.skips,
@@ -2318,35 +2264,28 @@ mod tests {
         #[test]
         fn test_ht_dist_mmphf_small() {
             let keys: Vec<&str> = vec!["alpha", "beta", "delta", "gamma", "omega"];
-            let func = HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+            let func =
+                HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             for (i, key) in keys.iter().enumerate() {
-                assert_eq!(
-                    func.get(key),
-                    i,
-                    "Mismatch for key {key:?} at position {i}"
-                );
+                assert_eq!(func.get(key), i, "Mismatch for key {key:?} at position {i}");
             }
         }
 
         #[test]
         fn test_ht_dist_mmphf_many() {
-            let keys: Vec<String> =
-                (0..500).map(|i| format!("key_{:06}", i)).collect();
+            let keys: Vec<String> = (0..500).map(|i| format!("key_{:06}", i)).collect();
             let func =
                 HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             for (i, key) in keys.iter().enumerate() {
-                assert_eq!(
-                    func.get(key),
-                    i,
-                    "Mismatch for key {key:?} at position {i}"
-                );
+                assert_eq!(func.get(key), i, "Mismatch for key {key:?} at position {i}");
             }
         }
 
         #[test]
         fn test_ht_dist_mmphf_two_keys() {
             let keys: Vec<&str> = vec!["aaa", "zzz"];
-            let func = HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+            let func =
+                HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             for (i, key) in keys.iter().enumerate() {
                 assert_eq!(func.get(key), i);
             }
@@ -2355,38 +2294,45 @@ mod tests {
         #[test]
         fn test_ht_dist_mmphf_single_key() {
             let keys: Vec<&str> = vec!["only"];
-            let func = HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+            let func =
+                HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             assert_eq!(func.get("only"), 0);
         }
 
         #[test]
         fn test_ht_dist_mmphf_large() {
-            let keys: Vec<String> =
-                (0..5000).map(|i| format!("key_{:08}", i)).collect();
-            let func = HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+            let keys: Vec<String> = (0..5000).map(|i| format!("key_{:08}", i)).collect();
+            let func =
+                HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             for (i, key) in keys.iter().enumerate() {
-                assert_eq!(
-                    func.get(key),
-                    i,
-                    "Mismatch for key {key:?} at position {i}"
-                );
+                assert_eq!(func.get(key), i, "Mismatch for key {key:?} at position {i}");
             }
         }
 
         #[test]
         fn test_ht_dist_mmphf_prefix_keys() {
             let keys: Vec<&str> = vec![
-                "0", "00", "000", "0000", "00000", "000000", "0000000",
-                "00000000", "000000000", "0000000000", "1", "10", "100",
-                "2", "20", "200",
+                "0",
+                "00",
+                "000",
+                "0000",
+                "00000",
+                "000000",
+                "0000000",
+                "00000000",
+                "000000000",
+                "0000000000",
+                "1",
+                "10",
+                "100",
+                "2",
+                "20",
+                "200",
             ];
-            let func = HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+            let func =
+                HtDistMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             for (i, key) in keys.iter().enumerate() {
-                assert_eq!(
-                    func.get(key),
-                    i,
-                    "Mismatch for key {key:?} at position {i}"
-                );
+                assert_eq!(func.get(key), i, "Mismatch for key {key:?} at position {i}");
             }
         }
     }
@@ -2401,9 +2347,8 @@ mod tests {
         #[test]
         fn test_int_small_u64() {
             let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-            let func = HtDistMmphfInt::try_new(
-                FromSlice::new(&keys), keys.len(), no_logging![],
-            ).unwrap();
+            let func =
+                HtDistMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             for (i, &key) in keys.iter().enumerate() {
                 assert_eq!(func.get(key), i, "Mismatch for key {key} at position {i}");
             }
@@ -2412,9 +2357,8 @@ mod tests {
         #[test]
         fn test_int_many_u64() {
             let keys: Vec<u64> = (0..500).map(|i| i * 7 + 1000).collect();
-            let func = HtDistMmphfInt::try_new(
-                FromSlice::new(&keys), keys.len(), no_logging![],
-            ).unwrap();
+            let func =
+                HtDistMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             for (i, &key) in keys.iter().enumerate() {
                 assert_eq!(func.get(key), i, "Mismatch for key {key} at position {i}");
             }
@@ -2423,9 +2367,8 @@ mod tests {
         #[test]
         fn test_int_two_keys() {
             let keys: Vec<u64> = vec![0, u64::MAX];
-            let func = HtDistMmphfInt::try_new(
-                FromSlice::new(&keys), keys.len(), no_logging![],
-            ).unwrap();
+            let func =
+                HtDistMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             for (i, &key) in keys.iter().enumerate() {
                 assert_eq!(func.get(key), i);
             }
@@ -2434,18 +2377,16 @@ mod tests {
         #[test]
         fn test_int_single_key() {
             let keys: Vec<u64> = vec![42];
-            let func = HtDistMmphfInt::try_new(
-                FromSlice::new(&keys), keys.len(), no_logging![],
-            ).unwrap();
+            let func =
+                HtDistMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             assert_eq!(func.get(42), 0);
         }
 
         #[test]
         fn test_int_large_u64() {
             let keys: Vec<u64> = (0..5000).map(|i| i * 3).collect();
-            let func = HtDistMmphfInt::try_new(
-                FromSlice::new(&keys), keys.len(), no_logging![],
-            ).unwrap();
+            let func =
+                HtDistMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             for (i, &key) in keys.iter().enumerate() {
                 assert_eq!(func.get(key), i, "Mismatch for key {key} at position {i}");
             }
@@ -2454,9 +2395,8 @@ mod tests {
         #[test]
         fn test_int_u32() {
             let keys: Vec<u32> = (0..200).map(|i| i * 11 + 5).collect();
-            let func = HtDistMmphfInt::try_new(
-                FromSlice::new(&keys), keys.len(), no_logging![],
-            ).unwrap();
+            let func =
+                HtDistMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             for (i, &key) in keys.iter().enumerate() {
                 assert_eq!(func.get(key), i, "Mismatch for key {key} at position {i}");
             }
@@ -2465,9 +2405,8 @@ mod tests {
         #[test]
         fn test_int_signed_i64() {
             let keys: Vec<i64> = (-250..250).collect();
-            let func = HtDistMmphfInt::try_new(
-                FromSlice::new(&keys), keys.len(), no_logging![],
-            ).unwrap();
+            let func =
+                HtDistMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             for (i, &key) in keys.iter().enumerate() {
                 assert_eq!(func.get(key), i, "Mismatch for key {key} at position {i}");
             }
@@ -2476,9 +2415,8 @@ mod tests {
         #[test]
         fn test_int_consecutive_u64() {
             let keys: Vec<u64> = (0..100).collect();
-            let func = HtDistMmphfInt::try_new(
-                FromSlice::new(&keys), keys.len(), no_logging![],
-            ).unwrap();
+            let func =
+                HtDistMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
             for (i, &key) in keys.iter().enumerate() {
                 assert_eq!(func.get(key), i, "Mismatch for key {key} at position {i}");
             }
