@@ -47,9 +47,9 @@ use {
 
 use crate::bits::{BitFieldVec, BitFieldVecU};
 use crate::func::VFunc;
-use crate::func::lcp_mmphf::{LcpMmphf, LcpMmphfInt};
+use crate::func::lcp_mmphf::{BitPrefix, IntBitPrefix, LcpMmphf, LcpMmphfInt};
 use crate::func::lcp2_mmphf::{Lcp2Mmphf, Lcp2MmphfInt};
-use crate::func::shard_edge::{Fuse3Shards, ShardEdge};
+use crate::func::shard_edge::ShardEdge;
 use crate::traits::Backend;
 use crate::utils::*;
 use mem_dbg::*;
@@ -123,18 +123,24 @@ pub trait SignableFunc {
     }
 }
 
-impl<T: PrimitiveInteger, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> SignableFunc
-    for LcpMmphfInt<T, D, S, E>
+impl<
+    K: PrimitiveInteger,
+    D: SliceByValue<Value = usize>,
+    S0: Sig,
+    E0: ShardEdge<S0, 3>,
+    S1: Sig,
+    E1: ShardEdge<S1, 3>,
+> SignableFunc for LcpMmphfInt<K, D, S0, E0, S1, E1>
 {
-    type Sig = S;
-    type Edge = E;
+    type Sig = S0;
+    type Edge = E0;
 
     #[inline(always)]
     fn seed(&self) -> u64 {
         self.offset_lcp_length.seed
     }
     #[inline(always)]
-    fn shard_edge(&self) -> &E {
+    fn shard_edge(&self) -> &E0 {
         &self.offset_lcp_length.shard_edge
     }
     #[inline(always)]
@@ -143,18 +149,24 @@ impl<T: PrimitiveInteger, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S
     }
 }
 
-impl<K: ?Sized, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> SignableFunc
-    for LcpMmphf<K, D, S, E>
+impl<
+    K: ?Sized,
+    D: SliceByValue<Value = usize>,
+    S0: Sig,
+    E0: ShardEdge<S0, 3>,
+    S1: Sig,
+    E1: ShardEdge<S1, 3>,
+> SignableFunc for LcpMmphf<K, D, S0, E0, S1, E1>
 {
-    type Sig = S;
-    type Edge = E;
+    type Sig = S0;
+    type Edge = E0;
 
     #[inline(always)]
     fn seed(&self) -> u64 {
         self.offset_lcp_length.seed
     }
     #[inline(always)]
-    fn shard_edge(&self) -> &E {
+    fn shard_edge(&self) -> &E0 {
         &self.offset_lcp_length.shard_edge
     }
     #[inline(always)]
@@ -163,20 +175,25 @@ impl<K: ?Sized, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> Sign
     }
 }
 
-impl<T: PrimitiveInteger, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> SignableFunc
-    for Lcp2MmphfInt<T, D, S, E>
-where
-    Fuse3Shards: ShardEdge<S, 3>,
+impl<
+    K: PrimitiveInteger,
+    D: SliceByValue<Value = usize>,
+    S0: Sig,
+    E0: ShardEdge<S0, 3>,
+    F0: ShardEdge<S0, 3>,
+    S1: Sig,
+    E1: ShardEdge<S1, 3>,
+> SignableFunc for Lcp2MmphfInt<K, D, S0, E0, F0, S1, E1>
 {
-    type Sig = S;
-    type Edge = E;
+    type Sig = S0;
+    type Edge = E0;
 
     #[inline(always)]
     fn seed(&self) -> u64 {
         self.fused.seed
     }
     #[inline(always)]
-    fn shard_edge(&self) -> &E {
+    fn shard_edge(&self) -> &E0 {
         &self.fused.shard_edge
     }
     #[inline(always)]
@@ -185,20 +202,25 @@ where
     }
 }
 
-impl<K: ?Sized, D: SliceByValue<Value = usize>, S: Sig, E: ShardEdge<S, 3>> SignableFunc
-    for Lcp2Mmphf<K, D, S, E>
-where
-    Fuse3Shards: ShardEdge<S, 3>,
+impl<
+    K: ?Sized,
+    D: SliceByValue<Value = usize>,
+    S0: Sig,
+    E0: ShardEdge<S0, 3>,
+    F0: ShardEdge<S0, 3>,
+    S1: Sig,
+    E1: ShardEdge<S1, 3>,
+> SignableFunc for Lcp2Mmphf<K, D, S0, E0, F0, S1, E1>
 {
-    type Sig = S;
-    type Edge = E;
+    type Sig = S0;
+    type Edge = E0;
 
     #[inline(always)]
     fn seed(&self) -> u64 {
         self.fused.seed
     }
     #[inline(always)]
-    fn shard_edge(&self) -> &E {
+    fn shard_edge(&self) -> &E0 {
         &self.fused.shard_edge
     }
     #[inline(always)]
@@ -370,31 +392,39 @@ impl<
 // ── LcpMmphfInt `get` ────────────────────────────────────────────
 
 impl<
-    T: PrimitiveInteger + ToSig<S> + Copy,
+    K: PrimitiveInteger + ToSig<S0> + Copy,
     D: SliceByValue<Value = usize>,
     H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::Value>,
-    S: Sig,
-    E: ShardEdge<S, 3>,
-> SignedFunc<LcpMmphfInt<T, D, S, E>, H>
+    S0: Sig,
+    E0: ShardEdge<S0, 3>,
+    S1: Sig,
+    E1: ShardEdge<S1, 3>,
+> SignedFunc<LcpMmphfInt<K, D, S0, E0, S1, E1>, H>
+where
+    IntBitPrefix<K>: ToSig<S1>,
 {
     /// Returns the rank of the given key if it was in the original set,
     /// or `None` if the verification hash does not match.
     #[inline]
-    pub fn get(&self, key: T) -> Option<usize> {
+    pub fn get(&self, key: K) -> Option<usize> {
         let rank = self.func.get(key);
-        self.verify(rank, T::to_sig(key, self.func.seed()))
+        self.verify(rank, K::to_sig(key, self.func.seed()))
     }
 }
 
 // ── LcpMmphf `get` ──────────────────────────────────────────────
 
 impl<
-    K: ?Sized + AsRef<[u8]> + ToSig<S>,
+    K: ?Sized + AsRef<[u8]> + ToSig<S0>,
     D: SliceByValue<Value = usize>,
     H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::Value>,
-    S: Sig,
-    E: ShardEdge<S, 3>,
-> SignedFunc<LcpMmphf<K, D, S, E>, H>
+    S0: Sig,
+    E0: ShardEdge<S0, 3>,
+    S1: Sig,
+    E1: ShardEdge<S1, 3>,
+> SignedFunc<LcpMmphf<K, D, S0, E0, S1, E1>, H>
+where
+    BitPrefix: ToSig<S1>,
 {
     /// Returns the rank of the given key if it was in the original set,
     /// or `None` if the verification hash does not match.
@@ -408,35 +438,41 @@ impl<
 // ── Lcp2MmphfInt `get` ──────────────────────────────────────────
 
 impl<
-    T: PrimitiveInteger + ToSig<S> + Copy,
+    K: PrimitiveInteger + ToSig<S0> + Copy,
     D: SliceByValue<Value = usize>,
     H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::Value>,
-    S: Sig,
-    E: ShardEdge<S, 3>,
-> SignedFunc<Lcp2MmphfInt<T, D, S, E>, H>
+    S0: Sig,
+    E0: ShardEdge<S0, 3>,
+    F0: ShardEdge<S0, 3>,
+    S1: Sig,
+    E1: ShardEdge<S1, 3>,
+> SignedFunc<Lcp2MmphfInt<K, D, S0, E0, F0, S1, E1>, H>
 where
-    Fuse3Shards: ShardEdge<S, 3>,
+    IntBitPrefix<K>: ToSig<S1>,
 {
     /// Returns the rank of the given key if it was in the original set,
     /// or `None` if the verification hash does not match.
     #[inline]
-    pub fn get(&self, key: T) -> Option<usize> {
+    pub fn get(&self, key: K) -> Option<usize> {
         let rank = self.func.get(key);
-        self.verify(rank, T::to_sig(key, self.func.seed()))
+        self.verify(rank, K::to_sig(key, self.func.seed()))
     }
 }
 
 // ── Lcp2Mmphf `get` ─────────────────────────────────────────────
 
 impl<
-    K: ?Sized + AsRef<[u8]> + ToSig<S>,
+    K: ?Sized + AsRef<[u8]> + ToSig<S0>,
     D: SliceByValue<Value = usize>,
     H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::Value>,
-    S: Sig,
-    E: ShardEdge<S, 3>,
-> SignedFunc<Lcp2Mmphf<K, D, S, E>, H>
+    S0: Sig,
+    E0: ShardEdge<S0, 3>,
+    F0: ShardEdge<S0, 3>,
+    S1: Sig,
+    E1: ShardEdge<S1, 3>,
+> SignedFunc<Lcp2Mmphf<K, D, S0, E0, F0, S1, E1>, H>
 where
-    Fuse3Shards: ShardEdge<S, 3>,
+    BitPrefix: ToSig<S1>,
 {
     /// Returns the rank of the given key if it was in the original set,
     /// or `None` if the verification hash does not match.
@@ -1143,14 +1179,20 @@ where
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl<T, W, S, E> SignedFunc<LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, Box<[W]>>
-where
-    T: PrimitiveInteger + ToSig<S> + std::fmt::Debug + Send + Sync + Copy + Ord,
+impl<
+    K: PrimitiveInteger + ToSig<S0> + std::fmt::Debug + Send + Sync + Copy + Ord,
     W: Word,
-    S: Sig + Send + Sync,
-    E: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
-    SigVal<S, usize>: RadixKey,
-    SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    S0: Sig + Send + Sync,
+    E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+    S1: Sig + Send + Sync,
+    E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+> SignedFunc<LcpMmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, S1, E1>, Box<[W]>>
+where
+    IntBitPrefix<K>: ToSig<S1>,
+    SigVal<S0, usize>: RadixKey,
+    SigVal<E0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<S1, usize>: RadixKey,
+    SigVal<E1::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<W>,
 {
     /// Creates a new signed LCP-based MMPHF for integers.
@@ -1189,7 +1231,7 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend K>,
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
@@ -1205,15 +1247,15 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend K>,
         n: usize,
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         let (func, keys) = LcpMmphfInt::try_new_inner(keys, n, builder, pl)?;
         let mut keys = keys.rewind()?;
         let hashes = fill_hashes(func.shard_edge(), func.seed(), n, &mut keys, |key, seed| {
-            T::to_sig(*key, seed)
+            K::to_sig(*key, seed)
         })?;
         Ok(Self { func, hashes })
     }
@@ -1251,7 +1293,7 @@ where
     /// # fn main() {}
     /// ```
     pub fn try_par_new(
-        keys: &[T],
+        keys: &[K],
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
@@ -1286,12 +1328,12 @@ where
     /// # fn main() {}
     /// ```
     pub fn try_par_new_with_builder(
-        keys: &[T],
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        keys: &[K],
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         let func = LcpMmphfInt::try_par_new_inner(keys, builder, pl)?;
-        let hashes = fill_hashes_from_slice::<T, T, W, S, E>(
+        let hashes = fill_hashes_from_slice::<K, K, W, S0, E0>(
             func.shard_edge(),
             func.seed(),
             keys.len(),
@@ -1306,14 +1348,20 @@ where
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl<K, W, S, E> SignedFunc<LcpMmphf<K, BitFieldVec<Box<[usize]>>, S, E>, Box<[W]>>
-where
-    K: ?Sized + AsRef<[u8]> + ToSig<S> + std::fmt::Debug,
+impl<
+    K: ?Sized + AsRef<[u8]> + ToSig<S0> + std::fmt::Debug,
     W: Word,
-    S: Sig + Send + Sync,
-    E: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
-    SigVal<S, usize>: RadixKey,
-    SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    S0: Sig + Send + Sync,
+    E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+    S1: Sig + Send + Sync,
+    E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+> SignedFunc<LcpMmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, S1, E1>, Box<[W]>>
+where
+    BitPrefix: ToSig<S1>,
+    SigVal<S0, usize>: RadixKey,
+    SigVal<E0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<S1, usize>: RadixKey,
+    SigVal<E1::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<W>,
 {
     /// Creates a new signed LCP-based MMPHF for byte-sequence keys.
@@ -1371,7 +1419,7 @@ where
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         let (func, keys) = LcpMmphf::try_new_inner(keys, n, builder, pl)?;
@@ -1455,14 +1503,14 @@ where
     /// ```
     pub fn try_par_new_with_builder<B: AsRef<[u8]> + Borrow<K> + Sync>(
         keys: &[B],
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self>
     where
         K: Sync,
     {
         let func = LcpMmphf::try_par_new_inner(keys, builder, pl)?;
-        let hashes = fill_hashes_from_slice::<B, K, W, S, E>(
+        let hashes = fill_hashes_from_slice::<B, K, W, S0, E0>(
             func.shard_edge(),
             func.seed(),
             keys.len(),
@@ -1477,21 +1525,25 @@ where
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl<T, W, S, E> SignedFunc<Lcp2MmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, Box<[W]>>
-where
-    T: PrimitiveInteger + ToSig<S> + std::fmt::Debug + Send + Sync + Copy + Ord,
+impl<
+    K: PrimitiveInteger + ToSig<S0> + std::fmt::Debug + Send + Sync + Copy + Ord,
     W: Word,
-    S: Sig + Send + Sync,
-    E: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
-    Fuse3Shards: ShardEdge<S, 3>,
-    SigVal<S, usize>: RadixKey,
-    SigVal<S, u64>: RadixKey,
-    SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
-    SigVal<E::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
-    SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, usize>:
-        std::ops::BitXor + std::ops::BitXorAssign,
-    SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, u64>:
-        std::ops::BitXor + std::ops::BitXorAssign,
+    S0: Sig + Send + Sync,
+    E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+    F0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+    S1: Sig + Send + Sync,
+    E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+> SignedFunc<Lcp2MmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>, Box<[W]>>
+where
+    IntBitPrefix<K>: ToSig<S1>,
+    SigVal<S0, usize>: RadixKey,
+    SigVal<S0, u64>: RadixKey,
+    SigVal<E0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<E0::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<F0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<F0::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<S1, usize>: RadixKey,
+    SigVal<E1::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<W>,
 {
     /// Creates a new signed two-step LCP-based MMPHF for integers.
@@ -1528,7 +1580,7 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend K>,
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
@@ -1544,15 +1596,15 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend K>,
         n: usize,
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         let (func, keys) = Lcp2MmphfInt::try_new_inner(keys, n, builder, pl)?;
         let mut keys = keys.rewind()?;
         let hashes = fill_hashes(func.shard_edge(), func.seed(), n, &mut keys, |key, seed| {
-            T::to_sig(*key, seed)
+            K::to_sig(*key, seed)
         })?;
         Ok(Self { func, hashes })
     }
@@ -1591,7 +1643,7 @@ where
     /// # fn main() {}
     /// ```
     pub fn try_par_new(
-        keys: &[T],
+        keys: &[K],
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
@@ -1626,12 +1678,12 @@ where
     /// # fn main() {}
     /// ```
     pub fn try_par_new_with_builder(
-        keys: &[T],
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        keys: &[K],
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         let func = Lcp2MmphfInt::try_par_new_inner(keys, builder, pl)?;
-        let hashes = fill_hashes_from_slice::<T, T, W, S, E>(
+        let hashes = fill_hashes_from_slice::<K, K, W, S0, E0>(
             func.shard_edge(),
             func.seed(),
             keys.len(),
@@ -1646,21 +1698,25 @@ where
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl<K, W, S, E> SignedFunc<Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S, E>, Box<[W]>>
-where
-    K: ?Sized + AsRef<[u8]> + ToSig<S> + std::fmt::Debug,
+impl<
+    K: ?Sized + AsRef<[u8]> + ToSig<S0> + std::fmt::Debug,
     W: Word,
-    S: Sig + Send + Sync,
-    E: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
-    Fuse3Shards: ShardEdge<S, 3>,
-    SigVal<S, usize>: RadixKey,
-    SigVal<S, u64>: RadixKey,
-    SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
-    SigVal<E::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
-    SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, usize>:
-        std::ops::BitXor + std::ops::BitXorAssign,
-    SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, u64>:
-        std::ops::BitXor + std::ops::BitXorAssign,
+    S0: Sig + Send + Sync,
+    E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+    F0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+    S1: Sig + Send + Sync,
+    E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+> SignedFunc<Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>, Box<[W]>>
+where
+    BitPrefix: ToSig<S1>,
+    SigVal<S0, usize>: RadixKey,
+    SigVal<S0, u64>: RadixKey,
+    SigVal<E0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<E0::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<F0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<F0::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<S1, usize>: RadixKey,
+    SigVal<E1::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<W>,
 {
     /// Creates a new signed two-step LCP-based MMPHF for byte-sequence keys.
@@ -1715,7 +1771,7 @@ where
             Error: std::error::Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         let (func, keys) = Lcp2Mmphf::try_new_inner(keys, n, builder, pl)?;
@@ -1799,14 +1855,14 @@ where
     /// ```
     pub fn try_par_new_with_builder<B: AsRef<[u8]> + Borrow<K> + Sync>(
         keys: &[B],
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self>
     where
         K: Sync,
     {
         let func = Lcp2Mmphf::try_par_new_inner(keys, builder, pl)?;
-        let hashes = fill_hashes_from_slice::<B, K, W, S, E>(
+        let hashes = fill_hashes_from_slice::<B, K, W, S0, E0>(
             func.shard_edge(),
             func.seed(),
             keys.len(),
@@ -1821,14 +1877,20 @@ where
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl<T, H, S, E> SignedFunc<LcpMmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
-where
-    T: PrimitiveInteger + ToSig<S> + std::fmt::Debug + Send + Sync + Copy + Ord,
+impl<
+    K: PrimitiveInteger + ToSig<S0> + std::fmt::Debug + Send + Sync + Copy + Ord,
     H: Word,
-    S: Sig + Send + Sync,
-    E: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
-    SigVal<S, usize>: RadixKey,
-    SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    S0: Sig + Send + Sync,
+    E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+    S1: Sig + Send + Sync,
+    E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+> SignedFunc<LcpMmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, S1, E1>, BitFieldVec<Box<[H]>>>
+where
+    IntBitPrefix<K>: ToSig<S1>,
+    SigVal<S0, usize>: RadixKey,
+    SigVal<E0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<S1, usize>: RadixKey,
+    SigVal<E1::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<H>,
 {
     /// Creates a new signed LCP-based MMPHF for integers with
@@ -1872,7 +1934,7 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend K>,
         n: usize,
         hash_width: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -1889,10 +1951,10 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend K>,
         n: usize,
         hash_width: usize,
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         assert!(hash_width > 0 && hash_width <= H::BITS as usize);
@@ -1904,7 +1966,7 @@ where
             n,
             hash_width,
             &mut keys,
-            |key, seed| T::to_sig(*key, seed),
+            |key, seed| K::to_sig(*key, seed),
         )?;
         Ok(Self { func, hashes })
     }
@@ -1947,7 +2009,7 @@ where
     /// # fn main() {}
     /// ```
     pub fn try_par_new(
-        keys: &[T],
+        keys: &[K],
         hash_width: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
@@ -1983,14 +2045,14 @@ where
     /// # fn main() {}
     /// ```
     pub fn try_par_new_with_builder(
-        keys: &[T],
+        keys: &[K],
         hash_width: usize,
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         assert!(hash_width > 0 && hash_width <= H::BITS as usize);
         let func = LcpMmphfInt::try_par_new_inner(keys, builder, pl)?;
-        let hashes = fill_bit_hashes_from_slice::<T, T, H, S, E>(
+        let hashes = fill_bit_hashes_from_slice::<K, K, H, S0, E0>(
             func.shard_edge(),
             func.seed(),
             keys.len(),
@@ -2006,14 +2068,20 @@ where
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl<K, H, S, E> SignedFunc<LcpMmphf<K, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
-where
-    K: ?Sized + AsRef<[u8]> + ToSig<S> + std::fmt::Debug,
+impl<
+    K: ?Sized + AsRef<[u8]> + ToSig<S0> + std::fmt::Debug,
     H: Word,
-    S: Sig + Send + Sync,
-    E: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
-    SigVal<S, usize>: RadixKey,
-    SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    S0: Sig + Send + Sync,
+    E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+    S1: Sig + Send + Sync,
+    E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+> SignedFunc<LcpMmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, S1, E1>, BitFieldVec<Box<[H]>>>
+where
+    BitPrefix: ToSig<S1>,
+    SigVal<S0, usize>: RadixKey,
+    SigVal<E0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<S1, usize>: RadixKey,
+    SigVal<E1::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<H>,
 {
     /// Creates a new signed LCP-based MMPHF for byte-sequence keys with
@@ -2078,7 +2146,7 @@ where
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
         hash_width: usize,
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         assert!(hash_width > 0 && hash_width <= H::BITS as usize);
@@ -2176,7 +2244,7 @@ where
     pub fn try_par_new_with_builder<B: AsRef<[u8]> + Borrow<K> + Sync>(
         keys: &[B],
         hash_width: usize,
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self>
     where
@@ -2184,7 +2252,7 @@ where
     {
         assert!(hash_width > 0 && hash_width <= H::BITS as usize);
         let func = LcpMmphf::try_par_new_inner(keys, builder, pl)?;
-        let hashes = fill_bit_hashes_from_slice::<B, K, H, S, E>(
+        let hashes = fill_bit_hashes_from_slice::<B, K, H, S0, E0>(
             func.shard_edge(),
             func.seed(),
             keys.len(),
@@ -2200,21 +2268,25 @@ where
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl<T, H, S, E> SignedFunc<Lcp2MmphfInt<T, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
-where
-    T: PrimitiveInteger + ToSig<S> + std::fmt::Debug + Send + Sync + Copy + Ord,
+impl<
+    K: PrimitiveInteger + ToSig<S0> + std::fmt::Debug + Send + Sync + Copy + Ord,
     H: Word,
-    S: Sig + Send + Sync,
-    E: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
-    Fuse3Shards: ShardEdge<S, 3>,
-    SigVal<S, usize>: RadixKey,
-    SigVal<S, u64>: RadixKey,
-    SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
-    SigVal<E::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
-    SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, usize>:
-        std::ops::BitXor + std::ops::BitXorAssign,
-    SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, u64>:
-        std::ops::BitXor + std::ops::BitXorAssign,
+    S0: Sig + Send + Sync,
+    E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+    F0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+    S1: Sig + Send + Sync,
+    E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+> SignedFunc<Lcp2MmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>, BitFieldVec<Box<[H]>>>
+where
+    IntBitPrefix<K>: ToSig<S1>,
+    SigVal<S0, usize>: RadixKey,
+    SigVal<S0, u64>: RadixKey,
+    SigVal<E0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<E0::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<F0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<F0::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<S1, usize>: RadixKey,
+    SigVal<E1::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<H>,
 {
     /// Creates a new signed two-step LCP-based MMPHF for integers with
@@ -2253,7 +2325,7 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend K>,
         n: usize,
         hash_width: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -2270,10 +2342,10 @@ where
         keys: impl FallibleRewindableLender<
             RewindError: std::error::Error + Send + Sync + 'static,
             Error: std::error::Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend T>,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend K>,
         n: usize,
         hash_width: usize,
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         assert!(hash_width > 0 && hash_width <= H::BITS as usize);
@@ -2285,7 +2357,7 @@ where
             n,
             hash_width,
             &mut keys,
-            |key, seed| T::to_sig(*key, seed),
+            |key, seed| K::to_sig(*key, seed),
         )?;
         Ok(Self { func, hashes })
     }
@@ -2324,7 +2396,7 @@ where
     /// # fn main() {}
     /// ```
     pub fn try_par_new(
-        keys: &[T],
+        keys: &[K],
         hash_width: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
@@ -2360,14 +2432,14 @@ where
     /// # fn main() {}
     /// ```
     pub fn try_par_new_with_builder(
-        keys: &[T],
+        keys: &[K],
         hash_width: usize,
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         assert!(hash_width > 0 && hash_width <= H::BITS as usize);
         let func = Lcp2MmphfInt::try_par_new_inner(keys, builder, pl)?;
-        let hashes = fill_bit_hashes_from_slice::<T, T, H, S, E>(
+        let hashes = fill_bit_hashes_from_slice::<K, K, H, S0, E0>(
             func.shard_edge(),
             func.seed(),
             keys.len(),
@@ -2383,21 +2455,25 @@ where
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl<K, H, S, E> SignedFunc<Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
-where
-    K: ?Sized + AsRef<[u8]> + ToSig<S> + std::fmt::Debug,
+impl<
+    K: ?Sized + AsRef<[u8]> + ToSig<S0> + std::fmt::Debug,
     H: Word,
-    S: Sig + Send + Sync,
-    E: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
-    Fuse3Shards: ShardEdge<S, 3>,
-    SigVal<S, usize>: RadixKey,
-    SigVal<S, u64>: RadixKey,
-    SigVal<E::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
-    SigVal<E::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
-    SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, usize>:
-        std::ops::BitXor + std::ops::BitXorAssign,
-    SigVal<<Fuse3Shards as ShardEdge<S, 3>>::LocalSig, u64>:
-        std::ops::BitXor + std::ops::BitXorAssign,
+    S0: Sig + Send + Sync,
+    E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+    F0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+    S1: Sig + Send + Sync,
+    E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+> SignedFunc<Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>, BitFieldVec<Box<[H]>>>
+where
+    BitPrefix: ToSig<S1>,
+    SigVal<S0, usize>: RadixKey,
+    SigVal<S0, u64>: RadixKey,
+    SigVal<E0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<E0::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<F0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<F0::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
+    SigVal<S1, usize>: RadixKey,
+    SigVal<E1::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
     u64: PrimitiveNumberAs<H>,
 {
     /// Creates a new signed two-step LCP-based MMPHF for byte-sequence keys
@@ -2456,7 +2532,7 @@ where
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         n: usize,
         hash_width: usize,
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         assert!(hash_width > 0 && hash_width <= H::BITS as usize);
@@ -2548,7 +2624,7 @@ where
     pub fn try_par_new_with_builder<B: AsRef<[u8]> + Borrow<K> + Sync>(
         keys: &[B],
         hash_width: usize,
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self>
     where
@@ -2556,7 +2632,7 @@ where
     {
         assert!(hash_width > 0 && hash_width <= H::BITS as usize);
         let func = Lcp2Mmphf::try_par_new_inner(keys, builder, pl)?;
-        let hashes = fill_bit_hashes_from_slice::<B, K, H, S, E>(
+        let hashes = fill_bit_hashes_from_slice::<B, K, H, S0, E0>(
             func.shard_edge(),
             func.seed(),
             keys.len(),
