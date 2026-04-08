@@ -85,7 +85,7 @@ use std::borrow::Borrow;
 #[derive(Debug, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct VFunc<T: ?Sized, D: SliceByValue, S = [u64; 2], E = FuseLge3Shards> {
+pub struct VFunc<T: ?Sized, D, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) shard_edge: E,
     pub(crate) seed: u64,
     pub(crate) num_keys: usize,

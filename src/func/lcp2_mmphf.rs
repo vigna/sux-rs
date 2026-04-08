@@ -130,7 +130,7 @@ type LcpLen = u16;
 )]
 pub struct Lcp2MmphfInt<
     K,
-    D: SliceByValue = BitFieldVec<Box<[usize]>>,
+    D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
     E0 = FuseLge3Shards,
     F0 = E0,
@@ -1053,7 +1053,7 @@ where
 )]
 pub struct Lcp2Mmphf<
     K: ?Sized,
-    D: SliceByValue = BitFieldVec<Box<[usize]>>,
+    D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
     E0 = FuseLge3Shards,
     F0 = E0,

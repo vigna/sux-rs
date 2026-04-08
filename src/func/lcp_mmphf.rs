@@ -209,7 +209,7 @@ pub(crate) fn log2_bucket_size(n: usize) -> usize {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LcpMmphfInt<
     K,
-    D: SliceByValue = BitFieldVec<Box<[usize]>>,
+    D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
     E0 = FuseLge3Shards,
     S1 = [u64; 1],
@@ -858,7 +858,7 @@ impl ToSig<[u64; 1]> for BitPrefix {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LcpMmphf<
     K: ?Sized,
-    D: SliceByValue = BitFieldVec<Box<[usize]>>,
+    D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
     E0 = FuseLge3Shards,
     S1 = [u64; 1],

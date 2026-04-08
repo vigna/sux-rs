@@ -389,7 +389,7 @@ fn encode_behaviour_key(
 /// [`VFunc`](crate::func::VFunc)s.
 #[cfg(feature = "rayon")]
 #[derive(Debug)]
-pub struct HollowTrieDistributor<D: SliceByValue = BitFieldVec<Box<[usize]>>> {
+pub struct HollowTrieDistributor<D = BitFieldVec<Box<[usize]>>> {
     /// Balanced-parentheses support structure for the trie.
     bal_paren: JacobsonBP,
     /// Skip values stored as a prefix-sum list over Elias-Fano.
@@ -908,7 +908,7 @@ impl<D: SliceByValue<Value = usize> + MemSize> HollowTrieDistributor<D> {
 /// ```
 #[derive(Debug)]
 #[cfg(feature = "rayon")]
-pub struct HtDistMmphf<K: ?Sized, D: SliceByValue = BitFieldVec<Box<[usize]>>> {
+pub struct HtDistMmphf<K: ?Sized, D = BitFieldVec<Box<[usize]>>> {
     /// The hollow trie distributor.
     distributor: HollowTrieDistributor<D>,
     /// Per-key offset within the bucket.
@@ -1710,7 +1710,7 @@ fn encode_int_behaviour_key<T: PrimitiveInteger>(
 /// ```
 #[derive(Debug)]
 #[cfg(feature = "rayon")]
-pub struct HtDistMmphfInt<T: PrimitiveInteger, D: SliceByValue = BitFieldVec<Box<[usize]>>> {
+pub struct HtDistMmphfInt<T, D = BitFieldVec<Box<[usize]>>> {
     bal_paren: JacobsonBP,
     skips: crate::list::PrefixSumIntList,
     #[allow(dead_code)]
