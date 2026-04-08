@@ -1450,18 +1450,12 @@ impl<
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-impl
-    TryIntoUnaligned
-    for HtDist<
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-    >
+impl<E: TryIntoUnaligned, F: TryIntoUnaligned, B: BalParen + TryIntoUnaligned, S>
+    TryIntoUnaligned for HtDist<E, F, B, S>
+where
+    Unaligned<B>: BalParen,
 {
-    type Unaligned = HtDist<
-        VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
-        Unaligned<JacobsonBalParen>,
-    >;
+    type Unaligned = HtDist<Unaligned<E>, Unaligned<F>, Unaligned<B>, S>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -1516,22 +1510,19 @@ impl
 }
 
 #[cfg(feature = "rayon")]
-impl<K: ?Sized>
-    TryIntoUnaligned
-    for HtDistMmphf<
-        K,
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-        VFunc<K, BitFieldVec<Box<[usize]>>>,
-    >
+impl<
+    K: ?Sized,
+    E: TryIntoUnaligned,
+    F: TryIntoUnaligned,
+    O: TryIntoUnaligned,
+    B: BalParen + TryIntoUnaligned,
+    S,
+> TryIntoUnaligned for HtDistMmphf<K, E, F, O, B, S>
+where
+    Unaligned<B>: BalParen,
 {
-    type Unaligned = HtDistMmphf<
-        K,
-        VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
-        VFunc<K, Unaligned<BitFieldVec<Box<[usize]>>>>,
-        Unaligned<JacobsonBalParen>,
-    >;
+    type Unaligned =
+        HtDistMmphf<K, Unaligned<E>, Unaligned<F>, Unaligned<O>, Unaligned<B>, S>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -2219,20 +2210,12 @@ impl<
 // ── Integer TryIntoUnaligned conversions ──────────────────────────
 
 #[cfg(feature = "rayon")]
-impl<K: PrimitiveInteger>
-    TryIntoUnaligned
-    for HtDistInt<
-        K,
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], BitFieldVec<Box<[usize]>>, [u64; 1], FuseLge3NoShards>,
-    >
+impl<K, E: TryIntoUnaligned, F: TryIntoUnaligned, B: BalParen + TryIntoUnaligned, S>
+    TryIntoUnaligned for HtDistInt<K, E, F, B, S>
+where
+    Unaligned<B>: BalParen,
 {
-    type Unaligned = HtDistInt<
-        K,
-        VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
-        Unaligned<JacobsonBalParen>,
-    >;
+    type Unaligned = HtDistInt<K, Unaligned<E>, Unaligned<F>, Unaligned<B>, S>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -2771,14 +2754,19 @@ impl<
 // ── Integer MMPHF TryIntoUnaligned conversions ────────────────────
 
 #[cfg(feature = "rayon")]
-impl<K: PrimitiveInteger> TryIntoUnaligned for HtDistMmphfInt<K> {
-    type Unaligned = HtDistMmphfInt<
-        K,
-        VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
-        VFunc<[u8], Unaligned<BitFieldVec<Box<[usize]>>>, [u64; 1], FuseLge3NoShards>,
-        VFunc<K, Unaligned<BitFieldVec<Box<[usize]>>>>,
-        Unaligned<JacobsonBalParen>,
-    >;
+impl<
+    K,
+    E: TryIntoUnaligned,
+    F: TryIntoUnaligned,
+    O: TryIntoUnaligned,
+    B: BalParen + TryIntoUnaligned,
+    S,
+> TryIntoUnaligned for HtDistMmphfInt<K, E, F, O, B, S>
+where
+    Unaligned<B>: BalParen,
+{
+    type Unaligned =
+        HtDistMmphfInt<K, Unaligned<E>, Unaligned<F>, Unaligned<O>, Unaligned<B>, S>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
