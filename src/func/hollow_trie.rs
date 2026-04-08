@@ -6,19 +6,30 @@
 
 #![allow(clippy::type_complexity)]
 
-//! Hollow trie distributor for monotone minimal perfect hashing.
+//! Hollow-trie-based monotone minimal perfect hash functions.
 //!
-//! A hollow trie is a compacted (Patricia) trie whose edge labels have been
-//! replaced with their lengths. Combined with behaviour functions (stored as
-//! [`VFunc`]s), it distributes sorted keys into
-//! equal-size buckets in O(log *u*) time per query, where *u* is the
-//! universe size.
+//! Given *n* keys in sorted order, a monotone minimal perfect hash function
+//! maps each key to its rank (0 to *n* − 1). Querying a key not in the
+//! original set returns an arbitrary value (same contract as
+//! [`VFunc::get`]).
 //!
-//! The main entry point is [`HtDistMmphf`], which supports arbitrary
-//! byte-representable key types via the `K` parameter. Convenience aliases
-//! [`HtDistMmphfStr`] and [`HtDistMmphfSliceU8`] are provided for common
-//! cases. For integer keys, [`HtDistMmphfInt`] provides a specialized
-//! implementation with direct bit-level operations.
+//! The keys are divided into equal-size buckets. A hollow trie — a compacted
+//! (Patricia) trie whose edge labels have been replaced with their lengths —
+//! built on the bucket delimiters (last key of each full bucket) distributes
+//! each key to its bucket in O(log *u*) time, where *u* is the universe
+//! size. Then a per-key offset within the bucket is stored in a [`VFunc`].
+//! The rank of a key is `bucket * bucket_size + offset`.
+//!
+//! The trie walk uses behaviour functions (stored as [`VFunc`]s) to determine
+//! the exit direction and detect false follows.
+//!
+//! [`HtDistMmphf`] supports arbitrary byte-representable key types via the
+//! `K` parameter; convenience aliases [`HtDistMmphfStr`] and
+//! [`HtDistMmphfSliceU8`] are provided for common cases. For integer keys,
+//! [`HtDistMmphfInt`] provides a specialized implementation with direct
+//! bit-level operations (keys are XOR-mapped with `K::MIN` so that numeric
+//! order matches bit-lexicographic order; for unsigned types this is a
+//! no-op).
 //!
 //! These structures implement the [`TryIntoUnaligned`] trait, allowing them
 //! to be converted into (usually faster) structures using unaligned access.
@@ -582,7 +593,6 @@ impl
                 loop {
                     is_internal = get_bit(bal_paren.as_ref(), p);
                     if is_internal {
-                        use value_traits::slices::SliceByValue;
                         skip = skips.index_value(r);
                     }
 
@@ -833,25 +843,16 @@ impl<D: SliceByValue<Value = usize>, B: BalParen + AsRef<[usize]>, S: SliceByVal
 // HtDistMmphf — Hollow Trie Distributor MMPHF
 // ═══════════════════════════════════════════════════════════════════
 
-/// A monotone minimal perfect hash function based on a [`HtDist`] and
-/// per-bucket offsets stored in a [`VFunc`].
+/// A monotone minimal perfect hash function for sorted byte-sequence keys,
+/// based on a hollow trie distributor ([`HtDist`]) and per-bucket offsets
+/// stored in a [`VFunc`].
 ///
-/// Given *n* keys in sorted order, the structure maps each key to its
-/// rank (0 to *n* − 1). Querying a key not in the original set returns
-/// an arbitrary value (same contract as [`VFunc::get`]).
-///
-/// The keys are divided into equal-size buckets. A hollow trie built on
-/// the bucket delimiters (last key of each full bucket) distributes each
-/// key to its bucket. Then a per-key offset within the bucket is stored
-/// in a [`VFunc`]. The rank of a key is `bucket * bucket_size + offset`.
-///
+/// See the [module documentation](self) for the algorithmic description.
 /// See [`HtDistMmphfStr`] and [`HtDistMmphfSliceU8`] for common
-/// instantiations. For integer keys, use [`HtDistMmphfInt`].
+/// instantiations, and [`HtDistMmphfInt`] for integer keys.
 ///
-/// This structure implements the
-/// [`TryIntoUnaligned`] trait, allowing
-/// it to be converted into (usually faster) structures using unaligned
-/// access.
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to
+/// be converted into (usually faster) structures using unaligned access.
 ///
 /// # Examples
 ///
@@ -1086,7 +1087,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug>
             "Computing behaviour keys ({n} keys, {num_delimiters} delimiters, {num_nodes} internal nodes)..."
         ));
 
-        let mut right_delim_idx: Option<usize> = None;
+        let mut right_delimiter: Option<&[u8]> = None;
         let mut delimiter_lcp: Option<usize>;
 
         for b in 0..num_buckets {
@@ -1096,14 +1097,12 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug>
                 n - b * bucket_size
             };
 
-            let left_delim_idx = right_delim_idx;
-            right_delim_idx = if real_bucket_size == bucket_size {
-                Some(b)
+            let left_delimiter = right_delimiter;
+            right_delimiter = if real_bucket_size == bucket_size {
+                Some(delimiters[b].as_slice())
             } else {
                 None
             };
-            let left_delimiter: Option<&[u8]> = left_delim_idx.map(|i| delimiters[i].as_slice());
-            let right_delimiter: Option<&[u8]> = right_delim_idx.map(|i| delimiters[i].as_slice());
             delimiter_lcp = match (left_delimiter, right_delimiter) {
                 (Some(l), Some(r)) => Some(lcp_bits_nul::<true>(l, r)),
                 _ => None,
@@ -1152,7 +1151,6 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug>
                 loop {
                     is_internal = get_bit(bal_paren.as_ref(), p);
                     if is_internal {
-                        use value_traits::slices::SliceByValue;
                         skip = skips.index_value(r);
                     }
 
@@ -1224,8 +1222,7 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug>
                     ext_keys.push(path_key);
                 }
 
-                prev_key_buf.clear();
-                prev_key_buf.extend_from_slice(curr);
+                prev_key_buf = curr.to_vec();
             }
         }
 
@@ -1747,14 +1744,8 @@ fn encode_int_behaviour_key<K: PrimitiveInteger>(
 
 /// A hollow trie distributor for sorted integer keys.
 ///
-/// This is the integer-key analogue of [`HtDist`]. It assigns each
-/// key to a bucket index using a compacted trie built on
-/// the bucket delimiters combined with behaviour functions stored as
-/// [`VFunc`]s.
-///
-/// Internally, keys are XOR-mapped with `K::MIN` so that numeric
-/// order matches bit-lexicographic order (for unsigned types this is
-/// a no-op).
+/// This is the integer-key analogue of [`HtDist`]; see the
+/// [module documentation](self) for the algorithmic description.
 #[cfg(feature = "rayon")]
 #[derive(Debug)]
 pub struct HtDistInt<
@@ -1860,7 +1851,7 @@ where
             "Computing behaviour keys ({n} keys, {num_delimiters} delimiters, {num_nodes} internal nodes)..."
         ));
 
-        let mut right_delim_idx: Option<usize> = None;
+        let mut right_delimiter: Option<K> = None;
         let mut delimiter_lcp: Option<usize>;
 
         for b in 0..num_buckets {
@@ -1870,14 +1861,12 @@ where
                 n - b * bucket_size
             };
 
-            let left_delim_idx = right_delim_idx;
-            right_delim_idx = if real_bucket_size == bucket_size {
-                Some(b)
+            let left_delimiter = right_delimiter;
+            right_delimiter = if real_bucket_size == bucket_size {
+                Some(delimiters[b])
             } else {
                 None
             };
-            let left_delimiter: Option<K> = left_delim_idx.map(|i| delimiters[i]);
-            let right_delimiter: Option<K> = right_delim_idx.map(|i| delimiters[i]);
             delimiter_lcp = match (left_delimiter, right_delimiter) {
                 (Some(l), Some(r)) => Some(lcp_bits(l, r)),
                 _ => None,
@@ -1925,7 +1914,6 @@ where
                 loop {
                     is_internal = get_bit(bal_paren.as_ref(), p);
                     if is_internal {
-                        use value_traits::slices::SliceByValue;
                         skip = skips.index_value(r);
                     }
 
@@ -2244,28 +2232,14 @@ impl<K: PrimitiveInteger>
 // HtDistMmphfInt — Integer variant
 // ═══════════════════════════════════════════════════════════════════
 
-/// A monotone minimal perfect hash function for sorted integers,
-/// based on a [`HtDistInt`] and per-bucket offsets stored in a
-/// [`VFunc`].
+/// A monotone minimal perfect hash function for sorted integer keys,
+/// based on a hollow trie distributor ([`HtDistInt`]) and per-bucket
+/// offsets stored in a [`VFunc`].
 ///
-/// Given *n* integers of type `K` in ascending order, the structure
-/// maps each integer to its rank (0 to *n* − 1). Querying an integer
-/// not in the original set returns an arbitrary value (same contract as
-/// [`VFunc::get`]).
+/// See the [module documentation](self) for the algorithmic description.
 ///
-/// The keys are divided into equal-size buckets. A hollow trie built on
-/// the bucket delimiters distributes each key to its bucket using
-/// bit-level operations. Then a per-key offset is stored in a
-/// [`VFunc`]. The rank of a key is `bucket * bucket_size + offset`.
-///
-/// Internally, keys are XOR-mapped with `K::MIN` so that numeric
-/// order matches bit-lexicographic order (for unsigned types this is
-/// a no-op).
-///
-/// This structure implements the
-/// [`TryIntoUnaligned`] trait, allowing
-/// it to be converted into (usually faster) structures using unaligned
-/// access.
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to
+/// be converted into (usually faster) structures using unaligned access.
 ///
 /// # Examples
 ///
@@ -2428,7 +2402,7 @@ where
             "Computing behaviour keys ({n} keys, {num_delimiters} delimiters, {num_nodes} internal nodes)..."
         ));
 
-        let mut right_delim_idx: Option<usize> = None;
+        let mut right_delimiter: Option<K> = None;
         let mut delimiter_lcp: Option<usize>;
 
         for b in 0..num_buckets {
@@ -2438,14 +2412,12 @@ where
                 n - b * bucket_size
             };
 
-            let left_delim_idx = right_delim_idx;
-            right_delim_idx = if real_bucket_size == bucket_size {
-                Some(b)
+            let left_delimiter = right_delimiter;
+            right_delimiter = if real_bucket_size == bucket_size {
+                Some(delimiters[b])
             } else {
                 None
             };
-            let left_delimiter: Option<K> = left_delim_idx.map(|i| delimiters[i]);
-            let right_delimiter: Option<K> = right_delim_idx.map(|i| delimiters[i]);
             delimiter_lcp = match (left_delimiter, right_delimiter) {
                 (Some(l), Some(r)) => Some(lcp_bits(l, r)),
                 _ => None,
@@ -2493,7 +2465,6 @@ where
                 loop {
                     is_internal = get_bit(bal_paren.as_ref(), p);
                     if is_internal {
-                        use value_traits::slices::SliceByValue;
                         skip = skips.index_value(r);
                     }
 

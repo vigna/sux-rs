@@ -8,13 +8,31 @@
 
 //! LCP-based monotone minimal perfect hash functions.
 //!
-//! We provide two variants: [`LcpMmphfInt`] works with any primitive integer
-//! type, whereas [`LcpMmphf`] works with any byte-sequence key type
-//! (`K: AsRef<[u8]>`). Type aliases [`LcpMmphfStr`] and [`LcpMmphfSliceU8`]
-//! are provided for convenience.
+//! Given *n* keys in sorted order, a monotone minimal perfect hash function
+//! maps each key to its rank (0 to *n* − 1). Querying a key not in the
+//! original set returns an arbitrary value (same contract as
+//! [`VFunc::get`]).
+//!
+//! [`LcpMmphfInt`] works with any primitive integer type, whereas [`LcpMmphf`]
+//! works with any byte-sequence key type (`K: AsRef<[u8]>`). Type aliases
+//! [`LcpMmphfStr`] and [`LcpMmphfSliceU8`] are provided for convenience. For
+//! the byte-sequence variant, keys must not contain zeros, as a virtual zero
+//! byte is appended internally to ensure prefix-freeness. Alternatively,
+//! they must be prefix-free, in which case they can contain zeros.
 //!
 //! These structures implement the [`TryIntoUnaligned`] trait, allowing them to
 //! be converted into (usually faster) structures using unaligned access.
+//!
+//! # Implementation details
+//!
+//! The keys are divided into buckets. For each bucket, the longest common
+//! bit-level prefix (LCP) shared by all consecutive pairs within the bucket is
+//! computed. The rank of a key is then reconstructed as `bucket * bucket_size +
+//! offset`, where the bucket is determined by the LCP (computed from its
+//! length) and the offset is stored directly. The mapping from a key to the
+//! length of the prefix of its bucket and its offset within the bucket is
+//! stored in a [`VFunc`]. Another [`Vfunc`] maps each LCP bit-prefix to its
+//! bucket index.
 //!
 //! # References
 //!
@@ -123,8 +141,6 @@ impl<K: PrimitiveInteger> ToSig<[u64; 1]> for IntBitPrefix<K> {
     }
 }
 
-// ── Helper functions (construction only) ─────────────────────────────
-
 /// Returns the number of leading bits shared by two integers of the same
 /// type, compared MSB-first (big-endian bit order).
 #[cfg(feature = "rayon")]
@@ -145,30 +161,13 @@ pub(crate) fn log2_bucket_size(n: usize) -> usize {
     theoretical.next_power_of_two().ilog2() as usize
 }
 
-/// A monotone minimal perfect hash function for sorted integers, based on
-/// longest common bit-prefixes (LCPs).
+/// A monotone minimal perfect hash function for sorted integer keys based
+/// on longest common bit-prefixes (LCPs).
 ///
-/// Given *n* integers of type `K` in ascending order, the structure maps
-/// each integer to its rank (0 to *n* − 1). Querying an integer not in
-/// the original set returns an arbitrary value (same contract as
-/// [`VFunc`]).
-///
-/// The integers are divided into buckets. For each bucket, the longest common
-/// bit-prefix shared by all consecutive pairs within the bucket is computed.
-/// The rank of a key is then reconstructed as `bucket * bucket_size + offset`,
-/// where the bucket is determined by the bit-prefix and the offset is stored
-/// directly.
+/// See the [module documentation](self) for the algorithmic description.
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
-///
-/// # Implementation details
-///
-/// Internally, the structure contains two [`VFunc`]s:
-/// - `offset_lcp_length`: maps each key (`K`) to a packed value encoding
-///   the LCP bit-length and the offset within the bucket;
-/// - `lcp2bucket`: maps each LCP bit-prefix ([`IntBitPrefix`]) to its
-///   bucket index.
 ///
 /// # Type parameters
 ///
@@ -178,7 +177,7 @@ pub(crate) fn log2_bucket_size(n: usize) -> usize {
 /// - `S0`: the [signature type](`Sig`) for the key map
 ///   (`offset_lcp_length`).
 /// - `E0`: the [`ShardEdge`] for the key map.
-/// - `S1`: the signature type for the prefix-to-bucket map
+/// - `S1`: the  [signature type](`Sig`) for the prefix-to-bucket map
 ///   (`lcp2bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
 ///
@@ -305,7 +304,6 @@ where
     ///
     /// # Examples
     ///
-    ///
     /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
     /// parallelizes the hash computation for faster construction.
     /// ```rust
@@ -351,7 +349,6 @@ where
     /// The keys must be provided in strictly increasing order.
     ///
     /// # Examples
-    ///
     ///
     /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
     /// for parallel hash computation from slices.
@@ -530,7 +527,6 @@ where
     ///
     /// # Examples
     ///
-    ///
     /// If keys are produced sequentially (e.g., from a file), use
     /// [`try_new`](Self::try_new) instead.
     /// ```rust
@@ -568,7 +564,6 @@ where
     /// The keys must be provided in strictly increasing order.
     ///
     /// # Examples
-    ///
     ///
     /// If keys are produced sequentially (e.g., from a file), use
     /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
@@ -795,34 +790,27 @@ impl ToSig<[u64; 1]> for BitPrefix {
     }
 }
 
-/// A monotone minimal perfect hash function for lexicographically sorted
-/// byte-sequence keys, based on longest common prefixes (LCPs).
+/// A monotone minimal perfect hash function for sorted byte-sequence keys based
+/// on longest common prefixes (LCPs).
 ///
-/// Given *n* keys in lexicographic order, the structure maps each key to its
-/// rank (0 to *n* − 1). The key type `K` must implement
-/// [`AsRef<[u8]>`](core::convert::AsRef) so bytes can be extracted. Querying a
-/// key not in the original set returns an arbitrary value (same contract as
-/// [`VFunc`]).
+/// See the [module documentation](self) for the algorithmic description.
+/// See [`LcpMmphfStr`] and [`LcpMmphfSliceU8`] for common instantiations,
+/// and [`LcpMmphfInt`] for integer keys.
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
 ///
-/// # Implementation details
+/// # Type parameters
 ///
-/// The keys are divided into buckets. For each bucket, the longest common
-/// bit-level prefix (LCP) shared by all consecutive pairs within the bucket is
-/// computed. A virtual NUL byte is appended internally to ensure
-/// prefix-freeness (keys must not contain ASCII NUL). The rank of a key is
-/// then reconstructed as `bucket * bucket_size + offset`, where the bucket is
-/// determined by the LCP and the offset is stored directly.
-///
-/// Internally, the structure contains two [`VFunc`]s:
-/// - `offset_lcp_length`: maps each key to a packed value encoding the
-///   LCP bit-length and the offset within the bucket;
-/// - `lcp2bucket`: maps each LCP bit-prefix ([`BitPrefix`]) to its bucket
-///   index.
-///
-/// See [`LcpMmphfStr`] and [`LcpMmphfSliceU8`] for common instantiations.
+/// - `K`: the integer key type.
+/// - `D`: the backing store for [`VFunc`] data (e.g.,
+///   [`BitFieldVec`]).
+/// - `S0`: the [signature type](`Sig`) for the key map
+///   (`offset_lcp_length`).
+/// - `E0`: the [`ShardEdge`] for the key map.
+/// - `S1`: the  [signature type](`Sig`) for the prefix-to-bucket map
+///   (`lcp2bucket`).
+/// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
 ///
 /// # Examples
 ///
@@ -1083,8 +1071,8 @@ where
     SigVal<S1, usize>: RadixKey,
     SigVal<E1::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
 {
-    /// Creates a new LCP-based monotone minimal perfect hash function
-    /// for byte-sequence keys using default [`VBuilder`] settings.
+    /// Creates a new LCP-based monotone minimal perfect hash function for
+    /// byte-sequence keys using default [`VBuilder`] settings.
     ///
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder). Use that
@@ -1100,7 +1088,6 @@ where
     /// `K = [u8]`).
     ///
     /// # Examples
-    ///
     ///
     /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
     /// parallelizes the hash computation for faster construction.
@@ -1134,9 +1121,8 @@ where
         Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
     }
 
-    /// Creates a new LCP-based monotone minimal perfect hash function
-    /// for byte-sequence keys using the given [`VBuilder`]
-    /// configuration.
+    /// Creates a new LCP-based monotone minimal perfect hash function for
+    /// byte-sequence keys using the given [`VBuilder`] configuration.
     ///
     /// The builder controls construction parameters such as [offline
     /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
@@ -1148,7 +1134,6 @@ where
     /// The keys must be in strictly increasing lexicographic order.
     ///
     /// # Examples
-    ///
     ///
     /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
     /// for parallel hash computation from slices.
@@ -1330,9 +1315,9 @@ where
         Ok((result, keys))
     }
 
-    /// Creates a new LCP-based monotone minimal perfect hash function
-    /// for byte-sequence keys from a slice, using parallel hash
-    /// computation and default [`VBuilder`] settings.
+    /// Creates a new LCP-based monotone minimal perfect hash function for
+    /// byte-sequence keys from a slice, using parallel hash computation and
+    /// default [`VBuilder`] settings.
     ///
     /// This is the parallel counterpart of [`try_new`](Self::try_new).
     /// It is a convenience wrapper around
@@ -1342,7 +1327,6 @@ where
     /// The keys must be in strictly increasing lexicographic order.
     ///
     /// # Examples
-    ///
     ///
     /// If keys are produced sequentially (e.g., from a file), use
     /// [`try_new`](Self::try_new) instead.
@@ -1374,9 +1358,9 @@ where
         Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
     }
 
-    /// Creates a new LCP-based monotone minimal perfect hash function
-    /// for byte-sequence keys from a slice, using parallel hash
-    /// computation and the given [`VBuilder`] configuration.
+    /// Creates a new LCP-based monotone minimal perfect hash function for
+    /// byte-sequence keys from a slice, using parallel hash computation and the
+    /// given [`VBuilder`] configuration.
     ///
     /// This is the parallel counterpart of
     /// [`try_new_with_builder`](Self::try_new_with_builder).
@@ -1384,7 +1368,6 @@ where
     /// The keys must be in strictly increasing lexicographic order.
     ///
     /// # Examples
-    ///
     ///
     /// If keys are produced sequentially (e.g., from a file), use
     /// [`try_new_with_builder`](Self::try_new_with_builder) instead.

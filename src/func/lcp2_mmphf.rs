@@ -8,14 +8,18 @@
 
 //! Two-step LCP-based monotone minimal perfect hash functions.
 //!
-//! Compared to [`LcpMmphfInt`](super::LcpMmphfInt) /
-//! [`LcpMmphf`](super::LcpMmphf), these variants use a
-//! [`VFunc2`](crate::func::VFunc2)-like two-step internal representation for
-//! the LCP-length component, trading 3 infrequent extra independent random
-//! memory accesses (when a second step is necessary) per query for ≈20–35% less
-//! space.
+//! This module contains structures analogous to those in [`lcp_mmphf`];
+//! however, they use a secondary [`VFunc`] for infrequent prefix lengths,
+//! similarly to a [`VFunc2`], providing some space savings at the cost
+//! of slightly slower queries.
 //!
-//! See [`Lcp2MmphfInt`], [`Lcp2MmphfStr`], and [`Lcp2MmphfSliceU8`].
+//! [`Lcp2MmphfInt`] works with any primitive integer type, whereas
+//! [`Lcp2Mmphf`] works with any byte-sequence key type (`K: AsRef<[u8]>`). Type
+//! aliases [`Lcp2MmphfStr`] and [`Lcp2MmphfSliceU8`] are provided for
+//! convenience. For the byte-sequence variant, keys must not contain zeros, as
+//! a virtual zero byte is appended internally to ensure prefix-freeness.
+//! Alternatively, they must be prefix-free, in which case they can contain
+//! zeros.
 //!
 //! These structures implement the [`TryIntoUnaligned`] trait, allowing them to
 //! be converted into (usually faster) structures using unaligned access.
@@ -61,26 +65,13 @@ type LcpLen = u32;
 #[cfg(all(feature = "rayon", not(target_pointer_width = "64")))]
 type LcpLen = u16;
 
-// ── Integer variant ─────────────────────────────────────────────────
-
-/// A two-step monotone minimal perfect hash function for sorted integers.
+/// A two-step monotone minimal perfect hash function for sorted integer keys based
+/// on longest common bit-prefixes (LCPs).
 ///
-/// Like [`LcpMmphfInt`](super::LcpMmphfInt) but uses a
-/// [`VFunc2`](crate::func::VFunc2)-like two-step internal representation for
-/// the LCP-length component, trading query speed for ≈20–35% less space.
+/// See the [module documentation](self) for the algorithmic description.
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
-///
-/// # Implementation details
-///
-/// Internally, the structure contains three [`VFunc`]s:
-/// - `fused`: maps each key to a packed value encoding a remapped
-///   LCP index and the offset within the bucket;
-/// - `lcp_long`: maps escaped keys (whose LCP index does not fit in the
-///   remapped range) to their full LCP bit-length;
-/// - `lcp2bucket`: maps each LCP bit-prefix ([`IntBitPrefix`]) to its
-///   bucket index.
 ///
 /// # Type parameters
 ///
@@ -92,7 +83,7 @@ type LcpLen = u16;
 /// - `E0`: the [`ShardEdge`] for the key maps (`fused`).
 /// - `F0`: the [`ShardEdge`] for the long map (`lcp_long`). Defaults to
 ///   `E0`.
-/// - `S1`: the signature type for the prefix-to-bucket map
+/// - `S1`: the  [signature type](`Sig`) for the prefix-to-bucket map
 ///   (`lcp2bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
 ///
@@ -667,8 +658,9 @@ where
         }
     }
 
-    /// Creates a two-step LCP-based MMPHF for integers from a slice,
-    /// using parallel hash computation and default [`VBuilder`] settings.
+    /// Creates a two-step LCP-based monotone minimal perfect hash function for
+    /// integers from a slice, using parallel hash computation and default
+    /// [`VBuilder`] settings.
     ///
     /// This is the parallel counterpart of [`try_new`](Self::try_new).
     /// It is a convenience wrapper around
@@ -678,7 +670,6 @@ where
     /// The keys must be provided in strictly increasing order.
     ///
     /// # Examples
-    ///
     ///
     /// If keys are produced sequentially (e.g., from a file), use
     /// [`try_new`](Self::try_new) instead.
@@ -707,9 +698,9 @@ where
         Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
     }
 
-    /// Creates a two-step LCP-based MMPHF for integers from a slice,
-    /// using parallel hash computation and the given [`VBuilder`]
-    /// configuration.
+    /// Creates a two-step LCP-based monotone minimal perfect hash function for
+    /// integers from a slice, using parallel hash computation and the given
+    /// [`VBuilder`] configuration.
     ///
     /// This is the parallel counterpart of
     /// [`try_new_with_builder`](Self::try_new_with_builder).
@@ -717,7 +708,6 @@ where
     /// The keys must be provided in strictly increasing order.
     ///
     /// # Examples
-    ///
     ///
     /// If keys are produced sequentially (e.g., from a file), use
     /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
@@ -1002,31 +992,19 @@ where
     }
 }
 
-// ── Byte-sequence variant ───────────────────────────────────────────
-
 /// A two-step monotone minimal perfect hash function for sorted
-/// byte-sequence keys.
+/// byte-sequence keys based on longest common prefixes (LCPs).
 ///
-/// Like [`LcpMmphf`](super::LcpMmphf) but uses a
-/// [`VFunc2`](crate::func::VFunc2)-like two-step internal representation for
-/// the LCP-length component, trading query speed for ≈20–35% less space.
+/// See the [module documentation](self) for the algorithmic description.
+/// See [`Lcp2MmphfStr`] and [`Lcp2MmphfSliceU8`] for common instantiations,
+/// and [`Lcp2MmphfInt`] for integer keys.
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
 ///
-/// # Implementation details
-///
-/// Internally, the structure contains three [`VFunc`]s:
-/// - `fused`: maps each key to a packed value encoding a remapped
-///   LCP index and the offset within the bucket;
-/// - `lcp_long`: maps escaped keys (whose LCP index does not fit in the
-///   remapped range) to their full LCP bit-length;
-/// - `lcp2bucket`: maps each LCP bit-prefix ([`BitPrefix`]) to its
-///   bucket index.
-///
 /// # Type parameters
 ///
-/// - `K`: the key type (e.g., `str` or `[u8]`).
+/// - `K`: the integer key type.
 /// - `D`: the backing store for [`VFunc`] data (e.g.,
 ///   [`BitFieldVec`]).
 /// - `S0`: the [signature type](`Sig`) for the key maps (`fused` and
@@ -1034,11 +1012,10 @@ where
 /// - `E0`: the [`ShardEdge`] for the key maps (`fused`).
 /// - `F0`: the [`ShardEdge`] for the long map (`lcp_long`). Defaults to
 ///   `E0`.
-/// - `S1`: the signature type for the prefix-to-bucket map
+/// - `S1`: the  [signature type](`Sig`) for the prefix-to-bucket map
 ///   (`lcp2bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
 ///
-/// See [`Lcp2MmphfStr`] and [`Lcp2MmphfSliceU8`] for common instantiations.
 #[derive(MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1091,6 +1068,34 @@ where
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
+///
+/// # Examples
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::func::LcpMmphfStr;
+/// # use sux::traits::TryIntoUnaligned;
+/// # use sux::utils::FromSlice;
+/// let keys = vec![
+///     "alpha".to_owned(),
+///     "beta".to_owned(),
+///     "delta".to_owned(),
+///     "gamma".to_owned(),
+/// ];
+///
+/// let func =
+///     <Lcp2MmphfStr>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?.try_into_unaligned()?;
+///
+/// for (i, key) in keys.iter().enumerate() {
+///     assert_eq!(func.get(key.as_str()), i);
+/// }
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 pub type Lcp2MmphfStr<
     D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
@@ -1103,6 +1108,37 @@ pub type Lcp2MmphfStr<
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
+///
+/// # Examples
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::func::LcpMmphfSliceU8;
+/// # use sux::traits::TryIntoUnaligned;
+/// # use sux::utils::FromSlice;
+/// let keys: Vec<Vec<u8>> = vec![
+///     b"alpha".to_vec(),
+///     b"beta".to_vec(),
+///     b"delta".to_vec(),
+///     b"gamma".to_vec(),
+/// ];
+///
+/// let func = <Lcp2MmphfSliceU8>::try_new(
+///     FromSlice::new(&keys),
+///     keys.len(),
+///     no_logging![],
+/// )?.try_into_unaligned()?;
+///
+/// for (i, key) in keys.iter().enumerate() {
+///     assert_eq!(func.get(key.as_slice()), i);
+/// }
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 pub type Lcp2MmphfSliceU8<
     D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
@@ -1198,8 +1234,8 @@ where
     SigVal<S1, usize>: RadixKey,
     SigVal<E1::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
 {
-    /// Creates a two-step LCP-based MMPHF for byte-sequence keys
-    /// using default [`VBuilder`] settings.
+    /// Creates a two-step LCP-based monotone minimal perfect hash function for
+    /// byte-sequence keys using default [`VBuilder`] settings.
     ///
     /// This is a convenience wrapper around
     /// [`try_new_with_builder`](Self::try_new_with_builder). Use that
@@ -1246,8 +1282,8 @@ where
         Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
     }
 
-    /// Creates a two-step LCP-based MMPHF for byte-sequence keys
-    /// using the given [`VBuilder`] configuration.
+    /// Creates a two-step LCP-based monotone minimal perfect hash function for
+    /// byte-sequence keys using the given [`VBuilder`] configuration.
     ///
     /// The builder controls construction parameters such as [offline
     /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
@@ -1633,9 +1669,9 @@ where
         }
     }
 
-    /// Creates a two-step LCP-based MMPHF for byte-sequence keys from
-    /// a slice, using parallel hash computation and default [`VBuilder`]
-    /// settings.
+    /// Creates a two-step LCP-based monotone minimal perfect hash function for
+    /// byte-sequence keys from a slice, using parallel hash computation and
+    /// default [`VBuilder`] settings.
     ///
     /// This is the parallel counterpart of [`try_new`](Self::try_new).
     /// It is a convenience wrapper around
@@ -1645,7 +1681,6 @@ where
     /// The keys must be in strictly increasing lexicographic order.
     ///
     /// # Examples
-    ///
     ///
     /// If keys are produced sequentially (e.g., from a file), use
     /// [`try_new`](Self::try_new) instead.
@@ -1677,9 +1712,9 @@ where
         Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
     }
 
-    /// Creates a two-step LCP-based MMPHF for byte-sequence keys from
-    /// a slice, using parallel hash computation and the given
-    /// [`VBuilder`] configuration.
+    /// Creates a two-step LCP-based monotone minimal perfect hash function for
+    /// byte-sequence keys from a slice, using parallel hash computation and the
+    /// given [`VBuilder`] configuration.
     ///
     /// This is the parallel counterpart of
     /// [`try_new_with_builder`](Self::try_new_with_builder).
@@ -1687,7 +1722,6 @@ where
     /// The keys must be in strictly increasing lexicographic order.
     ///
     /// # Examples
-    ///
     ///
     /// If keys are produced sequentially (e.g., from a file), use
     /// [`try_new_with_builder`](Self::try_new_with_builder) instead.

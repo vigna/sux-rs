@@ -257,6 +257,8 @@ where
     D::Unaligned: SliceByValue<Value = u64>,
 {
     type Unaligned = CompIntList<BitVecU<Box<[V]>>, D::Unaligned>;
+    /// This method will fail if any stored value has a bit width that does not
+    /// satisfy the constraints for unaligned reads.
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {

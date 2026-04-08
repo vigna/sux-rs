@@ -161,7 +161,7 @@ fn count_far_close(word: usize, l: usize) -> usize {
 /// sought. The function shifts right by 1 internally and scans byte by
 /// byte with an initial excess of 1.
 ///
-/// Returns the bit position of the matching close, or a value ≥ [`WORD_BITS`]
+/// Returns the bit position of the matching close, or a value ≥ `usize::BITS`
 /// if the match is not in this word.
 #[inline]
 pub fn find_near_close(word: usize) -> usize {

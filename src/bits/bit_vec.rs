@@ -1043,7 +1043,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 ///
 /// Obtain an instance via [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned)
 /// on a `BitVec<Box<[W]>>`, which adds a padding word if one is not already
-/// present. You can recover the original [`BitFieldVec`] using a [`From`
+/// present. You can recover the original [`BitVec`] using a [`From`
 /// implementation](#impl-From<BitVecU<Box<%5BW%5D>>>-for-BitVec<Box<%5BW%5D>>)
 ///
 /// Note that unaligned reads give correct results only when the bit width
