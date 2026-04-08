@@ -19,6 +19,7 @@
 #![allow(clippy::too_many_arguments)]
 
 pub mod array;
+pub mod bal_paren;
 pub mod bits;
 pub mod dict;
 pub mod func;

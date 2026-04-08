@@ -48,7 +48,7 @@ use {
     mem_dbg::*,
     num_primitive::PrimitiveInteger,
     std::borrow::Borrow,
-    super::jacobson_bp::JacobsonBP,
+    crate::bal_paren::JacobsonBP,
     value_traits::slices::SliceByValue,
 };
 
@@ -1343,7 +1343,10 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
 
         let flags = SizeFlags::default();
         let total_bits = result.mem_size(flags) * 8;
-        let dist_bp = result.distributor.bal_paren.words().len() * 8 * 8;
+        let mut refs = mem_dbg::HashMap::default();
+        let dist_bp = result.distributor.bal_paren.mem_size_rec(flags, &mut refs) * 8;
+        let dist_bp_words = result.distributor.bal_paren.words().len() * 8 * 8;
+        let dist_bp_pioneers = dist_bp - dist_bp_words;
         let dist_skips = result.distributor.skips.mem_size(flags) * 8;
         let dist_ff = result.distributor.false_follows_detector.mem_size(flags) * 8;
         let dist_ext = result.distributor.external_behaviour.mem_size(flags) * 8;
@@ -1353,8 +1356,12 @@ impl<K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]> + std::fmt::Debug> HtDistMmphf<K>
             total_bits as f64 / n as f64
         );
         info!(
-            "  Trie BP: {dist_bp} bits ({:.2}/key), skips: {dist_skips} bits ({:.2}/key)",
-            dist_bp as f64 / n as f64,
+            "  Trie BP words: {dist_bp_words} bits ({:.2}/key), pioneers: {dist_bp_pioneers} bits ({:.2}/key)",
+            dist_bp_words as f64 / n as f64,
+            dist_bp_pioneers as f64 / n as f64,
+        );
+        info!(
+            "  Skips: {dist_skips} bits ({:.2}/key)",
             dist_skips as f64 / n as f64,
         );
         info!(

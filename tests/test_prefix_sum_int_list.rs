@@ -3,7 +3,7 @@ use value_traits::slices::SliceByValue;
 
 /// Converts a `PrefixSumIntList` with default (EfSeq) prefix sums to one
 /// backed by `Vec<u64>`, for testing with a different backend.
-fn to_vec_backend(list: PrefixSumIntList) -> PrefixSumIntList<usize, Vec<usize>> {
+fn to_vec_backend(list: PrefixSumIntList) -> PrefixSumIntList<Vec<usize>> {
     unsafe {
         list.map_prefix_sums(|d| {
             let n = d.len();
@@ -39,7 +39,7 @@ fn check(values: Vec<usize>) {
     }
 
     // Check with Vec<u64> backend
-    let vec_list = to_vec_backend(PrefixSumIntList::<usize>::new(&values));
+    let vec_list = to_vec_backend(PrefixSumIntList::new(&values));
     assert_eq!(vec_list.len(), values.len());
     for (i, &v) in values.iter().enumerate() {
         assert_eq!(
