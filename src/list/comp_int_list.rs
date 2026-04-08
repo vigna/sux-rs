@@ -48,9 +48,9 @@ use crate::bits::test_unaligned;
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EfSeq;
 use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
-use ambassador::Delegate;
-use crate::traits::{ambassador_impl_Backend, Backend, BitVecValueOps, TryIntoUnaligned, Word};
+use crate::traits::{Backend, BitVecValueOps, TryIntoUnaligned, Word, ambassador_impl_Backend};
 use crate::utils::PrimitiveUnsignedExt;
+use ambassador::Delegate;
 use mem_dbg::*;
 use value_traits::slices::SliceByValue;
 
@@ -81,7 +81,9 @@ use value_traits::slices::SliceByValue;
 #[cfg_attr(
     feature = "epserde",
     derive(epserde::Epserde),
-    epserde(bound(deser = "for<'a> <B as epserde::deser::DeserInner>::DeserType<'a>: Backend<Word = B::Word>"))
+    epserde(bound(
+        deser = "for<'a> <B as epserde::deser::DeserInner>::DeserType<'a>: Backend<Word = B::Word>"
+    ))
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CompIntList<B: Backend = BitVec<Box<[usize]>>, D = EfSeq<u64>> {
