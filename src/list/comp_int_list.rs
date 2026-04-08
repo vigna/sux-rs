@@ -81,7 +81,7 @@ use value_traits::slices::SliceByValue;
 #[cfg_attr(
     feature = "epserde",
     derive(epserde::Epserde),
-    epserde(bound(deser = "B::Word: for<'a> epserde::deser::DeserInner<DeserType<'a> = B::Word>"))
+    epserde(bound(deser = "for<'a> <B as epserde::deser::DeserInner>::DeserType<'a>: Backend<Word = B::Word>"))
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CompIntList<B: Backend = BitVec<Box<[usize]>>, D = EfSeq<u64>> {
