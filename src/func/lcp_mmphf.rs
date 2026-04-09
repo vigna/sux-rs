@@ -229,20 +229,12 @@ mod build {
         /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
         /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
         ///
-        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// for parallel hash computation from slices.
-        ///
         /// The keys must be provided in strictly increasing order.
         ///
-<<<<<<< HEAD
-=======
         /// Keys must be provided as a [`FallibleRewindableLender`]. The
         /// [`lenders`](crate::utils::lenders) module provides easy ways
         /// to build such lenders.
         ///
-        /// # Examples
-        ///
->>>>>>> bc68351e (Added lenders blurb everywhere)
         /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
         /// for parallel hash computation from slices.
         ///
