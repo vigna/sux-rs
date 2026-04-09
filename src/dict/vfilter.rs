@@ -18,19 +18,6 @@ use std::borrow::Borrow;
 use std::ops::Index;
 use value_traits::slices::SliceByValue;
 
-#[cfg(feature = "rayon")]
-use {
-    crate::func::VBuilder,
-    crate::utils::{EmptyVal, FallibleRewindableLender, SigVal},
-    anyhow::Result,
-    core::error::Error,
-    dsi_progress_logger::ProgressLog,
-    lender::*,
-    rdst::RadixKey,
-    std::ops::{BitXor, BitXorAssign},
-    value_traits::slices::SliceByValueMut,
-};
-
 /// A static filter (approximate membership data structure) with
 /// controllable false-positive rate.
 ///
@@ -198,546 +185,572 @@ impl<K: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>>
 // ── Convenience constructors ───────────────────────────────────────
 
 #[cfg(feature = "rayon")]
-impl<K, W, S, E> VFilter<VFunc<K, Box<[W]>, S, E>>
-where
-    K: ?Sized + ToSig<S> + std::fmt::Debug,
-    W: Word + BinSafe,
-    S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
-    SigVal<S, EmptyVal>: RadixKey,
-    SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
-{
-    /// Builds a [`VFilter`] with a `Box<[W]>` backend from keys using
-    /// default [`VBuilder`] settings.
-    ///
-    /// The number of hash bits per key equals `W::BITS`, giving a
-    /// false-positive rate of 2<sup>−`W::BITS`</sup>. To use fewer
-    /// bits per key (trading space for a higher false-positive rate),
-    /// use the [`BitFieldVec`] variant with an explicit `filter_bits`
-    /// parameter.
-    ///
-    /// * `keys` must be rewindable (they may be rewound on retry).
-    /// * `n` is the expected number of keys; a significantly wrong
-    ///   value may degrade performance or cause extra retries.
-    ///
-    /// This is a convenience wrapper around
-    /// [`try_new_with_builder`](Self::try_new_with_builder) with
-    /// `VBuilder::default()`.
-    ///
-    /// # Examples
-    ///
-    /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
-    /// parallelizes the hash computation for faster construction.
-    /// ```rust
-    /// # #[cfg(feature = "rayon")]
-    /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::dict::VFilter;
-    /// # use sux::func::VFunc;
-    /// # use dsi_progress_logger::no_logging;
-    /// # use sux::utils::FromCloneableIntoIterator;
-    /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_new(
-    ///     FromCloneableIntoIterator::new(0..100),
-    ///     100,
-    ///     no_logging![],
-    /// )?;
-    ///
-    /// for i in 0..100 {
-    ///     assert!(filter[i]);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// # #[cfg(not(feature = "rayon"))]
-    /// # fn main() {}
-    /// ```
-    pub fn try_new<B: ?Sized + Borrow<K>>(
-        keys: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        n: usize,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> Result<Self>
+mod build {
+    use super::*;
+    use crate::func::VBuilder;
+    use crate::utils::{EmptyVal, FallibleRewindableLender, SigVal};
+    use anyhow::Result;
+    use core::error::Error;
+    use dsi_progress_logger::ProgressLog;
+    use lender::*;
+    use rdst::RadixKey;
+    use std::ops::{BitXor, BitXorAssign};
+    use value_traits::slices::SliceByValueMut;
+
+    impl<K, W, S, E> VFilter<VFunc<K, Box<[W]>, S, E>>
     where
-        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
-            crate::traits::bit_field_slice::BitFieldSliceMut,
-        for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
-        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
+        K: ?Sized + ToSig<S> + std::fmt::Debug,
+        W: Word + BinSafe,
+        S: Sig + Send + Sync,
+        E: ShardEdge<S, 3>,
+        SigVal<S, EmptyVal>: RadixKey,
+        SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
     {
-        Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
+        /// Builds a [`VFilter`] with a `Box<[W]>` backend from keys using
+        /// default [`VBuilder`] settings.
+        ///
+        /// The number of hash bits per key equals `W::BITS`, giving a
+        /// false-positive rate of 2<sup>−`W::BITS`</sup>. To use fewer
+        /// bits per key (trading space for a higher false-positive rate),
+        /// use the [`BitFieldVec`] variant with an explicit `filter_bits`
+        /// parameter.
+        ///
+        /// * `keys` must be rewindable (they may be rewound on retry).
+        /// * `n` is the expected number of keys; a significantly wrong
+        ///   value may degrade performance or cause extra retries.
+        ///
+        /// This is a convenience wrapper around
+        /// [`try_new_with_builder`](Self::try_new_with_builder) with
+        /// `VBuilder::default()`.
+        ///
+        /// # Examples
+        ///
+        /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
+        /// parallelizes the hash computation for faster construction.
+        /// ```rust
+        /// # #[cfg(feature = "rayon")]
+        /// # fn main() -> anyhow::Result<()> {
+        /// # use sux::dict::VFilter;
+        /// # use sux::func::VFunc;
+        /// # use dsi_progress_logger::no_logging;
+        /// # use sux::utils::FromCloneableIntoIterator;
+        /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_new(
+        ///     FromCloneableIntoIterator::new(0..100),
+        ///     100,
+        ///     no_logging![],
+        /// )?;
+        ///
+        /// for i in 0..100 {
+        ///     assert!(filter[i]);
+        /// }
+        /// # Ok(())
+        /// # }
+        /// # #[cfg(not(feature = "rayon"))]
+        /// # fn main() {}
+        /// ```
+        pub fn try_new<B: ?Sized + Borrow<K>>(
+            keys: impl FallibleRewindableLender<
+                RewindError: Error + Send + Sync + 'static,
+                Error: Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+            n: usize,
+            pl: &mut (impl ProgressLog + Clone + Send + Sync),
+        ) -> Result<Self>
+        where
+            for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
+                crate::traits::bit_field_slice::BitFieldSliceMut,
+            for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
+            for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
+        {
+            Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
+        }
+
+        /// Builds a [`VFilter`] with a `Box<[W]>` backend from keys using
+        /// the given [`VBuilder`] configuration.
+        ///
+        /// The number of hash bits per key equals `W::BITS`, giving a
+        /// false-positive rate of 2<sup>−`W::BITS`</sup>.
+        ///
+        /// * `keys` must be rewindable (they may be rewound on retry).
+        /// * `n` is the expected number of keys.
+        ///
+        /// The builder controls construction parameters such as [offline
+        /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
+        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        ///
+        /// # Examples
+        ///
+        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+        /// for parallel hash computation from slices.
+        /// ```rust
+        /// # #[cfg(feature = "rayon")]
+        /// # fn main() -> anyhow::Result<()> {
+        /// # use sux::dict::VFilter;
+        /// # use sux::func::{VBuilder, VFunc};
+        /// # use dsi_progress_logger::no_logging;
+        /// # use sux::utils::FromCloneableIntoIterator;
+        /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_new_with_builder(
+        ///     FromCloneableIntoIterator::new(0..100),
+        ///     100,
+        ///     VBuilder::default().offline(true),
+        ///     no_logging![],
+        /// )?;
+        ///
+        /// for i in 0..100 {
+        ///     assert!(filter[i]);
+        /// }
+        /// # Ok(())
+        /// # }
+        /// # #[cfg(not(feature = "rayon"))]
+        /// # fn main() {}
+        /// ```
+        pub fn try_new_with_builder<B: ?Sized + Borrow<K>, P: ProgressLog + Clone + Send + Sync>(
+            keys: impl FallibleRewindableLender<
+                RewindError: Error + Send + Sync + 'static,
+                Error: Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+            n: usize,
+            builder: VBuilder<Box<[W]>, S, E>,
+            pl: &mut P,
+        ) -> Result<Self>
+        where
+            for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
+                crate::traits::BitFieldSliceMut,
+            for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
+            for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
+        {
+            let filter_mask = W::MAX;
+            let func = builder.expected_num_keys(n).try_build_filter(
+                keys,
+                W::BITS as usize,
+                |_, len| vec![W::ZERO; len].into(),
+                &|shard_edge, sig_val| {
+                    W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig)))
+                },
+                pl,
+            )?;
+
+            Ok(VFilter { func, filter_mask })
+        }
+
+        /// Builds a [`VFilter`] with a `Box<[W]>` backend from in-memory key
+        /// slices, parallelizing hash computation and store population with
+        /// rayon, using default [`VBuilder`] settings.
+        ///
+        /// The number of hash bits per key equals `W::BITS`, giving a
+        /// false-positive rate of 2<sup>-`W::BITS`</sup>.
+        ///
+        /// This is a convenience wrapper around
+        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder) with
+        /// `VBuilder::default()`.
+        ///
+        /// # Examples
+        ///
+        /// If keys are produced sequentially (e.g., from a file), use
+        /// [`try_new`](Self::try_new) instead.
+        /// ```rust
+        /// # #[cfg(feature = "rayon")]
+        /// # fn main() -> anyhow::Result<()> {
+        /// # use sux::dict::VFilter;
+        /// # use sux::func::VFunc;
+        /// # use dsi_progress_logger::no_logging;
+        /// let keys: Vec<usize> = (0..100).collect();
+        /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_par_new(
+        ///     &keys,
+        ///     no_logging![],
+        /// )?;
+        ///
+        /// for &i in &keys {
+        ///     assert!(filter[i]);
+        /// }
+        /// # Ok(())
+        /// # }
+        /// # #[cfg(not(feature = "rayon"))]
+        /// # fn main() {}
+        /// ```
+        pub fn try_par_new<P: ProgressLog + Clone + Send + Sync>(
+            keys: &[impl Borrow<K> + Sync],
+            pl: &mut P,
+        ) -> Result<Self>
+        where
+            K: Sync,
+            S: Send,
+        {
+            Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
+        }
+
+        /// Builds a [`VFilter`] with a `Box<[W]>` backend from in-memory key
+        /// slices, parallelizing hash computation and store population with
+        /// rayon, using the given [`VBuilder`] configuration.
+        ///
+        /// The number of hash bits per key equals `W::BITS`, giving a
+        /// false-positive rate of 2<sup>-`W::BITS`</sup>.
+        ///
+        /// The builder controls construction parameters such as
+        /// [thread count](VBuilder::max_num_threads),
+        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        ///
+        /// # Examples
+        ///
+        /// If keys are produced sequentially (e.g., from a file), use
+        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// ```rust
+        /// # #[cfg(feature = "rayon")]
+        /// # fn main() -> anyhow::Result<()> {
+        /// # use sux::dict::VFilter;
+        /// # use sux::func::{VBuilder, VFunc};
+        /// # use dsi_progress_logger::no_logging;
+        /// let keys: Vec<usize> = (0..100).collect();
+        /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_par_new_with_builder(
+        ///     &keys,
+        ///     VBuilder::default(),
+        ///     no_logging![],
+        /// )?;
+        ///
+        /// for &i in &keys {
+        ///     assert!(filter[i]);
+        /// }
+        /// # Ok(())
+        /// # }
+        /// # #[cfg(not(feature = "rayon"))]
+        /// # fn main() {}
+        /// ```
+        pub fn try_par_new_with_builder<P: ProgressLog + Clone + Send + Sync>(
+            keys: &[impl Borrow<K> + Sync],
+            builder: VBuilder<Box<[W]>, S, E>,
+            pl: &mut P,
+        ) -> Result<Self>
+        where
+            K: Sync,
+            S: Send,
+        {
+            let n = keys.len();
+            let filter_mask = W::MAX;
+            let func = builder.expected_num_keys(n).try_par_populate_and_build(
+                keys,
+                &|_| EmptyVal::default(),
+                &mut |builder,
+                      seed,
+                      mut store,
+                      _max_value,
+                      _num_keys,
+                      pl: &mut P,
+                      _state: &mut ()| {
+                    builder.bit_width = W::BITS as usize;
+
+                    let data: Box<[W]> = vec![
+                        W::ZERO;
+                        builder.shard_edge.num_vertices()
+                            * builder.shard_edge.num_shards()
+                    ]
+                    .into();
+
+                    pl.info(format_args!(
+                        "Number of keys: {} Bit width: {}",
+                        builder.num_keys, builder.bit_width,
+                    ));
+
+                    let func = builder.try_build_from_shard_iter(
+                        seed,
+                        data,
+                        store.drain(),
+                        &|shard_edge: &E, sig_val| {
+                            W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig)))
+                        },
+                        &|_| {},
+                        pl,
+                    )?;
+                    Ok(func)
+                },
+                pl,
+                (),
+            )?;
+
+            Ok(VFilter { func, filter_mask })
+        }
     }
 
-    /// Builds a [`VFilter`] with a `Box<[W]>` backend from keys using
-    /// the given [`VBuilder`] configuration.
-    ///
-    /// The number of hash bits per key equals `W::BITS`, giving a
-    /// false-positive rate of 2<sup>−`W::BITS`</sup>.
-    ///
-    /// * `keys` must be rewindable (they may be rewound on retry).
-    /// * `n` is the expected number of keys.
-    ///
-    /// The builder controls construction parameters such as [offline
-    /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
-    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
-    ///
-    /// # Examples
-    ///
-    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-    /// for parallel hash computation from slices.
-    /// ```rust
-    /// # #[cfg(feature = "rayon")]
-    /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::dict::VFilter;
-    /// # use sux::func::{VBuilder, VFunc};
-    /// # use dsi_progress_logger::no_logging;
-    /// # use sux::utils::FromCloneableIntoIterator;
-    /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_new_with_builder(
-    ///     FromCloneableIntoIterator::new(0..100),
-    ///     100,
-    ///     VBuilder::default().offline(true),
-    ///     no_logging![],
-    /// )?;
-    ///
-    /// for i in 0..100 {
-    ///     assert!(filter[i]);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// # #[cfg(not(feature = "rayon"))]
-    /// # fn main() {}
-    /// ```
-    pub fn try_new_with_builder<B: ?Sized + Borrow<K>, P: ProgressLog + Clone + Send + Sync>(
-        keys: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        n: usize,
-        builder: VBuilder<Box<[W]>, S, E>,
-        pl: &mut P,
-    ) -> Result<Self>
+    impl<K, W, S, E> VFilter<VFunc<K, BitFieldVec<Box<[W]>>, S, E>>
     where
-        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
-            crate::traits::BitFieldSliceMut,
-        for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
-        for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
+        K: ?Sized + ToSig<S> + std::fmt::Debug,
+        W: Word + BinSafe,
+        S: Sig + Send + Sync,
+        E: ShardEdge<S, 3>,
+        SigVal<S, EmptyVal>: RadixKey,
+        SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
     {
-        let filter_mask = W::MAX;
-        let func = builder.expected_num_keys(n).try_build_filter(
-            keys,
-            W::BITS as usize,
-            |_, len| vec![W::ZERO; len].into(),
-            &|shard_edge, sig_val| {
-                W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig)))
-            },
-            pl,
-        )?;
+        /// Builds a [`VFilter`] with a [`BitFieldVec`] backend from keys
+        /// using default [`VBuilder`] settings.
+        ///
+        /// * `keys` must be rewindable (they may be rewound on retry).
+        /// * `n` is the expected number of keys; a significantly wrong
+        ///   value may degrade performance or cause extra retries.
+        /// * `filter_bits` is the number of hash bits per key; the
+        ///   false-positive rate is 2<sup>−`filter_bits`</sup>.
+        ///
+        /// This is a convenience wrapper around
+        /// [`try_new_with_builder`](Self::try_new_with_builder) with
+        /// `VBuilder::default()`.
+        ///
+        /// # Examples
+        ///
+        /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
+        /// parallelizes the hash computation for faster construction.
+        /// ```rust
+        /// # #[cfg(feature = "rayon")]
+        /// # fn main() -> anyhow::Result<()> {
+        /// # use sux::dict::VFilter;
+        /// # use sux::func::VFunc;
+        /// # use sux::bits::BitFieldVec;
+        /// # use dsi_progress_logger::no_logging;
+        /// # use sux::utils::FromCloneableIntoIterator;
+        /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_new(
+        ///     FromCloneableIntoIterator::new(0..100),
+        ///     100,
+        ///     5,
+        ///     no_logging![],
+        /// )?;
+        ///
+        /// for i in 0..100 {
+        ///     assert!(filter[i]);
+        /// }
+        /// # Ok(())
+        /// # }
+        /// # #[cfg(not(feature = "rayon"))]
+        /// # fn main() {}
+        /// ```
+        pub fn try_new<B: ?Sized + Borrow<K>>(
+            keys: impl FallibleRewindableLender<
+                RewindError: Error + Send + Sync + 'static,
+                Error: Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+            n: usize,
+            filter_bits: usize,
+            pl: &mut (impl ProgressLog + Clone + Send + Sync),
+        ) -> Result<Self>
+        where
+            for<'a> <BitFieldVec<Box<[W]>> as SliceByValueMut>::ChunksMut<'a>: Send,
+            for<'a> <<BitFieldVec<Box<[W]>> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
+                Send,
+        {
+            Self::try_new_with_builder(keys, n, filter_bits, VBuilder::default(), pl)
+        }
 
-        Ok(VFilter { func, filter_mask })
+        /// Builds a [`VFilter`] with a [`BitFieldVec`] backend from keys
+        /// using the given [`VBuilder`] configuration.
+        ///
+        /// * `keys` must be rewindable (they may be rewound on retry).
+        /// * `n` is the expected number of keys.
+        /// * `filter_bits` is the number of hash bits per key; the
+        ///   false-positive rate is 2<sup>−`filter_bits`</sup>.
+        ///
+        /// The builder controls construction parameters such as [offline
+        /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
+        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        ///
+        /// # Examples
+        ///
+        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+        /// for parallel hash computation from slices.
+        /// ```rust
+        /// # #[cfg(feature = "rayon")]
+        /// # fn main() -> anyhow::Result<()> {
+        /// # use sux::dict::VFilter;
+        /// # use sux::func::{VBuilder, VFunc};
+        /// # use sux::bits::BitFieldVec;
+        /// # use dsi_progress_logger::no_logging;
+        /// # use sux::utils::FromCloneableIntoIterator;
+        /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_new_with_builder(
+        ///     FromCloneableIntoIterator::new(0..100),
+        ///     100,
+        ///     5,
+        ///     VBuilder::default().offline(true),
+        ///     no_logging![],
+        /// )?;
+        ///
+        /// for i in 0..100 {
+        ///     assert!(filter[i]);
+        /// }
+        /// # Ok(())
+        /// # }
+        /// # #[cfg(not(feature = "rayon"))]
+        /// # fn main() {}
+        /// ```
+        pub fn try_new_with_builder<B: ?Sized + Borrow<K>, P: ProgressLog + Clone + Send + Sync>(
+            keys: impl FallibleRewindableLender<
+                RewindError: Error + Send + Sync + 'static,
+                Error: Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+            n: usize,
+            filter_bits: usize,
+            builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
+            pl: &mut P,
+        ) -> Result<Self>
+        where
+            for<'a> <BitFieldVec<Box<[W]>> as SliceByValueMut>::ChunksMut<'a>: Send,
+            for<'a> <<BitFieldVec<Box<[W]>> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
+                Send,
+        {
+            assert!(filter_bits > 0);
+            assert!(filter_bits <= W::BITS as usize);
+            let filter_mask = W::MAX >> (W::BITS - filter_bits as u32);
+            let func = builder.expected_num_keys(n).try_build_filter(
+                keys,
+                filter_bits,
+                BitFieldVec::new_padded,
+                &|shard_edge, sig_val| {
+                    W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig))) & filter_mask
+                },
+                pl,
+            )?;
+
+            Ok(VFilter { func, filter_mask })
+        }
+
+        /// Builds a [`VFilter`] with a [`BitFieldVec`] backend from in-memory
+        /// key slices, parallelizing hash computation and store population
+        /// with rayon, using default [`VBuilder`] settings.
+        ///
+        /// * `filter_bits` is the number of hash bits per key; the
+        ///   false-positive rate is 2<sup>-`filter_bits`</sup>.
+        ///
+        /// This is a convenience wrapper around
+        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder) with
+        /// `VBuilder::default()`.
+        ///
+        /// # Examples
+        ///
+        /// If keys are produced sequentially (e.g., from a file), use
+        /// [`try_new`](Self::try_new) instead.
+        /// ```rust
+        /// # #[cfg(feature = "rayon")]
+        /// # fn main() -> anyhow::Result<()> {
+        /// # use sux::dict::VFilter;
+        /// # use sux::func::VFunc;
+        /// # use sux::bits::BitFieldVec;
+        /// # use dsi_progress_logger::no_logging;
+        /// let keys: Vec<usize> = (0..100).collect();
+        /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_par_new(
+        ///     &keys,
+        ///     5,
+        ///     no_logging![],
+        /// )?;
+        ///
+        /// for &i in &keys {
+        ///     assert!(filter[i]);
+        /// }
+        /// # Ok(())
+        /// # }
+        /// # #[cfg(not(feature = "rayon"))]
+        /// # fn main() {}
+        /// ```
+        pub fn try_par_new<P: ProgressLog + Clone + Send + Sync>(
+            keys: &[impl Borrow<K> + Sync],
+            filter_bits: usize,
+            pl: &mut P,
+        ) -> Result<Self>
+        where
+            K: Sync,
+            S: Send,
+        {
+            Self::try_par_new_with_builder(keys, filter_bits, VBuilder::default(), pl)
+        }
+
+        /// Builds a [`VFilter`] with a [`BitFieldVec`] backend from in-memory
+        /// key slices, parallelizing hash computation and store population
+        /// with rayon, using the given [`VBuilder`] configuration.
+        ///
+        /// * `filter_bits` is the number of hash bits per key; the
+        ///   false-positive rate is 2<sup>-`filter_bits`</sup>.
+        ///
+        /// The builder controls construction parameters such as
+        /// [thread count](VBuilder::max_num_threads),
+        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        ///
+        /// # Examples
+        ///
+        /// If keys are produced sequentially (e.g., from a file), use
+        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// ```rust
+        /// # #[cfg(feature = "rayon")]
+        /// # fn main() -> anyhow::Result<()> {
+        /// # use sux::dict::VFilter;
+        /// # use sux::func::{VBuilder, VFunc};
+        /// # use sux::bits::BitFieldVec;
+        /// # use dsi_progress_logger::no_logging;
+        /// let keys: Vec<usize> = (0..100).collect();
+        /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_par_new_with_builder(
+        ///     &keys,
+        ///     5,
+        ///     VBuilder::default(),
+        ///     no_logging![],
+        /// )?;
+        ///
+        /// for &i in &keys {
+        ///     assert!(filter[i]);
+        /// }
+        /// # Ok(())
+        /// # }
+        /// # #[cfg(not(feature = "rayon"))]
+        /// # fn main() {}
+        /// ```
+        pub fn try_par_new_with_builder<P: ProgressLog + Clone + Send + Sync>(
+            keys: &[impl Borrow<K> + Sync],
+            filter_bits: usize,
+            builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
+            pl: &mut P,
+        ) -> Result<Self>
+        where
+            K: Sync,
+            S: Send,
+        {
+            assert!(filter_bits > 0);
+            assert!(filter_bits <= W::BITS as usize);
+            let n = keys.len();
+            let filter_mask = W::MAX >> (W::BITS - filter_bits as u32);
+            let func = builder.expected_num_keys(n).try_par_populate_and_build(
+                keys,
+                &|_| EmptyVal::default(),
+                &mut |builder,
+                      seed,
+                      mut store,
+                      _max_value,
+                      _num_keys,
+                      pl: &mut P,
+                      _state: &mut ()| {
+                    builder.bit_width = filter_bits;
+
+                    let data = BitFieldVec::<Box<[W]>>::new_padded(
+                        builder.bit_width,
+                        builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
+                    );
+
+                    pl.info(format_args!(
+                        "Number of keys: {} Bit width: {}",
+                        builder.num_keys, builder.bit_width,
+                    ));
+
+                    let func = builder.try_build_from_shard_iter(
+                        seed,
+                        data,
+                        store.drain(),
+                        &|shard_edge: &E, sig_val| {
+                            W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig)))
+                                & filter_mask
+                        },
+                        &|_| {},
+                        pl,
+                    )?;
+                    Ok(func)
+                },
+                pl,
+                (),
+            )?;
+
+            Ok(VFilter { func, filter_mask })
+        }
     }
-
-    /// Builds a [`VFilter`] with a `Box<[W]>` backend from in-memory key
-    /// slices, parallelizing hash computation and store population with
-    /// rayon, using default [`VBuilder`] settings.
-    ///
-    /// The number of hash bits per key equals `W::BITS`, giving a
-    /// false-positive rate of 2<sup>-`W::BITS`</sup>.
-    ///
-    /// This is a convenience wrapper around
-    /// [`try_par_new_with_builder`](Self::try_par_new_with_builder) with
-    /// `VBuilder::default()`.
-    ///
-    /// # Examples
-    ///
-    /// If keys are produced sequentially (e.g., from a file), use
-    /// [`try_new`](Self::try_new) instead.
-    /// ```rust
-    /// # #[cfg(feature = "rayon")]
-    /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::dict::VFilter;
-    /// # use sux::func::VFunc;
-    /// # use dsi_progress_logger::no_logging;
-    /// let keys: Vec<usize> = (0..100).collect();
-    /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_par_new(
-    ///     &keys,
-    ///     no_logging![],
-    /// )?;
-    ///
-    /// for &i in &keys {
-    ///     assert!(filter[i]);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// # #[cfg(not(feature = "rayon"))]
-    /// # fn main() {}
-    /// ```
-    pub fn try_par_new<P: ProgressLog + Clone + Send + Sync>(
-        keys: &[impl Borrow<K> + Sync],
-        pl: &mut P,
-    ) -> Result<Self>
-    where
-        K: Sync,
-        S: Send,
-    {
-        Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
-    }
-
-    /// Builds a [`VFilter`] with a `Box<[W]>` backend from in-memory key
-    /// slices, parallelizing hash computation and store population with
-    /// rayon, using the given [`VBuilder`] configuration.
-    ///
-    /// The number of hash bits per key equals `W::BITS`, giving a
-    /// false-positive rate of 2<sup>-`W::BITS`</sup>.
-    ///
-    /// The builder controls construction parameters such as
-    /// [thread count](VBuilder::max_num_threads),
-    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
-    ///
-    /// # Examples
-    ///
-    /// If keys are produced sequentially (e.g., from a file), use
-    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
-    /// ```rust
-    /// # #[cfg(feature = "rayon")]
-    /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::dict::VFilter;
-    /// # use sux::func::{VBuilder, VFunc};
-    /// # use dsi_progress_logger::no_logging;
-    /// let keys: Vec<usize> = (0..100).collect();
-    /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_par_new_with_builder(
-    ///     &keys,
-    ///     VBuilder::default(),
-    ///     no_logging![],
-    /// )?;
-    ///
-    /// for &i in &keys {
-    ///     assert!(filter[i]);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// # #[cfg(not(feature = "rayon"))]
-    /// # fn main() {}
-    /// ```
-    pub fn try_par_new_with_builder<P: ProgressLog + Clone + Send + Sync>(
-        keys: &[impl Borrow<K> + Sync],
-        builder: VBuilder<Box<[W]>, S, E>,
-        pl: &mut P,
-    ) -> Result<Self>
-    where
-        K: Sync,
-        S: Send,
-    {
-        let n = keys.len();
-        let filter_mask = W::MAX;
-        let func = builder.expected_num_keys(n).try_par_populate_and_build(
-            keys,
-            &|_| EmptyVal::default(),
-            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
-                builder.bit_width = W::BITS as usize;
-
-                let data: Box<[W]> = vec![
-                    W::ZERO;
-                    builder.shard_edge.num_vertices()
-                        * builder.shard_edge.num_shards()
-                ]
-                .into();
-
-                pl.info(format_args!(
-                    "Number of keys: {} Bit width: {}",
-                    builder.num_keys, builder.bit_width,
-                ));
-
-                let func = builder.try_build_from_shard_iter(
-                    seed,
-                    data,
-                    store.drain(),
-                    &|shard_edge: &E, sig_val| {
-                        W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig)))
-                    },
-                    &|_| {},
-                    pl,
-                )?;
-                Ok(func)
-            },
-            pl,
-            (),
-        )?;
-
-        Ok(VFilter { func, filter_mask })
-    }
-}
-
-#[cfg(feature = "rayon")]
-impl<K, W, S, E> VFilter<VFunc<K, BitFieldVec<Box<[W]>>, S, E>>
-where
-    K: ?Sized + ToSig<S> + std::fmt::Debug,
-    W: Word + BinSafe,
-    S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
-    SigVal<S, EmptyVal>: RadixKey,
-    SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
-{
-    /// Builds a [`VFilter`] with a [`BitFieldVec`] backend from keys
-    /// using default [`VBuilder`] settings.
-    ///
-    /// * `keys` must be rewindable (they may be rewound on retry).
-    /// * `n` is the expected number of keys; a significantly wrong
-    ///   value may degrade performance or cause extra retries.
-    /// * `filter_bits` is the number of hash bits per key; the
-    ///   false-positive rate is 2<sup>−`filter_bits`</sup>.
-    ///
-    /// This is a convenience wrapper around
-    /// [`try_new_with_builder`](Self::try_new_with_builder) with
-    /// `VBuilder::default()`.
-    ///
-    /// # Examples
-    ///
-    /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
-    /// parallelizes the hash computation for faster construction.
-    /// ```rust
-    /// # #[cfg(feature = "rayon")]
-    /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::dict::VFilter;
-    /// # use sux::func::VFunc;
-    /// # use sux::bits::BitFieldVec;
-    /// # use dsi_progress_logger::no_logging;
-    /// # use sux::utils::FromCloneableIntoIterator;
-    /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_new(
-    ///     FromCloneableIntoIterator::new(0..100),
-    ///     100,
-    ///     5,
-    ///     no_logging![],
-    /// )?;
-    ///
-    /// for i in 0..100 {
-    ///     assert!(filter[i]);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// # #[cfg(not(feature = "rayon"))]
-    /// # fn main() {}
-    /// ```
-    pub fn try_new<B: ?Sized + Borrow<K>>(
-        keys: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        n: usize,
-        filter_bits: usize,
-        pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> Result<Self>
-    where
-        for<'a> <BitFieldVec<Box<[W]>> as SliceByValueMut>::ChunksMut<'a>: Send,
-        for<'a> <<BitFieldVec<Box<[W]>> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
-    {
-        Self::try_new_with_builder(keys, n, filter_bits, VBuilder::default(), pl)
-    }
-
-    /// Builds a [`VFilter`] with a [`BitFieldVec`] backend from keys
-    /// using the given [`VBuilder`] configuration.
-    ///
-    /// * `keys` must be rewindable (they may be rewound on retry).
-    /// * `n` is the expected number of keys.
-    /// * `filter_bits` is the number of hash bits per key; the
-    ///   false-positive rate is 2<sup>−`filter_bits`</sup>.
-    ///
-    /// The builder controls construction parameters such as [offline
-    /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
-    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
-    ///
-    /// # Examples
-    ///
-    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-    /// for parallel hash computation from slices.
-    /// ```rust
-    /// # #[cfg(feature = "rayon")]
-    /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::dict::VFilter;
-    /// # use sux::func::{VBuilder, VFunc};
-    /// # use sux::bits::BitFieldVec;
-    /// # use dsi_progress_logger::no_logging;
-    /// # use sux::utils::FromCloneableIntoIterator;
-    /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_new_with_builder(
-    ///     FromCloneableIntoIterator::new(0..100),
-    ///     100,
-    ///     5,
-    ///     VBuilder::default().offline(true),
-    ///     no_logging![],
-    /// )?;
-    ///
-    /// for i in 0..100 {
-    ///     assert!(filter[i]);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// # #[cfg(not(feature = "rayon"))]
-    /// # fn main() {}
-    /// ```
-    pub fn try_new_with_builder<B: ?Sized + Borrow<K>, P: ProgressLog + Clone + Send + Sync>(
-        keys: impl FallibleRewindableLender<
-            RewindError: Error + Send + Sync + 'static,
-            Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        n: usize,
-        filter_bits: usize,
-        builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
-        pl: &mut P,
-    ) -> Result<Self>
-    where
-        for<'a> <BitFieldVec<Box<[W]>> as SliceByValueMut>::ChunksMut<'a>: Send,
-        for<'a> <<BitFieldVec<Box<[W]>> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
-    {
-        assert!(filter_bits > 0);
-        assert!(filter_bits <= W::BITS as usize);
-        let filter_mask = W::MAX >> (W::BITS - filter_bits as u32);
-        let func = builder.expected_num_keys(n).try_build_filter(
-            keys,
-            filter_bits,
-            BitFieldVec::new_padded,
-            &|shard_edge, sig_val| {
-                W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig))) & filter_mask
-            },
-            pl,
-        )?;
-
-        Ok(VFilter { func, filter_mask })
-    }
-
-    /// Builds a [`VFilter`] with a [`BitFieldVec`] backend from in-memory
-    /// key slices, parallelizing hash computation and store population
-    /// with rayon, using default [`VBuilder`] settings.
-    ///
-    /// * `filter_bits` is the number of hash bits per key; the
-    ///   false-positive rate is 2<sup>-`filter_bits`</sup>.
-    ///
-    /// This is a convenience wrapper around
-    /// [`try_par_new_with_builder`](Self::try_par_new_with_builder) with
-    /// `VBuilder::default()`.
-    ///
-    /// # Examples
-    ///
-    /// If keys are produced sequentially (e.g., from a file), use
-    /// [`try_new`](Self::try_new) instead.
-    /// ```rust
-    /// # #[cfg(feature = "rayon")]
-    /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::dict::VFilter;
-    /// # use sux::func::VFunc;
-    /// # use sux::bits::BitFieldVec;
-    /// # use dsi_progress_logger::no_logging;
-    /// let keys: Vec<usize> = (0..100).collect();
-    /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_par_new(
-    ///     &keys,
-    ///     5,
-    ///     no_logging![],
-    /// )?;
-    ///
-    /// for &i in &keys {
-    ///     assert!(filter[i]);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// # #[cfg(not(feature = "rayon"))]
-    /// # fn main() {}
-    /// ```
-    pub fn try_par_new<P: ProgressLog + Clone + Send + Sync>(
-        keys: &[impl Borrow<K> + Sync],
-        filter_bits: usize,
-        pl: &mut P,
-    ) -> Result<Self>
-    where
-        K: Sync,
-        S: Send,
-    {
-        Self::try_par_new_with_builder(keys, filter_bits, VBuilder::default(), pl)
-    }
-
-    /// Builds a [`VFilter`] with a [`BitFieldVec`] backend from in-memory
-    /// key slices, parallelizing hash computation and store population
-    /// with rayon, using the given [`VBuilder`] configuration.
-    ///
-    /// * `filter_bits` is the number of hash bits per key; the
-    ///   false-positive rate is 2<sup>-`filter_bits`</sup>.
-    ///
-    /// The builder controls construction parameters such as
-    /// [thread count](VBuilder::max_num_threads),
-    /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
-    ///
-    /// # Examples
-    ///
-    /// If keys are produced sequentially (e.g., from a file), use
-    /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
-    /// ```rust
-    /// # #[cfg(feature = "rayon")]
-    /// # fn main() -> anyhow::Result<()> {
-    /// # use sux::dict::VFilter;
-    /// # use sux::func::{VBuilder, VFunc};
-    /// # use sux::bits::BitFieldVec;
-    /// # use dsi_progress_logger::no_logging;
-    /// let keys: Vec<usize> = (0..100).collect();
-    /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_par_new_with_builder(
-    ///     &keys,
-    ///     5,
-    ///     VBuilder::default(),
-    ///     no_logging![],
-    /// )?;
-    ///
-    /// for &i in &keys {
-    ///     assert!(filter[i]);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// # #[cfg(not(feature = "rayon"))]
-    /// # fn main() {}
-    /// ```
-    pub fn try_par_new_with_builder<P: ProgressLog + Clone + Send + Sync>(
-        keys: &[impl Borrow<K> + Sync],
-        filter_bits: usize,
-        builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
-        pl: &mut P,
-    ) -> Result<Self>
-    where
-        K: Sync,
-        S: Send,
-    {
-        assert!(filter_bits > 0);
-        assert!(filter_bits <= W::BITS as usize);
-        let n = keys.len();
-        let filter_mask = W::MAX >> (W::BITS - filter_bits as u32);
-        let func = builder.expected_num_keys(n).try_par_populate_and_build(
-            keys,
-            &|_| EmptyVal::default(),
-            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
-                builder.bit_width = filter_bits;
-
-                let data = BitFieldVec::<Box<[W]>>::new_padded(
-                    builder.bit_width,
-                    builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
-                );
-
-                pl.info(format_args!(
-                    "Number of keys: {} Bit width: {}",
-                    builder.num_keys, builder.bit_width,
-                ));
-
-                let func = builder.try_build_from_shard_iter(
-                    seed,
-                    data,
-                    store.drain(),
-                    &|shard_edge: &E, sig_val| {
-                        W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig)))
-                            & filter_mask
-                    },
-                    &|_| {},
-                    pl,
-                )?;
-                Ok(func)
-            },
-            pl,
-            (),
-        )?;
-
-        Ok(VFilter { func, filter_mask })
-    }
-}
+} // mod build
 
 // ── Tests ───────────────────────────────────────────────────────────
 
