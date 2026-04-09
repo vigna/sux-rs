@@ -60,7 +60,7 @@ use {
     },
     mem_dbg::*,
     num_primitive::PrimitiveInteger,
-    std::borrow::Borrow,
+    std::{borrow::Borrow, ops::Index},
     value_traits::slices::SliceByValue,
 };
 
@@ -87,12 +87,6 @@ fn get_key_bit(key: &[u8], i: usize) -> bool {
     } else {
         false // virtual NUL
     }
-}
-
-/// Read bit `i` from a word-packed bit vector (LSB-first within each word).
-#[inline]
-fn get_bit(words: &[usize], i: usize) -> bool {
-    (words[i / usize::BITS as usize] >> (i % usize::BITS as usize)) & 1 != 0
 }
 
 /// Read bit `i` (MSB-first) from an integer.
@@ -404,7 +398,7 @@ pub struct HtDistInt<
     K,
     E = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
     F = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
-    B: BalParen = JacobsonBalParen,
+    B = JacobsonBalParen,
     S = PrefixSumIntList,
 > {
     /// Balanced-parentheses support structure for the trie.
@@ -461,7 +455,7 @@ pub struct HtDistMmphfInt<
     E = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
     F = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
     O = VFunc<K, BitFieldVec<Box<[usize]>>>,
-    B: BalParen = JacobsonBalParen,
+    B = JacobsonBalParen,
     S = PrefixSumIntList,
 > {
     /// The hollow trie distributor.
@@ -478,8 +472,11 @@ pub struct HtDistMmphfInt<
 // Query methods
 // ═══════════════════════════════════════════════════════════════════
 
-impl<D: SliceByValue<Value = usize>, B: BalParen + AsRef<[usize]>, S: SliceByValue<Value = usize>>
-    HtDist<VFunc<[u8], D>, VFunc<[u8], D>, B, S>
+impl<
+    D: SliceByValue<Value = usize>,
+    B: BalParen + AsRef<[usize]> + Index<usize, Output = bool>,
+    S: SliceByValue<Value = usize>,
+> HtDist<VFunc<[u8], D>, VFunc<[u8], D>, B, S>
 {
     /// Returns the bucket index for the given key.
     ///
@@ -492,7 +489,7 @@ impl<D: SliceByValue<Value = usize>, B: BalParen + AsRef<[usize]>, S: SliceByVal
             return 0;
         }
 
-        let trie_words = self.bal_paren.as_ref();
+        let trie_words = &self.bal_paren;
         let length = key.len() * 8 + 8; // including virtual NUL terminator
         let mut p: usize = 1;
         let mut index: usize = 0;
@@ -514,7 +511,7 @@ impl<D: SliceByValue<Value = usize>, B: BalParen + AsRef<[usize]>, S: SliceByVal
         };
 
         loop {
-            let is_internal = get_bit(trie_words, p);
+            let is_internal = trie_words[p];
             let skip: usize = if is_internal {
                 self.skips.index_value(r)
             } else {
@@ -597,7 +594,7 @@ impl<D: SliceByValue<Value = usize>, B: BalParen + AsRef<[usize]>, S: SliceByVal
 impl<
     K: ?Sized + AsRef<[u8]> + ToSig<[u64; 2]>,
     D: SliceByValue<Value = usize> + MemSize,
-    B: BalParen + AsRef<[usize]>,
+    B: BalParen + AsRef<[usize]> + Index<usize, Output = bool>,
     S: SliceByValue<Value = usize>,
 > HtDistMmphf<K, VFunc<[u8], D>, VFunc<[u8], D>, VFunc<K, D>, B, S>
 {
@@ -628,7 +625,7 @@ impl<
 impl<
     K: PrimitiveInteger,
     D: SliceByValue<Value = usize>,
-    B: BalParen + AsRef<[usize]>,
+    B: BalParen + AsRef<[usize]> + Index<usize, Output = bool>,
     S: SliceByValue<Value = usize>,
 > HtDistInt<K, VFunc<[u8], D>, VFunc<[u8], D>, B, S>
 {
@@ -646,7 +643,7 @@ impl<
         let mapped = key ^ K::MIN;
         let length = K::BITS as usize;
 
-        let trie_words = self.bal_paren.as_ref();
+        let bal_paren = &self.bal_paren;
         let mut p: usize = 1;
         let mut index: usize = 0;
         let mut r: usize = 0;
@@ -657,7 +654,7 @@ impl<
         let mut key_buf = [0u8; BEHAVIOUR_KEY_HEADER + 16];
 
         loop {
-            let is_internal = get_bit(trie_words, p);
+            let is_internal = bal_paren[p];
             let skip: usize = if is_internal {
                 self.skips.index_value(r)
             } else {
@@ -724,7 +721,7 @@ impl<
 impl<
     K: PrimitiveInteger + ToSig<[u64; 2]>,
     D: SliceByValue<Value = usize> + MemSize + mem_dbg::FlatType,
-    B: BalParen + AsRef<[usize]>,
+    B: BalParen + AsRef<[usize]> + Index<usize, Output = bool>,
     S: SliceByValue<Value = usize>,
 > HtDistMmphfInt<K, VFunc<[u8], D>, VFunc<[u8], D>, VFunc<K, D>, B, S>
 {
@@ -1621,7 +1618,7 @@ mod build {
                     let mut skip = 0usize;
 
                     loop {
-                        is_internal = get_bit(bal_paren.as_ref(), p);
+                        is_internal = bal_paren[p];
                         if is_internal {
                             skip = skips.index_value(r);
                         }
@@ -1943,7 +1940,7 @@ mod build {
                     let mut skip = 0usize;
 
                     loop {
-                        is_internal = get_bit(bal_paren.as_ref(), p);
+                        is_internal = bal_paren[p];
                         if is_internal {
                             skip = skips.index_value(r);
                         }
@@ -2263,7 +2260,7 @@ mod build {
                     let mut skip = 0usize;
 
                     loop {
-                        is_internal = get_bit(bal_paren.as_ref(), p);
+                        is_internal = bal_paren[p];
                         if is_internal {
                             skip = skips.index_value(r);
                         }
@@ -2575,7 +2572,7 @@ mod build {
                     let mut skip = 0usize;
 
                     loop {
-                        is_internal = get_bit(bal_paren.as_ref(), p);
+                        is_internal = bal_paren[p];
                         if is_internal {
                             skip = skips.index_value(r);
                         }
