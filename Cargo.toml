@@ -130,6 +130,10 @@ name = "mem_usage"
 required-features = ["cli"]
 
 [[example]]
+name = "bench_hollow"
+required-features = ["cli", "epserde", "deko", "rayon"]
+
+[[example]]
 name = "bench_rear_coded_list"
 required-features = ["cli"]
 
