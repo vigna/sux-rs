@@ -662,10 +662,11 @@ mod build {
         ///
         /// The keys must be provided in strictly increasing order.
         ///
-        /// # Examples
-        ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new`](Self::try_new) instead.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -700,10 +701,11 @@ mod build {
         ///
         /// The keys must be provided in strictly increasing order.
         ///
-        /// # Examples
-        ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -1452,10 +1454,11 @@ mod build {
         ///
         /// The keys must be in strictly increasing lexicographic order.
         ///
-        /// # Examples
-        ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new`](Self::try_new) instead.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -1493,10 +1496,11 @@ mod build {
         ///
         /// The keys must be in strictly increasing lexicographic order.
         ///
-        /// # Examples
-        ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {

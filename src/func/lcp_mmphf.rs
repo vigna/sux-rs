@@ -186,10 +186,11 @@ mod build {
         ///
         /// The keys must be provided in strictly increasing order.
         ///
-        /// # Examples
-        ///
         /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
         /// parallelizes the hash computation for faster construction.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -232,10 +233,11 @@ mod build {
         ///
         /// The keys must be provided in strictly increasing order.
         ///
-        /// # Examples
-        ///
         /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
         /// for parallel hash computation from slices.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -407,10 +409,11 @@ mod build {
         ///
         /// The keys must be provided in strictly increasing order.
         ///
-        /// # Examples
-        ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new`](Self::try_new) instead.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -445,10 +448,11 @@ mod build {
         ///
         /// The keys must be provided in strictly increasing order.
         ///
-        /// # Examples
-        ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -683,10 +687,11 @@ mod build {
         /// as `K` (e.g., `&String` for `K = str`, `&Vec<u8>` for
         /// `K = [u8]`).
         ///
-        /// # Examples
-        ///
         /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
         /// parallelizes the hash computation for faster construction.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -729,10 +734,11 @@ mod build {
         ///
         /// The keys must be in strictly increasing lexicographic order.
         ///
-        /// # Examples
-        ///
         /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
         /// for parallel hash computation from slices.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -922,10 +928,11 @@ mod build {
         ///
         /// The keys must be in strictly increasing lexicographic order.
         ///
-        /// # Examples
-        ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new`](Self::try_new) instead.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -963,10 +970,11 @@ mod build {
         ///
         /// The keys must be in strictly increasing lexicographic order.
         ///
-        /// # Examples
-        ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {

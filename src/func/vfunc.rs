@@ -213,10 +213,11 @@ mod build {
         /// [`try_new_with_builder`](Self::try_new_with_builder) with
         /// `VBuilder::default()`.
         ///
-        /// # Examples
-        ///
         /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
         /// parallelizes the hash computation for faster construction.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -270,10 +271,11 @@ mod build {
         /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
         /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
         ///
-        /// # Examples
-        ///
         /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
         /// for parallel hash computation from slices.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -338,10 +340,11 @@ mod build {
         /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
         /// with `VBuilder::default()`.
         ///
-        /// # Examples
-        ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new`](Self::try_new) instead.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -388,10 +391,11 @@ mod build {
         /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
         /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
         ///
-        /// # Examples
-        ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -472,10 +476,11 @@ mod build {
         /// [`try_new_with_builder`](Self::try_new_with_builder) with
         /// `VBuilder::default()`.
         ///
-        /// # Examples
-        ///
         /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
         /// parallelizes the hash computation for faster construction.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -524,10 +529,11 @@ mod build {
         /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
         /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
         ///
-        /// # Examples
-        ///
         /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
         /// for parallel hash computation from slices.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -587,10 +593,11 @@ mod build {
         /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
         /// with `VBuilder::default()`.
         ///
-        /// # Examples
-        ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new`](Self::try_new) instead.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -634,10 +641,11 @@ mod build {
         /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
         /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
         ///
-        /// # Examples
-        ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        ///
+        /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
