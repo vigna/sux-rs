@@ -80,13 +80,10 @@ use {
 /// preserving lexicographic order.
 #[inline]
 fn get_key_bit(key: &[u8], i: usize) -> bool {
-    let byte_idx = i / 8;
-    let bit_idx = 7 - (i % 8);
-    if byte_idx < key.len() {
-        (key[byte_idx] >> bit_idx) & 1 != 0
-    } else {
-        false // virtual NUL
-    }
+    let byte_idx = i >> 3;
+    // Branchless: out-of-bounds indices (virtual NUL) yield 0, producing false.
+    let b = if byte_idx < key.len() { key[byte_idx] } else { 0u8 };
+    (b >> (7 - (i & 7))) & 1 != 0
 }
 
 /// Read bit `i` (MSB-first) from an integer.
@@ -500,11 +497,13 @@ impl<
         // Buffer for behaviour key encoding. Reused across loop iterations
         // to avoid per-node allocation. Max size: 16 header + key path bytes.
         let buf_size = BEHAVIOUR_KEY_HEADER + key.len() + 1;
-        let mut key_buf_storage;
+        let mut key_buf_storage: std::mem::MaybeUninit<[u8; 528]>;
         let mut key_buf_vec;
+        // SAFETY: encode_behaviour_key_into initialises every byte it
+        // subsequently reads; no uninitialised byte is ever exposed.
         let key_buf: &mut [u8] = if buf_size <= 528 {
-            key_buf_storage = [0u8; 528];
-            &mut key_buf_storage[..buf_size]
+            key_buf_storage = std::mem::MaybeUninit::uninit();
+            unsafe { &mut (&mut *key_buf_storage.as_mut_ptr())[..buf_size] }
         } else {
             key_buf_vec = vec![0u8; buf_size];
             &mut key_buf_vec
@@ -513,7 +512,8 @@ impl<
         loop {
             let is_internal = trie_words[p];
             let skip: usize = if is_internal {
-                self.skips.index_value(r)
+                // SAFETY: r is a valid internal-node rank by construction.
+                unsafe { self.skips.get_value_unchecked(r) }
             } else {
                 0
             };
@@ -548,10 +548,10 @@ impl<
                     // is the total number of leaves in the subtree
                     // rooted at the last left turn plus the leaves
                     // already counted.
-                    let q = self
-                        .bal_paren
-                        .find_close(last_left_turn)
-                        .expect("balanced parentheses broken");
+                    // SAFETY: last_left_turn is always an open-paren position.
+                    let q = unsafe {
+                        self.bal_paren.find_close(last_left_turn).unwrap_unchecked()
+                    };
                     #[allow(clippy::manual_div_ceil)]
                     return ((q - last_left_turn + 1) / 2) + last_left_turn_index;
                 } else {
@@ -569,13 +569,11 @@ impl<
                 // `findClose(p)` gives the matching `)` of the left
                 // subtree; the right child starts at `q = findClose(p) + 1`.
                 // The number of leaves in the left subtree is `(q - p) / 2`.
-                let q = self
-                    .bal_paren
-                    .find_close(p)
-                    .expect("balanced parentheses broken")
-                    + 1;
-                index += (q - p) / 2;
-                r += (q - p) / 2;
+                // SAFETY: p is always an open-paren position in a valid trie.
+                let q = unsafe { self.bal_paren.find_close(p).unwrap_unchecked() } + 1;
+                let delta = (q - p) / 2;
+                index += delta;
+                r += delta;
                 p = q;
             } else {
                 // LEFT: the left child is at `p + 1`. Record this as
@@ -656,7 +654,8 @@ impl<
         loop {
             let is_internal = bal_paren[p];
             let skip: usize = if is_internal {
-                self.skips.index_value(r)
+                // SAFETY: r is a valid internal-node rank by construction.
+                unsafe { self.skips.get_value_unchecked(r) }
             } else {
                 0
             };
@@ -686,10 +685,10 @@ impl<
                 if behaviour == Behaviour::Left {
                     return index;
                 } else if is_internal {
-                    let q = self
-                        .bal_paren
-                        .find_close(last_left_turn)
-                        .expect("balanced parentheses broken");
+                    // SAFETY: last_left_turn is always an open-paren position.
+                    let q = unsafe {
+                        self.bal_paren.find_close(last_left_turn).unwrap_unchecked()
+                    };
                     #[allow(clippy::manual_div_ceil)]
                     return ((q - last_left_turn + 1) / 2) + last_left_turn_index;
                 } else {
@@ -698,13 +697,11 @@ impl<
             }
 
             if get_int_bit(mapped, s) {
-                let q = self
-                    .bal_paren
-                    .find_close(p)
-                    .expect("balanced parentheses broken")
-                    + 1;
-                index += (q - p) / 2;
-                r += (q - p) / 2;
+                // SAFETY: p is always an open-paren position in a valid trie.
+                let q = unsafe { self.bal_paren.find_close(p).unwrap_unchecked() } + 1;
+                let delta = (q - p) / 2;
+                index += delta;
+                r += delta;
                 p = q;
             } else {
                 last_left_turn = p;
