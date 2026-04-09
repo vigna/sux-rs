@@ -50,22 +50,10 @@ Rank/select structures are built on backends implementing the [`Backend`] trait,
 providing via an associated type the word type, and on the traits above;
 moreover, the strutures export the same traits by delegation, so you can use any
 structure as a backend for (further) rank/select structures, making arbitrary
-nesting of structures simple, typesafe and zero-cost.
+nesting of structures simple, typesafe and zero-cost. The same is true of
+structures for balanced parentheses.
 
-## ε-serde Support
-
-All structures in this crate are designed to work well with [ε-serde]: in
-particular, once you have created and serialized them, you can easily map them
-into memory or load them in memory regions with specific `mmap()` attributes.
-Support for ε-serde is provided by the feature `epserde`, and support for
-memory mapping in ε-serde is provided by the `mmap` feature.
-
-## serde Support
-
-All structures in this crate support serialization with [serde]. Support is
-gated by the feature `serde`.
-
-## Slice by Value Support
+## Slice-by-value support
 
 Wherever possible, we support the “slice by value” traits from the
 [`value-traits`] crate, which make it possible to treat structures such as
@@ -73,7 +61,26 @@ bit-field vectors or succinct representations in a manner similar to slices.
 This approach is also used to make [vectors of bit fields] and slices (where the
 bit width of the fields is exactly that of the word type) interchangeable.
 
-## `MemDbg`/`MemSize` Support
+## Support for unaligned access
+
+The [`TryIntoUnaligned`] trait provides a [`try_into_unaligned`] method that can
+be used to convert recursively all components of a structure into components
+using unaligned access to retrieve bit sequences.
+
+## ε-serde support
+
+All structures in this crate are designed to work well with [ε-serde]: in
+particular, once you have created and serialized them, you can easily map them
+into memory or load them in memory regions with specific `mmap()` attributes.
+Support for ε-serde is provided by the feature `epserde`, and support for
+memory mapping in ε-serde is provided by the `mmap` feature.
+
+## serde support
+
+All structures in this crate support serialization with [serde]. Support is
+gated by the feature `serde`.
+
+## `MemDbg`/`MemSize` support
 
 All structures in this crate support the [`MemDbg`] and [`MemSize`] traits from
 the [`mem_dbg`] crate, which provide convenient facilities for inspecting memory
@@ -225,3 +232,6 @@ Union nor the Italian MUR can be held responsible for them.
 [`Backend`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html
 [balanced parantheses]: https://docs.rs/sux/latest/sux/bal_paren/index.html
 [`Index<usize, Output = bool>`]: https://doc.rust-lang.org/core/ops/index/trait.Index.html
+[operations on bit vectors]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
+[`TryIntoUnaligned`]: https://docs.rs/sux/latest/sux/traits/trait.TryIntoUnaligned.html
+[`try_into_unaligned`]: https://docs.rs/sux/latest/sux/traits/trait.TryIntoUnaligned.html#tymethod.try_into_unaligned
