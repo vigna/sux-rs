@@ -5,7 +5,16 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Indexed dictionaries.
+//! (Indexed) dictionaries.
+//!
+//! # Membership structures
+//!
+//! - [`VFilter`]: Static filters (approximate membership structures) based on
+//!   hash comparison. Use the `Box<[W]>` backend for full-width hashes, or the
+//!   `BitFieldVec` backend with an explicit `filter_bits` parameter for
+//!   space/false-positive tradeoffs.
+//!
+//! # Indexed dictionaries
 //!
 //! An indexed dictionary maps integer indices to values, supporting both
 //! random access and predecessor/successor queries. The main structures are:
@@ -20,10 +29,6 @@
 //!   Index functions verified by hash signatures, returning `None` on mismatch.
 //!   Re-exported from [`func::signed`](crate::func::signed).
 //!   Use concrete types like `SignedFunc<LcpMmphfStr, Box<[u64]>>`.
-//! - [`VFilter`]: Static filters (approximate membership structures) based on
-//!   hash comparison. Use the `Box<[W]>` backend for full-width hashes, or the
-//!   `BitFieldVec` backend with an explicit `filter_bits` parameter for
-//!   space/false-positive tradeoffs.
 //! - [`SliceSeq`]: Adapters exposing slice references as indexed sequences.
 //!
 //! These structures implement traits from the
