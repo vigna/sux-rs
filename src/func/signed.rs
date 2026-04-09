@@ -645,7 +645,9 @@ mod build {
         /// and stores `H::BITS`-bit hashes for verification, giving a
         /// false-positive rate of 2<sup>-`H::BITS`</sup>.
         ///
-        /// * `keys` must be rewindable (they may be rewound on retry).
+        /// * `keys` must be provided as a [`FallibleRewindableLender`].
+        ///   The [`lenders`](crate::utils::lenders) module provides easy
+        ///   ways to build such lenders.
         /// * `n` is the expected number of keys; a significantly wrong
         ///   value may degrade performance or cause extra retries.
         ///
@@ -698,7 +700,9 @@ mod build {
         /// and stores `H::BITS`-bit hashes for verification, giving a
         /// false-positive rate of 2<sup>-`H::BITS`</sup>.
         ///
-        /// * `keys` must be rewindable (they may be rewound on retry).
+        /// * `keys` must be provided as a [`FallibleRewindableLender`].
+        ///   The [`lenders`](crate::utils::lenders) module provides easy
+        ///   ways to build such lenders.
         /// * `n` is the expected number of keys.
         ///
         /// The builder controls construction parameters such as [offline
@@ -898,7 +902,9 @@ mod build {
         /// and stores `hash_width`-bit hashes for verification, giving a
         /// false-positive rate of 2<sup>−`hash_width`</sup>.
         ///
-        /// * `keys` must be rewindable (they may be rewound on retry).
+        /// * `keys` must be provided as a [`FallibleRewindableLender`].
+        ///   The [`lenders`](crate::utils::lenders) module provides easy
+        ///   ways to build such lenders.
         /// * `n` is the expected number of keys; a significantly wrong
         ///   value may degrade performance or cause extra retries.
         /// * `hash_width` is the number of hash bits per key (at most
@@ -958,7 +964,9 @@ mod build {
         /// and stores `hash_width`-bit hashes for verification, giving a
         /// false-positive rate of 2<sup>−`hash_width`</sup>.
         ///
-        /// * `keys` must be rewindable (they may be rewound on retry).
+        /// * `keys` must be provided as a [`FallibleRewindableLender`].
+        ///   The [`lenders`](crate::utils::lenders) module provides easy
+        ///   ways to build such lenders.
         /// * `n` is the expected number of keys.
         /// * `hash_width` is the number of hash bits per key (at most
         ///   `H::BITS`).
@@ -1184,6 +1192,10 @@ mod build {
         ///
         /// The keys must be in strictly increasing order.
         ///
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The
+        /// [`lenders`](crate::utils::lenders) module provides easy ways
+        /// to build such lenders.
+        ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`](Self::try_new_with_builder) with
         /// `VBuilder::default()`.
@@ -1352,6 +1364,10 @@ mod build {
         ///
         /// The keys must be in strictly increasing lexicographic order
         /// (byte-level comparison).
+        ///
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The
+        /// [`lenders`](crate::utils::lenders) module provides easy ways
+        /// to build such lenders.
         ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`](Self::try_new_with_builder) with
@@ -1538,6 +1554,10 @@ mod build {
         /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
         /// parallelizes the hash computation for faster construction.
         ///
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The
+        /// [`lenders`](crate::utils::lenders) module provides easy ways
+        /// to build such lenders.
+        ///
         /// # Examples
         ///
         /// ```rust
@@ -1709,6 +1729,10 @@ mod build {
         ///
         /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
         /// parallelizes the hash computation for faster construction.
+        ///
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The
+        /// [`lenders`](crate::utils::lenders) module provides easy ways
+        /// to build such lenders.
         ///
         /// # Examples
         ///
@@ -1887,6 +1911,10 @@ mod build {
         ///
         /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
         /// parallelizes the hash computation for faster construction.
+        ///
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The
+        /// [`lenders`](crate::utils::lenders) module provides easy ways
+        /// to build such lenders.
         ///
         /// # Examples
         ///
@@ -2077,6 +2105,10 @@ mod build {
         ///
         /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
         /// parallelizes the hash computation for faster construction.
+        ///
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The
+        /// [`lenders`](crate::utils::lenders) module provides easy ways
+        /// to build such lenders.
         ///
         /// # Examples
         ///
@@ -2282,6 +2314,10 @@ mod build {
         /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
         /// parallelizes the hash computation for faster construction.
         ///
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The
+        /// [`lenders`](crate::utils::lenders) module provides easy ways
+        /// to build such lenders.
+        ///
         /// # Examples
         ///
         /// ```rust
@@ -2467,6 +2503,10 @@ mod build {
         ///
         /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
         /// parallelizes the hash computation for faster construction.
+        ///
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The
+        /// [`lenders`](crate::utils::lenders) module provides easy ways
+        /// to build such lenders.
         ///
         /// # Examples
         ///

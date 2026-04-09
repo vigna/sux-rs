@@ -244,6 +244,10 @@ mod build {
         ///
         /// The keys must be provided in strictly increasing order.
         ///
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The
+        /// [`lenders`](crate::utils::lenders) module provides easy ways
+        /// to build such lenders.
+        ///
         /// # Examples
         ///
         /// ```rust
@@ -287,6 +291,10 @@ mod build {
         /// for parallel hash computation from slices.
         ///
         /// The keys must be provided in strictly increasing order.
+        ///
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The
+        /// [`lenders`](crate::utils::lenders) module provides easy ways
+        /// to build such lenders.
         ///
         /// # Examples
         ///
@@ -1025,6 +1033,10 @@ mod build {
         /// as `K` (e.g., `&String` for `K = str`, `&Vec<u8>` for
         /// `K = [u8]`).
         ///
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The
+        /// [`lenders`](crate::utils::lenders) module provides easy ways
+        /// to build such lenders.
+        ///
         /// # Examples
         ///
         /// ```rust
@@ -1068,6 +1080,10 @@ mod build {
         /// for parallel hash computation from slices.
         ///
         /// The keys must be in strictly increasing lexicographic order.
+        ///
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The
+        /// [`lenders`](crate::utils::lenders) module provides easy ways
+        /// to build such lenders.
         ///
         /// # Examples
         ///

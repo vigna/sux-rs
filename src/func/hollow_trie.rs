@@ -1462,6 +1462,10 @@ mod build {
         /// perfect hash function from sorted byte-sequence keys.
         ///
         /// The keys must be in strictly increasing lexicographic order.
+        ///
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The
+        /// [`lenders`](crate::utils::lenders) module provides easy ways
+        /// to build such lenders.
         pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
             mut keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -1828,6 +1832,10 @@ mod build {
         /// perfect hash function from sorted integer keys.
         ///
         /// The keys must be in strictly increasing order.
+        ///
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The
+        /// [`lenders`](crate::utils::lenders) module provides easy ways
+        /// to build such lenders.
         pub fn try_new(
             mut keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,

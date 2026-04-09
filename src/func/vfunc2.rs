@@ -352,8 +352,10 @@ mod build {
         /// Builds a [`VFunc2`] from keys and values using default
         /// [`VBuilder`] settings.
         ///
-        /// * `keys` and `values` must be aligned (one value per key, same
-        ///   order) and rewindable (they may be rewound on retry).
+        /// * `keys` and `values` must be provided as
+        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
+        ///   same order). The [`lenders`](crate::utils::lenders) module
+        ///   provides easy ways to build such lenders.
         /// * `n` is the expected number of keys; a significantly wrong
         ///   value may degrade performance or cause extra retries.
         ///
@@ -403,8 +405,10 @@ mod build {
         /// Builds a [`VFunc2`] from keys and values using the given
         /// [`VBuilder`] configuration.
         ///
-        /// * `keys` and `values` must be aligned (one value per key, same
-        ///   order) and rewindable (they may be rewound on retry).
+        /// * `keys` and `values` must be provided as
+        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
+        ///   same order). The [`lenders`](crate::utils::lenders) module
+        ///   provides easy ways to build such lenders.
         /// * `n` is the expected number of keys.
         ///
         /// The builder controls construction parameters such as [offline

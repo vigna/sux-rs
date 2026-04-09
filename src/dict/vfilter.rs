@@ -217,7 +217,9 @@ mod build {
         /// use the [`BitFieldVec`] variant with an explicit `filter_bits`
         /// parameter.
         ///
-        /// * `keys` must be rewindable (they may be rewound on retry).
+        /// * `keys` must be provided as a [`FallibleRewindableLender`].
+        ///   The [`lenders`](crate::utils::lenders) module provides easy
+        ///   ways to build such lenders.
         /// * `n` is the expected number of keys; a significantly wrong
         ///   value may degrade performance or cause extra retries.
         ///
@@ -273,7 +275,9 @@ mod build {
         /// The number of hash bits per key equals `W::BITS`, giving a
         /// false-positive rate of 2<sup>−`W::BITS`</sup>.
         ///
-        /// * `keys` must be rewindable (they may be rewound on retry).
+        /// * `keys` must be provided as a [`FallibleRewindableLender`].
+        ///   The [`lenders`](crate::utils::lenders) module provides easy
+        ///   ways to build such lenders.
         /// * `n` is the expected number of keys.
         ///
         /// The builder controls construction parameters such as [offline
@@ -487,7 +491,9 @@ mod build {
         /// Builds a [`VFilter`] with a [`BitFieldVec`] backend from keys
         /// using default [`VBuilder`] settings.
         ///
-        /// * `keys` must be rewindable (they may be rewound on retry).
+        /// * `keys` must be provided as a [`FallibleRewindableLender`].
+        ///   The [`lenders`](crate::utils::lenders) module provides easy
+        ///   ways to build such lenders.
         /// * `n` is the expected number of keys; a significantly wrong
         ///   value may degrade performance or cause extra retries.
         /// * `filter_bits` is the number of hash bits per key; the
@@ -545,7 +551,9 @@ mod build {
         /// Builds a [`VFilter`] with a [`BitFieldVec`] backend from keys
         /// using the given [`VBuilder`] configuration.
         ///
-        /// * `keys` must be rewindable (they may be rewound on retry).
+        /// * `keys` must be provided as a [`FallibleRewindableLender`].
+        ///   The [`lenders`](crate::utils::lenders) module provides easy
+        ///   ways to build such lenders.
         /// * `n` is the expected number of keys.
         /// * `filter_bits` is the number of hash bits per key; the
         ///   false-positive rate is 2<sup>−`filter_bits`</sup>.
