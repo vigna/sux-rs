@@ -82,7 +82,11 @@ use {
 fn get_key_bit(key: &[u8], i: usize) -> bool {
     let byte_idx = i >> 3;
     // Branchless: out-of-bounds indices (virtual NUL) yield 0, producing false.
-    let b = if byte_idx < key.len() { key[byte_idx] } else { 0u8 };
+    let b = if byte_idx < key.len() {
+        key[byte_idx]
+    } else {
+        0u8
+    };
     (b >> (7 - (i & 7))) & 1 != 0
 }
 
@@ -549,9 +553,7 @@ impl<
                     // rooted at the last left turn plus the leaves
                     // already counted.
                     // SAFETY: last_left_turn is always an open-paren position.
-                    let q = unsafe {
-                        self.bal_paren.find_close(last_left_turn).unwrap_unchecked()
-                    };
+                    let q = unsafe { self.bal_paren.find_close(last_left_turn).unwrap_unchecked() };
                     #[allow(clippy::manual_div_ceil)]
                     return ((q - last_left_turn + 1) / 2) + last_left_turn_index;
                 } else {
@@ -686,9 +688,7 @@ impl<
                     return index;
                 } else if is_internal {
                     // SAFETY: last_left_turn is always an open-paren position.
-                    let q = unsafe {
-                        self.bal_paren.find_close(last_left_turn).unwrap_unchecked()
-                    };
+                    let q = unsafe { self.bal_paren.find_close(last_left_turn).unwrap_unchecked() };
                     #[allow(clippy::manual_div_ceil)]
                     return ((q - last_left_turn + 1) / 2) + last_left_turn_index;
                 } else {

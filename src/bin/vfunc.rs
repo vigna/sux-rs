@@ -165,10 +165,11 @@ where
         }
         match args.hash_type {
             None => {
-                let (func, _) = builder.try_build_func(
+                let func = <VFunc<str, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                     DekoBufLineLender::from_path(filename)?.take(n),
                     FromCloneableIntoIterator::from(0_usize..),
-                    BitFieldVec::<Box<[usize]>>::new_padded,
+                    n,
+                    builder,
                     &mut pl,
                 )?;
                 if let Some(filename) = args.func {

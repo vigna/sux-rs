@@ -16,7 +16,7 @@ use crate::ambassador_impl_Index;
 use crate::traits::Backend;
 use ambassador::{Delegate, delegatable_trait};
 use impl_tools::autoimpl;
-use mem_dbg::{MemSize, MemDbg};
+use mem_dbg::{MemDbg, MemSize};
 use std::ops::Deref;
 use std::ops::Index;
 

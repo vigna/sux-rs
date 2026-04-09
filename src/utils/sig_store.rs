@@ -53,7 +53,7 @@
 #![allow(clippy::comparison_chain)]
 #![allow(clippy::type_complexity)]
 use anyhow::Result;
-use mem_dbg::{MemSize, MemDbg};
+use mem_dbg::{MemDbg, MemSize};
 
 use rdst::RadixKey;
 use std::{

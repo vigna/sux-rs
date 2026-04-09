@@ -29,7 +29,7 @@
 //!   [`next`](Iterator::next) and [`prev`](BidiIterator::prev).
 
 use impl_tools::autoimpl;
-use mem_dbg::{MemSize, MemDbg};
+use mem_dbg::{MemDbg, MemSize};
 
 /// Conversion into an [`Iterator`] starting from a given position.
 ///

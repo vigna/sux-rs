@@ -54,7 +54,7 @@ pub trait BitLength {
 
 use crate::traits::Word;
 use atomic_primitive::PrimitiveAtomicUnsigned;
-use mem_dbg::{MemSize, MemDbg};
+use mem_dbg::{MemDbg, MemSize};
 use num_primitive::PrimitiveInteger;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;

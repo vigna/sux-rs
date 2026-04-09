@@ -11,7 +11,7 @@ use crate::prelude::*;
 use crate::traits::{Backend, Word};
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
-use mem_dbg::{MemSize, MemDbg};
+use mem_dbg::{MemDbg, MemSize};
 use num_primitive::PrimitiveInteger;
 
 use crate::ambassador_impl_Index;

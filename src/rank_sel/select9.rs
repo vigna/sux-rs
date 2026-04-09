@@ -14,7 +14,7 @@ use crate::traits::{
 };
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
-use mem_dbg::{MemSize, MemDbg};
+use mem_dbg::{MemDbg, MemSize};
 use num_primitive::PrimitiveInteger;
 
 const ONES_STEP_9: u64 = (1u64 << 0)
