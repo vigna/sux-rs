@@ -547,7 +547,8 @@ mod build {
                                 &|sv: &SigVal<S0, u64>| {
                                     let lcp = (sv.val >> log2_bs) as usize;
                                     if inv_map.get(lcp) == escape_usize {
-                                        let shard_idx = sv.sig.high_bits(max_shb, max_shard_mask) as usize;
+                                        let shard_idx =
+                                            sv.sig.high_bits(max_shb, max_shard_mask) as usize;
                                         // SAFETY: each shard is processed by
                                         // exactly one thread.
                                         unsafe {
@@ -1325,7 +1326,8 @@ mod build {
                                 &|sv: &SigVal<S0, u64>| {
                                     let lcp = (sv.val >> log2_bs) as usize;
                                     if inv_map.get(lcp) == escape_usize {
-                                        let shard_idx = sv.sig.high_bits(max_shb, max_shard_mask) as usize;
+                                        let shard_idx =
+                                            sv.sig.high_bits(max_shb, max_shard_mask) as usize;
                                         // SAFETY: each shard is processed by
                                         // exactly one thread.
                                         unsafe {
