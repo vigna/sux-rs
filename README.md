@@ -43,7 +43,8 @@ provides the bit length, and on the traits [`AsRef<W>`]/[`AsMut<W>`], which
 provide concrete access to the underlying data. This approach makes it possible
 to use any structure that implements these traits as a bit vector, and to
 implement your own bit vector if you need specific features (e.g., support for
-unaligned access).
+unaligned access). Additionally, we support [`Index<usize, Output = bool>`] for
+bit vectors, so you can read them as you would read a slice of `bool`.
 
 Rank/select structures are built on backends implementing the [`Backend`] trait,
 providing via an associated type the word type, and on the traits above;
@@ -223,3 +224,4 @@ Union nor the Italian MUR can be held responsible for them.
 [`Word`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html#associatedtype.Word
 [`Backend`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html
 [balanced parantheses]: https://docs.rs/sux/latest/sux/bal_paren/index.html
+[`Index<usize, Output = bool>`]: https://doc.rust-lang.org/core/ops/index/trait.Index.html

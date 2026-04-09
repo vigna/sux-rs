@@ -98,6 +98,7 @@
 //! assert_eq!(unsafe { BitVec::from_raw_parts(ones.as_slice(), 1) }.count_ones(), 1);
 //! ```
 
+use crate::ambassador_impl_Index;
 use crate::bits::{assert_unaligned, debug_assert_unaligned, test_unaligned};
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::ambassador_impl_BitLength;
@@ -1051,11 +1052,13 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 /// `W::BITS - 4`, or exactly `W::BITS`). Using other widths will not
 /// cause undefined behavior, but may return incorrect values.
 ///
-/// We delegate [`Backend`], [`BitLength`], and [`AsRef<[Backend::Word]>`](AsRef)
-/// to make [`BitVecOps`] methods available.
+/// We delegate [`Backend`], [`BitLength`], and
+/// [`AsRef<[Backend::Word]>`](AsRef) to make [`BitVecOps`] methods available,
+/// and [`Index`] to make slice-like read-only access available.
 #[derive(Debug, Clone, Delegate, MemDbg, MemSize)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[delegate(Index<usize>, target = "0")]
 #[delegate(crate::traits::Backend, target = "0")]
 #[delegate(crate::traits::bit_vec_ops::BitLength, target = "0")]
 pub struct BitVecU<B>(BitVec<B>);

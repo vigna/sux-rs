@@ -366,7 +366,7 @@ pub type HtDistMmphfStr = HtDistMmphf<str>;
 /// # use dsi_progress_logger::no_logging;
 /// # use sux::func::hollow_trie::HtDistMmphfSliceU8;
 /// # use sux::utils::FromSlice;
-/// let keys: Vec<Vec<u8>> = vec![
+/// let keys = vec![
 ///     b"alpha".to_vec(),
 ///     b"beta".to_vec(),
 ///     b"delta".to_vec(),
@@ -1507,10 +1507,10 @@ mod build {
             let mut emitted = vec![false; num_nodes];
 
             // Collected keys and values for the two VFuncs.
-            let mut ff_keys: Vec<Vec<u8>> = Vec::new();
-            let mut ff_values: Vec<usize> = Vec::new();
-            let mut ext_keys: Vec<Vec<u8>> = Vec::new();
-            let mut ext_values: Vec<usize> = Vec::new();
+            let mut ff_keys = Vec::new();
+            let mut ff_values = Vec::new();
+            let mut ext_keys = Vec::new();
+            let mut ext_values = Vec::new();
 
             pl.info(format_args!(
                 "Computing behaviour keys ({n} keys, {num_delimiters} delimiters, {num_nodes} internal nodes)..."
@@ -1825,7 +1825,7 @@ mod build {
             // ── Pass 2: collect delimiters, build trie ────────────────
             let mut keys = keys.rewind()?;
             let mut builder = HollowTrieBuilder::new();
-            let mut delimiters: Vec<Vec<u8>> = Vec::with_capacity(num_delimiters);
+            let mut delimiters = Vec::with_capacity(num_delimiters);
             let mut i = 0usize;
             while let Some(key) = keys.next()? {
                 // Delimiter = last key of each full bucket
@@ -1863,10 +1863,10 @@ mod build {
             let mut keys = keys.rewind()?;
 
             let mut emitted = vec![false; num_nodes];
-            let mut ff_keys: Vec<Vec<u8>> = Vec::new();
-            let mut ff_values: Vec<usize> = Vec::new();
-            let mut ext_keys: Vec<Vec<u8>> = Vec::new();
-            let mut ext_values: Vec<usize> = Vec::new();
+            let mut ff_keys = Vec::new();
+            let mut ff_values = Vec::new();
+            let mut ext_keys = Vec::new();
+            let mut ext_values = Vec::new();
 
             pl.info(format_args!(
                 "Computing behaviour keys ({n} keys, {num_delimiters} delimiters, {num_nodes} internal nodes)..."
@@ -2183,10 +2183,10 @@ mod build {
             let mut keys = keys.rewind()?;
 
             let mut emitted = vec![false; num_nodes];
-            let mut ff_keys: Vec<Vec<u8>> = Vec::new();
-            let mut ff_values: Vec<usize> = Vec::new();
-            let mut ext_keys: Vec<Vec<u8>> = Vec::new();
-            let mut ext_values: Vec<usize> = Vec::new();
+            let mut ff_keys = Vec::new();
+            let mut ff_values = Vec::new();
+            let mut ext_keys = Vec::new();
+            let mut ext_values = Vec::new();
 
             pl.info(format_args!(
                 "Computing behaviour keys ({n} keys, {num_delimiters} delimiters, {num_nodes} internal nodes)..."
@@ -2495,10 +2495,10 @@ mod build {
             let mut keys = keys.rewind()?;
 
             let mut emitted = vec![false; num_nodes];
-            let mut ff_keys: Vec<Vec<u8>> = Vec::new();
-            let mut ff_values: Vec<usize> = Vec::new();
-            let mut ext_keys: Vec<Vec<u8>> = Vec::new();
-            let mut ext_values: Vec<usize> = Vec::new();
+            let mut ff_keys = Vec::new();
+            let mut ff_values = Vec::new();
+            let mut ext_keys = Vec::new();
+            let mut ext_values = Vec::new();
 
             pl.info(format_args!(
                 "Computing behaviour keys ({n} keys, {num_delimiters} delimiters, {num_nodes} internal nodes)..."
