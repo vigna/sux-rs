@@ -555,12 +555,19 @@ impl<
 > BalParen for JacobsonBalParen<B, P, O>
 {
     /// Returns the position of the matching close parenthesis for the open
-    /// parenthesis at bit position `pos`, or `None` if `pos` is out of bounds
-    /// or is not an open parenthesis.
+    /// parenthesis at bit position `pos`, or `None` if `pos` is not an
+    /// open parenthesis.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `pos` is out of bounds.
     fn find_close(&self, pos: usize) -> Option<usize> {
-        if pos >= self.paren.len() {
-            return None;
-        }
+        assert!(
+            pos < self.paren.len(),
+            "find_close: pos {} out of bounds for length {}",
+            pos,
+            self.paren.len()
+        );
         let word_idx = pos / WORD_BITS;
         let bit_idx = pos % WORD_BITS;
 

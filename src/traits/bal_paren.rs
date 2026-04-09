@@ -15,7 +15,11 @@ use impl_tools::autoimpl;
 #[delegatable_trait]
 pub trait BalParen {
     /// Returns the position of the matching close parenthesis for the open
-    /// parenthesis at bit position `pos`, or `None` if `pos` is out of
-    /// bounds or is not an open parenthesis.
+    /// parenthesis at bit position `pos`, or `None` if `pos` is not an
+    /// open parenthesis.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `pos` is out of bounds.
     fn find_close(&self, pos: usize) -> Option<usize>;
 }

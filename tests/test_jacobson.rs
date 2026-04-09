@@ -181,7 +181,13 @@ fn test_accessors() {
 fn test_empty() {
     let bp = JacobsonBalParen::new(BitVec::new(0));
     assert_eq!(bp.len(), 0);
-    assert_eq!(bp.find_close(0), None);
+}
+
+#[test]
+#[should_panic(expected = "out of bounds")]
+fn test_find_close_empty_panics() {
+    let bp = JacobsonBalParen::new(BitVec::new(0));
+    bp.find_close(0);
 }
 
 // ── find_close edge cases ───────────────────────────────────────────
@@ -190,7 +196,13 @@ fn test_empty() {
 fn test_find_close_not_open() {
     let bp = JacobsonBalParen::new(unsafe { BitVec::from_raw_parts(vec![0b0011], 4) });
     assert_eq!(bp.find_close(2), None); // close paren
-    assert_eq!(bp.find_close(4), None); // out of bounds
+}
+
+#[test]
+#[should_panic(expected = "out of bounds")]
+fn test_find_close_out_of_bounds() {
+    let bp = JacobsonBalParen::new(unsafe { BitVec::from_raw_parts(vec![0b0011], 4) });
+    bp.find_close(4);
 }
 
 #[test]
