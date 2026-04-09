@@ -1888,7 +1888,7 @@ where
 /// # #[cfg(feature = "rayon")]
 /// # fn main() -> anyhow::Result<()> {
 /// # use dsi_progress_logger::no_logging;
-/// # use sux::func::LcpMmphfStr;
+/// # use sux::func::Lcp2MmphfStr;
 /// # use sux::traits::TryIntoUnaligned;
 /// # use sux::utils::FromSlice;
 /// let keys = vec![
@@ -1928,7 +1928,7 @@ pub type Lcp2MmphfStr<
 /// # #[cfg(feature = "rayon")]
 /// # fn main() -> anyhow::Result<()> {
 /// # use dsi_progress_logger::no_logging;
-/// # use sux::func::LcpMmphfSliceU8;
+/// # use sux::func::Lcp2MmphfSliceU8;
 /// # use sux::traits::TryIntoUnaligned;
 /// # use sux::utils::FromSlice;
 /// let keys: Vec<Vec<u8>> = vec![

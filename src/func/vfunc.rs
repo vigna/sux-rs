@@ -485,6 +485,7 @@ mod build {
         /// # use sux::utils::FromCloneableIntoIterator;
         /// let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new(
         ///     FromCloneableIntoIterator::new(0..100),
+        ///     FromCloneableIntoIterator::new(0..100),
         ///     100,
         ///     no_logging![],
         /// )?;
@@ -535,6 +536,7 @@ mod build {
         /// # use dsi_progress_logger::no_logging;
         /// # use sux::utils::FromCloneableIntoIterator;
         /// let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
+        ///     FromCloneableIntoIterator::new(0..100),
         ///     FromCloneableIntoIterator::new(0..100),
         ///     100,
         ///     VBuilder::default().offline(true),

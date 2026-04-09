@@ -2087,6 +2087,7 @@ mod build {
         /// # use sux::bits::BitFieldVec;
         /// # use dsi_progress_logger::no_logging;
         /// # use sux::utils::FromSlice;
+        /// # use crate::sux::traits::TryIntoUnaligned;
         /// let keys = vec!["alpha", "beta", "delta", "gamma"];
         /// type BSFunc = SignedFunc<LcpMmphfStr, BitFieldVec<Box<[usize]>>>;
         /// let func =
@@ -2290,6 +2291,7 @@ mod build {
         /// # use sux::bits::BitFieldVec;
         /// # use dsi_progress_logger::no_logging;
         /// # use sux::utils::FromSlice;
+        /// # use crate::sux::traits::TryIntoUnaligned;
         /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
         /// let func =
         ///     <SignedFunc<Lcp2MmphfInt<u64>, BitFieldVec<Box<[usize]>>>>::try_new(

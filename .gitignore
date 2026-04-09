@@ -18,3 +18,4 @@ experiments/gen_sorted_u64
 dump.log
 perf-*.data
 err.new
+data
