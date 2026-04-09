@@ -697,6 +697,21 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>, C: Backend<Word = B::Word> + AsR
 
 impl<B: Backend<Word: Word> + AsRef<[B::Word]>> Eq for BitVec<B> {}
 
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> std::hash::Hash for BitVec<B> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let len = self.len();
+        len.hash(state);
+        let word_bits = B::Word::BITS as usize;
+        let full_words = len / word_bits;
+        self.as_ref()[..full_words].hash(state);
+        let residual = len % word_bits;
+        if residual != 0 {
+            // Mask off the padding bits before hashing the last partial word.
+            (self.as_ref()[full_words] << (word_bits - residual)).hash(state);
+        }
+    }
+}
+
 impl<B: Backend<Word: Word> + AsRef<[B::Word]>> Index<usize> for BitVec<B> {
     type Output = bool;
 

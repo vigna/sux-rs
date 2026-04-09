@@ -198,7 +198,7 @@ macro_rules! bit_field_vec {
 /// etc.).
 ///
 /// See the [module documentation](crate::bits) for more details.
-#[derive(Debug, Clone, Hash, MemSize, MemDbg, Delegate, value_traits::Subslices)]
+#[derive(Debug, Clone, MemSize, MemDbg, Delegate, value_traits::Subslices)]
 #[value_traits_subslices(bound = "B: AsRef<[B::Word]>")]
 #[value_traits_subslices(bound = "B::Word: Word")]
 #[derive(value_traits::SubslicesMut)]
@@ -1269,6 +1269,24 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>, C: Backend<Word = B::Word> + AsR
             || (self.bits.as_ref()[bit_len / bits] ^ other.bits.as_ref()[bit_len / bits])
                 << (bits - residual)
                 == B::Word::ZERO
+    }
+}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> Eq for BitFieldVec<B> {}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> std::hash::Hash for BitFieldVec<B> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.bit_width().hash(state);
+        self.len().hash(state);
+        let bits = B::Word::BITS as usize;
+        let bit_len = self.len() * self.bit_width();
+        let full_words = bit_len / bits;
+        self.bits.as_ref()[..full_words].hash(state);
+        let residual = bit_len % bits;
+        if residual != 0 {
+            // Mask off the padding bits before hashing the last partial word.
+            (self.bits.as_ref()[full_words] << (bits - residual)).hash(state);
+        }
     }
 }
 
