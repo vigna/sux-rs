@@ -236,8 +236,7 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 /// converted into (usually faster) structures using unaligned access. Due to
 /// genericity of all the type parameter involved, it is not possible to provide
 /// a [`From`] implementation for the unaligned version, but the conversion can
-/// be done using the map methods (see [this
-/// example](crate::func::HtDist#impl-From<<HtDist+as+TryIntoUnaligned>::Unaligned>-for-HtDist)).
+/// be done using the map methods.
 ///
 /// # Implementation details
 ///

@@ -39,8 +39,6 @@ use value_traits::slices::SliceByValue;
 /// trait, allowing it to be converted into (usually faster) structures using
 /// unaligned access.
 ///
-/// TODO: constructors & common derive
-///
 /// Please see the documentation of [`VBuilder`](crate::func::VBuilder) for
 /// construction examples.
 ///

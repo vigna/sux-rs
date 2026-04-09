@@ -50,11 +50,6 @@ fn default_max_num_threads() -> usize {
 
 /// A builder for [`VFunc`] and [`VFilter`](crate::dict::VFilter).
 ///
-/// Most users should not use the construction methods this structure directly.
-/// Instead, functions and filters have `try_new` and `try_new_with_builder`
-/// methods. In the second case, an instance of this structure can be passed
-/// to configure the construction.
-///
 /// There are two construction modes: in core memory (default) and
 /// [offline](VBuilder::offline); both use a [`SigStore`]. In the first case,
 /// space will be allocated in core memory for signatures and associated values
@@ -63,6 +58,8 @@ fn default_max_num_threads() -> usize {
 ///
 /// There are several setters: for example, you can [set the maximum number
 /// of threads](VBuilder::max_num_threads).
+///
+/// # Implementation details
 ///
 /// Initially, keys are scanned, turned into signatures, and stored in the
 /// [`SigStore`], possibly together with associated values.
@@ -73,36 +70,13 @@ fn default_max_num_threads() -> usize {
 /// particular in offline mode, can be significantly reduced. Note that using
 /// too many threads might actually be harmful due to memory contention.
 ///
-/// The generic parameters are explained in the [`VFunc`] documentation. You
-/// have to choose the backend: the remaining parameters (which tune the
-/// sharding and the hypergraph peeling) have default values that are the same
-/// as those of [`VFunc`]/[`VFilter`](crate::dict::VFilter), and some
-/// elaboration about them can be found in their documentation.
-///
+/// The generic parameters are explained in the [`VFunc`]/[`VFilter`]
+/// documentation.
+//
 /// Most methods require to pass one or two [`FallibleRewindableLender`]s
-/// (keys and possibly values), and the construction might fail and keys might
+/// (keys and possibly values), as the construction might fail and keys might
 /// be scanned again. The structures in the [`lenders`] module provide easy ways
-/// to build such lenders, even starting from compressed files of UTF-8 strings.
-/// The type of the keys of the resulting filter or function will be the type of
-/// the elements of the [`FallibleRewindableLender`].
-///
-/// # Low-level methods
-///
-/// - [`try_build_func`](Self::try_build_func) — builds a [`VFunc`],
-///   draining the store to save memory.
-///
-/// - [`try_build_func_and_store`](Self::try_build_func_and_store) — builds
-///   a [`VFunc`] and returns the populated [`ShardStore`] for reuse.
-///
-/// - [`try_build_func_with_store`](Self::try_build_func_with_store) — builds
-///   from an existing store (used by compound functions like [`VFunc2`]).
-///
-/// - [`try_build_filter`](Self::try_build_filter) — builds a filter-mode
-///   [`VFunc`] from keys only.
-///
-/// - [`try_populate_and_build`](Self::try_populate_and_build) — generic
-///   retry loop with a caller-supplied build closure.
-
+/// to build such lenders.
 #[derive(Setters, Debug, Derivative)]
 #[derivative(Default)]
 #[setters(generate = false)]
@@ -656,7 +630,7 @@ impl<
     /// structures, use
     /// [`try_build_func_and_store`](Self::try_build_func_and_store)
     /// instead.
-    pub fn try_build_func<
+    pub(crate) fn try_build_func<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<K>,
         P: ProgressLog + Clone + Send + Sync,
@@ -731,7 +705,7 @@ impl<
     /// you do not need the store, use
     /// [`try_build_func`](Self::try_build_func) instead, which drains
     /// the store to free memory during construction.
-    pub fn try_build_func_and_store<
+    pub(crate) fn try_build_func_and_store<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<K>,
         P: ProgressLog + Clone + Send + Sync,
@@ -802,7 +776,7 @@ impl<
     /// stored values from signatures via `get_val`.
     ///
     /// `new_data(bit_width, len)` allocates the backend storage.
-    pub fn try_build_filter<
+    pub(crate) fn try_build_filter<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<K>,
         P: ProgressLog + Clone + Send + Sync,
@@ -929,7 +903,7 @@ impl<
     /// `try_build_from_shard_iter` directly.
     ///
     /// Returns whatever `build_fn` returns on success.
-    pub fn try_populate_and_build<
+    pub(crate) fn try_populate_and_build<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<K>,
         V: BinSafe + Default + Send + Sync + Ord,
@@ -1006,7 +980,7 @@ impl<
     /// typically faster than the lender-based path for large in-memory key
     /// sets, because the expensive per-key hashing runs on all available
     /// cores.
-    pub fn try_par_populate_and_build<
+    pub(crate) fn try_par_populate_and_build<
         K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
         B: Borrow<K> + Sync,
         V: BinSafe + Default + Send + Sync + Ord + Copy,
