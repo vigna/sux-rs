@@ -585,12 +585,12 @@ mod build {
             // When r = 0, escape = 0 and the short function maps every key to
             // 0 = escape, so the long function is always queried.
 
-            // Set up per-shard counters for escaped entries, using the
-            // store's current shard granularity.
-            let shb = shard_edge.shard_high_bits();
-            let num_shards = 1usize << shb;
-            let shard_mask = (1u64 << shb) - 1;
-            let mut escaped_counts = vec![0usize; num_shards];
+            // Set up per-shard counters for escaped entries at maximum
+            // granularity so they can be re-aggregated to any target.
+            let max_shb = store.max_shard_high_bits();
+            let max_num_shards = 1usize << max_shb;
+            let max_shard_mask = (1u64 << max_shb) - 1;
+            let mut escaped_counts = vec![0usize; max_num_shards];
             let sync_counts = escaped_counts.as_sync_slice();
 
             // Save builder settings before the short VFunc consumes it.
@@ -608,7 +608,7 @@ mod build {
                 &|_e, sig_val| inv_map.get(get_val(sig_val.val)),
                 &|sv: &SigVal<S, V>| {
                     if inv_map.get(get_val(sv.val)) == escape {
-                        let shard_idx = sv.sig.high_bits(shb, shard_mask) as usize;
+                        let shard_idx = sv.sig.high_bits(max_shb, max_shard_mask) as usize;
                         // SAFETY: each shard is processed by exactly one
                         // thread, so no two threads access the same counter.
                         unsafe {
@@ -641,15 +641,11 @@ mod build {
 
             // Aggregate escaped_counts to the long function's shard granularity.
             let long_num_shards = 1usize << long_shard_high_bits;
-            let filtered_shard_sizes = if long_num_shards >= num_shards {
-                escaped_counts
-            } else {
-                let shards_per_long = num_shards / long_num_shards;
-                escaped_counts
-                    .chunks(shards_per_long)
-                    .map(|chunk| chunk.iter().sum())
-                    .collect()
-            };
+            let shards_per_long = max_num_shards / long_num_shards;
+            let filtered_shard_sizes: Vec<usize> = escaped_counts
+                .chunks(shards_per_long)
+                .map(|chunk| chunk.iter().sum())
+                .collect();
 
             pl.info(format_args!(
                 "Building key -> full value ({w} bits, {n_escaped} escaped keys, {:.1}%)...",

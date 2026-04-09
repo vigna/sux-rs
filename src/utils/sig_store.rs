@@ -547,18 +547,13 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
             files.push(BufReader::new(file));
         }
 
-        // Aggregate shard sizes as necessary
-        let shard_sizes = self
-            .shard_sizes
-            .chunks(1 << (self.max_shard_high_bits - shard_high_bits))
-            .map(|x| x.iter().sum())
-            .collect::<Vec<_>>();
         Ok(ShardStoreImpl {
             bucket_high_bits: self.buckets_high_bits,
             shard_high_bits,
+            max_shard_high_bits: self.max_shard_high_bits,
             buckets: files,
             buf_sizes: self.bucket_sizes,
-            shard_sizes,
+            fine_shard_sizes: self.shard_sizes,
             _marker: PhantomData,
         })
     }
@@ -610,18 +605,13 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
                 Arc::new(x)
             })
             .collect();
-        // Aggregate shard sizes as necessary
-        let shard_sizes = self
-            .shard_sizes
-            .chunks(1 << (self.max_shard_high_bits - shard_high_bits))
-            .map(|x| x.iter().sum())
-            .collect::<Vec<_>>();
         Ok(ShardStoreImpl {
             bucket_high_bits: self.buckets_high_bits,
             shard_high_bits,
+            max_shard_high_bits: self.max_shard_high_bits,
             buckets: files,
             buf_sizes: self.bucket_sizes,
-            shard_sizes,
+            fine_shard_sizes: self.shard_sizes,
             _marker: PhantomData,
         })
     }
@@ -777,8 +767,12 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
 /// combinations of type parameters. Having this trait greatly simplifies the
 /// type signatures.
 pub trait ShardStore<S: Sig, V: BinSafe> {
-    /// Returns the shard sizes.
-    fn shard_sizes(&self) -> &[usize];
+    /// Returns an iterator over the shard sizes at the current granularity.
+    ///
+    /// Yields one value per shard (i.e., 2<sup>`shard_high_bits`</sup>
+    /// values). Computed on the fly from fine-grained counters; callers
+    /// needing random access should `.collect()`.
+    fn shard_sizes(&self) -> Box<dyn Iterator<Item = usize> + '_>;
 
     /// Returns an iterator on shards.
     ///
@@ -793,20 +787,24 @@ pub trait ShardStore<S: Sig, V: BinSafe> {
     /// `drain` will yield no elements.
     fn drain(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_>;
 
-    /// Re-aggregates to a coarser shard granularity.
+    /// Changes the shard granularity.
     ///
-    /// `new_bits` must be less than or equal to the current
-    /// `shard_high_bits`. Recomputes `shard_sizes` from the underlying
-    /// per-bucket counts.
+    /// `new_bits` must be at most [`max_shard_high_bits`](Self::max_shard_high_bits).
+    /// Both coarsening and refining are supported; the fine-grained
+    /// counters from construction are never discarded.
     ///
     /// # Panics
     ///
-    /// Panics if `new_bits` is greater than the current `shard_high_bits`.
+    /// Panics if `new_bits` exceeds [`max_shard_high_bits`](Self::max_shard_high_bits).
     fn set_shard_high_bits(&mut self, new_bits: u32);
+
+    /// Returns the maximum value that can be passed to
+    /// [`set_shard_high_bits`](Self::set_shard_high_bits).
+    fn max_shard_high_bits(&self) -> u32;
 
     /// Returns the number of signature/value pairs in the store.
     fn len(&self) -> usize {
-        self.shard_sizes().iter().sum()
+        self.shard_sizes().sum()
     }
 }
 
@@ -818,14 +816,16 @@ pub trait ShardStore<S: Sig, V: BinSafe> {
 pub struct ShardStoreImpl<S, V, B> {
     /// The number of high bits used for bucket sorting.
     bucket_high_bits: u32,
-    /// The number of high bits defining a shard.
+    /// The number of high bits defining a shard (the current view).
     shard_high_bits: u32,
+    /// The maximum value of `shard_high_bits` (set at construction).
+    max_shard_high_bits: u32,
     /// The buckets (files or vectors).
     buckets: Vec<B>,
     /// The number of keys in each bucket.
     buf_sizes: Vec<usize>,
-    /// The number of keys in each shard.
-    shard_sizes: Vec<usize>,
+    /// Per-shard key counts at `max_shard_high_bits` granularity (never changed).
+    fine_shard_sizes: Vec<usize>,
     _marker: PhantomData<(S, V)>,
 }
 
@@ -834,19 +834,22 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync, B: Send + Sync> S
 where
     for<'a> ShardIter<S, V, B, &'a mut Self>: Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync,
 {
-    fn shard_sizes(&self) -> &[usize] {
-        &self.shard_sizes
+    fn shard_sizes(&self) -> Box<dyn Iterator<Item = usize> + '_> {
+        let coarsen = 1usize << (self.max_shard_high_bits - self.shard_high_bits);
+        Box::new(
+            self.fine_shard_sizes
+                .chunks(coarsen)
+                .map(|c| c.iter().sum()),
+        )
     }
 
     fn set_shard_high_bits(&mut self, new_bits: u32) {
-        assert!(new_bits <= self.shard_high_bits);
+        assert!(new_bits <= self.max_shard_high_bits);
         self.shard_high_bits = new_bits;
-        let buckets_per_shard = 1usize << (self.bucket_high_bits - new_bits);
-        self.shard_sizes = self
-            .buf_sizes
-            .chunks(buckets_per_shard)
-            .map(|chunk| chunk.iter().sum())
-            .collect();
+    }
+
+    fn max_shard_high_bits(&self) -> u32 {
+        self.max_shard_high_bits
     }
 
     fn iter(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
@@ -909,7 +912,9 @@ impl<
 
             let to_aggr = 1 << (store.bucket_high_bits - store.shard_high_bits);
 
-            let len = store.shard_sizes[self.next_shard];
+            let coarsen = 1usize << (store.max_shard_high_bits - store.shard_high_bits);
+            let base = self.next_shard * coarsen;
+            let len: usize = store.fine_shard_sizes[base..base + coarsen].iter().sum();
             let mut shard = Vec::<SigVal<S, V>>::with_capacity(len);
 
             // SAFETY: we just allocated this vector so it is safe to set the length,
@@ -949,9 +954,11 @@ impl<
 
                 // Index of the first shard we are going to retrieve
                 let shard_offset = self.next_bucket * split_into;
+                let coarsen = 1usize << (store.max_shard_high_bits - store.shard_high_bits);
                 for shard in shard_offset..shard_offset + split_into {
-                    self.shards
-                        .push_back(Vec::with_capacity(store.shard_sizes[shard]));
+                    let base = shard * coarsen;
+                    let cap: usize = store.fine_shard_sizes[base..base + coarsen].iter().sum();
+                    self.shards.push_back(Vec::with_capacity(cap));
                 }
 
                 let mut len = store.buf_sizes[self.next_bucket];
@@ -1033,7 +1040,9 @@ impl<
 
             let to_aggr = 1 << (store.bucket_high_bits - store.shard_high_bits);
 
-            let len = store.shard_sizes[self.next_shard];
+            let coarsen = 1usize << (store.max_shard_high_bits - store.shard_high_bits);
+            let base = self.next_shard * coarsen;
+            let len: usize = store.fine_shard_sizes[base..base + coarsen].iter().sum();
             let mut shard = Vec::with_capacity(len);
 
             for i in self.next_bucket..self.next_bucket + to_aggr {
@@ -1059,9 +1068,11 @@ impl<
 
                 // Index of the first shard we are going to retrieve
                 let shard_offset = self.next_bucket * split_into;
+                let coarsen = 1usize << (store.max_shard_high_bits - store.shard_high_bits);
                 for shard in shard_offset..shard_offset + split_into {
-                    self.shards
-                        .push_back(Vec::with_capacity(store.shard_sizes[shard]));
+                    let base = shard * coarsen;
+                    let cap: usize = store.fine_shard_sizes[base..base + coarsen].iter().sum();
+                    self.shards.push_back(Vec::with_capacity(cap));
                 }
 
                 let shard_mask = (1 << store.shard_high_bits) - 1;
@@ -1099,7 +1110,7 @@ where
 {
     #[inline(always)]
     fn len(&self) -> usize {
-        self.store.borrow().shard_sizes.len() - self.next_shard
+        (1usize << self.store.borrow().shard_high_bits) - self.next_shard
     }
 }
 
@@ -1124,16 +1135,14 @@ fn write_binary<S: BinSafe + Sig, V: BinSafe>(
     writer.write_all(buf)
 }
 
-/// A [`ShardStore`] wrapper that filters entries and optionally
-/// re-aggregates shards to a coarser granularity.
+/// A [`ShardStore`] wrapper that filters entries and re-shards to an
+/// arbitrary granularity.
 ///
 /// [`SigVal`]s for which the predicate returns `false` are excluded.
 ///
-/// If the requested `shard_high_bits` results in fewer shards than
-/// the inner store,
 /// [`set_shard_high_bits`](ShardStore::set_shard_high_bits) is called on
-/// the inner store so that shards are re-aggregated once at the bucket
-/// level, avoiding double aggregation.
+/// the inner store to set the desired granularity (both coarsening and
+/// refining are supported up to [`max_shard_high_bits`](ShardStore::max_shard_high_bits)).
 pub struct FilteredShardStore<'a, SS: ?Sized, S, V, F> {
     /// The inner store.
     inner: &'a mut SS,
@@ -1163,13 +1172,7 @@ where
         filter: F,
         shard_sizes: Vec<usize>,
     ) -> Self {
-        let old_num_shards = inner.shard_sizes().len();
-        let new_num_shards = (1usize << shard_high_bits).min(old_num_shards);
-
-        if new_num_shards < old_num_shards {
-            inner.set_shard_high_bits(shard_high_bits);
-        }
-
+        inner.set_shard_high_bits(shard_high_bits);
         Self {
             inner,
             filter,
@@ -1186,8 +1189,8 @@ where
     V: BinSafe + Copy + Send + Sync,
     F: Fn(&SigVal<S, V>) -> bool + Send + Sync,
 {
-    fn shard_sizes(&self) -> &[usize] {
-        &self.shard_sizes
+    fn shard_sizes(&self) -> Box<dyn Iterator<Item = usize> + '_> {
+        Box::new(self.shard_sizes.iter().copied())
     }
 
     fn set_shard_high_bits(&mut self, new_bits: u32) {
@@ -1198,6 +1201,10 @@ where
             .iter()
             .map(|shard| shard.iter().filter(|sv| (self.filter)(sv)).count())
             .collect();
+    }
+
+    fn max_shard_high_bits(&self) -> u32 {
+        self.inner.max_shard_high_bits()
     }
 
     fn iter(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
@@ -1222,12 +1229,16 @@ where
 }
 
 impl<S: Sig, V: BinSafe> ShardStore<S, V> for Box<dyn ShardStore<S, V> + Send + Sync> {
-    fn shard_sizes(&self) -> &[usize] {
+    fn shard_sizes(&self) -> Box<dyn Iterator<Item = usize> + '_> {
         (**self).shard_sizes()
     }
 
     fn set_shard_high_bits(&mut self, new_bits: u32) {
         (**self).set_shard_high_bits(new_bits)
+    }
+
+    fn max_shard_high_bits(&self) -> u32 {
+        (**self).max_shard_high_bits()
     }
 
     fn iter(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {

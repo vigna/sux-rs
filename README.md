@@ -65,7 +65,8 @@ bit width of the fields is exactly that of the word type) interchangeable.
 
 The [`TryIntoUnaligned`] trait provides a [`try_into_unaligned`] method that can
 be used to convert recursively all components of a structure into components
-using unaligned access to retrieve bit sequences.
+using unaligned access to retrieve bit sequences. This approach makes unaligned
+access typesafe.
 
 ## ε-serde support
 

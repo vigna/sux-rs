@@ -26,12 +26,13 @@
 //!   [`LcpMmphfSliceU8`] for common instantiations.
 //!
 //! - [`Lcp2MmphfInt`]/[`Lcp2Mmphf`] are versions of
-//!   [`LcpMmphfInt`]/[`LcpMmphf`] that use a [`VFunc2`] to reduce space usage, at
-//!   the cost of slightly slower queries.
+//!   [`LcpMmphfInt`]/[`LcpMmphf`] that use a [`VFunc2`]-like technique to reduce
+//!   space usage, at the cost of slightly slower queries.
 //!
-//! - [`HtDistMmphfInt`]/[`HtDistMmphf`] are *monotone minimal perfect hash
-//!   functions* based on a hollow trie distributor. See [`HtDistMmphfStr`] and
-//!   [`HtDistMmphfSliceU8`] for common instantiations.
+//! - [`HtDistMmphfInt`]/[`HtDistMmphf`] are monotone minimal perfect hash
+//!   functions based on a hollow trie distributor. See [`HtDistMmphfStr`] and
+//!   [`HtDistMmphfSliceU8`] for common instantiations. They are extremely
+//!   space-efficient, but also much slower than the LCP-based ones.
 //!
 //! - [`SignedFunc`] wraps any of the above with per-key verification hashes,
 //!   returning `None` for keys outside the original set. Use `Box<[W]>` for

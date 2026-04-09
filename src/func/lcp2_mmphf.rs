@@ -523,10 +523,10 @@ mod build {
                             // -- Build fused VFunc: (remapped_lcp << log2_bs) | offset --
                             let fused_max = (escape_usize << log2_bs) | bucket_mask;
 
-                            let shb = shard_edge.shard_high_bits();
-                            let num_shards_se = 1usize << shb;
-                            let shard_mask = (1u64 << shb) - 1;
-                            let mut escaped_counts = vec![0usize; num_shards_se];
+                            let max_shb = store.max_shard_high_bits();
+                            let max_num_shards = 1usize << max_shb;
+                            let max_shard_mask = (1u64 << max_shb) - 1;
+                            let mut escaped_counts = vec![0usize; max_num_shards];
                             let sync_counts = escaped_counts.as_sync_slice();
 
                             pl.info(format_args!(
@@ -547,7 +547,7 @@ mod build {
                                 &|sv: &SigVal<S0, u64>| {
                                     let lcp = (sv.val >> log2_bs) as usize;
                                     if inv_map.get(lcp) == escape_usize {
-                                        let shard_idx = sv.sig.high_bits(shb, shard_mask) as usize;
+                                        let shard_idx = sv.sig.high_bits(max_shb, max_shard_mask) as usize;
                                         // SAFETY: each shard is processed by
                                         // exactly one thread.
                                         unsafe {
@@ -566,12 +566,9 @@ mod build {
                                 let long_shb = long_shard_edge.shard_high_bits();
 
                                 let long_num_shards = 1usize << long_shb;
-                                let filtered_shard_sizes = if long_num_shards >= num_shards_se {
-                                    escaped_counts
-                                } else {
-                                    let per = num_shards_se / long_num_shards;
-                                    escaped_counts.chunks(per).map(|c| c.iter().sum()).collect()
-                                };
+                                let per = max_num_shards / long_num_shards;
+                                let filtered_shard_sizes: Vec<usize> =
+                                    escaped_counts.chunks(per).map(|c| c.iter().sum()).collect();
 
                                 pl.info(format_args!(
                                     "Building LCP long map ({n_escaped} escaped \
@@ -873,10 +870,10 @@ mod build {
                     // -- Build fused VFunc: (remapped_lcp << log2_bs) | offset --
                     let fused_max = (escape_usize << log2_bs) | bucket_mask;
 
-                    let shb = shard_edge.shard_high_bits();
-                    let num_shards_se = 1usize << shb;
-                    let shard_mask = (1u64 << shb) - 1;
-                    let mut escaped_counts = vec![0usize; num_shards_se];
+                    let max_shb = store.max_shard_high_bits();
+                    let max_num_shards = 1usize << max_shb;
+                    let max_shard_mask = (1u64 << max_shb) - 1;
+                    let mut escaped_counts = vec![0usize; max_num_shards];
                     let sync_counts = escaped_counts.as_sync_slice();
 
                     let fused = builder.try_build_func_with_store_and_inspect::<K, u64>(
@@ -892,7 +889,7 @@ mod build {
                         &|sv: &SigVal<S0, u64>| {
                             let lcp = (sv.val >> log2_bs) as usize;
                             if inv_map.get(lcp) == escape_usize {
-                                let shard_idx = sv.sig.high_bits(shb, shard_mask) as usize;
+                                let shard_idx = sv.sig.high_bits(max_shb, max_shard_mask) as usize;
                                 // SAFETY: each shard is processed by
                                 // exactly one thread.
                                 unsafe {
@@ -911,12 +908,9 @@ mod build {
                         let long_shb = long_shard_edge.shard_high_bits();
 
                         let long_num_shards = 1usize << long_shb;
-                        let filtered_shard_sizes = if long_num_shards >= num_shards_se {
-                            escaped_counts
-                        } else {
-                            let per = num_shards_se / long_num_shards;
-                            escaped_counts.chunks(per).map(|c| c.iter().sum()).collect()
-                        };
+                        let per = max_num_shards / long_num_shards;
+                        let filtered_shard_sizes: Vec<usize> =
+                            escaped_counts.chunks(per).map(|c| c.iter().sum()).collect();
 
                         pl.info(format_args!(
                             "Building LCP long map ({n_escaped} escaped \
@@ -1307,10 +1301,10 @@ mod build {
                             // -- Build fused VFunc: (remapped_lcp << log2_bs) | offset --
                             let fused_max = (escape_usize << log2_bs) | bucket_mask;
 
-                            let shb = shard_edge.shard_high_bits();
-                            let num_shards_se = 1usize << shb;
-                            let shard_mask = (1u64 << shb) - 1;
-                            let mut escaped_counts = vec![0usize; num_shards_se];
+                            let max_shb = store.max_shard_high_bits();
+                            let max_num_shards = 1usize << max_shb;
+                            let max_shard_mask = (1u64 << max_shb) - 1;
+                            let mut escaped_counts = vec![0usize; max_num_shards];
                             let sync_counts = escaped_counts.as_sync_slice();
 
                             pl.info(format_args!(
@@ -1331,7 +1325,7 @@ mod build {
                                 &|sv: &SigVal<S0, u64>| {
                                     let lcp = (sv.val >> log2_bs) as usize;
                                     if inv_map.get(lcp) == escape_usize {
-                                        let shard_idx = sv.sig.high_bits(shb, shard_mask) as usize;
+                                        let shard_idx = sv.sig.high_bits(max_shb, max_shard_mask) as usize;
                                         // SAFETY: each shard is processed by
                                         // exactly one thread.
                                         unsafe {
@@ -1350,12 +1344,9 @@ mod build {
                                 let long_shb = long_shard_edge.shard_high_bits();
 
                                 let long_num_shards = 1usize << long_shb;
-                                let filtered_shard_sizes = if long_num_shards >= num_shards_se {
-                                    escaped_counts
-                                } else {
-                                    let per = num_shards_se / long_num_shards;
-                                    escaped_counts.chunks(per).map(|c| c.iter().sum()).collect()
-                                };
+                                let per = max_num_shards / long_num_shards;
+                                let filtered_shard_sizes: Vec<usize> =
+                                    escaped_counts.chunks(per).map(|c| c.iter().sum()).collect();
 
                                 pl.info(format_args!(
                                     "Building LCP long map ({n_escaped} escaped \
@@ -1681,10 +1672,10 @@ mod build {
                     // -- Build fused VFunc: (remapped_lcp << log2_bs) | offset --
                     let fused_max = (escape_usize << log2_bs) | bucket_mask;
 
-                    let shb = shard_edge.shard_high_bits();
-                    let num_shards_se = 1usize << shb;
-                    let shard_mask = (1u64 << shb) - 1;
-                    let mut escaped_counts = vec![0usize; num_shards_se];
+                    let max_shb = store.max_shard_high_bits();
+                    let max_num_shards = 1usize << max_shb;
+                    let max_shard_mask = (1u64 << max_shb) - 1;
+                    let mut escaped_counts = vec![0usize; max_num_shards];
                     let sync_counts = escaped_counts.as_sync_slice();
 
                     let fused = builder.try_build_func_with_store_and_inspect::<K, u64>(
@@ -1700,7 +1691,7 @@ mod build {
                         &|sv: &SigVal<S0, u64>| {
                             let lcp = (sv.val >> log2_bs) as usize;
                             if inv_map.get(lcp) == escape_usize {
-                                let shard_idx = sv.sig.high_bits(shb, shard_mask) as usize;
+                                let shard_idx = sv.sig.high_bits(max_shb, max_shard_mask) as usize;
                                 // SAFETY: each shard is processed by
                                 // exactly one thread.
                                 unsafe {
@@ -1719,12 +1710,9 @@ mod build {
                         let long_shb = long_shard_edge.shard_high_bits();
 
                         let long_num_shards = 1usize << long_shb;
-                        let filtered_shard_sizes = if long_num_shards >= num_shards_se {
-                            escaped_counts
-                        } else {
-                            let per = num_shards_se / long_num_shards;
-                            escaped_counts.chunks(per).map(|c| c.iter().sum()).collect()
-                        };
+                        let per = max_num_shards / long_num_shards;
+                        let filtered_shard_sizes: Vec<usize> =
+                            escaped_counts.chunks(per).map(|c| c.iter().sum()).collect();
 
                         pl.info(format_args!(
                             "Building LCP long map ({n_escaped} escaped \

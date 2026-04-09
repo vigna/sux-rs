@@ -544,7 +544,7 @@ where
         // The shard structure is fixed by the store (set at `into_shard_store`
         // time). We only reconfigure graph parameters (c, lge, segment size,
         // vertex count) for the actual key count and shard sizes.
-        let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
+        let max_shard = shard_store.shard_sizes().max().unwrap_or(0);
         (self.c, self.lge) = self.shard_edge.set_up_graphs(self.num_keys, max_shard);
 
         pl.info(format_args!(
@@ -1066,7 +1066,7 @@ impl<
                 shard_edge.set_up_shards(num_keys, self.eps);
 
                 let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
-                let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
+                let max_shard = shard_store.shard_sizes().max().unwrap_or(0);
 
                 if max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64 {
                     Err(SolveError::MaxShardTooBig.into())
@@ -1237,7 +1237,7 @@ impl<
         let start = Instant::now();
 
         let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
-        let max_shard = shard_store.shard_sizes().iter().copied().max().unwrap_or(0);
+        let max_shard = shard_store.shard_sizes().max().unwrap_or(0);
 
         if shard_edge.shard_high_bits() != 0 {
             pl.info(format_args!(
