@@ -273,7 +273,7 @@ struct HtDist<
 }
 
 /// A monotone minimal perfect hash function for sorted byte-sequence keys,
-/// based on a hollow trie distributor ([`HtDist`]) and per-bucket offsets
+/// based on a hollow trie distributor (`HtDist`) and per-bucket offsets
 /// stored in a [`VFunc`].
 ///
 /// See the [module documentation](self) for the algorithmic description.
@@ -421,7 +421,7 @@ struct HtDistInt<
 }
 
 /// A monotone minimal perfect hash function for sorted integer keys,
-/// based on a hollow trie distributor ([`HtDistInt`]) and per-bucket
+/// based on a hollow trie distributor (`HtDistInt`) and per-bucket
 /// offsets stored in a [`VFunc`].
 ///
 /// See the [module documentation](self) for the algorithmic description.
@@ -1463,9 +1463,8 @@ mod build {
         ///
         /// The keys must be in strictly increasing lexicographic order.
         ///
-        /// Keys must be provided as a [`FallibleRewindableLender`]. The
-        /// [`lenders`](crate::utils::lenders) module provides easy ways
-        /// to build such lenders.
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
+        /// module provides easy ways to build such lenders.
         pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
             mut keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -1833,9 +1832,8 @@ mod build {
         ///
         /// The keys must be in strictly increasing order.
         ///
-        /// Keys must be provided as a [`FallibleRewindableLender`]. The
-        /// [`lenders`](crate::utils::lenders) module provides easy ways
-        /// to build such lenders.
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
+        /// module provides easy ways to build such lenders.
         pub fn try_new(
             mut keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,

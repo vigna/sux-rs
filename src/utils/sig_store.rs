@@ -171,9 +171,8 @@ impl<S: Sig + PartialEq, V: BinSafe> PartialEq for SigVal<S, V> {
 /// Zero-sized placeholder value type for filter-mode construction.
 ///
 /// Used internally by [`VFilter`](crate::dict::VFilter) and
-/// [`VBuilder::try_build_filter`](crate::func::VBuilder::try_build_filter)
-/// when building structures that map keys to hash-derived values rather
-/// than caller-supplied values. All arithmetic operations ([`BitXor`],
+/// `VBuilder::try_build_filter` when building structures that map keys to
+/// hash-derived values rather than caller-supplied values. All arithmetic operations ([`BitXor`],
 /// [`BitXorAssign`]) are no-ops.
 pub struct EmptyVal(());
 

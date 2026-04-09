@@ -70,8 +70,8 @@ fn default_max_num_threads() -> usize {
 /// particular in offline mode, can be significantly reduced. Note that using
 /// too many threads might actually be harmful due to memory contention.
 ///
-/// The generic parameters are explained in the [`VFunc`]/[`VFilter`]
-/// documentation.
+/// The generic parameters are explained in the [`VFunc`] /
+/// [`VFilter`](crate::dict::VFilter) documentation.
 //
 /// Most methods require to pass one or two [`FallibleRewindableLender`]s
 /// (keys and possibly values), as the construction might fail and keys might

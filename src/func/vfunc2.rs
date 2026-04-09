@@ -354,8 +354,8 @@ mod build {
         ///
         /// * `keys` and `values` must be provided as
         ///   [`FallibleRewindableLender`]s, aligned (one value per key,
-        ///   same order). The [`lenders`](crate::utils::lenders) module
-        ///   provides easy ways to build such lenders.
+        ///   same order). The [`lenders`] module provides easy ways to
+        ///   build such lenders.
         /// * `n` is the expected number of keys; a significantly wrong
         ///   value may degrade performance or cause extra retries.
         ///
@@ -407,8 +407,8 @@ mod build {
         ///
         /// * `keys` and `values` must be provided as
         ///   [`FallibleRewindableLender`]s, aligned (one value per key,
-        ///   same order). The [`lenders`](crate::utils::lenders) module
-        ///   provides easy ways to build such lenders.
+        ///   same order). The [`lenders`] module provides easy ways to
+        ///   build such lenders.
         /// * `n` is the expected number of keys.
         ///
         /// The builder controls construction parameters such as [offline

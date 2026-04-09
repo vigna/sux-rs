@@ -183,9 +183,8 @@ mod build {
         ///
         /// The keys must be provided in strictly increasing order.
         ///
-        /// Keys must be provided as a [`FallibleRewindableLender`]. The
-        /// [`lenders`](crate::utils::lenders) module provides easy ways
-        /// to build such lenders.
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
+        /// module provides easy ways to build such lenders.
         ///
         /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
         /// parallelizes the hash computation for faster construction.
@@ -231,9 +230,8 @@ mod build {
         ///
         /// The keys must be provided in strictly increasing order.
         ///
-        /// Keys must be provided as a [`FallibleRewindableLender`]. The
-        /// [`lenders`](crate::utils::lenders) module provides easy ways
-        /// to build such lenders.
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
+        /// module provides easy ways to build such lenders.
         ///
         /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
         /// for parallel hash computation from slices.
@@ -686,9 +684,8 @@ mod build {
         /// as `K` (e.g., `&String` for `K = str`, `&Vec<u8>` for
         /// `K = [u8]`).
         ///
-        /// Keys must be provided as a [`FallibleRewindableLender`]. The
-        /// [`lenders`](crate::utils::lenders) module provides easy ways
-        /// to build such lenders.
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
+        /// module provides easy ways to build such lenders.
         ///
         /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
         /// parallelizes the hash computation for faster construction.
@@ -734,9 +731,8 @@ mod build {
         ///
         /// The keys must be in strictly increasing lexicographic order.
         ///
-        /// Keys must be provided as a [`FallibleRewindableLender`]. The
-        /// [`lenders`](crate::utils::lenders) module provides easy ways
-        /// to build such lenders.
+        /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
+        /// module provides easy ways to build such lenders.
         ///
         /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
         /// for parallel hash computation from slices.
