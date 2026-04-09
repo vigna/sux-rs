@@ -288,7 +288,7 @@ impl<K: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableFunc for VF
 /// # #[cfg(not(feature = "rayon"))]
 /// # fn main() {}
 /// ```
-#[derive(Debug, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SignedFunc<F, H> {

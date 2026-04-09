@@ -59,7 +59,7 @@ use value_traits::slices::SliceByValue;
 /// and practice of monotone minimal perfect
 /// hashing](https://doi.org/10.1145/1963190.2025378). *ACM Journal of
 /// Experimental Algorithmics*, 16(3):3.2:1−3.2:26, 2011.
-#[derive(MemDbg, MemSize)]
+#[derive(Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(
     feature = "epserde",

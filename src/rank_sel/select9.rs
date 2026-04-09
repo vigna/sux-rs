@@ -14,7 +14,7 @@ use crate::traits::{
 };
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
-use mem_dbg::{MemDbg, MemSize};
+use mem_dbg::{MemSize, MemDbg};
 use num_primitive::PrimitiveInteger;
 
 const ONES_STEP_9: u64 = (1u64 << 0)
@@ -126,7 +126,7 @@ use std::ops::{Deref, Index};
 /// assert_eq!(select9[7], true);
 /// # }
 /// ```
-#[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
+#[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(Index<usize>, target = "rank9")]

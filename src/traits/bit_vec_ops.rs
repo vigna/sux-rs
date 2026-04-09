@@ -54,7 +54,7 @@ pub trait BitLength {
 
 use crate::traits::Word;
 use atomic_primitive::PrimitiveAtomicUnsigned;
-use mem_dbg::{MemDbg, MemSize};
+use mem_dbg::{MemSize, MemDbg};
 use num_primitive::PrimitiveInteger;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -265,7 +265,7 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
 }
 
 /// An iterator over the bits of a bit vector as booleans.
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct BitIter<'a, W: Word, B: ?Sized> {
     bits: &'a B,
     len: usize,
@@ -310,7 +310,7 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> ExactSizeIterator for BitIter<'_, W, B> {
 impl<W: Word, B: ?Sized + AsRef<[W]>> FusedIterator for BitIter<'_, W, B> {}
 
 /// An iterator over the positions of the ones in a bit vector.
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct OnesIter<'a, W: Word, B: ?Sized> {
     bits: &'a B,
     len: usize,
@@ -365,7 +365,7 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for OnesIter<'_, W, B> {
 impl<W: Word, B: ?Sized + AsRef<[W]>> FusedIterator for OnesIter<'_, W, B> {}
 
 /// An iterator over the positions of the zeros in a bit vector.
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct ZerosIter<'a, W: Word, B: ?Sized> {
     bits: &'a B,
     len: usize,
@@ -678,7 +678,7 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
 ///
 /// Note that modifying the bit vector while iterating over it will lead to
 /// behavior depending on processor scheduling and memory model.
-#[derive(Debug, MemDbg, MemSize)]
+#[derive(Debug, MemSize, MemDbg)]
 pub struct AtomicBitIter<'a, A, B: ?Sized> {
     bits: &'a B,
     len: usize,

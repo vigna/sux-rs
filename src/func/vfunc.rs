@@ -69,7 +69,7 @@ use std::borrow::Borrow;
 ///   coupled with `[u64; 1]` signatures. For functions with more than a few
 ///   dozen billion keys, you might try
 ///   [`FuseLge3FullSigs`](crate::func::shard_edge::FuseLge3FullSigs).
-#[derive(Debug, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct VFunc<K: ?Sized, D, S = [u64; 2], E = FuseLge3Shards> {

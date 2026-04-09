@@ -47,7 +47,7 @@ use value_traits::slices::SliceByValue;
 /// * `W`: The unsigned integer type used to store hashes.
 /// * `F`: The underlying [`VFunc`] type (determines key type, signature
 ///   type, sharding, and backend).
-#[derive(Debug, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(
     feature = "epserde",
     derive(epserde::Epserde),

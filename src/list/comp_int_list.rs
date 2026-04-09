@@ -76,7 +76,7 @@ use value_traits::slices::SliceByValue;
 ///   [`BitVec<Box<[usize]>>`].
 /// - `D`: The delimiter structure. Must implement `SliceByValue<Value = u64>`.
 ///   Defaults to [`EfSeq<u64>`](EfSeq).
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(
     feature = "epserde",
     derive(epserde::Epserde),

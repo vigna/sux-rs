@@ -277,7 +277,7 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// assert_eq!(ef.get(0), 0);
 /// assert_eq!(ef.get(1), 2);
 /// ```
-#[derive(Debug, Clone, Copy, Hash, MemDbg, MemSize, value_traits::Subslices)]
+#[derive(Debug, Clone, Hash, MemSize, MemDbg, value_traits::Subslices)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[value_traits_subslices(bound = "V: Word + PrimitiveNumberAs<usize>")]
@@ -1355,7 +1355,7 @@ where
 }
 
 /// An iterator for [`EliasFano`].
-#[derive(MemDbg, MemSize)]
+#[derive(MemSize, MemDbg)]
 pub struct EliasFanoIter<
     'a,
     V: Word + PrimitiveNumberAs<usize>,
@@ -1587,7 +1587,7 @@ where
 /// and accesses low bits through a backward unchecked iterator.
 ///
 /// This iterator is slightly slower than a [forward iterator](EliasFanoIter).
-#[derive(MemDbg, MemSize)]
+#[derive(MemSize, MemDbg)]
 pub struct EliasFanoBackIter<
     'a,
     V: Word + PrimitiveNumberAs<usize>,
@@ -1762,7 +1762,7 @@ where
 ///
 /// This iterator is slightly slower than a [backward
 /// iterator](EliasFanoBackIter), but much faster than using selection.
-#[derive(MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct EliasFanoBidiIter<
     'a,
     V: Word + PrimitiveNumberAs<usize>,
@@ -2023,7 +2023,7 @@ impl<V: Word + PrimitiveNumberAs<usize>, A: AsRef<[V]>> From<A>
 /// assert_eq!(iter.next(), Some(10u64));
 /// assert_eq!(iter.next(), None);
 /// ```
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct EliasFanoBuilder<V: Word = usize> {
     n: usize,
     u: V,
@@ -2216,7 +2216,7 @@ impl<V: Word + PrimitiveNumberAs<usize>> Extend<V> for EliasFanoBuilder<V> {
 /// assert_eq!(iter.next(), None);
 /// ```
 
-#[derive(MemDbg, MemSize)]
+#[derive(MemSize, MemDbg)]
 pub struct EliasFanoConcurrentBuilder<V: Word + AtomicPrimitive>
 where
     Atomic<V>: PrimitiveAtomicUnsigned,

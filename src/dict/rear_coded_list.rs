@@ -171,7 +171,7 @@ use lender::{FusedLender, for_};
 use mem_dbg::*;
 use std::borrow::Borrow;
 
-#[derive(Debug, Clone, MemDbg, MemSize, Default)]
+#[derive(Debug, Clone, MemSize, MemDbg, Default)]
 #[mem_size(flat)]
 /// Statistics of the encoded data.
 struct Stats {
@@ -208,7 +208,7 @@ struct Stats {
 /// respectively. The const boolean parameter `SORTED` specifies whether the
 /// elements are sorted in ascending order and enables, if true, the
 /// implementation of [`IndexedDict`].
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RearCodedList<I: ?Sized, O, D = Box<[u8]>, P = Box<[usize]>, const SORTED: bool = true> {
@@ -506,7 +506,7 @@ impl<
 // Lenders
 
 /// Sequential [`Lender`] over the contents of the list.
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct Lend<
     'a,
     I: PartialEq<O> + PartialEq + ?Sized,
@@ -678,7 +678,7 @@ where
 // Iterators
 
 /// Sequential [`Iterator`] over the contents of the list.
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct Iter<
     'a,
     I: PartialEq<O> + PartialEq + ?Sized,
@@ -823,7 +823,7 @@ where
 /// You have to specify two types: the input type (currently, either `str` or `[u8]`)
 /// and a boolean constant `SORTED` that indicates whether the strings are sorted
 /// in ascending order (which will enable checks and indexing capabilities).
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct RearCodedListBuilder<I: ?Sized, const SORTED: bool = true> {
     /// The number of strings in a block; this value trades compression for speed.
     ratio: usize,

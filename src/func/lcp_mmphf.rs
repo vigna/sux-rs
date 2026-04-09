@@ -64,7 +64,7 @@ use xxhash_rust::xxh3;
 /// implementation hashes only the top `bit_length` bits (by masking out
 /// the bottom bits) followed by the bit length, directly on the stack
 /// with no allocation.
-#[derive(Debug, Clone, Copy, MemDbg, MemSize)]
+#[derive(Debug, Clone, Copy, MemSize, MemDbg)]
 #[mem_size(flat)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1182,7 +1182,7 @@ pub(crate) use build::{lcp_bits, lcp_bits_nul, log2_bucket_size};
 /// # #[cfg(not(feature = "rayon"))]
 /// # fn main() {}
 /// ```
-#[derive(Debug, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LcpMmphfInt<
@@ -1266,7 +1266,7 @@ impl<
 /// This type is used only at construction time (to build the `lcp2bucket`
 /// VFunc). At query time, signatures are computed directly from the key
 /// bytes, avoiding any allocation.
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BitPrefix {
@@ -1374,7 +1374,7 @@ impl ToSig<[u64; 1]> for BitPrefix {
 /// # #[cfg(not(feature = "rayon"))]
 /// # fn main() {}
 /// ```
-#[derive(Debug, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LcpMmphf<

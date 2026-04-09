@@ -131,7 +131,7 @@ use std::{ops::Index, sync::atomic::Ordering};
 /// implementation](#impl-FromIterator<bool>-for-BitVec).
 ///
 /// See the [module documentation](mod@crate::bits::bit_vec) for more details.
-#[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
+#[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(crate::traits::Backend, target = "bits")]
@@ -728,7 +728,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> fmt::Display for BitVec<B> {
     }
 }
 
-#[derive(Debug, Clone, MemDbg, MemSize, Delegate)]
+#[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 /// A thread-safe bit vector.
 ///
 /// See the [module documentation](mod@crate::bits::bit_vec) for details.
@@ -1055,7 +1055,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 /// We delegate [`Backend`], [`BitLength`], and
 /// [`AsRef<[Backend::Word]>`](AsRef) to make [`BitVecOps`] methods available,
 /// and [`Index`] to make slice-like read-only access available.
-#[derive(Debug, Clone, Delegate, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(Index<usize>, target = "0")]

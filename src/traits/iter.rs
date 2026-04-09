@@ -29,7 +29,7 @@
 //!   [`next`](Iterator::next) and [`prev`](BidiIterator::prev).
 
 use impl_tools::autoimpl;
-use mem_dbg::{MemDbg, MemSize};
+use mem_dbg::{MemSize, MemDbg};
 
 /// Conversion into an [`Iterator`] starting from a given position.
 ///
@@ -299,7 +299,7 @@ pub trait FusedBidiIterator: BidiIterator {}
 /// delegate to [`BidiIterator::prev`] and vice versa. Calling
 /// [`swap`](BidiIterator::swap) on a [`SwappedIter`] unwraps back to the
 /// inner iterator, so the operation is an involution.
-#[derive(Clone, Debug, MemDbg, MemSize)]
+#[derive(Clone, Debug, MemSize, MemDbg)]
 #[repr(transparent)]
 pub struct SwappedIter<I>(pub I);
 

@@ -153,7 +153,7 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// assert_eq!(rank_small[6], false);
 /// assert_eq!(rank_small[7], true);
 /// ```
-#[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
+#[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(Index<usize>, target = "bits")]
@@ -348,7 +348,7 @@ macro_rules! rank_small {
 }
 
 #[doc(hidden)]
-#[derive(Copy, Debug, Clone, MemDbg, MemSize)]
+#[derive(Copy, Debug, Clone, MemSize, MemDbg)]
 #[mem_size(flat)]
 #[cfg_attr(
     feature = "epserde",

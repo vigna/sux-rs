@@ -85,7 +85,7 @@ use xxhash_rust::xxh3;
 /// # #[cfg(not(feature = "rayon"))]
 /// # fn main() {}
 /// ```
-#[derive(MemDbg, MemSize)]
+#[derive(Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
@@ -1819,7 +1819,7 @@ mod build {
 ///   (`lcp2bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
 ///
-#[derive(MemDbg, MemSize)]
+#[derive(Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(

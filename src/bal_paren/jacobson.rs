@@ -306,7 +306,7 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 /// graphs](https://ieeexplore.ieee.org/abstract/document/63533). In *30th
 /// annual symposium on foundations of computer science (FOCS '89)*, pp.
 /// 549−554. IEEE, 1989.
-#[derive(Debug, Clone, MemDbg, MemSize, Delegate)]
+#[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(Index<usize>, target = "paren")]

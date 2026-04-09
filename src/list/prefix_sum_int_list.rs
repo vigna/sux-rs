@@ -69,7 +69,7 @@ use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
 ///
 /// - `D`: The prefix-sum structure. Must implement `SliceByValue<Value = usize>`.
 ///   Defaults to [`EfSeq<usize>`](EfSeq).
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PrefixSumIntList<D = EfSeq<usize>> {

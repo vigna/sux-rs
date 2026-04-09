@@ -81,7 +81,7 @@ use std::ops::Index;
 /// # }
 /// ```
 
-#[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
+#[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(Index<usize>, target = "bits")]
@@ -116,7 +116,7 @@ impl<B: Backend + AsRef<[B::Word]>, C> AsRef<[B::Word]> for Rank9<B, C> {
 }
 
 #[doc(hidden)]
-#[derive(Copy, Debug, Clone, MemDbg, MemSize, Default)]
+#[derive(Copy, Debug, Clone, MemSize, MemDbg, Default)]
 #[mem_size(flat)]
 #[cfg_attr(
     feature = "epserde",

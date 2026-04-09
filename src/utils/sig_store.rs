@@ -53,7 +53,7 @@
 #![allow(clippy::comparison_chain)]
 #![allow(clippy::type_complexity)]
 use anyhow::Result;
-use mem_dbg::{MemDbg, MemSize};
+use mem_dbg::{MemSize, MemDbg};
 
 use rdst::RadixKey;
 use std::{
@@ -119,7 +119,7 @@ impl Sig for [u64; 1] {
 }
 
 /// A signature and a value.
-#[derive(Debug, Clone, Copy, Default, MemDbg, MemSize)]
+#[derive(Debug, Clone, Copy, Default, MemSize, MemDbg)]
 pub struct SigVal<S: BinSafe + Sig, V: BinSafe> {
     pub sig: S,
     pub val: V,

@@ -9,7 +9,7 @@
 use super::{Inventory, LOG2_U16_PER_USIZE, SpanType, U32_PER_USIZE, assert_inventory_length};
 use crate::{rank_sel::select_adapt, utils::SelectInWord};
 use ambassador::Delegate;
-use mem_dbg::{MemDbg, MemSize};
+use mem_dbg::{MemSize, MemDbg};
 use num_primitive::PrimitiveInteger;
 use std::{
     cmp::{max, min},
@@ -154,7 +154,7 @@ use std::ops::Index;
 /// # }
 /// ```
 
-#[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
+#[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(crate::traits::Backend, target = "bits")]

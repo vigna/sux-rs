@@ -96,7 +96,7 @@ use value_traits::slices::SliceByValue;
 
 /// Main structure; please use the type aliases [`MappedRearCodedListStr`] and
 /// [`MappedRearCodedListSliceU8`].
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MappedRearCodedList<
@@ -316,7 +316,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SO
 // Lenders
 
 /// Sequential [`Lender`] over the contents of the list.
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct Lend<
     'a,
     I: PartialEq<O> + PartialEq + ?Sized,
@@ -464,7 +464,7 @@ where
 // Iterators
 
 /// Sequential [`Iterator`] over the contents of the list.
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct Iter<
     'a,
     I: PartialEq<O> + PartialEq + ?Sized,

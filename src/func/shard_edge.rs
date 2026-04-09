@@ -297,7 +297,7 @@ mod mwhc {
     /// for benchmarking and comparison. It also provides slightly faster
     /// queries due to the simpler edge-generation logic, albeit construction is
     /// slower due to cache-unfriendly accesses.
-    #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
     pub struct Mwhc3Shards {
@@ -424,7 +424,7 @@ mod mwhc {
     ///
     /// This construction uses random peelable 3-hypergraphs, giving a 23% space
     /// overhead. See [`Mwhc3Shards`] for more information.
-    #[derive(Default, Debug, MemDbg, MemSize, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, MemSize, MemDbg, Default)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
     pub struct Mwhc3NoShards {
@@ -549,7 +549,7 @@ mod fuse {
     /// [`FuseLge3FullSigs`]. It uses full signatures as local signatures,
     /// making the probability of a duplicate local signature negligible. As a
     /// result, it is slightly slower and uses more space at construction time.
-    #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -710,7 +710,7 @@ mod fuse {
     }
 
     /// A newtype for sorting by the second value of a `[u64; 2]` signature.
-    #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[repr(transparent)]
     pub struct LowSortSigVal<V: BinSafe>(SigVal<[u64; 2], V>);
 
@@ -831,7 +831,7 @@ mod fuse {
     /// small sets of keys, but it works only up to 3.8 billion keys. It is
     /// mostly equivalent to that described in [“Binary Fuse Filters: Fast and
     /// Smaller Than Xor Filters”](https://doi.org/10.1145/3510449).
-    #[derive(Default, Debug, MemDbg, MemSize, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, MemSize, MemDbg, Default)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1048,7 +1048,7 @@ mod fuse {
     /// This is intended for small to medium key sets (up to 2³² keys due
     /// to `u32` vertices) where avoiding Gaussian elimination is more
     /// important than minimizing space overhead.
-    #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1250,7 +1250,7 @@ mod fuse {
     /// Compared to [`FuseLge3Shards`], this variant avoids the expensive
     /// Gaussian elimination fallback at the cost of slightly higher space
     /// overhead for small shard sizes.
-    #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1426,7 +1426,7 @@ mod fuse {
     /// construction time.
     ///
     /// The rest of the logic is identical.
-    #[derive(Debug, MemDbg, MemSize, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

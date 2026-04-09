@@ -16,7 +16,7 @@ use crate::ambassador_impl_Index;
 use crate::traits::Backend;
 use ambassador::{Delegate, delegatable_trait};
 use impl_tools::autoimpl;
-use mem_dbg::{MemDbg, MemSize};
+use mem_dbg::{MemSize, MemDbg};
 use std::ops::Deref;
 use std::ops::Index;
 
@@ -358,7 +358,7 @@ pub trait SelectZeroHinted {
 /// is typically used to provide [`NumBits`] to [`Select`]/[`SelectZero`]
 /// implementations; see,
 /// for example, [`SelectAdapt`](crate::rank_sel::SelectAdapt).
-#[derive(Debug, Clone, MemDbg, MemSize, Delegate)]
+#[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(Index<usize>, target = "bits")]

@@ -11,7 +11,7 @@ use crate::prelude::*;
 use crate::traits::{Backend, Word};
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
-use mem_dbg::{MemDbg, MemSize};
+use mem_dbg::{MemSize, MemDbg};
 use num_primitive::PrimitiveInteger;
 
 use crate::ambassador_impl_Index;
@@ -74,7 +74,7 @@ use std::ops::Index;
 /// assert_eq!(sel.select(3), None);
 /// # }
 /// ```
-#[derive(Debug, Clone, Copy, MemDbg, MemSize, Delegate)]
+#[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(crate::traits::Backend, target = "small_counters")]

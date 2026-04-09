@@ -37,7 +37,7 @@ type DenseIndex = Rank9<BitVec<Box<[u64]>>>;
 /// [`Succ`](crate::traits::Succ) would require
 /// [`SelectUnchecked`](crate::traits::SelectUnchecked) as well.
 #[doc(hidden)]
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SparseIndex<D, L = BitFieldVec<Box<[u64]>>> {
@@ -53,7 +53,7 @@ pub struct SparseIndex<D, L = BitFieldVec<Box<[u64]>>> {
 /// increasing order.
 ///
 /// To get a builder you can use either [new_dense] or [new_sparse].
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct PartialArrayBuilder<T, B> {
     builder: B,
     values: Vec<T>,
@@ -246,7 +246,7 @@ impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
 /// to be converted into (usually faster) structures using unaligned access.
 ///
 /// See [`PartialArrayBuilder`] for details on how to create a partial array.
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PartialArray<T, P, V = Box<[T]>> {

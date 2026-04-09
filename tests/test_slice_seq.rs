@@ -116,7 +116,7 @@ fn test_slice_seq_equality() {
 fn test_slice_seq_clone() {
     let data = vec![1usize, 2, 3];
     let seq = SliceSeq::new(&data);
-    let cloned = seq;
+    let cloned = seq.clone();
     assert_eq!(seq.len(), cloned.len());
 }
 

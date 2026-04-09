@@ -245,7 +245,7 @@ impl Behaviour {
 /// Built from sorted keys and a bucket size. Uses a hollow trie on
 /// the bucket delimiters combined with behaviour functions stored as
 /// [`VFunc`]s.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct HtDist<
     E = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
     F = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
@@ -298,7 +298,7 @@ struct HtDist<
 /// # #[cfg(not(feature = "rayon"))]
 /// # fn main() {}
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HtDistMmphf<
     K: ?Sized,
     E = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
@@ -390,7 +390,7 @@ pub type HtDistMmphfSliceU8 = HtDistMmphf<[u8]>;
 ///
 /// This is the integer-key analogue of [`HtDist`]; see the
 /// [module documentation](self) for the algorithmic description.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct HtDistInt<
     K,
     E = VFunc<[u8], BitFieldVec<Box<[usize]>>>,
@@ -446,7 +446,7 @@ struct HtDistInt<
 /// # #[cfg(not(feature = "rayon"))]
 /// # fn main() {}
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HtDistMmphfInt<
     K,
     E = VFunc<[u8], BitFieldVec<Box<[usize]>>>,

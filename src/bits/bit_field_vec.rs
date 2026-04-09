@@ -198,7 +198,7 @@ macro_rules! bit_field_vec {
 /// etc.).
 ///
 /// See the [module documentation](crate::bits) for more details.
-#[derive(Debug, Clone, Copy, Hash, MemDbg, MemSize, Delegate, value_traits::Subslices)]
+#[derive(Debug, Clone, Hash, MemSize, MemDbg, Delegate, value_traits::Subslices)]
 #[value_traits_subslices(bound = "B: AsRef<[B::Word]>")]
 #[value_traits_subslices(bound = "B::Word: Word")]
 #[derive(value_traits::SubslicesMut)]
@@ -1028,7 +1028,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
 // Support for unchecked iterators
 
 /// An [`UncheckedIterator`] over the values of a [`BitFieldVec`].
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct BitFieldVecUncheckedIter<'a, B: Backend<Word: Word>> {
     vec: &'a BitFieldVec<B>,
     word_index: usize,
@@ -1101,7 +1101,7 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> IntoUncheckedIterator for &'
 }
 
 /// An [`UncheckedIterator`] moving backwards over the values of a [`BitFieldVec`].
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct BitFieldVecUncheckedBackIter<'a, B: Backend<Word: Word>> {
     vec: &'a BitFieldVec<B>,
     word_index: usize,
@@ -1182,7 +1182,7 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> IntoUncheckedBackIterator
 }
 
 /// An [`Iterator`] over the values of a [`BitFieldVec`].
-#[derive(Debug, Clone, MemDbg, MemSize)]
+#[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct BitFieldVecIter<'a, B: Backend<Word: Word>> {
     unchecked: BitFieldVecUncheckedIter<'a, B>,
     range: core::ops::Range<usize>,
@@ -1318,7 +1318,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
 /// happen.
 ///
 /// See the [module documentation](crate::bits) for more details.
-#[derive(Debug, Clone, Hash, MemDbg, MemSize, Delegate)]
+#[derive(Debug, Clone, Hash, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(
     feature = "epserde",
@@ -1845,7 +1845,7 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateB
 ///
 /// The backing storage must have sufficient padding at the end so that
 /// unaligned reads do not access memory outside the allocation.
-#[derive(Debug, Clone, MemDbg, MemSize, value_traits::Subslices)]
+#[derive(Debug, Clone, MemSize, MemDbg, value_traits::Subslices)]
 #[value_traits_subslices(bound = "B: AsRef<[B::Word]>")]
 #[value_traits_subslices(bound = "B::Word: Word")]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
