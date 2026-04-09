@@ -20,7 +20,7 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Clippy (no default features)
         run: cargo clippy --all-targets --no-default-features -- -D warnings
-      - name: Clippy (all features except slow_tests)
+      - name: Clippy (all features except no_logging)
         run: cargo clippy --all-targets --features rayon,flate2,zstd,clap,cli,fuzz,mwhc,deko,serde,epserde,mmap,slow_tests -- -D warnings
 
   msrv:
@@ -32,7 +32,7 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.85.0
-      - name: Check (MSRV)
+      - name: Check (MSRV, all features except no_logging)
         run: cargo check --all-targets --features rayon,flate2,zstd,clap,cli,fuzz,mwhc,deko,serde,epserde,mmap,slow_tests
 
   build:
@@ -47,10 +47,10 @@ jobs:
         features:
           - ""
           - "--no-default-features"
-          - "--features rayon,flate2,zstd,clap,cli,fuzz,mwhc,deko,serde,epserde,mmap,slow_tests"
+          - "--features rayon,flate2,zstd,clap,cli,fuzz,mwhc,deko,serde,epserde,mmap"
         include:
           - rust: nightly
-            features: "--features rayon,flate2,zstd,clap,cli,fuzz,mwhc,deko,serde,epserde,mmap,slow_tests,aarch64_prefetch,iter_advance_by"
+            features: "--features rayon,flate2,zstd,clap,cli,fuzz,mwhc,deko,serde,epserde,mmap,aarch64_prefetch,iter_advance_by"
 
     steps:
       - name: Install rust (${{ matrix.rust }})
@@ -88,7 +88,7 @@ jobs:
 
       - name: Generate code coverage
         run: |
-          cargo +nightly tarpaulin --verbose --engine llvm --all-features --workspace --out Lcov
+          cargo +nightly tarpaulin --verbose --engine llvm --features rayon,flate2,zstd,clap,cli,fuzz,mwhc,deko,serde,epserde,mmap --workspace --out Lcov
 
       - name: Coveralls
         uses: coverallsapp/github-action@v2
@@ -107,4 +107,4 @@ jobs:
       - name: Build (32-bit)
         run: cargo build --all-targets --features rayon,flate2,zstd,clap,cli,fuzz,mwhc,deko,serde,epserde,mmap,slow_tests --target i686-unknown-linux-gnu
       - name: Test (32-bit)
-        run: cargo test --features rayon,flate2,zstd,clap,cli,fuzz,mwhc,deko,serde,epserde,mmap,slow_tests --target i686-unknown-linux-gnu
+        run: cargo test --features rayon,flate2,zstd,clap,cli,fuzz,mwhc,deko,serde,epserde,mmap --target i686-unknown-linux-gnu
