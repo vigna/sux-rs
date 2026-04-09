@@ -23,8 +23,7 @@
 //! - [`VFilter`]: Static filters (approximate membership structures) based on
 //!   hash comparison. Use the `Box<[W]>` backend for full-width hashes, or the
 //!   `BitFieldVec` backend with an explicit `filter_bits` parameter for
-//!   space/false-positive tradeoffs. See the [choosing a type](crate::func#choosing-a-type)
-//!   guide.
+//!   space/false-positive tradeoffs.
 //! - [`SliceSeq`]: Adapters exposing slice references as indexed sequences.
 //!
 //! These structures implement traits from the

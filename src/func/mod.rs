@@ -29,11 +29,6 @@
 //!   [`LcpMmphfInt`]/[`LcpMmphf`] that use a [`VFunc2`]-like technique to reduce
 //!   space usage, at the cost of slightly slower queries.
 //!
-//! - [`HtDistMmphfInt`]/[`HtDistMmphf`] are monotone minimal perfect hash
-//!   functions based on a hollow trie distributor. See [`HtDistMmphfStr`] and
-//!   [`HtDistMmphfSliceU8`] for common instantiations. They are extremely
-//!   space-efficient, but also much slower than the LCP-based ones.
-//!
 //! - [`SignedFunc`] wraps any of the above with per-key verification hashes,
 //!   returning `None` for keys outside the original set. Use `Box<[W]>` for
 //!   full-width hashes or [`BitFieldVec`](crate::bits::BitFieldVec) for
@@ -43,18 +38,6 @@
 //! Most structures implement the
 //! [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing them
 //! to be converted into (usually faster) structures using unaligned access.
-//!
-//! # Choosing a type
-//!
-//! | Need | Type | Space overhead |
-//! |------|------|----------------|
-//! | Map keys → arbitrary values | [`VFunc`] | ~2.3 bits/key + value bits |
-//! | Same, skewed value distribution | [`VFunc2`] | less for skewed |
-//! | Map sorted keys → rank (monotone) | [`LcpMmphfInt`] / [`LcpMmphf`] | ~1.8 bits/key |
-//! | Same, less space, slower queries | [`Lcp2MmphfInt`] / [`Lcp2Mmphf`] | ~1.4 bits/key |
-//! | Same, hollow trie distributor | [`HtDistMmphfInt`] / [`HtDistMmphf`] | ~5.0 bits/key |
-//! | Approximate membership (Bloom-like) | [`VFilter`](crate::dict::VFilter) | ~1.13 × filter_bits per key |
-//! | Any of the above + reject unknown keys | [`SignedFunc`] | inner cost + hash bits |
 //!
 //! All constructors follow the pattern `try_new(keys, …, pl)` for default
 //! settings, and `try_new_with_builder(keys, …, builder, pl)` to configure
@@ -79,9 +62,6 @@ pub use lcp2_mmphf::*;
 
 pub mod signed;
 pub use signed::*;
-
-pub mod hollow_trie;
-pub use hollow_trie::*;
 
 pub mod shard_edge;
 
