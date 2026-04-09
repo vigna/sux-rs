@@ -23,8 +23,9 @@
 //!
 //! These type of monotone minimal perfect hash functions are extremely compact
 //! (in fact, provably optimal, as the use log log log *u* bits per key), but
-//! they are very slow. Usually, an LCP-based solution ([`lcp_mmphf`] or
-//! [`lcp2_mmphf`]) is more practical.
+//! they are very slow. Usually, an LCP-based solution
+//! ([`lcp_mmphf`](crate::func::lcp_mmphf) or
+//! [`lcp2_mmphf`](crate::func::lcp2_mmphf)) is more practical.
 //!
 //! These structures implement the [`TryIntoUnaligned`] trait, allowing them
 //! to be converted into (usually faster) structures using unaligned access.

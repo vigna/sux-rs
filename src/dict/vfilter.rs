@@ -28,8 +28,9 @@ use value_traits::slices::SliceByValue;
 /// For values of *b* that correspond to the size of an unsigned type, you can
 /// use a boxed slice as a backend.
 ///
-/// Instances are immutable; they are built using a [`VBuilder`] and can be
-/// serialized with [ε-serde](https://crates.io/crates/epserde).
+/// Instances are immutable; they are built using a
+/// [`VBuilder`](crate::func::VBuilder) and can be serialized with
+/// [ε-serde](https://crates.io/crates/epserde).
 ///
 /// This structure implements the [`Index`] trait for convenient
 /// `filter[key]` syntax (returning `&bool`).
@@ -38,7 +39,10 @@ use value_traits::slices::SliceByValue;
 /// trait, allowing it to be converted into (usually faster) structures using
 /// unaligned access.
 ///
-/// Please see the documentation of [`VBuilder`] for construction examples.
+/// TODO: constructors
+///
+/// Please see the documentation of [`VBuilder`](crate::func::VBuilder) for
+/// construction examples.
 ///
 /// # Generics
 ///
