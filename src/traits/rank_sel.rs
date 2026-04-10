@@ -198,7 +198,13 @@ pub trait RankZero: Rank {
 /// counters of different kind.
 ///
 /// The hint position is expressed as a multiple of the word bit size.
-#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+///
+/// The const parameter `WORDS_PER_SUBBLOCK` bounds the maximum number of
+/// words that will be scanned from `hint_pos` to reach `pos`. Knowing this
+/// bound at compile time lets the compiler fully unroll the inner loop.
+///
+/// If the bound is not known at compile time, pass `usize::MAX` to fall back to
+/// an unbounded scan.
 #[delegatable_trait]
 pub trait RankHinted {
     /// Returns the number of ones preceding the specified position,
@@ -219,7 +225,48 @@ pub trait RankHinted {
     /// before the bit at the start of word `hint_pos`.
     ///
     /// Some implementation might accept the length as a valid argument.
-    unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize;
+    unsafe fn rank_hinted<const WORDS_PER_SUBBLOCK: usize>(
+        &self,
+        pos: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize;
+}
+
+impl<T: RankHinted + ?Sized> RankHinted for &T {
+    #[inline(always)]
+    unsafe fn rank_hinted<const WORDS_PER_SUBBLOCK: usize>(
+        &self,
+        pos: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize {
+        unsafe { (**self).rank_hinted::<WORDS_PER_SUBBLOCK>(pos, hint_pos, hint_rank) }
+    }
+}
+
+impl<T: RankHinted + ?Sized> RankHinted for &mut T {
+    #[inline(always)]
+    unsafe fn rank_hinted<const WORDS_PER_SUBBLOCK: usize>(
+        &self,
+        pos: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize {
+        unsafe { (**self).rank_hinted::<WORDS_PER_SUBBLOCK>(pos, hint_pos, hint_rank) }
+    }
+}
+
+impl<T: RankHinted + ?Sized> RankHinted for Box<T> {
+    #[inline(always)]
+    unsafe fn rank_hinted<const WORDS_PER_SUBBLOCK: usize>(
+        &self,
+        pos: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize {
+        unsafe { (**self).rank_hinted::<WORDS_PER_SUBBLOCK>(pos, hint_pos, hint_rank) }
+    }
 }
 
 /// Selection over a bit vector without bound checks.
@@ -312,7 +359,10 @@ pub trait SelectZero: SelectZeroUnchecked + NumBits {
 /// This trait is used to implement fast selection by adding to bit vectors
 /// indices of different kind. See, for example,
 /// [`SelectAdapt`](crate::rank_sel::SelectAdapt).
-#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+///
+/// The const parameter `WORDS_PER_SUBBLOCK` bounds the maximum number of words
+/// scanned from `hint_pos`. If the bound is not known (as it is typical in
+/// selection), pass `usize::MAX` to fall back to an unbounded scan.
 #[delegatable_trait]
 pub trait SelectHinted {
     /// Selects the one of given rank, provided the position of a preceding one
@@ -327,14 +377,58 @@ pub trait SelectHinted {
     /// in the underlying bit vector. `hint_rank` must be the number of ones in
     /// the underlying bit vector before `hint_pos`, and must be less than or
     /// equal to `rank`.
-    unsafe fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize;
+    unsafe fn select_hinted<const WORDS_PER_SUBBLOCK: usize>(
+        &self,
+        rank: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize;
+}
+
+impl<T: SelectHinted + ?Sized> SelectHinted for &T {
+    #[inline(always)]
+    unsafe fn select_hinted<const WORDS_PER_SUBBLOCK: usize>(
+        &self,
+        rank: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize {
+        unsafe { (**self).select_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank) }
+    }
+}
+
+impl<T: SelectHinted + ?Sized> SelectHinted for &mut T {
+    #[inline(always)]
+    unsafe fn select_hinted<const WORDS_PER_SUBBLOCK: usize>(
+        &self,
+        rank: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize {
+        unsafe { (**self).select_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank) }
+    }
+}
+
+impl<T: SelectHinted + ?Sized> SelectHinted for Box<T> {
+    #[inline(always)]
+    unsafe fn select_hinted<const WORDS_PER_SUBBLOCK: usize>(
+        &self,
+        rank: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize {
+        unsafe { (**self).select_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank) }
+    }
 }
 
 /// Selection of zeros over a bit vector, with a hint.
 ///
 /// This trait is used to implement fast selection over zeros by adding to bit
 /// vectors indices of different kind.
-#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+///
+/// The const parameter `WORDS_PER_SUBBLOCK` bounds the maximum number of words
+/// scanned from `hint_pos`. If the bound is not known (as it is typical in
+/// selection), pass `usize::MAX` to fall back to an unbounded scan.
 #[delegatable_trait]
 pub trait SelectZeroHinted {
     /// Selects the zero of given rank, provided the position of a preceding zero
@@ -347,7 +441,48 @@ pub trait SelectZeroHinted {
     /// and must be the position of a zero in the underlying bit vector.
     /// `hint_rank` must be the number of zeros in the underlying bit vector
     /// before `hint_pos`, and must be less than or equal to `rank`.
-    unsafe fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize;
+    unsafe fn select_zero_hinted<const WORDS_PER_SUBBLOCK: usize>(
+        &self,
+        rank: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize;
+}
+
+impl<T: SelectZeroHinted + ?Sized> SelectZeroHinted for &T {
+    #[inline(always)]
+    unsafe fn select_zero_hinted<const WORDS_PER_SUBBLOCK: usize>(
+        &self,
+        rank: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize {
+        unsafe { (**self).select_zero_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank) }
+    }
+}
+
+impl<T: SelectZeroHinted + ?Sized> SelectZeroHinted for &mut T {
+    #[inline(always)]
+    unsafe fn select_zero_hinted<const WORDS_PER_SUBBLOCK: usize>(
+        &self,
+        rank: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize {
+        unsafe { (**self).select_zero_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank) }
+    }
+}
+
+impl<T: SelectZeroHinted + ?Sized> SelectZeroHinted for Box<T> {
+    #[inline(always)]
+    unsafe fn select_zero_hinted<const WORDS_PER_SUBBLOCK: usize>(
+        &self,
+        rank: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize {
+        unsafe { (**self).select_zero_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank) }
+    }
 }
 
 /// A thin wrapper implementing [`NumBits`] by caching the result of

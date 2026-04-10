@@ -988,26 +988,44 @@ impl<B: Backend + AsRef<[B::Word]>> AsRef<[B::Word]> for AtomicBitVec<B> {
 
 impl<B: Backend<Word: Word> + AsRef<[B::Word]>> RankHinted for BitVec<B> {
     #[inline(always)]
-    unsafe fn rank_hinted(&self, pos: usize, hint_pos: usize, hint_rank: usize) -> usize {
+    unsafe fn rank_hinted<const WORDS_PER_SUBBLOCK: usize>(
+        &self,
+        pos: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize {
         let bits_per_word = B::Word::BITS as usize;
         let bits: &[B::Word] = self.as_ref();
         let mut rank = hint_rank;
-        let mut hint_pos = hint_pos;
+        let mut hp = hint_pos;
 
-        debug_assert!(
-            hint_pos < bits.len(),
-            "hint_pos: {}, len: {}",
-            hint_pos,
-            bits.len()
-        );
+        debug_assert!(hp < bits.len(), "hint_pos: {}, len: {}", hp, bits.len());
 
-        while (hint_pos + 1) * bits_per_word <= pos {
-            rank += unsafe { bits.get_unchecked(hint_pos) }.count_ones() as usize;
-            hint_pos += 1;
+        // Prefetch the word containing `pos` so that the load below overlaps
+        // with the popcount accumulation loop.
+        crate::utils::prefetch_index(bits, pos / bits_per_word);
+
+        if WORDS_PER_SUBBLOCK == usize::MAX {
+            // Unbounded: fall back to while loop (used when the caller cannot
+            // provide a compile-time bound).
+            while (hp + 1) * bits_per_word <= pos {
+                rank += unsafe { bits.get_unchecked(hp) }.count_ones() as usize;
+                hp += 1;
+            }
+        } else {
+            // Bounded: the loop runs at most WORDS_PER_SUBBLOCK-1 times.
+            // LLVM can fully unroll this when WORDS_PER_SUBBLOCK is small.
+            for _ in 0..WORDS_PER_SUBBLOCK - 1 {
+                if (hp + 1) * bits_per_word > pos {
+                    break;
+                }
+                rank += unsafe { bits.get_unchecked(hp) }.count_ones() as usize;
+                hp += 1;
+            }
         }
 
-        rank + (unsafe { *bits.get_unchecked(hint_pos) }
-            & (B::Word::ONE << (pos % bits_per_word)).wrapping_sub(B::Word::ONE))
+        rank + (unsafe { *bits.get_unchecked(hp) }
+            & (B::Word::ONE << (pos % bits_per_word) as u32).wrapping_sub(B::Word::ONE))
         .count_ones() as usize
     }
 }
@@ -1015,42 +1033,69 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> RankHinted for BitVec<B> {
 // SelectHinted and SelectZeroHinted for BitVec.
 
 impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectHinted for BitVec<B> {
-    unsafe fn select_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
+    #[inline(always)]
+    unsafe fn select_hinted<const WORDS_PER_SUBBLOCK: usize>(
+        &self,
+        rank: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize {
         let bits_per_word = B::Word::BITS as usize;
+        let bits: &[B::Word] = self.as_ref();
         let mut word_index = hint_pos / bits_per_word;
         let bit_index = hint_pos % bits_per_word;
         let mut residual = rank - hint_rank;
-        let mut word =
-            (unsafe { *self.as_ref().get_unchecked(word_index) } >> bit_index) << bit_index;
-        loop {
+        let mut word = (unsafe { *bits.get_unchecked(word_index) } >> bit_index) << bit_index;
+        // WORDS_PER_SUBBLOCK == usize::MAX means unbounded (caller doesn't know the bound).
+        // Otherwise the loop runs at most WORDS_PER_SUBBLOCK times, helping LLVM unroll.
+        let limit = if WORDS_PER_SUBBLOCK == usize::MAX {
+            usize::MAX
+        } else {
+            WORDS_PER_SUBBLOCK
+        };
+        for _ in 0..limit {
             let bit_count = word.count_ones() as usize;
             if residual < bit_count {
                 return word_index * bits_per_word + word.select_in_word(residual);
             }
             word_index += 1;
-            word = *unsafe { self.as_ref().get_unchecked(word_index) };
+            word = *unsafe { bits.get_unchecked(word_index) };
             residual -= bit_count;
         }
+        unreachable!()
     }
 }
 
 impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted for BitVec<B> {
-    unsafe fn select_zero_hinted(&self, rank: usize, hint_pos: usize, hint_rank: usize) -> usize {
+    #[inline(always)]
+    unsafe fn select_zero_hinted<const WORDS_PER_SUBBLOCK: usize>(
+        &self,
+        rank: usize,
+        hint_pos: usize,
+        hint_rank: usize,
+    ) -> usize {
         let bits_per_word = B::Word::BITS as usize;
+        let bits: &[B::Word] = self.as_ref();
         let mut word_index = hint_pos / bits_per_word;
         let bit_index = hint_pos % bits_per_word;
         let mut residual = rank - hint_rank;
         let mut word =
-            (!*unsafe { self.as_ref().get_unchecked(word_index) } >> bit_index) << bit_index;
-        loop {
+            (!unsafe { *bits.get_unchecked(word_index) } >> bit_index) << bit_index;
+        let limit = if WORDS_PER_SUBBLOCK == usize::MAX {
+            usize::MAX
+        } else {
+            WORDS_PER_SUBBLOCK
+        };
+        for _ in 0..limit {
             let bit_count = word.count_ones() as usize;
             if residual < bit_count {
                 return word_index * bits_per_word + word.select_in_word(residual);
             }
             word_index += 1;
-            word = unsafe { !*self.as_ref().get_unchecked(word_index) };
+            word = unsafe { !*bits.get_unchecked(word_index) };
             residual -= bit_count;
         }
+        unreachable!()
     }
 }
 

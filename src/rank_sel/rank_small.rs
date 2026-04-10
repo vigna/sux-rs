@@ -653,12 +653,29 @@ macro_rules! impl_rank_small {
                                 & ((B::Word::ONE << (pos % bits_per_word) as u32) - B::Word::ONE))
                                 .count_ones() as usize
                     } else {
-                        // Multi-word subblocks: use RankHinted.
+                        // Multi-word subblocks: use RankHinted with a compile-time
+                        // bound so LLVM can fully unroll the inner popcount loop.
+                        // We compute WORDS_PER_SUBBLOCK from the macro literal
+                        // parameters to avoid the self-in-anonymous-const limitation
+                        // (Self::WORDS_PER_SUBBLOCK cannot be used in turbofish).
+                        // TODO: replace with Self::WORDS_PER_SUBBLOCK once Rust
+                        // allows associated consts in const generic arguments.
+                        const WPS: usize = {
+                            let word_bit_log2: usize =
+                                match $WORD_BITS { 32 => 5, 64 => 6, _ => panic!("") };
+                            let words_per_block: usize = 1 << ($COUNTER_WIDTH - word_bit_log2);
+                            match $NUM_U32S {
+                                1 => words_per_block / 4,
+                                2 => words_per_block / 8,
+                                3 => words_per_block / 8,
+                                _ => panic!(""),
+                            }
+                        };
                         #[allow(clippy::modulo_one)]
                         let hint_pos = word_pos
                             - ((word_pos % Self::WORDS_PER_BLOCK) % Self::WORDS_PER_SUBBLOCK);
 
-                        RankHinted::rank_hinted(&self.bits, pos, hint_pos, hint_rank)
+                        RankHinted::rank_hinted::<WPS>(&self.bits, pos, hint_pos, hint_rank)
                     }
                 }
             }

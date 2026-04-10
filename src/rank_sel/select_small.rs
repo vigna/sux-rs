@@ -493,7 +493,7 @@ impl<
         let offset_in_block = ULEQ_STEP_9!(relative, rank_in_block_step_9).count_ones() as usize;
 
         unsafe {
-            self.select_hinted(
+            self.select_hinted::<{usize::MAX}>(
                 rank,
                 hint_pos + offset_in_block * Self::SUBBLOCK_BIT_SIZE,
                 hint_rank + block_count.rel(offset_in_block),
@@ -536,7 +536,7 @@ impl<
         let offset_in_block = ULEQ_STEP_10!(relative, rank_in_block_step_10).count_ones() as usize;
 
         unsafe {
-            self.select_hinted(
+            self.select_hinted::<{usize::MAX}>(
                 rank,
                 hint_pos + offset_in_block * Self::SUBBLOCK_BIT_SIZE,
                 hint_rank + block_count.rel(offset_in_block),
@@ -579,7 +579,7 @@ impl<
         let offset_in_block = ULEQ_STEP_11!(relative, rank_in_block_step_11).count_ones() as usize;
 
         unsafe {
-            self.select_hinted(
+            self.select_hinted::<{usize::MAX}>(
                 rank,
                 hint_pos + offset_in_block * Self::SUBBLOCK_BIT_SIZE,
                 hint_rank + block_count.rel(offset_in_block),
@@ -628,7 +628,7 @@ impl<
         let offset_in_block = ULEQ_STEP_13!(relative, rank_in_block_step_13).count_ones() as usize;
 
         unsafe {
-            self.select_hinted(
+            self.select_hinted::<{usize::MAX}>(
                 rank,
                 hint_pos + offset_in_block * Self::SUBBLOCK_BIT_SIZE,
                 hint_rank + block_count.rel(offset_in_block),
@@ -718,7 +718,7 @@ impl<
         let offset_in_block = ULEQ_STEP_8!(relative, rank_in_block_step_8).count_ones() as usize;
 
         unsafe {
-            self.select_hinted(
+            self.select_hinted::<{usize::MAX}>(
                 rank,
                 hint_pos + offset_in_block * Self::SUBBLOCK_BIT_SIZE,
                 hint_rank + block_count.rel(offset_in_block),

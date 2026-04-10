@@ -566,7 +566,7 @@ impl<
 
                 return self
                     .bits
-                    .select_zero_hinted(rank, hint_pos, rank - residual);
+                    .select_zero_hinted::<{usize::MAX}>(rank, hint_pos, rank - residual);
             }
 
             let words_per_subinventory = 1 << LOG2_WORDS_PER_SUBINVENTORY;
@@ -607,7 +607,7 @@ impl<
                 let residual = subrank & ((1 << log2_ones_per_sub32) - 1);
                 return self
                     .bits
-                    .select_zero_hinted(rank, hint_pos, rank - residual);
+                    .select_zero_hinted::<{usize::MAX}>(rank, hint_pos, rank - residual);
             }
 
             #[cfg(target_pointer_width = "64")]
