@@ -21,7 +21,7 @@ use std::borrow::Borrow;
 /// *Static functions* map keys to values, but they do not store the keys:
 /// querying a static function with a key outside of the original set will lead
 /// to an arbitrary result. Another name for static functions is *retrieval data
-/// structure*. Values are retrieved using the [`get`](VFunc::get) method.
+/// structure*. Values are retrieved using the [`get`] method.
 ///
 /// In exchange, static functions have a very low space overhead, and make it
 /// possible to store the association between keys and values just in the space
@@ -29,16 +29,16 @@ use std::borrow::Borrow;
 ///
 /// This structure is based on “[ε-Cost Sharding: Scaling Hypergraph-Based
 /// Static Functions and Filters to Trillions of
-/// Keys](https://arxiv.org/abs/2503.18397)”. Space overhead with respect to the
+/// Keys]”. Space overhead with respect to the
 /// optimum depends on the [`ShardEdge`] type. The default is
 /// [`FuseLge3Shards`], which provides 10.5% space overhead for large key sets
 /// (above a few million keys), which grow up to 12% going towards smaller key
 /// sets. Details on other possible [`ShardEdge`] implementations can be found
-/// in the [`shard_edge`](crate::func::shard_edge) module documentation.
+/// in the [`shard_edge`] module documentation.
 ///
 /// Instances of this structure are immutable; they are built using
-/// [`try_new`](VFunc::try_new) or one of its variants, and can be serialized
-/// using [ε-serde](https://crates.io/crates/epserde).
+/// [`try_new`] or one of its variants, and can be serialized
+/// using [ε-serde].
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
@@ -49,29 +49,39 @@ use std::borrow::Borrow;
 /// * `W`: The word used to store the data, which is also the output type. It
 ///   can be any unsigned type.
 /// * `D`: The backend storing the function data. It can be a
-///   [`BitFieldVec<Box<[W]>>`](crate::bits::BitFieldVec) or a `Box<[W]>`. In the first
+///   [`BitFieldVec<Box<[W]>>`] or a `Box<[W]>`. In the first
 ///   case, the data is stored using exactly the number of bits needed, but
 ///   access is slightly slower, while in the second case the data is stored in
 ///   a boxed slice of `W`, thus forcing the number of bits to the number of
 ///   bits of `W`, but access will be faster. Note that for most bit sizes in
 ///   the first case on some architectures you can use
 ///   [`TryIntoUnaligned`] to convert the function into one using [unaligned
-///   reads](BitFieldVec::get_unaligned) for faster queries.
+///   reads] for faster queries.
 /// * `S`: The signature type. The default is `[u64; 2]`. You can switch to
 ///   `[u64; 1]` (and possibly
-///   [`FuseLge3NoShards`](crate::func::shard_edge::FuseLge3NoShards)) for
+///   [`FuseLge3NoShards`]) for
 ///   slightly faster construction and queries, but the construction will not
 ///   scale beyond 3.8 billion keys.
 /// * `E`: The sharding and edge logic type. The default is [`FuseLge3Shards`].
 ///   For small sets of keys you might try
-///   [`FuseLge3NoShards`](crate::func::shard_edge::FuseLge3NoShards), possibly
+///   [`FuseLge3NoShards`], possibly
 ///   coupled with `[u64; 1]` signatures. For functions with more than a few
 ///   dozen billion keys, you might try
-///   [`FuseLge3FullSigs`](crate::func::shard_edge::FuseLge3FullSigs).
+///   [`FuseLge3FullSigs`].
 ///
 /// # Examples
 ///
-/// See [`try_new`](VFunc::try_new).
+/// See [`try_new`].
+///
+/// [`get`]: VFunc::get
+/// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
+/// [`shard_edge`]: crate::func::shard_edge
+/// [`try_new`]: VFunc::try_new
+/// [ε-serde]: https://crates.io/crates/epserde
+/// [`BitFieldVec<Box<[W]>>`]: crate::bits::BitFieldVec
+/// [unaligned reads]: BitFieldVec::get_unaligned
+/// [`FuseLge3NoShards`]: crate::func::shard_edge::FuseLge3NoShards
+/// [`FuseLge3FullSigs`]: crate::func::shard_edge::FuseLge3FullSigs
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -215,10 +225,10 @@ mod build {
         ///   value may degrade performance or cause extra retries.
         ///
         /// This is a convenience wrapper around
-        /// [`try_new_with_builder`](Self::try_new_with_builder) with
+        /// [`try_new_with_builder`] with
         /// `VBuilder::default()`.
         ///
-        /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
+        /// If keys and values are available as slices, [`try_par_new`]
         /// parallelizes the hash computation for faster construction.
         ///
         /// # Examples
@@ -244,6 +254,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new<B: ?Sized + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: Error + Send + Sync + 'static,
@@ -275,10 +288,10 @@ mod build {
         /// * `n` is the expected number of keys.
         ///
         /// The builder controls construction parameters such as [offline
-        /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
-        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        /// mode], [thread count],
+        /// [sharding overhead], and [PRNG seed].
         ///
-        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+        /// See also [`try_par_new_with_builder`]
         /// for parallel hash computation from slices.
         ///
         /// # Examples
@@ -305,6 +318,12 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder<B: ?Sized + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: Error + Send + Sync + 'static,
@@ -341,14 +360,14 @@ mod build {
         ///
         /// Each key is hashed on a rayon worker thread and deposited directly
         /// into its SigStore bucket. This is faster than
-        /// [`try_new`](Self::try_new) for large in-memory key sets.
+        /// [`try_new`] for large in-memory key sets.
         ///
         /// This is a convenience wrapper around
-        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+        /// [`try_par_new_with_builder`]
         /// with `VBuilder::default()`.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new`](Self::try_new) instead.
+        /// [`try_new`] instead.
         ///
         /// # Examples
         ///
@@ -369,6 +388,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new`]: Self::try_new
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_par_new(
             keys: &[impl Borrow<K> + Sync],
             values: &[W],
@@ -392,14 +414,14 @@ mod build {
         ///
         /// Each key is hashed on a rayon worker thread and deposited directly
         /// into its SigStore bucket. This is faster than
-        /// [`try_new`](Self::try_new) for large in-memory key sets.
+        /// [`try_new`] for large in-memory key sets.
         ///
         /// The builder controls construction parameters such as [offline
-        /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
-        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        /// mode], [thread count],
+        /// [sharding overhead], and [PRNG seed].
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// [`try_new_with_builder`] instead.
         ///
         /// # Examples
         ///
@@ -420,6 +442,13 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new`]: Self::try_new
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder(
             keys: &[impl Borrow<K> + Sync],
             values: &[W],
@@ -482,10 +511,10 @@ mod build {
         ///   value may degrade performance or cause extra retries.
         ///
         /// This is a convenience wrapper around
-        /// [`try_new_with_builder`](Self::try_new_with_builder) with
+        /// [`try_new_with_builder`] with
         /// `VBuilder::default()`.
         ///
-        /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
+        /// If keys and values are available as slices, [`try_par_new`]
         /// parallelizes the hash computation for faster construction.
         ///
         /// # Examples
@@ -512,6 +541,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new<B: ?Sized + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: Error + Send + Sync + 'static,
@@ -537,10 +569,10 @@ mod build {
         /// * `n` is the expected number of keys.
         ///
         /// The builder controls construction parameters such as [offline
-        /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
-        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        /// mode], [thread count],
+        /// [sharding overhead], and [PRNG seed].
         ///
-        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+        /// See also [`try_par_new_with_builder`]
         /// for parallel hash computation from slices.
         ///
         /// # Examples
@@ -568,6 +600,12 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder<B: ?Sized + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: Error + Send + Sync + 'static,
@@ -598,14 +636,14 @@ mod build {
         ///
         /// Each key is hashed on a rayon worker thread and deposited directly
         /// into its SigStore bucket. This is faster than
-        /// [`try_new`](Self::try_new) for large in-memory key sets.
+        /// [`try_new`] for large in-memory key sets.
         ///
         /// This is a convenience wrapper around
-        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+        /// [`try_par_new_with_builder`]
         /// with `VBuilder::default()`.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new`](Self::try_new) instead.
+        /// [`try_new`] instead.
         ///
         /// # Examples
         ///
@@ -627,6 +665,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new`]: Self::try_new
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_par_new(
             keys: &[impl Borrow<K> + Sync],
             values: &[W],
@@ -646,14 +687,14 @@ mod build {
         ///
         /// Each key is hashed on a rayon worker thread and deposited directly
         /// into its SigStore bucket. This is faster than
-        /// [`try_new`](Self::try_new) for large in-memory key sets.
+        /// [`try_new`] for large in-memory key sets.
         ///
         /// The builder controls construction parameters such as [offline
-        /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
-        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        /// mode], [thread count],
+        /// [sharding overhead], and [PRNG seed].
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// [`try_new_with_builder`] instead.
         ///
         /// # Examples
         ///
@@ -677,6 +718,13 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new`]: Self::try_new
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder(
             keys: &[impl Borrow<K> + Sync],
             values: &[W],

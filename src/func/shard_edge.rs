@@ -6,12 +6,11 @@
 
 //! Strategies to shard keys and to generate edges in hypergraphs.
 //!
-//! The code for [`VFunc`](crate::func::VFunc)/[`VFilter`](crate::dict::VFilter)
-//! and [`VBuilder`](crate::func::VBuilder) is generic with respect to the size
-//! of signatures and to the logic that possibly shards keys and generates edges
-//! from keys; such a logic is defined by a [`ShardEdge`] implementation. While
-//! the default should be a reasonable choice in most cases, there are possible
-//! alternatives.
+//! The code for [`VFunc`]/[`VFilter`] and [`VBuilder`] is generic with respect
+//! to the size of signatures and to the logic that possibly shards keys and
+//! generates edges from keys; such a logic is defined by a [`ShardEdge`]
+//! implementation. While the default should be a reasonable choice in most
+//! cases, there are possible alternatives.
 //!
 //! The amount of sharding is partially controlled by the parameter ε of
 //! [`ShardEdge::set_up_shards`], which specifies the target space loss due to
@@ -23,15 +22,13 @@
 //! available, but they are mostly interesting for benchmarking or for
 //! historical reasons. More details can be found in the documentation of each
 //! implementation, and in “[ε-Cost Sharding: Scaling Hypergraph-Based Static
-//! Functions and Filters to Trillions of
-//! Keys](https://arxiv.org/abs/2503.18397)”.
+//! Functions and Filters to Trillions of Keys]”.
 //!
 //! - [`FuseLge3Shards`] with 128-bit signatures and 64-bit local signatures:
 //!   this is the default choice. It shards keys using ε-cost sharding and
 //!   generates edges from 64-bit local signatures using a fuse 3-hypergraph
 //!   with a 10.5% (ε = 0.001) space overhead for key sets above a few million
-//!   keys. Below 800000 keys, it switches to [lazy Gaussian
-//!   elimination](https://doi.org/10.1016/j.ic.2020.104517), which
+//!   keys. Below 800000 keys, it switches to [lazy Gaussian elimination], which
 //!   increases construction time but still contains space overhead to 12.5%.
 //!   Sharding makes parallelism possible above a few dozen million keys.
 //!   Depending on the amount of sharding, functions with more than a few dozen
@@ -40,14 +37,13 @@
 //!
 //! - [`FuseLge3NoShards`] with 64-bit signatures: this choice provides fast
 //!   queries on key sets of less than 3.8 billion keys. Construction, however,
-//!   cannot be parallelized. It generates edges using a fuse 3-hypergraph with a
-//!   10.5% space overhead for key sets above a few million keys: the overhead
-//!   increases slightly for smaller key sets, but below 100000 keys we use [lazy
-//!   Gaussian elimination](https://doi.org/10.1016/j.ic.2020.104517) Gaussian
-//!   elimination to keep overhead within 12.5%. Above that threshold, this logic
-//!   is that of a standard fuse 3-hypergraph and thus mostly equivalent to that
-//!   described in [“Binary Fuse Filters: Fast and Smaller Than Xor
-//!   Filters”](https://doi.org/10.1145/3510449).
+//!   cannot be parallelized. It generates edges using a fuse 3-hypergraph with
+//!   a 10.5% space overhead for key sets above a few million keys: the overhead
+//!   increases slightly for smaller key sets, but below 100000 keys we use
+//!   [lazy Gaussian elimination] Gaussian elimination to keep overhead within
+//!   12.5%. Above that threshold, this logic is that of a standard fuse
+//!   3-hypergraph and thus mostly equivalent to that described in [“Binary Fuse
+//!   Filters: Fast and Smaller Than Xor Filters”].
 //!
 //! - [`FuseLge3FullSigs`]: When building functions with more than a few dozen
 //!   billion keys, depending on the amount of sharding [`FuseLge3Shards`] might
@@ -57,21 +53,26 @@
 //!   Filter do not have this problem as local signatures can be deduplicated
 //!   without affecting the semantics of the filter.
 //!
-//! - [`Fuse3Shards`] is like [`FuseLge3Shards`] but does not use
-//!   [lazy Gaussian elimination](https://doi.org/10.1016/j.ic.2020.104517),
-//!   so the construction on small datasets will be faster but the resulting
-//!   structure will be bigger (≈+10%).
+//! - [`Fuse3Shards`] is like [`FuseLge3Shards`] but does not use [lazy Gaussian
+//!   elimination], so the construction on small datasets will be faster but the
+//!   resulting structure will be bigger (≈+10%).
 //!
-//! - [`Fuse3NoShards`] does not use sharding or [lazy Gaussian
-//!   elimination](https://doi.org/10.1016/j.ic.2020.104517) and thus is
-//!   mostly equivalent to [“Binary Fuse Filters: Fast and Smaller Than Xor
-//!   Filters”](https://doi.org/10.1145/3510449).
+//! - [`Fuse3NoShards`] does not use sharding or [lazy Gaussian elimination] and
+//!   thus is mostly equivalent to [“Binary Fuse Filters: Fast and Smaller Than
+//!   Xor Filters”].
 //!
 //! - `Mwhc3Shards` with 128-bit signatures (requires the `mwhc` feature): this
 //!   choice gives much worse overhead (23%) but can be sharded very finely.
 //!   With ε = 0.01 (and thus 24% space overhead) sharding can already happen at
 //!   very small sizes, providing the fastest parallel construction. Query speed
 //!   is similar to [`FuseLge3Shards`].
+//!
+//! [“Binary Fuse Filters: Fast and Smaller Than Xor Filters”]: https://doi.org/10.1145/3510449
+//! [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
+//! [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
+//! [`VBuilder`]: crate::func::VBuilder
+//! [`VFilter`]: crate::dict::VFilter
+//! [`VFunc`]: crate::func::VFunc
 
 use crate::utils::{BinSafe, Sig};
 use mem_dbg::*;
@@ -82,92 +83,107 @@ use std::fmt::Display;
 /// Shard and edge logic.
 ///
 /// This trait is used to derive shards and edges from key signatures. Instances
-/// are stored, for example, in a [`VFunc`](crate::func::VFunc) or in a
-/// [`VBuilder`](crate::func::VBuilder). They contain the data and logic that
-/// turns a signature into an edge, and possibly a shard.
+/// are stored, for example, in a [`VFunc`] or in a [`VBuilder`]. They contain
+/// the data and logic that turns a signature into an edge, and possibly a
+/// shard.
 ///
 /// This trait makes it possible to test different types of generation
 /// techniques for hypergraphs. Moreover, it decouples entirely the sharding and
 /// edge-generation logic from the rest of the code.
 ///
 /// If you compile with the `mwhc` feature, you will get additional
-/// implementations for the classic [MWHC
-/// construction](https://doi.org/10.1093/comjnl/39.6.547).
+/// implementations for the classic [MWHC construction].
 ///
 /// There are a few different implementations depending on the type of graphs,
 /// on the size of signatures, and on whether sharding is used. See, for
-/// example, [`FuseLge3Shards`]. The [module
-/// documentation](crate::func::shard_edge) contains some discussion.
+/// example, [`FuseLge3Shards`]. The [module documentation] contains some
+/// discussion.
 ///
 /// The implementation of the [`Display`] trait should return the relevant
 /// information about the sharding and edge logic.
 ///
 /// Sometimes sorting signatures by a certain key improves performance when
 /// generating a hypergraph. In this case, the implementation of
-/// [`num_sort_keys`](ShardEdge::num_sort_keys) should return the number of keys
-/// used for sorting, and [`sort_key`](ShardEdge::sort_key) should return the
-/// key to be used for sorting.
+/// [`num_sort_keys`] should return the number of keys used for sorting, and
+/// [`sort_key`] should return the key to be used for sorting.
+///
+/// [`sort_key`]: ShardEdge::sort_key
+/// [`num_sort_keys`]: ShardEdge::num_sort_keys
+/// [module documentation]: crate::func::shard_edge
+/// [MWHC construction]: https://doi.org/10.1093/comjnl/39.6.547
+/// [`VBuilder`]: crate::func::VBuilder
+/// [`VFunc`]: crate::func::VFunc
 pub trait ShardEdge<S, const K: usize>: Default + Display + Clone + Copy + Send + Sync {
     /// The type to use for sorting signature when looking for duplicate edges.
     ///
-    /// This type must be [transmutable](std::mem::transmute) with `SigVal<S,
-    /// V>`, but it must implement [`PartialEq`] and [`RadixKey`] so that equal
-    /// `SortSigVal` generate identical edges and after radix sort equal
-    /// `SortSigVal` are adjacent. Using `SigVal<S, V>` always works, but it
-    /// might be possible to use less information. See, for example,
-    /// [`LowSortSigVal`].
+    /// This type must be [transmutable] with `SigVal<S, V>`, but it must
+    /// implement [`PartialEq`] and [`RadixKey`] so that equal `SortSigVal`
+    /// generate identical edges and after radix sort equal `SortSigVal` are
+    /// adjacent. Using `SigVal<S, V>` always works, but it might be possible to
+    /// use less information. See, for example, [`LowSortSigVal`].
     ///
-    /// Note that [`VBuilder`](crate::func::VBuilder) assumes internally that
-    /// sorting the signatures by this type gives an order very similar to that
-    /// obtained sorting by the key returned by
-    /// [`sort_key`](ShardEdge::sort_key).
+    /// Note that [`VBuilder`] assumes internally that sorting the signatures by
+    /// this type gives an order very similar to that obtained sorting by the
+    /// key returned by [`sort_key`].
+    ///
+    /// [`sort_key`]: ShardEdge::sort_key
+    /// [`VBuilder`]: crate::func::VBuilder
+    /// [transmutable]: std::mem::transmute
     type SortSigVal<V: BinSafe>: RadixKey + Send + Sync + Copy + PartialEq;
 
     /// The type of local signatures used to generate local edges.
     ///
     /// In general, local edges will depend on a local signature, which might
     /// depend only on a fraction of the global signature bits. The method
-    /// [`local_sig`](ShardEdge::local_sig), which returns this type, returns
-    /// the local signature.
+    /// [`local_sig`], which returns this type, returns the local signature.
+    ///
+    /// [`local_sig`]: ShardEdge::local_sig
     type LocalSig: Sig;
 
     /// The type representing vertices local to a shard.
     ///
-    /// [`set_up_graphs`](ShardEdge::set_up_graphs) should panic
-    /// if the number of vertices in a shard is larger than the maximum value
-    /// representable by this type.
+    /// [`set_up_graphs`] should panic if the number of vertices in a shard is
+    /// larger than the maximum value representable by this type.
     ///
-    /// Note that since all our graphs have more vertices than edges, this
-    /// type is also used to represent an edge by its index (i.e., the
-    /// index of the associated key).
+    /// Note that since all our graphs have more vertices than edges, this type
+    /// is also used to represent an edge by its index (i.e., the index of the
+    /// associated key).
+    ///
+    /// [`set_up_graphs`]: ShardEdge::set_up_graphs
     type Vertex: PrimitiveUnsigned + PrimitiveNumberAs<usize>;
 
     /// Sets up the sharding logic for the given number of keys.
     ///
     /// `eps` is the target relative space overhead. See “[ε-Cost Sharding:
     /// Scaling Hypergraph-Based Static Functions and Filters to Trillions of
-    /// Keys](https://arxiv.org/abs/2503.18397)” for more information.
+    /// Keys]” for more information.
     ///
     /// This method can be called multiple times. For example, it can be used to
-    /// precompute the number of shards so to optimize a
-    ///  [`SigStore`](crate::utils::SigStore) by using the same number of
-    /// buckets.
+    /// precompute the number of shards so to optimize a [`SigStore`] by using
+    /// the same number of buckets.
     ///
-    /// After this call, [`shard_high_bits`](ShardEdge::shard_high_bits)
-    /// and [`num_shards`](ShardEdge::num_shards) will contain sharding information.
+    /// After this call, [`shard_high_bits`] and [`num_shards`] will contain
+    /// sharding information.
+    ///
+    /// [`num_shards`]: ShardEdge::num_shards
+    /// [`shard_high_bits`]: ShardEdge::shard_high_bits
+    /// [`SigStore`]: crate::utils::SigStore
+    /// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
     fn set_up_shards(&mut self, n: usize, eps: f64);
 
     /// Sets up the edge logic for the given number of keys and maximum shard
     /// size.
     ///
-    /// This method must be called after
-    /// [`set_up_shards`](ShardEdge::set_up_shards), albeit some no-sharding
-    /// implementation might not require it. It returns the expansion factor and
-    /// whether the graph will need [lazy Gaussian
-    /// elimination](https://doi.org/10.1016/j.ic.2020.104517).
+    /// This method must be called after [`set_up_shards`], albeit some
+    /// no-sharding implementation might not require it. It returns the
+    /// expansion factor and whether the graph will need [lazy Gaussian
+    /// elimination].
     ///
     /// This method can be called multiple times. For example, it can be used to
     /// precompute data and then refine it.
+    ///
+    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
+    /// [`set_up_shards`]: ShardEdge::set_up_shards
     fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool);
 
     /// Returns the number of high bits used for sharding.
@@ -194,47 +210,56 @@ pub trait ShardEdge<S, const K: usize>: Default + Display + Clone + Copy + Send 
 
     /// Returns the number of vertices in a shard.
     ///
-    /// If there is no sharding, this method returns the overall
-    /// number of vertices.
+    /// If there is no sharding, this method returns the overall number of
+    /// vertices.
     ///
-    /// This method returns a `usize`, but vertices must be
-    /// representable by the [`Vertex`](ShardEdge::Vertex) type.
+    /// This method returns a `usize`, but vertices must be representable by the
+    /// [`Vertex`] type.
+    ///
+    /// [`Vertex`]: ShardEdge::Vertex
     fn num_vertices(&self) -> usize;
 
     /// Returns the shard assigned to a signature.
     ///
-    /// This method is mainly used for testing and debugging, as
-    /// [`edge`](ShardEdge::edge) already takes sharding
-    /// into consideration.
+    /// This method is mainly used for testing and debugging, as [`edge`]
+    /// already takes sharding into consideration.
+    ///
+    /// [`edge`]: ShardEdge::edge
     fn shard(&self, sig: S) -> usize;
 
     /// Extracts the signature used to generate a local edge.
     fn local_sig(&self, sig: S) -> Self::LocalSig;
 
-    /// Returns the local edge generated by a [local
-    /// signature](ShardEdge::LocalSig).
+    /// Returns the local edge generated by a [local signature].
     ///
     /// The edge returned is local to the shard the signature belongs to. If
-    /// there is no sharding, this method has the same value as
-    /// [`edge`](ShardEdge::edge).
+    /// there is no sharding, this method has the same value as [`edge`].
+    ///
+    /// [`edge`]: ShardEdge::edge
+    /// [local signature]: ShardEdge::LocalSig
     fn local_edge(&self, local_sig: Self::LocalSig) -> [usize; K];
 
     /// Returns the global edge assigned to a signature.
     ///
     /// The edge returned is global, that is, its vertices are absolute indices
     /// into the backend. If there is no sharding, this method has the same
-    /// value as [`edge`](ShardEdge::edge).
+    /// value as [`edge`].
+    ///
+    /// [`edge`]: ShardEdge::edge
     fn edge(&self, sig: S) -> [usize; K];
 
     /// Derives a 64-bit remixed hash from a signature.
     ///
-    /// This composes [`local_sig`](Self::local_sig),
-    /// [`edge_hash`](Self::edge_hash), and the finalization step of Austin
-    /// Appleby's [MurmurHash3](http://code.google.com/p/smhasher/).
+    /// This composes [`local_sig`], [`edge_hash`], and the finalization step of
+    /// Austin Appleby's [MurmurHash3].
     ///
-    /// The result is the canonical hash used by
-    /// [`VFilter`](crate::dict::VFilter) and all signed structures to verify
-    /// membership.
+    /// The result is the canonical hash used by [`VFilter`] and all signed
+    /// structures to verify membership.
+    ///
+    /// [`VFilter`]: crate::dict::VFilter
+    /// [MurmurHash3]: http://code.google.com/p/smhasher/
+    /// [`edge_hash`]: Self::edge_hash
+    /// [`local_sig`]: Self::local_sig
     #[inline(always)]
     fn remixed_hash(&self, sig: S) -> u64 {
         super::mix64(self.edge_hash(self.local_sig(sig)))
@@ -263,12 +288,14 @@ macro_rules! fixed_point_inv_128 {
     };
 }
 
-/// Returns the maximum number of high bits for sharding the given number of keys
-/// so that the overhead of the maximum shard size with respect to the average
-/// shard size is with high probability `eps`.
+/// Returns the maximum number of high bits for sharding the given number of
+/// keys so that the overhead of the maximum shard size with respect to the
+/// average shard size is with high probability `eps`.
 ///
 /// From “[ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and
-/// Filters to Trillions of Keys](https://arxiv.org/abs/2503.18397)”.
+/// Filters to Trillions of Keys]”.
+///
+/// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
 fn sharding_high_bits(n: usize, eps: f64) -> u32 {
     // Bound from balls and bins problem
     let t = (n as f64 * eps * eps / 2.0).max(1.);
@@ -281,22 +308,24 @@ mod mwhc {
 
     use super::*;
 
-    /// [ε-cost sharded](https://arxiv.org/abs/2503.18397) 3-hypergraph [MWHC
-    /// construction](https://doi.org/10.1093/comjnl/39.6.547).
+    /// [ε-cost sharded] 3-hypergraph [MWHC construction].
     ///
     /// This construction uses ε-cost sharding (“[ε-Cost Sharding: Scaling
-    /// Hypergraph-Based Static Functions and Filters to Trillions of
-    /// Keys](https://arxiv.org/abs/2503.18397)”) to shard keys and then random
-    /// peelable 3-hypergraphs on sharded keys, giving a 23% space overhead.
-    /// Duplicate edges are not possible, which makes it possible to shard keys
-    /// with a finer grain than with [fuse
-    /// graphs](crate::func::shard_edge::FuseLge3Shards).
+    /// Hypergraph-Based Static Functions and Filters to Trillions of Keys]”) to
+    /// shard keys and then random peelable 3-hypergraphs on sharded keys,
+    /// giving a 23% space overhead. Duplicate edges are not possible, which
+    /// makes it possible to shard keys with a finer grain than with [fuse
+    /// graphs].
     ///
-    /// The MWHC construction has mostly been obsoleted by [fuse
-    /// graphs](crate::func::shard_edge::FuseLge3Shards), but it is still useful
-    /// for benchmarking and comparison. It also provides slightly faster
-    /// queries due to the simpler edge-generation logic, albeit construction is
-    /// slower due to cache-unfriendly accesses.
+    /// The MWHC construction has mostly been obsoleted by [fuse graphs], but it
+    /// is still useful for benchmarking and comparison. It also provides
+    /// slightly faster queries due to the simpler edge-generation logic, albeit
+    /// construction is slower due to cache-unfriendly accesses.
+    ///
+    /// [fuse graphs]: crate::func::shard_edge::FuseLge3Shards
+    /// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
+    /// [MWHC construction]: https://doi.org/10.1093/comjnl/39.6.547
+    /// [ε-cost sharded]: https://arxiv.org/abs/2503.18397
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
@@ -343,7 +372,9 @@ mod mwhc {
     /// most `eta`.
     ///
     /// From “[ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and
-    /// Filters to Trillions of Keys](https://arxiv.org/abs/2503.18397)”.
+    /// Filters to Trillions of Keys]”.
+    ///
+    /// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
     fn dup_edge_high_bits(arity: usize, n: usize, c: f64, eta: f64) -> u32 {
         let n = n as f64;
         match arity {
@@ -419,11 +450,12 @@ mod mwhc {
         }
     }
 
-    /// Unsharded 3-hypergraph [MWHC
-    /// construction](https://doi.org/10.1093/comjnl/39.6.547).
+    /// Unsharded 3-hypergraph [MWHC construction].
     ///
     /// This construction uses random peelable 3-hypergraphs, giving a 23% space
     /// overhead. See [`Mwhc3Shards`] for more information.
+    ///
+    /// [MWHC construction]: https://doi.org/10.1093/comjnl/39.6.547
     #[derive(Debug, Clone, Copy, MemSize, MemDbg, Default)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
@@ -516,22 +548,19 @@ mod fuse {
     use super::*;
     use lambert_w::lambert_w0;
     use rdst::RadixKey;
-    /// [ε-cost sharded](https://arxiv.org/abs/2503.18397) [fuse
-    /// 3-hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38) with [lazy
-    /// Gaussian elimination](https://doi.org/10.1016/j.ic.2020.104517) using
-    /// 64-bit local signatures.
+    /// [ε-cost sharded] [fuse 3-hypergraphs] with [lazy Gaussian elimination]
+    /// using 64-bit local signatures.
     ///
     /// This construction uses ε-cost sharding (“[ε-Cost Sharding: Scaling
-    /// Hypergraph-Based Static Functions and Filters to Trillions of
-    /// Keys](https://arxiv.org/abs/2503.18397)”) to shard keys and
-    /// then fuse 3-hypergraphs (see “[Dense Peelable Random Uniform
-    /// Hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38)”) on sharded
-    /// keys, giving a 10.5% space overhead for large key sets; smaller key sets
-    /// have a slightly larger overhead. Duplicate edges are possible, which
-    /// limits the amount of possible sharding.
+    /// Hypergraph-Based Static Functions and Filters to Trillions of Keys]”) to
+    /// shard keys and then fuse 3-hypergraphs (see “[Dense Peelable Random
+    /// Uniform Hypergraphs]”) on sharded keys, giving a 10.5% space overhead
+    /// for large key sets; smaller key sets have a slightly larger overhead.
+    /// Duplicate edges are possible, which limits the amount of possible
+    /// sharding.
     ///
-    /// In a fuse graph there are 𝓁 + 2 *segments* of size *s*. A random edge
-    /// is chosen by selecting a first segment *f* uniformly at random among the
+    /// In a fuse graph there are 𝓁 + 2 *segments* of size *s*. A random edge is
+    /// chosen by selecting a first segment *f* uniformly at random among the
     /// first 𝓁, and then choosing uniformly and at random a vertex in the
     /// segments *f*, *f* + 1 and *f* + 2. The probability of duplicates thus
     /// increases as segments gets smaller. This construction uses new empirical
@@ -540,15 +569,21 @@ mod fuse {
     ///
     /// Below a few million keys, fuse graphs have a much higher space overhead.
     /// This construction in that case switches to sharding and [lazy Gaussian
-    /// elimination](https://doi.org/10.1016/j.ic.2020.104517) to provide a
-    /// 12.5% overhead. The construction time per keys increases by an order of
-    /// magnitude, but since the number of keys is small, the impact is limited.
+    /// elimination] to provide a 12.5% overhead. The construction time per keys
+    /// increases by an order of magnitude, but since the number of keys is
+    /// small, the impact is limited.
     ///
     /// When building functions over key sets above a few dozen billion keys
     /// (but this depends on the sharding parameter ε) we suggest to use
     /// [`FuseLge3FullSigs`]. It uses full signatures as local signatures,
     /// making the probability of a duplicate local signature negligible. As a
     /// result, it is slightly slower and uses more space at construction time.
+    ///
+    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
+    /// [Dense Peelable Random Uniform Hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
+    /// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
+    /// [fuse 3-hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
+    /// [ε-cost sharded]: https://arxiv.org/abs/2503.18397
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
@@ -694,8 +729,9 @@ mod fuse {
         /// at most `eta`.
         ///
         /// From “[ε-Cost Sharding: Scaling Hypergraph-Based Static Functions
-        /// and Filters to Trillions of
-        /// Keys](https://arxiv.org/abs/2503.18397)”.
+        /// and Filters to Trillions of Keys]”.
+        ///
+        /// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
         fn dup_edge_high_bits(arity: usize, n: usize, c: f64, eta: f64) -> u32 {
             let n = n as f64;
             match arity {
@@ -816,21 +852,22 @@ mod fuse {
         }
     }
 
-    /// Unsharded [fuse
-    /// 3-hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38) with [lazy
-    /// Gaussian elimination](https://doi.org/10.1016/j.ic.2020.104517).
+    /// Unsharded [fuse 3-hypergraphs] with [lazy Gaussian elimination].
     ///
     /// See [`FuseLge3Shards`] for a general description of fuse graphs.
     ///
     /// This construction does not use sharding, so it has a higher space
     /// overhead for a small number of keys, albeit it uses [lazy Gaussian
-    /// elimination](https://doi.org/10.1016/j.ic.2020.104517) in the smaller
-    /// cases to improve the overhead.
+    /// elimination] in the smaller cases to improve the overhead.
     ///
-    /// This construction, coupled with `[u64; 1]` signatures, is the fastest for
-    /// small sets of keys, but it works only up to 3.8 billion keys. It is
+    /// This construction, coupled with `[u64; 1]` signatures, is the fastest
+    /// for small sets of keys, but it works only up to 3.8 billion keys. It is
     /// mostly equivalent to that described in [“Binary Fuse Filters: Fast and
-    /// Smaller Than Xor Filters”](https://doi.org/10.1145/3510449).
+    /// Smaller Than Xor Filters”].
+    ///
+    /// [“Binary Fuse Filters: Fast and Smaller Than Xor Filters”]: https://doi.org/10.1145/3510449
+    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
+    /// [fuse 3-hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
     #[derive(Debug, Clone, Copy, MemSize, MemDbg, Default)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
@@ -1034,20 +1071,21 @@ mod fuse {
         }
     }
 
-    /// Unsharded [fuse
-    /// 3-hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38) without [lazy
-    /// Gaussian elimination](https://doi.org/10.1016/j.ic.2020.104517).
+    /// Unsharded [fuse 3-hypergraphs] without [lazy Gaussian elimination].
     ///
     /// This implementation is equivalent to that described in "[Binary Fuse
-    /// Filters: Fast and Smaller Than Xor
-    /// Filters](https://doi.org/10.1145/3510449)". We use the 3-wise expansion
-    /// factor from Table 1, , which provides enough expansion for peelability
-    /// at any *n* at the cost of slightly more space for small key sets (e.g.,
-    /// ≈1.35 for *n* = 100, ≈1.125 for *n* ≥ 10⁶).
+    /// Filters: Fast and Smaller Than Xor Filters]". We use the 3-wise
+    /// expansion factor from Table 1, , which provides enough expansion for
+    /// peelability at any *n* at the cost of slightly more space for small key
+    /// sets (e.g., ≈1.35 for *n* = 100, ≈1.125 for *n* ≥ 10⁶).
     ///
-    /// This is intended for small to medium key sets (up to 2³² keys due
-    /// to `u32` vertices) where avoiding Gaussian elimination is more
-    /// important than minimizing space overhead.
+    /// This is intended for small to medium key sets (up to 2³² keys due to
+    /// `u32` vertices) where avoiding Gaussian elimination is more important
+    /// than minimizing space overhead.
+    ///
+    /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
+    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
+    /// [fuse 3-hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
@@ -1072,9 +1110,10 @@ mod fuse {
     impl Fuse3NoShards {
         /// Returns the expansion factor for fuse 3-hypergraphs.
         ///
-        /// From Table 1 (3-wise) of "[Binary Fuse Filters: Fast and
-        /// Smaller Than Xor
-        /// Filters](https://doi.org/10.1145/3510449)".
+        /// From Table 1 (3-wise) of "[Binary Fuse Filters: Fast and Smaller
+        /// Than Xor Filters]".
+        ///
+        /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
         fn c(n: usize) -> f64 {
             let n = n.max(2) as f64;
             0.875 + 0.25 * (1.0_f64).max((1e6_f64).ln() / n.ln())
@@ -1082,8 +1121,9 @@ mod fuse {
 
         /// Returns the log₂ of segment size for fuse 3-hypergraphs.
         ///
-        /// From "[Binary Fuse Filters: Fast and Smaller Than Xor
-        /// Filters](https://doi.org/10.1145/3510449)".
+        /// From "[Binary Fuse Filters: Fast and Smaller Than Xor Filters]".
+        ///
+        /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
         fn log2_seg_size(n: usize) -> u32 {
             let n = n.max(1) as f64;
             (n.ln() / (3.33_f64).ln() + 2.25).floor() as u32
@@ -1234,22 +1274,25 @@ mod fuse {
         }
     }
 
-    /// [ε-cost sharded](https://arxiv.org/abs/2503.18397) [fuse
-    /// 3-hypergraphs](https://doi.org/10.4230/LIPIcs.ESA.2019.38) without [lazy
-    /// Gaussian elimination](https://doi.org/10.1016/j.ic.2020.104517).
+    /// [ε-cost sharded] [fuse 3-hypergraphs] without [lazy Gaussian
+    /// elimination].
     ///
-    /// This variant uses the expansion factor from Table 1 (row "3-wise")
-    /// of "[Binary Fuse Filters: Fast and Smaller Than Xor
-    /// Filters](https://doi.org/10.1145/3510449)", which provides enough
-    /// expansion for peelability without Gaussian elimination.
+    /// This variant uses the expansion factor from Table 1 (row "3-wise") of
+    /// "[Binary Fuse Filters: Fast and Smaller Than Xor Filters]", which
+    /// provides enough expansion for peelability without Gaussian elimination.
     ///
-    /// To keep the expansion factor near its asymptotic optimum (1.125),
-    /// shards are never smaller than 10⁶ keys. Below 10⁶ total keys, no
-    /// sharding occurs (single shard).
+    /// To keep the expansion factor near its asymptotic optimum (1.125), shards
+    /// are never smaller than 10⁶ keys. Below 10⁶ total keys, no sharding
+    /// occurs (single shard).
     ///
     /// Compared to [`FuseLge3Shards`], this variant avoids the expensive
     /// Gaussian elimination fallback at the cost of slightly higher space
     /// overhead for small shard sizes.
+    ///
+    /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
+    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
+    /// [fuse 3-hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
+    /// [ε-cost sharded]: https://arxiv.org/abs/2503.18397
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
@@ -1289,9 +1332,10 @@ mod fuse {
 
         /// Returns the expansion factor for fuse 3-hypergraphs.
         ///
-        /// From Table 1 (3-wise) of "[Binary Fuse Filters: Fast and
-        /// Smaller Than Xor
-        /// Filters](https://doi.org/10.1145/3510449)".
+        /// From Table 1 (3-wise) of "[Binary Fuse Filters: Fast and Smaller
+        /// Than Xor Filters]".
+        ///
+        /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
         fn c(n: usize) -> f64 {
             let n = n.max(2) as f64;
             0.875 + 0.25 * (1.0_f64).max((1e6_f64).ln() / n.ln())
@@ -1307,10 +1351,11 @@ mod fuse {
         /// Returns the log₂ of segment size for fuse 3-hypergraphs.
         ///
         /// Uses the standard fuse formula for shards up to
-        /// [`Self::LARGE_SHARD_THRESHOLD`], and the ε-cost sharding
-        /// formula from "[ε-Cost Sharding: Scaling Hypergraph-Based
-        /// Static Functions and Filters to Trillions of
-        /// Keys](https://arxiv.org/abs/2503.18397)" for larger shards.
+        /// [`Self::LARGE_SHARD_THRESHOLD`], and the ε-cost sharding formula
+        /// from "[ε-Cost Sharding: Scaling Hypergraph-Based Static Functions
+        /// and Filters to Trillions of Keys]" for larger shards.
+        ///
+        /// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
         fn log2_seg_size(n: usize) -> u32 {
             let n = n.max(1) as f64;
             if (n as usize) <= Self::LARGE_SHARD_THRESHOLD {
@@ -1321,12 +1366,13 @@ mod fuse {
         }
 
         /// Returns the maximum number of high bits for sharding the given
-        /// number of keys so that the probability of a duplicate edge in a
-        /// fuse graph is at most `eta`.
+        /// number of keys so that the probability of a duplicate edge in a fuse
+        /// graph is at most `eta`.
         ///
-        /// From "[ε-Cost Sharding: Scaling Hypergraph-Based Static
-        /// Functions and Filters to Trillions of
-        /// Keys](https://arxiv.org/abs/2503.18397)".
+        /// From "[ε-Cost Sharding: Scaling Hypergraph-Based Static Functions
+        /// and Filters to Trillions of Keys]".
+        ///
+        /// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
         fn dup_edge_high_bits(n: usize, c: f64, eta: f64) -> u32 {
             let n = n as f64;
             let subexpr =
@@ -1412,10 +1458,8 @@ mod fuse {
         }
     }
 
-    /// [ε-cost sharded](https://arxiv.org/abs/2503.18397) fuse
-    /// 3-hypergraphs with [lazy Gaussian
-    /// elimination](https://doi.org/10.1016/j.ic.2020.104517) using full local
-    /// signatures.
+    /// [ε-cost sharded] fuse 3-hypergraphs with [lazy Gaussian elimination]
+    /// using full local signatures.
     ///
     ///
     /// This construction should be preferred to [`FuseLge3Shards`] when
@@ -1426,6 +1470,9 @@ mod fuse {
     /// construction time.
     ///
     /// The rest of the logic is identical.
+    ///
+    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
+    /// [ε-cost sharded]: https://arxiv.org/abs/2503.18397
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]

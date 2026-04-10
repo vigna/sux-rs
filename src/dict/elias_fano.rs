@@ -21,25 +21,20 @@
 //! record.
 //!
 //! The representation was introduced by Peter Elias in "[Efficient storage and
-//! retrieval by content and address of static
-//! files](https://dl.acm.org/doi/abs/10.1145/321812.321820)”, *J. Assoc.
-//! Comput. Mach.*, 21(2):246–260, ACM, 1974, and also independently by Robert
-//! Fano in “[On the number of bits required to implement an associative
-//! memory](http://csg.csail.mit.edu/pubs/memos/Memo-61/Memo-61.pdf)”,
+//! retrieval by content and address of static files]”, *J. Assoc. Comput.
+//! Mach.*, 21(2):246–260, ACM, 1974, and also independently by Robert Fano in
+//! “[On the number of bits required to implement an associative memory]”,
 //! Memorandum 61, Computer Structures Group, Project MAC, MIT, Cambridge,
 //! Mass., n.d., 1971.
 //!
 //! This implementation is based on algorithmic engineering ideas proposed by
-//! Sebastiano Vigna in “[Quasi-succinct
-//! indices](https://dl.acm.org/doi/10.1145/2433396.2433409)”, *Proceedings of
-//! the 6th ACM International Conference on Web Search and Data Mining,
-//! WSDM'13*, pages 83–92, ACM, 2013. The name “Elias–Fano” for this
-//! representation was used for the first time by Sebastiano Vigna in
-//! “[Broadword Implementation of Rank/Select
-//! Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
-//! _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
-//! 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
-//! Springer, 2008.
+//! Sebastiano Vigna in “[Quasi-succinct indices]”, *Proceedings of the 6th ACM
+//! International Conference on Web Search and Data Mining, WSDM'13*, pages
+//! 83–92, ACM, 2013. The name “Elias–Fano” for this representation was used for
+//! the first time by Sebastiano Vigna in “[Broadword Implementation of
+//! Rank/Select Queries]”, _Proc. of the 7th International Workshop on
+//! Experimental Algorithms, WEA 2008_, volume 5038 of Lecture Notes in Computer
+//! Science, pages 154–168, Springer, 2008.
 //!
 //! The elements of the sequence are recorded by storing separately the lower
 //! *s* = ⌊log₂(*u*/*n*)⌋ bits and the remaining upper bits. The lower bits are
@@ -49,6 +44,11 @@
 //! recovered by selecting the *i*-th bit of the resulting bit array and
 //! subtracting *i* (note that this will work because the upper bits are
 //! nondecreasing).
+//!
+//! [Broadword Implementation of Rank/Select Queries]: https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12
+//! [Quasi-succinct indices]: https://dl.acm.org/doi/10.1145/2433396.2433409
+//! [On the number of bits required to implement an associative memory]: http://csg.csail.mit.edu/pubs/memos/Memo-61/Memo-61.pdf
+//! [Efficient storage and retrieval by content and address of static files]: https://dl.acm.org/doi/abs/10.1145/321812.321820
 
 use crate::prelude::{indexed_dict::*, *};
 use crate::traits::{AtomicBitVecOps, BitVecOpsMut, TryIntoUnaligned, Word, bit_field_slice::*};
@@ -101,13 +101,11 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// convenience implementation makes it possible to build an [`EliasFano`] from
 /// a slice.
 ///
-/// In both cases, if you use the [`build`](EliasFanoBuilder::build) method you
-/// will only be able to iterate over the sequence. Using the methods
-/// [`build_with_seq`](EliasFanoBuilder::build_with_seq),
-/// [`build_with_dict`](EliasFanoBuilder::build_with_dict), or
-/// [`build_with_seq_and_dict`](EliasFanoBuilder::build_with_seq_and_dict) you
-/// will have access to the additional functionalities of an [`IndexedSeq`] or
-/// an [`IndexedDict`] with [`Succ`] and [`Pred`].
+/// In both cases, if you use the [`build`] method you will only be able to
+/// iterate over the sequence. Using the methods [`build_with_seq`],
+/// [`build_with_dict`], or [`build_with_seq_and_dict`] you will have access to
+/// the additional functionalities of an [`IndexedSeq`] or an [`IndexedDict`]
+/// with [`Succ`] and [`Pred`].
 ///
 /// It is also possible to manually enrich the base structure by calling
 /// [`EliasFano::map_high_bits`]. To use the structure as an [`IndexedSeq`] you
@@ -122,11 +120,10 @@ pub type EfSeqDict<V = usize> = EliasFano<
 ///
 /// - `V`: The value type (e.g., `u64`). Must implement [`Word`].
 /// - `H`: The higher-bits storage. Defaults to
-///   [`BitVec<Box<[usize]>>`](crate::bits::BitVec). Enriching this with
-///   selection structures enables [`IndexedSeq`] and/or successor/predecessor
-///   queries.
+///   [`BitVec<Box<[usize]>>`]. Enriching this with selection structures enables
+///   [`IndexedSeq`] and/or successor/predecessor queries.
 /// - `L`: The lower-bits storage. Defaults to
-///   [`BitFieldVec<Box<[V]>>`](crate::bits::BitFieldVec).
+///   [`BitFieldVec<Box<[V]>>`].
 ///
 /// # Bound Checks for Successor and Predecessor Queries
 ///
@@ -146,20 +143,18 @@ pub type EfSeqDict<V = usize> = EliasFano<
 ///
 /// We provide a number of iterators over the values of the sequence:
 ///
-/// - Forward iterators, returned by [`iter`](EliasFano::iter) and
-///   [`iter_from`](EliasFano::iter_from), that iterate over the values in
-///   increasing order, are the fastest. The returned iterators implement
+/// - Forward iterators, returned by [`iter`] and
+///   [`iter_from`], that iterate over the values in increasing order, are the
+///   fastest. The returned iterators implement also [`UncheckedIterator`].
+///
+/// - Backward iterators, returned by [`iter_back`] and
+///   [`iter_back_from`], that iterate over the values in decreasing order, are
+///   slightly slower than forward iterators. The returned iterators implement
 ///   also [`UncheckedIterator`].
 ///
-/// - Backward iterators, returned by [`iter_back`](EliasFano::iter_back) and
-///   [`iter_back_from`](EliasFano::iter_back_from), that iterate over the
-///   values in decreasing order, are slightly slower than forward iterators.
-///   The returned iterators implement also [`UncheckedIterator`].
-///
-/// - Bidirectional iterators, returned by [`iter_bidi`](EliasFano::iter_bidi)
-///   and [`iter_bidi_from`](EliasFano::iter_bidi_from), that can iterate in
-///   both directions, are the slowest, but they are significantly faster than
-///   selecting values.
+/// - Bidirectional iterators, returned by [`iter_bidi`]
+///   and [`iter_bidi_from`], that can iterate in both directions, are the
+///   slowest, but they are significantly faster than selecting values.
 ///
 /// Besides the convenience inherent methods, we implement [`IntoIterator`],
 /// [`IntoIteratorFrom`], [`IntoBackIterator`], [`IntoBackIteratorFrom`],
@@ -172,10 +167,9 @@ pub type EfSeqDict<V = usize> = EliasFano<
 ///
 /// # Unaligned access
 ///
-/// This structure can use [unaligned access](BitFieldVec::get_unaligned) to
-/// retrieve the lower bits. On some architectures this provides a mild
-/// performance improvement. To use unaligned access, call
-/// [`try_into_unaligned`](TryIntoUnaligned::try_into_unaligned):
+/// This structure can use [unaligned access] to retrieve the lower bits. On
+/// some architectures this provides a mild performance improvement. To use
+/// unaligned access, call [`try_into_unaligned`]:
 ///
 /// ```ignore
 /// use sux::traits::TryIntoUnaligned;
@@ -227,8 +221,7 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// assert_eq!(ef.succ(11), None);
 /// ```
 ///
-/// Enriching manually a base structure with
-/// [`map_high_bits`](EliasFano::map_high_bits):
+/// Enriching manually a base structure with [`map_high_bits`]:
 /// ```rust
 /// # use sux::rank_sel::{SelectAdaptConst, SelectZeroAdaptConst};
 /// # use sux::dict::{EliasFanoBuilder};
@@ -277,6 +270,22 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// assert_eq!(ef.get(0), 0);
 /// assert_eq!(ef.get(1), 2);
 /// ```
+///
+/// [`map_high_bits`]: EliasFano::map_high_bits
+/// [`try_into_unaligned`]: TryIntoUnaligned::try_into_unaligned
+/// [unaligned access]: BitFieldVec::get_unaligned
+/// [`iter_bidi_from`]: EliasFano::iter_bidi_from
+/// [`iter_bidi`]: EliasFano::iter_bidi
+/// [`iter_back_from`]: EliasFano::iter_back_from
+/// [`iter_back`]: EliasFano::iter_back
+/// [`iter_from`]: EliasFano::iter_from
+/// [`iter`]: EliasFano::iter
+/// [`BitFieldVec<Box<[V]>>`]: crate::bits::BitFieldVec
+/// [`BitVec<Box<[usize]>>`]: crate::bits::BitVec
+/// [`build_with_seq_and_dict`]: EliasFanoBuilder::build_with_seq_and_dict
+/// [`build_with_dict`]: EliasFanoBuilder::build_with_dict
+/// [`build_with_seq`]: EliasFanoBuilder::build_with_seq
+/// [`build`]: EliasFanoBuilder::build
 #[derive(Debug, Clone, Hash, MemSize, MemDbg, value_traits::Subslices)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1582,11 +1591,15 @@ where
 
 /// A backward iterator for [`EliasFano`].
 ///
-/// Instead of scanning bits from right to left (using [`trailing_zeros`](usize::trailing_zeros)),
-/// it scans from left to right (using [`leading_zeros`](usize::leading_zeros)),
-/// and accesses low bits through a backward unchecked iterator.
+/// Instead of scanning bits from right to left (using [`trailing_zeros`]), it
+/// scans from left to right (using [`leading_zeros`]), and accesses low bits
+/// through a backward unchecked iterator.
 ///
-/// This iterator is slightly slower than a [forward iterator](EliasFanoIter).
+/// This iterator is slightly slower than a [forward iterator].
+///
+/// [forward iterator]: EliasFanoIter
+/// [`leading_zeros`]: usize::leading_zeros
+/// [`trailing_zeros`]: usize::trailing_zeros
 #[derive(MemSize, MemDbg)]
 pub struct EliasFanoBackIter<
     'a,
@@ -1749,19 +1762,23 @@ where
 
 /// A bidirectional iterator (cursor) for [`EliasFano`].
 ///
-/// Unlike [`EliasFanoIter`] and [`EliasFanoBackIter`], this cursor
-/// does not clear bits from the current word. Instead, it uses
-/// [`select_in_word`](SelectInWord::select_in_word) to find the relevant bit
-/// on each call to [`next`](Iterator::next) or
-/// [`prev`](BidiIterator::prev). Low bits are accessed via random
-/// access ([`get_value_unchecked`](SliceByValue::get_value_unchecked)).
+/// Unlike [`EliasFanoIter`] and [`EliasFanoBackIter`], this cursor does not
+/// clear bits from the current word. Instead, it uses [`select_in_word`] to
+/// find the relevant bit on each call to [`next`] or [`prev`]. Low bits are
+/// accessed via random access ([`get_value_unchecked`]).
 ///
 /// The cursor position `index` ranges from 0 to *n*. Calling `next()` yields
 /// element `index` and increments the cursor; calling `prev()` yields element
 /// `index - 1` and decrements it.
 ///
-/// This iterator is slightly slower than a [backward
-/// iterator](EliasFanoBackIter), but much faster than using selection.
+/// This iterator is slightly slower than a [backward iterator], but much faster
+/// than using selection.
+///
+/// [backward iterator]: EliasFanoBackIter
+/// [`get_value_unchecked`]: SliceByValue::get_value_unchecked
+/// [`prev`]: BidiIterator::prev
+/// [`next`]: Iterator::next
+/// [`select_in_word`]: SelectInWord::select_in_word
 #[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct EliasFanoBidiIter<
     'a,
@@ -2120,10 +2137,12 @@ impl<V: Word + PrimitiveNumberAs<u128>> EliasFanoBuilder<V> {
     /// high bits a selection structure.
     ///
     /// Usually, however, the default implementations returned by the
-    /// [`build_with_seq`](EliasFanoBuilder::build_with_seq),
-    /// [`build_with_dict`](EliasFanoBuilder::build_with_dict), and
-    /// [`build_with_seq_and_dict`](EliasFanoBuilder::build_with_seq_and_dict)
+    /// [`build_with_seq`], [`build_with_dict`], and [`build_with_seq_and_dict`]
     /// methods are more convenient.
+    ///
+    /// [`build_with_seq_and_dict`]: EliasFanoBuilder::build_with_seq_and_dict
+    /// [`build_with_dict`]: EliasFanoBuilder::build_with_dict
+    /// [`build_with_seq`]: EliasFanoBuilder::build_with_seq
     pub fn build(self) -> EliasFano<V> {
         assert!(
             self.count == self.n,
@@ -2290,10 +2309,12 @@ where
     /// high bits a selection structure.
     ///
     /// Usually, however, the default implementations returned by the
-    /// [`build_with_seq`](EliasFanoConcurrentBuilder::build_with_seq),
-    /// [`build_with_dict`](EliasFanoConcurrentBuilder::build_with_dict), and
-    /// [`build_with_seq_and_dict`](EliasFanoConcurrentBuilder::build_with_seq_and_dict)
+    /// [`build_with_seq`], [`build_with_dict`], and [`build_with_seq_and_dict`]
     /// methods are more convenient.
+    ///
+    /// [`build_with_seq_and_dict`]: EliasFanoConcurrentBuilder::build_with_seq_and_dict
+    /// [`build_with_dict`]: EliasFanoConcurrentBuilder::build_with_dict
+    /// [`build_with_seq`]: EliasFanoConcurrentBuilder::build_with_seq
     pub fn build(self) -> EliasFano<V> {
         let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
         let low_bits: BitFieldVec<Vec<V>> = self.low_bits.into();

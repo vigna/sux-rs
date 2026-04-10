@@ -38,9 +38,10 @@
 //!
 //! Djamal Belazzougui, Paolo Boldi, Rasmus Pagh, and Sebastiano Vigna.
 //! [Monotone minimal perfect hashing: Searching a sorted table with O(1)
-//! accesses](https://dl.acm.org/doi/10.5555/1496770.1496856). In *Proceedings of
-//! the 20th Annual ACM-SIAM Symposium On Discrete Mathematics (SODA)*, pages
-//! 785−794, New York, 2009. ACM Press.
+//! accesses]. In *Proceedings of the 20th Annual ACM-SIAM Symposium On
+//! Discrete Mathematics (SODA)*, pages 785−794, New York, 2009. ACM Press.
+//!
+//! [Monotone minimal perfect hashing: Searching a sorted table with O(1) accesses]: https://dl.acm.org/doi/10.5555/1496770.1496856
 
 use crate::bits::BitFieldVec;
 use crate::func::VFunc;
@@ -176,18 +177,17 @@ mod build {
         /// Creates a new LCP-based monotone minimal perfect hash function
         /// for integers using default [`VBuilder`] settings.
         ///
-        /// This is a convenience wrapper around
-        /// [`try_new_with_builder`](Self::try_new_with_builder). Use that
-        /// method if you need to configure construction parameters such
-        /// as offline mode, thread count, or sharding overhead.
+        /// This is a convenience wrapper around [`try_new_with_builder`].
+        /// Use that method if you need to configure construction parameters
+        /// such as offline mode, thread count, or sharding overhead.
         ///
         /// The keys must be provided in strictly increasing order.
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
         ///
-        /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
-        /// parallelizes the hash computation for faster construction.
+        /// If keys are available as a slice, [`try_par_new`] parallelizes
+        /// the hash computation for faster construction.
         ///
         /// # Examples
         ///
@@ -210,6 +210,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -225,16 +228,15 @@ mod build {
         /// for integers using the given [`VBuilder`] configuration.
         ///
         /// The builder controls construction parameters such as [offline
-        /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
-        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        /// mode], [thread count], [sharding overhead], and [PRNG seed].
         ///
         /// The keys must be provided in strictly increasing order.
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
         ///
-        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// for parallel hash computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel hash
+        /// computation from slices.
         ///
         /// # Examples
         ///
@@ -261,6 +263,12 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -402,15 +410,14 @@ mod build {
         /// for integers from a slice, using parallel hash computation and
         /// default [`VBuilder`] settings.
         ///
-        /// This is the parallel counterpart of [`try_new`](Self::try_new).
-        /// It is a convenience wrapper around
-        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// with `VBuilder::default()`.
+        /// This is the parallel counterpart of [`try_new`]. It is a
+        /// convenience wrapper around [`try_par_new_with_builder`] with
+        /// `VBuilder::default()`.
         ///
         /// The keys must be provided in strictly increasing order.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new`](Self::try_new) instead.
+        /// [`try_new`] instead.
         ///
         /// # Examples
         ///
@@ -432,6 +439,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new`]: Self::try_new
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_par_new(
             keys: &[K],
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -443,13 +453,12 @@ mod build {
         /// for integers from a slice, using parallel hash computation and
         /// the given [`VBuilder`] configuration.
         ///
-        /// This is the parallel counterpart of
-        /// [`try_new_with_builder`](Self::try_new_with_builder).
+        /// This is the parallel counterpart of [`try_new_with_builder`].
         ///
         /// The keys must be provided in strictly increasing order.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// [`try_new_with_builder`] instead.
         ///
         /// # Examples
         ///
@@ -474,6 +483,8 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder(
             keys: &[K],
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
@@ -674,10 +685,9 @@ mod build {
         /// Creates a new LCP-based monotone minimal perfect hash function for
         /// byte-sequence keys using default [`VBuilder`] settings.
         ///
-        /// This is a convenience wrapper around
-        /// [`try_new_with_builder`](Self::try_new_with_builder). Use that
-        /// method if you need to configure construction parameters such
-        /// as offline mode, thread count, or sharding overhead.
+        /// This is a convenience wrapper around [`try_new_with_builder`].
+        /// Use that method if you need to configure construction parameters
+        /// such as offline mode, thread count, or sharding overhead.
         ///
         /// The keys must be in strictly increasing lexicographic order.
         /// The lender may yield references to any type `B` that borrows
@@ -687,8 +697,8 @@ mod build {
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
         ///
-        /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
-        /// parallelizes the hash computation for faster construction.
+        /// If keys are available as a slice, [`try_par_new`] parallelizes
+        /// the hash computation for faster construction.
         ///
         /// # Examples
         ///
@@ -711,6 +721,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -726,16 +739,15 @@ mod build {
         /// byte-sequence keys using the given [`VBuilder`] configuration.
         ///
         /// The builder controls construction parameters such as [offline
-        /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
-        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        /// mode], [thread count], [sharding overhead], and [PRNG seed].
         ///
         /// The keys must be in strictly increasing lexicographic order.
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
         ///
-        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// for parallel hash computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel hash
+        /// computation from slices.
         ///
         /// # Examples
         ///
@@ -762,6 +774,12 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -921,15 +939,14 @@ mod build {
         /// byte-sequence keys from a slice, using parallel hash computation and
         /// default [`VBuilder`] settings.
         ///
-        /// This is the parallel counterpart of [`try_new`](Self::try_new).
-        /// It is a convenience wrapper around
-        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// with `VBuilder::default()`.
+        /// This is the parallel counterpart of [`try_new`]. It is a
+        /// convenience wrapper around [`try_par_new_with_builder`] with
+        /// `VBuilder::default()`.
         ///
         /// The keys must be in strictly increasing lexicographic order.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new`](Self::try_new) instead.
+        /// [`try_new`] instead.
         ///
         /// # Examples
         ///
@@ -951,6 +968,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new`]: Self::try_new
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_par_new<B: AsRef<[u8]> + Borrow<K> + Sync>(
             keys: &[B],
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -965,13 +985,12 @@ mod build {
         /// byte-sequence keys from a slice, using parallel hash computation and the
         /// given [`VBuilder`] configuration.
         ///
-        /// This is the parallel counterpart of
-        /// [`try_new_with_builder`](Self::try_new_with_builder).
+        /// This is the parallel counterpart of [`try_new_with_builder`].
         ///
         /// The keys must be in strictly increasing lexicographic order.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// [`try_new_with_builder`] instead.
         ///
         /// # Examples
         ///
@@ -996,6 +1015,8 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder<B: AsRef<[u8]> + Borrow<K> + Sync>(
             keys: &[B],
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
@@ -1151,7 +1172,7 @@ pub(crate) use build::{lcp_bits, lcp_bits_nul, log2_bucket_size};
 /// A monotone minimal perfect hash function for sorted integer keys based
 /// on longest common bit-prefixes (LCPs).
 ///
-/// See the [module documentation](self) for the algorithmic description.
+/// See the [module documentation] for the algorithmic description.
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
@@ -1161,16 +1182,20 @@ pub(crate) use build::{lcp_bits, lcp_bits_nul, log2_bucket_size};
 /// - `K`: the integer key type.
 /// - `D`: the backing store for [`VFunc`] data (e.g.,
 ///   [`BitFieldVec`]).
-/// - `S0`: the [signature type](`Sig`) for the key map
+/// - `S0`: the [signature type] for the key map
 ///   (`offset_lcp_length`).
 /// - `E0`: the [`ShardEdge`] for the key map.
-/// - `S1`: the  [signature type](`Sig`) for the prefix-to-bucket map
+/// - `S1`: the  [signature type] for the prefix-to-bucket map
 ///   (`lcp2bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
 ///
 /// # Examples
 ///
-/// See [`try_new`](LcpMmphfInt::try_new).
+/// See [`try_new`].
+///
+/// [module documentation]: self
+/// [signature type]: Sig
+/// [`try_new`]: LcpMmphfInt::try_new
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1315,7 +1340,7 @@ impl ToSig<[u64; 1]> for BitPrefix {
 /// A monotone minimal perfect hash function for sorted byte-sequence keys based
 /// on longest common prefixes (LCPs).
 ///
-/// See the [module documentation](self) for the algorithmic description.
+/// See the [module documentation] for the algorithmic description.
 /// See [`LcpMmphfStr`] and [`LcpMmphfSliceU8`] for common instantiations,
 /// and [`LcpMmphfInt`] for integer keys.
 ///
@@ -1327,17 +1352,21 @@ impl ToSig<[u64; 1]> for BitPrefix {
 /// - `K`: the integer key type.
 /// - `D`: the backing store for [`VFunc`] data (e.g.,
 ///   [`BitFieldVec`]).
-/// - `S0`: the [signature type](`Sig`) for the key map
+/// - `S0`: the [signature type] for the key map
 ///   (`offset_lcp_length`).
 /// - `E0`: the [`ShardEdge`] for the key map.
-/// - `S1`: the  [signature type](`Sig`) for the prefix-to-bucket map
+/// - `S1`: the  [signature type] for the prefix-to-bucket map
 ///   (`lcp2bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
 ///
 /// # Examples
 ///
-/// See [`try_new`](LcpMmphf::try_new). See also [`LcpMmphfStr`] and
-/// [`LcpMmphfSliceU8`] for common instantiations.
+/// See [`try_new`]. See also [`LcpMmphfStr`] and [`LcpMmphfSliceU8`]
+/// for common instantiations.
+///
+/// [module documentation]: self
+/// [signature type]: Sig
+/// [`try_new`]: LcpMmphf::try_new
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
