@@ -247,47 +247,7 @@ impl<K: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableFunc for VF
 ///
 /// # Examples
 ///
-/// Wrapping a [`VFunc`] with full-width hashes:
-///
-/// ```rust
-/// # #[cfg(feature = "rayon")]
-/// # fn main() -> anyhow::Result<()> {
-/// # use sux::func::{SignedFunc, VFunc};
-/// # use sux::bits::BitFieldVec;
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromCloneableIntoIterator;
-/// let func = <SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, Box<[u16]>>>::try_new(
-///     FromCloneableIntoIterator::new(0..100_usize),
-///     100,
-///     no_logging![],
-/// )?;
-/// assert_eq!(func.get(42_usize), Some(42));
-/// assert_eq!(func.get(999_usize), None);
-/// # Ok(())
-/// # }
-/// # #[cfg(not(feature = "rayon"))]
-/// # fn main() {}
-/// ```
-///
-/// Wrapping an [`LcpMmphfStr`](crate::func::LcpMmphfStr) for sorted string keys:
-///
-/// ```rust
-/// # #[cfg(feature = "rayon")]
-/// # fn main() -> anyhow::Result<()> {
-/// # use sux::func::{SignedFunc, LcpMmphfStr};
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::utils::FromSlice;
-/// let keys = vec!["alpha", "beta", "gamma"];
-/// let func = <SignedFunc<LcpMmphfStr, Box<[u64]>>>::try_new(
-///     FromSlice::new(&keys), keys.len(), no_logging![],
-/// )?;
-/// assert_eq!(func.get("beta"), Some(1));
-/// assert_eq!(func.get("missing"), None);
-/// # Ok(())
-/// # }
-/// # #[cfg(not(feature = "rayon"))]
-/// # fn main() {}
-/// ```
+/// See the various [`try_new`](SignedFunc::try_new) implementations.
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

@@ -358,6 +358,16 @@ pub trait SelectZeroHinted {
 /// is typically used to provide [`NumBits`] to [`Select`]/[`SelectZero`]
 /// implementations; see,
 /// for example, [`SelectAdapt`](crate::rank_sel::SelectAdapt).
+///
+/// # Examples
+///
+/// ```rust
+/// # use sux::prelude::*;
+/// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 0, 1];
+/// let bits: AddNumBits<_> = bits.into();
+/// assert_eq!(bits.num_ones(), 5);
+/// assert_eq!(bits.num_zeros(), 4);
+/// ```
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

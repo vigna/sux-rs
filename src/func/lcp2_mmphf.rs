@@ -65,26 +65,7 @@ use xxhash_rust::xxh3;
 ///
 /// # Examples
 ///
-/// ```rust
-/// # #[cfg(feature = "rayon")]
-/// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::func::Lcp2MmphfInt;
-/// # use sux::traits::TryIntoUnaligned;
-/// # use sux::utils::FromSlice;
-/// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-///
-/// let func =
-///     Lcp2MmphfInt::<u64>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?.try_into_unaligned()?;
-///
-/// for (i, &key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key), i);
-/// }
-/// # Ok(())
-/// # }
-/// # #[cfg(not(feature = "rayon"))]
-/// # fn main() {}
-/// ```
+/// See [`try_new`](Lcp2MmphfInt::try_new).
 #[derive(Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1835,6 +1816,10 @@ mod build {
 ///   (`lcp2bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
 ///
+/// # Examples
+///
+/// See [`try_new`](Lcp2Mmphf::try_new). See also [`Lcp2MmphfStr`] and
+/// [`Lcp2MmphfSliceU8`] for common instantiations.
 #[derive(Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

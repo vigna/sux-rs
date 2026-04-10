@@ -28,7 +28,8 @@
 //!   immutable lists of strings or byte sequences with random access.
 //! - [`MappedRearCodedListStr`] / [`MappedRearCodedListSliceU8`]: Rear-coded
 //!   lists with element reordering for better compression.
-//! - [`SignedFunc`]: [Index functions](crate::func) verified by hash signatures.
+//! - [`SignedFunc`](crate::func::signed::SignedFunc):
+//!   [Functions](crate::func) verified by hash signatures.
 //! - [`SliceSeq`]: Adapters exposing slice references as indexed sequences.
 //!
 //! Most structures implement the

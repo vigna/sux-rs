@@ -36,10 +36,9 @@ use std::borrow::Borrow;
 /// sets. Details on other possible [`ShardEdge`] implementations can be found
 /// in the [`shard_edge`](crate::func::shard_edge) module documentation.
 ///
-/// Instances of this structure are immutable; they are built
-/// using a [`VBuilder`](crate::func::VBuilder) and can be serialized using
-/// [ε-serde](https://crates.io/crates/epserde). Please see the documentation of
-/// [`VBuilder`](crate::func::VBuilder) for examples.
+/// Instances of this structure are immutable; they are built using
+/// [`try_new`](VFunc::try_new) or one of its variants, and can be serialized
+/// using [ε-serde](https://crates.io/crates/epserde).
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
@@ -69,6 +68,10 @@ use std::borrow::Borrow;
 ///   coupled with `[u64; 1]` signatures. For functions with more than a few
 ///   dozen billion keys, you might try
 ///   [`FuseLge3FullSigs`](crate::func::shard_edge::FuseLge3FullSigs).
+///
+/// # Examples
+///
+/// See [`try_new`](VFunc::try_new).
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

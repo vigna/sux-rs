@@ -1170,26 +1170,7 @@ pub(crate) use build::{lcp_bits, lcp_bits_nul, log2_bucket_size};
 ///
 /// # Examples
 ///
-/// ```rust
-/// # #[cfg(feature = "rayon")]
-/// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::func::LcpMmphfInt;
-/// # use sux::traits::TryIntoUnaligned;
-/// # use sux::utils::FromSlice;
-/// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-///
-/// let func =
-///     LcpMmphfInt::<u64>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?.try_into_unaligned()?;
-///
-/// for (i, &key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key), i);
-/// }
-/// # Ok(())
-/// # }
-/// # #[cfg(not(feature = "rayon"))]
-/// # fn main() {}
-/// ```
+/// See [`try_new`](LcpMmphfInt::try_new).
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1355,33 +1336,8 @@ impl ToSig<[u64; 1]> for BitPrefix {
 ///
 /// # Examples
 ///
-/// Build from sorted strings using the [`LcpMmphfStr`] alias:
-///
-/// ```rust
-/// # #[cfg(feature = "rayon")]
-/// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
-/// # use sux::func::LcpMmphfStr;
-/// # use sux::traits::TryIntoUnaligned;
-/// # use sux::utils::FromSlice;
-/// let keys = vec![
-///     "alpha".to_owned(),
-///     "beta".to_owned(),
-///     "delta".to_owned(),
-///     "gamma".to_owned(),
-/// ];
-///
-/// let func =
-///     <LcpMmphfStr>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?.try_into_unaligned()?;
-///
-/// for (i, key) in keys.iter().enumerate() {
-///     assert_eq!(func.get(key.as_str()), i);
-/// }
-/// # Ok(())
-/// # }
-/// # #[cfg(not(feature = "rayon"))]
-/// # fn main() {}
-/// ```
+/// See [`try_new`](LcpMmphf::try_new). See also [`LcpMmphfStr`] and
+/// [`LcpMmphfSliceU8`] for common instantiations.
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

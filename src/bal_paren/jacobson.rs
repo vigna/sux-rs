@@ -289,10 +289,9 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 /// # Examples
 ///
 /// ```rust
-/// use sux::bal_paren::JacobsonBalParen;
-/// use sux::bit_vec;
-/// use sux::prelude::BalParen;
-///
+/// # use sux::bal_paren::JacobsonBalParen;
+/// # use sux::bit_vec;
+/// # use sux::prelude::BalParen;
 /// // Sequence "(()())" = bits 1,1,0,1,0,0
 /// let bp = JacobsonBalParen::new(bit_vec![1, 1, 0, 1, 0, 0]);
 /// assert_eq!(bp.find_close(0), Some(5)); // outermost pair

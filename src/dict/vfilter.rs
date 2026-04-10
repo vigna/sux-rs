@@ -28,9 +28,9 @@ use value_traits::slices::SliceByValue;
 /// For values of *b* that correspond to the size of an unsigned type, you can
 /// use a boxed slice as a backend.
 ///
-/// Instances are immutable; they are built using a
-/// [`VBuilder`](crate::func::VBuilder) and can be serialized with
-/// [ε-serde](https://crates.io/crates/epserde).
+/// Instances are immutable; they are built using
+/// [`try_new`](VFilter::try_new) or one of its variants, and can be
+/// serialized with [ε-serde](https://crates.io/crates/epserde).
 ///
 /// This structure implements the [`Index`] trait for convenient
 /// `filter[key]` syntax (returning `&bool`).
@@ -39,14 +39,15 @@ use value_traits::slices::SliceByValue;
 /// trait, allowing it to be converted into (usually faster) structures using
 /// unaligned access.
 ///
-/// Please see the documentation of [`VBuilder`](crate::func::VBuilder) for
-/// construction examples.
-///
 /// # Generics
 ///
 /// * `W`: The unsigned integer type used to store hashes.
 /// * `F`: The underlying [`VFunc`] type (determines key type, signature
 ///   type, sharding, and backend).
+///
+/// # Examples
+///
+/// See [`try_new`](VFilter::try_new).
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(
     feature = "epserde",
@@ -109,6 +110,32 @@ where
     /// [`contains_by_sig`](Self::contains_by_sig). Returns `true`
     /// on match (false-positive rate 2⁻*ᵇ*), `false` on mismatch
     /// (definitely absent).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # #[cfg(feature = "rayon")]
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use sux::dict::VFilter;
+    /// # use sux::func::VFunc;
+    /// # use dsi_progress_logger::no_logging;
+    /// # use sux::utils::FromCloneableIntoIterator;
+    /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_new(
+    ///     FromCloneableIntoIterator::new(0..100),
+    ///     100,
+    ///     no_logging![],
+    /// )?;
+    ///
+    /// for i in 0..100 {
+    ///     assert!(filter.contains(i));
+    /// }
+    /// // Keys outside the set are (almost certainly) rejected
+    /// assert!(!filter.contains(1000));
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "rayon"))]
+    /// # fn main() {}
+    /// ```
     #[inline]
     pub fn contains(&self, key: impl Borrow<K>) -> bool {
         self.contains_by_sig(K::to_sig(key.borrow(), self.func.seed))
