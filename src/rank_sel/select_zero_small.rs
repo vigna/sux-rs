@@ -166,10 +166,10 @@ macro_rules! impl_select_zero_small {
                 + SelectZeroHinted,
         > SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
         {
-            /// Creates a new selection structure with eight [`RankSmall`]
+            /// Creates a new selection structure with four [`RankSmall`]
             /// blocks per inventory on average.
             pub fn new(small_counters: C) -> Self {
-                Self::with_inv(small_counters, 8)
+                Self::with_inv(small_counters, 4)
             }
 
             /// Creates a new selection structure with a given number of
@@ -310,6 +310,23 @@ macro_rules! impl_select_zero_small {
                 // local_rank - local_rank % ones_per_inventory
                 // >= counts.get(block_idx).absolute.
                 block_idx += (local_rank - opt) / Self::BLOCK_BIT_SIZE;
+
+                // Prefetch all subblocks of the approximate target block now,
+                // so the bit-vector DRAM fetch can proceed in parallel with
+                // the upcoming counts DRAM fetch (same idea as rank_unchecked).
+                {
+                    const NUM_SUBBLOCKS: usize = match $NUM_U32S {
+                        1 => 4,
+                        _ => 8,
+                    };
+                    let bits_ref: &[C::Word] = self.as_ref();
+                    let words_per_subblock =
+                        Self::BLOCK_BIT_SIZE / (NUM_SUBBLOCKS * C::Word::BITS as usize);
+                    let base_word = block_idx * (Self::BLOCK_BIT_SIZE / C::Word::BITS as usize);
+                    for k in 0..NUM_SUBBLOCKS {
+                        crate::utils::prefetch_index(bits_ref, base_word + k * words_per_subblock);
+                    }
+                }
 
                 let last_block_idx;
                 if inv_idx + 1 < inventory.len() {
@@ -475,7 +492,18 @@ impl<
         hint_rank +=
             offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block);
 
-        unsafe { self.select_zero_hinted::<{ usize::MAX }>(rank, hint_pos, hint_rank) }
+        let subblock_words = (SUBBLOCK_BIT_SIZE as usize) / C::Word::BITS as usize;
+        unsafe {
+            match subblock_words {
+                1 => self.select_zero_hinted::<1>(rank, hint_pos, hint_rank),
+                2 => self.select_zero_hinted::<2>(rank, hint_pos, hint_rank),
+                4 => self.select_zero_hinted::<4>(rank, hint_pos, hint_rank),
+                8 => self.select_zero_hinted::<8>(rank, hint_pos, hint_rank),
+                16 => self.select_zero_hinted::<16>(rank, hint_pos, hint_rank),
+                32 => self.select_zero_hinted::<32>(rank, hint_pos, hint_rank),
+                _ => self.select_zero_hinted::<{ usize::MAX }>(rank, hint_pos, hint_rank),
+            }
+        }
     }
 }
 
@@ -521,7 +549,18 @@ impl<
         hint_rank +=
             offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block);
 
-        unsafe { self.select_zero_hinted::<{ usize::MAX }>(rank, hint_pos, hint_rank) }
+        let subblock_words = (SUBBLOCK_BIT_SIZE as usize) / C::Word::BITS as usize;
+        unsafe {
+            match subblock_words {
+                1 => self.select_zero_hinted::<1>(rank, hint_pos, hint_rank),
+                2 => self.select_zero_hinted::<2>(rank, hint_pos, hint_rank),
+                4 => self.select_zero_hinted::<4>(rank, hint_pos, hint_rank),
+                8 => self.select_zero_hinted::<8>(rank, hint_pos, hint_rank),
+                16 => self.select_zero_hinted::<16>(rank, hint_pos, hint_rank),
+                32 => self.select_zero_hinted::<32>(rank, hint_pos, hint_rank),
+                _ => self.select_zero_hinted::<{ usize::MAX }>(rank, hint_pos, hint_rank),
+            }
+        }
     }
 }
 
@@ -567,7 +606,18 @@ impl<
         hint_rank +=
             offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block);
 
-        unsafe { self.select_zero_hinted::<{ usize::MAX }>(rank, hint_pos, hint_rank) }
+        let subblock_words = (SUBBLOCK_BIT_SIZE as usize) / C::Word::BITS as usize;
+        unsafe {
+            match subblock_words {
+                1 => self.select_zero_hinted::<1>(rank, hint_pos, hint_rank),
+                2 => self.select_zero_hinted::<2>(rank, hint_pos, hint_rank),
+                4 => self.select_zero_hinted::<4>(rank, hint_pos, hint_rank),
+                8 => self.select_zero_hinted::<8>(rank, hint_pos, hint_rank),
+                16 => self.select_zero_hinted::<16>(rank, hint_pos, hint_rank),
+                32 => self.select_zero_hinted::<32>(rank, hint_pos, hint_rank),
+                _ => self.select_zero_hinted::<{ usize::MAX }>(rank, hint_pos, hint_rank),
+            }
+        }
     }
 }
 
@@ -624,7 +674,18 @@ impl<
         hint_rank +=
             offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block);
 
-        unsafe { self.select_zero_hinted::<{ usize::MAX }>(rank, hint_pos, hint_rank) }
+        let subblock_words = (SUBBLOCK_BIT_SIZE as usize) / C::Word::BITS as usize;
+        unsafe {
+            match subblock_words {
+                1 => self.select_zero_hinted::<1>(rank, hint_pos, hint_rank),
+                2 => self.select_zero_hinted::<2>(rank, hint_pos, hint_rank),
+                4 => self.select_zero_hinted::<4>(rank, hint_pos, hint_rank),
+                8 => self.select_zero_hinted::<8>(rank, hint_pos, hint_rank),
+                16 => self.select_zero_hinted::<16>(rank, hint_pos, hint_rank),
+                32 => self.select_zero_hinted::<32>(rank, hint_pos, hint_rank),
+                _ => self.select_zero_hinted::<{ usize::MAX }>(rank, hint_pos, hint_rank),
+            }
+        }
     }
 }
 
@@ -736,7 +797,18 @@ impl<
         hint_rank +=
             offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block);
 
-        unsafe { self.select_zero_hinted::<{ usize::MAX }>(rank, hint_pos, hint_rank) }
+        let subblock_words = (SUBBLOCK_BIT_SIZE as usize) / C::Word::BITS as usize;
+        unsafe {
+            match subblock_words {
+                1 => self.select_zero_hinted::<1>(rank, hint_pos, hint_rank),
+                2 => self.select_zero_hinted::<2>(rank, hint_pos, hint_rank),
+                4 => self.select_zero_hinted::<4>(rank, hint_pos, hint_rank),
+                8 => self.select_zero_hinted::<8>(rank, hint_pos, hint_rank),
+                16 => self.select_zero_hinted::<16>(rank, hint_pos, hint_rank),
+                32 => self.select_zero_hinted::<32>(rank, hint_pos, hint_rank),
+                _ => self.select_zero_hinted::<{ usize::MAX }>(rank, hint_pos, hint_rank),
+            }
+        }
     }
 }
 

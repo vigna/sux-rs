@@ -1002,8 +1002,13 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> RankHinted for BitVec<B> {
         debug_assert!(hp < bits.len(), "hint_pos: {}, len: {}", hp, bits.len());
 
         // Prefetch the word containing `pos` so that the load below overlaps
-        // with the popcount accumulation loop.
-        crate::utils::prefetch_index(bits, pos / bits_per_word);
+        // with the popcount accumulation loop — but only when the subblock
+        // spans more than one cache line.  When the subblock fits in a single
+        // 64-byte cache line (e.g. 8 × u64 words), the first loop iteration
+        // already pulls in the target word and the prefetch is pure overhead.
+        if WORDS_PER_SUBBLOCK * std::mem::size_of::<B::Word>() > 64 {
+            crate::utils::prefetch_index(bits, pos / bits_per_word);
+        }
 
         if WORDS_PER_SUBBLOCK == usize::MAX {
             // Unbounded: fall back to while loop (used when the caller cannot

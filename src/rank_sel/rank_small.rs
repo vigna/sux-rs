@@ -634,6 +634,11 @@ macro_rules! impl_rank_small {
                 debug_assert!(pos < self.bits.len());
                 unsafe {
                     let word_pos = pos / bits_per_word;
+                    // Prefetch the bit-vector cache line containing word_pos
+                    // BEFORE loading counts, so both DRAM fetches can proceed
+                    // in parallel (counts and bit vector are independent once
+                    // word_pos is known).
+                    crate::utils::prefetch_index(self.bits.as_ref(), word_pos);
                     let block = word_pos / Self::WORDS_PER_BLOCK;
                     let offset = (word_pos % Self::WORDS_PER_BLOCK) / Self::WORDS_PER_SUBBLOCK;
                     let counts = self.counts.as_ref().get_unchecked(block);
