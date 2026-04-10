@@ -16,8 +16,11 @@
 //!
 //! # Indexed dictionaries
 //!
-//! An indexed dictionary maps integer indices to values, supporting both
-//! random access and predecessor/successor queries. The main structures are:
+//! An indexed dictionary maps [integer indices to
+//! values](crate::traits::IndexedSeq), possibly supporting
+//! [lookups](crate::traits::IndexedDict) and
+//! [predecessor](crate::traits::Pred)/[successor](crate::traits::Succ) queries.
+//! The main structures are:
 //!
 //! - [`EliasFano`]: A compact representation of monotone integer sequences,
 //!   supporting efficient access, successor, and predecessor queries.
@@ -30,9 +33,6 @@
 //!   Re-exported from [`func::signed`](crate::func::signed).
 //!   Use concrete types like `SignedFunc<LcpMmphfStr, Box<[u64]>>`.
 //! - [`SliceSeq`]: Adapters exposing slice references as indexed sequences.
-//!
-//! These structures implement traits from the
-//! [`indexed_dict`](crate::traits::indexed_dict) module.
 //!
 //! Most structures implement the
 //! [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing them
@@ -51,8 +51,6 @@ pub use mapped_rear_coded_list::{MappedRearCodedListSliceU8, MappedRearCodedList
 
 mod slice_seq;
 pub use slice_seq::SliceSeq;
-
-pub use crate::func::signed::SignedFunc;
 
 pub mod vfilter;
 pub use vfilter::VFilter;
