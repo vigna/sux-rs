@@ -6,11 +6,8 @@
 
 //! Compact representations of lists.
 //!
-//! This module contains compact representations of lists. Note that [(indexed)
-//! dictionaries](crate::dict) can sometimes be used to represent lists of
-//! distinct elements, but implementations in this module do not have this
-//! restriction, as they implement just
-//! [`SliceByValue`](value_traits::slices::SliceByValue).
+//! This module contains compact representations of lists. All structures
+//! implement [`SliceByValue`](value_traits::slices::SliceByValue).
 
 pub mod comp_int_list;
 pub use comp_int_list::CompIntList;

@@ -37,23 +37,10 @@
 //! [`BitVec`](crate::bits::BitVec) and
 //! [`AtomicBitVec`](crate::bits::AtomicBitVec).
 
-use ambassador::delegatable_trait;
-use impl_tools::autoimpl;
-
-/// A trait expressing a length in bits.
-///
-/// This trait is typically used in conjunction with [`Backend`](crate::traits::Backend) and
-/// [`AsRef<[Backend::Word]>`](std::convert::AsRef) to provide word-based access
-/// to a bit vector.
-#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
-pub trait BitLength {
-    /// Returns a length in bits.
-    fn len(&self) -> usize;
-}
-
 use crate::traits::Word;
+use ambassador::delegatable_trait;
 use atomic_primitive::PrimitiveAtomicUnsigned;
+use impl_tools::autoimpl;
 use mem_dbg::{MemDbg, MemSize};
 use num_primitive::PrimitiveInteger;
 #[cfg(feature = "rayon")]
@@ -68,30 +55,16 @@ macro_rules! panic_if_out_of_bounds {
     };
 }
 
-/// Operations for reading multi-bit values from a bit vector at arbitrary
-/// bit positions.
+/// A trait expressing a length in bits.
 ///
-/// Unlike [`BitVecOps`] and [`BitVecOpsMut`], this trait does not have a
-/// blanket implementation, allowing different types to provide specialized
-/// implementations (e.g., using unaligned reads).
-pub trait BitVecValueOps<W: Word> {
-    /// Reads `width` bits starting at bit position `pos`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `pos + width` exceeds the bit length or if `width` >
-    /// `W::BITS`.
-    fn get_value(&self, pos: usize, width: usize) -> W;
-
-    /// Reads `width` bits starting at bit position `pos`, without bounds
-    /// checks.
-    ///
-    /// # Safety
-    ///
-    /// - `pos + width` must not exceed the bit length of the underlying
-    ///   storage.
-    /// - `width` must be at most `W::BITS`.
-    unsafe fn get_value_unchecked(&self, pos: usize, width: usize) -> W;
+/// This trait is typically used in conjunction with
+/// [`AsRef<[W]>`](std::convert::AsRef) to provide word-based access to a bit
+/// vector on words of type `W`.
+#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
+#[delegatable_trait]
+pub trait BitLength {
+    /// Returns a length in bits.
+    fn len(&self) -> usize;
 }
 
 impl<W: Word, T: ?Sized + AsRef<[W]> + BitLength> BitVecOps<W> for T {}
@@ -262,6 +235,32 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
             bits[full_words] = (bits[full_words] & !mask) | (!bits[full_words] & mask);
         }
     }
+}
+
+/// Operations for reading multi-bit values from a bit vector at arbitrary
+/// bit positions.
+///
+/// Unlike [`BitVecOps`] and [`BitVecOpsMut`], this trait does not have a
+/// blanket implementation, allowing different types to provide specialized
+/// implementations (e.g., using unaligned reads).
+pub trait BitVecValueOps<W: Word> {
+    /// Reads `width` bits starting at bit position `pos`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `pos + width` exceeds the bit length or if `width` >
+    /// `W::BITS`.
+    fn get_value(&self, pos: usize, width: usize) -> W;
+
+    /// Reads `width` bits starting at bit position `pos`, without bounds
+    /// checks.
+    ///
+    /// # Safety
+    ///
+    /// - `pos + width` must not exceed the bit length of the underlying
+    ///   storage.
+    /// - `width` must be at most `W::BITS`.
+    unsafe fn get_value_unchecked(&self, pos: usize, width: usize) -> W;
 }
 
 /// An iterator over the bits of a bit vector as booleans.

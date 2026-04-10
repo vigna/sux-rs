@@ -15,7 +15,7 @@
 //! - [`fair_chunks`]: splitting ranges into balanced chunks.
 //! - [`mod2_sys`]: linear system solving over **F**₂.
 //! - [`select_in_word`]: select-in-word primitives.
-//! - [`Mwc192`]: a multiply-with-carry pseudo-random number generator.
+//! - [`Mwc192`]: a ridiculously fast multiply-with-carry pseudo-random number generator.
 //! - [`transmute_vec_into_atomic`] / [`transmute_vec_from_atomic`]: safe
 //!   transmutation between non-atomic and atomic vectors.
 //! - [`prefetch_index`]: cache-line prefetching for indexed data structures.

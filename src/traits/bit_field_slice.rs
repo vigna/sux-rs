@@ -42,7 +42,6 @@
 //! and non-atomic unsigned integer types that view their elements as values
 //! with a bit width equal to that of the type. It is thus trivial to replace
 //! a slice of bits with a slice of a primitive integer type of the same width.
-//!
 #![allow(clippy::result_unit_err)]
 use crate::{debug_assert_bounds, panic_if_out_of_bounds, panic_if_value, traits::Word};
 use ambassador::delegatable_trait;
@@ -316,12 +315,6 @@ impl<W: Word, const N: usize> BitFieldSliceMut for [W; N] {
 }
 
 // Generic implementations for slices/vectors of atomic types.
-//
-// These impls are parameterized by the atomic type A (e.g., AtomicU64)
-// and derive the value type W from A::Value (e.g., u64). This avoids
-// the associated-type projection ambiguity that occurs when writing
-// `impl<W> ... for [W::Atomic]` — Rust can't resolve methods on
-// `[W::Atomic]` because it cannot infer W from the projection.
 
 impl<A: PrimitiveAtomicUnsigned<Value: Word>> AtomicBitFieldSlice<A> for [A] {
     #[inline(always)]
