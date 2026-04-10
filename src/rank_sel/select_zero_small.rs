@@ -475,7 +475,7 @@ impl<
         hint_rank +=
             offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block);
 
-        unsafe { self.select_zero_hinted::<{usize::MAX}>(rank, hint_pos, hint_rank) }
+        unsafe { self.select_zero_hinted::<{ usize::MAX }>(rank, hint_pos, hint_rank) }
     }
 }
 
@@ -521,7 +521,7 @@ impl<
         hint_rank +=
             offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block);
 
-        unsafe { self.select_zero_hinted::<{usize::MAX}>(rank, hint_pos, hint_rank) }
+        unsafe { self.select_zero_hinted::<{ usize::MAX }>(rank, hint_pos, hint_rank) }
     }
 }
 
@@ -567,7 +567,7 @@ impl<
         hint_rank +=
             offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block);
 
-        unsafe { self.select_zero_hinted::<{usize::MAX}>(rank, hint_pos, hint_rank) }
+        unsafe { self.select_zero_hinted::<{ usize::MAX }>(rank, hint_pos, hint_rank) }
     }
 }
 
@@ -624,7 +624,7 @@ impl<
         hint_rank +=
             offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block);
 
-        unsafe { self.select_zero_hinted::<{usize::MAX}>(rank, hint_pos, hint_rank) }
+        unsafe { self.select_zero_hinted::<{ usize::MAX }>(rank, hint_pos, hint_rank) }
     }
 }
 
@@ -736,7 +736,7 @@ impl<
         hint_rank +=
             offset_in_block * (SUBBLOCK_BIT_SIZE as usize) - block_count.rel(offset_in_block);
 
-        unsafe { self.select_zero_hinted::<{usize::MAX}>(rank, hint_pos, hint_rank) }
+        unsafe { self.select_zero_hinted::<{ usize::MAX }>(rank, hint_pos, hint_rank) }
     }
 }
 

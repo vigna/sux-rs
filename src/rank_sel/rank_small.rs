@@ -661,8 +661,11 @@ macro_rules! impl_rank_small {
                         // TODO: replace with Self::WORDS_PER_SUBBLOCK once Rust
                         // allows associated consts in const generic arguments.
                         const WPS: usize = {
-                            let word_bit_log2: usize =
-                                match $WORD_BITS { 32 => 5, 64 => 6, _ => panic!("") };
+                            let word_bit_log2: usize = match $WORD_BITS {
+                                32 => 5,
+                                64 => 6,
+                                _ => panic!(""),
+                            };
                             let words_per_block: usize = 1 << ($COUNTER_WIDTH - word_bit_log2);
                             match $NUM_U32S {
                                 1 => words_per_block / 4,
@@ -678,17 +681,6 @@ macro_rules! impl_rank_small {
                         RankHinted::rank_hinted::<WPS>(&self.bits, pos, hint_pos, hint_rank)
                     }
                 }
-            }
-
-            #[inline(always)]
-            fn prefetch(&self, pos: usize) {
-                let bits_per_word = B::Word::BITS as usize;
-                let word_pos = pos / bits_per_word;
-                let block = word_pos / Self::WORDS_PER_BLOCK;
-                crate::utils::prefetch_index(self.bits.as_ref(), word_pos);
-                // `counts` can be large enough to not fit in L3, so needs prefetching as well.
-                crate::utils::prefetch_index(self.counts.as_ref(), block);
-                // `upper_counts` is small enough to fit in caches, so does not need prefetching.
             }
         }
     };

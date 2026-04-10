@@ -564,9 +564,11 @@ impl<
                     + *subinventory.get_unchecked(subrank >> Self::LOG2_ONES_PER_SUB16) as usize;
                 let residual = subrank & Self::ONES_PER_SUB16_MASK;
 
-                return self
-                    .bits
-                    .select_zero_hinted::<{usize::MAX}>(rank, hint_pos, rank - residual);
+                return self.bits.select_zero_hinted::<{ usize::MAX }>(
+                    rank,
+                    hint_pos,
+                    rank - residual,
+                );
             }
 
             let words_per_subinventory = 1 << LOG2_WORDS_PER_SUBINVENTORY;
@@ -605,9 +607,11 @@ impl<
                         ) as usize
                 };
                 let residual = subrank & ((1 << log2_ones_per_sub32) - 1);
-                return self
-                    .bits
-                    .select_zero_hinted::<{usize::MAX}>(rank, hint_pos, rank - residual);
+                return self.bits.select_zero_hinted::<{ usize::MAX }>(
+                    rank,
+                    hint_pos,
+                    rank - residual,
+                );
             }
 
             #[cfg(target_pointer_width = "64")]

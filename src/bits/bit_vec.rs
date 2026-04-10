@@ -1079,8 +1079,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
         let mut word_index = hint_pos / bits_per_word;
         let bit_index = hint_pos % bits_per_word;
         let mut residual = rank - hint_rank;
-        let mut word =
-            (!unsafe { *bits.get_unchecked(word_index) } >> bit_index) << bit_index;
+        let mut word = (!unsafe { *bits.get_unchecked(word_index) } >> bit_index) << bit_index;
         let limit = if WORDS_PER_SUBBLOCK == usize::MAX {
             usize::MAX
         } else {
