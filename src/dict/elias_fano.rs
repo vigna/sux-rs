@@ -44,8 +44,8 @@
 //! The elements of the sequence are recorded by storing separately the lower
 //! *s* = ⌊log₂(*u*/*n*)⌋ bits and the remaining upper bits. The lower bits are
 //! stored contiguously, whereas the upper bits are stored in an array of *n* +
-//! ⌊*u* / 2<sup>*s*</sup>⌋ bits by setting, for each 0 ≤ *i* < *n*, the bit of
-//! index ⌊*x*<sub>*i*</sub> / 2<sup>*s*</sup>⌋ + *i*; the value can then be
+//! ⌊*u* / 2*ˢ*⌋ bits by setting, for each 0 ≤ *i* < *n*, the bit of
+//! index ⌊*xᵢ* / 2*ˢ*⌋ + *i*; the value can then be
 //! recovered by selecting the *i*-th bit of the resulting bit array and
 //! subtracting *i* (note that this will work because the upper bits are
 //! nondecreasing).

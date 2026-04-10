@@ -19,7 +19,7 @@
 //! [`SignedFunc`] is generic over the inner function `F` (which must implement
 //! [`SignableFunc`]) and the hash storage `H` (which must implement
 //! [`TruncateHash`]). The hash storage can be a full-width boxed slice (e.g.,
-//! `Box<[u64]>`, giving false-positive probability 2<sup>−64</sup>) or a
+//! `Box<[u64]>`, giving false-positive probability 2⁻⁶⁴) or a
 //! [`BitFieldVec`] with a caller-chosen bit width (e.g., 8 bits for ≈0.4%
 //! false positives). Per-inner-type `get` methods are provided via
 //! monomorphized `impl` blocks.

@@ -28,10 +28,7 @@
 //!   immutable lists of strings or byte sequences with random access.
 //! - [`MappedRearCodedListStr`] / [`MappedRearCodedListSliceU8`]: Rear-coded
 //!   lists with element reordering for better compression.
-//! - [`SignedFunc`]:
-//!   Index functions verified by hash signatures, returning `None` on mismatch.
-//!   Re-exported from [`func::signed`](crate::func::signed).
-//!   Use concrete types like `SignedFunc<LcpMmphfStr, Box<[u64]>>`.
+//! - [`SignedFunc`]: [Index functions](crate::func) verified by hash signatures.
 //! - [`SliceSeq`]: Adapters exposing slice references as indexed sequences.
 //!
 //! Most structures implement the
