@@ -38,10 +38,14 @@ use std::ops::Index;
 ///
 /// This structure has been described by Sebastiano Vigna in “[Broadword
 /// Implementation of Rank/Select Queries]”, _Proc. of the 7th International
-/// Workshop on Experimental Algorithms, WEA 2008_, volume 5038 of Lecture
-/// Notes in Computer Science, pages 154–168, Springer, 2008.
+/// Workshop on Experimental Algorithms, WEA 2008_, volume 5038 of Lecture Notes
+/// in Computer Science, pages 154–168, Springer, 2008. This implementation
+/// however uses [Gog and Petri's reverse ordering of relative counters], which
+/// provides faster extraction using the implicit zero extension of right-shift
+/// operations.
 ///
-/// [Broadword Implementation of Rank/Select Queries]: https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12
+/// [Broadword Implementation of Rank/Select Queries]: https://doi.org/10.1007/978-3-540-68552-4_12
+/// [Gog and Petri's reverse ordering of relative counters]: https://doi.org/10.1002/spe.2198
 ///
 /// This structure forwards several traits and [`Deref`]'s to its backend.
 ///

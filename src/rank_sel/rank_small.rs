@@ -53,26 +53,27 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// A family of ranking structures using very little additional space but with
 /// slower operations than [`Rank9`].
 ///
-/// [`RankSmall`] structures combine two ideas from [`Rank9`], that is,
-/// the interleaving of absolute and relative counters and the storage of
-/// implicit counters using zero extension, and a design trick from
-/// [`poppy`], that is, that the structures are actually designed around
-/// bit vectors of at most 2³² bits. This allows the use of 32-bit
-/// counters, which use less space, at the expense of a high-level
-/// additional list of 64-bit counters that contain the actual absolute
-/// cumulative counts for each block of 2³² bits. Since in most applications
-/// these counters will be very few, their additional space is negligible,
-/// and they will usually be accessed without cache misses.
+/// [`RankSmall`] structures combine three ideas:
 ///
-/// On some recent architecture, versions of this family are almost as fast as
-/// [`Rank9`] (and sometimes faster).
+/// - The main idea from [`Rank9`], that is, the interleaving of absolute
+///   and relative counters to reduce cache misses.
 ///
-/// An associated family of selection structures is provided by
-/// [`SelectSmall`] and [`SelectZeroSmall`]
+/// - The [improved layout of relative counters by Gog & Petri], which is here
+///   extended to partial counter storage (i.e., the implicit zero bits do
+///   not cover only the first counter, which is always zero, but also the
+///   part of the second counter, as it's certainly small).
 ///
-/// [`Rank9`]: super::Rank9
-/// [`SelectSmall`]: crate::rank_sel::SelectSmall
-/// [`SelectZeroSmall`]: crate::rank_sel::SelectZeroSmall
+/// - A design trick from [`poppy`], that is, that the structures are actually
+///   built for bit vectors of at most 2³² bits. This makes it possible to use
+///   32-bit counters, which use less space, at the expense of a high-level
+///   additional list of 64-bit counters that contain the actual absolute
+///   cumulative counts for each block of 2³² bits. Since in most applications
+///   these counters will be very few, their additional space is negligible, and
+///   they will usually be accessed without cache misses.
+///
+/// On some recent architecture, variants of this family are almost as fast as
+/// [`Rank9`] (and sometimes faster). An associated family of selection
+/// structures is provided by [`SelectSmall`] and [`SelectZeroSmall`]
 ///
 /// The [`RankSmall`] variants are parameterized by the number of 32-bit words
 /// per block and by the size of the relative counters. Only certain
@@ -82,9 +83,13 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 ///
 /// This structure forwards several traits and [`Deref`]'s to its backend.
 ///
-/// # Implementation details
-///
 /// [`rank_small`]: crate::rank_small
+/// [`Rank9`]: super::Rank9
+/// [`SelectSmall`]: crate::rank_sel::SelectSmall
+/// [`SelectZeroSmall`]: crate::rank_sel::SelectZeroSmall
+/// [improved layout of relative counters by Gog & Petri]: https://doi.org/10.1002/spe.2198
+///
+/// # Implementation details
 ///
 /// The first const generic parameter `WORD_BITS` (32 or 64) specifies the
 /// word size; the remaining parameters `NUM_U32S` and `COUNTER_WIDTH` define
@@ -98,7 +103,7 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// Presently we support the following combinations for `u64` words:
 ///
 /// - `rank_small![u64: 0; -]` (builds `RankSmall<64, 2, 9>`): 18.75%
-///   additional space, speed slightly slower than [`Rank9`].
+///   additional space.
 /// - `rank_small![u64: 1; -]` (builds `RankSmall<64, 1, 9>`): 12.5%
 ///   additional space.
 /// - `rank_small![u64: 2; -]` (builds `RankSmall<64, 1, 10>`): 6.25%
@@ -123,9 +128,8 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// - `rank_small![u32: 5; -]` (builds `RankSmall<32, 3, 13>`): 1.56%
 ///   additional space; same counter layout as `RankSmall<64, 3, 13>`.
 ///
-/// The word type can be omitted, in which case it defaults to `usize`;
-/// the numbering mirrors the `u64` variants (see the [`rank_small`] macro
-/// documentation).
+/// The word type can be omitted, in which case it defaults to `usize` (see the
+/// [`rank_small`] macro documentation).
 ///
 /// `RankSmall<64, 2, 9>` and `RankSmall<32, 2, 8>` (selector 0) work like
 /// [`Rank9`], while the other variants provide increasingly less space
@@ -133,40 +137,17 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 ///
 /// `RankSmall<64, 1, 11>` and `RankSmall<32, 1, 11>` are similar to
 /// [`poppy`], but instead of storing counters and rebuilding cumulative
-/// counters on the fly it stores the cumulative counters directly using
-/// implicit zero extension, as in [`Rank9`].
+/// counters on the fly they store the cumulative counters directly using
+/// implicit zero extension. They are the default suggested by the macro.
+///
+/// [`poppy`]: https://doi.org/10.1007/978-3-642-38527-8_15
+/// [backend]: Backend
 ///
 /// # Examples
 ///
-/// ```rust
-/// # use sux::{bit_vec,rank_small};
-/// # use sux::traits::Rank;
-/// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
-/// let rank_small = rank_small![0; bits];
+/// See the [`rank_small`] macro documentation for examples of construction and usage.
 ///
-/// assert_eq!(rank_small.rank(0), 0);
-/// assert_eq!(rank_small.rank(1), 1);
-/// assert_eq!(rank_small.rank(2), 1);
-/// assert_eq!(rank_small.rank(3), 2);
-/// assert_eq!(rank_small.rank(4), 3);
-/// assert_eq!(rank_small.rank(5), 3);
-/// assert_eq!(rank_small.rank(6), 4);
-/// assert_eq!(rank_small.rank(7), 4);
-/// assert_eq!(rank_small.rank(8), 5);
-///
-/// // Access to the underlying bit vector is forwarded
-/// assert_eq!(rank_small[0], true);
-/// assert_eq!(rank_small[1], false);
-/// assert_eq!(rank_small[2], true);
-/// assert_eq!(rank_small[3], true);
-/// assert_eq!(rank_small[4], false);
-/// assert_eq!(rank_small[5], true);
-/// assert_eq!(rank_small[6], false);
-/// assert_eq!(rank_small[7], true);
-/// ```
-///
-/// [`poppy`]: https://link.springer.com/chapter/10.1007/978-3-642-38527-8_15
-/// [backend]: Backend
+/// [`rank_small`]: crate::rank_small
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -265,6 +246,8 @@ impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, 
 ///
 /// # Examples
 ///
+/// The four construction forms:
+///
 /// ```rust
 /// # use sux::{prelude::Rank,bit_vec,rank_small};
 /// // Default: ~3% overhead, usize words (recommended)
@@ -287,6 +270,33 @@ impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, 
 /// let rank_small = rank_small![0; bits];
 /// assert_eq!(rank_small.rank(0), 0);
 /// ```
+///
+/// Rank queries return the number of ones preceding a given position, and
+/// indexing on the resulting structure is forwarded via [`Deref`] to the
+/// underlying bit vector:
+///
+/// ```rust
+/// # use sux::{prelude::Rank,bit_vec,rank_small};
+/// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
+/// let rank_small = rank_small![bits];
+///
+/// assert_eq!(rank_small.rank(0), 0);
+/// assert_eq!(rank_small.rank(1), 1);
+/// assert_eq!(rank_small.rank(2), 1);
+/// assert_eq!(rank_small.rank(3), 2);
+/// assert_eq!(rank_small.rank(4), 3);
+/// assert_eq!(rank_small.rank(5), 3);
+/// assert_eq!(rank_small.rank(6), 4);
+/// assert_eq!(rank_small.rank(7), 4);
+/// assert_eq!(rank_small.rank(8), 5);
+///
+/// // Indexing is forwarded to the wrapped bit vector.
+/// assert_eq!(rank_small[0], true);
+/// assert_eq!(rank_small[4], false);
+/// assert_eq!(rank_small[7], true);
+/// ```
+///
+/// [`Deref`]: core::ops::Deref
 #[macro_export]
 macro_rules! rank_small {
     // Explicit u64 variants

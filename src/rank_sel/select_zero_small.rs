@@ -232,8 +232,8 @@ macro_rules! impl_select_zero_small {
                                 inventory.push(block_in_superblock as u32);
                             } else {
                                 let last = inventory.last_mut().unwrap();
-                                let delta = block_in_superblock
-                                    - (*last as usize & Self::BLOCK_IDX_MASK);
+                                let delta =
+                                    block_in_superblock - (*last as usize & Self::BLOCK_IDX_MASK);
                                 debug_assert!(
                                     delta < Self::BLOCK_BIT_SIZE,
                                     "midpoint delta {delta} overflows COUNTER_WIDTH bits"
@@ -306,8 +306,7 @@ macro_rules! impl_select_zero_small {
                 // Branchless: compute a mask that is all-ones in the second half
                 // and all-zeros in the first half, avoiding a ~50/50 branch that
                 // would cause systematic mispredictions.
-                let second_half_mask =
-                    ((rank & half_ones != 0) as usize).wrapping_neg();
+                let second_half_mask = ((rank & half_ones != 0) as usize).wrapping_neg();
                 let mut block_idx = if inv_upper_block_idx == upper_block_idx {
                     let inv_entry = *unsafe { inventory.get_unchecked(inv_idx) } as usize;
                     let base_block = inv_entry & Self::BLOCK_IDX_MASK;
@@ -315,7 +314,8 @@ macro_rules! impl_select_zero_small {
                     base_block + (mid_delta & second_half_mask)
                 } else {
                     0
-                } + upper_block_idx * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE);
+                } + upper_block_idx
+                    * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE);
 
                 // Prefetch all subblocks of the approximate target block now,
                 // so the bit-vector DRAM fetch can proceed in parallel with
@@ -344,9 +344,9 @@ macro_rules! impl_select_zero_small {
                         .linear_partition_point(|_, &x| x as usize <= inv_idx + 1)
                         - 1;
                     last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
-                        let next_base_block =
-                            (*unsafe { inventory.get_unchecked(inv_idx + 1) } as usize)
-                                & Self::BLOCK_IDX_MASK;
+                        let next_base_block = (*unsafe { inventory.get_unchecked(inv_idx + 1) }
+                            as usize)
+                            & Self::BLOCK_IDX_MASK;
                         next_base_block
                             + 1
                             + upper_block_idx * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE)
