@@ -217,16 +217,21 @@ impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, 
 /// A convenient macro to build a [`RankSmall`] structure with the correct
 /// parameters.
 ///
-/// The syntax is `rank_small![W: n; bits]`, where `W` is the word type
-/// (`u64`, `u32`, or `usize`) and `n` is the variant index. If `W:` is
-/// omitted, it defaults to `usize`.
+/// **Default form** — `rank_small![bits]` or `rank_small![W: bits]` (no
+/// variant index) selects the ~3.125% overhead variant (`RankSmall<W, 1, 11>`)
+/// for the given word type. This is the recommended starting point for most
+/// use cases.
+///
+/// **Explicit form** — `rank_small![W: n; bits]` selects a specific variant
+/// `n` for word type `W` (`u64`, `u32`, or `usize`). If `W:` is omitted,
+/// it defaults to `usize`.
 ///
 /// `u64` variants (0–4):
 ///
 /// - `rank_small![u64: 0; -]` → `RankSmall<64, 2, 9>` (18.75%)
 /// - `rank_small![u64: 1; -]` → `RankSmall<64, 1, 9>` (12.5%)
 /// - `rank_small![u64: 2; -]` → `RankSmall<64, 1, 10>` (6.25%)
-/// - `rank_small![u64: 3; -]` → `RankSmall<64, 1, 11>` (3.125%)
+/// - `rank_small![u64: 3; -]` → `RankSmall<64, 1, 11>` (3.125%) ← default
 /// - `rank_small![u64: 4; -]` → `RankSmall<64, 3, 13>` (1.56%)
 ///
 /// `u32` variants (0–5):
@@ -235,7 +240,7 @@ impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, 
 /// - `rank_small![u32: 1; -]` → `RankSmall<32, 1, 8>` (25%)
 /// - `rank_small![u32: 2; -]` → `RankSmall<32, 1, 9>` (12.5%)
 /// - `rank_small![u32: 3; -]` → `RankSmall<32, 1, 10>` (6.25%)
-/// - `rank_small![u32: 4; -]` → `RankSmall<32, 1, 11>` (3.125%)
+/// - `rank_small![u32: 4; -]` → `RankSmall<32, 1, 11>` (3.125%) ← default
 /// - `rank_small![u32: 5; -]` → `RankSmall<32, 3, 13>` (1.56%)
 ///
 /// Default / `usize` variants — the index represents the rank in the
@@ -247,15 +252,25 @@ impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, 
 /// | 0 | `<64, 2, 9>` (18.75%) | `<32, 2, 8>` (37.5%) |
 /// | 1 | `<64, 1, 9>` (12.5%) | `<32, 1, 8>` (25%) |
 /// | 2 | `<64, 1, 10>` (6.25%) | `<32, 1, 9>` (12.5%) |
-/// | 3 | `<64, 1, 11>` (3.125%) | `<32, 1, 10>` (6.25%) |
-/// | 4 | `<64, 3, 13>` (1.56%) | `<32, 1, 11>` (3.125%) |
+/// | 3 | `<64, 1, 11>` (3.125%) ← default | `<32, 1, 10>` (6.25%) |
+/// | 4 | `<64, 3, 13>` (1.56%) | `<32, 1, 11>` (3.125%) ← default |
 /// | 5 | — | `<32, 3, 13>` (1.56%) |
 ///
 /// # Examples
 ///
 /// ```rust
 /// # use sux::{prelude::Rank,bit_vec,rank_small};
-/// // Explicit word size
+/// // Default: ~3% overhead, usize words (recommended)
+/// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
+/// let rank_small = rank_small![bits];
+/// assert_eq!(rank_small.rank(4), 3);
+///
+/// // Default with explicit word type
+/// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
+/// let rank_small = rank_small![u64: bits];
+/// assert_eq!(rank_small.rank(4), 3);
+///
+/// // Explicit word size and variant
 /// let bits = bit_vec![u32: 1, 0, 1, 1, 0, 1, 0, 1];
 /// let rank_small = rank_small![u32: 0; bits];
 /// assert_eq!(rank_small.rank(0), 0);
@@ -283,6 +298,10 @@ macro_rules! rank_small {
     (u64 : 4 ; $bits:expr) => {
         $crate::prelude::RankSmall::<64, 3, 13, _, _, _>::new($bits)
     };
+    // Default u64 variant: ~3% space overhead (same as u64:3)
+    (u64 : $bits:expr) => {
+        $crate::prelude::RankSmall::<64, 1, 11, _, _, _>::new($bits)
+    };
     // Explicit u32 variants (ordered by decreasing overhead)
     (u32 : 0 ; $bits:expr) => {
         $crate::prelude::RankSmall::<32, 2, 8, _, _, _>::new($bits)
@@ -301,6 +320,10 @@ macro_rules! rank_small {
     };
     (u32 : 5 ; $bits:expr) => {
         $crate::prelude::RankSmall::<32, 3, 13, _, _, _>::new($bits)
+    };
+    // Default u32 variant: ~3% space overhead (same as u32:4)
+    (u32 : $bits:expr) => {
+        $crate::prelude::RankSmall::<32, 1, 11, _, _, _>::new($bits)
     };
     // Default / usize: the index represents the rank in the space-usage
     // ordering for the platform's word size. Index 0 is always the fastest
@@ -352,6 +375,14 @@ macro_rules! rank_small {
     // Explicit usize prefix: forward to the bare-number arms
     (usize : $n:tt ; $bits:expr) => {
         $crate::rank_small![$n ; $bits]
+    };
+    // Default usize variant: ~3% space overhead (variant 3 on 64-bit, variant 4 on 32-bit)
+    (usize : $bits:expr) => {
+        $crate::rank_small![$bits]
+    };
+    // Bare default: usize words, ~3% space overhead
+    ($bits:expr) => {
+        $crate::prelude::RankSmall::<{ usize::BITS as usize }, 1, 11, _, _, _>::new($bits)
     };
 }
 
