@@ -249,14 +249,14 @@ impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, 
 /// The four construction forms:
 ///
 /// ```rust
-/// # use sux::{prelude::Rank,bit_vec,rank_small};
+/// # use sux::{prelude::Rank,bit_vec,rank_small,prelude::BitVec};
 /// // Default: ~3% overhead, usize words (recommended)
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
 /// let rank_small = rank_small![bits];
 /// assert_eq!(rank_small.rank(4), 3);
 ///
 /// // Default with explicit word type
-/// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
+/// let bits = bit_vec![u64: 1, 0, 1, 1, 0, 1, 0, 1];
 /// let rank_small = rank_small![u64: bits];
 /// assert_eq!(rank_small.rank(4), 3);
 ///
