@@ -287,8 +287,6 @@ macro_rules! impl_select_zero_small {
                 }) - 1;
                 let upper_rank_ones =
                     *unsafe { upper_counts.get_unchecked(upper_block_idx) } as usize;
-                let upper_rank = upper_block_idx * Self::SUPERBLOCK_BIT_SIZE - upper_rank_ones;
-                let local_rank = rank - upper_rank;
 
                 let inventory = self.inventory.as_ref();
                 let inventory_begin = self.inventory_begin.as_ref();
@@ -308,31 +306,14 @@ macro_rules! impl_select_zero_small {
                 // would cause systematic mispredictions.
                 let second_half_mask =
                     ((rank & half_ones != 0) as usize).wrapping_neg();
-                let opt;
                 let mut block_idx = if inv_upper_block_idx == upper_block_idx {
                     let inv_entry = *unsafe { inventory.get_unchecked(inv_idx) } as usize;
                     let base_block = inv_entry & Self::BLOCK_IDX_MASK;
                     let mid_delta = inv_entry >> Self::BLOCK_IDX_BITS;
-                    let primary_opt = (inv_idx << self.log2_ones_per_inventory) - upper_rank;
-                    opt = primary_opt + (half_ones & second_half_mask);
                     base_block + (mid_delta & second_half_mask)
                 } else {
-                    opt = 0;
                     0
                 } + upper_block_idx * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE);
-                // cs-poppy micro-optimization: each block can contain at most
-                // Self::BLOCK_BIT_SIZE ones, so we can skip blocks to which the bit
-                // we are looking for cannot possibly belong.
-                //
-                // It would be more precise by using the absolute counter at
-                // block_idx, but in benchmarks the additional memory accesses
-                // slow down the search, except in the very dense case. We thus
-                // approximate the value with opt: this works because
-                //
-                // inv_idx * ones_per_inventory - upper_rank =
-                // local_rank - local_rank % ones_per_inventory
-                // >= counts.get(block_idx).absolute.
-                block_idx += (local_rank - opt) / Self::BLOCK_BIT_SIZE;
 
                 // Prefetch all subblocks of the approximate target block now,
                 // so the bit-vector DRAM fetch can proceed in parallel with
