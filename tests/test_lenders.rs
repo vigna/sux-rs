@@ -304,7 +304,7 @@ fn test_map() {
 
     let mut iter = FromSlice::new(&data).map(covar_mut!(for<'lend> |x: &'lend i32| -> Result<
         i32,
-        std::convert::Infallible,
+        core::convert::Infallible,
     > { Ok(x * 2) }));
 
     assert_eq!(iter.next().unwrap(), Some(2));
@@ -701,7 +701,7 @@ fn test_map_rewind() {
     let lender = FromSlice::new(data.as_slice());
     let mut mapped = lender.map(covar_mut!(for<'lend> |x: &'lend i32| -> Result<
         i32,
-        std::convert::Infallible,
+        core::convert::Infallible,
     > { Ok(x * 10) }));
 
     assert_eq!(mapped.next().unwrap(), Some(10));

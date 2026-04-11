@@ -1134,8 +1134,9 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 /// cause undefined behavior, but may return incorrect values.
 ///
 /// We delegate [`Backend`], [`BitLength`], and
-/// [`AsRef`]`<[Backend::Word]>` to make [`BitVecOps`] methods
-/// available, and [`Index`] to make slice-like read-only access available.
+/// [`AsRef<[Backend::Word]>`](core::convert::AsRef) to make [`BitVecOps`]
+/// methods available, and [`Index`] to make slice-like read-only access
+/// available.
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

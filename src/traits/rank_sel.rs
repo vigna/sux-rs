@@ -109,8 +109,10 @@ pub trait Rank: BitLength + NumBits + RankUnchecked {
 /// Rank over a bit vector without bounds checks.
 ///
 /// This is the unchecked counterpart of [`Rank`], providing the core
-/// [`RankUnchecked::rank_unchecked`] operation. Use [`Rank`]
-/// for a checked version that verifies the position is within bounds.
+/// [`rank_unchecked`] operation. Use [`Rank`] for a checked version
+/// that verifies the position is within bounds.
+///
+/// [`rank_unchecked`]: RankUnchecked::rank_unchecked
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait RankUnchecked {
@@ -282,8 +284,10 @@ impl<T: RankHinted + ?Sized> RankHinted for Box<T> {
 /// Selection over a bit vector without bound checks.
 ///
 /// This is the unchecked counterpart of [`Select`], providing the core
-/// [`SelectUnchecked::select_unchecked`] operation. Use [`Select`]
-/// for a checked version that verifies that there is a one of the given rank.
+/// [`select_unchecked`] operation. Use [`Select`] for a checked
+/// version that verifies that there is a one of the given rank.
+///
+/// [`select_unchecked`]: SelectUnchecked::select_unchecked
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait SelectUnchecked {

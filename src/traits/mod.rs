@@ -182,7 +182,7 @@ impl_word!(u8, u16, u32, u64, u128, usize);
 ///
 /// Note that *traits* manipulating backends such as [`BitVecOps`] do not use
 /// this trait, but are rather parametrized by a word type `W`, and extend
-/// traits such as [`AsRef<[W]>`] as needed.
+/// traits such as [`AsRef<[W]>`](core::convert::AsRef) as needed.
 ///
 /// However, *types* with a backend need this trait to avoid a redundant
 /// specification of the word type in isolation and as part of the backend. If
@@ -201,8 +201,6 @@ impl_word!(u8, u16, u32, u64, u128, usize);
 /// delegate it automatically to references, boxed types, and reference-counted
 /// wrappers.
 ///
-/// [`AsRef`]: core::convert::AsRef
-/// [`AsRef<[W]>`]: core::convert::AsRef
 /// [rank/select structure]: crate::rank_sel
 /// [`AsMut`]: core::convert::AsMut
 /// [`Backend::Word`]: Self::Word

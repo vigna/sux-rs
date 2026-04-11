@@ -1307,6 +1307,8 @@ impl BitPrefix {
 /// hasher: the full bytes, the masked partial byte (if any), and the bit
 /// length. Including the bit length distinguishes prefixes that differ
 /// only by trailing zero bits.
+///
+/// [`Xxh3`]: xxh3::Xxh3
 #[inline]
 pub(crate) fn hash_bit_prefix_raw(hasher: &mut xxh3::Xxh3, bytes: &[u8], bit_length: usize) {
     let full_bytes = bit_length / 8;

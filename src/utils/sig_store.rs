@@ -587,7 +587,7 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
 impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
     for SigStoreImpl<S, V, Vec<SigVal<S, V>>>
 {
-    type Error = std::convert::Infallible;
+    type Error = core::convert::Infallible;
 
     fn try_push(&mut self, sig_val: SigVal<S, V>) -> Result<(), Self::Error> {
         self.len += 1;
