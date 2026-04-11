@@ -603,6 +603,7 @@ impl<B: BitLength> BitCount for AddNumBits<B> {
 
 impl<B> Deref for AddNumBits<B> {
     type Target = B;
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.bits
     }

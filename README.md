@@ -51,7 +51,8 @@ providing via an associated type the word type, and on the traits above;
 moreover, the strutures export the same traits by delegation, so you can use any
 structure as a backend for (further) rank/select structures, making arbitrary
 nesting of structures simple, typesafe and zero-cost. The same is true of
-structures for balanced parentheses.
+structures for balanced parentheses. All structures [`Deref`] to their backends,
+too.
 
 ## Slice-by-value support
 
@@ -236,3 +237,4 @@ Union nor the Italian MUR can be held responsible for them.
 [operations on bit vectors]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
 [`TryIntoUnaligned`]: https://docs.rs/sux/latest/sux/traits/trait.TryIntoUnaligned.html
 [`try_into_unaligned`]: https://docs.rs/sux/latest/sux/traits/trait.TryIntoUnaligned.html#tymethod.try_into_unaligned
+[`Deref`]: https://doc.rust-lang.org/core/ops/deref/trait.Deref.html

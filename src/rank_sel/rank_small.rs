@@ -215,6 +215,7 @@ impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, 
 {
     type Target = B;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.bits
     }

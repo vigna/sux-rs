@@ -176,6 +176,7 @@ impl<B: Backend + AsRef<[B::Word]>, I> AsRef<[B::Word]> for SelectZeroAdapt<B, I
 impl<B, I> Deref for SelectZeroAdapt<B, I> {
     type Target = B;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.bits
     }

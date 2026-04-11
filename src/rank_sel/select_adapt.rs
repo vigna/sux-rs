@@ -309,6 +309,7 @@ impl<B: Backend + AsRef<[B::Word]>, I> AsRef<[B::Word]> for SelectAdapt<B, I> {
 impl<B, I> Deref for SelectAdapt<B, I> {
     type Target = B;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.bits
     }

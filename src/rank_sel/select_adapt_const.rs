@@ -212,6 +212,7 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTO
 {
     type Target = B;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.bits
     }

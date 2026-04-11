@@ -230,6 +230,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength> Rank9<B, Box<[BlockC
 impl<B, C> Deref for Rank9<B, C> {
     type Target = B;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.bits
     }
