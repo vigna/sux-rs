@@ -101,11 +101,13 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// convenience implementation makes it possible to build an [`EliasFano`] from
 /// a slice.
 ///
-/// In both cases, if you use the [`build`] method you will only be able to
-/// iterate over the sequence. Using the methods [`build_with_seq`],
-/// [`build_with_dict`], or [`build_with_seq_and_dict`] you will have access to
-/// the additional functionalities of an [`IndexedSeq`] or an [`IndexedDict`]
-/// with [`Succ`] and [`Pred`].
+/// In both cases, if you use the [`EliasFanoBuilder::build`] method you will
+/// only be able to iterate over the sequence. Using the methods
+/// [`EliasFanoBuilder::build_with_seq`],
+/// [`EliasFanoBuilder::build_with_dict`], or
+/// [`EliasFanoBuilder::build_with_seq_and_dict`] you will have access to the
+/// additional functionalities of an [`IndexedSeq`] or an [`IndexedDict`] with
+/// [`Succ`] and [`Pred`].
 ///
 /// It is also possible to manually enrich the base structure by calling
 /// [`EliasFano::map_high_bits`]. To use the structure as an [`IndexedSeq`] you
@@ -119,11 +121,10 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// # Type Parameters
 ///
 /// - `V`: The value type (e.g., `u64`). Must implement [`Word`].
-/// - `H`: The higher-bits storage. Defaults to
-///   [`BitVec<Box<[usize]>>`]. Enriching this with selection structures enables
-///   [`IndexedSeq`] and/or successor/predecessor queries.
-/// - `L`: The lower-bits storage. Defaults to
-///   [`BitFieldVec<Box<[V]>>`].
+/// - `H`: The higher-bits storage. Defaults to [`BitVec`]`<Box<[usize]>>`.
+///   Enriching this with selection structures enables [`IndexedSeq`] and/or
+///   successor/predecessor queries.
+/// - `L`: The lower-bits storage. Defaults to [`BitFieldVec`]`<Box<[V]>>`.
 ///
 /// # Bound Checks for Successor and Predecessor Queries
 ///
@@ -280,12 +281,6 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// [`iter_back`]: EliasFano::iter_back
 /// [`iter_from`]: EliasFano::iter_from
 /// [`iter`]: EliasFano::iter
-/// [`BitFieldVec<Box<[V]>>`]: crate::bits::BitFieldVec
-/// [`BitVec<Box<[usize]>>`]: crate::bits::BitVec
-/// [`build_with_seq_and_dict`]: EliasFanoBuilder::build_with_seq_and_dict
-/// [`build_with_dict`]: EliasFanoBuilder::build_with_dict
-/// [`build_with_seq`]: EliasFanoBuilder::build_with_seq
-/// [`build`]: EliasFanoBuilder::build
 #[derive(Debug, Clone, Hash, MemSize, MemDbg, value_traits::Subslices)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

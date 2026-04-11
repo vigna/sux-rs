@@ -11,7 +11,7 @@
 //! The typical use case of this structure is to compress and access efficiently
 //! list of strings that are not in sorted order. You build a sorted
 //! [`RearCodedList`], and then you [wrap the instance together with a
-//! mapping](MappedRearCodedList::from_parts) that maps the original order
+//! mapping] that maps the original order
 //! to the sorted order.
 //!
 //! There is no constraint, however, on the mapping: it can also collapse indices;
@@ -90,6 +90,7 @@
 //! [`Iterator`]: MappedRearCodedList::iter
 //! [`Lender`]: MappedRearCodedList::lender
 //! [iterate from a given position]: MappedRearCodedList::lender_from
+//! [wrap the instance together with a mapping]: MappedRearCodedList::from_parts
 use crate::bits::BitFieldVec;
 use crate::dict::rear_coded_list::RearCodedList;
 use crate::traits::{IndexedSeq, IntoIteratorFrom, Types};

@@ -61,9 +61,10 @@ macro_rules! panic_if_out_of_bounds {
 
 /// A trait expressing a length in bits.
 ///
-/// This trait is typically used in conjunction with
-/// [`AsRef<[W]>`](std::convert::AsRef) to provide word-based access to a
-/// bit vector on words of type `W`.
+/// This trait is typically used in conjunction with [`AsRef<[W]>`]` to provide
+/// word-based access to a bit vector on words of type `W`.
+///
+/// [`AsRef<[W]`]:
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait BitLength {

@@ -34,7 +34,7 @@
 //!
 //! It is possible to juggle between all flavors using [`From`]/[`Into`], and
 //! with [`TryFrom`]/[`TryInto`] when going [from a non-atomic to an atomic bit
-//! vector](BitVec#impl-TryFrom%3CBitVec%3C%26%5BW%5D%3E%3E-for-AtomicBitVec%3C%26%5B%3CW+as+AtomicPrimitive%3E::Atomic%5D%3E).
+//! vector].
 //!
 //! # Type annotations
 //!
@@ -99,6 +99,7 @@
 //! assert_eq!(unsafe { BitVec::from_raw_parts(ones.as_slice(), 1) }.count_ones(), 1);
 //! ```
 //!
+//! [from a non-atomic to an atomic bit vector]: BitVec#impl-TryFrom%3CBitVec%3C%26%5BW%5D%3E%3E-for-AtomicBitVec%3C%26%5B%3CW+as+AtomicPrimitive%3E%3A%3AAtomic%5D%3E
 //! [ε-serde]: https://crates.io/crates/epserde
 //! [`push`]: BitVec::push
 //! [`bit_vec!`]: macro@crate::bits::bit_vec
@@ -132,10 +133,11 @@ use std::{ops::Index, sync::atomic::Ordering};
 ///
 /// Instances can be created using [`new`], [`with_value`], with the
 /// convenience macro [`bit_vec!`], or with a [`FromIterator`
-/// implementation](#impl-FromIterator<bool>-for-BitVec).
+/// implementation].
 ///
 /// See the [module documentation] for more details.
 ///
+/// [`FromIterator` implementation]: #impl-FromIterator<bool>-for-BitVec
 /// [`new`]: BitVec::new
 /// [`with_value`]: BitVec::with_value
 /// [`bit_vec!`]: macro@crate::bits::bit_vec
@@ -1124,8 +1126,9 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 /// Obtain an instance via [`TryIntoUnaligned`] on a `BitVec<Box<[W]>>`,
 /// which adds a padding word if one is not already present. You can recover
 /// the original [`BitVec`] using a [`From`
-/// implementation](#impl-From<BitVecU<Box<%5BW%5D>>>-for-BitVec<Box<%5BW%5D>>)
+/// implementation]
 ///
+/// [`From` implementation]: #impl-From<BitVecU<Box<%5BW%5D>>-for-BitVec<Box<%5BW%5D>>
 /// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 ///
 /// Note that unaligned reads give correct results only when the bit width
@@ -1134,7 +1137,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 /// cause undefined behavior, but may return incorrect values.
 ///
 /// We delegate [`Backend`], [`BitLength`], and
-/// [`AsRef<[Backend::Word]>`](AsRef) to make [`BitVecOps`] methods
+/// [`AsRef`]`<[Backend::Word]>` to make [`BitVecOps`] methods
 /// available, and [`Index`] to make slice-like read-only access available.
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]

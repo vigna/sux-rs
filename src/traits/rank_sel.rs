@@ -92,8 +92,10 @@ pub trait Rank: BitLength + NumBits + RankUnchecked {
     /// Returns the number of ones preceding the specified position.
     ///
     /// The bit vector is virtually zero-extended. If `pos` is greater than or equal to the
-    /// [length of the underlying bit vector](`BitLength::len`), the number of
+    /// [length of the underlying bit vector], the number of
     /// ones in the underlying bit vector is returned.
+    ///
+    /// [length of the underlying bit vector]: BitLength::len
     #[inline(always)]
     fn rank(&self, pos: usize) -> usize {
         if pos >= self.len() {
@@ -107,7 +109,7 @@ pub trait Rank: BitLength + NumBits + RankUnchecked {
 /// Rank over a bit vector without bounds checks.
 ///
 /// This is the unchecked counterpart of [`Rank`], providing the core
-/// [`rank_unchecked`](RankUnchecked::rank_unchecked) operation. Use [`Rank`]
+/// [`RankUnchecked::rank_unchecked`] operation. Use [`Rank`]
 /// for a checked version that verifies the position is within bounds.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
@@ -116,16 +118,18 @@ pub trait RankUnchecked {
     ///
     /// # Safety
     /// `pos` must be between 0 (included) and the [length of the underlying bit
-    /// vector](`BitLength::len`) (excluded).
+    /// vector] (excluded).
     ///
     /// Some implementation might accept the length as a valid argument. If
     /// you need to be sure that the length is a valid argument, just
     /// add a padding zero bit at the end of your vector (at which
     /// point the original length will fall within the valid range).
+    ///
+    /// [length of the underlying bit vector]: BitLength::len
     unsafe fn rank_unchecked(&self, pos: usize) -> usize;
 
     /// Prefetches the cache lines needed to compute
-    /// [`rank_unchecked(pos)](#tymethod.rank_unchecked).
+    /// [`rank_unchecked(pos)`].
     ///
     /// This can speed up computing the rank of many positions in parallel.
     ///
@@ -154,11 +158,14 @@ pub trait RankUnchecked {
     /// }
     /// ```
     ///
-    /// For [`Rank9`](crate::rank_sel::Rank9) and
-    /// [`RankSmall`](crate::rank_sel::RankSmall), this gives around 10% to 30%
+    /// For [`Rank9`] and [`RankSmall`], this gives around 10% to 30%
     /// speedup when there are 16 billion keys.
     ///
     /// Prefetching out-of-bounds is never unsafe, and neither is this method.
+    ///
+    /// [`rank_unchecked(pos)`]: RankUnchecked::rank_unchecked
+    /// [`Rank9`]: crate::rank_sel::Rank9
+    /// [`RankSmall`]: crate::rank_sel::RankSmall
     fn prefetch(&self, _pos: usize) {
         // Default implementation is no-op
     }
@@ -173,9 +180,11 @@ pub trait RankZero: Rank {
     /// Returns the number of zeros preceding the specified position.
     ///
     /// The bit vector is virtually zero-extended. If `pos` is greater than or
-    /// equal to the [length of the underlying bit vector](`BitLength::len`),
+    /// equal to the [length of the underlying bit vector],
     /// the `pos` minus the number of ones in the underlying bit vector is
     /// returned.
+    ///
+    /// [length of the underlying bit vector]: BitLength::len
     fn rank_zero(&self, pos: usize) -> usize {
         pos - self.rank(pos)
     }
@@ -184,9 +193,11 @@ pub trait RankZero: Rank {
     ///
     /// # Safety
     /// `pos` must be between 0 and the [length of the underlying bit
-    /// vector](`BitLength::len`) (excluded).
+    /// vector] (excluded).
     ///
     /// Some implementation might accept the length as a valid argument.
+    ///
+    /// [length of the underlying bit vector]: BitLength::len
     unsafe fn rank_zero_unchecked(&self, pos: usize) -> usize {
         pos - unsafe { self.rank_unchecked(pos) }
     }
@@ -218,13 +229,15 @@ pub trait RankHinted {
     /// # Safety
     ///
     /// `pos` must be between 0 (included) and
-    /// the [length of the underlying bit vector](`BitLength::len`) (excluded).
+    /// the [length of the underlying bit vector] (excluded).
     /// `hint_pos` must be between 0 (included) and
     /// `pos` (included), expressed in words.
     /// `hint_rank` must be the number of ones in the underlying bit vector
     /// before the bit at the start of word `hint_pos`.
     ///
     /// Some implementation might accept the length as a valid argument.
+    ///
+    /// [length of the underlying bit vector]: BitLength::len
     unsafe fn rank_hinted<const WORDS_PER_SUBBLOCK: usize>(
         &self,
         pos: usize,
@@ -272,7 +285,7 @@ impl<T: RankHinted + ?Sized> RankHinted for Box<T> {
 /// Selection over a bit vector without bound checks.
 ///
 /// This is the unchecked counterpart of [`Select`], providing the core
-/// [`select_unchecked`](SelectUnchecked::select_unchecked) operation. Use [`Select`]
+/// [`SelectUnchecked::select_unchecked`] operation. Use [`Select`]
 /// for a checked version that verifies that there is a one of the given rank.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
@@ -358,11 +371,13 @@ pub trait SelectZero: SelectZeroUnchecked + NumBits {
 ///
 /// This trait is used to implement fast selection by adding to bit vectors
 /// indices of different kind. See, for example,
-/// [`SelectAdapt`](crate::rank_sel::SelectAdapt).
+/// [`SelectAdapt`].
 ///
 /// The const parameter `WORDS_PER_SUBBLOCK` bounds the maximum number of words
 /// scanned from `hint_pos`. If the bound is not known (as it is typical in
 /// selection), pass `usize::MAX` to fall back to an unbounded scan.
+///
+/// [`SelectAdapt`]: crate::rank_sel::SelectAdapt
 #[delegatable_trait]
 pub trait SelectHinted {
     /// Selects the one of given rank, provided the position of a preceding one
@@ -373,10 +388,12 @@ pub trait SelectHinted {
     /// `rank` must be between zero (included) and the number of ones
     /// in the underlying bit vector (excluded). `hint_pos` must be between 0
     /// (included) and the [length of the underlying bit
-    /// vector](`BitLength::len`) (included), and must be the position of a one
+    /// vector] (included), and must be the position of a one
     /// in the underlying bit vector. `hint_rank` must be the number of ones in
     /// the underlying bit vector before `hint_pos`, and must be less than or
     /// equal to `rank`.
+    ///
+    /// [length of the underlying bit vector]: BitLength::len
     unsafe fn select_hinted<const WORDS_PER_SUBBLOCK: usize>(
         &self,
         rank: usize,
@@ -437,10 +454,12 @@ pub trait SelectZeroHinted {
     /// # Safety
     /// `rank` must be between zero (included) and the number of zeros in the
     /// underlying bit vector (excluded). `hint_pos` must be between 0 (included) and
-    /// the [length of the underlying bit vector](`BitLength::len`) (included),
+    /// the [length of the underlying bit vector] (included),
     /// and must be the position of a zero in the underlying bit vector.
     /// `hint_rank` must be the number of zeros in the underlying bit vector
     /// before `hint_pos`, and must be less than or equal to `rank`.
+    ///
+    /// [length of the underlying bit vector]: BitLength::len
     unsafe fn select_zero_hinted<const WORDS_PER_SUBBLOCK: usize>(
         &self,
         rank: usize,
@@ -489,10 +508,13 @@ impl<T: SelectZeroHinted + ?Sized> SelectZeroHinted for Box<T> {
 /// [`BitCount::count_ones`].
 ///
 /// This structure forwards to the wrapped structure all traits defined in [this
-/// module](crate::traits::rank_sel) except for [`NumBits`] and [`BitCount`]. It
+/// module] except for [`NumBits`] and [`BitCount`]. It
 /// is typically used to provide [`NumBits`] to [`Select`]/[`SelectZero`]
 /// implementations; see,
-/// for example, [`SelectAdapt`](crate::rank_sel::SelectAdapt).
+/// for example, [`SelectAdapt`].
+///
+/// [this module]: crate::traits::rank_sel
+/// [`SelectAdapt`]: crate::rank_sel::SelectAdapt
 ///
 /// # Examples
 ///

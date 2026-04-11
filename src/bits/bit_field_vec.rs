@@ -1874,8 +1874,9 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateB
 /// if the bit width does not satisfy the constraints of
 /// [`BitFieldVec::get_unaligned_unchecked`]. You can recover the original
 /// [`BitFieldVec`] using a [`From`
-/// implementation](#impl-From<BitFieldVecU<Box<%5BW%5D>>>-for-BitFieldVec<Box<%5BW%5D>>).
+/// implementation].
 ///
+/// [`From` implementation]: #impl-From<BitFieldVecU<Box<%5BW%5D>>-for-BitFieldVec<Box<%5BW%5D>>
 /// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 ///
 /// # Safety

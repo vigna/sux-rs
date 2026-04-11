@@ -193,7 +193,7 @@ impl_word!(u8, u16, u32, u64, u128, usize);
 /// type (or the implemented trait) contains `W`.
 ///
 /// This trait is delegated by every
-/// [rank/select structure](crate::rank_sel) to its backend (an inner
+/// [rank/select structure] to its backend (an inner
 /// field) together with [`AsRef`] and [`BitLength`] so that, for
 /// example, a rank/select structure can be used as a backend for another
 /// structure without any boilerplate.
@@ -204,6 +204,7 @@ impl_word!(u8, u16, u32, u64, u128, usize);
 ///
 /// [`AsRef`]: core::convert::AsRef
 /// [`AsRef<[W]>`]: core::convert::AsRef
+/// [rank/select structure]: crate::rank_sel
 /// [`AsMut`]: core::convert::AsMut
 /// [`Backend::Word`]: Self::Word
 /// [`BitVec<Vec<usize>>`]: BitVec

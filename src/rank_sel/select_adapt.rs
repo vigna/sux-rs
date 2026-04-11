@@ -520,12 +520,14 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     SelectAdapt<B, Box<[usize]>>
 {
     /// Creates a new selection structure over a bit vector using [default
-    /// values](SelectAdapt) for all parameters.
+    /// values] for all parameters.
     ///
     /// # Panics
     ///
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
     /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
+    ///
+    /// [default values]: SelectAdapt
     pub fn new(bits: B) -> Self {
         Self::with_span(
             bits,

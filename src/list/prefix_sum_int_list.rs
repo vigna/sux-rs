@@ -59,7 +59,7 @@ use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
 /// accesses to the prefix-sum structure.
 ///
 /// The structure provides also [direct access to the prefix
-/// sums](PrefixSumIntList::prefix_sum).
+/// sums].
 ///
 /// After construction, the prefix-sum structure can be replaced using
 /// [`map_prefix_sums`].
@@ -74,6 +74,7 @@ use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
 ///   Defaults to [`EfSeq<usize>`].
 ///
 /// [Elias–Fano sequence]: EfSeq
+/// [direct access to the prefix sums]: PrefixSumIntList::prefix_sum
 /// [`map_prefix_sums`]: PrefixSumIntList::map_prefix_sums
 /// [`EfSeq<usize>`]: EfSeq
 #[derive(Debug, Clone, MemSize, MemDbg)]
