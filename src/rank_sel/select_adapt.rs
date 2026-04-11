@@ -519,8 +519,8 @@ impl<B: BitLength, C> SelectAdapt<B, C> {
 impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     SelectAdapt<B, Box<[usize]>>
 {
-    /// Creates a new selection structure over a bit vector using [default
-    /// values] for all parameters.
+    /// Creates a new selection structure over a bit vector using [default values]
+    /// for all parameters.
     ///
     /// # Panics
     ///

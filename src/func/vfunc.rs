@@ -28,9 +28,8 @@ use std::borrow::Borrow;
 /// required by the values (with a small overhead).
 ///
 /// This structure is based on “[ε-Cost Sharding: Scaling Hypergraph-Based
-/// Static Functions and Filters to Trillions of
-/// Keys]”. Space overhead with respect to the
-/// optimum depends on the [`ShardEdge`] type. The default is
+/// Static Functions and Filters to Trillions of Keys]”. Space overhead with
+/// respect to the optimum depends on the [`ShardEdge`] type. The default is
 /// [`FuseLge3Shards`], which provides 10.5% space overhead for large key sets
 /// (above a few million keys), which grow up to 12% going towards smaller key
 /// sets. Details on other possible [`ShardEdge`] implementations can be found

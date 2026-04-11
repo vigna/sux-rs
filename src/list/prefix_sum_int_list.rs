@@ -58,8 +58,7 @@ use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
 /// [Elias–Fano sequence]). Recovering the *i*-th value requires two
 /// accesses to the prefix-sum structure.
 ///
-/// The structure provides also [direct access to the prefix
-/// sums].
+/// The structure provides also [direct access to the prefix sums].
 ///
 /// After construction, the prefix-sum structure can be replaced using
 /// [`map_prefix_sums`].

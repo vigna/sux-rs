@@ -92,8 +92,8 @@ pub trait Rank: BitLength + NumBits + RankUnchecked {
     /// Returns the number of ones preceding the specified position.
     ///
     /// The bit vector is virtually zero-extended. If `pos` is greater than or equal to the
-    /// [length of the underlying bit vector], the number of
-    /// ones in the underlying bit vector is returned.
+    /// [length of the underlying bit vector], the number of ones in the underlying bit vector
+    /// is returned.
     ///
     /// [length of the underlying bit vector]: BitLength::len
     #[inline(always)]
@@ -117,8 +117,8 @@ pub trait RankUnchecked {
     /// Returns the number of ones preceding the specified position.
     ///
     /// # Safety
-    /// `pos` must be between 0 (included) and the [length of the underlying bit
-    /// vector] (excluded).
+    /// `pos` must be between 0 (included) and the [length of the underlying bit vector]
+    /// (excluded).
     ///
     /// Some implementation might accept the length as a valid argument. If
     /// you need to be sure that the length is a valid argument, just
@@ -180,9 +180,8 @@ pub trait RankZero: Rank {
     /// Returns the number of zeros preceding the specified position.
     ///
     /// The bit vector is virtually zero-extended. If `pos` is greater than or
-    /// equal to the [length of the underlying bit vector],
-    /// the `pos` minus the number of ones in the underlying bit vector is
-    /// returned.
+    /// equal to the [length of the underlying bit vector], the `pos` minus the
+    /// number of ones in the underlying bit vector is returned.
     ///
     /// [length of the underlying bit vector]: BitLength::len
     fn rank_zero(&self, pos: usize) -> usize {
@@ -192,8 +191,7 @@ pub trait RankZero: Rank {
     /// Returns the number of zeros preceding the specified position.
     ///
     /// # Safety
-    /// `pos` must be between 0 and the [length of the underlying bit
-    /// vector] (excluded).
+    /// `pos` must be between 0 and the [length of the underlying bit vector] (excluded).
     ///
     /// Some implementation might accept the length as a valid argument.
     ///
@@ -228,9 +226,8 @@ pub trait RankHinted {
     ///
     /// # Safety
     ///
-    /// `pos` must be between 0 (included) and
-    /// the [length of the underlying bit vector] (excluded).
-    /// `hint_pos` must be between 0 (included) and
+    /// `pos` must be between 0 (included) and the [length of the underlying bit
+    /// vector] (excluded). `hint_pos` must be between 0 (included) and
     /// `pos` (included), expressed in words.
     /// `hint_rank` must be the number of ones in the underlying bit vector
     /// before the bit at the start of word `hint_pos`.
@@ -387,11 +384,10 @@ pub trait SelectHinted {
     ///
     /// `rank` must be between zero (included) and the number of ones
     /// in the underlying bit vector (excluded). `hint_pos` must be between 0
-    /// (included) and the [length of the underlying bit
-    /// vector] (included), and must be the position of a one
-    /// in the underlying bit vector. `hint_rank` must be the number of ones in
-    /// the underlying bit vector before `hint_pos`, and must be less than or
-    /// equal to `rank`.
+    /// (included) and the [length of the underlying bit vector] (included), and
+    /// must be the position of a one in the underlying bit vector. `hint_rank`
+    /// must be the number of ones in the underlying bit vector before
+    /// `hint_pos`, and must be less than or equal to `rank`.
     ///
     /// [length of the underlying bit vector]: BitLength::len
     unsafe fn select_hinted<const WORDS_PER_SUBBLOCK: usize>(
@@ -453,11 +449,11 @@ pub trait SelectZeroHinted {
     ///
     /// # Safety
     /// `rank` must be between zero (included) and the number of zeros in the
-    /// underlying bit vector (excluded). `hint_pos` must be between 0 (included) and
-    /// the [length of the underlying bit vector] (included),
-    /// and must be the position of a zero in the underlying bit vector.
-    /// `hint_rank` must be the number of zeros in the underlying bit vector
-    /// before `hint_pos`, and must be less than or equal to `rank`.
+    /// underlying bit vector (excluded). `hint_pos` must be between 0 (included)
+    /// and the [length of the underlying bit vector] (included), and must be the
+    /// position of a zero in the underlying bit vector. `hint_rank` must be the
+    /// number of zeros in the underlying bit vector before `hint_pos`, and must
+    /// be less than or equal to `rank`.
     ///
     /// [length of the underlying bit vector]: BitLength::len
     unsafe fn select_zero_hinted<const WORDS_PER_SUBBLOCK: usize>(
@@ -508,10 +504,9 @@ impl<T: SelectZeroHinted + ?Sized> SelectZeroHinted for Box<T> {
 /// [`BitCount::count_ones`].
 ///
 /// This structure forwards to the wrapped structure all traits defined in [this
-/// module] except for [`NumBits`] and [`BitCount`]. It
-/// is typically used to provide [`NumBits`] to [`Select`]/[`SelectZero`]
-/// implementations; see,
-/// for example, [`SelectAdapt`].
+/// module] except for [`NumBits`] and [`BitCount`]. It is typically used to
+/// provide [`NumBits`] to [`Select`]/[`SelectZero`] implementations; see, for
+/// example, [`SelectAdapt`].
 ///
 /// [this module]: crate::traits::rank_sel
 /// [`SelectAdapt`]: crate::rank_sel::SelectAdapt

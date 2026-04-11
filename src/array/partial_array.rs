@@ -149,8 +149,7 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
 /// [Elias-Fano]: crate::dict::EliasFano
 /// [dense partial array]: new_dense
 ///
-/// If your set of values is really dense, consider using a [dense partial
-/// array].
+/// If your set of values is really dense, consider using a [dense partial array].
 ///
 /// # Examples
 ///

@@ -33,8 +33,7 @@
 //! the bit vector is never modified by the methods of this structure.
 //!
 //! It is possible to juggle between all flavors using [`From`]/[`Into`], and
-//! with [`TryFrom`]/[`TryInto`] when going [from a non-atomic to an atomic bit
-//! vector].
+//! with [`TryFrom`]/[`TryInto`] when going [from a non-atomic to an atomic bit vector].
 //!
 //! # Type annotations
 //!
@@ -132,8 +131,7 @@ use std::{ops::Index, sync::atomic::Ordering};
 /// A bit vector.
 ///
 /// Instances can be created using [`new`], [`with_value`], with the
-/// convenience macro [`bit_vec!`], or with a [`FromIterator`
-/// implementation].
+/// convenience macro [`bit_vec!`], or with a [`FromIterator` implementation].
 ///
 /// See the [module documentation] for more details.
 ///
@@ -1125,8 +1123,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 ///
 /// Obtain an instance via [`TryIntoUnaligned`] on a `BitVec<Box<[W]>>`,
 /// which adds a padding word if one is not already present. You can recover
-/// the original [`BitVec`] using a [`From`
-/// implementation]
+/// the original [`BitVec`] using a [`From` implementation]
 ///
 /// [`From` implementation]: #impl-From<BitVecU<Box<%5BW%5D>>-for-BitVec<Box<%5BW%5D>>
 /// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
