@@ -19,3 +19,4 @@ dump.log
 perf-*.data
 err.new
 data
+.github/copilot-instructions.md
