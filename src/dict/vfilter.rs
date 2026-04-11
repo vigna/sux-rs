@@ -28,16 +28,16 @@ use value_traits::slices::SliceByValue;
 /// For values of *b* that correspond to the size of an unsigned type, you can
 /// use a boxed slice as a backend.
 ///
-/// Instances are immutable; they are built using
-/// [`try_new`](VFilter::try_new) or one of its variants, and can be
-/// serialized with [ε-serde](https://crates.io/crates/epserde).
+/// Instances are immutable; they are built using [`try_new`] or one of its
+/// variants, and can be serialized with [ε-serde].
 ///
 /// This structure implements the [`Index`] trait for convenient
 /// `filter[key]` syntax (returning `&bool`).
 ///
-/// This structure implements the [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned)
-/// trait, allowing it to be converted into (usually faster) structures using
-/// unaligned access.
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it
+/// to be converted into (usually faster) structures using unaligned access.
+///
+/// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 ///
 /// # Generics
 ///
@@ -47,7 +47,10 @@ use value_traits::slices::SliceByValue;
 ///
 /// # Examples
 ///
-/// See [`try_new`](VFilter::try_new).
+/// See [`try_new`].
+///
+/// [`try_new`]: VFilter::try_new
+/// [ε-serde]: https://crates.io/crates/epserde
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(
     feature = "epserde",
@@ -72,8 +75,10 @@ impl<F: Backend> VFilter<F> {
     /// bit count.
     ///
     /// This is a low-level constructor; prefer
-    /// [`try_new`](VFilter::try_new)/[`try_new_with_builder`](VFilter::try_new_with_builder)
-    /// when possible.
+    /// [`try_new`]/[`try_new_with_builder`] when possible.
+    ///
+    /// [`try_new`]: VFilter::try_new
+    /// [`try_new_with_builder`]: VFilter::try_new_with_builder
     pub fn from_parts(func: F, filter_mask: F::Word) -> Self {
         Self { func, filter_mask }
     }
@@ -93,7 +98,9 @@ where
     /// `false` on mismatch (key definitely absent).
     ///
     /// This is the signature-level entry point; most callers should use
-    /// [`contains`](Self::contains) instead.
+    /// [`contains`] instead.
+    ///
+    /// [`contains`]: Self::contains
     #[inline(always)]
     pub fn contains_by_sig(&self, sig: S) -> bool {
         // Derive the expected hash from the signature via the canonical
@@ -107,9 +114,10 @@ where
     /// Returns whether `key` is likely in the set.
     ///
     /// Computes the key's signature and delegates to
-    /// [`contains_by_sig`](Self::contains_by_sig). Returns `true`
-    /// on match (false-positive rate 2⁻*ᵇ*), `false` on mismatch
-    /// (definitely absent).
+    /// [`contains_by_sig`]. Returns `true` on match (false-positive
+    /// rate 2⁻*ᵇ*), `false` on mismatch (definitely absent).
+    ///
+    /// [`contains_by_sig`]: Self::contains_by_sig
     ///
     /// # Examples
     ///
@@ -173,8 +181,10 @@ where
 
     /// Indexes the filter by key, returning `&true` or `&false`.
     ///
-    /// Equivalent to [`contains`](VFilter::contains) but satisfying
-    /// the [`Index`] trait for `filter[key]` syntax.
+    /// Equivalent to [`contains`] but satisfying the [`Index`] trait for
+    /// `filter[key]` syntax.
+    ///
+    /// [`contains`]: VFilter::contains
     #[inline(always)]
     fn index(&self, key: B) -> &Self::Output {
         // Return references to static bools — this is the standard
@@ -245,17 +255,20 @@ mod build {
         /// parameter.
         ///
         /// * `keys` must be provided as a [`FallibleRewindableLender`].
-        ///   The [`lenders`](crate::utils::lenders) module provides easy
+        ///   The [`lenders`] module provides easy
         ///   ways to build such lenders.
         /// * `n` is the expected number of keys; a significantly wrong
         ///   value may degrade performance or cause extra retries.
         ///
         /// This is a convenience wrapper around
-        /// [`try_new_with_builder`](Self::try_new_with_builder) with
-        /// `VBuilder::default()`.
+        /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
-        /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
+        /// If keys and values are available as slices, [`try_par_new`]
         /// parallelizes the hash computation for faster construction.
+        ///
+        /// [`lenders`]: crate::utils::lenders
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         ///
         /// # Examples
         /// ```rust
@@ -303,16 +316,22 @@ mod build {
         /// false-positive rate of 2<sup>−`W::BITS`</sup>.
         ///
         /// * `keys` must be provided as a [`FallibleRewindableLender`].
-        ///   The [`lenders`](crate::utils::lenders) module provides easy
+        ///   The [`lenders`] module provides easy
         ///   ways to build such lenders.
         /// * `n` is the expected number of keys.
         ///
         /// The builder controls construction parameters such as [offline
-        /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
-        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        /// mode], [thread count], [sharding overhead], and [PRNG seed].
         ///
-        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// for parallel hash computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel hash
+        /// computation from slices.
+        ///
+        /// [`lenders`]: crate::utils::lenders
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         ///
         /// # Examples
         ///
@@ -375,11 +394,13 @@ mod build {
         /// false-positive rate of 2<sup>-`W::BITS`</sup>.
         ///
         /// This is a convenience wrapper around
-        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder) with
-        /// `VBuilder::default()`.
+        /// [`try_par_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new`](Self::try_new) instead.
+        /// [`try_new`] instead.
+        ///
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`try_new`]: Self::try_new
         ///
         /// # Examples
         ///
@@ -422,11 +443,15 @@ mod build {
         /// false-positive rate of 2<sup>-`W::BITS`</sup>.
         ///
         /// The builder controls construction parameters such as
-        /// [thread count](VBuilder::max_num_threads),
-        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        /// [thread count], [sharding overhead], and [PRNG seed].
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// [`try_new_with_builder`] instead.
+        ///
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         ///
         /// # Examples
         ///
@@ -519,7 +544,7 @@ mod build {
         /// using default [`VBuilder`] settings.
         ///
         /// * `keys` must be provided as a [`FallibleRewindableLender`].
-        ///   The [`lenders`](crate::utils::lenders) module provides easy
+        ///   The [`lenders`] module provides easy
         ///   ways to build such lenders.
         /// * `n` is the expected number of keys; a significantly wrong
         ///   value may degrade performance or cause extra retries.
@@ -527,11 +552,14 @@ mod build {
         ///   false-positive rate is 2<sup>−`filter_bits`</sup>.
         ///
         /// This is a convenience wrapper around
-        /// [`try_new_with_builder`](Self::try_new_with_builder) with
-        /// `VBuilder::default()`.
+        /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
-        /// If keys and values are available as slices, [`try_par_new`](Self::try_par_new)
+        /// If keys and values are available as slices, [`try_par_new`]
         /// parallelizes the hash computation for faster construction.
+        ///
+        /// [`lenders`]: crate::utils::lenders
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         ///
         /// # Examples
         ///
@@ -579,18 +607,24 @@ mod build {
         /// using the given [`VBuilder`] configuration.
         ///
         /// * `keys` must be provided as a [`FallibleRewindableLender`].
-        ///   The [`lenders`](crate::utils::lenders) module provides easy
+        ///   The [`lenders`] module provides easy
         ///   ways to build such lenders.
         /// * `n` is the expected number of keys.
         /// * `filter_bits` is the number of hash bits per key; the
         ///   false-positive rate is 2<sup>−`filter_bits`</sup>.
         ///
         /// The builder controls construction parameters such as [offline
-        /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
-        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        /// mode], [thread count], [sharding overhead], and [PRNG seed].
         ///
-        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// for parallel hash computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel hash
+        /// computation from slices.
+        ///
+        /// [`lenders`]: crate::utils::lenders
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         ///
         /// # Examples
         ///
@@ -657,11 +691,13 @@ mod build {
         ///   false-positive rate is 2<sup>-`filter_bits`</sup>.
         ///
         /// This is a convenience wrapper around
-        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder) with
-        /// `VBuilder::default()`.
+        /// [`try_par_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new`](Self::try_new) instead.
+        /// [`try_new`] instead.
+        ///
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`try_new`]: Self::try_new
         ///
         /// # Examples
         ///
@@ -707,11 +743,15 @@ mod build {
         ///   false-positive rate is 2<sup>-`filter_bits`</sup>.
         ///
         /// The builder controls construction parameters such as
-        /// [thread count](VBuilder::max_num_threads),
-        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        /// [thread count], [sharding overhead], and [PRNG seed].
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// [`try_new_with_builder`] instead.
+        ///
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         ///
         /// # Examples
         ///

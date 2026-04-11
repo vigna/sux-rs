@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Immutable [partial array](PartialArray) implementations.
+//! Immutable [partial array] implementations.
+//!
+//! [partial array]: PartialArray
 
 use std::marker::PhantomData;
 
@@ -28,14 +30,18 @@ type DenseIndex = Rank9<BitVec<Box<[u64]>>>;
 
 /// An internal index for sparse partial arrays.
 ///
-/// We cannot use directly an [Elias–Fano](crate::dict::EliasFano) structure
-/// because we need to keep track of the first invalid position; and we need to
-/// keep track of the first invalid position because we want to implement just
-/// [`SuccUnchecked`](crate::traits::SuccUnchecked) on the Elias–Fano structure,
-/// because it requires just
-/// [`SelectZeroUnchecked`](crate::traits::SelectZeroUnchecked), whereas
-/// [`Succ`](crate::traits::Succ) would require
-/// [`SelectUnchecked`](crate::traits::SelectUnchecked) as well.
+/// We cannot use directly an [Elias–Fano] structure because we need to
+/// keep track of the first invalid position; and we need to keep track of
+/// the first invalid position because we want to implement just
+/// [`SuccUnchecked`] on the Elias–Fano structure, because it requires just
+/// [`SelectZeroUnchecked`], whereas [`Succ`] would require
+/// [`SelectUnchecked`] as well.
+///
+/// [Elias–Fano]: crate::dict::EliasFano
+/// [`SuccUnchecked`]: crate::traits::SuccUnchecked
+/// [`SelectZeroUnchecked`]: crate::traits::SelectZeroUnchecked
+/// [`Succ`]: crate::traits::Succ
+/// [`SelectUnchecked`]: crate::traits::SelectUnchecked
 #[doc(hidden)]
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
@@ -68,7 +74,7 @@ pub struct PartialArrayBuilder<T, B> {
 /// map positions to indices in a contiguous value array.
 ///
 /// If your set of values is really sparse, consider using a
-/// [sparse partial array](new_sparse).
+/// [sparse partial array].
 ///
 /// # Examples
 ///
@@ -85,6 +91,8 @@ pub struct PartialArrayBuilder<T, B> {
 /// assert_eq!(array.get(3), None);
 /// assert_eq!(array.get(7), Some(&"world"));
 /// ```
+///
+/// [sparse partial array]: new_sparse
 pub fn new_dense<T>(len: usize) -> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
     let n_of_words = len.div_ceil(64);
     // SAFETY: the backing has exactly enough words for len bits
@@ -136,7 +144,9 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
 /// Creates a new builder for a sparse partial array of the given length.
 ///
 /// A sparse partial array stores the non-empty positions of the array in an
-/// [Elias-Fano](crate::dict::EliasFano) structure.
+/// [Elias-Fano] structure.
+///
+/// [Elias-Fano]: crate::dict::EliasFano
 ///
 /// If your set of values is really dense, consider using a [dense partial
 /// array](new_dense).
@@ -235,9 +245,8 @@ impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
 /// in compacted storage.
 ///
 /// This structure stores a *partial array*—an array in which only
-/// some positions contain values. There is a [dense](new_dense)
-/// and a [sparse](new_sparse) implementation with different
-/// space/time trade-offs.
+/// some positions contain values. There is a [dense] and a [sparse]
+/// implementation with different space/time trade-offs.
 ///
 /// For convenience, this structure implements [`SliceByValue`].
 ///
@@ -246,6 +255,9 @@ impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
 /// to be converted into (usually faster) structures using unaligned access.
 ///
 /// See [`PartialArrayBuilder`] for details on how to create a partial array.
+///
+/// [dense]: new_dense
+/// [sparse]: new_sparse
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

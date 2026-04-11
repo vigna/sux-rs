@@ -15,7 +15,9 @@
 //! of elements sorted in ascending order. The elements can contain arbitrary
 //! data, including `\0` bytes. Note that if your list is not sorted and you
 //! want to achieve significant compression you can try to use a
-//! [`MappedRearCodedList`](crate::dict::mapped_rear_coded_list) instead.
+//! [`MappedRearCodedList`] instead.
+//!
+//! [`MappedRearCodedList`]: crate::dict::mapped_rear_coded_list
 //!
 //! The encoding is done in blocks of `ratio` elements: in each block the first
 //! string is encoded without compression, whereas the other elements are encoded
@@ -34,16 +36,15 @@
 //! Besides the standard access by means of the [`IndexedSeq`] trait, this
 //! structure also implements the `get_in_place` method, which makes it possible
 //! to write the element directly into a user-provided buffer (a string or a
-//! vector of bytes), avoiding allocations. [`RearCodedListStr`] has an additional
-//! [`get_bytes_in_place`](RearCodedListStr::get_bytes_in_place) method that
-//! writes the bytes of the string into a user-provided `Vec<u8>`.
+//! vector of bytes), avoiding allocations. [`RearCodedListStr`] has an
+//! additional [`get_bytes_in_place`] method that writes the bytes of the
+//! string into a user-provided `Vec<u8>`.
 //!
-//! Rear-coded lists can be iterated upon using either an
-//! [`Iterator`](RearCodedList::iter) or a [`Lender`](RearCodedList::lender).
-//! In the first case there will be an allocation at each iteration, whereas in
-//! the second case a single buffer will be reused. You can also
-//! [iterate from a given position](RearCodedList::lender_from), which is
-//! much faster than skipping elements one by one.
+//! Rear-coded lists can be iterated upon using either an [`Iterator`] or a
+//! [`Lender`]. In the first case there will be an allocation at each
+//! iteration, whereas in the second case a single buffer will be reused. You
+//! can also [iterate from a given position], which is much faster than
+//! skipping elements one by one.
 //!
 //! There are two versions of the structure, depending on a const boolean
 //! parameter `SORTED`: if it is true, the elements must be sorted in ascending
@@ -56,9 +57,8 @@
 //!
 //! To build a [`RearCodedList`] you use a [`RearCodedListBuilder`], which has a
 //! first parameter, `str` or `[u8]`, that specifies the type of elements, and a
-//! `SORTED` boolean parameter; you have to [`push`](RearCodedListBuilder::push)
-//! the elements, and then call the [`build`](RearCodedListBuilder::build)
-//! method to obtain the final structure.
+//! `SORTED` boolean parameter; you have to [`push`] the elements, and then
+//! call the [`build`] method to obtain the final structure.
 //!
 //! If the feature `epserde` is active, you can also directly serialize a
 //! rear-coded list without building it in memory using the functions
@@ -82,11 +82,9 @@
 //!
 //! The check for UTF-8 validity poses a significant performance penalty on the
 //! accessors. If you are sure that the data is valid UTF-8 (e.g., you built the
-//! serialized structure yourself), you can use
-//! [`get_bytes`](RearCodedListStr::get_bytes) or
-//! [`get_bytes_in_place`](RearCodedListStr::get_bytes_in_place) and then unsafe
-//! methods such as [`String::from_utf8_unchecked`] or
-//! [`str::from_utf8_unchecked`].
+//! serialized structure yourself), you can use [`get_bytes`] or
+//! [`get_bytes_in_place`] and then unsafe methods such as
+//! [`String::from_utf8_unchecked`] or [`str::from_utf8_unchecked`].
 //!
 //! # Examples
 //!
@@ -115,11 +113,12 @@
 //! ```
 //!
 //! Here instead we serialize directly the list in an aligned cursor. Note that
-//! the methods accept a
-//! [`FallibleRewindableLender`](crate::utils::lenders::FallibleRewindableLender),
-//! so we create it from a buffer using the
-//! [`FromSlice`](crate::utils::FromSlice) adapter. Using the [`store_str`]
+//! the methods accept a [`FallibleRewindableLender`], so we create it from
+//! a buffer using the [`FromSlice`] adapter. Using the [`store_str`]
 //! function you could write directly to a file.
+//!
+//! [`FallibleRewindableLender`]: crate::utils::lenders::FallibleRewindableLender
+//! [`FromSlice`]: crate::utils::FromSlice
 //!
 //! ```
 //! # #[cfg(feature = "epserde")] {
@@ -163,6 +162,14 @@
 //! `<bytes>` and `<suffix_bytes>` are the actual bytes of the string or suffix,
 //! and `<rear_len>` is the length of the suffix of the previous string that must be
 //! removed to obtain the common prefix.
+//!
+//! [`get_bytes_in_place`]: RearCodedListStr::get_bytes_in_place
+//! [`get_bytes`]: RearCodedListStr::get_bytes
+//! [`Iterator`]: RearCodedList::iter
+//! [`Lender`]: RearCodedList::lender
+//! [iterate from a given position]: RearCodedList::lender_from
+//! [`push`]: RearCodedListBuilder::push
+//! [`build`]: RearCodedListBuilder::build
 
 use crate::traits::{IndexedDict, IndexedSeq, IntoIteratorFrom, Types};
 use core::marker::PhantomData;
@@ -292,8 +299,9 @@ where
 {
     /// Returns a [`Lender`] over the elements of the list.
     ///
-    /// Note that [`iter`](RearCodedList::iter) is more convenient if
-    /// you need owned elements.
+    /// Note that [`iter`] is more convenient if you need owned elements.
+    ///
+    /// [`iter`]: RearCodedList::iter
     #[inline(always)]
     pub fn lender(&self) -> Lend<'_, I, O, D, P, SORTED> {
         Lend::new(self)
@@ -302,8 +310,10 @@ where
     /// Returns a [`Lender`] over the elements of the list
     /// starting from the given index.
     ///
-    /// Note that [`iter_from`](RearCodedList::iter_from) is more convenient if
-    /// you need owned elements.
+    /// Note that [`iter_from`] is more convenient if you need owned
+    /// elements.
+    ///
+    /// [`iter_from`]: RearCodedList::iter_from
     #[inline(always)]
     pub fn lender_from(&self, from: usize) -> Lend<'_, I, O, D, P, SORTED> {
         Lend::new_from(self, from)
@@ -311,8 +321,10 @@ where
 
     /// Returns an [`Iterator`] over the elements of the list.
     ///
-    /// Note that [`lender`](RearCodedList::lender) is more efficient if
-    /// you need to iterate over many elements.
+    /// Note that [`lender`] is more efficient if you need to iterate
+    /// over many elements.
+    ///
+    /// [`lender`]: RearCodedList::lender
     #[inline(always)]
     pub fn iter(&self) -> Iter<'_, I, O, D, P, SORTED> {
         Iter(self.lender())
@@ -321,8 +333,10 @@ where
     /// Returns an [`Iterator`] over the elements of the list
     /// starting from the given index.
     ///
-    /// Note that [`lender_from`](RearCodedList::lender_from) is more efficient if
-    /// you need to iterate over many elements.
+    /// Note that [`lender_from`] is more efficient if you need to
+    /// iterate over many elements.
+    ///
+    /// [`lender_from`]: RearCodedList::lender_from
     #[inline(always)]
     pub fn iter_from(&self, from: usize) -> Iter<'_, I, O, D, P, SORTED> {
         Iter(self.lender_from(from))
@@ -1076,8 +1090,9 @@ impl<I: ?Sized + AsRef<[u8]>, const SORTED: bool> RearCodedListBuilder<I, SORTED
     /// We prefer to implement extension via a [`Lender`] instead of an
     /// [`Iterator`] to avoid the need to allocate a new string for every string
     /// in the list. This is particularly useful when building large lists from
-    /// files using, for example, a
-    /// [`FallibleRewindableLender`](crate::utils::FallibleRewindableLender).
+    /// files using, for example, a [`FallibleRewindableLender`].
+    ///
+    /// [`FallibleRewindableLender`]: crate::utils::FallibleRewindableLender
     ///
     /// # Panics
     ///

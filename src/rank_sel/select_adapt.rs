@@ -9,10 +9,12 @@
 //! Main module for the adaptive select family of data structures.
 //!
 //! Besides containing the main structure [`SelectAdapt`], this module also
-//! contains constants used by the variants
-//! [`SelectZeroAdapt`](super::SelectZeroAdapt),
-//! [`SelectAdaptConst`](super::SelectAdaptConst), and
-//! [`SelectZeroAdaptConst`](super::SelectZeroAdaptConst).
+//! contains constants used by the variants [`SelectZeroAdapt`],
+//! [`SelectAdaptConst`], and [`SelectZeroAdaptConst`].
+//!
+//! [`SelectZeroAdapt`]: super::SelectZeroAdapt
+//! [`SelectAdaptConst`]: super::SelectAdaptConst
+//! [`SelectZeroAdaptConst`]: super::SelectZeroAdaptConst
 
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
@@ -51,31 +53,36 @@ use std::ops::Index;
 ///
 /// The design of this selection structure starts from the `simple` structure
 /// described by Sebastiano Vigna in “[Broadword Implementation of Rank/Select
-/// Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
-/// _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
-/// 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
-/// Springer, 2008, but adds adaptivity of the second-level inventory, using
-/// thus significantly less space than `simple` for bit vectors with uneven
-/// distribution.
+/// Queries]”, _Proc. of the 7th International Workshop on Experimental
+/// Algorithms, WEA 2008_, volume 5038 of Lecture Notes in Computer Science,
+/// pages 154–168, Springer, 2008, but adds adaptivity of the second-level
+/// inventory, using thus significantly less space than `simple` for bit
+/// vectors with uneven distribution.
 ///
-/// [`SelectZeroAdapt`](super::SelectZeroAdapt) is a variant of this structure
-/// that provides the same functionality for zero bits.
-/// [`SelectAdaptConst`](super::SelectAdaptConst) provides similar functionality
-/// but with const parameters.
+/// [`SelectZeroAdapt`] is a variant of this structure that provides the
+/// same functionality for zero bits. [`SelectAdaptConst`] provides similar
+/// functionality but with const parameters.
+///
+/// [`SelectZeroAdapt`]: super::SelectZeroAdapt
+/// [`SelectAdaptConst`]: super::SelectAdaptConst
 ///
 /// # Type Parameters
 ///
-/// - `B`: The bit-based [backend](Backend) (usually a
-///   [bit vector](crate::bits::BitVec), possibly wrapped in
-///   rank/select structures).
+/// - `B`: The bit-based [backend] (usually a [bit vector],
+///   possibly wrapped in rank/select structures).
+///
+/// [bit vector]: crate::bits::BitVec
+/// [backend]: Backend
 /// - `I`: The inventory storage. Defaults to `Box<[usize]>`.
 ///
 /// # Implementation Details
 ///
 /// The structure is based on an inventory and fixed-size subinventories, plus a
 /// spill buffer to handle adaptively extreme cases. Similarly to
-/// [`Rank9`](super::Rank9), the two levels are interleaved to reduce the number
-/// of cache misses.
+/// [`Rank9`], the two levels are interleaved to reduce the number of cache
+/// misses.
+///
+/// [`Rank9`]: super::Rank9
 ///
 /// The inventory is sized so that the distance between two indexed ones is on
 /// average a given target value *L*. For each indexed one in the inventory (for
@@ -86,12 +93,14 @@ use std::ops::Index;
 /// might be smaller by a factor of 2, doubling the actual space occupancy with
 /// respect to the target space occupancy.
 ///
-/// For example, using [the default value of
-/// *L*](default_target_inventory_span) and [the default value of
-/// *M*](DEFAULT_LOG2_WORDS_PER_SUBINVENTORY), the space occupancy
-/// is between 7% and 14% on 64-bit platforms and twice that on 32-bit
-/// platforms. The space might be smaller for very sparse vectors as less than
-/// *M* subinventory words per inventory might be used.
+/// For example, using [the default value of *L*] and [the default value of
+/// *M*], the space occupancy is between 7% and 14% on 64-bit platforms and
+/// twice that on 32-bit platforms. The space might be smaller for very
+/// sparse vectors as less than *M* subinventory words per inventory might
+/// be used.
+///
+/// [the default value of *L*]: default_target_inventory_span
+/// [the default value of *M*]: DEFAULT_LOG2_WORDS_PER_SUBINVENTORY
 ///
 /// Given a specific indexed one in the inventory, if the distance to the next
 /// indexed one is at most 2¹⁶ we use the *M* words associated to the
@@ -122,7 +131,9 @@ use std::ops::Index;
 /// Note that it is possible to build pathological cases (e.g., half of the bit
 /// vector extremely dense, half of the vector extremely sparse) in which the
 /// structure has a different performance depending on the selected bit. In
-/// these cases, [`Select9`](super::Select9) might be a better choice.
+/// these cases, [`Select9`] might be a better choice.
+///
+/// [`Select9`]: super::Select9
 ///
 /// # Choosing Parameters
 ///
@@ -138,9 +149,11 @@ use std::ops::Index;
 /// path; *L* has thus to be significantly smaller than 2¹⁶ to manage
 /// irregularities in the distribution of ones. Moreover, given the default
 /// value for *M*, the worst-case linear search after reading the inventory
-/// should be on few words. The [default suggested
-/// value](default_target_inventory_span) is a reasonable choice modeled on a
-/// maximum of four words in the linear search for vectors with uniform density.
+/// should be on few words. The [default suggested value] is a reasonable
+/// choice modeled on a maximum of four words in the linear search for
+/// vectors with uniform density.
+///
+/// [default suggested value]: default_target_inventory_span
 ///
 /// Note that doubling *M* and *L* reduces space occupancy (because of the
 /// plus-one in the space occupancy formula) and, in the 64-bit case, doubles
@@ -256,6 +269,8 @@ use std::ops::Index;
 /// assert_eq!(rank9_sel[7], true);
 /// # }
 /// ```
+///
+/// [Broadword Implementation of Rank/Select Queries]: https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -302,11 +317,13 @@ impl<B, I> Deref for SelectAdapt<B, I> {
 /// The base-2 logarithm of the default number of `usize` in each
 /// subinventory.
 ///
-/// This value is defined as 3 (e.g., *M* = 8 in the
-/// [documentation](SelectAdapt)), because it corresponds to the size of a
-/// cache line, and thus tentatively to a single cache miss when retrieving
-/// the inventory data (albeit inventory entries are not guaranteed to be
-/// aligned, and they contain an additional word).
+/// This value is defined as 3 (e.g., *M* = 8 in the [documentation]),
+/// because it corresponds to the size of a cache line, and thus tentatively
+/// to a single cache miss when retrieving the inventory data (albeit
+/// inventory entries are not guaranteed to be aligned, and they contain an
+/// additional word).
+///
+/// [documentation]: SelectAdapt
 pub const DEFAULT_LOG2_WORDS_PER_SUBINVENTORY: usize = 3;
 
 /// Returns the default target inventory span for a given
@@ -524,17 +541,21 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     ///
     /// * `bits`: A bit vector.
     ///
-    /// * `target_inventory_span`: The target span [*L*](SelectAdapt) of a
-    ///   first-level inventory entry. The actual span might be smaller by a
-    ///   factor of 2. The suggested value is
-    ///   [`default_target_inventory_span(max_log2_words_per_subinv)`](default_target_inventory_span).
+    /// * `target_inventory_span`: The target span [*L*] of a first-level
+    ///   inventory entry. The actual span might be smaller by a factor of 2.
+    ///   The suggested value is
+    ///   [`default_target_inventory_span(max_log2_words_per_subinv)`].
     ///
     /// * `max_log2_words_per_subinv`: The base-2 logarithm of the maximum
-    ///   number [*M*](SelectAdapt) of `usize` in each subinventory. The
-    ///   suggested value is [`DEFAULT_LOG2_WORDS_PER_SUBINVENTORY`].
+    ///   number [*M*] of `usize` in each subinventory. The suggested value
+    ///   is [`DEFAULT_LOG2_WORDS_PER_SUBINVENTORY`].
     ///
-    /// See the [documentation](SelectAdapt) for details on how to choose these
-    /// parameters.
+    /// See the [documentation] for details on how to choose these parameters.
+    ///
+    /// [*L*]: SelectAdapt
+    /// [`default_target_inventory_span(max_log2_words_per_subinv)`]: default_target_inventory_span
+    /// [*M*]: SelectAdapt
+    /// [documentation]: SelectAdapt
     ///
     /// # Panics
     ///
@@ -571,8 +592,10 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     /// density of ones in the bit vector. Thus, this constructor makes sense
     /// only if the density is known in advance.
     ///
-    /// Unless you understand all the implications, it is preferable to use the
-    /// [standard constructor](SelectAdapt::new).
+    /// Unless you understand all the implications, it is preferable to use
+    /// the [standard constructor].
+    ///
+    /// [standard constructor]: SelectAdapt::new
     ///
     /// # Arguments
     ///
@@ -581,12 +604,14 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     /// * `log2_ones_per_inventory`: The base-2 logarithm of the indexing
     ///   frequency.
     ///
-    /// * `max_log2_words_per_subinventory`: The base-2 logarithm of the maximum
-    ///   number [*M*](SelectAdapt) of `usize` in each subinventory. The
-    ///   suggested value is [`DEFAULT_LOG2_WORDS_PER_SUBINVENTORY`].
+    /// * `max_log2_words_per_subinventory`: The base-2 logarithm of the
+    ///   maximum number [*M*] of `usize` in each subinventory. The suggested
+    ///   value is [`DEFAULT_LOG2_WORDS_PER_SUBINVENTORY`].
     ///
-    /// See the [documentation](SelectAdapt) for details on how to choose these
-    /// parameters.
+    /// See the [documentation] for details on how to choose these parameters.
+    ///
+    /// [*M*]: SelectAdapt
+    /// [documentation]: SelectAdapt
     ///
     /// # Panics
     ///
@@ -614,9 +639,8 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     /// example, `overhead_percentage = 10.0` targets a selection structure
     /// using about 10% of the bit vector size. The target inventory span *T*
     /// is computed as (1 + *M*) · `usize::BITS` · 100 / `overhead_percentage`.
-    /// Note that, as explained in the [documentation](SelectAdapt), the
-    /// actual overhead might be up to twice the target overhead due to
-    /// rounding.
+    /// Note that, as explained in the [documentation], the actual overhead
+    /// might be up to twice the target overhead due to rounding.
     ///
     /// If the requested overhead would result in a target span so small that
     /// the worst-case linear search is less than one word, the target span is
@@ -630,11 +654,13 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     ///   vector size.
     ///
     /// * `max_log2_words_per_subinv`: The base-2 logarithm of the maximum
-    ///   number [*M*](SelectAdapt) of `usize` in each subinventory. The
-    ///   suggested value is [`DEFAULT_LOG2_WORDS_PER_SUBINVENTORY`].
+    ///   number [*M*] of `usize` in each subinventory. The suggested value
+    ///   is [`DEFAULT_LOG2_WORDS_PER_SUBINVENTORY`].
     ///
-    /// See the [documentation](SelectAdapt) for details on how to choose these
-    /// parameters.
+    /// See the [documentation] for details on how to choose these parameters.
+    ///
+    /// [*M*]: SelectAdapt
+    /// [documentation]: SelectAdapt
     ///
     /// # Panics
     ///

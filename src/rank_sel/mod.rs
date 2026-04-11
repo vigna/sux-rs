@@ -11,17 +11,19 @@
 //!
 //! Rank and selection structures can be combined arbitrarily with a
 //! mix-and-match approach. There is a base class, usually
-//! [`BitVec`](crate::bits::bit_vec::BitVec), over which different structures
-//! can be layered. Each structure forwards traits it does not implement to the
-//! next structure in the chain, and also implements [`Deref`](core::ops::Deref)
-//! with the next structure as target.
+//! [`BitVec`], over which different structures can be layered. Each structure
+//! forwards traits it does not implement to the next structure in the chain,
+//! and also implements [`Deref`] with the next structure as target.
 //!
-//! A few of the structures in this module have been described by Sebastiano Vigna in
-//! “[Broadword Implementation of Rank/Select
-//! Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
-//! _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
-//! 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
-//! Springer, 2008.
+//! [`BitVec`]: crate::bits::bit_vec::BitVec
+//!
+//! A few of the structures in this module have been described by Sebastiano
+//! Vigna in “[Broadword Implementation of Rank/Select Queries]”, _Proc. of the
+//! 7th International Workshop on Experimental Algorithms, WEA 2008_, volume
+//! 5038 of Lecture Notes in Computer Science, pages 154–168, Springer,
+//! 2008.
+//!
+//! [Broadword Implementation of Rank/Select Queries]: https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12
 //!
 //! # Examples
 //!
@@ -39,15 +41,17 @@
 //! assert_eq!(unsafe { select.select_unchecked(0) }, 1);
 //! ```
 //!
-//! Note that we invoked
-//! [`select_unchecked`](crate::traits::SelectUnchecked::select_unchecked). The
-//! [`select`](crate::traits::Select::select) method, indeed, requires the
-//! knowledge of the number of ones in the bit vector to perform bound checks,
-//! and this number is not available in constant time in a
-//! [`BitVec`](crate::bits::BitVec); we need
-//! [`AddNumBits`](crate::traits::AddNumBits), a thin immutable wrapper around a
-//! bit vector that stores internally the number of ones and thus implements the
-//! [`NumBits`](crate::traits::NumBits) trait:
+//! Note that we invoked [`select_unchecked`]. The [`select`] method,
+//! indeed, requires the knowledge of the number of ones in the bit vector
+//! to perform bound checks, and this number is not available in constant
+//! time in a [`BitVec`]; we need [`AddNumBits`], a thin immutable wrapper
+//! around a bit vector that stores internally the number of ones and thus
+//! implements the [`NumBits`] trait:
+//!
+//! [`select_unchecked`]: crate::traits::SelectUnchecked::select_unchecked
+//! [`select`]: crate::traits::Select::select
+//! [`AddNumBits`]: crate::traits::AddNumBits
+//! [`NumBits`]: crate::traits::NumBits
 //!
 //! ```rust
 //! use sux::bit_vec;
@@ -61,8 +65,8 @@
 //! ```
 //!
 //! Suppose instead we want to build our selection structure around a [`Rank9`]
-//! structure: in this case, [`Rank9`] implements directly
-//! [`NumBits`](crate::traits::NumBits), so we can just use it:
+//! structure: in this case, [`Rank9`] implements directly [`NumBits`], so
+//! we can just use it:
 //!
 //! ```rust
 //! # #[cfg(target_pointer_width = "64")]
@@ -83,20 +87,26 @@
 //! # }
 //! ```
 //!
-//! Note how [`SelectAdapt`] forwards not only [`Rank`](crate::traits::Rank) but
-//! also [`Index`](std::ops::Index), which gives access to the bits of the
-//! underlying bit vector. The last line uses the [`map`](SelectAdapt::map)
-//! method to replace the underlying [`Rank9`] structure with one that is slower
-//! but uses much less space: the method is unsafe because in principle you
-//! might replace the structure with something built on a different bit vector,
-//! leading to an inconsistent state; note how we use `into_inner()` to get rid
-//! of the [`AddNumBits`](crate::traits::AddNumBits) wrapper.
+//! Note how [`SelectAdapt`] forwards not only [`Rank`] but also [`Index`],
+//! which gives access to the bits of the underlying bit vector. The last
+//! line uses the [`map`] method to replace the underlying [`Rank9`]
+//! structure with one that is slower but uses much less space: the method
+//! is unsafe because in principle you might replace the structure with
+//! something built on a different bit vector, leading to an inconsistent
+//! state; note how we use `into_inner()` to get rid of the [`AddNumBits`]
+//! wrapper.
+//!
+//! [`Rank`]: crate::traits::Rank
 //!
 //! Some structures depend on the internals of others, and thus cannot be
 //! composed freely: for example, a [`Select9`] must necessarily wrap a
 //! [`Rank9`]. In general, in any case, we suggest embedding structures in the
 //! order rank, select, and zero select, from inner to outer, because ranking
-//! structures usually implement [`NumBits`](crate::traits::NumBits).
+//! structures usually implement [`NumBits`].
+//!
+//! [`Deref`]: core::ops::Deref
+//! [`Index`]: std::ops::Index
+//! [`map`]: SelectAdapt::map
 
 pub mod select_adapt;
 pub use select_adapt::*;

@@ -31,13 +31,14 @@
 //!
 //! - [`SignedFunc`] wraps any of the above with per-key verification hashes,
 //!   returning `None` for keys outside the original set. Use `Box<[W]>` for
-//!   full-width hashes or [`BitFieldVec`](crate::bits::BitFieldVec) for
-//!   sub-word-width hashes. Use concrete types like
-//!   `SignedFunc<LcpMmphfStr, Box<[u64]>>`.
+//!   full-width hashes or [`BitFieldVec`] for sub-word-width hashes. Use
+//!   concrete types like `SignedFunc<LcpMmphfStr, Box<[u64]>>`.
 //!
-//! Most structures implement the
-//! [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing them
+//! Most structures implement the [`TryIntoUnaligned`] trait, allowing them
 //! to be converted into (usually faster) structures using unaligned access.
+//!
+//! [`BitFieldVec`]: crate::bits::BitFieldVec
+//! [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 //!
 //! All constructors follow the pattern `try_new(keys, …, pl)` for default
 //! settings, and `try_new_with_builder(keys, …, builder, pl)` to configure
@@ -66,7 +67,9 @@ pub use signed::*;
 pub mod shard_edge;
 
 /// Avalanches bits using the finalization step of Austin Appleby's
-/// [MurmurHash3](http://code.google.com/p/smhasher/).
+/// [MurmurHash3].
+///
+/// [MurmurHash3]: http://code.google.com/p/smhasher/
 pub(crate) const fn mix64(mut k: u64) -> u64 {
     k ^= k >> 33;
     k = k.overflowing_mul(0xff51_afd7_ed55_8ccd).0;

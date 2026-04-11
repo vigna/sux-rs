@@ -35,8 +35,9 @@ use std::ops::Index;
 // NOTE: to make parallel modifications with SelectSmall as easy as possible,
 // "ones" are considered to be zeros in the following code.
 
-/// A version of [`SelectSmall`] implementing [selection on
-/// zeros](crate::traits::SelectZero).
+/// A version of [`SelectSmall`] implementing [selection on zeros].
+///
+/// [selection on zeros]: crate::traits::SelectZero
 ///
 /// # Examples
 ///
@@ -816,8 +817,10 @@ impl<
 impl_select_zero_small!(2; 8);
 impl_select_zero_small!(1; 8);
 
-/// A trait providing the semantics of
-/// [`partition_point`](slice::partition_point), but using a linear search.
+/// A trait providing the semantics of [`partition_point`], but using a
+/// linear search.
+///
+/// [`partition_point`]: slice::partition_point
 trait LinearPartitionPointWithIndexExt<T>: AsRef<[T]> {
     fn linear_partition_point<P>(&self, mut pred: P) -> usize
     where

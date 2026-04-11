@@ -8,12 +8,12 @@
 //!
 //! Given a list of nonnegative integers, a [`PrefixSumIntList`] stores the
 //! cumulative (prefix) sums in a [`SliceByValue`] structure (by default an
-//! [Elias–Fano sequence](crate::dict::elias_fano::EfSeq)). The original
+//! [Elias–Fano sequence]). The original
 //! values are recovered by taking differences of consecutive prefix sums.
 //!
-//! The prefix-sum structure can be [replaced](PrefixSumIntList::map_prefix_sums)
-//! with any structure implementing [`IntoIteratorFrom`] with the returned
-//! iterator implementing `UncheckedIterator<Item = usize>`, as long as it returns
+//! The prefix-sum structure can be [replaced] with any structure
+//! implementing [`IntoIteratorFrom`] with the returned iterator
+//! implementing `UncheckedIterator<Item = usize>`, as long as it returns
 //! the same cumulative sums.
 //!
 //! This structure implements [`SliceByValue`] for random access.
@@ -39,6 +39,9 @@
 //! assert_eq!(list.prefix_sum(2), 4);
 //! assert_eq!(list.prefix_sum(5), 14);
 //! ```
+//!
+//! [Elias–Fano sequence]: crate::dict::elias_fano::EfSeq
+//! [replaced]: PrefixSumIntList::map_prefix_sums
 
 use mem_dbg::*;
 use value_traits::slices::SliceByValue;
@@ -52,14 +55,14 @@ use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
 ///
 /// The original values are stored implicitly as differences of consecutive
 /// prefix sums held in a [`SliceByValue<Value = usize>`] (by default an
-/// [Elias–Fano sequence](EfSeq)). Recovering the *i*-th value requires two
+/// [Elias–Fano sequence]). Recovering the *i*-th value requires two
 /// accesses to the prefix-sum structure.
 ///
 /// The structure provides also [direct access to the prefix
 /// sums](PrefixSumIntList::prefix_sum).
 ///
 /// After construction, the prefix-sum structure can be replaced using
-/// [`map_prefix_sums`](PrefixSumIntList::map_prefix_sums).
+/// [`map_prefix_sums`].
 ///
 /// This structure implements the [`TryIntoUnaligned`]
 /// trait, allowing it to be converted into (usually faster) structures using
@@ -68,7 +71,11 @@ use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
 /// # Type Parameters
 ///
 /// - `D`: The prefix-sum structure. Must implement `SliceByValue<Value = usize>`.
-///   Defaults to [`EfSeq<usize>`](EfSeq).
+///   Defaults to [`EfSeq<usize>`].
+///
+/// [Elias–Fano sequence]: EfSeq
+/// [`map_prefix_sums`]: PrefixSumIntList::map_prefix_sums
+/// [`EfSeq<usize>`]: EfSeq
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

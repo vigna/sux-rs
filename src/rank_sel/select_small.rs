@@ -39,8 +39,7 @@ use std::ops::Index;
 /// structure to locate approximately the position of the desired one; the bit
 /// is then located using binary searches over [`RankSmall`]'s counters; this
 /// technique is called _hinted bsearch_ and is described in “[Broadword
-/// Implementation of Rank/Select
-/// Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”.
+/// Implementation of Rank/Select Queries]”.
 ///
 /// The resulting selection methods are quite slow, and in general it is
 /// convenient and faster to use [`SelectAdapt`], even with `M` set to 1 (in
@@ -109,6 +108,8 @@ use std::ops::Index;
 /// assert_eq!(sel.select_zero(3), None);
 /// # }
 /// ```
+///
+/// [Broadword Implementation of Rank/Select Queries]: https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -787,8 +788,10 @@ impl_rank_small_sel!(3; 13);
 impl_rank_small_sel!(2; 8);
 impl_rank_small_sel!(1; 8);
 
-/// A trait providing the semantics of
-/// [`partition_point`](slice::partition_point), but using a linear search.
+/// A trait providing the semantics of [`partition_point`], but using a
+/// linear search.
+///
+/// [`partition_point`]: slice::partition_point
 trait LinearPartitionPointExt<T>: AsRef<[T]> {
     fn linear_partition_point<P>(&self, mut pred: P) -> usize
     where

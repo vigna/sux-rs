@@ -11,17 +11,18 @@
 //! [`AtomicBitVec`], a mutable, thread-safe bit vector.
 //!
 //! Operations on these structures are provided by the extension traits
-//! [`BitVecOps`], [`BitVecOpsMut`](crate::traits::BitVecOpsMut), and
-//! [`AtomicBitVecOps`], which must be pulled in scope as needed. There are also
-//! operations that are specific to certain implementations, such as
-//! [`push`](BitVec::push).
+//! [`BitVecOps`], [`BitVecOpsMut`], and [`AtomicBitVecOps`], which must be
+//! pulled in scope as needed. There are also operations that are specific to
+//! certain implementations, such as [`push`].
+//!
+//! [`BitVecOpsMut`]: crate::traits::BitVecOpsMut
 //!
 //! These flavors depend on a backend with a word type `W`, and presently we
 //! provide:
 //!
 //! - `BitVec<Vec<W>>`: a mutable, growable and resizable bit vector;
 //! - `BitVec<AsRef<[W]>>`: an immutable bit vector, useful for
-//!   [ε-serde](https://crates.io/crates/epserde) support;
+//!   [ε-serde] support;
 //! - `BitVec<AsRef<[W]> + AsMut<[W]>>`: a mutable (but
 //!   not resizable) bit vector;
 //! - `AtomicBitVec<AsRef<[Atomic<W>]>>`: a thread-safe, mutable (but
@@ -52,7 +53,7 @@
 //! let a: AtomicBitVec = AtomicBitVec::new(10); // OK: B = Box<[Atomic<usize>]>
 //! ```
 //!
-//! The [`bit_vec!`](macro@crate::bits::bit_vec) macro and
+//! The [`bit_vec!`] macro and
 //! [`FromIterator`] / [`Extend`] do not need
 //! annotations because the word type is determined by the output context.
 //!
@@ -97,6 +98,10 @@
 //! let ones = [usize::MAX; 2];
 //! assert_eq!(unsafe { BitVec::from_raw_parts(ones.as_slice(), 1) }.count_ones(), 1);
 //! ```
+//!
+//! [ε-serde]: https://crates.io/crates/epserde
+//! [`push`]: BitVec::push
+//! [`bit_vec!`]: macro@crate::bits::bit_vec
 
 use crate::ambassador_impl_Index;
 use crate::bits::{assert_unaligned, debug_assert_unaligned, test_unaligned};
@@ -125,12 +130,16 @@ use std::{ops::Index, sync::atomic::Ordering};
 
 /// A bit vector.
 ///
-/// Instances can be created using [`new`](BitVec::new),
-/// [`with_value`](BitVec::with_value), with the convenience macro
-/// [`bit_vec!`](macro@crate::bits::bit_vec), or with a [`FromIterator`
+/// Instances can be created using [`new`], [`with_value`], with the
+/// convenience macro [`bit_vec!`], or with a [`FromIterator`
 /// implementation](#impl-FromIterator<bool>-for-BitVec).
 ///
-/// See the [module documentation](mod@crate::bits::bit_vec) for more details.
+/// See the [module documentation] for more details.
+///
+/// [`new`]: BitVec::new
+/// [`with_value`]: BitVec::with_value
+/// [`bit_vec!`]: macro@crate::bits::bit_vec
+/// [module documentation]: mod@crate::bits::bit_vec
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -140,7 +149,9 @@ pub struct BitVec<B = Vec<usize>> {
     len: usize,
 }
 
-/// Convenient, [`vec!`](vec!)-like macro to initialize bit vectors.
+/// Convenient, [`vec!`]-like macro to initialize bit vectors.
+///
+/// [`vec!`]: vec!
 ///
 /// - `bit_vec![]` creates an empty bit vector.
 ///
@@ -508,8 +519,9 @@ impl<W: Word> BitVec<Vec<W>> {
     /// with a padding word at the end for safe unaligned reads.
     ///
     /// This constructor is useful for structures implementing
-    /// [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) that want to avoid
-    /// reallocations.
+    /// [`TryIntoUnaligned`] that want to avoid reallocations.
+    ///
+    /// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
     pub fn new_padded(len: usize) -> BitVec<Box<[W]>> {
         let n_of_words = len.div_ceil(W::BITS as usize);
         unsafe { BitVec::from_raw_parts(vec![W::ZERO; n_of_words + 1].into_boxed_slice(), len) }
@@ -589,10 +601,11 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVec<B> {
     /// Like [`BitVecValueOps::get_value`], but using unaligned reads.
     ///
     /// This avoids a branch at the cost of requiring the bit width to satisfy
-    /// the constraints of
-    /// [`BitFieldVec::get_unaligned`](crate::bits::BitFieldVec::get_unaligned):
-    /// `width` must be at most `W::BITS - 6`, or exactly `W::BITS - 4`, or
-    /// exactly `W::BITS` (where `W` is the word type of the backend).
+    /// the constraints of [`BitFieldVec::get_unaligned`]: `width` must be at
+    /// most `W::BITS - 6`, or exactly `W::BITS - 4`, or exactly `W::BITS`
+    /// (where `W` is the word type of the backend).
+    ///
+    /// [`BitFieldVec::get_unaligned`]: crate::bits::BitFieldVec::get_unaligned
     ///
     /// Additionally, a padding word must be present at the end of the
     /// underlying storage.
@@ -746,7 +759,9 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> fmt::Display for BitVec<B> {
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 /// A thread-safe bit vector.
 ///
-/// See the [module documentation](mod@crate::bits::bit_vec) for details.
+/// See the [module documentation] for details.
+///
+/// [module documentation]: mod@crate::bits::bit_vec
 #[delegate(crate::traits::Backend, target = "bits")]
 pub struct AtomicBitVec<B = Box<[Atomic<usize>]>> {
     bits: B,
@@ -1106,10 +1121,12 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 /// A wrapper around [`BitVec`] that implements [`BitVecValueOps`] using
 /// unaligned reads.
 ///
-/// Obtain an instance via [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned)
-/// on a `BitVec<Box<[W]>>`, which adds a padding word if one is not already
-/// present. You can recover the original [`BitVec`] using a [`From`
+/// Obtain an instance via [`TryIntoUnaligned`] on a `BitVec<Box<[W]>>`,
+/// which adds a padding word if one is not already present. You can recover
+/// the original [`BitVec`] using a [`From`
 /// implementation](#impl-From<BitVecU<Box<%5BW%5D>>>-for-BitVec<Box<%5BW%5D>>)
+///
+/// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 ///
 /// Note that unaligned reads give correct results only when the bit width
 /// satisfies the unaligned constraints (at most `W::BITS - 6`, or exactly
@@ -1117,8 +1134,8 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 /// cause undefined behavior, but may return incorrect values.
 ///
 /// We delegate [`Backend`], [`BitLength`], and
-/// [`AsRef<[Backend::Word]>`](AsRef) to make [`BitVecOps`] methods available,
-/// and [`Index`] to make slice-like read-only access available.
+/// [`AsRef<[Backend::Word]>`](AsRef) to make [`BitVecOps`] methods
+/// available, and [`Index`] to make slice-like read-only access available.
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1131,8 +1148,9 @@ impl<W: Word> From<BitVecU<Box<[W]>>> for BitVec<Box<[W]>> {
     /// Converts a [`BitVecU`] back into a [`BitVec`].
     ///
     /// The padding word is kept in the backing storage so that a subsequent
-    /// [`try_into_unaligned`](crate::traits::TryIntoUnaligned::try_into_unaligned)
-    /// does not need to reallocate.
+    /// [`try_into_unaligned`] does not need to reallocate.
+    ///
+    /// [`try_into_unaligned`]: crate::traits::TryIntoUnaligned::try_into_unaligned
     fn from(unaligned: BitVecU<Box<[W]>>) -> Self {
         unaligned.0
     }

@@ -36,9 +36,11 @@ pub mod fuzz;
 
 /// Imports the most common items.
 ///
-/// Note that [`bit_field_slice`](crate::traits::bit_field_slice) and
-/// [`indexed_dict`](crate::traits::indexed_dict) are not included in the
-/// prelude, as they may cause ambiguities in some contexts.
+/// Note that [`bit_field_slice`] and [`indexed_dict`] are not included in
+/// the prelude, as they may cause ambiguities in some contexts.
+///
+/// [`bit_field_slice`]: crate::traits::bit_field_slice
+/// [`indexed_dict`]: crate::traits::indexed_dict
 pub mod prelude {
     pub use crate::array::*;
     pub use crate::bal_paren::*;
@@ -63,9 +65,12 @@ pub(crate) trait Index<Idx> {
 }
 
 /// Parallel iterators performing very fast operations, such as [zeroing a
-/// bit](crate::traits::BitVecOpsMut::reset) vector, should pass this argument
+/// bit] vector, should pass this argument
 /// to
-/// [IndexedParallelIterator::with_min_len](`rayon::iter::IndexedParallelIterator::with_min_len`).
+/// [IndexedParallelIterator::with_min_len].
+///
+/// [zeroing a bit]: crate::traits::BitVecOpsMut::reset
+/// [IndexedParallelIterator::with_min_len]: `rayon::iter::IndexedParallelIterator::with_min_len`
 pub const RAYON_MIN_LEN: usize = 100_000;
 
 macro_rules! panic_if_out_of_bounds {

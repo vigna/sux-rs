@@ -43,8 +43,10 @@ use std::ops::Index;
 // NOTE: to make parallel modifications with SelectAdaptConst as easy as
 // possible, "ones" are considered to be zeros in the following code.
 
-/// A version of [`SelectAdaptConst`](super::SelectAdaptConst) implementing
-/// [selection on zeros](crate::traits::SelectZero).
+/// A version of [`SelectAdaptConst`] implementing [selection on zeros].
+///
+/// [`SelectAdaptConst`]: super::SelectAdaptConst
+/// [selection on zeros]: crate::traits::SelectZero
 ///
 /// # Examples
 /// ```rust
@@ -263,7 +265,9 @@ impl<
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
 > SelectZeroAdaptConst<B, Box<[usize]>, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
-    /// See [`SelectAdaptConst::new`](super::SelectAdaptConst::new).
+    /// See [`SelectAdaptConst::new`].
+    ///
+    /// [`SelectAdaptConst::new`]: super::SelectAdaptConst::new
     pub fn new(bits: B) -> Self {
         assert_inventory_length(bits.len());
         let num_ones = bits.count_zeros();

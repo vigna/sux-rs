@@ -14,16 +14,18 @@
 //! *x* − `min` + 1 > 0, the number of stored bits is ⌊log₂ *y*⌋.
 //!
 //! The boundaries between these variable-length representations are recorded as
-//! cumulative bit positions in an [Elias–Fano
-//! sequence](crate::dict::elias_fano::EfSeq), enabling efficient random access.
+//! cumulative bit positions in an [Elias–Fano sequence], enabling efficient
+//! random access.
 //!
-//! The delimiter structure can be [replaced](CompIntList::map_delimiters) with
-//! any structure implementing [`IntoIteratorFrom`] with the returned iterator
-//! implementing `UncheckedIterator<Item = u64>`, as long as it returns the same
-//! cumulative bit positions.
+//! [Elias–Fano sequence]: crate::dict::elias_fano::EfSeq
 //!
-//! The data structure can be [replaced](CompIntList::map_data) with any
-//! structure implementing [`BitVecValueOps`].
+//! The delimiter structure can be [replaced][map_delimiters] with any
+//! structure implementing [`IntoIteratorFrom`] with the returned iterator
+//! implementing `UncheckedIterator<Item = u64>`, as long as it returns the
+//! same cumulative bit positions.
+//!
+//! The data structure can be [replaced][map_data] with any structure
+//! implementing [`BitVecValueOps`].
 //!
 //! This structure implements [`SliceByValue`] for random access.
 //!
@@ -42,6 +44,9 @@
 //! assert_eq!(list.index_value(3), 42);
 //! assert_eq!(list.index_value(4), 100);
 //! ```
+//!
+//! [map_delimiters]: CompIntList::map_delimiters
+//! [map_data]: CompIntList::map_data
 
 use crate::bits::bit_vec::{BitVec, BitVecU};
 use crate::bits::test_unaligned;
@@ -58,12 +63,11 @@ use value_traits::slices::SliceByValue;
 /// Each value *x* is stored as *x* − `min` + 1 (a strictly positive integer)
 /// by concatenating binary representations with the most significant bit
 /// removed. The boundaries between values are recorded in a
-/// [`SliceByValue<Value = u64>`] (by default an [Elias–Fano
-/// sequence](EfSeq)), enabling efficient random access.
+/// [`SliceByValue<Value = u64>`] (by default an [Elias–Fano sequence]),
+/// enabling efficient random access.
 ///
 /// After construction, the delimiter structure can be replaced using
-/// [`map_delimiters`](CompIntList::map_delimiters), and the data structure
-/// using [`map_data`](CompIntList::map_data).
+/// [`map_delimiters`], and the data structure using [`map_data`].
 ///
 /// This structure implements the [`TryIntoUnaligned`]
 /// trait, allowing it to be converted into (usually faster) structures using
@@ -75,7 +79,12 @@ use value_traits::slices::SliceByValue;
 ///   [`BitVecValueOps<B::Word>`]. Defaults to
 ///   [`BitVec<Box<[usize]>>`].
 /// - `D`: The delimiter structure. Must implement `SliceByValue<Value = u64>`.
-///   Defaults to [`EfSeq<u64>`](EfSeq).
+///   Defaults to [`EfSeq<u64>`].
+///
+/// [Elias–Fano sequence]: EfSeq
+/// [`map_delimiters`]: CompIntList::map_delimiters
+/// [`map_data`]: CompIntList::map_data
+/// [`EfSeq<u64>`]: EfSeq
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(
     feature = "epserde",

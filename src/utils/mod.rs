@@ -72,9 +72,8 @@ impl<T: AtomicPrimitive + core::fmt::Debug> core::error::Error for CannotCastToA
 /// Transmutes a vector of elements of non-atomic type into a vector of elements
 /// of the associated atomic type.
 ///
-/// [It is not safe to transmute a
-/// vector](https://doc.rust-lang.org/std/mem/fn.transmute.html). This method
-/// implements a correct transmutation of the vector content.
+/// [It is not safe to transmute a vector]. This method implements a correct
+/// transmutation of the vector content.
 ///
 /// Since the alignment of the atomic type might be greater than that of the
 /// non-atomic type, we can only perform a direct transmutation when the
@@ -84,6 +83,8 @@ impl<T: AtomicPrimitive + core::fmt::Debug> core::error::Error for CannotCastToA
 /// Otherwise, we fall back to a safe but less efficient method that allocates a
 /// new vector and copies the elements one by one. The compiler might be able
 /// to optimize this case away in some situations.
+///
+/// [It is not safe to transmute a vector]: https://doc.rust-lang.org/std/mem/fn.transmute.html
 pub fn transmute_vec_into_atomic<W: AtomicPrimitive>(v: Vec<W>) -> Vec<Atomic<W>> {
     if core::mem::align_of::<Atomic<W>>() == core::mem::align_of::<W>() {
         let mut v = std::mem::ManuallyDrop::new(v);
@@ -96,9 +97,10 @@ pub fn transmute_vec_into_atomic<W: AtomicPrimitive>(v: Vec<W>) -> Vec<Atomic<W>
 /// Transmutes a vector of elements of atomic type into a vector of elements of
 /// the associated non-atomic type.
 ///
-/// [It is not safe to transmute a
-/// vector](https://doc.rust-lang.org/std/mem/fn.transmute.html). This method
-/// implements a correct transmutation of the vector content.
+/// [It is not safe to transmute a vector]. This method implements a correct
+/// transmutation of the vector content.
+///
+/// [It is not safe to transmute a vector]: https://doc.rust-lang.org/std/mem/fn.transmute.html
 pub fn transmute_vec_from_atomic<A: PrimitiveAtomic>(v: Vec<A>) -> Vec<A::Value> {
     let mut v = std::mem::ManuallyDrop::new(v);
     // this is always safe because atomic types have bigger or equal alignment
@@ -124,9 +126,10 @@ pub fn transmute_boxed_slice_into_atomic<W: AtomicPrimitive + Copy>(
 /// Transmutes a boxed slice of values of atomic type into a boxed slice of
 /// values of the associated non-atomic type.
 ///
-/// [It is not safe to transmute a
-/// vector](https://doc.rust-lang.org/std/mem/fn.transmute.html). This method
-/// implements a correct transmutation of the vector content.
+/// [It is not safe to transmute a vector]. This method implements a correct
+/// transmutation of the vector content.
+///
+/// [It is not safe to transmute a vector]: https://doc.rust-lang.org/std/mem/fn.transmute.html
 pub fn transmute_boxed_slice_from_atomic<A: PrimitiveAtomic>(b: Box<[A]>) -> Box<[A::Value]> {
     let mut b = std::mem::ManuallyDrop::new(b);
     unsafe { Box::from_raw(b.as_mut() as *mut [A] as *mut [A::Value]) }

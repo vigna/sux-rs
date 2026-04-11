@@ -14,31 +14,29 @@
 //! the high bits of the hash.
 //!
 //! A [`SigStore`] acts as a builder for a [`ShardStore`]: it accepts
-//! [signature/value pairs](SigVal) in any order, and when you call
-//! [`into_shard_store`](SigStore::into_shard_store) it returns an immutable
-//! [`ShardStore`] that can iterate on shards of signature/value pairs.
+//! [signature/value pairs] in any order, and when you call
+//! [`into_shard_store`] it returns an immutable [`ShardStore`] that can
+//! iterate on shards of signature/value pairs.
 //!
 //! The implementation exploits the fact that signatures are randomly
 //! distributed, and thus bucket sorting is very effective: at construction time
 //! you specify the number of high bits to use for bucket sorting (say, 8), and
-//! when you [push](`SigStore::try_push`) signature/value pairs they will be
-//! stored in different buckets (in this case, 256) depending on their high
-//! bits.
+//! when you [push] signature/value pairs they will be stored in different
+//! buckets (in this case, 256) depending on their high bits.
 //!
-//! An [online](new_online) [`SigStore`] keeps the signature/value pairs in
-//! memory, while an [offline](new_offline) [`SigStore`] writes them to disk.
-//! After all key signatures and values have been accumulated,
-//! [`into_shard_store`](SigStore::into_shard_store) will return a
-//! [`ShardStore`]. [`into_shard_store`](SigStore::into_shard_store) takes the
-//! the number of high bits to use for grouping signatures into shards, and the
-//! necessary bucket splitting or merging will be handled automatically, albeit
-//! the most efficient scenario is the one in which the number of buckets is
-//! equal to the number of shards.
+//! An [online] [`SigStore`] keeps the signature/value pairs in memory, while
+//! an [offline] [`SigStore`] writes them to disk. After all key signatures
+//! and values have been accumulated, [`into_shard_store`] will return a
+//! [`ShardStore`]. [`into_shard_store`] takes the the number of high bits to
+//! use for grouping signatures into shards, and the necessary bucket splitting
+//! or merging will be handled automatically, albeit the most efficient
+//! scenario is the one in which the number of buckets is equal to the number
+//! of shards.
 //!
-//! You can iterate over the shards in a [`ShardStore`] multiple times using the
-//! method [`iter`](ShardStore::iter), or just once using the method
-//! [`drain`](ShardStore::drain). In the latter case resources (i.e., files or
-//! memory) will be released as soon as they are consumed.
+//! You can iterate over the shards in a [`ShardStore`] multiple times using
+//! the method [`iter`], or just once using the method [`drain`]. In the
+//! latter case resources (i.e., files or memory) will be released as soon as
+//! they are consumed.
 //!
 //! The trait [`ToSig`] provides a standard way to generate signatures for a
 //! [`SigStore`]. Implementations are provided for signatures types `[u64;1]`
@@ -49,6 +47,14 @@
 //! Both signatures and values must be [`BinSafe`] so that they might be
 //! serialized and deserialized efficiently in the offline case, and they must
 //! be [`Send`] and [`Sync`].
+//!
+//! [signature/value pairs]: SigVal
+//! [`into_shard_store`]: SigStore::into_shard_store
+//! [push]: SigStore::try_push
+//! [online]: new_online
+//! [offline]: new_offline
+//! [`iter`]: ShardStore::iter
+//! [`drain`]: ShardStore::drain
 
 #![allow(clippy::comparison_chain)]
 #![allow(clippy::type_complexity)]
@@ -86,8 +92,10 @@ pub trait Sig: BinSafe + Default + PartialEq + Eq + std::fmt::Debug {
     /// high_bits) - 1`.
     fn high_bits(&self, high_bits: u32, mask: u64) -> u64;
 
-    /// Constructs a signature from the state of an [`Xxh3`](xxh3::Xxh3)
-    /// streaming hasher.
+    /// Constructs a signature from the state of an [`Xxh3`] streaming
+    /// hasher.
+    ///
+    /// [`Xxh3`]: xxh3::Xxh3
     fn from_hasher(hasher: &xxh3::Xxh3) -> Self;
 }
 
@@ -170,10 +178,12 @@ impl<S: Sig + PartialEq, V: BinSafe> PartialEq for SigVal<S, V> {
 )]
 /// Zero-sized placeholder value type for filter-mode construction.
 ///
-/// Used internally by [`VFilter`](crate::dict::VFilter) and
-/// `VBuilder::try_build_filter` when building structures that map keys to
-/// hash-derived values rather than caller-supplied values. All arithmetic operations ([`BitXor`],
+/// Used internally by [`VFilter`] and `VBuilder::try_build_filter` when
+/// building structures that map keys to hash-derived values rather than
+/// caller-supplied values. All arithmetic operations ([`BitXor`],
 /// [`BitXorAssign`]) are no-ops.
+///
+/// [`VFilter`]: crate::dict::VFilter
 pub struct EmptyVal(());
 
 impl BitXor for EmptyVal {
@@ -384,8 +394,9 @@ pub trait SigStore<S: Sig + BinSafe, V: BinSafe> {
     /// # Panics
     ///
     /// It must hold that `shard_high_bits` is at most
-    /// [`max_shard_high_bits`](SigStore::max_shard_high_bits) or this method
-    /// will panic.
+    /// [`max_shard_high_bits`] or this method will panic.
+    ///
+    /// [`max_shard_high_bits`]: SigStore::max_shard_high_bits
     fn into_shard_store(self, shard_high_bits: u32) -> Result<Self::ShardStore>;
 
     /// Returns the number of signature/value pairs added to the store so far.
@@ -408,8 +419,9 @@ pub trait SigStore<S: Sig + BinSafe, V: BinSafe> {
 /// An implementation of [`SigStore`] that accumulates signature/value pairs in
 /// memory or on disk.
 ///
-/// See the [module documentation](crate::utils::sig_store) for more
-/// information.
+/// See the [module documentation] for more information.
+///
+/// [module documentation]: crate::utils::sig_store
 #[derive(Debug)]
 pub struct SigStoreImpl<S, V, B> {
     /// Number of keys added so far.
@@ -441,8 +453,10 @@ pub struct SigStoreImpl<S, V, B> {
 ///
 /// The type `S` is the type of the signatures (usually `[u64;1]` or `[u64;
 /// 2]`), while `V` is the type of the values. The store will be written to a
-/// [temporary directory](https://doc.rust-lang.org/std/env/fn.temp_dir.html),
-/// and the files will be deleted when the store is dropped.
+/// [temporary directory], and the files will be deleted when the store is
+/// dropped.
+///
+/// [temporary directory]: https://doc.rust-lang.org/std/env/fn.temp_dir.html
 pub fn new_offline<S: BinSafe + Sig, V: BinSafe>(
     buckets_high_bits: u32,
     max_shard_high_bits: u32,
@@ -636,17 +650,19 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
     /// `0..n` across rayon's thread pool and depositing the resulting
     /// [`SigVal`] directly into its bucket.
     ///
-    /// Each bucket is protected by a [`Mutex`](std::sync::Mutex); at 256
+    /// Each bucket is protected by a [`Mutex`]; at 256
     /// buckets the contention is negligible. Returns the maximum value
     /// seen (for bit-width computation).
     /// Populates the store in parallel by calling `f(i)` for each index
     /// `0..n` across rayon's thread pool and depositing the resulting
     /// [`SigVal`] directly into its bucket.
     ///
-    /// Each bucket is protected by a [`Mutex`](std::sync::Mutex).
+    /// Each bucket is protected by a [`Mutex`].
     /// Thread-local buffers (one per bucket) batch insertions to reduce
     /// lock acquisitions. Returns the maximum value seen (for bit-width
     /// computation).
+    ///
+    /// [`Mutex`]: std::sync::Mutex
     pub fn par_populate(
         &mut self,
         n: usize,
@@ -758,7 +774,9 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
 }
 
 /// A container for the signatures and values accumulated by a [`SigStore`],
-/// with the ability to [enumerate them grouped in shards](ShardStore::iter).
+/// with the ability to [enumerate them grouped in shards].
+///
+/// [enumerate them grouped in shards]: ShardStore::iter
 ///
 /// Also in this case, the purpose of this trait is that of avoiding clumsy
 /// `where` clauses when passing around a signature store. There is only one
@@ -781,24 +799,30 @@ pub trait ShardStore<S: Sig, V: BinSafe> {
 
     /// Returns an iterator on shards, draining the store.
     ///
-    /// Like [`iter`](Self::iter), but frees each shard's memory as it
-    /// is consumed. After draining, subsequent calls to `iter` or
-    /// `drain` will yield no elements.
+    /// Like [`iter`], but frees each shard's memory as it is consumed.
+    /// After draining, subsequent calls to `iter` or `drain` will yield
+    /// no elements.
+    ///
+    /// [`iter`]: Self::iter
     fn drain(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_>;
 
     /// Changes the shard granularity.
     ///
-    /// `new_bits` must be at most [`max_shard_high_bits`](Self::max_shard_high_bits).
-    /// Both coarsening and refining are supported; the fine-grained
-    /// counters from construction are never discarded.
+    /// `new_bits` must be at most [`max_shard_high_bits`]. Both coarsening
+    /// and refining are supported; the fine-grained counters from
+    /// construction are never discarded.
     ///
     /// # Panics
     ///
-    /// Panics if `new_bits` exceeds [`max_shard_high_bits`](Self::max_shard_high_bits).
+    /// Panics if `new_bits` exceeds [`max_shard_high_bits`].
+    ///
+    /// [`max_shard_high_bits`]: Self::max_shard_high_bits
     fn set_shard_high_bits(&mut self, new_bits: u32);
 
     /// Returns the maximum value that can be passed to
-    /// [`set_shard_high_bits`](Self::set_shard_high_bits).
+    /// [`set_shard_high_bits`].
+    ///
+    /// [`set_shard_high_bits`]: Self::set_shard_high_bits
     fn max_shard_high_bits(&self) -> u32;
 
     /// Returns the number of signature/value pairs in the store.
@@ -809,8 +833,9 @@ pub trait ShardStore<S: Sig, V: BinSafe> {
 
 /// An implementation of [`ShardStore`].
 ///
-/// See the [module documentation](crate::utils::sig_store) for more
-/// information.
+/// See the [module documentation] for more information.
+///
+/// [module documentation]: crate::utils::sig_store
 #[derive(Debug)]
 pub struct ShardStoreImpl<S, V, B> {
     /// The number of high bits used for bucket sorting.
@@ -1139,9 +1164,12 @@ fn write_binary<S: BinSafe + Sig, V: BinSafe>(
 ///
 /// [`SigVal`]s for which the predicate returns `false` are excluded.
 ///
-/// [`set_shard_high_bits`](ShardStore::set_shard_high_bits) is called on
-/// the inner store to set the desired granularity (both coarsening and
-/// refining are supported up to [`max_shard_high_bits`](ShardStore::max_shard_high_bits)).
+/// [`set_shard_high_bits`] is called on the inner store to set the desired
+/// granularity (both coarsening and refining are supported up to
+/// [`max_shard_high_bits`]).
+///
+/// [`set_shard_high_bits`]: ShardStore::set_shard_high_bits
+/// [`max_shard_high_bits`]: ShardStore::max_shard_high_bits
 pub struct FilteredShardStore<'a, SS: ?Sized, S, V, F> {
     /// The inner store.
     inner: &'a mut SS,

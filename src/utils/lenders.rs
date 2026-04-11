@@ -6,7 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Support for [rewindable fallible lenders](FallibleRewindableLender).
+//! Support for [rewindable fallible lenders].
 //!
 //! Some data structures in this crate have some features in common:
 //! - they must be able to read their input more than once;
@@ -16,31 +16,27 @@
 //!   as signatures, so using owned data would be wasteful.
 //!
 //! For this kind of structures, we provide a [`FallibleRewindableLender`]
-//! trait, which is a [`FallibleLender`] with an additional
-//! [`rewind`](FallibleRewindableLender::rewind) method that allows rewinding
-//! the lender to the beginning.
+//! trait, which is a [`FallibleLender`] with an additional [`rewind`] method
+//! that allows rewinding the lender to the beginning.
 //!
 //! The basic implementation for strings is [`LineLender`], which lends lines
 //! from a [`BufRead`] as a `&str`, but lends an internal buffer, rather than
 //! allocating a new string for each line. Convenience constructors are provided
-//! for [`File`](LineLender::from_file) and [`Path`](LineLender::from_path).
-//! Analogously, we provide `ZstdLineLender` (enabled by the `zstd` feature)
-//! that lends lines from a zstd-compressed [`Read`](std::io::Read), and
-//! [`GzipLineLender`], which lends lines from a gzip-compressed
-//! [`Read`](std::io::Read).
+//! for [`File`] and [`Path`]. Analogously, we provide `ZstdLineLender`
+//! (enabled by the `zstd` feature) that lends lines from a zstd-compressed
+//! [`Read`], and [`GzipLineLender`], which lends lines from a
+//! gzip-compressed [`Read`].
 //!
 //! Finally, under the `deko` feature, we provide `DekoLineLender` and
 //! `DekoBufLineLender`, which work like the previous two implementations, but
-//! detect dynamically the compression format using the
-//! [`deko`](https://crates.io/crates/deko) crate.
+//! detect dynamically the compression format using the [`deko`] crate.
 //!
 //! # Methods
 //!
 //! We implement [`FallibleRewindableLender`] on top of most of the adapters
-//! returned by methods available for fallible lenders, such as
-//! [`map`](lender::FallibleLender::map),
-//! [`take`](lender::FallibleLender::take), etc., so when you use these
-//! methods you will actually obtain a [`FallibleRewindableLender`].
+//! returned by methods available for fallible lenders, such as [`map`],
+//! [`take`], etc., so when you use these methods you will actually obtain a
+//! [`FallibleRewindableLender`].
 //!
 //! # Adapters
 //!
@@ -81,6 +77,15 @@
 //!   call that function every time it is rewound. If you have instead a function
 //!   returning an [`IntoFallibleLender`], use [`FromIntoFallibleLenderFactory`] to
 //!   properly propagate errors.
+//!
+//! [`deko`]: https://crates.io/crates/deko
+//! [rewindable fallible lenders]: FallibleRewindableLender
+//! [`rewind`]: FallibleRewindableLender::rewind
+//! [`File`]: LineLender::from_file
+//! [`Path`]: LineLender::from_path
+//! [`Read`]: std::io::Read
+//! [`map`]: lender::FallibleLender::map
+//! [`take`]: lender::FallibleLender::take
 use fallible_iterator::{FallibleIterator, IntoFallibleIterator};
 use io::{BufRead, BufReader};
 use lender::{higher_order::FnMutHKARes, *};
@@ -93,10 +98,12 @@ use std::{
 
 /// The main trait: a [`FallibleLender`] that can be rewound to the beginning.
 ///
-/// Note that [`rewind`](FallibleRewindableLender::rewind) consumes `self` and
+/// Note that [`rewind`] consumes `self` and
 /// returns it. This slightly inconvenient behavior is necessary to handle
 /// cleanly all implementations, and in particular those involving compression,
 /// such as [`ZstdLineLender`] and [`GzipLineLender`].
+///
+/// [`rewind`]: FallibleRewindableLender::rewind
 pub trait FallibleRewindableLender: Sized + FallibleLender {
     /// The type of error happening when rewinding, as distinct
     /// from the error happening when lending.
@@ -182,10 +189,12 @@ mod zstd_lender {
     use zstd::Decoder;
 
     /// A structure lending the lines coming from a
-    /// [`zstd`](https://facebook.github.io/zstd/)-compressed [`Read`] as `&str`.
+    /// [`zstd`]-compressed [`Read`] as `&str`.
     ///
     /// The lines are read into a reusable internal string buffer that grows as
     /// needed.
+    ///
+    /// [`zstd`]: https://facebook.github.io/zstd/
     pub struct ZstdLineLender<R: Read> {
         buf: BufReader<Decoder<'static, BufReader<R>>>,
         line: String,
@@ -243,10 +252,12 @@ mod flate2_lender {
     use std::io::Read;
 
     /// A structure lending the lines coming from a
-    /// [`gzip`](https://www.gzip.org/)-compressed [`Read`] as `&str`.
+    /// [`gzip`]-compressed [`Read`] as `&str`.
     ///
     /// The lines are read into a reusable internal string buffer that
     /// grows as needed.
+    ///
+    /// [`gzip`]: https://www.gzip.org/
     #[derive(Debug)]
     pub struct GzipLineLender<R: Read> {
         buf: BufReader<GzDecoder<R>>,
@@ -311,10 +322,12 @@ mod deko {
     /// `&str`.
     ///
     /// The compression format will be detected dynamically by the
-    /// [`deko`](https://crates.io/crates/deko) crate.
+    /// [`deko`] crate.
     ///
     /// The lines are read into a reusable internal string buffer that
     /// grows as needed.
+    ///
+    /// [`deko`]: https://crates.io/crates/deko
     pub struct DekoLineLender<R: Read> {
         buf: BufReader<::deko::read::AnyDecoder<R>>,
         line: String,
@@ -324,10 +337,12 @@ mod deko {
     /// `&str`.
     ///
     /// The compression format will be detected dynamically by the
-    /// [`deko`](https://crates.io/crates/deko) crate.
+    /// [`deko`] crate.
     ///
     /// The lines are read into a reusable internal string buffer that
     /// grows as needed.
+    ///
+    /// [`deko`]: https://crates.io/crates/deko
     pub struct DekoBufLineLender<R: BufRead> {
         buf: BufReader<::deko::bufread::AnyDecoder<R>>,
         line: String,
@@ -667,11 +682,13 @@ where
 
 /// An infallible adapter based on a reference implementing [`IntoIterator`].
 ///
-/// Rewinding is implemented by calling [`into_iter()`](IntoIterator::into_iter)
-/// on the reference again.
+/// Rewinding is implemented by calling [`into_iter()`] on the reference
+/// again.
 ///
 /// If your reference is to a slice, consider using [`FromSlice`], which is
 /// slightly more efficient, instead.
+///
+/// [`into_iter()`]: IntoIterator::into_iter
 pub struct FromIntoIterator<'a, I>
 where
     &'a I: IntoIterator,
@@ -735,9 +752,10 @@ where
 
 /// An adapter based on a reference implementing [`IntoFallibleIterator`].
 ///
-/// Rewinding is implemented by calling
-/// [`into_fallible_iter()`](IntoFallibleIterator::into_fallible_iter) on the
+/// Rewinding is implemented by calling [`into_fallible_iter()`] on the
 /// reference again, so rewinding cannot fail.
+///
+/// [`into_fallible_iter()`]: IntoFallibleIterator::into_fallible_iter
 pub struct FromIntoFallibleIterator<'a, I>
 where
     &'a I: IntoFallibleIterator,

@@ -7,7 +7,9 @@
 //! Compact representations of lists.
 //!
 //! This module contains compact representations of lists. All structures
-//! implement [`SliceByValue`](value_traits::slices::SliceByValue).
+//! implement [`SliceByValue`].
+//!
+//! [`SliceByValue`]: value_traits::slices::SliceByValue
 
 pub mod comp_int_list;
 pub use comp_int_list::CompIntList;

@@ -8,7 +8,7 @@
 //! Operations on bit vectors.
 //!
 //! `sux` does not provide a dedicated trait for bit vectors (whereas it
-//! provides a trait for [bit-field slices](crate::traits::bit_field_slice)).
+//! provides a trait for [bit-field slices]).
 //! Rather, it considers anything that is `AsRef<[W]>` (where `W` implements
 //! [`Word`]) and implements [`BitLength`] as a bit vector.
 //!
@@ -20,10 +20,9 @@
 //! The Rust type system makes the approach quite flexible. We cannot, however,
 //! accommodate implicit representation of bit vectors (e.g., compressed or
 //! algorithmic). This is in fact in line with Rust's philosophy—the
-//! [`Index`](std::ops::Index) trait returns a reference, which forces an
+//! [`Index`] trait returns a reference, which forces an
 //! explicit representation of sequences (an alternative approach is provided by
-//! the [`value-traits`](https://crates.io/crates/value-traits) crate, which is used
-//! by bit-field slices).
+//! the [`value-traits`] crate, which is used by bit-field slices).
 //!
 //! All traits provided in this module are extension traits. They have no
 //! unimplemented methods: just pulling them into scope will provide anything
@@ -34,8 +33,13 @@
 //! zeros, is provided by means of structures that can be reused.
 //!
 //! The reference implementations using these traits are
-//! [`BitVec`](crate::bits::BitVec) and
-//! [`AtomicBitVec`](crate::bits::AtomicBitVec).
+//! [`BitVec`] and [`AtomicBitVec`].
+//!
+//! [`value-traits`]: https://crates.io/crates/value-traits
+//! [bit-field slices]: crate::traits::bit_field_slice
+//! [`BitVec`]: crate::bits::BitVec
+//! [`AtomicBitVec`]: crate::bits::AtomicBitVec
+//! [`Index`]: std::ops::Index
 
 use crate::traits::Word;
 use ambassador::delegatable_trait;
@@ -58,8 +62,8 @@ macro_rules! panic_if_out_of_bounds {
 /// A trait expressing a length in bits.
 ///
 /// This trait is typically used in conjunction with
-/// [`AsRef<[W]>`](std::convert::AsRef) to provide word-based access to a bit
-/// vector on words of type `W`.
+/// [`AsRef<[W]>`](std::convert::AsRef) to provide word-based access to a
+/// bit vector on words of type `W`.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait BitLength {
@@ -108,8 +112,9 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
         ZerosIter::new(self.as_ref(), self.len())
     }
 
-    /// A parallel version of
-    /// [`BitCount::count_ones`](crate::traits::BitCount::count_ones).
+    /// A parallel version of [`BitCount::count_ones`].
+    ///
+    /// [`BitCount::count_ones`]: crate::traits::BitCount::count_ones
     #[cfg(feature = "rayon")]
     fn par_count_ones(&self) -> usize {
         let bits_per_word = W::BITS as usize;
@@ -637,8 +642,9 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
         }
     }
 
-    /// A parallel version of
-    /// [`BitCount::count_ones`](`crate::traits::BitCount::count_ones`).
+    /// A parallel version of [`BitCount::count_ones`].
+    ///
+    /// [`BitCount::count_ones`]: `crate::traits::BitCount::count_ones`
     #[cfg(feature = "rayon")]
     fn par_count_ones(&self) -> usize {
         let bits_per_word = A::Value::BITS as usize;

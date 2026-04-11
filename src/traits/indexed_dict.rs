@@ -9,13 +9,16 @@
 //!
 //! An indexed dictionary is a dictionary of values indexed by a `usize`. When
 //! the values are monotonically increasing, such a dictionary might provide
-//! additional operations such as [predecessor](Pred) and [successor](Succ).
+//! additional operations such as [predecessor] and [successor].
+//!
+//! [predecessor]: Pred
+//! [successor]: Succ
 //!
 //! There are seven traits:
 //! - [`Types`] defines the type of the values in the dictionary. The type of
 //!   input and output values may be different: for example, in a dictionary of
 //!   strings (see, e.g.,
-//!   [`RearCodedList`](crate::dict::rear_coded_list::RearCodedList)), one
+//!   [`RearCodedList`]), one
 //!   usually accepts as inputs references to [`str`] but returns owned
 //!   [`String`]s.
 //! - [`IndexedSeq`] provides positional access to the values in the dictionary.
@@ -34,15 +37,19 @@
 //! Borrow<Self::Input>`. This makes it possible to pass a value both by
 //! reference and by value, which is particularly convenient in the case of
 //! primitive types (see, e.g.,
-//! [`EliasFano`](crate::dict::elias_fano::EliasFano)).
+//! [`EliasFano`]).
 //!
 //! We suggest that every implementation of [`IndexedSeq`] also implements
-//! [`IntoIterator`]/[`IntoIteratorFrom`](super::iter::IntoIteratorFrom) with `Item = Self::Output` on a
+//! [`IntoIterator`]/[`IntoIteratorFrom`] with `Item = Self::Output` on a
 //! reference. This property can be tested on a type `T` with the clause `where
 //! for<'a> &'a T: IntoIteratorFrom<Item = Self::Output>` (or `where for<'a> &'a
 //! T: IntoIterator<Item = Self::Output>`, if you don't need to select the
 //! starting position). Many implementations also offer equivalent
 //! `iter`/`iter_from` convenience methods.
+//!
+//! [`RearCodedList`]: crate::dict::rear_coded_list::RearCodedList
+//! [`EliasFano`]: crate::dict::elias_fano::EliasFano
+//! [`IntoIteratorFrom`]: super::iter::IntoIteratorFrom
 
 use ambassador::delegatable_trait;
 use impl_tools::autoimpl;
@@ -67,7 +74,7 @@ pub trait Types {
 /// implementation, although it would be convenient, because it would cause
 /// significant problems with structures that have their own implementation of
 /// the method, and in which the implementation is dependent on additional trait
-/// bounds (see, e.g., [`EliasFano`](crate::dict::elias_fano::EliasFano)).
+/// bounds (see, e.g., [`EliasFano`]).
 ///
 /// More precisely, the inherent implementation could not be used to override
 /// the default implementation, due to the additional trait bounds, and thus the
@@ -76,10 +83,12 @@ pub trait Types {
 /// diagnose. Having a different name for the trait and inherent iteration
 /// method would make the call predictable, but it would be less ergonomic.
 ///
-/// The (pretty standard) strategy outlined in the [module
-/// documentation](crate::traits::indexed_dict) is more flexible, as it makes it
-/// possible to write methods that use the inherent implementation only if
-/// available.
+/// The (pretty standard) strategy outlined in the [module documentation] is
+/// more flexible, as it makes it possible to write methods that use the
+/// inherent implementation only if available.
+///
+/// [`EliasFano`]: crate::dict::elias_fano::EliasFano
+/// [module documentation]: crate::traits::indexed_dict
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait IndexedSeq: Types {
@@ -87,7 +96,9 @@ pub trait IndexedSeq: Types {
     ///
     /// # Panics
     ///
-    /// May panic if the index is not in [0..[len](`IndexedSeq::len`)).
+    /// May panic if the index is not in [0..[len]).
+    ///
+    /// [len]: IndexedSeq::len
     fn get(&self, index: usize) -> Self::Output<'_> {
         panic_if_out_of_bounds!(index, self.len());
         unsafe { self.get_unchecked(index) }
@@ -97,22 +108,28 @@ pub trait IndexedSeq: Types {
     ///
     /// # Safety
     ///
-    /// `index` must be in [0..[len](`IndexedSeq::len`)). No bounds checking
+    /// `index` must be in [0..[len]). No bounds checking
     /// is performed.
+    ///
+    /// [len]: IndexedSeq::len
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_>;
 
     /// Returns the length (number of items) of the dictionary.
     fn len(&self) -> usize;
 
-    /// Returns true if [`len`](`IndexedSeq::len`) is zero.
+    /// Returns true if [`len`] is zero.
+    ///
+    /// [`len`]: IndexedSeq::len
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Returns the first value, or `None` if the dictionary is empty.
     ///
-    /// Equivalent to [`get(0)`](IndexedSeq::get), but implementations may
-    /// provide a more efficient method.
+    /// Equivalent to [`get(0)`], but implementations may provide a more
+    /// efficient method.
+    ///
+    /// [`get(0)`]: IndexedSeq::get
     fn first_value(&self) -> Option<Self::Output<'_>> {
         if self.is_empty() {
             None
@@ -123,8 +140,10 @@ pub trait IndexedSeq: Types {
 
     /// Returns the last value, or `None` if the dictionary is empty.
     ///
-    /// Equivalent to [`get(len - 1)`](IndexedSeq::get), but implementations
-    /// may provide a more efficient method.
+    /// Equivalent to [`get(len - 1)`], but implementations may provide a
+    /// more efficient method.
+    ///
+    /// [`get(len - 1)`]: IndexedSeq::get
     fn last_value(&self) -> Option<Self::Output<'_>> {
         if self.is_empty() {
             None
@@ -144,8 +163,9 @@ pub trait IndexedDict: Types {
 
     /// Returns true if the dictionary contains the given value.
     ///
-    /// The default implementation just calls
-    /// [`index_of`](`IndexedDict::index_of`).
+    /// The default implementation just calls [`index_of`].
+    ///
+    /// [`index_of`]: IndexedDict::index_of
     fn contains(&self, value: impl Borrow<Self::Input>) -> bool {
         self.index_of(value).is_some()
     }
@@ -158,12 +178,16 @@ where
     for<'a> Self::Output<'a>: PartialOrd<Self::Input> + PartialOrd,
 {
     /// The forward iterator type returned by
-    /// [`iter_from_succ_unchecked`](SuccUnchecked::iter_from_succ_unchecked).
+    /// [`iter_from_succ_unchecked`].
+    ///
+    /// [`iter_from_succ_unchecked`]: SuccUnchecked::iter_from_succ_unchecked
     type Iter<'a>: Iterator<Item = Self::Output<'a>>
     where
         Self: 'a;
     /// The bidirectional iterator type returned by
-    /// [`iter_bidi_from_succ_unchecked`](SuccUnchecked::iter_bidi_from_succ_unchecked).
+    /// [`iter_bidi_from_succ_unchecked`].
+    ///
+    /// [`iter_bidi_from_succ_unchecked`]: SuccUnchecked::iter_bidi_from_succ_unchecked
     type BidiIter<'a>: BidiIterator<Item = Self::Output<'a>>
     where
         Self: 'a;
@@ -189,9 +213,11 @@ where
     /// Returns the index of the successor and an iterator starting at
     /// the successor position.
     ///
-    /// The iterator's first [`next()`](Iterator::next) call returns the
+    /// The iterator's first [`next()`] call returns the
     /// successor value itself. The index returned is the position of the
     /// successor in the sequence.
+    ///
+    /// [`next()`]: Iterator::next
     ///
     /// # Safety
     ///
@@ -204,10 +230,13 @@ where
     /// Returns the index of the successor and a bidirectional iterator
     /// positioned at the successor.
     ///
-    /// The iterator's first [`next()`](Iterator::next) call returns the
+    /// The iterator's first [`next()`] call returns the
     /// successor value itself; the first
-    /// [`prev()`](crate::traits::BidiIterator::prev) call returns the element
+    /// [`prev()`] call returns the element
     /// before the successor.
+    ///
+    /// [`next()`]: Iterator::next
+    /// [`prev()`]: crate::traits::BidiIterator::prev
     ///
     /// # Safety
     ///
@@ -364,12 +393,16 @@ where
     for<'a> Self::Output<'a>: PartialOrd<Self::Input> + PartialOrd,
 {
     /// The backward iterator type returned by
-    /// [`iter_back_from_pred_unchecked`](PredUnchecked::iter_back_from_pred_unchecked).
+    /// [`iter_back_from_pred_unchecked`].
+    ///
+    /// [`iter_back_from_pred_unchecked`]: PredUnchecked::iter_back_from_pred_unchecked
     type BackIter<'a>: Iterator<Item = Self::Output<'a>>
     where
         Self: 'a;
     /// The bidirectional iterator type returned by
-    /// [`iter_bidi_from_pred_unchecked`](PredUnchecked::iter_bidi_from_pred_unchecked).
+    /// [`iter_bidi_from_pred_unchecked`].
+    ///
+    /// [`iter_bidi_from_pred_unchecked`]: PredUnchecked::iter_bidi_from_pred_unchecked
     type BidiIter<'a>: BidiIterator<Item = Self::Output<'a>>
     where
         Self: 'a;
@@ -396,9 +429,11 @@ where
     /// Returns the index of the predecessor and a backward iterator starting
     /// at the predecessor position.
     ///
-    /// The iterator's first [`next()`](Iterator::next) call returns the
+    /// The iterator's first [`next()`] call returns the
     /// predecessor value itself, and subsequent calls return preceding elements
     /// in decreasing order.
+    ///
+    /// [`next()`]: Iterator::next
     ///
     /// # Safety
     ///
@@ -411,10 +446,13 @@ where
     /// Returns the index of the predecessor and a bidirectional iterator
     /// positioned at the predecessor.
     ///
-    /// The iterator's first [`next()`](Iterator::next) call returns the
+    /// The iterator's first [`next()`] call returns the
     /// predecessor value itself; the first
-    /// [`prev()`](crate::traits::BidiIterator::prev) call returns the element
+    /// [`prev()`] call returns the element
     /// after the predecessor.
+    ///
+    /// [`next()`]: Iterator::next
+    /// [`prev()`]: crate::traits::BidiIterator::prev
     ///
     /// # Safety
     ///

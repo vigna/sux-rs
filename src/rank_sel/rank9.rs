@@ -37,17 +37,17 @@ use std::ops::Index;
 /// using at most two cache misses and no tests or loops.
 ///
 /// This structure has been described by Sebastiano Vigna in “[Broadword
-/// Implementation of Rank/Select
-/// Queries](https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12)”,
-/// _Proc. of the 7th International Workshop on Experimental Algorithms, WEA
-/// 2008_, volume 5038 of Lecture Notes in Computer Science, pages 154–168,
-/// Springer, 2008.
+/// Implementation of Rank/Select Queries]”, _Proc. of the 7th International
+/// Workshop on Experimental Algorithms, WEA 2008_, volume 5038 of Lecture
+/// Notes in Computer Science, pages 154–168, Springer, 2008.
+///
+/// [Broadword Implementation of Rank/Select Queries]: https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12
 ///
 /// This structure forwards several traits and [`Deref`]'s to its backend.
 ///
 /// # Type Parameters
 ///
-/// - `B`: The bit-base [backend](Backend). Defaults to
+/// - `B`: The bit-base [backend]. Defaults to
 ///   [`BitVec`].
 /// - `C`: The counter storage. Defaults to `Box<[BlockCounters]>`.
 ///
@@ -80,7 +80,8 @@ use std::ops::Index;
 /// assert_eq!(rank9[7], true);
 /// # }
 /// ```
-
+///
+/// [backend]: Backend
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -255,11 +256,12 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCount
     ///
     /// The implementation of [`RankUnchecked`] for [`Rank9`] has a weakened
     /// safety requirement: it is possible to call this method with `pos` equal
-    /// to [the length of the underlying bit
-    /// vector](crate::traits::BitLength::len) provided there is at least one
-    /// unused bit. This is always true if the length is not a multiple of the
-    /// number of bits in a word, but requires allocating an extra word
-    /// otherwise. The content of the extra word is irrelevant.
+    /// to [the length of the underlying bit vector] provided there is at
+    /// least one unused bit. This is always true if the length is not a
+    /// multiple of the number of bits in a word, but requires allocating an
+    /// extra word otherwise. The content of the extra word is irrelevant.
+    ///
+    /// [the length of the underlying bit vector]: crate::traits::BitLength::len
     ///
     /// # Example
     ///

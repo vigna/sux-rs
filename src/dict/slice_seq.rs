@@ -7,8 +7,7 @@
 
 use crate::traits::{IndexedSeq, IntoIteratorFrom, Types};
 
-/// A newtype exhibiting a reference to a slice as an [indexed
-/// sequence](crate::traits::IndexedSeq).
+/// A newtype exhibiting a reference to a slice as an [indexed sequence].
 ///
 /// Note that [`IndexedSeq`] is implemented for vectors, slices, and arrays,
 /// so the need for this newtype is very limited.
@@ -18,6 +17,8 @@ use crate::traits::{IndexedSeq, IntoIteratorFrom, Types};
 ///
 /// While a blanket implementation of [`IndexedSeq`] could be more convenient,
 /// it would cause significant ambiguity problems.
+///
+/// [indexed sequence]: crate::traits::IndexedSeq
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SliceSeq<O: PartialEq<usize> + PartialEq + Copy, A: AsRef<[O]>>(
     A,

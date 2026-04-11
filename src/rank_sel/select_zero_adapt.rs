@@ -43,8 +43,10 @@ use std::ops::Index;
 // NOTE: to make parallel modifications with SelectAdapt as easy as possible,
 // "ones" are considered to be zeros in the following code.
 
-/// A version of [`SelectAdapt`](super::SelectAdapt) implementing [selection on
-/// zeros](crate::traits::SelectZero).
+/// A version of [`SelectAdapt`] implementing [selection on zeros].
+///
+/// [`SelectAdapt`]: super::SelectAdapt
+/// [selection on zeros]: crate::traits::SelectZero
 ///
 /// # Examples
 /// ```rust
@@ -229,7 +231,9 @@ impl<B: BitLength, C> SelectZeroAdapt<B, C> {
 impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     SelectZeroAdapt<B, Box<[usize]>>
 {
-    /// See [`SelectAdapt::new`](super::SelectAdapt::new).
+    /// See [`SelectAdapt::new`].
+    ///
+    /// [`SelectAdapt::new`]: super::SelectAdapt::new
     pub fn new(bits: B) -> Self {
         Self::with_span(
             bits,
@@ -240,7 +244,9 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
         )
     }
 
-    /// See [`SelectAdapt::with_span`](super::SelectAdapt::with_span).
+    /// See [`SelectAdapt::with_span`].
+    ///
+    /// [`SelectAdapt::with_span`]: super::SelectAdapt::with_span
     pub fn with_span(
         bits: B,
         target_inventory_span: usize,
@@ -263,7 +269,9 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
         )
     }
 
-    /// See [`SelectAdapt::with_inv`](super::SelectAdapt::with_inv).
+    /// See [`SelectAdapt::with_inv`].
+    ///
+    /// [`SelectAdapt::with_inv`]: super::SelectAdapt::with_inv
     pub fn with_inv(
         bits: B,
         log2_ones_per_inventory: usize,
@@ -279,7 +287,9 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
         )
     }
 
-    /// See [`SelectAdapt::with_overhead`](super::SelectAdapt::with_overhead).
+    /// See [`SelectAdapt::with_overhead`].
+    ///
+    /// [`SelectAdapt::with_overhead`]: super::SelectAdapt::with_overhead
     pub fn with_overhead(
         bits: B,
         overhead_percentage: f64,

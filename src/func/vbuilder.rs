@@ -48,16 +48,19 @@ fn default_max_num_threads() -> usize {
         .unwrap_or(1)
 }
 
-/// A builder for [`VFunc`] and [`VFilter`](crate::dict::VFilter).
+/// A builder for [`VFunc`] and [`VFilter`].
 ///
 /// There are two construction modes: in core memory (default) and
-/// [offline](VBuilder::offline); both use a [`SigStore`]. In the first case,
-/// space will be allocated in core memory for signatures and associated values
-/// for all keys; in the second case, such information will be stored in a
-/// number of on-disk buckets.
+/// [offline]; both use a [`SigStore`]. In the first case, space will be
+/// allocated in core memory for signatures and associated values for all
+/// keys; in the second case, such information will be stored in a number
+/// of on-disk buckets.
 ///
 /// There are several setters: for example, you can [set the maximum number
-/// of threads](VBuilder::max_num_threads).
+/// of threads].
+///
+/// [offline]: VBuilder::offline
+/// [set the maximum number of threads]: VBuilder::max_num_threads
 ///
 /// # Implementation details
 ///
@@ -71,12 +74,14 @@ fn default_max_num_threads() -> usize {
 /// too many threads might actually be harmful due to memory contention.
 ///
 /// The generic parameters are explained in the [`VFunc`] /
-/// [`VFilter`](crate::dict::VFilter) documentation.
+/// [`VFilter`] documentation.
 //
 /// Most methods require to pass one or two [`FallibleRewindableLender`]s
 /// (keys and possibly values), as the construction might fail and keys might
 /// be scanned again. The structures in the [`lenders`] module provide easy ways
 /// to build such lenders.
+///
+/// [`VFilter`]: crate::dict::VFilter
 #[derive(Setters, Debug, Derivative)]
 #[derivative(Default)]
 #[setters(generate = false)]
@@ -121,13 +126,14 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
 
     /// The base-2 logarithm of buckets of the [`SigStore`]. The default is 8.
     /// This value is automatically overridden, even if set, if you provide an
-    /// [expected number of keys](VBuilder::expected_num_keys).
+    /// [expected number of keys].
+    ///
+    /// [expected number of keys]: VBuilder::expected_num_keys
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "8"))]
     log2_buckets: u32,
 
-    /// The target relative space loss due to [ε-cost
-    /// sharding](https://doi.org/10.4230/LIPIcs.ESA.2019.38).
+    /// The target relative space loss due to [ε-cost sharding].
     ///
     /// The default is 0.001. Setting a larger target, for example, 0.01, will
     /// increase the space overhead due to sharding, but will provide in general
@@ -136,8 +142,11 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// sharding for a specific [`ShardEdge`]. For example, increasing the
     /// target to 0.01 will provide very fine sharding using `Mwhc3Shards`
     /// shard/edge logic, activated by the `mwhc` feature, but will affect only
-    /// slightly [`FuseLge3Shards`] or
-    /// [`FuseLge3FullSigs`](crate::func::shard_edge::FuseLge3FullSigs).
+    /// slightly [`FuseLge3Shards`] or [`FuseLge3FullSigs`].
+    ///
+    /// [`FuseLge3FullSigs`]: crate::func::shard_edge::FuseLge3FullSigs
+    ///
+    /// [ε-cost sharding]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "0.001"))]
     pub(crate) eps: f64,
@@ -151,8 +160,9 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// The ratio between the number of vertices and the number of edges
     /// (i.e., between the number of variables and the number of equations).
     c: f64,
-    /// Whether we should use [lazy Gaussian
-    /// elimination](https://doi.org/10.1016/j.ic.2020.104517).
+    /// Whether we should use [lazy Gaussian elimination].
+    ///
+    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     lge: bool,
     /// The number of threads to use.
     num_threads: usize,
@@ -167,9 +177,10 @@ impl<D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync, S: Sig, E: ShardEdge
 {
     /// Sets up shards from the expected number of keys and returns the
     /// seed. This is the same initialization that
-    /// [`try_populate_and_build`](Self::try_populate_and_build)
-    /// performs at the start; callers that drive `try_solve_once`
-    /// directly must call this first.
+    /// [`try_populate_and_build`] performs at the start; callers that
+    /// drive `try_solve_once` directly must call this first.
+    ///
+    /// [`try_populate_and_build`]: Self::try_populate_and_build
     pub(crate) fn init_shards_and_seed(&mut self) -> u64 {
         if let Some(expected_num_keys) = self.expected_num_keys {
             self.shard_edge.set_up_shards(expected_num_keys, self.eps);
@@ -181,12 +192,19 @@ impl<D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync, S: Sig, E: ShardEdge
     /// Copies behavioral configuration from another builder into `self`,
     /// regardless of the other builder's type parameters.
     ///
-    /// The copied fields are: [`max_num_threads`](Self::max_num_threads),
-    /// [`offline`](Self::offline), [`check_dups`](Self::check_dups),
-    /// [`low_mem`](Self::low_mem), and [`eps`](Self::eps).
-    /// Data-dependent fields ([`expected_num_keys`](Self::expected_num_keys),
-    /// [`seed`](Self::seed), [`log2_buckets`](Self::log2_buckets)) and
-    /// internal construction state are left at their defaults.
+    /// The copied fields are: [`max_num_threads`], [`offline`],
+    /// [`check_dups`], [`low_mem`], and [`eps`]. Data-dependent fields
+    /// ([`expected_num_keys`], [`seed`], [`log2_buckets`]) and internal
+    /// construction state are left at their defaults.
+    ///
+    /// [`max_num_threads`]: Self::max_num_threads
+    /// [`offline`]: Self::offline
+    /// [`check_dups`]: Self::check_dups
+    /// [`low_mem`]: Self::low_mem
+    /// [`eps`]: Self::eps
+    /// [`expected_num_keys`]: Self::expected_num_keys
+    /// [`seed`]: Self::seed
+    /// [`log2_buckets`]: Self::log2_buckets
     pub fn set_from<D2, S2, E2>(mut self, other: &VBuilder<D2, S2, E2>) -> Self {
         self.max_num_threads = other.max_num_threads;
         self.offline = other.offline;
@@ -272,8 +290,7 @@ enum PeelResult<
 /// store edge indices or signature/value pairs (the generic parameter `X`).
 ///
 /// Edge information is packed together using Djamal's XOR trick (see
-/// [“Cache-Oblivious Peeling of Random
-/// Hypergraphs”](https://doi.org/10.1109/DCC.2014.48)): since during the
+/// [“Cache-Oblivious Peeling of Random Hypergraphs”]): since during the
 /// peeling visit we need to know the content of the list only when a single
 /// edge index is present, we can XOR together all the edge information.
 ///
@@ -283,8 +300,12 @@ enum PeelResult<
 /// In any case, the Boolean field `overflow` will become `true` in case of
 /// overflow.
 ///
-/// When we peel an edge, we just [zero the degree](Self::zero), leaving the
-/// edge information and the side in place for further processing later.
+/// When we peel an edge, we just [zero the degree], leaving the edge
+/// information and the side in place for further processing later.
+///
+/// [zero the degree]: Self::zero
+///
+/// ["Cache-Oblivious Peeling of Random Hypergraphs"]: https://doi.org/10.1109/DCC.2014.48
 struct XorGraph<X: Copy + Default + BitXor + BitXorAssign> {
     edges: Box<[X]>,
     degrees_sides: Box<[u8]>,
@@ -486,12 +507,15 @@ where
         )
     }
 
-    /// Like [`try_build_func_with_store`](Self::try_build_func_with_store),
-    /// but calls `inspect` on each [`SigVal`] during the peeling phase.
+    /// Like [`try_build_func_with_store`], but calls `inspect` on each
+    /// [`SigVal`] during the peeling phase.
     ///
-    /// This is used by [`VFunc2`](crate::func::VFunc2) and
-    /// [`Lcp2MmphfInt`](crate::func::Lcp2MmphfInt) to count escaped keys
-    /// per shard without a separate pass over the store.
+    /// This is used by [`VFunc2`] and [`Lcp2MmphfInt`] to count escaped
+    /// keys per shard without a separate pass over the store.
+    ///
+    /// [`try_build_func_with_store`]: Self::try_build_func_with_store
+    /// [`VFunc2`]: crate::func::VFunc2
+    /// [`Lcp2MmphfInt`]: crate::func::Lcp2MmphfInt
     pub fn try_build_func_with_store_and_inspect<
         K: ?Sized + ToSig<S>,
         V: BinSafe + Default + Send + Sync,
@@ -541,8 +565,9 @@ where
 /// [`VBuilder::try_solve_once`] directly.
 ///
 /// Create with [`VBuilder::retry_state`], then call
-/// [`handle_solve_result`](RetryState::handle_solve_result) after each
-/// attempt.
+/// [`handle_solve_result`] after each attempt.
+///
+/// [`handle_solve_result`]: RetryState::handle_solve_result
 pub(crate) struct RetryState {
     prng: SmallRng,
     dup_count: u32,
@@ -627,9 +652,9 @@ impl<
     ///
     /// The store is drained (freed) during construction. If you need
     /// to keep the store for building signed wrappers or secondary
-    /// structures, use
-    /// [`try_build_func_and_store`](Self::try_build_func_and_store)
-    /// instead.
+    /// structures, use [`try_build_func_and_store`] instead.
+    ///
+    /// [`try_build_func_and_store`]: Self::try_build_func_and_store
     pub(crate) fn try_build_func<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<K>,
@@ -699,12 +724,14 @@ impl<
     ///
     /// The second element of the returned tuple is the store that was
     /// populated during construction. The caller can pass it to
-    /// [`try_build_func_with_store`](Self::try_build_func_with_store)
-    /// to build additional functions without re-hashing the keys, or
-    /// simply drop it. The store is preserved intact (not drained). If
-    /// you do not need the store, use
-    /// [`try_build_func`](Self::try_build_func) instead, which drains
-    /// the store to free memory during construction.
+    /// [`try_build_func_with_store`] to build additional functions
+    /// without re-hashing the keys, or simply drop it. The store is
+    /// preserved intact (not drained). If you do not need the store,
+    /// use [`try_build_func`] instead, which drains the store to free
+    /// memory during construction.
+    ///
+    /// [`try_build_func_with_store`]: Self::try_build_func_with_store
+    /// [`try_build_func`]: Self::try_build_func
     pub(crate) fn try_build_func_and_store<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<K>,
@@ -770,10 +797,12 @@ impl<
 
     /// Builds a [`VFunc`] suitable for use as a filter backend.
     ///
-    /// Unlike [`try_build_func_and_store`](Self::try_build_func_and_store),
-    /// this method takes only keys (no values), uses a caller-specified
-    /// `bit_width` instead of deriving it from `max_value`, and derives
-    /// stored values from signatures via `get_val`.
+    /// Unlike [`try_build_func_and_store`], this method takes only keys
+    /// (no values), uses a caller-specified `bit_width` instead of
+    /// deriving it from `max_value`, and derives stored values from
+    /// signatures via `get_val`.
+    ///
+    /// [`try_build_func_and_store`]: Self::try_build_func_and_store
     ///
     /// `new_data(bit_width, len)` allocates the backend storage.
     pub(crate) fn try_build_filter<
@@ -869,8 +898,9 @@ impl<
     /// retry loop.
     ///
     /// This is the same initialization that
-    /// [`try_populate_and_build`](Self::try_populate_and_build) performs
-    /// at the start.
+    /// [`try_populate_and_build`] performs at the start.
+    ///
+    /// [`try_populate_and_build`]: Self::try_populate_and_build
     pub(crate) fn retry_state(&mut self, pl: &mut impl ProgressLog) -> RetryState {
         self.init_shards_and_seed();
         pl.info(format_args!("Using 2^{} buckets", self.log2_buckets));
@@ -971,9 +1001,11 @@ impl<
         }
     }
 
-    /// Like [`try_populate_and_build`](Self::try_populate_and_build), but
-    /// takes key and value **slices** and parallelizes the hash computation
-    /// and store population using rayon.
+    /// Like [`try_populate_and_build`], but takes key and value
+    /// **slices** and parallelizes the hash computation and store
+    /// population using rayon.
+    ///
+    /// [`try_populate_and_build`]: Self::try_populate_and_build
     ///
     /// Each key is hashed on a rayon worker thread and deposited directly
     /// into its SigStore bucket (protected by a per-bucket mutex). This is
@@ -1137,7 +1169,9 @@ impl<
         }
     }
 
-    /// Inner generic implementation of [`try_solve_once`](Self::try_solve_once).
+    /// Inner generic implementation of [`try_solve_once`].
+    ///
+    /// [`try_solve_once`]: Self::try_solve_once
     ///
     /// This is generic over `SS` so that the `populate` closure can push
     /// to the concrete store type without dynamic dispatch. The `state`
@@ -1264,7 +1298,9 @@ impl<
     ///
     /// * `self.shard_edge`, `self.c`, `self.lge`, `self.bit_width`, and
     ///   `self.num_keys` must be set up by the caller (typically by
-    ///   [`try_solve_once`](Self::try_solve_once)).
+    ///   [`try_solve_once`]).
+    ///
+    /// [`try_solve_once`]: Self::try_solve_once
     ///
     /// * `get_val` must be deterministic.
     ///
@@ -1275,8 +1311,10 @@ impl<
     /// solved with the current seed.
     ///
     /// The peeling algorithm is selected based on `self.lge` and
-    /// `self.low_mem`; see the [`low_mem`](VBuilder::low_mem) field
-    /// documentation for the automatic selection heuristic.
+    /// `self.low_mem`; see the [`low_mem`] field documentation for the
+    /// automatic selection heuristic.
+    ///
+    /// [`low_mem`]: VBuilder::low_mem
     pub(crate) fn try_build_from_shard_iter<
         K: ?Sized + ToSig<S>,
         I,
@@ -1715,24 +1753,25 @@ impl<
     /// [`ShardEdge::Vertex`] per vertex (for the [`DoubleStack`]), and a final
     /// byte per vertex (for the stack of sides).
     ///
-    /// This peeler uses more memory than
-    /// [`peel_by_sig_vals_low_mem`](VBuilder::peel_by_sig_vals_low_mem) but
-    /// less memory than
-    /// [`peel_by_sig_vals_high_mem`](VBuilder::peel_by_sig_vals_high_mem). It
-    /// is fairly slow as it has to go through a cache-unfriendly memory
-    /// indirection every time it has to retrieve a [`SigVal`] from the shard,
-    /// but it is the peeler of choice when [lazy Gaussian
-    /// elimination](https://doi.org/10.1016/j.ic.2020.104517) is required, as
-    /// after a failed peel-by-sig-vals it is not possible to retrieve
-    /// information about the signature/value pairs in the shard.
+    /// This peeler uses more memory than [`peel_by_sig_vals_low_mem`] but
+    /// less memory than [`peel_by_sig_vals_high_mem`]. It is fairly slow as
+    /// it has to go through a cache-unfriendly memory indirection every time
+    /// it has to retrieve a [`SigVal`] from the shard, but it is the peeler
+    /// of choice when [lazy Gaussian elimination] is required, as after a
+    /// failed peel-by-sig-vals it is not possible to retrieve information
+    /// about the signature/value pairs in the shard.
     ///
     /// In theory one could avoid the stack of sides by putting vertices,
-    /// instead of edge indices, on the upper stack, and retrieving edge indices
-    /// and sides from the [`XorGraph`], as
-    /// [`peel_by_sig_vals_low_mem`](VBuilder::peel_by_sig_vals_low_mem) does,
-    ///  but this would be less cache friendly. This peeler is only used for
-    /// very small instances, and since we are going to pass through lazy
-    /// Gaussian elimination some additional speed is a good idea.
+    /// instead of edge indices, on the upper stack, and retrieving edge
+    /// indices and sides from the [`XorGraph`], as
+    /// [`peel_by_sig_vals_low_mem`] does, but this would be less cache
+    /// friendly. This peeler is only used for very small instances, and
+    /// since we are going to pass through lazy Gaussian elimination some
+    /// additional speed is a good idea.
+    ///
+    /// [`peel_by_sig_vals_low_mem`]: VBuilder::peel_by_sig_vals_low_mem
+    /// [`peel_by_sig_vals_high_mem`]: VBuilder::peel_by_sig_vals_high_mem
+    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     fn peel_by_index<
         'a,
         V: BinSafe,
@@ -1884,14 +1923,16 @@ impl<
     ///
     /// This is the fastest and more memory-consuming peeler. It has however
     /// just a small advantage during assignment with respect to
-    /// [`peel_by_sig_vals_low_mem`](VBuilder::peel_by_sig_vals_low_mem), which
-    /// uses almost half the memory. It is the peeler of choice for low levels
-    /// of parallelism.
+    /// [`peel_by_sig_vals_low_mem`], which uses almost half the memory. It
+    /// is the peeler of choice for low levels of parallelism.
+    ///
+    /// [`peel_by_sig_vals_low_mem`]: VBuilder::peel_by_sig_vals_low_mem
     ///
     /// This peeler cannot be used in conjunction with [lazy Gaussian
-    /// elimination](https://doi.org/10.1016/j.ic.2020.104517) as after a failed
-    /// peeling it is not possible to retrieve information about the
-    /// signature/value pairs in the shard.
+    /// elimination] as after a failed peeling it is not possible to retrieve
+    /// information about the signature/value pairs in the shard.
+    ///
+    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     fn peel_by_sig_vals_high_mem<
         V: BinSafe,
         G: Fn(&E, SigVal<E::LocalSig, V>) -> D::Value + Send + Sync,
@@ -2023,15 +2064,17 @@ impl<
     /// [`ShardEdge::Vertex`] per vertex (for a [`DoubleStack`]).
     ///
     /// This is by far the less memory-hungry peeler, and it is just slightly
-    /// slower than
-    /// [`peel_by_sig_vals_high_mem`](VBuilder::peel_by_sig_vals_high_mem),
-    /// which uses almost twice the memory. It is the peeler of choice for
-    /// significant levels of parallelism.
+    /// slower than [`peel_by_sig_vals_high_mem`], which uses almost twice
+    /// the memory. It is the peeler of choice for significant levels of
+    /// parallelism.
+    ///
+    /// [`peel_by_sig_vals_high_mem`]: VBuilder::peel_by_sig_vals_high_mem
     ///
     /// This peeler cannot be used in conjunction with [lazy Gaussian
-    /// elimination](https://doi.org/10.1016/j.ic.2020.104517) as after a
-    /// failed peeling it is not possible to retrieve information about the
-    /// signature/value pairs in the shard.
+    /// elimination] as after a failed peeling it is not possible to retrieve
+    /// information about the signature/value pairs in the shard.
+    ///
+    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     fn peel_by_sig_vals_low_mem<
         V: BinSafe,
         G: Fn(&E, SigVal<E::LocalSig, V>) -> D::Value + Send + Sync,
@@ -2148,16 +2191,20 @@ impl<
     }
 
     /// Solves a shard of given index possibly using [lazy Gaussian
-    /// elimination](https://doi.org/10.1016/j.ic.2020.104517), and stores the
-    /// solution in the given data.
+    /// elimination], and stores the solution in the given data.
     ///
-    /// As a first try, the shard is [peeled by index](VBuilder::peel_by_index).
-    /// If the peeling is [partial](PeelResult::Partial), lazy Gaussian
-    /// elimination is used to solve the remaining edges.
+    /// As a first try, the shard is [peeled by index]. If the peeling is
+    /// [partial], lazy Gaussian elimination is used to solve the remaining
+    /// edges.
+    ///
+    /// [peeled by index]: VBuilder::peel_by_index
+    /// [partial]: PeelResult::Partial
     ///
     /// This method will scan the double stack, without emptying it, to check
     /// which edges have been peeled. The information will be then passed to
     /// [`VBuilder::assign`] to complete the assignment of values.
+    ///
+    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     fn lge_shard<
         V: BinSafe,
         G: Fn(&E, SigVal<E::LocalSig, V>) -> D::Value + Send + Sync,

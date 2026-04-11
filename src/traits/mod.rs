@@ -53,22 +53,19 @@ impl std::error::Error for UnalignedConversionError {}
 pub type Unaligned<T> = <T as TryIntoUnaligned>::Unaligned;
 
 /// A trait for types that can be converted into an unaligned variant
-/// that uses branchless
-/// [unaligned reads](crate::bits::BitFieldVec::get_unaligned).
+/// that uses branchless [unaligned reads].
 ///
 /// The conversion will fail if the bit width for which unaligned reads are
 /// required does not satisfy the constraints for the word type used by the
 /// structure or its components.
 ///
-/// Compound types (e.g.,
-/// [`SignedFunc`](crate::func::SignedFunc)) implement this
-/// trait by recursively converting their inner components.
+/// Compound types (e.g., [`SignedFunc`]) implement this trait by recursively
+/// converting their inner components.
 ///
 /// You can obtain an unaligned variant of a structure just by chaining the
-/// [`try_into_unaligned`](Self::try_into_unaligned) method at construction
-/// time. Since the unaligned variant of a type can be quite complicated, there
-/// is an [`Unaligned`] type alias to refer to it more conveniently. For
-/// example,
+/// [`try_into_unaligned`] method at construction time. Since the unaligned
+/// variant of a type can be quite complicated, there is an [`Unaligned`]
+/// type alias to refer to it more conveniently. For example,
 ///
 /// ```rust
 /// # #[cfg(feature = "rayon")]
@@ -104,6 +101,10 @@ pub type Unaligned<T> = <T as TryIntoUnaligned>::Unaligned;
 /// # #[cfg(not(feature = "rayon"))]
 /// # fn main() {}
 /// ```
+///
+/// [unaligned reads]: crate::bits::BitFieldVec::get_unaligned
+/// [`SignedFunc`]: crate::func::SignedFunc
+/// [`try_into_unaligned`]: Self::try_into_unaligned
 pub trait TryIntoUnaligned {
     /// The unaligned version of this type.
     type Unaligned;
@@ -117,13 +118,16 @@ pub trait TryIntoUnaligned {
     fn try_into_unaligned(self) -> Result<Self::Unaligned, UnalignedConversionError>;
 }
 
-/// A trait for primitive types that can be used in
-/// [backends](crate::traits::Backend).
+/// A trait for primitive types that can be used in [backends].
 ///
-/// This trait is equivalent to [`PrimitiveUnsigned`], but it has a shorter name
-/// and provides constants [`ZERO`](Self::ZERO) and [`ONE`](Self::ONE), which
-/// avoid a dependency on the
-/// [`num-traits`](https://crates.io/crates/num-traits) crate.
+/// This trait is equivalent to [`PrimitiveUnsigned`], but it has a shorter
+/// name and provides constants [`ZERO`] and [`ONE`], which avoid a dependency
+/// on the [`num-traits`] crate.
+///
+/// [`num-traits`]: https://crates.io/crates/num-traits
+/// [backends]: crate::traits::Backend
+/// [`ZERO`]: Self::ZERO
+/// [`ONE`]: Self::ONE
 pub trait Word: PrimitiveUnsigned {
     const ZERO: Self;
     const ONE: Self;
@@ -188,10 +192,11 @@ impl_word!(u8, u16, u32, u64, u128, usize);
 /// block a syntax like `impl<W, B: AsRef<[W]>>` will not compile unless the
 /// type (or the implemented trait) contains `W`.
 ///
-/// This trait is delegated by every [rank/select structure](crate::rank_sel) to
-/// its backend (an inner field) together with [`AsRef`] and [`BitLength`] so
-/// that, for example, a rank/select structure can be used as a backend for
-/// another structure without any boilerplate.
+/// This trait is delegated by every
+/// [rank/select structure](crate::rank_sel) to its backend (an inner
+/// field) together with [`AsRef`] and [`BitLength`] so that, for
+/// example, a rank/select structure can be used as a backend for another
+/// structure without any boilerplate.
 ///
 /// We implement this trait for slices, vectors, and arrays; moreover, we
 /// delegate it automatically to references, boxed types, and reference-counted

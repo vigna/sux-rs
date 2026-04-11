@@ -20,7 +20,7 @@
 //!
 //! - `BitFieldVec<Vec<T>>`: a mutable, growable and resizable bit-field vector;
 //! - `BitFieldVec<AsRef<[W]>>`: an immutable bit-field vector, useful for
-//!   [ε-serde](https://crates.io/crates/epserde) support;
+//!   [ε-serde] support;
 //! - `BitFieldVec<AsRef<[W]> + AsMut<[W]>>`: a mutable (but not resizable) bit
 //!   vector;
 //! - `AtomicBitFieldVec<AsRef<[A]>>`: a partially thread-safe, mutable (but not
@@ -28,8 +28,7 @@
 //!
 //! More generally, the underlying type must satisfy the trait [`Word`] for
 //! [`BitFieldVec`], while for [`AtomicBitFieldVec`] it must satisfy
-//! [`PrimitiveAtomic`] with a
-//! [`Value`](atomic_primitive::PrimitiveAtomic::Value) satisfying [`Word`].
+//! [`PrimitiveAtomic`] with a [`Value`] satisfying [`Word`].
 //! A blanket implementation exposes slices of elements of type `W` as bit-field
 //! vectors of width `W::BITS`, analogously for atomic types `A`.
 //!
@@ -40,8 +39,7 @@
 //! write generic code that works both on bit-field vectors and on slices of
 //! words when you need to consider the bit width of each element.
 //!
-//! Note that the [`try_chunks_mut`](SliceByValueMut::try_chunks_mut) method is
-//! part of the [`SliceByValueMut`] trait, and thus returns an iterator over
+//! Note that the [`try_chunks_mut`] method is part of the [`SliceByValueMut`] trait, and thus returns an iterator over
 //! elements implementing [`SliceByValueMut`]; the elements, however, implement
 //! also [`BitFieldSliceMut`], and you can use this property by adding the bound
 //! `for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item:
@@ -54,14 +52,14 @@
 //! For high-speed unchecked scanning, we implement [`IntoUncheckedIterator`]
 //! and [`IntoUncheckedBackIterator`] on a reference to this type. They are
 //! used, for example, to provide
-//! [predecessor](crate::traits::indexed_dict::Pred) and
-//! [successor](crate::traits::indexed_dict::Succ) primitives for
-//! [`EliasFano`].
+//! [predecessor] and [successor] primitives for [`EliasFano`].
+//!
+//! [predecessor]: crate::traits::indexed_dict::Pred
+//! [successor]: crate::traits::indexed_dict::Succ
 //!
 //! # Low-level support
 //!
-//! The methods [`addr_of`](BitFieldVec::addr_of) and
-//! [`get_unaligned`](BitFieldVec::get_unaligned) can be used to manually
+//! The methods [`addr_of`] and [`get_unaligned`] can be used to manually
 //! prefetch parts of the data structure, or read values using unaligned read,
 //! when the bit width makes it possible.
 //!
@@ -102,6 +100,12 @@
 //! assert_eq!(b.index_value(3), 0);
 //! assert_eq!(b.index_value(4), 1);
 //! ```
+//!
+//! [ε-serde]: https://crates.io/crates/epserde
+//! [`Value`]: atomic_primitive::PrimitiveAtomic::Value
+//! [`try_chunks_mut`]: SliceByValueMut::try_chunks_mut
+//! [`addr_of`]: BitFieldVec::addr_of
+//! [`get_unaligned`]: BitFieldVec::get_unaligned
 
 use crate::prelude::{bit_field_slice::*, *};
 use crate::traits::ambassador_impl_Backend;
@@ -197,7 +201,9 @@ macro_rules! bit_field_vec {
 /// A vector of bit fields of fixed width (AKA "compact array", "bit array",
 /// etc.).
 ///
-/// See the [module documentation](crate::bits) for more details.
+/// See the [module documentation] for more details.
+///
+/// [module documentation]: crate::bits
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate, value_traits::Subslices)]
 #[value_traits_subslices(bound = "B: AsRef<[B::Word]>")]
 #[value_traits_subslices(bound = "B::Word: Word")]
@@ -299,8 +305,10 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
     ///
     /// Note that to guarantee the absence of undefined behavior this method
     /// has to perform several tests. Consider using
-    /// [`get_unaligned_unchecked`](Self::get_unaligned_unchecked) if you are
-    /// sure that the constraints are respected.
+    /// [`get_unaligned_unchecked`] if you are sure that the constraints are
+    /// respected.
+    ///
+    /// [`get_unaligned_unchecked`]: Self::get_unaligned_unchecked
     ///
     /// # Panics
     ///
@@ -355,9 +363,9 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
 /// When the vector len is not evenly divided by the chunk size, the last chunk
 /// of the iteration will be shorter.
 ///
-/// This struct is created by the
-/// [`try_chunks_mut`](crate::bits::bit_field_vec::BitFieldVec#impl-BitFieldSliceMut-for-BitFieldVec<B>)
-/// method.
+/// This struct is created by the [`try_chunks_mut`] method.
+///
+/// [`try_chunks_mut`]: crate::bits::bit_field_vec::BitFieldVec#impl-BitFieldSliceMut-for-BitFieldVec<B>
 pub struct ChunksMut<'a, W: Word> {
     remaining: usize,
     bit_width: usize,
@@ -535,8 +543,9 @@ impl<W: Word> BitFieldVec<Box<[W]>> {
     /// with a padding word at the end for safe unaligned reads.
     ///
     /// This constructor is useful for structures implementing
-    /// [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) that want to avoid
-    /// reallocations.
+    /// [`TryIntoUnaligned`] that want to avoid reallocations.
+    ///
+    /// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
     pub fn new_padded(bit_width: usize, len: usize) -> Self {
         let n_of_words = (len * bit_width).div_ceil(W::BITS as usize);
         Self {
@@ -626,8 +635,10 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> BitFieldSlice
     }
 }
 
-/// Error type returned when [`try_chunks_mut`](SliceByValueMut::try_chunks_mut)
-/// does not find sufficient alignment.
+/// Error type returned when [`try_chunks_mut`] does not find sufficient
+/// alignment.
+///
+/// [`try_chunks_mut`]: SliceByValueMut::try_chunks_mut
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChunksMutError<W: Word> {
     bit_width: usize,
@@ -994,8 +1005,10 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
     /// # Errors
     ///
     /// This method will return an error if the chunk size multiplied by
-    /// the [bit width](BitWidth::bit_width) is not a multiple of
-    /// `W::BITS` and more than one chunk must be returned.
+    /// the [bit width] is not a multiple of `W::BITS` and more than one
+    /// chunk must be returned.
+    ///
+    /// [bit width]: BitWidth::bit_width
     fn try_chunks_mut(
         &mut self,
         chunk_size: usize,
@@ -1335,7 +1348,9 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
 /// ever write to the same boundary-crossing value, then no race condition can
 /// happen.
 ///
-/// See the [module documentation](crate::bits) for more details.
+/// See the [module documentation] for more details.
+///
+/// [module documentation]: crate::bits
 #[derive(Debug, Clone, Hash, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(
@@ -1468,8 +1483,10 @@ impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>>
 
     /// Sets the element of the slice at the specified index.
     ///
-    /// May panic if the index is not in [0..[len](SliceByValue::len))
-    /// or the value does not fit in [`BitWidth::bit_width`] bits.
+    /// May panic if the index is not in [0..[len]) or the value does not
+    /// fit in [`BitWidth::bit_width`] bits.
+    ///
+    /// [len]: SliceByValue::len
     #[inline(always)]
     fn set_atomic(
         &self,
@@ -1851,13 +1868,15 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateB
 /// [`BitFieldVec::get_unaligned_unchecked`], which can be faster for random
 /// access patterns.
 ///
-/// The [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait converts a
-/// [`BitFieldVec`] into an [`BitFieldVecU`] after adding a padding word at the
-/// end, which is required for unaligned reads to work correctly. The conversion
-/// will fail if the bit width does not satisfy the constraints of
+/// The [`TryIntoUnaligned`] trait converts a [`BitFieldVec`] into an
+/// [`BitFieldVecU`] after adding a padding word at the end, which is
+/// required for unaligned reads to work correctly. The conversion will fail
+/// if the bit width does not satisfy the constraints of
 /// [`BitFieldVec::get_unaligned_unchecked`]. You can recover the original
 /// [`BitFieldVec`] using a [`From`
 /// implementation](#impl-From<BitFieldVecU<Box<%5BW%5D>>>-for-BitFieldVec<Box<%5BW%5D>>).
+///
+/// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 ///
 /// # Safety
 ///
@@ -1981,8 +2000,9 @@ impl<W: Word> From<BitFieldVecU<Box<[W]>>> for BitFieldVec<Box<[W]>> {
     /// Converts a [`BitFieldVecU`] back into a [`BitFieldVec`].
     ///
     /// The padding word is kept in the backing storage so that a
-    /// subsequent [`try_into_unaligned`](crate::traits::TryIntoUnaligned::try_into_unaligned)
-    /// does not need to reallocate.
+    /// subsequent [`try_into_unaligned`] does not need to reallocate.
+    ///
+    /// [`try_into_unaligned`]: crate::traits::TryIntoUnaligned::try_into_unaligned
     fn from(unaligned: BitFieldVecU<Box<[W]>>) -> Self {
         unaligned.0
     }

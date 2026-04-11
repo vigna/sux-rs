@@ -40,27 +40,30 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 use std::ops::Index;
 
-/// A const-based version of [`SelectAdapt`](super::SelectAdapt).
+/// A const-based version of [`SelectAdapt`].
 ///
-/// The code of this structure is essentially the same as
-/// [`SelectAdapt`](super::SelectAdapt), with the important difference that the
-/// parameters of the constructor
-/// [`SelectAdapt::with_inv`](super::SelectAdapt::with_inv) are now compile-time
-/// constants. This allows further optimization, leading to a speedup of about
-/// 5% (but your mileage may vary). However, the structure is no longer adaptive
-/// to the density of the bit vector, so you must be able to know the density in
-/// advance (as it happens, for example, for the high bits of the [Elias-Fano
-/// representation of monotone sequences](crate::dict::EliasFano)). Moreover,
-/// the const parameter `LOG2_WORDS_PER_SUBINVENTORY` is no longer a maximum
-/// value, but rather an exact value.
+/// The code of this structure is essentially the same as [`SelectAdapt`],
+/// with the important difference that the parameters of the constructor
+/// [`SelectAdapt::with_inv`] are now compile-time constants. This allows
+/// further optimization, leading to a speedup of about 5% (but your mileage
+/// may vary). However, the structure is no longer adaptive to the density of
+/// the bit vector, so you must be able to know the density in advance (as it
+/// happens, for example, for the high bits of the [Elias-Fano
+/// representation of monotone sequences]). Moreover, the const parameter
+/// `LOG2_WORDS_PER_SUBINVENTORY` is no longer a maximum value, but rather
+/// an exact value.
 ///
-/// The default parameters correspond to the [`SelectAdapt`](super::SelectAdapt)
-/// default values for a bit vector of density 0.5. A more detailed discussion of
-/// the parameters can be found in the documentation of
-/// [`SelectAdapt`](super::SelectAdapt).
+/// The default parameters correspond to the [`SelectAdapt`] default values
+/// for a bit vector of density 0.5. A more detailed discussion of the
+/// parameters can be found in the documentation of [`SelectAdapt`].
 ///
-/// [`SelectZeroAdaptConst`](super::SelectZeroAdaptConst) is a variant of this
-/// structure that provides the same functionality for zero bits.
+/// [`SelectZeroAdaptConst`] is a variant of this structure that provides
+/// the same functionality for zero bits.
+///
+/// [`SelectAdapt`]: super::SelectAdapt
+/// [`SelectAdapt::with_inv`]: super::SelectAdapt::with_inv
+/// [Elias-Fano representation of monotone sequences]: crate::dict::EliasFano
+/// [`SelectZeroAdaptConst`]: super::SelectZeroAdaptConst
 ///
 /// This structure forwards several traits and [`Deref`]'s to its backend.
 ///

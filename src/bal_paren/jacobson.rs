@@ -13,10 +13,11 @@
 //!
 //! # References
 //!
-//! Guy Jacobson. [Space-efficient static trees and
-//! graphs](https://ieeexplore.ieee.org/abstract/document/63533). In *30th
-//! annual symposium on foundations of computer science (FOCS '89)*, pp.
-//! 549−554. IEEE, 1989.
+//! Guy Jacobson. [Space-efficient static trees and graphs]. In *30th annual
+//! symposium on foundations of computer science (FOCS '89)*, pp. 549−554. IEEE,
+//! 1989.
+//!
+//! [Space-efficient static trees and graphs]: https://ieeexplore.ieee.org/abstract/document/63533
 
 use std::ops::Index;
 
@@ -226,8 +227,9 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 }
 
 /// A balanced parentheses structure supporting
-/// [`find_close`](Self::find_close) queries, based on Jacobson's pioneer
-/// technique.
+/// [`find_close`] queries, based on Jacobson's pioneer technique.
+///
+/// [`find_close`]: Self::find_close
 ///
 /// Open parentheses are represented as 1-bits and close parentheses as
 /// 0-bits, with bit 0 being the LSB.
@@ -247,21 +249,24 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 ///
 /// Among the far opening parentheses, a subset called *pioneers* is selected: a
 /// far opening parenthesis is a pioneer if it is the first far opening
-/// parenthesis in its word, or if its match falls in a different word than the
-/// previous far opening parenthesis's match. Pioneer positions are stored in a
-/// structure supporting [predecessor
-/// queries](crate::traits::indexed_dict::PredUnchecked), and the offsets from
-/// each pioneer to its matching close parenthesis are stored in a
+/// parenthesis in its word, or if its match falls in a different word than
+/// the previous far opening parenthesis's match. Pioneer positions are
+/// stored in a structure supporting [predecessor queries], and the offsets
+/// from each pioneer to its matching close parenthesis are stored in a
 /// [`SliceByValue`] structure. Three offset storage variants are available:
+///
+/// [predecessor queries]: crate::traits::indexed_dict::PredUnchecked
 ///
 /// - [`CompIntList`] (default, best space);
 /// - [`PrefixSumIntList`] (faster queries, more space);
 /// - [`BitFieldVec`] (fastest queries, largest space).
 ///
 /// Both structures can be replaced with custom implementations as long as they
-/// return the same values, using
-/// [`map_pioneer_positions`](Self::map_pioneer_positions) and
-/// [`map_pioneer_match_offsets`](Self::map_pioneer_match_offsets).
+/// return the same values, using [`map_pioneer_positions`] and
+/// [`map_pioneer_match_offsets`].
+///
+/// [`map_pioneer_positions`]: Self::map_pioneer_positions
+/// [`map_pioneer_match_offsets`]: Self::map_pioneer_match_offsets
 ///
 /// Queries work in two stages:
 /// 1. **In-word**: byte-level lookup tables are used to find the matching close
@@ -276,15 +281,19 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 ///   `BitLength`.
 ///
 /// - `P`: The predecessor structure for pioneer positions. Must implement
-///   [`PredUnchecked<Input = usize, Output<'_> = usize>`](PredUnchecked).
+///   [`PredUnchecked<Input = usize, Output<'_> = usize>`].
 ///   Defaults to [`EfDict<usize>`].
 ///
 /// - `O`: The storage for pioneer match offsets. Must implement
-///   [`SliceByValue<Value = usize>`](SliceByValue). Defaults to [`CompIntList`]
+///   [`SliceByValue<Value = usize>`]. Defaults to [`CompIntList`]
 ///   for compact variable-length encoding. See the
-///   [`new_with_bit_field_vec`](Self::new_with_bit_field_vec) and
-///   [`new_with_prefix_sum`](Self::new_with_prefix_sum) constructors for
-///   alternative configurations.
+///   [`new_with_bit_field_vec`] and [`new_with_prefix_sum`] constructors
+///   for alternative configurations.
+///
+/// [`PredUnchecked<Input = usize, Output<'_> = usize>`]: PredUnchecked
+/// [`SliceByValue<Value = usize>`]: SliceByValue
+/// [`new_with_bit_field_vec`]: Self::new_with_bit_field_vec
+/// [`new_with_prefix_sum`]: Self::new_with_prefix_sum
 ///
 /// # Examples
 ///
@@ -301,10 +310,11 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 ///
 /// # References
 ///
-/// Guy Jacobson. [Space-efficient static trees and
-/// graphs](https://ieeexplore.ieee.org/abstract/document/63533). In *30th
-/// annual symposium on foundations of computer science (FOCS '89)*, pp.
-/// 549−554. IEEE, 1989.
+/// Guy Jacobson. [Space-efficient static trees and graphs]. In *30th annual
+/// symposium on foundations of computer science (FOCS '89)*, pp. 549−554. IEEE,
+/// 1989.
+///
+/// [Space-efficient static trees and graphs]: https://ieeexplore.ieee.org/abstract/document/63533
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -429,9 +439,11 @@ impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B> {
     /// match offsets.
     ///
     /// Pioneer match offsets are stored in a [`CompIntList`] for compact
-    /// variable-length encoding. See also
-    /// [`new_with_prefix_sum`](Self::new_with_prefix_sum). and
-    /// [`new_with_bit_field_vec`](Self::new_with_bit_field_vec).
+    /// variable-length encoding. See also [`new_with_prefix_sum`].
+    /// and [`new_with_bit_field_vec`].
+    ///
+    /// [`new_with_prefix_sum`]: Self::new_with_prefix_sum
+    /// [`new_with_bit_field_vec`]: Self::new_with_bit_field_vec
     ///
     /// # Panics
     ///
@@ -455,8 +467,10 @@ impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B, EfDict<usize>, BitFieldV
     ///
     /// This variant uses fixed-width encoding for the offsets, which is faster
     /// to query but uses more space than the default [`CompIntList`]-based
-    /// [`new`](JacobsonBalParen::new) or the [`PrefixSumIntList`]-based
-    /// [`new_with_prefix_sum`](Self::new_with_prefix_sum).
+    /// [`new`] or the [`PrefixSumIntList`]-based [`new_with_prefix_sum`].
+    ///
+    /// [`new`]: JacobsonBalParen::new
+    /// [`new_with_prefix_sum`]: Self::new_with_prefix_sum
     ///
     /// # Panics
     ///
@@ -490,8 +504,11 @@ impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B, EfDict<usize>, PrefixSum
     ///
     /// This variant stores the offsets as prefix-sum differences over
     /// Elias–Fano. The space usage is between the default [`CompIntList`]-based
-    /// returned by [`new`](JacobsonBalParen::new) and the [`BitFieldVec`]-based
-    /// returned by [`new_with_bit_field_vec`](Self::new_with_bit_field_vec).
+    /// returned by [`new`] and the [`BitFieldVec`]-based returned by
+    /// [`new_with_bit_field_vec`].
+    ///
+    /// [`new`]: JacobsonBalParen::new
+    /// [`new_with_bit_field_vec`]: Self::new_with_bit_field_vec
     ///
     /// # Panics
     ///

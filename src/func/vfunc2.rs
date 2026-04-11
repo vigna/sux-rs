@@ -38,8 +38,8 @@ use value_traits::slices::SliceByValue;
 /// can even lead to faster queries due to better cache locality.
 ///
 /// Instances of this structure are immutable; they are built using
-/// [`try_new`](VFunc2::try_new) or one of its variants, and can be serialized
-/// using [ε-serde](https://crates.io/crates/epserde).
+/// [`try_new`] or one of its variants, and can be serialized using
+/// [ε-serde].
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
@@ -59,14 +59,17 @@ use value_traits::slices::SliceByValue;
 ///
 /// # References
 ///
-/// Djamal Belazzougui, Paolo Boldi, Rasmus Pagh, and Sebastiano Vigna. [Theory
-/// and practice of monotone minimal perfect
-/// hashing](https://doi.org/10.1145/1963190.2025378). *ACM Journal of
+/// Djamal Belazzougui, Paolo Boldi, Rasmus Pagh, and Sebastiano Vigna.
+/// [Theory and practice of monotone minimal perfect hashing]. *ACM Journal of
 /// Experimental Algorithmics*, 16(3):3.2:1−3.2:26, 2011.
 ///
 /// # Examples
 ///
-/// See [`try_new`](VFunc2::try_new).
+/// See [`try_new`].
+///
+/// [`try_new`]: VFunc2::try_new
+/// [ε-serde]: https://crates.io/crates/epserde
+/// [Theory and practice of monotone minimal perfect hashing]: https://doi.org/10.1145/1963190.2025378
 #[derive(Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(
@@ -368,8 +371,9 @@ mod build {
         ///   value may degrade performance or cause extra retries.
         ///
         /// This is a convenience wrapper around
-        /// [`try_new_with_builder`](Self::try_new_with_builder) with
-        /// `VBuilder::default()`.
+        /// [`try_new_with_builder`] with `VBuilder::default()`.
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         ///
         /// # Examples
         ///
@@ -420,8 +424,12 @@ mod build {
         /// * `n` is the expected number of keys.
         ///
         /// The builder controls construction parameters such as [offline
-        /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
-        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        /// mode], [thread count], [sharding overhead], and [PRNG seed].
+        ///
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
         ///
         /// # Examples
         ///
@@ -487,10 +495,13 @@ mod build {
         /// Builds a [`VFunc2`] from an existing [`ShardStore`].
         ///
         /// This is the low-level constructor used when multiple VFuncs are
-        /// built from the same store (e.g., inside
-        /// [`Lcp2Mmphf`](crate::func::Lcp2Mmphf)). Use [`try_new`](Self::try_new)
-        /// or [`try_new_with_builder`](Self::try_new_with_builder) for the
-        /// common case of building from keys and values directly.
+        /// built from the same store (e.g., inside [`Lcp2Mmphf`]). Use
+        /// [`try_new`] or [`try_new_with_builder`] for the common case of
+        /// building from keys and values directly.
+        ///
+        /// [`Lcp2Mmphf`]: crate::func::Lcp2Mmphf
+        /// [`try_new`]: Self::try_new
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         ///
         /// # Preconditions
         ///

@@ -10,7 +10,9 @@ use ambassador::delegatable_trait;
 use impl_tools::autoimpl;
 
 /// A balanced parentheses structure supporting
-/// [`find_close`](BalParen::find_close) queries.
+/// [`find_close`] queries.
+///
+/// [`find_close`]: BalParen::find_close
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait]
 pub trait BalParen {

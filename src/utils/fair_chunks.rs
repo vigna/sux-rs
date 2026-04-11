@@ -20,7 +20,9 @@ use crate::traits::{IndexedSeq, Succ, SuccUnchecked};
 ///
 /// To build an iterator, you need to provide the cumulative function of weights
 /// (i.e., the sequence 0, `w₀`, `w₀ + w₁`, `w₀ + w₁ + w₂`, …), stored in a
-/// structure that supports [(unchecked) successor queries](crate::traits::Succ).
+/// structure that supports [(unchecked) successor queries].
+///
+/// [(unchecked) successor queries]: crate::traits::Succ
 ///
 /// # Example
 ///
@@ -96,11 +98,15 @@ pub struct FairChunks<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64>> {
     target_weight: u64,
     /// The position of the first non-returned element.
     curr_pos: usize,
-    /// The weight at [`curr_pos`](Self::curr_pos).
+    /// The weight at [`curr_pos`].
+    ///
+    /// [`curr_pos`]: Self::curr_pos
     current_weight: u64,
     /// The number of weights.
     num_weights: usize,
-    /// The last element of [cwf](Self::cwf).
+    /// The last element of [`cwf`].
+    ///
+    /// [`cwf`]: Self::cwf
     max_weight: u64,
 }
 
@@ -110,8 +116,9 @@ impl<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64>> FairChunks<I> {
     ///
     /// This constructor does not require the cumulative weight function to
     /// implement [`Succ`], but rather just [`SuccUnchecked`]. In the typical
-    /// case of [`EliasFano`](crate::dict::EliasFano), it is sufficient to have
-    /// selection on zeros.
+    /// case of [`EliasFano`], it is sufficient to have selection on zeros.
+    ///
+    /// [`EliasFano`]: crate::dict::EliasFano
     ///
     /// # Arguments
     ///
@@ -139,11 +146,13 @@ impl<I: for<'a> Succ<Input = u64, Output<'a> = u64> + IndexedSeq> FairChunks<I> 
     /// queries.
     ///
     /// This constructor requires that the cumulative weight function implements
-    /// [`Succ`]. In the typical case of
-    /// [`EliasFano`](crate::dict::EliasFano), it is necessary to have
-    /// selections on zeroes and ones. The constructor
-    /// [`new_with`](Self::new_with) makes it possible to use a cumulative
-    /// weight function that only implements [`SuccUnchecked`].
+    /// [`Succ`]. In the typical case of [`EliasFano`], it is necessary to
+    /// have selections on zeroes and ones. The constructor [`new_with`]
+    /// makes it possible to use a cumulative weight function that only
+    /// implements [`SuccUnchecked`].
+    ///
+    /// [`EliasFano`]: crate::dict::EliasFano
+    /// [`new_with`]: Self::new_with
     ///
     /// # Arguments
     ///

@@ -88,9 +88,11 @@ where
 ///
 /// This trait is not intended to be implemented by users; it is an internal
 /// abstraction to allow the signed wrappers to work with different static
-/// functions. It provides access to the seed, [signature type](Sig),
+/// functions. It provides access to the seed, [signature type],
 /// [`ShardEdge`], and key count, so that [`SignedFunc`] can verify hashes
 /// without knowing which specific type of function it wraps.
+///
+/// [signature type]: Sig
 pub trait SignableFunc {
     /// The signature type used by the inner function (e.g., `[u64; 2]`).
     type Sig: Sig;
@@ -247,7 +249,9 @@ impl<K: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableFunc for VF
 ///
 /// # Examples
 ///
-/// See the various [`try_new`](SignedFunc::try_new) implementations.
+/// See the various [`try_new`] implementations.
+///
+/// [`try_new`]: SignedFunc::try_new
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -260,8 +264,10 @@ impl<F, H> SignedFunc<F, H> {
     /// Creates a new `SignedFunc` from a function and a hash slice.
     ///
     /// This is a low-level constructor; prefer
-    /// [`try_new`](Self::try_new)/[`try_new_with_builder`](Self::try_new_with_builder)
-    /// when possible.
+    /// [`try_new`]/[`try_new_with_builder`] when possible.
+    ///
+    /// [`try_new`]: Self::try_new
+    /// [`try_new_with_builder`]: Self::try_new_with_builder
     pub fn from_parts(func: F, hashes: H) -> Self {
         Self { func, hashes }
     }
@@ -481,7 +487,7 @@ mod build {
         Ok(hashes.into_boxed_slice())
     }
 
-    /// Fills a [`BitFieldVec<Box<[H]>>`](BitFieldVec) hash array from a key
+    /// Fills a [`BitFieldVec<Box<[H]>>`] hash array from a key
     /// lender.
     ///
     /// Iterates the first `n` elements of `keys`, converting each borrowed
@@ -493,6 +499,8 @@ mod build {
     /// # Panics
     ///
     /// Panics if the lender yields fewer than `n` elements.
+    ///
+    /// [`BitFieldVec<Box<[H]>>`]: BitFieldVec
     fn fill_bit_hashes<H, S, E, L>(
         shard_edge: &E,
         seed: u64,
@@ -551,7 +559,7 @@ mod build {
         hashes.into_boxed_slice()
     }
 
-    /// Fills a [`BitFieldVec<Box<[H]>>`](BitFieldVec) hash array from a key
+    /// Fills a [`BitFieldVec<Box<[H]>>`] hash array from a key
     /// slice.
     ///
     /// Iterates the first `n` elements of `keys`, converting each key to a
@@ -562,6 +570,8 @@ mod build {
     /// # Panics
     ///
     /// Panics if `keys.len() < n`.
+    ///
+    /// [`BitFieldVec<Box<[H]>>`]: BitFieldVec
     fn fill_bit_hashes_from_slice<B, K, H, S, E>(
         shard_edge: &E,
         seed: u64,
@@ -612,11 +622,10 @@ mod build {
         ///   value may degrade performance or cause extra retries.
         ///
         /// This is a convenience wrapper around
-        /// [`try_new_with_builder`](Self::try_new_with_builder) with
-        /// `VBuilder::default()`.
+        /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
-        /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
-        /// parallelizes the hash computation for faster construction.
+        /// If keys are available as a slice, [`try_par_new`] parallelizes
+        /// the hash computation for faster construction.
         ///
         /// # Examples
         ///
@@ -642,6 +651,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new<B: ?Sized + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: Error + Send + Sync + 'static,
@@ -666,11 +678,10 @@ mod build {
         /// * `n` is the expected number of keys.
         ///
         /// The builder controls construction parameters such as [offline
-        /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
-        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        /// mode], [thread count], [sharding overhead], and [PRNG seed].
         ///
-        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// for parallel hash computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel hash
+        /// computation from slices.
         ///
         /// # Examples
         ///
@@ -697,6 +708,12 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder<B: ?Sized + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: Error + Send + Sync + 'static,
@@ -746,11 +763,10 @@ mod build {
         /// false-positive rate of 2<sup>-`H::BITS`</sup>.
         ///
         /// This is a convenience wrapper around
-        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// with `VBuilder::default()`.
+        /// [`try_par_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new`](Self::try_new) instead.
+        /// [`try_new`] instead.
         ///
         /// # Examples
         ///
@@ -772,6 +788,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`try_new`]: Self::try_new
         pub fn try_par_new<B: Borrow<K> + Sync>(
             keys: &[B],
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -793,11 +812,10 @@ mod build {
         /// false-positive rate of 2<sup>-`H::BITS`</sup>.
         ///
         /// The builder controls construction parameters such as [offline
-        /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
-        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        /// mode], [thread count], [sharding overhead], and [PRNG seed].
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// [`try_new_with_builder`] instead.
         ///
         /// # Examples
         ///
@@ -823,6 +841,12 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder<B: Borrow<K> + Sync>(
             keys: &[B],
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
@@ -871,11 +895,10 @@ mod build {
         ///   `H::BITS`).
         ///
         /// This is a convenience wrapper around
-        /// [`try_new_with_builder`](Self::try_new_with_builder) with
-        /// `VBuilder::default()`.
+        /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
-        /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
-        /// parallelizes the hash computation for faster construction.
+        /// If keys are available as a slice, [`try_par_new`] parallelizes
+        /// the hash computation for faster construction.
         ///
         /// # Examples
         ///
@@ -902,6 +925,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new<B: ?Sized + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: Error + Send + Sync + 'static,
@@ -932,11 +958,10 @@ mod build {
         ///   `H::BITS`).
         ///
         /// The builder controls construction parameters such as [offline
-        /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
-        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        /// mode], [thread count], [sharding overhead], and [PRNG seed].
         ///
-        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// for parallel hash computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel hash
+        /// computation from slices.
         ///
         /// # Examples
         ///
@@ -964,6 +989,12 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder<B: ?Sized + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: Error + Send + Sync + 'static,
@@ -1021,11 +1052,10 @@ mod build {
         /// false-positive rate of 2<sup>−`hash_width`</sup>.
         ///
         /// This is a convenience wrapper around
-        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// with `VBuilder::default()`.
+        /// [`try_par_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new`](Self::try_new) instead.
+        /// [`try_new`] instead.
         ///
         /// # Examples
         ///
@@ -1047,6 +1077,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`try_new`]: Self::try_new
         pub fn try_par_new<B: Borrow<K> + Sync>(
             keys: &[B],
             hash_width: usize,
@@ -1069,11 +1102,10 @@ mod build {
         /// false-positive rate of 2<sup>−`hash_width`</sup>.
         ///
         /// The builder controls construction parameters such as [offline
-        /// mode](VBuilder::offline), [thread count](VBuilder::max_num_threads),
-        /// [sharding overhead](VBuilder::eps), and [PRNG seed](VBuilder::seed).
+        /// mode], [thread count], [sharding overhead], and [PRNG seed].
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// [`try_new_with_builder`] instead.
         ///
         /// # Examples
         ///
@@ -1100,6 +1132,12 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder<B: Borrow<K> + Sync>(
             keys: &[B],
             hash_width: usize,
@@ -1156,11 +1194,10 @@ mod build {
         /// module provides easy ways to build such lenders.
         ///
         /// This is a convenience wrapper around
-        /// [`try_new_with_builder`](Self::try_new_with_builder) with
-        /// `VBuilder::default()`.
+        /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
-        /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
-        /// parallelizes the hash computation for faster construction.
+        /// If keys are available as a slice, [`try_par_new`] parallelizes
+        /// the hash computation for faster construction.
         ///
         /// # Examples
         ///
@@ -1183,6 +1220,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -1194,11 +1234,14 @@ mod build {
             Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
         }
 
-        /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`] to
-        /// configure the internal `offset_lcp_length` VFunc.
+        /// Like [`try_new`], but uses the given [`VBuilder`] to configure
+        /// the internal `offset_lcp_length` VFunc.
         ///
-        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// for parallel hash computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel hash
+        /// computation from slices.
+        ///
+        /// [`try_new`]: Self::try_new
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -1222,11 +1265,10 @@ mod build {
         /// The keys must be in strictly increasing order.
         ///
         /// This is a convenience wrapper around
-        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// with `VBuilder::default()`.
+        /// [`try_par_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new`](Self::try_new) instead.
+        /// [`try_new`] instead.
         ///
         /// # Examples
         ///
@@ -1248,6 +1290,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`try_new`]: Self::try_new
         pub fn try_par_new(
             keys: &[K],
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -1255,11 +1300,11 @@ mod build {
             Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
         }
 
-        /// Like [`try_par_new`](Self::try_par_new), but uses the given
-        /// [`VBuilder`] to configure the internal `offset_lcp_length` VFunc.
+        /// Like [`try_par_new`], but uses the given [`VBuilder`] to
+        /// configure the internal `offset_lcp_length` VFunc.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// [`try_new_with_builder`] instead.
         ///
         /// # Examples
         ///
@@ -1283,6 +1328,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new`]: Self::try_par_new
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder(
             keys: &[K],
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
@@ -1328,11 +1376,10 @@ mod build {
         /// module provides easy ways to build such lenders.
         ///
         /// This is a convenience wrapper around
-        /// [`try_new_with_builder`](Self::try_new_with_builder) with
-        /// `VBuilder::default()`.
+        /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
-        /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
-        /// parallelizes the hash computation for faster construction.
+        /// If keys are available as a slice, [`try_par_new`] parallelizes
+        /// the hash computation for faster construction.
         ///
         /// # Examples
         ///
@@ -1355,6 +1402,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -1366,11 +1416,14 @@ mod build {
             Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
         }
 
-        /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`] to
-        /// configure the internal `offset_lcp_length` VFunc.
+        /// Like [`try_new`], but uses the given [`VBuilder`] to configure
+        /// the internal `offset_lcp_length` VFunc.
         ///
-        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// for parallel hash computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel hash
+        /// computation from slices.
+        ///
+        /// [`try_new`]: Self::try_new
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -1395,11 +1448,10 @@ mod build {
         /// The keys must be in strictly increasing lexicographic order.
         ///
         /// This is a convenience wrapper around
-        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// with `VBuilder::default()`.
+        /// [`try_par_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new`](Self::try_new) instead.
+        /// [`try_new`] instead.
         ///
         /// # Examples
         ///
@@ -1421,6 +1473,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`try_new`]: Self::try_new
         pub fn try_par_new<B: AsRef<[u8]> + Borrow<K> + Sync>(
             keys: &[B],
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -1431,11 +1486,11 @@ mod build {
             Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
         }
 
-        /// Like [`try_par_new`](Self::try_par_new), but uses the given
-        /// [`VBuilder`] to configure the internal `offset_lcp_length` VFunc.
+        /// Like [`try_par_new`], but uses the given [`VBuilder`] to
+        /// configure the internal `offset_lcp_length` VFunc.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// [`try_new_with_builder`] instead.
         ///
         /// # Examples
         ///
@@ -1459,6 +1514,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new`]: Self::try_par_new
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder<B: AsRef<[u8]> + Borrow<K> + Sync>(
             keys: &[B],
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
@@ -1506,11 +1564,10 @@ mod build {
         /// Creates a new signed two-step LCP-based MMPHF for integers.
         ///
         /// This is a convenience wrapper around
-        /// [`try_new_with_builder`](Self::try_new_with_builder) with
-        /// `VBuilder::default()`.
+        /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
-        /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
-        /// parallelizes the hash computation for faster construction.
+        /// If keys are available as a slice, [`try_par_new`] parallelizes
+        /// the hash computation for faster construction.
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
@@ -1536,6 +1593,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -1547,11 +1607,14 @@ mod build {
             Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
         }
 
-        /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`] to
-        /// configure the internal VFuncs.
+        /// Like [`try_new`], but uses the given [`VBuilder`] to configure
+        /// the internal VFuncs.
         ///
-        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// for parallel hash computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel hash
+        /// computation from slices.
+        ///
+        /// [`try_new`]: Self::try_new
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -1576,11 +1639,10 @@ mod build {
         /// The keys must be in strictly increasing order.
         ///
         /// This is a convenience wrapper around
-        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// with `VBuilder::default()`.
+        /// [`try_par_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new`](Self::try_new) instead.
+        /// [`try_new`] instead.
         ///
         /// # Examples
         ///
@@ -1602,6 +1664,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`try_new`]: Self::try_new
         pub fn try_par_new(
             keys: &[K],
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -1609,11 +1674,11 @@ mod build {
             Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
         }
 
-        /// Like [`try_par_new`](Self::try_par_new), but uses the given
-        /// [`VBuilder`] to configure the internal VFuncs.
+        /// Like [`try_par_new`], but uses the given [`VBuilder`] to
+        /// configure the internal VFuncs.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// [`try_new_with_builder`] instead.
         ///
         /// # Examples
         ///
@@ -1637,6 +1702,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new`]: Self::try_par_new
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder(
             keys: &[K],
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
@@ -1681,11 +1749,10 @@ mod build {
         /// Creates a new signed two-step LCP-based MMPHF for byte-sequence keys.
         ///
         /// This is a convenience wrapper around
-        /// [`try_new_with_builder`](Self::try_new_with_builder) with
-        /// `VBuilder::default()`.
+        /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
-        /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
-        /// parallelizes the hash computation for faster construction.
+        /// If keys are available as a slice, [`try_par_new`] parallelizes
+        /// the hash computation for faster construction.
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
@@ -1711,6 +1778,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -1722,11 +1792,14 @@ mod build {
             Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
         }
 
-        /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`] to
-        /// configure the internal VFuncs.
+        /// Like [`try_new`], but uses the given [`VBuilder`] to configure
+        /// the internal VFuncs.
         ///
-        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// for parallel hash computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel hash
+        /// computation from slices.
+        ///
+        /// [`try_new`]: Self::try_new
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -1751,11 +1824,10 @@ mod build {
         /// The keys must be in strictly increasing lexicographic order.
         ///
         /// This is a convenience wrapper around
-        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// with `VBuilder::default()`.
+        /// [`try_par_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new`](Self::try_new) instead.
+        /// [`try_new`] instead.
         ///
         /// # Examples
         ///
@@ -1777,6 +1849,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`try_new`]: Self::try_new
         pub fn try_par_new<B: AsRef<[u8]> + Borrow<K> + Sync>(
             keys: &[B],
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -1787,11 +1862,11 @@ mod build {
             Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
         }
 
-        /// Like [`try_par_new`](Self::try_par_new), but uses the given
-        /// [`VBuilder`] to configure the internal VFuncs.
+        /// Like [`try_par_new`], but uses the given [`VBuilder`] to
+        /// configure the internal VFuncs.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// [`try_new_with_builder`] instead.
         ///
         /// # Examples
         ///
@@ -1815,6 +1890,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new`]: Self::try_par_new
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder<B: AsRef<[u8]> + Borrow<K> + Sync>(
             keys: &[B],
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
@@ -1862,11 +1940,10 @@ mod build {
         /// 2<sup>−`hash_width`</sup>.
         ///
         /// This is a convenience wrapper around
-        /// [`try_new_with_builder`](Self::try_new_with_builder) with
-        /// `VBuilder::default()`.
+        /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
-        /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
-        /// parallelizes the hash computation for faster construction.
+        /// If keys are available as a slice, [`try_par_new`] parallelizes
+        /// the hash computation for faster construction.
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
@@ -1894,6 +1971,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -1906,11 +1986,14 @@ mod build {
             Self::try_new_with_builder(keys, n, hash_width, VBuilder::default(), pl)
         }
 
-        /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`] to
-        /// configure the internal `offset_lcp_length` VFunc.
+        /// Like [`try_new`], but uses the given [`VBuilder`] to configure
+        /// the internal `offset_lcp_length` VFunc.
         ///
-        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// for parallel hash computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel hash
+        /// computation from slices.
+        ///
+        /// [`try_new`]: Self::try_new
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -1944,11 +2027,10 @@ mod build {
         /// 2<sup>−`hash_width`</sup>.
         ///
         /// This is a convenience wrapper around
-        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// with `VBuilder::default()`.
+        /// [`try_par_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new`](Self::try_new) instead.
+        /// [`try_new`] instead.
         ///
         /// # Examples
         ///
@@ -1972,6 +2054,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`try_new`]: Self::try_new
         pub fn try_par_new(
             keys: &[K],
             hash_width: usize,
@@ -1980,11 +2065,11 @@ mod build {
             Self::try_par_new_with_builder(keys, hash_width, VBuilder::default(), pl)
         }
 
-        /// Like [`try_par_new`](Self::try_par_new), but uses the given
-        /// [`VBuilder`] to configure the internal `offset_lcp_length` VFunc.
+        /// Like [`try_par_new`], but uses the given [`VBuilder`] to
+        /// configure the internal `offset_lcp_length` VFunc.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// [`try_new_with_builder`] instead.
         ///
         /// # Examples
         ///
@@ -2008,6 +2093,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new`]: Self::try_par_new
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder(
             keys: &[K],
             hash_width: usize,
@@ -2055,11 +2143,10 @@ mod build {
         /// 2<sup>−`hash_width`</sup>.
         ///
         /// This is a convenience wrapper around
-        /// [`try_new_with_builder`](Self::try_new_with_builder) with
-        /// `VBuilder::default()`.
+        /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
-        /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
-        /// parallelizes the hash computation for faster construction.
+        /// If keys are available as a slice, [`try_par_new`] parallelizes
+        /// the hash computation for faster construction.
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
@@ -2088,6 +2175,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -2100,11 +2190,14 @@ mod build {
             Self::try_new_with_builder(keys, n, hash_width, VBuilder::default(), pl)
         }
 
-        /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`] to
-        /// configure the internal `offset_lcp_length` VFunc.
+        /// Like [`try_new`], but uses the given [`VBuilder`] to configure
+        /// the internal `offset_lcp_length` VFunc.
         ///
-        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// for parallel hash computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel hash
+        /// computation from slices.
+        ///
+        /// [`try_new`]: Self::try_new
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -2138,11 +2231,10 @@ mod build {
         /// 2<sup>−`hash_width`</sup>.
         ///
         /// This is a convenience wrapper around
-        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// with `VBuilder::default()`.
+        /// [`try_par_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new`](Self::try_new) instead.
+        /// [`try_new`] instead.
         ///
         /// # Examples
         ///
@@ -2167,6 +2259,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`try_new`]: Self::try_new
         pub fn try_par_new<B: AsRef<[u8]> + Borrow<K> + Sync>(
             keys: &[B],
             hash_width: usize,
@@ -2178,11 +2273,11 @@ mod build {
             Self::try_par_new_with_builder(keys, hash_width, VBuilder::default(), pl)
         }
 
-        /// Like [`try_par_new`](Self::try_par_new), but uses the given
-        /// [`VBuilder`] to configure the internal `offset_lcp_length` VFunc.
+        /// Like [`try_par_new`], but uses the given [`VBuilder`] to
+        /// configure the internal `offset_lcp_length` VFunc.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// [`try_new_with_builder`] instead.
         ///
         /// # Examples
         ///
@@ -2207,6 +2302,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new`]: Self::try_par_new
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder<B: AsRef<[u8]> + Borrow<K> + Sync>(
             keys: &[B],
             hash_width: usize,
@@ -2262,11 +2360,10 @@ mod build {
         /// sub-word-width hashes.
         ///
         /// This is a convenience wrapper around
-        /// [`try_new_with_builder`](Self::try_new_with_builder) with
-        /// `VBuilder::default()`.
+        /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
-        /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
-        /// parallelizes the hash computation for faster construction.
+        /// If keys are available as a slice, [`try_par_new`] parallelizes
+        /// the hash computation for faster construction.
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
@@ -2293,6 +2390,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -2305,11 +2405,14 @@ mod build {
             Self::try_new_with_builder(keys, n, hash_width, VBuilder::default(), pl)
         }
 
-        /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`] to
-        /// configure the internal VFuncs.
+        /// Like [`try_new`], but uses the given [`VBuilder`] to configure
+        /// the internal VFuncs.
         ///
-        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// for parallel hash computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel hash
+        /// computation from slices.
+        ///
+        /// [`try_new`]: Self::try_new
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -2339,11 +2442,10 @@ mod build {
         /// and default [`VBuilder`] settings.
         ///
         /// This is a convenience wrapper around
-        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// with `VBuilder::default()`.
+        /// [`try_par_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new`](Self::try_new) instead.
+        /// [`try_new`] instead.
         ///
         /// # Examples
         ///
@@ -2367,6 +2469,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`try_new`]: Self::try_new
         pub fn try_par_new(
             keys: &[K],
             hash_width: usize,
@@ -2375,11 +2480,11 @@ mod build {
             Self::try_par_new_with_builder(keys, hash_width, VBuilder::default(), pl)
         }
 
-        /// Like [`try_par_new`](Self::try_par_new), but uses the given
-        /// [`VBuilder`] to configure the internal VFuncs.
+        /// Like [`try_par_new`], but uses the given [`VBuilder`] to
+        /// configure the internal VFuncs.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// [`try_new_with_builder`] instead.
         ///
         /// # Examples
         ///
@@ -2403,6 +2508,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new`]: Self::try_par_new
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder(
             keys: &[K],
             hash_width: usize,
@@ -2451,11 +2559,10 @@ mod build {
         /// with sub-word-width hashes.
         ///
         /// This is a convenience wrapper around
-        /// [`try_new_with_builder`](Self::try_new_with_builder) with
-        /// `VBuilder::default()`.
+        /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
-        /// If keys are available as a slice, [`try_par_new`](Self::try_par_new)
-        /// parallelizes the hash computation for faster construction.
+        /// If keys are available as a slice, [`try_par_new`] parallelizes
+        /// the hash computation for faster construction.
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
@@ -2482,6 +2589,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -2494,11 +2604,14 @@ mod build {
             Self::try_new_with_builder(keys, n, hash_width, VBuilder::default(), pl)
         }
 
-        /// Like [`try_new`](Self::try_new), but uses the given [`VBuilder`] to
-        /// configure the internal VFuncs.
+        /// Like [`try_new`], but uses the given [`VBuilder`] to configure
+        /// the internal VFuncs.
         ///
-        /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// for parallel hash computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel hash
+        /// computation from slices.
+        ///
+        /// [`try_new`]: Self::try_new
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -2528,11 +2641,10 @@ mod build {
         /// computation and default [`VBuilder`] settings.
         ///
         /// This is a convenience wrapper around
-        /// [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-        /// with `VBuilder::default()`.
+        /// [`try_par_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new`](Self::try_new) instead.
+        /// [`try_new`] instead.
         ///
         /// # Examples
         ///
@@ -2556,6 +2668,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`try_new`]: Self::try_new
         pub fn try_par_new<B: AsRef<[u8]> + Borrow<K> + Sync>(
             keys: &[B],
             hash_width: usize,
@@ -2567,11 +2682,11 @@ mod build {
             Self::try_par_new_with_builder(keys, hash_width, VBuilder::default(), pl)
         }
 
-        /// Like [`try_par_new`](Self::try_par_new), but uses the given
-        /// [`VBuilder`] to configure the internal VFuncs.
+        /// Like [`try_par_new`], but uses the given [`VBuilder`] to
+        /// configure the internal VFuncs.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
-        /// [`try_new_with_builder`](Self::try_new_with_builder) instead.
+        /// [`try_new_with_builder`] instead.
         ///
         /// # Examples
         ///
@@ -2595,6 +2710,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new`]: Self::try_par_new
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder<B: AsRef<[u8]> + Borrow<K> + Sync>(
             keys: &[B],
             hash_width: usize,

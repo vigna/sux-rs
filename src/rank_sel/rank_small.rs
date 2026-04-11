@@ -39,9 +39,11 @@ use std::ops::Index;
 /// structure.
 ///
 /// This trait is implemented by [`RankSmall`], but it is propagated by
-/// [`SelectSmall`](crate::rank_sel::SelectSmall) and
-/// [`SelectZeroSmall`](crate::rank_sel::SelectZeroSmall), making it
-/// possible to combine selection structures arbitrarily.
+/// [`SelectSmall`] and [`SelectZeroSmall`], making it possible to combine
+/// selection structures arbitrarily.
+///
+/// [`SelectSmall`]: crate::rank_sel::SelectSmall
+/// [`SelectZeroSmall`]: crate::rank_sel::SelectZeroSmall
 #[delegatable_trait]
 pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
     fn upper_counts(&self) -> &[u64];
@@ -49,28 +51,32 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 }
 
 /// A family of ranking structures using very little additional space but with
-/// slower operations than [`Rank9`](super::Rank9).
+/// slower operations than [`Rank9`].
 ///
-/// [`RankSmall`] structures combine two ideas from [`Rank9`](super::Rank9),
-/// that is, the interleaving of absolute and relative counters and the storage
-/// of implicit counters using zero extension, and a design trick from
-/// [`poppy`](https://link.springer.com/chapter/10.1007/978-3-642-38527-8_15),
-/// that is, that the structures are actually designed around bit vectors of at
-/// most 2³² bits. This allows the use of 32-bit counters, which use less space,
-/// at the expense of a high-level additional list of 64-bit counters that
-/// contain the actual absolute cumulative counts for each block of 2³² bits.
-/// Since in most applications these counters will be very few, their additional
-/// space is negligible, and they will usually be accessed without cache misses.
+/// [`RankSmall`] structures combine two ideas from [`Rank9`], that is,
+/// the interleaving of absolute and relative counters and the storage of
+/// implicit counters using zero extension, and a design trick from
+/// [`poppy`], that is, that the structures are actually designed around
+/// bit vectors of at most 2³² bits. This allows the use of 32-bit
+/// counters, which use less space, at the expense of a high-level
+/// additional list of 64-bit counters that contain the actual absolute
+/// cumulative counts for each block of 2³² bits. Since in most applications
+/// these counters will be very few, their additional space is negligible,
+/// and they will usually be accessed without cache misses.
 ///
 /// An associated family of selection structures is provided by
-/// [`SelectSmall`](crate::rank_sel::SelectSmall) and
-/// [`SelectZeroSmall`](crate::rank_sel::SelectZeroSmall)
+/// [`SelectSmall`] and [`SelectZeroSmall`]
+///
+/// [`Rank9`]: super::Rank9
+/// [`SelectSmall`]: crate::rank_sel::SelectSmall
+/// [`SelectZeroSmall`]: crate::rank_sel::SelectZeroSmall
 ///
 /// The [`RankSmall`] variants are parameterized by the number of 32-bit words
 /// per block and by the size of the relative counters. Only certain
 /// combinations are possible, and to simplify construction we provide a
-/// [`rank_small`](crate::rank_small) macro that selects the correct
-/// combination.
+/// [`rank_small`] macro that selects the correct combination.
+///
+/// [`rank_small`]: crate::rank_small
 ///
 /// The first const generic parameter `WORD_BITS` (32 or 64) specifies the
 /// word size; the remaining parameters `NUM_U32S` and `COUNTER_WIDTH` define
@@ -78,13 +84,13 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// with both word sizes (with the exception of `(2, 8)` and `(2, 9)`, which
 /// are word-size-specific).
 ///
-/// The type parameter `B` is a bit-based [backend](Backend); the remaining
+/// The type parameter `B` is a bit-based [backend]; the remaining
 /// type parameter are internal and should always have their default values.
 ///
 /// Presently we support the following combinations for `u64` words:
 ///
 /// - `rank_small![u64: 0; -]` (builds `RankSmall<64, 2, 9>`): 18.75%
-///   additional space, speed slightly slower than [`Rank9`](super::Rank9).
+///   additional space, speed slightly slower than [`Rank9`].
 /// - `rank_small![u64: 1; -]` (builds `RankSmall<64, 1, 9>`): 12.5%
 ///   additional space.
 /// - `rank_small![u64: 2; -]` (builds `RankSmall<64, 1, 10>`): 6.25%
@@ -110,18 +116,17 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 ///   additional space; same counter layout as `RankSmall<64, 3, 13>`.
 ///
 /// The word type can be omitted, in which case it defaults to `usize`;
-/// the numbering mirrors the `u64` variants (see the
-/// [`rank_small`](crate::rank_small) macro documentation).
+/// the numbering mirrors the `u64` variants (see the [`rank_small`] macro
+/// documentation).
 ///
 /// `RankSmall<64, 2, 9>` and `RankSmall<32, 2, 8>` (selector 0) work like
-/// [`Rank9`](super::Rank9), while the other variants provide increasingly less
-/// space usage at the expense of slower operations.
+/// [`Rank9`], while the other variants provide increasingly less space
+/// usage at the expense of slower operations.
 ///
 /// `RankSmall<64, 1, 11>` and `RankSmall<32, 1, 11>` are similar to
-/// [`poppy`](https://link.springer.com/chapter/10.1007/978-3-642-38527-8_15),
-/// but instead of storing counters and rebuilding cumulative counters on the
-/// fly it stores the cumulative counters directly using implicit zero
-/// extension, as in [`Rank9`](super::Rank9).
+/// [`poppy`], but instead of storing counters and rebuilding cumulative
+/// counters on the fly it stores the cumulative counters directly using
+/// implicit zero extension, as in [`Rank9`].
 ///
 /// This structure forwards several traits and [`Deref`]'s to its backend.
 ///
@@ -153,6 +158,9 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// assert_eq!(rank_small[6], false);
 /// assert_eq!(rank_small[7], true);
 /// ```
+///
+/// [`poppy`]: https://link.springer.com/chapter/10.1007/978-3-642-38527-8_15
+/// [backend]: Backend
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

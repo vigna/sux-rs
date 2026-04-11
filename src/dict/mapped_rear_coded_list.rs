@@ -35,20 +35,18 @@
 //! structure also implements the `get_in_place` method, which makes it possible
 //! to write the element directly into a user-provided buffer (a string or a
 //! vector of bytes), avoiding allocations. [`MappedRearCodedListStr`] has an
-//! additional
-//! [`get_bytes_in_place`](MappedRearCodedListStr::get_bytes_in_place) method that
-//! writes the bytes of the string into a user-provided `Vec<u8>`.
+//! additional [`get_bytes_in_place`] method that writes the bytes of the
+//! string into a user-provided `Vec<u8>`.
 //!
 //! Mapped rear-coded lists can be iterated upon using either an
-//! [`Iterator`](MappedRearCodedList::iter) or a [`Lender`](MappedRearCodedList::lender). In
-//! the first case there will be an allocation at each iteration, whereas in
-//! the second case a single buffer will be reused. You can also [iterate from a
-//! given position](MappedRearCodedList::lender_from). The iteration will not be as
-//! fast as in the non-mapped case, however, as it is not possible to build the
-//! returned strings incrementally.
+//! [`Iterator`] or a [`Lender`]. In the first case there will be an
+//! allocation at each iteration, whereas in the second case a single buffer
+//! will be reused. You can also [iterate from a given position]. The
+//! iteration will not be as fast as in the non-mapped case, however, as it
+//! is not possible to build the returned strings incrementally.
 //!
 //! Note that, contrarily to [`RearCodedList`], this structure does not provide
-//! implementations for the [`IndexedDict`](crate::traits::IndexedDict) trait,
+//! implementations for the [`IndexedDict`] trait,
 //! independently of whether the underlying [`RearCodedList`] is sorted or not.
 //!
 //! Finally, the `mrcl` command-line tool can be used to create
@@ -86,6 +84,12 @@
 //! assert_eq!(mrcl.get(4), "aab");
 //! assert_eq!(mrcl.get(5), "abdd");
 //! ```
+//!
+//! [`IndexedDict`]: crate::traits::IndexedDict
+//! [`get_bytes_in_place`]: MappedRearCodedListStr::get_bytes_in_place
+//! [`Iterator`]: MappedRearCodedList::iter
+//! [`Lender`]: MappedRearCodedList::lender
+//! [iterate from a given position]: MappedRearCodedList::lender_from
 use crate::bits::BitFieldVec;
 use crate::dict::rear_coded_list::RearCodedList;
 use crate::traits::{IndexedSeq, IntoIteratorFrom, Types};
@@ -184,8 +188,9 @@ where
 {
     /// Returns a [`Lender`] over the elements of the list.
     ///
-    /// Note that [`iter`](MappedRearCodedList::iter) is more convenient if
-    /// you need owned elements.
+    /// Note that [`iter`] is more convenient if you need owned elements.
+    ///
+    /// [`iter`]: MappedRearCodedList::iter
     #[inline(always)]
     pub fn lender(&self) -> Lend<'_, I, O, D, P, Q, SORTED> {
         Lend::new(self)
@@ -194,8 +199,10 @@ where
     /// Returns a [`Lender`] over the elements of the list
     /// starting from the given index.
     ///
-    /// Note that [`iter_from`](MappedRearCodedList::iter_from) is more convenient if
-    /// you need owned elements.
+    /// Note that [`iter_from`] is more convenient if you need owned
+    /// elements.
+    ///
+    /// [`iter_from`]: MappedRearCodedList::iter_from
     #[inline(always)]
     pub fn lender_from(&self, from: usize) -> Lend<'_, I, O, D, P, Q, SORTED> {
         Lend::new_from(self, from)
@@ -203,8 +210,10 @@ where
 
     /// Returns an [`Iterator`] over the elements of the list.
     ///
-    /// Note that [`lender`](MappedRearCodedList::lender) is more efficient
-    /// if you need to iterate over many elements.
+    /// Note that [`lender`] is more efficient if you need to iterate
+    /// over many elements.
+    ///
+    /// [`lender`]: MappedRearCodedList::lender
     #[inline(always)]
     pub fn iter(&self) -> Iter<'_, I, O, D, P, Q, SORTED> {
         Iter(self.lender())
@@ -213,8 +222,10 @@ where
     /// Returns an [`Iterator`] over the elements of the list
     /// starting from the given index.
     ///
-    /// Note that [`lender_from`](MappedRearCodedList::lender_from) is more efficient
-    /// if you need to iterate over many elements.
+    /// Note that [`lender_from`] is more efficient if you need to
+    /// iterate over many elements.
+    ///
+    /// [`lender_from`]: MappedRearCodedList::lender_from
     #[inline(always)]
     pub fn iter_from(&self, from: usize) -> Iter<'_, I, O, D, P, Q, SORTED> {
         Iter(self.lender_from(from))

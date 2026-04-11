@@ -15,7 +15,7 @@
 //! - [`UncheckedIterator`]/[`IntoUncheckedIterator`]/[`IntoUncheckedBackIterator`]
 //!   are traits providing unsafe cheap iteration. Their main purpose is to
 //!   abstract fast, unchecked iteration over implementations of
-//!   [`BitFieldSlice`](crate::traits::BitFieldSlice).
+//!   [`BitFieldSlice`].
 //!
 //! - [`IntoBackIterator`]/[`IntoBackIteratorFrom`] are counterparts of
 //!   [`IntoIterator`]/[`IntoIteratorFrom`] for backward iteration.
@@ -24,9 +24,14 @@
 //!   for bidirectional iteration. These will usually be slower than their unidirectional
 //!   counterparts, but they provide more flexibility. [`ExactSizeBidiIterator`]
 //!   and [`FusedBidiIterator`] are the bidirectional counterparts of
-//!   [`ExactSizeIterator`] and [`FusedIterator`](core::iter::FusedIterator).
+//!   [`ExactSizeIterator`] and [`FusedIterator`].
 //!   [`SwappedIter`] wraps a [`BidiIterator`] swapping the roles of
-//!   [`next`](Iterator::next) and [`prev`](BidiIterator::prev).
+//!   [`next`] and [`prev`].
+//!
+//! [`BitFieldSlice`]: crate::traits::BitFieldSlice
+//! [`FusedIterator`]: core::iter::FusedIterator
+//! [`next`]: Iterator::next
+//! [`prev`]: BidiIterator::prev
 
 use impl_tools::autoimpl;
 use mem_dbg::{MemDbg, MemSize};
@@ -34,17 +39,20 @@ use mem_dbg::{MemDbg, MemSize};
 /// Conversion into an [`Iterator`] starting from a given position.
 ///
 /// This trait is similar to [`IntoIterator`], but it allows specifying a
-/// starting position for the iteration. Calling
-/// [`into_iter`](IntoIterator::into_iter) followed by a call to
-/// [`skip`](Iterator::skip) would be sufficient, but for many compressed and
-/// succinct data structures the setup of an iterator can be expensive, and that
-/// setup is usually required again after a skip.
+/// starting position for the iteration. Calling [`into_iter`] followed by
+/// a call to [`skip`] would be sufficient, but for many compressed and
+/// succinct data structures the setup of an iterator can be expensive, and
+/// that setup is usually required again after a skip.
 ///
 /// We provide implementations for (references to) slices, vectors, and boxed
 /// slices.
+///
+/// [`into_iter`]: IntoIterator::into_iter
+/// [`skip`]: Iterator::skip
 pub trait IntoIteratorFrom: IntoIterator {
-    /// The iterator type returned by
-    /// [`into_iter_from`](IntoIteratorFrom::into_iter_from).
+    /// The iterator type returned by [`into_iter_from`].
+    ///
+    /// [`into_iter_from`]: IntoIteratorFrom::into_iter_from
     type IntoIterFrom: Iterator<Item = <Self as IntoIterator>::Item>;
 
     /// Creates an iterator from a starting position.
@@ -107,7 +115,9 @@ impl<'a, T: Copy> UncheckedIterator for std::iter::Skip<std::slice::Iter<'a, T>>
 /// structures of the same size. The calling code can take care that the
 /// iteration is safe, and can use this trait to iterate very cheaply over each
 /// structure. See the implementation of
-/// [`EliasFanoIter`](crate::dict::elias_fano::EliasFanoIter) for an example.
+/// [`EliasFanoIter`] for an example.
+///
+/// [`EliasFanoIter`]: crate::dict::elias_fano::EliasFanoIter
 #[autoimpl(for<T: trait + ?Sized> &mut T, Box<T>)]
 pub trait UncheckedIterator {
     type Item;
@@ -143,11 +153,12 @@ pub trait IntoUncheckedIterator: Sized {
 /// Unlike [`IntoIterator`], this trait provides a way
 /// to obtain an iterator starting from a given position.
 ///
-/// Note that
-/// [`into_unchecked_iter_back`](IntoUncheckedBackIterator::into_unchecked_iter_back)
-/// cannot be implemented in terms of
-/// [`into_unchecked_iter_back_from`](IntoUncheckedBackIterator::into_unchecked_iter_back_from)
-/// because we cannot know which is the last position.
+/// Note that [`into_unchecked_iter_back`] cannot be implemented in terms of
+/// [`into_unchecked_iter_back_from`] because we cannot know which is the
+/// last position.
+///
+/// [`into_unchecked_iter_back`]: IntoUncheckedBackIterator::into_unchecked_iter_back
+/// [`into_unchecked_iter_back_from`]: IntoUncheckedBackIterator::into_unchecked_iter_back_from
 pub trait IntoUncheckedBackIterator: Sized {
     type Item;
     type IntoUncheckedIterBack: UncheckedIterator<Item = Self::Item>;
@@ -173,9 +184,11 @@ pub trait IntoBackIterator: Sized {
 /// Conversion into a backward [`Iterator`] starting from a given position.
 ///
 /// This is the backward counterpart of [`IntoIteratorFrom`]. The iterator
-/// returned by [`into_iter_back_from`](IntoBackIteratorFrom::into_iter_back_from)
-/// yields element `from` first, then preceding elements in decreasing order
+/// returned by [`into_iter_back_from`] yields element `from` first, then
+/// preceding elements in decreasing order
 /// (as [`IntoUncheckedBackIterator::into_unchecked_iter_back_from`]).
+///
+/// [`into_iter_back_from`]: IntoBackIteratorFrom::into_iter_back_from
 pub trait IntoBackIteratorFrom: IntoBackIterator {
     type IntoIterBackFrom: Iterator<Item = <Self as IntoBackIterator>::Item>;
 
@@ -186,13 +199,16 @@ pub trait IntoBackIteratorFrom: IntoBackIterator {
 /// A bidirectional iterator that can move both forward and backward.
 ///
 /// This trait extends [`Iterator`] with a `prev()` method and an associated
-/// [`SwappedIter`](BidiIterator::SwappedIter) type that swaps the directions. The
-/// involution constraint `SwappedIter: BidiIterator<SwappedIter = Self>` guarantees
-/// that wrapping and unwrapping are inverses.
+/// [`SwappedIter`] type that swaps the directions. The involution constraint
+/// `SwappedIter: BidiIterator<SwappedIter = Self>` guarantees that wrapping
+/// and unwrapping are inverses.
 ///
-/// Call [`swap`](BidiIterator::swap) to obtain an iterator whose
-/// `next` goes in the opposite direction. The canonical implementation is
-/// [`SwappedIter`], a zero-cost `#[repr(transparent)]` wrapper.
+/// Call [`swap`] to obtain an iterator whose `next` goes in the opposite
+/// direction. The canonical implementation is [`SwappedIter`], a zero-cost
+/// `#[repr(transparent)]` wrapper.
+///
+/// [`SwappedIter`]: BidiIterator::SwappedIter
+/// [`swap`]: BidiIterator::swap
 pub trait BidiIterator: Iterator + Sized {
     /// The type of the iterator obtained by reversing the direction.
     ///
@@ -287,18 +303,22 @@ pub trait ExactSizeBidiIterator: BidiIterator {
 
 /// A fused bidirectional iterator.
 ///
-/// A `FusedBidiIterator` guarantees that [`prev`](BidiIterator::prev) keeps
-/// returning [`None`] once exhausted, mirroring
-/// [`FusedIterator`](std::iter::FusedIterator) for the backward direction.
+/// A `FusedBidiIterator` guarantees that [`prev`] keeps returning [`None`]
+/// once exhausted, mirroring [`FusedIterator`] for the backward direction.
+///
+/// [`prev`]: BidiIterator::prev
+/// [`FusedIterator`]: std::iter::FusedIterator
 pub trait FusedBidiIterator: BidiIterator {}
 
 /// A zero-cost wrapper that swaps the forward and backward directions of a
 /// [`BidiIterator`].
 ///
 /// Wrapping a `BidiIterator` in [`SwappedIter`] causes [`Iterator::next`] to
-/// delegate to [`BidiIterator::prev`] and vice versa. Calling
-/// [`swap`](BidiIterator::swap) on a [`SwappedIter`] unwraps back to the
-/// inner iterator, so the operation is an involution.
+/// delegate to [`BidiIterator::prev`] and vice versa. Calling [`swap`] on a
+/// [`SwappedIter`] unwraps back to the inner iterator, so the operation is
+/// an involution.
+///
+/// [`swap`]: BidiIterator::swap
 #[derive(Clone, Debug, MemSize, MemDbg)]
 #[repr(transparent)]
 pub struct SwappedIter<I>(pub I);
@@ -453,15 +473,18 @@ pub trait IntoBidiIterator: Sized {
 /// This is the bidirectional counterpart of [`IntoIteratorFrom`]. It provides
 /// a way to obtain a bidirectional iterator starting from a given position.
 ///
-/// Calling [`into_iter_bidi`](IntoBidiIterator::into_iter_bidi) followed by a
-/// call to [`skip`](Iterator::skip) would be sufficient, but for many
-/// compressed and succinct data structures the setup of an iterator can be
-/// expensive, and that setup is usually required again after a skip.
+/// Calling [`into_iter_bidi`] followed by a call to [`skip`] would be
+/// sufficient, but for many compressed and succinct data structures the
+/// setup of an iterator can be expensive, and that setup is usually
+/// required again after a skip.
 ///
 /// The cursor position `from` is interpreted as for
 /// [`IntoIteratorFrom`]: the first call to `next()` yields element `from`,
-/// while the first call to [`prev()`](BidiIterator::prev) yields element
-/// `from - 1`.
+/// while the first call to [`prev()`] yields element `from - 1`.
+///
+/// [`into_iter_bidi`]: IntoBidiIterator::into_iter_bidi
+/// [`skip`]: Iterator::skip
+/// [`prev()`]: BidiIterator::prev
 pub trait IntoBidiIteratorFrom: IntoBidiIterator {
     type IntoIterBidiFrom: BidiIterator<Item = <Self as IntoBidiIterator>::Item>;
 

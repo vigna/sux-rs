@@ -9,12 +9,10 @@
 //! “bit array“, etc.).
 //!
 //! Slices of bit fields are accessed with a logic similar to slices, but when
-//! indexed they return an owned value of a [fixed bit
-//! width](BitWidth::bit_width). They are a prototypical example of a [*slice by
-//! value*](SliceByValue), and as such they are based on the
-//! [`value-traits`](https://crates.io/crates/value-traits) crate.
-//! In particular, [`BitFieldSlice`] extends [`SliceByValue`] and
-//! [`BitFieldSliceMut`] extends [`SliceByValueMut`]. Both traits also extend
+//! indexed they return an owned value of a [fixed bit width]. They are a
+//! prototypical example of a [*slice by value*], and as such they are based
+//! on the [`value-traits`] crate. In particular, [`BitFieldSlice`] extends
+//! [`SliceByValue`] and [`BitFieldSliceMut`] extends [`SliceByValueMut`]. Both traits also extend
 //! [`BitWidth`], which provides the method [`BitWidth::bit_width`] to
 //! retrieve the bit width of the values stored in the slice.
 //!
@@ -24,24 +22,29 @@
 //! The [`SliceByValue::Value`] type of implementors must satisfy the [`Word`]
 //! trait, with the restriction that the bit width of the slice can be at most
 //! the bit width of `Value` as defined by
-//! [`PrimitiveInteger::BITS`](num_primitive::PrimitiveInteger::BITS).
+//! [`PrimitiveInteger::BITS`].
 //! Additionally, to implement [`AtomicBitFieldSlice`], the word type must
-//! implement [`AtomicPrimitive`](atomic_primitive::AtomicPrimitive). The
+//! implement [`AtomicPrimitive`]. The
 //! methods of all traits accept and return values of type `Value`.
 //!
 //! Implementations must always return zero upon a read operation when the bit
 //! width is zero. The behavior of write operations in the same context is not
 //! defined.
 //!
-//! The derive macros from the
-//! [`value-traits`](https://crates.io/crates/value-traits) crate can be used to
-//! derive implementations of iterator and subslices for types that
+//! The derive macros from the [`value-traits`] crate can be used to derive
+//! implementations of iterator and subslices for types that
 //! implement [`BitFieldSlice`] and [`BitFieldSliceMut`].
 //!
 //! We provide implementations for vectors and slices of all primitive atomic
 //! and non-atomic unsigned integer types that view their elements as values
 //! with a bit width equal to that of the type. It is thus trivial to replace
 //! a slice of bits with a slice of a primitive integer type of the same width.
+//!
+//! [`value-traits`]: https://crates.io/crates/value-traits
+//! [fixed bit width]: BitWidth::bit_width
+//! [*slice by value*]: SliceByValue
+//! [`PrimitiveInteger::BITS`]: num_primitive::PrimitiveInteger::BITS
+//! [`AtomicPrimitive`]: atomic_primitive::AtomicPrimitive
 #![allow(clippy::result_unit_err)]
 use crate::{debug_assert_bounds, panic_if_out_of_bounds, panic_if_value, traits::Word};
 use ambassador::delegatable_trait;
@@ -69,8 +72,9 @@ pub trait BitWidth {
 /// A slice of bit fields of constant bit width.
 ///
 /// This trait combines [`SliceByValue`] and [`BitWidth`]. Additionally,
-/// it provides the method [`as_slice`](BitFieldSlice::as_slice) to
-/// access the backend of the slice.
+/// it provides the method [`as_slice`] to access the backend of the slice.
+///
+/// [`as_slice`]: BitFieldSlice::as_slice
 #[delegatable_trait]
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait BitFieldSlice: SliceByValue + BitWidth {
@@ -80,10 +84,11 @@ pub trait BitFieldSlice: SliceByValue + BitWidth {
 
 /// A mutable slice of bit fields of constant bit width.
 ///
-/// This trait combines [`BitFieldSlice`] and [`SliceByValueMut`]. Moreover, it
-/// provides reset methods and the method
-/// [`as_mut_slice`](BitFieldSliceMut::as_mut_slice) to mutate the backend of
-/// the slice.
+/// This trait combines [`BitFieldSlice`] and [`SliceByValueMut`]. Moreover,
+/// it provides reset methods and the method [`as_mut_slice`] to mutate the
+/// backend of the slice.
+///
+/// [`as_mut_slice`]: BitFieldSliceMut::as_mut_slice
 ///
 /// Note that this trait does **not** require `Value: Word` in its supertrait
 /// bounds; individual implementations or callers that need [`Word`] operations
@@ -151,7 +156,9 @@ impl<A: PrimitiveAtomicUnsigned, const N: usize> AtomicBitWidth for [A; N] {
 /// supporting atomic operations.
 ///
 /// Different implementations might provide different atomicity guarantees. See
-/// [`BitFieldVec`](crate::bits::bit_field_vec::BitFieldVec) for an example.
+/// [`BitFieldVec`] for an example.
+///
+/// [`BitFieldVec`]: crate::bits::bit_field_vec::BitFieldVec
 #[autoimpl(for<T: trait + ?Sized> &mut T, Box<T>)]
 pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBitWidth {
     /// See [`slice::len`].
@@ -165,14 +172,18 @@ pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBi
     /// Returns the value at the specified index.
     ///
     /// # Safety
-    /// `index` must be in [0..[len](SliceByValue::len)).
+    /// `index` must be in [0..[len]).
     /// No bound or bit-width check is performed.
+    ///
+    /// [len]: SliceByValue::len
     unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> A::Value;
 
     /// Returns the value at the specified index.
     ///
     /// # Panics
-    /// May panic if the index is not in [0..[len](SliceByValue::len))
+    /// May panic if the index is not in [0..[len])
+    ///
+    /// [len]: SliceByValue::len
     fn get_atomic(&self, index: usize, order: Ordering) -> A::Value {
         panic_if_out_of_bounds!(index, self.len());
         unsafe { self.get_atomic_unchecked(index, order) }
@@ -181,16 +192,20 @@ pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBi
     /// Sets the element of the slice at the specified index.
     ///
     /// # Safety
-    /// - `index` must be in [0..[len](SliceByValue::len));
+    /// - `index` must be in [0..[len]);
     /// - `value` must fit within [`BitWidth::bit_width`] bits.
+    ///
+    /// [len]: SliceByValue::len
     ///
     /// No bound or bit-width check is performed.
     unsafe fn set_atomic_unchecked(&self, index: usize, value: A::Value, order: Ordering);
 
     /// Sets the element of the slice at the specified index.
     ///
-    /// May panic if the index is not in [0..[len](SliceByValue::len))
+    /// May panic if the index is not in [0..[len])
     /// or the value does not fit in [`AtomicBitWidth::atomic_bit_width`] bits.
+    ///
+    /// [len]: SliceByValue::len
     fn set_atomic(&self, index: usize, value: A::Value, order: Ordering) {
         panic_if_out_of_bounds!(index, self.len());
         let bw = self.atomic_bit_width();
@@ -215,8 +230,9 @@ pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBi
 
     /// Sets all values to zero using a parallel implementation.
     ///
-    /// See [`reset_atomic`](AtomicBitFieldSlice::reset_atomic) for more
-    /// details.
+    /// See [`reset_atomic`] for more details.
+    ///
+    /// [`reset_atomic`]: AtomicBitFieldSlice::reset_atomic
     #[cfg(feature = "rayon")]
     fn par_reset_atomic(&mut self, order: Ordering);
 }

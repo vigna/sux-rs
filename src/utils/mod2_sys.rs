@@ -30,7 +30,9 @@ pub struct Modulo2Equation<W: Word = usize> {
     c: W,
 }
 
-/// A system of [equations](struct.Modulo2Equation.html).
+/// A system of [equations].
+///
+/// [equations]: struct.Modulo2Equation.html
 #[derive(Clone, Debug)]
 pub struct Modulo2System<W: Word = usize> {
     /// The number of variables.
@@ -217,8 +219,7 @@ impl<W: Word> Modulo2System<W> {
         Ok(solution)
     }
 
-    /// Builds the data structures needed for [lazy Gaussian
-    /// elimination](https://doi.org/10.1016/j.ic.2020.104517).
+    /// Builds the data structures needed for [lazy Gaussian elimination].
     ///
     /// This method returns the variable-to-equation mapping, the weight of each
     /// variable (the number of equations in which it appears), and the priority
@@ -226,6 +227,8 @@ impl<W: Word> Modulo2System<W> {
     /// variable-to-equation mapping is materialized as a vector of mutable
     /// slices, each of which points inside a provided backing vector. This
     /// approach greatly reduces the number of allocations.
+    ///
+    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     fn setup<'a>(
         &self,
         backing: &'a mut Vec<usize>,
@@ -261,8 +264,9 @@ impl<W: Word> Modulo2System<W> {
         (var_to_eq, weight, priority)
     }
 
-    /// Solves the system using [lazy Gaussian
-    /// elimination](https://doi.org/10.1016/j.ic.2020.104517).
+    /// Solves the system using [lazy Gaussian elimination].
+    ///
+    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     pub fn lazy_gaussian_elimination(&mut self) -> Result<Vec<W>> {
         let num_vars = self.num_vars;
         let num_equations = self.equations.len();

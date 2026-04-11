@@ -16,11 +16,9 @@
 //!
 //! # Indexed dictionaries
 //!
-//! An indexed dictionary maps [integer indices to
-//! values](crate::traits::IndexedSeq), possibly supporting
-//! [lookups](crate::traits::IndexedDict) and
-//! [predecessor](crate::traits::Pred)/[successor](crate::traits::Succ) queries.
-//! The main structures are:
+//! An indexed dictionary maps [integer indices to values], possibly
+//! supporting [lookups] and [predecessor]/[successor] queries. The main
+//! structures are:
 //!
 //! - [`EliasFano`]: A compact representation of monotone integer sequences,
 //!   supporting efficient access, successor, and predecessor queries.
@@ -28,13 +26,19 @@
 //!   immutable lists of strings or byte sequences with random access.
 //! - [`MappedRearCodedListStr`] / [`MappedRearCodedListSliceU8`]: Rear-coded
 //!   lists with element reordering for better compression.
-//! - [`SignedFunc`](crate::func::signed::SignedFunc):
-//!   [Functions](crate::func) verified by hash signatures.
+//! - [`SignedFunc`]: [Functions] verified by hash signatures.
 //! - [`SliceSeq`]: Adapters exposing slice references as indexed sequences.
 //!
-//! Most structures implement the
-//! [`TryIntoUnaligned`](crate::traits::TryIntoUnaligned) trait, allowing them
+//! Most structures implement the [`TryIntoUnaligned`] trait, allowing them
 //! to be converted into (usually faster) structures using unaligned access.
+//!
+//! [integer indices to values]: crate::traits::IndexedSeq
+//! [lookups]: crate::traits::IndexedDict
+//! [predecessor]: crate::traits::Pred
+//! [successor]: crate::traits::Succ
+//! [`SignedFunc`]: crate::func::signed::SignedFunc
+//! [Functions]: crate::func
+//! [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 
 pub mod elias_fano;
 pub use elias_fano::{
