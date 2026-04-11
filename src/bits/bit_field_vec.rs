@@ -247,6 +247,7 @@ impl<B: Backend<Word: Word>> BitFieldVec<B> {
     /// `len` * `bit_width` must be between 0 (included) and the number of
     /// bits in `bits` (included).
     #[inline(always)]
+    #[must_use]
     pub unsafe fn from_raw_parts(bits: B, bit_width: usize, len: usize) -> Self {
         Self {
             bits,
@@ -401,6 +402,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {}
 
 impl<W: Word> BitFieldVec<Vec<W>> {
     /// Creates a new zero-initialized vector of given bit width and length.
+    #[must_use]
     pub fn new(bit_width: usize, len: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
         let n_of_words = Ord::max(1, (len * bit_width).div_ceil(W::BITS as usize));
@@ -414,6 +416,7 @@ impl<W: Word> BitFieldVec<Vec<W>> {
 
     /// Creates an empty vector that doesn't need to reallocate for up to
     /// `capacity` elements.
+    #[must_use]
     pub fn with_capacity(bit_width: usize, capacity: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
         let n_of_words = Ord::max(1, (capacity * bit_width).div_ceil(W::BITS as usize));
@@ -1378,6 +1381,7 @@ impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>>> AtomicBitFieldVec<B
     /// `len` * `bit_width` must be between 0 (included) and the number of
     /// bits in `bits` (included).
     #[inline(always)]
+    #[must_use]
     pub unsafe fn from_raw_parts(bits: B, bit_width: usize, len: usize) -> Self {
         Self {
             bits,
@@ -1411,6 +1415,7 @@ impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>>
 }
 
 impl<A: PrimitiveAtomicUnsigned<Value: Word>> AtomicBitFieldVec<Vec<A>> {
+    #[must_use]
     pub fn new(bit_width: usize, len: usize) -> AtomicBitFieldVec<Vec<A>> {
         // we need at least two words to avoid branches in the gets
         let n_of_words = Ord::max(1, (len * bit_width).div_ceil(A::Value::BITS as usize));

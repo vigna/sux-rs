@@ -615,29 +615,17 @@ mod build {
         }
     }
 
-    /// Returns the byte position of the first mismatch between two byte
-    /// slices, or the length of the shorter slice if one is a prefix of
-    /// the other. Uses `chunks_exact` to enable SIMD auto-vectorization.
-    #[inline]
-    pub(crate) fn mismatch(xs: &[u8], ys: &[u8]) -> usize {
-        let off = std::iter::zip(xs.chunks_exact(128), ys.chunks_exact(128))
-            .take_while(|(x, y)| x == y)
-            .count()
-            * 128;
-        off + std::iter::zip(&xs[off..], &ys[off..])
-            .take_while(|(x, y)| x == y)
-            .count()
-    }
+    use crate::utils::lcp_len;
 
     /// Returns the number of leading bits that are identical in two byte
     /// slices, after conceptually appending a NUL byte to each. Since keys
     /// must not contain NUL, two distinct prefix-related strings are
     /// guaranteed to diverge at the NUL position.
     ///
-    /// The implementation first compares the string bytes (using vectorized
-    /// [`mismatch`]). If one string is a prefix of the other, the virtual
-    /// NUL (0x00) XOR the next byte of the longer string yields that byte
-    /// itself, and `leading_zeros` gives the additional shared bits.
+    /// The implementation first compares the string bytes (using the
+    /// vectorized [`lcp_len`]). If one string is a prefix of the other, the
+    /// virtual NUL (0x00) XOR the next byte of the longer string yields that
+    /// byte itself, and `leading_zeros` gives the additional shared bits.
     ///
     /// If `DISTINCT` is `true`, the two strings are assumed to be distinct
     /// and the identical-string case is skipped (calling with identical
@@ -647,7 +635,7 @@ mod build {
     /// virtual NUL).
     pub(crate) fn lcp_bits_nul<const DISTINCT: bool>(a: &[u8], b: &[u8]) -> usize {
         let min_len = a.len().min(b.len());
-        let pos = mismatch(&a[..min_len], &b[..min_len]);
+        let pos = lcp_len(&a[..min_len], &b[..min_len]);
 
         if pos < min_len {
             // Mismatch within the common part — fast path.

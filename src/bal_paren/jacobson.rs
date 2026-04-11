@@ -19,7 +19,7 @@
 //!
 //! [Space-efficient static trees and graphs]: https://ieeexplore.ieee.org/abstract/document/63533
 
-use std::ops::Index;
+use std::ops::{Deref, Index};
 
 use crate::ambassador_impl_Index;
 use crate::traits::ambassador_impl_Backend;
@@ -448,6 +448,7 @@ impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B> {
     /// # Panics
     ///
     /// Panics if the parentheses are not balanced.
+    #[must_use]
     pub fn new(paren: B) -> Self {
         let (ef_positions, matches) = build_pioneers(&paren);
         let min_offset = matches.iter().copied().min().unwrap_or(0);
@@ -475,6 +476,7 @@ impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B, EfDict<usize>, BitFieldV
     /// # Panics
     ///
     /// Panics if the parentheses are not balanced.
+    #[must_use]
     pub fn new_with_bit_field_vec(paren: B) -> Self {
         let (ef_positions, opening_pioneer_matches) = build_pioneers(&paren);
 
@@ -513,6 +515,7 @@ impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B, EfDict<usize>, PrefixSum
     /// # Panics
     ///
     /// Panics if the parentheses are not balanced.
+    #[must_use]
     pub fn new_with_prefix_sum(paren: B) -> Self {
         let (ef_positions, matches) = build_pioneers(&paren);
         let offsets = PrefixSumIntList::new(&matches);
@@ -558,6 +561,15 @@ impl<B, P, O> JacobsonBalParen<B, P, O> {
             pioneer_positions: self.pioneer_positions,
             pioneer_match_offsets: func(self.pioneer_match_offsets),
         }
+    }
+}
+
+impl<B, P, O> Deref for JacobsonBalParen<B, P, O> {
+    type Target = B;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.paren
     }
 }
 

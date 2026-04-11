@@ -111,6 +111,7 @@ impl PrefixSumIntList {
     /// assert_eq!(list.index_value(2), 4);
     /// assert_eq!(list.prefix_sum(5), 14);
     /// ```
+    #[must_use]
     pub fn new<I: ?Sized>(values: &I) -> Self
     where
         for<'a> &'a I: IntoIterator<Item = &'a usize>,

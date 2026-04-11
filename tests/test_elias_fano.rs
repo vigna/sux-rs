@@ -218,7 +218,7 @@ fn test_too_many_values() {
 fn test_too_few_values() {
     let mut efb = EliasFanoBuilder::new(2, 10u64);
     efb.push(0);
-    efb.build();
+    let _ = efb.build();
 }
 
 #[test]

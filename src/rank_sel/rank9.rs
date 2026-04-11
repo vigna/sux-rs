@@ -185,6 +185,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength> Rank9<B, Box<[BlockC
     /// # Panics
     ///
     /// Compile-time panic if `B::Word` is not a 64-bit type.
+    #[must_use]
     pub fn new(bits: B) -> Self {
         const { assert!(size_of::<B::Word>() == 8, "Rank9 requires 64-bit words") }
         let num_bits = bits.len();

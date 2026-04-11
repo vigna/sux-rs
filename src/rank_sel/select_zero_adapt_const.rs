@@ -268,6 +268,7 @@ impl<
     /// See [`SelectAdaptConst::new`].
     ///
     /// [`SelectAdaptConst::new`]: super::SelectAdaptConst::new
+    #[must_use]
     pub fn new(bits: B) -> Self {
         assert_inventory_length(bits.len());
         let num_ones = bits.count_zeros();

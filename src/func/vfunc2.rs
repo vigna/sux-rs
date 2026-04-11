@@ -125,6 +125,7 @@ impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, F: ShardEdge<S, 3>>
     /// With `escape = 0`, the short function always returns the escape,
     /// so `get` always queries the long function (which returns zero
     /// since both internal [`VFunc`]s are empty).
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             short: VFunc::empty(),

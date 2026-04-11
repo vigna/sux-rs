@@ -872,6 +872,7 @@ fn memcmp(string: &[u8], data: &[u8]) -> core::cmp::Ordering {
 
 impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
     /// Creates a builder for a rear-coded list with a block size of `ratio`.
+    #[must_use]
     pub fn new(ratio: usize) -> Self {
         Self {
             data: Vec::with_capacity(1024),
@@ -1048,6 +1049,7 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
 
 impl<const SORTED: bool> RearCodedListBuilder<str, SORTED> {
     /// Builds a rear-coded list of strings.
+    #[must_use]
     pub fn build(self) -> RearCodedListStr<SORTED> {
         RearCodedList {
             data: self.data.into(),
@@ -1062,6 +1064,7 @@ impl<const SORTED: bool> RearCodedListBuilder<str, SORTED> {
 
 impl<const SORTED: bool> RearCodedListBuilder<[u8], SORTED> {
     /// Builds a rear-coded list of slices of bytes (`[u8]`).
+    #[must_use]
     pub fn build(self) -> RearCodedListSliceU8<SORTED> {
         RearCodedList {
             data: self.data.into(),
@@ -1134,12 +1137,7 @@ impl<I: ?Sized + AsRef<[u8]>, const SORTED: bool> RearCodedListBuilder<I, SORTED
 /// Computes the longest common prefix between two slices of bytes.
 fn longest_common_prefix(a: &[u8], b: &[u8]) -> (usize, core::cmp::Ordering) {
     let min_len = a.len().min(b.len());
-    // normal lcp computation
-    let mut i = 0;
-    while i < min_len && a[i] == b[i] {
-        i += 1;
-    }
-    // TODO!: try to optimize with vpcmpeqb pextrb and leading count ones
+    let i = crate::utils::lcp_len(&a[..min_len], &b[..min_len]);
     if i < min_len {
         (i, a[i].cmp(&b[i]))
     } else {
@@ -1409,8 +1407,11 @@ mod epserde_impl {
                         Some(byte)
                     }
 
-                    Err(_e) => {
-                        panic!("Error while serializing RearCodedList")
+                    Err(e) => {
+                        panic!(
+                            "Error while iterating the underlying lender \
+                             during RearCodedList serialization: {e}"
+                        )
                     }
                 }
             }

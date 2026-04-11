@@ -234,6 +234,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     /// See [`SelectAdapt::new`].
     ///
     /// [`SelectAdapt::new`]: super::SelectAdapt::new
+    #[must_use]
     pub fn new(bits: B) -> Self {
         Self::with_span(
             bits,
@@ -247,6 +248,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     /// See [`SelectAdapt::with_span`].
     ///
     /// [`SelectAdapt::with_span`]: super::SelectAdapt::with_span
+    #[must_use]
     pub fn with_span(
         bits: B,
         target_inventory_span: usize,

@@ -129,6 +129,7 @@ impl<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64>> FairChunks<I> {
     /// * `num_weights` - The number of weights.
     ///
     /// * `max_weight` - The last element of the cumulative weight function.
+    #[must_use]
     pub fn new_with(target_weight: u64, cwf: I, num_weights: usize, max_weight: u64) -> Self {
         Self {
             target_weight,
@@ -159,6 +160,7 @@ impl<I: for<'a> Succ<Input = u64, Output<'a> = u64> + IndexedSeq> FairChunks<I> 
     /// * `target_weight` - The target weight of the chunks.
     ///
     /// * `cwf` - The cumulative weight function.
+    #[must_use]
     pub fn new(target_weight: u64, cwf: I) -> Self {
         let len = cwf.len();
         let max_weight = if len == 0 { 0 } else { cwf.get(len - 1) };

@@ -133,6 +133,7 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
     /// assert_eq!(list.len(), 3);
     /// assert_eq!(list.index_value(1), 5);
     /// ```
+    #[must_use]
     pub fn new<I: ?Sized>(min: V, values: &I) -> Self
     where
         for<'a> &'a I: IntoIterator<Item = &'a V>,

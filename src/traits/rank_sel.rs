@@ -558,6 +558,7 @@ impl<B> AddNumBits<B> {
     /// `number_of_ones` must be the actual number of ones in `bits`. No
     /// validation is performed to verify this invariant.
     #[inline(always)]
+    #[must_use]
     pub const unsafe fn from_raw_parts(bits: B, number_of_ones: usize) -> Self {
         Self {
             bits,

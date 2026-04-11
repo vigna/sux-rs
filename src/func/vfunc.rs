@@ -98,6 +98,7 @@ impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc<K, BitFieldVec<Box<[W
     /// This is safe because [`BitFieldVec::new(0, 0)`] allocates one
     /// word and `get_value_unchecked` with bit width 0 always reads
     /// index 0 and masks with 0.
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             shard_edge: E::default(),

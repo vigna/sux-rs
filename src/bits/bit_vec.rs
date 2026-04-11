@@ -281,6 +281,7 @@ impl<B> BitVec<B> {
     /// `len` must be between 0 (included) and the number of
     /// bits in `bits` (included).
     #[inline(always)]
+    #[must_use]
     pub const unsafe fn from_raw_parts(bits: B, len: usize) -> Self {
         Self { bits, len }
     }
@@ -307,11 +308,13 @@ impl<B> BitVec<B> {
 
 impl<W: Word> BitVec<Vec<W>> {
     /// Creates a new bit vector of length `len` initialized to `false`.
+    #[must_use]
     pub fn new(len: usize) -> Self {
         Self::with_value(len, false)
     }
 
     /// Creates a new bit vector of length `len` initialized to `value`.
+    #[must_use]
     pub fn with_value(len: usize, value: bool) -> Self {
         let bits_per_word = W::BITS as usize;
         let n_of_words = len.div_ceil(bits_per_word);
@@ -329,6 +332,7 @@ impl<W: Word> BitVec<Vec<W>> {
     ///
     /// Note that the capacity will be rounded up to a multiple of the word
     /// size.
+    #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         let bits_per_word = W::BITS as usize;
         let n_of_words = capacity.div_ceil(bits_per_word);
@@ -782,6 +786,7 @@ impl<B> AtomicBitVec<B> {
     /// `len` must be between 0 (included) and the number of
     /// bits in `bits` (included).
     #[inline(always)]
+    #[must_use]
     pub const unsafe fn from_raw_parts(bits: B, len: usize) -> Self {
         Self { bits, len }
     }
@@ -794,11 +799,13 @@ impl<B> AtomicBitVec<B> {
 
 impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + From<Vec<B::Word>>> AtomicBitVec<B> {
     /// Creates a new atomic bit vector of length `len` initialized to `false`.
+    #[must_use]
     pub fn new(len: usize) -> Self {
         Self::with_value(len, false)
     }
 
     /// Creates a new atomic bit vector of length `len` initialized to `value`.
+    #[must_use]
     pub fn with_value(len: usize, value: bool) -> Self {
         let bits_per_word = <B::Word as PrimitiveAtomic>::Value::BITS as usize;
         let n_of_words = len.div_ceil(bits_per_word);

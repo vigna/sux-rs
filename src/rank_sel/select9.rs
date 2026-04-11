@@ -192,6 +192,7 @@ impl<
     /// # Panics
     ///
     /// Compile-time panic if `B::Word` is not a 64-bit type.
+    #[must_use]
     pub fn new(rank9: Rank9<B, C>) -> Self {
         const { assert!(size_of::<B::Word>() == 8, "Select9 requires 64-bit words") }
         let num_bits = rank9.len();

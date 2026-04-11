@@ -528,6 +528,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
     ///
     /// [default values]: SelectAdapt
+    #[must_use]
     pub fn new(bits: B) -> Self {
         Self::with_span(
             bits,
@@ -563,6 +564,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     ///
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
     /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
+    #[must_use]
     pub fn with_span(
         bits: B,
         target_inventory_span: usize,

@@ -19,6 +19,8 @@
 //! - [`transmute_vec_into_atomic`] / [`transmute_vec_from_atomic`]: safe
 //!   transmutation between non-atomic and atomic vectors.
 //! - [`prefetch_index`]: cache-line prefetching for indexed data structures.
+//! - [`lcp_len`]: SIMD-friendly length of the longest common prefix between
+//!   two byte slices.
 
 use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic};
 use num_primitive::PrimitiveUnsigned;
@@ -200,6 +202,23 @@ impl SeedableRng for Mwc192 {
             c: 1,
         }
     }
+}
+
+/// Returns the length of the longest common prefix (in bytes) between two
+/// byte slices. This is the byte position of the first mismatch, or the
+/// length of the shorter slice if one is a prefix of the other.
+///
+/// Uses `chunks_exact(128)` to enable SIMD auto-vectorization in the common
+/// case where both slices share a long common prefix.
+#[inline]
+pub fn lcp_len(xs: &[u8], ys: &[u8]) -> usize {
+    let off = std::iter::zip(xs.chunks_exact(128), ys.chunks_exact(128))
+        .take_while(|(x, y)| x == y)
+        .count()
+        * 128;
+    off + std::iter::zip(&xs[off..], &ys[off..])
+        .take_while(|(x, y)| x == y)
+        .count()
 }
 
 /// Prefetches the cache line containing (the first byte of) `data[index]` into

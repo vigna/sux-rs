@@ -222,7 +222,7 @@ Union nor the Italian MUR can be held responsible for them.
 [serde]: https://crates.io/crates/serde/
 [`deko`]: https://crates.io/crates/deko/
 [`lenders`]: https://docs.rs/sux/latest/sux/utils/lenders/
-[signed minimal perfect hash functions]: https://docs.rs/sux/latest/sux/dict/signed_vfunc/struct.SignedVFunc.html
+[signed minimal perfect hash functions]: https://docs.rs/sux/latest/sux/func/signed/struct.SignedVFunc.html
 [lists]: https://docs.rs/sux/latest/sux/list/index.html
 [compressed lists of integers]: https://docs.rs/sux/latest/sux/list/comp_int_list/struct.CompIntList.html
 [`AsRef<Backend:Word>`]: https://doc.rust-lang.org/core/convert/trait.AsRef.html

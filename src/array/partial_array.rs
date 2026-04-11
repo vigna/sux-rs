@@ -128,6 +128,7 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
     }
 
     /// Builds the immutable dense partial array.
+    #[must_use]
     pub fn build(self) -> PartialArray<T, Rank9<BitVec<Box<[u64]>>>> {
         let (bit_vec, values) = (self.builder, self.values);
         let rank9 = Rank9::new(bit_vec);
@@ -201,6 +202,7 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
     }
 
     /// Builds the immutable sparse partial array.
+    #[must_use]
     pub fn build(self) -> PartialArray<T, SparseIndex<Box<[usize]>>> {
         let (builder, values) = (self.builder, self.values);
         let ef_dict = builder.build_with_dict();

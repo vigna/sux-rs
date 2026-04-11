@@ -35,6 +35,8 @@ use std::ops::Index;
 /// A selection structure over [`RankSmall`] using negligible additional space
 /// and providing constant-time selection.
 ///
+/// # Implementation details
+///
 /// [`SelectSmall`] adds a very sparse first-level inventory to a [`RankSmall`]
 /// structure to locate approximately the position of the desired one; the bit
 /// is then located using binary searches over [`RankSmall`]'s counters; this
@@ -42,11 +44,17 @@ use std::ops::Index;
 /// Implementation of Rank/Select Queries]”.
 ///
 /// The resulting selection methods are quite slow, and in general it is
-/// convenient and faster to use [`SelectAdapt`], even with `M` set to 1 (in
-/// which case the additional space is 1.5-3% of the original bit vector).
-/// However, when used in combination with [`RankSmall`], [`SelectSmall`] and
-/// [`SelectZeroSmall`] provide effective and almost ε-cost selection
+/// convenient and faster to use a sparse [`SelectAdapt`], with similar space
+/// usage. However, when used in combination with [`RankSmall`], [`SelectSmall`]
+/// and [`SelectZeroSmall`] provide effective and almost zero-cost selection
 /// structures.
+///
+/// The implementation uses a further trick from Piotr Beling's [`bsuccinct`]
+/// library: the first-level inventory is enriched with midpoint blocks that
+/// allow the binary search to start from a better initial position, reducing
+/// the number of steps and thus the query time. The midpoint blocks are stored
+/// in the high bits of the inventory entries, so they do not require additional
+/// space.
 ///
 /// This structure forwards several traits and [`Deref`]'s to its backend.
 ///
@@ -110,6 +118,7 @@ use std::ops::Index;
 /// ```
 ///
 /// [Broadword Implementation of Rank/Select Queries]: https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12
+/// [`bsuccinct`]: https://github.com/beling/bsuccinct-rs/
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -217,12 +226,14 @@ macro_rules! impl_rank_small_sel {
         {
             /// Creates a new selection structure with four [`RankSmall`]
             /// blocks per inventory on average.
+            #[must_use]
             pub fn new(small_counters: C) -> Self {
                 Self::with_inv(small_counters, 4)
             }
 
             /// Creates a new selection structure with a given number of
             /// [`RankSmall`] blocks per inventory on average.
+            #[must_use]
             pub fn with_inv(small_counters: C, blocks_per_inv: usize) -> Self {
                 let num_bits = small_counters.len();
                 let num_ones = small_counters.num_ones();
@@ -356,8 +367,7 @@ macro_rules! impl_rank_small_sel {
                     // Branchless: compute a mask that is all-ones in the second half
                     // and all-zeros in the first half, avoiding a ~50/50 branch that
                     // would cause systematic mispredictions.
-                    let second_half_mask =
-                        ((rank & half_ones != 0) as usize).wrapping_neg();
+                    let second_half_mask = ((rank & half_ones != 0) as usize).wrapping_neg();
                     let mut block_idx = if inv_upper_block_idx == upper_block_idx {
                         let inv_entry = *inventory.get_unchecked(inv_idx) as usize;
                         let base_block = inv_entry & Self::BLOCK_IDX_MASK;
@@ -369,7 +379,8 @@ macro_rules! impl_rank_small_sel {
                         // Since we know the rank is in upper block upper_block_idx, start
                         // from the beginning of that superblock.
                         0
-                    } + upper_block_idx * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE);
+                    } + upper_block_idx
+                        * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE);
 
                     // Prefetch all subblocks of the approximate target block now,
                     // so the bit-vector DRAM fetch can proceed in parallel with
@@ -402,7 +413,8 @@ macro_rules! impl_rank_small_sel {
                             // so we must include that block in the scan range.
                             next_base_block
                                 + 1
-                                + upper_block_idx * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE)
+                                + upper_block_idx
+                                    * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE)
                         } else {
                             (upper_block_idx + 1)
                                 * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE)

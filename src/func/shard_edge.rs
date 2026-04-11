@@ -381,7 +381,7 @@ mod mwhc {
             3 => (0.5
                 * (n.log2() + 1. + 3. * c.log2() - 3. * 3_f64.log2() + (-(1. - eta).ln()).log2()))
             .floor() as u32,
-            _ => unimplemented!(),
+            _ => unimplemented!("only arity 3 is supported, got {arity}"),
         }
     }
 
@@ -676,7 +676,7 @@ mod fuse {
                     }
                 }
 
-                _ => unimplemented!(),
+                _ => unimplemented!("only arity 3 is supported, got {arity}"),
             }
         }
 
@@ -691,7 +691,7 @@ mod fuse {
                     debug_assert!(n <= 2 * Self::HALF_MAX_LIN_SHARD_SIZE);
                     (0.85 * (n.max(1) as f64).ln()).floor().max(1.) as u32
                 }
-                _ => unimplemented!(),
+                _ => unimplemented!("only arity 3 is supported, got {arity}"),
             }
         }
 
@@ -719,7 +719,7 @@ mod fuse {
                     Self::A * n.ln() * n.ln().max(1.).ln() + Self::B
                 }
                 .floor() as u32,
-                _ => unimplemented!(),
+                _ => unimplemented!("only arity 3 is supported, got {arity}"),
             }
         }
 
@@ -740,7 +740,7 @@ mod fuse {
                         * (-n / (2. * c * (1. - eta).ln()) - 2. * Self::B).log2();
                     (n.log2() - subexpr / (2.0_f64.ln() * lambert_w0(subexpr))).floor() as u32
                 }
-                _ => unimplemented!(),
+                _ => unimplemented!("only arity 3 is supported, got {arity}"),
             }
         }
     }
@@ -905,7 +905,7 @@ mod fuse {
                     }
                 }
 
-                _ => unimplemented!(),
+                _ => unimplemented!("only arity 3 is supported, got {arity}"),
             }
         }
 
@@ -922,7 +922,7 @@ mod fuse {
                 {
                     (n.ln() / (3.33_f64).ln() + 2.25).floor() as u32
                 }
-                _ => unimplemented!(),
+                _ => unimplemented!("only arity 3 is supported, got {arity}"),
             }
         }
 

@@ -64,6 +64,9 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// these counters will be very few, their additional space is negligible,
 /// and they will usually be accessed without cache misses.
 ///
+/// On some recent architecture, versions of this family are almost as fast as
+/// [`Rank9`] (and sometimes faster).
+///
 /// An associated family of selection structures is provided by
 /// [`SelectSmall`] and [`SelectZeroSmall`]
 ///
@@ -74,7 +77,12 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// The [`RankSmall`] variants are parameterized by the number of 32-bit words
 /// per block and by the size of the relative counters. Only certain
 /// combinations are possible, and to simplify construction we provide a
-/// [`rank_small`] macro that selects the correct combination.
+/// [`rank_small`] macro that selects the correct combination. usually
+/// the default form of the macro is just what you need.
+///
+/// This structure forwards several traits and [`Deref`]'s to its backend.
+///
+/// # Implementation details
 ///
 /// [`rank_small`]: crate::rank_small
 ///
@@ -127,8 +135,6 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// [`poppy`], but instead of storing counters and rebuilding cumulative
 /// counters on the fly it stores the cumulative counters directly using
 /// implicit zero extension, as in [`Rank9`].
-///
-/// This structure forwards several traits and [`Deref`]'s to its backend.
 ///
 /// # Examples
 ///
@@ -592,6 +598,7 @@ macro_rules! impl_rank_small {
             /// Creates a new RankSmall structure from a given bit vector.
             ///
             /// Compile-time panic if `B::Word` does not match the expected word size.
+            #[must_use]
             pub fn new(bits: B) -> Self {
                 const {
                     assert!(

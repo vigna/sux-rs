@@ -173,12 +173,14 @@ macro_rules! impl_select_zero_small {
         {
             /// Creates a new selection structure with four [`RankSmall`]
             /// blocks per inventory on average.
+            #[must_use]
             pub fn new(small_counters: C) -> Self {
                 Self::with_inv(small_counters, 4)
             }
 
             /// Creates a new selection structure with a given number of
             /// [`RankSmall`] blocks per inventory on average.
+            #[must_use]
             pub fn with_inv(small_counters: C, blocks_per_inv: usize) -> Self {
                 let num_bits = small_counters.len();
                 let num_ones = small_counters.len() - small_counters.num_ones();

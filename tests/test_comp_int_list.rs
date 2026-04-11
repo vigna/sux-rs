@@ -116,5 +116,5 @@ fn test_empty() {
 #[should_panic(expected = "lower bound")]
 fn test_value_below_min_panics() {
     let values = vec![0usize, 1, 2];
-    CompIntList::new(1, &values);
+    let _ = CompIntList::new(1, &values);
 }

@@ -31,6 +31,7 @@ impl<O: PartialEq<usize> + PartialEq + Copy, A: AsRef<[O]>> SliceSeq<O, A>
 where
     usize: PartialEq<O>,
 {
+    #[must_use]
     pub fn new(slice: A) -> Self {
         Self(slice, std::marker::PhantomData)
     }

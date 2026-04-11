@@ -2058,6 +2058,7 @@ impl<V: Word + PrimitiveNumberAs<u128>> EliasFanoBuilder<V> {
     /// # Panics
     ///
     /// When any of the underlying structures would exceed `usize` in length.
+    #[must_use]
     pub fn new(n: usize, u: V) -> Self {
         let n_u128 = n as u128;
         let u_u128: u128 = u.as_to();
@@ -2142,6 +2143,7 @@ impl<V: Word + PrimitiveNumberAs<u128>> EliasFanoBuilder<V> {
     /// [`build_with_seq_and_dict`]: EliasFanoBuilder::build_with_seq_and_dict
     /// [`build_with_dict`]: EliasFanoBuilder::build_with_dict
     /// [`build_with_seq`]: EliasFanoBuilder::build_with_seq
+    #[must_use]
     pub fn build(self) -> EliasFano<V> {
         assert!(
             self.count == self.n,
@@ -2169,6 +2171,7 @@ impl<V: Word + PrimitiveNumberAs<usize>> EliasFanoBuilder<V> {
     ///
     /// The resulting structure implements [`IndexedSeq`], but not
     /// [`IndexedDict`], [`Succ`], or [`Pred`].
+    #[must_use]
     pub fn build_with_seq(self) -> EfSeq<V> {
         let ef = self.build();
         unsafe { ef.map_high_bits(SelectAdaptConst::<_, _, 12, 3>::new) }
@@ -2179,6 +2182,7 @@ impl<V: Word + PrimitiveNumberAs<usize>> EliasFanoBuilder<V> {
     ///
     /// The resulting structure implements [`IndexedDict`], [`Succ`], and
     /// [`Pred`], but not [`IndexedSeq`].
+    #[must_use]
     pub fn build_with_dict(self) -> EfDict<V> {
         let ef = self.build();
         unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _, 12, 3>::new) }
@@ -2189,6 +2193,7 @@ impl<V: Word + PrimitiveNumberAs<usize>> EliasFanoBuilder<V> {
     ///
     /// The resulting structure implements [`IndexedDict`], [`Succ`],
     /// [`Pred`], and [`IndexedSeq`].
+    #[must_use]
     pub fn build_with_seq_and_dict(self) -> EfSeqDict<V> {
         let ef = self.build();
         unsafe {
@@ -2252,6 +2257,7 @@ where
 {
     /// Creates a concurrent builder for a sequence containing `n` numbers
     /// smaller than or equal to `u`.
+    #[must_use]
     pub fn new(n: usize, u: V) -> Self {
         let n_u128 = n as u128;
         let u_u128: u128 = u.as_to();
@@ -2314,6 +2320,7 @@ where
     /// [`build_with_seq_and_dict`]: EliasFanoConcurrentBuilder::build_with_seq_and_dict
     /// [`build_with_dict`]: EliasFanoConcurrentBuilder::build_with_dict
     /// [`build_with_seq`]: EliasFanoConcurrentBuilder::build_with_seq
+    #[must_use]
     pub fn build(self) -> EliasFano<V> {
         let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
         let low_bits: BitFieldVec<Vec<V>> = self.low_bits.into();
@@ -2365,6 +2372,7 @@ where
     ///
     /// The resulting structure implements [`IndexedSeq`], but not [`IndexedDict`],
     /// [`Succ`], or [`Pred`].
+    #[must_use]
     pub fn build_with_seq(self) -> EfSeq<V> {
         let ef = self.build();
         unsafe { ef.map_high_bits(SelectAdaptConst::<_, _, 12, 3>::new) }
@@ -2375,6 +2383,7 @@ where
     ///
     /// The resulting structure implements [`IndexedDict`], [`Succ`],
     /// and [`Pred`], but not [`IndexedSeq`].
+    #[must_use]
     pub fn build_with_dict(self) -> EfDict<V> {
         let ef = self.build();
         unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _, 12, 3>::new) }
@@ -2385,6 +2394,7 @@ where
     ///
     /// The resulting structure implements [`IndexedDict`], [`Succ`],
     /// [`Pred`], and [`IndexedSeq`].
+    #[must_use]
     pub fn build_with_seq_and_dict(self) -> EfSeqDict<V> {
         let ef = self.build();
         unsafe {
