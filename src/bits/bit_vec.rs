@@ -153,6 +153,11 @@ pub struct BitVec<B = Vec<usize>> {
 ///
 /// [`vec!`]: vec!
 ///
+/// By default, the underlying storage is `Vec<usize>`. An explicit word type
+/// `W` can be selected by prepending `W:` to any form, producing a
+/// [`BitVec<Vec<W>>`]; this is useful, for example, to obtain a reproducible
+/// layout across platforms with different pointer widths.
+///
 /// - `bit_vec![]` creates an empty bit vector.
 ///
 /// - `bit_vec![false; n]` or `bit_vec![0; n]` creates a bit vector of length
@@ -162,8 +167,13 @@ pub struct BitVec<B = Vec<usize>> {
 ///   with all bits set to `true`.
 ///
 /// - `bit_vec![b₀, b₁, b₂, …]` creates a bit vector with the specified bits,
-///   where each `bᵢ` can be any expression that evaluates to a boolean or integer
-///   (0 for `false`, non-zero for `true`).
+///   where each `bᵢ` can be any expression that evaluates to a boolean or
+///   integer (0 for `false`, non-zero for `true`).
+///
+/// - `bit_vec![W]`, `bit_vec![W: false; n]`, `bit_vec![W: 0; n]`,
+///   `bit_vec![W: true; n]`, `bit_vec![W: 1; n]`, and
+///   `bit_vec![W: b₀, b₁, b₂, …]` are the same as the forms above, but
+///   backed by `Vec<W>` instead of `Vec<usize>`.
 ///
 /// # Examples
 ///
@@ -203,9 +213,9 @@ pub struct BitVec<B = Vec<usize>> {
 /// assert_eq!(b[5], false);
 ///
 /// // With explicit word type (useful for cross-platform code)
-/// let b = bit_vec![0, 1, 0, 1];
+/// let b = bit_vec![u32: 0, 1, 0, 1];
 /// assert_eq!(b.len(), 4);
-/// let b = bit_vec![false; 10];
+/// let b = bit_vec![u32: false; 10];
 /// assert_eq!(b.len(), 10);
 /// # }
 /// ```
