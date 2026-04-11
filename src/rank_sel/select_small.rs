@@ -180,6 +180,10 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
         _ => panic!("Unsupported number of u32s"),
     };
     const SUBBLOCK_BIT_SIZE: usize = Self::BLOCK_BIT_SIZE / Self::NUM_SUBBLOCKS;
+    /// Bits in each inventory `u32` used for the block index within the superblock.
+    /// The remaining high `COUNTER_WIDTH` bits store the midpoint-block delta.
+    const BLOCK_IDX_BITS: usize = 32 - COUNTER_WIDTH;
+    const BLOCK_IDX_MASK: usize = (1 << Self::BLOCK_IDX_BITS) - 1;
 
     /// Returns the underlying rank-small structure, consuming this structure.
     pub fn into_inner(self) -> C {
@@ -235,6 +239,12 @@ macro_rules! impl_rank_small_sel {
             fn _new(small_counters: C, num_ones: usize, log2_ones_per_inventory: usize) -> Self {
                 let bits_per_word = C::Word::BITS as usize;
                 let ones_per_inventory = 1 << log2_ones_per_inventory;
+                // half_ones is the midpoint within each inventory interval. We advance
+                // next_quantum by half_ones each step, alternating between primary and
+                // midpoint quantums. When ones_per_inventory == 1 (log2 == 0) half_ones
+                // is 0, so step falls back to 1 and no midpoints are recorded.
+                let half_ones = ones_per_inventory >> 1;
+                let step = half_ones.max(1);
 
                 let inventory_size = num_ones.div_ceil(ones_per_inventory);
                 let mut inventory = Vec::<u32>::with_capacity(inventory_size + 1);
@@ -258,12 +268,30 @@ macro_rules! impl_rank_small_sel {
                         while past_ones + ones_in_word > next_quantum {
                             let in_word_index = word.select_in_word(next_quantum - past_ones);
                             let in_superblock_index = i * bits_per_word + in_word_index;
-                            if first {
-                                inventory_begin.push(inventory.len());
-                                first = false;
+                            let block_in_superblock = in_superblock_index / Self::BLOCK_BIT_SIZE;
+
+                            if half_ones == 0 || next_quantum & half_ones == 0 {
+                                // Primary quantum: store the block index in the low
+                                // BLOCK_IDX_BITS bits; high COUNTER_WIDTH bits will be
+                                // filled when the midpoint quantum is encountered.
+                                if first {
+                                    inventory_begin.push(inventory.len());
+                                    first = false;
+                                }
+                                inventory.push(block_in_superblock as u32);
+                            } else {
+                                // Midpoint quantum: pack the delta (midpoint block minus
+                                // primary block) into the high COUNTER_WIDTH bits.
+                                let last = inventory.last_mut().unwrap();
+                                let delta =
+                                    block_in_superblock - (*last as usize & Self::BLOCK_IDX_MASK);
+                                debug_assert!(
+                                    delta < Self::BLOCK_BIT_SIZE,
+                                    "midpoint delta {delta} overflows COUNTER_WIDTH bits"
+                                );
+                                *last |= (delta as u32) << Self::BLOCK_IDX_BITS;
                             }
-                            inventory.push(in_superblock_index as u32);
-                            next_quantum += ones_per_inventory;
+                            next_quantum += step;
                         }
 
                         past_ones += ones_in_word;
@@ -321,21 +349,32 @@ macro_rules! impl_rank_small_sel {
                     let inv_idx = rank >> self.log2_ones_per_inventory;
                     let inv_upper_block_idx =
                         inventory_begin.linear_partition_point(|&x| x as usize <= inv_idx) - 1;
+                    // half_ones is ones_per_inventory / 2; rank & half_ones != 0 means
+                    // we are in the second half of the inventory interval, so we use the
+                    // stored midpoint block (base_block + mid_delta) as our starting point
+                    // and advance opt by half_ones accordingly.
+                    let half_ones = 1usize << self.log2_ones_per_inventory >> 1;
+                    // Branchless: compute a mask that is all-ones in the second half
+                    // and all-zeros in the first half, avoiding a ~50/50 branch that
+                    // would cause systematic mispredictions.
+                    let second_half_mask =
+                        ((rank & half_ones != 0) as usize).wrapping_neg();
                     let opt;
-                    let inv_pos = if inv_upper_block_idx == upper_block_idx {
-                        opt = (inv_idx << self.log2_ones_per_inventory) - upper_rank;
-                        *inventory.get_unchecked(inv_idx) as usize
-                            + upper_block_idx * Self::SUPERBLOCK_BIT_SIZE
+                    let mut block_idx = if inv_upper_block_idx == upper_block_idx {
+                        let inv_entry = *inventory.get_unchecked(inv_idx) as usize;
+                        let base_block = inv_entry & Self::BLOCK_IDX_MASK;
+                        let mid_delta = inv_entry >> Self::BLOCK_IDX_BITS;
+                        let primary_opt = (inv_idx << self.log2_ones_per_inventory) - upper_rank;
+                        opt = primary_opt + (half_ones & second_half_mask);
+                        base_block + (mid_delta & second_half_mask)
                     } else {
-                        // For extremely sparse and large bit vectors, the inventory entry containing
-                        // the rank could fall in previous upper blocks.
-                        // For this reason, inv_upper_block_idx is not necessarily equal to upper_block_idx.
-                        // Since we know for sure that the rank is in the upper block with index upper_block_idx,
-                        // we can safely use that value to compute inv_pos.
+                        // For extremely sparse and large bit vectors, the inventory entry
+                        // containing the rank could fall in a previous upper block.
+                        // Since we know the rank is in upper block upper_block_idx, start
+                        // from the beginning of that superblock.
                         opt = 0;
-                        upper_block_idx * Self::SUPERBLOCK_BIT_SIZE
-                    };
-                    let mut block_idx = inv_pos / Self::BLOCK_BIT_SIZE;
+                        0
+                    } + upper_block_idx * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE);
                     // cs-poppy micro-optimization: each block can contain at most
                     // Self::BLOCK_BIT_SIZE ones, so we can skip blocks to which the bit
                     // we are looking for cannot possibly belong.
@@ -375,9 +414,13 @@ macro_rules! impl_rank_small_sel {
                             .linear_partition_point(|&x| x as usize <= inv_idx + 1)
                             - 1;
                         last_block_idx = if next_inv_upper_block_idx == upper_block_idx {
-                            let next_inv_pos = *inventory.get_unchecked(inv_idx + 1) as usize
-                                + upper_block_idx * Self::SUPERBLOCK_BIT_SIZE;
-                            next_inv_pos.div_ceil(Self::BLOCK_BIT_SIZE)
+                            let next_base_block = (*inventory.get_unchecked(inv_idx + 1) as usize)
+                                & Self::BLOCK_IDX_MASK;
+                            // +1 because the next primary may be anywhere within next_base_block,
+                            // so we must include that block in the scan range.
+                            next_base_block
+                                + 1
+                                + upper_block_idx * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE)
                         } else {
                             (upper_block_idx + 1)
                                 * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE)
