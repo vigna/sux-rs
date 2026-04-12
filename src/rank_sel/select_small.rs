@@ -50,11 +50,11 @@ use std::ops::Index;
 /// structures.
 ///
 /// The implementation uses a further trick from Piotr Beling's [`bsuccinct`]
-/// library: the first-level inventory is enriched with midpoint blocks that
-/// allow the binary search to start from a better initial position, reducing
-/// the number of steps and thus the query time. The midpoint blocks are stored
-/// in the high bits of the inventory entries, so they do not require additional
-/// space.
+/// library: the first-level inventory uses a packed representation that stores
+/// the block index of the target bit and a further middle block position as an
+/// offset. Because of the sizes of the blocks and of the limitation to 2³²
+/// bits, these two values can be packed in 32 bits, doubling the frequency of
+/// the inventory without increasing its space usage.
 ///
 /// This structure forwards several traits and [`Deref`]'s to its backend.
 ///
