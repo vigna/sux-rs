@@ -422,7 +422,7 @@ impl HuffmanDecoder {
     /// Sets the branchy/branchless dispatch flag.
     ///
     /// Returns `&mut self` for chaining.
-    pub fn set_branchless(&mut self, branchless: bool) -> &mut Self {
+    pub fn branchless(&mut self, branchless: bool) -> &mut Self {
         self.branchless = branchless;
         self
     }

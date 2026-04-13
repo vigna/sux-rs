@@ -49,7 +49,7 @@
 //! [map_data]: CompIntList::map_data
 
 use crate::bits::bit_vec::{BitVec, BitVecU};
-use crate::bits::test_unaligned;
+use crate::bits::test_unaligned_any_pos;
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EfSeq;
 use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
@@ -147,7 +147,7 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
             let offset = v - min + V::ONE;
             let width = (offset.bit_len() - 1) as usize;
             total_bits += width as u64;
-            if !test_unaligned!(V, width) {
+            if !test_unaligned_any_pos!(V, width) {
                 all_widths_unaligned = false;
             }
             n += 1;

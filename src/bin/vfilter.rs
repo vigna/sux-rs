@@ -14,7 +14,7 @@ use epserde::ser::Serialize;
 use lender::FallibleLender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
-use sux::cli::ShardingArgs;
+use sux::cli::{BuilderArgs, ShardingArgs};
 use sux::dict::VFilter;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
@@ -46,27 +46,6 @@ struct Args {
     /// The number of bits of the hashes used by the filter.​
     #[arg(short, long, default_value_t = 8)]
     bits: usize,
-    /// Use this number of threads.​
-    #[arg(short, long)]
-    threads: Option<usize>,
-    /// Use disk-based buckets to reduce memory usage at construction time; providing the exact number of keys will speed up the construction.​
-    #[arg(short, long)]
-    offline: bool,
-    /// Sort shards and check for duplicate signatures.​
-    #[arg(short, long)]
-    check_dups: bool,
-    /// A 64-bit seed for the pseudorandom number generator.​
-    #[arg(long)]
-    seed: Option<u64>,
-    /// The target relative space overhead due to sharding.​
-    #[arg(long, default_value_t = 0.001)]
-    eps: f64,
-    /// Always use the low-mem peel-by-signature algorithm (slightly slower).​
-    #[arg(long)]
-    low_mem: bool,
-    /// Always use the high-mem peel-by-signature algorithm (slightly faster).​
-    #[arg(long, conflicts_with = "low_mem")]
-    high_mem: bool,
     /// Use slower edge logic reducing the probability of duplicate arcs for big
     /// shards.​
     #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
@@ -77,6 +56,8 @@ struct Args {
     mwhc: bool,
     #[clap(flatten)]
     sharding: ShardingArgs,
+    #[clap(flatten)]
+    builder: BuilderArgs,
 }
 
 macro_rules! fuse {
@@ -137,25 +118,9 @@ fn set_builder<D: Send + Sync, S, E: ShardEdge<S, 3>>(
     builder: VBuilder<D, S, E>,
     args: &Args,
 ) -> VBuilder<D, S, E> {
-    let mut builder = builder
-        .offline(args.offline)
-        .check_dups(args.check_dups)
-        .eps(args.eps);
+    let mut builder = args.builder.configure(builder);
     if let Some(n) = args.n {
         builder = builder.expected_num_keys(n);
-    }
-
-    if let Some(seed) = args.seed {
-        builder = builder.seed(seed);
-    }
-    if let Some(threads) = args.threads {
-        builder = builder.max_num_threads(threads);
-    }
-    if args.low_mem {
-        builder = builder.low_mem(true);
-    }
-    if args.high_mem {
-        builder = builder.low_mem(false);
     }
     builder
 }

@@ -35,7 +35,7 @@
 //! [`ShardEdge`]: crate::func::shard_edge::ShardEdge
 //! [`ToSig`]: crate::utils::ToSig
 
-use crate::bits::{BitFieldVec, BitVec, BitVecU};
+use crate::bits::{BitFieldVec, BitVec, BitVecU, ensure_unaligned_any_pos, test_unaligned_any_pos};
 use crate::func::VBuilder;
 use crate::func::codec::{Codec, Coder, Decoder, ESCAPE, Huffman, HuffmanCoder, HuffmanDecoder};
 use crate::func::shard_edge::{FuseLge3Shards, ShardEdge};
@@ -51,17 +51,6 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use value_traits::slices::SliceByValueMut;
-
-// ── Layout constants ────────────────────────────────────────────────
-//
-// CompVFunc uses a single large shard with fuse-graph structure, so
-// its `c` is bounded below by the fuse-graph peeling threshold. The
-// peel+LGE pipeline only closes a *small* unpeeled core efficiently,
-// so pushing `c` much below the peeling threshold leaves a large core
-// and LGE blows up. We therefore let `ShardEdge::set_up_graphs` pick
-// `c` from its peeling-tuned table (1.105 … 1.125) and accept the
-// corresponding ~0.08 b/key gap vs Sux4J, whose small-bucket + LGE
-// architecture can safely sit at the Gaussian threshold.
 
 // ── CompVFunc struct ────────────────────────────────────────────────
 
@@ -220,7 +209,7 @@ impl<K: ?Sized, D, S, E> CompVFunc<K, D, S, E> {
     /// strategy. The default is chosen at construction time based on
     /// the number of length blocks; this method overrides it.
     pub fn set_decoder_branchless(&mut self, branchless: bool) -> &mut Self {
-        self.decoder.set_branchless(branchless);
+        self.decoder.branchless(branchless);
         self
     }
 }
@@ -231,15 +220,20 @@ impl<K: ?Sized, S, E> TryIntoUnaligned for CompVFunc<K, BitVec<Box<[usize]>>, S,
     type Unaligned = CompVFunc<K, BitVecU<Box<[usize]>>, S, E>;
 
     fn try_into_unaligned(self) -> Result<Self::Unaligned, UnalignedConversionError> {
-        // The query path issues two distinct unaligned reads: a
-        // `w`-bit one for the codeword window, and (for escaped keys)
-        // an `escaped_symbol_length`-bit one for the literal field.
-        // Both must satisfy the unaligned constraints on `usize`.
+        // The query path issues two distinct unaligned reads at
+        // arbitrary shard-relative positions: a `w`-bit one for the
+        // codeword window, and (for escaped keys) an
+        // `escaped_symbol_length`-bit one for the literal field.
+        // Both positions come from `ShardEdge::local_edge` and can
+        // land at any `pos % 8`, so we need the strict
+        // arbitrary-position bound (`width <= W::BITS - 7`) — not the
+        // looser `BitFieldVec`-style bound used by
+        // `BitVec::try_into_unaligned`.
         let w = self.global_max_codeword_length as usize;
         let esym = self.escaped_symbol_length as usize;
-        check_unaligned_usize(w)?;
+        ensure_unaligned_any_pos!(usize, w);
         if esym > 0 {
-            check_unaligned_usize(esym)?;
+            ensure_unaligned_any_pos!(usize, esym);
         }
         Ok(CompVFunc {
             shard_edge: self.shard_edge,
@@ -272,21 +266,6 @@ impl<K: ?Sized, S, E> From<CompVFunc<K, BitVecU<Box<[usize]>>, S, E>>
             decoder: u.decoder,
             _marker: PhantomData,
         }
-    }
-}
-
-/// Mirrors the `test_unaligned!` macro from `bits/mod.rs` for `usize`,
-/// returning a structured error instead of asserting.
-fn check_unaligned_usize(width: usize) -> Result<(), UnalignedConversionError> {
-    let bits = usize::BITS as usize;
-    let max_small = bits - 6;
-    let mid = bits - 4;
-    if width <= max_small || width == mid || width == bits {
-        Ok(())
-    } else {
-        Err(UnalignedConversionError(format!(
-            "bit width {width} does not satisfy the constraints for unaligned reads on usize (must be <= {max_small}, or == {mid}, or == {bits})"
-        )))
     }
 }
 

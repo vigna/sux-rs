@@ -104,7 +104,9 @@
 //! [`bit_vec!`]: macro@crate::bits::bit_vec
 
 use crate::ambassador_impl_Index;
-use crate::bits::{assert_unaligned, debug_assert_unaligned, test_unaligned};
+use crate::bits::{
+    assert_unaligned_pos, debug_assert_unaligned_pos, test_unaligned_pos,
+};
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::ambassador_impl_BitLength;
 use crate::traits::{
@@ -612,25 +614,34 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVecValueOps<B::Word> for BitV
 }
 
 impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVec<B> {
-    /// Like [`BitVecValueOps::get_value`], but using unaligned reads.
+    /// Like [`BitVecValueOps::get_value`], but using a branchless unaligned
+    /// read.
     ///
-    /// This avoids a branch at the cost of requiring the bit width to satisfy
-    /// the constraints of [`BitFieldVec::get_unaligned`]: `width` must be at
-    /// most `W::BITS - 6`, or exactly `W::BITS - 4`, or exactly `W::BITS`
-    /// (where `W` is the word type of the backend).
+    /// The read loads one full word starting at byte offset `pos / 8`,
+    /// shifts right by `pos % 8`, and masks to `width` bits. This
+    /// avoids a branch at the cost of a *position-dependent* width
+    /// constraint: the read is valid iff `width + (pos % 8) <=
+    /// W::BITS` (where `W` is the word type of the backend).
     ///
-    /// [`BitFieldVec::get_unaligned`]: crate::bits::BitFieldVec::get_unaligned
+    /// Note that this is **not** the same constraint used by
+    /// [`BitFieldVec::get_unaligned`], which can exploit the fact that
+    /// its positions are multiples of `bit_width` to allow looser
+    /// widths such as `W::BITS - 4` and `W::BITS`. Here `pos` is
+    /// arbitrary, so in the worst case `pos % 8 == 7`, and only widths
+    /// up to `W::BITS - 7` are unconditionally safe.
     ///
     /// Additionally, a padding word must be present at the end of the
     /// underlying storage.
     ///
+    /// [`BitFieldVec::get_unaligned`]: crate::bits::BitFieldVec::get_unaligned
+    ///
     /// # Panics
     ///
-    /// Panics if `pos + width` exceeds the bit length, if `width` does not
-    /// satisfy the unaligned constraints, or if the read would exceed the
-    /// allocation.
+    /// Panics if `pos + width` exceeds the bit length, if
+    /// `width + (pos % 8)` exceeds `W::BITS`, or if the read would
+    /// exceed the allocation.
     pub fn get_value_unaligned(&self, pos: usize, width: usize) -> B::Word {
-        assert_unaligned!(B::Word, width);
+        assert_unaligned_pos!(B::Word, pos, width);
         assert!(
             pos + width <= self.len,
             "bit range {}..{} out of bounds for length {}",
@@ -646,20 +657,25 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVec<B> {
         unsafe { self.get_value_unaligned_unchecked(pos, width) }
     }
 
-    /// Like [`BitVecValueOps::get_value_unchecked`], but using unaligned
-    /// reads.
+    /// Like [`BitVecValueOps::get_value_unchecked`], but using a
+    /// branchless unaligned read.
+    ///
+    /// See [`get_value_unaligned`](Self::get_value_unaligned) for the
+    /// algorithm and the position-dependent width constraint.
     ///
     /// # Safety
     ///
-    /// - `width` must satisfy the unaligned constraints: at most `W::BITS -
-    ///   6`, or exactly `W::BITS - 4`, or exactly `W::BITS`.
+    /// - `width + (pos % 8)` must be at most `W::BITS`. In particular,
+    ///   for *arbitrary* `pos`, only widths up to `W::BITS - 7` are
+    ///   unconditionally safe; larger widths (up to `W::BITS`) are
+    ///   safe only when `pos` is byte-aligned enough to leave room.
     /// - `pos + width` must not exceed the bit length.
     /// - A padding word must be present at the end of the underlying storage so
     ///   that reading `size_of::<W>()` bytes starting at byte offset `pos / 8`
     ///   does not exceed the allocation.
     #[inline]
     pub unsafe fn get_value_unaligned_unchecked(&self, pos: usize, width: usize) -> B::Word {
-        debug_assert_unaligned!(B::Word, width);
+        debug_assert_unaligned_pos!(B::Word, pos, width);
         if width == 0 {
             return B::Word::ZERO;
         }
