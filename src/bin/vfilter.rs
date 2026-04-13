@@ -14,6 +14,7 @@ use epserde::ser::Serialize;
 use lender::FallibleLender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
+use sux::cli::ShardingArgs;
 use sux::dict::VFilter;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
@@ -57,9 +58,6 @@ struct Args {
     /// A 64-bit seed for the pseudorandom number generator.​
     #[arg(long)]
     seed: Option<u64>,
-    /// Use 64-bit signatures.​
-    #[arg(long, requires = "no_shards")]
-    sig64: bool,
     /// The target relative space overhead due to sharding.​
     #[arg(long, default_value_t = 0.001)]
     eps: f64,
@@ -69,9 +67,6 @@ struct Args {
     /// Always use the high-mem peel-by-signature algorithm (slightly faster).​
     #[arg(long, conflicts_with = "low_mem")]
     high_mem: bool,
-    /// Do not use sharding.​
-    #[arg(long)]
-    no_shards: bool,
     /// Use slower edge logic reducing the probability of duplicate arcs for big
     /// shards.​
     #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
@@ -80,12 +75,14 @@ struct Args {
     #[cfg(feature = "mwhc")]
     #[arg(long, conflicts_with_all = ["sig64", "full_sigs"])]
     mwhc: bool,
+    #[clap(flatten)]
+    sharding: ShardingArgs,
 }
 
 macro_rules! fuse {
     ($args: expr, $main: ident, $ty: ty) => {
-        if $args.no_shards {
-            if $args.sig64 {
+        if $args.sharding.no_shards {
+            if $args.sharding.sig64 {
                 $main::<$ty, [u64; 1], FuseLge3NoShards>($args)
             } else {
                 $main::<$ty, [u64; 2], FuseLge3NoShards>($args)
@@ -103,7 +100,7 @@ macro_rules! fuse {
 #[cfg(feature = "mwhc")]
 macro_rules! mwhc {
     ($args: expr, $main: ident, $ty: ty) => {
-        if $args.no_shards {
+        if $args.sharding.no_shards {
             $main::<$ty, [u64; 2], Mwhc3NoShards>($args)
         } else {
             $main::<$ty, [u64; 2], Mwhc3Shards>($args)

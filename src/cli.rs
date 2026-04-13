@@ -89,3 +89,21 @@ impl BuilderArgs {
         self.configure(VBuilder::default())
     }
 }
+
+/// Shared CLI flags that select the *type* of shard-edge used during
+/// construction.
+///
+/// These flags live here (rather than in [`BuilderArgs`]) because they
+/// don't configure a [`VBuilder`] instance — they select its type
+/// parameters. Binaries that dispatch on shard-edge type (`vfunc`,
+/// `vfilter`, `comp_vfunc`) flatten this struct next to [`BuilderArgs`];
+/// binaries that pin their shard-edge type (`lcp_mmphf`) don't.
+#[derive(clap::Args, Debug)]
+pub struct ShardingArgs {
+    /// Use 64-bit signatures.​
+    #[arg(long, requires = "no_shards")]
+    pub sig64: bool,
+    /// Do not use sharding.​
+    #[arg(long)]
+    pub no_shards: bool,
+}

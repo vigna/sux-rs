@@ -149,6 +149,10 @@ name = "bench_vfilter"
 required-features = ["epserde", "clap"]
 
 [[example]]
+name = "bench_comp_vfunc"
+required-features = ["epserde", "clap"]
+
+[[example]]
 name = "example_vfunc"
 required-features = ["rayon"]
 

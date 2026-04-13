@@ -14,7 +14,7 @@ use epserde::ser::Serialize;
 use lender::FallibleLender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
-use sux::cli::{BuilderArgs, HashTypes};
+use sux::cli::{BuilderArgs, HashTypes, ShardingArgs};
 use sux::func::signed::SignedFunc;
 use sux::func::vfunc2::VFunc2;
 use sux::func::{shard_edge::*, *};
@@ -48,12 +48,6 @@ struct Args {
     /// Sign the function using hashes of this type.​
     #[arg(long)]
     hash_type: Option<HashTypes>,
-    /// Use 64-bit signatures.​
-    #[arg(long, requires = "no_shards")]
-    sig64: bool,
-    /// Do not use sharding.​
-    #[arg(long)]
-    no_shards: bool,
     /// Use slower edge logic reducing the probability of duplicate arcs for big
     /// shards.​
     #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
@@ -62,6 +56,8 @@ struct Args {
     #[cfg(feature = "mwhc")]
     #[arg(long, conflicts_with_all = ["sig64", "full_sigs"])]
     mwhc: bool,
+    #[clap(flatten)]
+    sharding: ShardingArgs,
     #[clap(flatten)]
     builder: BuilderArgs,
 }
@@ -77,15 +73,15 @@ fn main() -> Result<()> {
 
     #[cfg(feature = "mwhc")]
     if args.mwhc {
-        return if args.no_shards {
+        return if args.sharding.no_shards {
             main_with_types::<[u64; 2], Mwhc3NoShards>(args)
         } else {
             main_with_types::<[u64; 2], Mwhc3Shards>(args)
         };
     }
 
-    if args.no_shards {
-        if args.sig64 {
+    if args.sharding.no_shards {
+        if args.sharding.sig64 {
             main_with_types::<[u64; 1], FuseLge3NoShards>(args)
         } else {
             main_with_types::<[u64; 2], FuseLge3NoShards>(args)
