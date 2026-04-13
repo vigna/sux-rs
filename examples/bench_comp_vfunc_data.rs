@@ -62,16 +62,20 @@ fn main() -> Result<()> {
     let first = args.next();
     let (keys, values): (Vec<usize>, Vec<u64>) = match first.as_deref() {
         Some("--synth-geometric") => {
-            // Synthetic 1M-key geometric(0.5) baseline, matching the
-            // criterion bench's distribution. Using the same harness as
-            // the file mode lets us cleanly separate methodology
-            // (criterion vs hand-coded loop) from data shape.
-            let n = 1_000_000usize;
+            // Synthetic geometric(0.5), default 1M keys or as requested
+            // via the next CLI arg. Using the same harness as the file
+            // mode lets us separate methodology (criterion vs
+            // hand-coded loop) from data shape and sweep over n cleanly.
+            let n: usize = args
+                .next()
+                .as_deref()
+                .map(|s| s.parse().expect("n must be an integer"))
+                .unwrap_or(1_000_000);
+            eprintln!("synthetic geometric(0.5), n={n}");
             let keys: Vec<usize> = (0..n).collect();
             let mut rng = SmallRng::seed_from_u64(42);
             let geo = Geometric::new(0.5).unwrap();
             let values: Vec<u64> = (0..n).map(|_| geo.sample(&mut rng)).collect();
-            eprintln!("synthetic geometric(0.5), n={n}");
             (keys, values)
         }
         Some(p) => {

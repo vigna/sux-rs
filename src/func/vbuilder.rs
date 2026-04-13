@@ -165,7 +165,7 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     lge: bool,
     /// The number of threads to use.
-    num_threads: usize,
+    pub(crate) num_threads: usize,
     /// Fast-stop for failed attempts.
     failed: AtomicBool,
     #[doc(hidden)]
@@ -1370,6 +1370,7 @@ impl<
             self.par_solve(
                 shard_iter,
                 &mut data,
+                0,
                 |this, shard_index, shard, data, pl| {
                     this.lge_shard(shard_index, shard, data, get_val, inspect, pl)
                 },
@@ -1383,6 +1384,7 @@ impl<
             self.par_solve(
                 shard_iter,
                 &mut data,
+                0,
                 |this, shard_index, shard, data, pl| {
                     this.peel_by_sig_vals_low_mem(shard_index, shard, data, get_val, inspect, pl)
                 },
@@ -1394,6 +1396,7 @@ impl<
             self.par_solve(
                 shard_iter,
                 &mut data,
+                0,
                 |this, shard_index, shard, data, pl| {
                     this.peel_by_sig_vals_high_mem(shard_index, shard, data, get_val, inspect, pl)
                 },
@@ -1525,7 +1528,7 @@ impl<
     ///
     /// This method returns an error if one of the shards cannot be solved, or
     /// if duplicates are detected.
-    fn par_solve<
+    pub(crate) fn par_solve<
         'b,
         V: BinSafe,
         I: IntoIterator<IntoIter: Send, Item = Arc<Vec<SigVal<S, V>>>> + Send,
@@ -1539,6 +1542,7 @@ impl<
         &self,
         shard_iter: I,
         data: &'b mut D,
+        shard_stride_padding: usize,
         solve_shard: SS,
         main_pl: &mut C,
         pl: &mut P,
@@ -1567,9 +1571,11 @@ impl<
         let result = std::thread::scope(|scope| {
             scope.spawn(move || {
                 let _ = thread_priority::set_current_thread_priority(ThreadPriority::Max);
+                let shard_stride =
+                    self.shard_edge.num_vertices() + shard_stride_padding;
                 for val in shard_iter
                     .into_iter()
-                    .zip(data.try_chunks_mut(self.shard_edge.num_vertices()).unwrap())
+                    .zip(data.try_chunks_mut(shard_stride).unwrap())
                     .enumerate()
                 {
                     if data_send.send(val).is_err() {
