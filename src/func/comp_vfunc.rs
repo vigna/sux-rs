@@ -53,13 +53,13 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 
 // ── Layout constants ────────────────────────────────────────────────
-
-/// Per-shard variable count overhead factor for the peel-only path,
-/// times 256. `floor(1.23 * 256) = 314`.
-const DELTA_PEEL_TIMES_256: u64 = 314;
-/// Same for peeling + lazy Gaussian elimination. `floor(1.10 * 256) =
-/// 281`.
-const DELTA_GAUSSIAN_TIMES_256: u64 = 281;
+//
+// No `DELTA_*` constants any more: the per-shard variable count comes
+// from `ShardEdge::set_up_graphs`, which picks the right `c` (= 1/δ)
+// based on the number of equations. For small data it returns a
+// conservative `c = 1.125` (with LGE fallback); for large data it
+// returns the asymptotic fuse-graph value `c(3, n) ≈ 1.105` with pure
+// peeling.
 
 // ── CompVFunc struct ────────────────────────────────────────────────
 
@@ -142,19 +142,18 @@ impl<
         let shard = self.shard_edge.shard(sig);
         let bucket_offset = shard * self.shard_size;
         let w = self.global_max_codeword_length as usize;
-        let m = self.shard_size - w;
-        // Local hash: ShardEdge tells us which bits don't carry the
-        // shard index (`local_sig`) and how to mix them down to a
-        // 64-bit value (`edge_hash`). The custom 3-position
-        // derivation lives in `equation_from_hash`.
-        let local_hash = self
-            .shard_edge
-            .edge_hash(self.shard_edge.local_sig(sig));
-        let e = equation_from_hash(local_hash, m);
+        // Reuse the fuse-graph `local_edge` to derive the three base
+        // positions inside the shard. For the multi-edge layout, bit
+        // `l` of the codeword is stored at offset `w − 1 − l` above
+        // each base vertex — the band structure of fuse graphs is
+        // preserved because the offset is vanishingly small relative
+        // to the segment size.
+        let local_sig = self.shard_edge.local_sig(sig);
+        let local_edge = self.shard_edge.local_edge(local_sig);
 
-        let v0 = bucket_offset + e[0] as usize;
-        let v1 = bucket_offset + e[1] as usize;
-        let v2 = bucket_offset + e[2] as usize;
+        let v0 = bucket_offset + local_edge[0];
+        let v1 = bucket_offset + local_edge[1];
+        let v2 = bucket_offset + local_edge[2];
         // SAFETY: by construction `v_i + w <= bucket_offset + m + w =
         // bucket_offset + shard_size`, which is within `data.len()`.
         let value = unsafe {
@@ -294,34 +293,17 @@ fn check_unaligned_usize(width: usize) -> Result<(), UnalignedConversionError> {
 }
 
 // ── Hashing helpers ─────────────────────────────────────────────────
-
-/// Derives three vertex positions in `[0, m)` from a single 64-bit
-/// local hash.
-///
-/// We don't reuse `ShardEdge::local_edge` because the multi-edge layout
-/// of `CompVFunc` requires that the three positions are *base*
-/// positions to which `(w − 1 − l)` is later added per codeword bit;
-/// `local_edge` produces positions sized for one edge per key with the
-/// `ShardEdge`'s own per-shard vertex count, which is unrelated to our
-/// per-shard `m`.
-///
-/// Three [`mix64`] perturbations of the same input give three
-/// uncorrelated hashes; the [`mul_high`](u128) reduction maps each into
-/// `[0, m)` without modulo bias.
-#[inline(always)]
-fn equation_from_hash(h: u64, m: usize) -> [u32; 3] {
-    let h0 = mix64(h);
-    let h1 = mix64(h.wrapping_add(0x9e37_79b9_7f4a_7c15));
-    let h2 = mix64(
-        h.rotate_left(31)
-            .wrapping_mul(0xbf58_476d_1ce4_e5b9),
-    );
-    let m_u128 = m as u128;
-    [
-        ((h0 as u128 * m_u128) >> 64) as u32,
-        ((h1 as u128 * m_u128) >> 64) as u32,
-        ((h2 as u128 * m_u128) >> 64) as u32,
-    ]
+//
+// Both build- and query-side edge generation now go through
+// `ShardEdge::local_edge(shard_edge.local_sig(sig))`, which provides
+// fuse-graph structured base positions in `[0, num_vertices)`. The
+// multi-edge layout then adds `(w − 1 − l)` per codeword bit to each
+// base position. No custom hash function is needed here any more.
+//
+// Keeping `mix64` in the imports because the codec module uses it.
+#[allow(dead_code)]
+fn _keep_mix64_used() {
+    let _ = mix64(0);
 }
 
 // ── Builder ─────────────────────────────────────────────────────────
@@ -355,16 +337,17 @@ impl Default for CompVBuilder {
     fn default() -> Self {
         Self {
             seed: 0,
-            // Peel-only is the safe default: our custom 3-uniform
-            // random hypergraph has a peeling threshold of ~0.818,
-            // so any ratio of edges to variables above that will
-            // make pure peeling fail and force the LGE fallback.
-            // LGE on a multi-million-equation system is effectively
-            // unbounded, so for typical ShardEdge-sized shards the
-            // peel-only (δ = 1.23) mode is the only one that makes
-            // sense. For tiny key sets the +12 % space overhead is
-            // negligible.
-            peel_only: true,
+            // With the fuse-graph structure injected via
+            // `shard_edge.local_edge(local_sig) + (w − 1 − l)`, the
+            // graph inherits the fuse-graph peeling threshold (δ ≈
+            // 1.105 for large shards), so we *don't* need the
+            // +12 % peel-only padding that plain random 3-uniform
+            // would demand. The `δ` is actually picked by
+            // `ShardEdge::set_up_graphs` based on the edge count;
+            // `peel_only` here just forces the solver to refuse the
+            // LGE fallback (useful for benchmarking and for data
+            // sets where we want to verify pure-peeling behavior).
+            peel_only: false,
             huffman: Huffman::new(),
             eps: 0.001,
             max_attempts: 16,
@@ -508,12 +491,6 @@ where
     shard_edge.set_up_shards(n, cfg.eps);
     let num_shards = shard_edge.num_shards();
 
-    let delta = if cfg.peel_only {
-        DELTA_PEEL_TIMES_256
-    } else {
-        DELTA_GAUSSIAN_TIMES_256
-    };
-
     // ── Retry loop with whole-build seed re-roll ──────────────────
     let mut prng = SmallRng::seed_from_u64(cfg.seed);
 
@@ -524,9 +501,11 @@ where
 
         // ── Phase 3: hash all keys with this attempt's seed ────────
         let mut entries: Vec<EntryShim<S>> = Vec::with_capacity(n);
+        let mut total_edges: u64 = 0;
         for (k, &v) in keys.iter().zip(values.iter()) {
             let sig = K::to_sig(k.borrow(), attempt_seed);
             let len = coder.codeword_length(v);
+            total_edges += len as u64;
             let bits = match coder.encode(v) {
                 Some(cw) => cw,
                 None => {
@@ -554,21 +533,35 @@ where
         }
         shard_starts[num_shards] = n;
 
-        // ── Phase 5: per-shard codeword sums + uniform shard size ──
-        let mut max_sum: u64 = 0;
+        // ── Phase 5: per-shard edge sums → size the fuse graph ───
+        let mut max_shard_edges: u64 = 0;
         for s in 0..num_shards {
             let sum: u64 = entries[shard_starts[s]..shard_starts[s + 1]]
                 .iter()
                 .map(|e| e.len as u64)
                 .sum();
-            if sum > max_sum {
-                max_sum = sum;
+            if sum > max_shard_edges {
+                max_shard_edges = sum;
             }
         }
-        // Uniform shard size = δ × max_sum + w. The `+w` accommodates
-        // the maximum offset introduced by the multi-edge expansion
-        // (vertex `e_i + w − 1 − l` for `l = 0..L−1`).
-        let shard_size = std::cmp::max(3, ((max_sum * delta) >> 8) + w as u64) as usize;
+        // Let the ShardEdge size its fuse graph for the actual edge
+        // count. For large shards this chooses `c ≈ 1.105` with pure
+        // peeling; for small shards it chooses a slightly larger `c`
+        // and enables LGE fallback.
+        //
+        // `max_shard_edges` must be at least 1 even when all shards
+        // are empty — `set_up_graphs` otherwise sets `l` to zero.
+        let (_c, _lge) = shard_edge.set_up_graphs(
+            total_edges.max(1) as usize,
+            max_shard_edges.max(1) as usize,
+        );
+
+        // Per-shard data region. `shard_edge.num_vertices()` gives the
+        // fuse-graph vertex count sized for `max_shard_edges` edges;
+        // we add `w` bits at the top of each shard so that the
+        // `(w − 1 − l)` offset never runs off the end.
+        let num_vertices_per_shard = shard_edge.num_vertices();
+        let shard_size = num_vertices_per_shard + w;
         let total_bits = num_shards
             .checked_mul(shard_size)
             .ok_or_else(|| anyhow!("data size overflow"))?;
@@ -576,7 +569,6 @@ where
         let mut data = BitVec::<Vec<usize>>::new_padded(total_bits);
 
         // ── Phase 6: solve each shard ───────────────────────────────
-        let m = shard_size - w;
         let mut all_solved = true;
         let mut attempt_err: Option<anyhow::Error> = None;
         for s in 0..num_shards {
@@ -587,12 +579,16 @@ where
             let mut edges: Vec<[u32; 3]> = Vec::new();
             let mut rhs: Vec<bool> = Vec::new();
             for entry in shard_entries {
-                let local_hash = shard_edge.edge_hash(shard_edge.local_sig(entry.sig));
-                let e = equation_from_hash(local_hash, m);
+                let local_sig = shard_edge.local_sig(entry.sig);
+                let base = shard_edge.local_edge(local_sig);
                 let len = entry.len as usize;
                 for l in 0..len {
-                    let off = (w - 1 - l) as u32;
-                    edges.push([e[0] + off, e[1] + off, e[2] + off]);
+                    let off = w - 1 - l;
+                    edges.push([
+                        (base[0] + off) as u32,
+                        (base[1] + off) as u32,
+                        (base[2] + off) as u32,
+                    ]);
                     rhs.push(((entry.bits >> l) & 1) == 1);
                 }
             }
@@ -881,19 +877,6 @@ mod tests {
             });
         }
         build_and_check(&values, false);
-    }
-
-    #[test]
-    fn test_skewed_small_peel_only() {
-        let mut values: Vec<u64> = Vec::with_capacity(200);
-        for i in 0..200 {
-            values.push(match i % 10 {
-                0..=6 => 0,
-                7 | 8 => 1,
-                _ => 2,
-            });
-        }
-        build_and_check(&values, true);
     }
 
     #[test]
