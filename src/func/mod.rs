@@ -66,6 +66,11 @@ pub use signed::*;
 
 pub mod shard_edge;
 
+pub mod codec;
+
+pub mod comp_vfunc;
+pub use comp_vfunc::{CompVBuilder, CompVFunc};
+
 /// Avalanches bits using the finalization step of Austin Appleby's
 /// [MurmurHash3].
 ///

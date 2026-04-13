@@ -138,6 +138,9 @@ name = "bench_vfunc"
 required-features = ["epserde", "clap"]
 
 [[example]]
+name = "bench_comp_vfunc_data"
+
+[[example]]
 name = "bench_vfilter"
 required-features = ["epserde", "clap"]
 
@@ -182,3 +185,7 @@ required-features = ["rayon"]
 name = "bench_vfunc"
 harness = false
 required-features = ["rayon"]
+
+[[bench]]
+name = "bench_comp_vfunc"
+harness = false
