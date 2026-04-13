@@ -118,6 +118,10 @@ name = "vfunc"
 required-features = ["cli", "epserde", "deko", "rayon"]
 
 [[bin]]
+name = "comp_vfunc"
+required-features = ["cli", "epserde", "deko", "rayon"]
+
+[[bin]]
 name = "lcp_mmphf"
 required-features = ["cli", "epserde", "deko", "rayon"]
 

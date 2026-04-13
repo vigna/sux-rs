@@ -47,7 +47,10 @@ fn read_decimals(path: &str) -> Result<Vec<u64>> {
         if line.is_empty() {
             continue;
         }
-        out.push(line.parse::<u64>().with_context(|| format!("parse {line}"))?);
+        out.push(
+            line.parse::<u64>()
+                .with_context(|| format!("parse {line}"))?,
+        );
     }
     Ok(out)
 }
@@ -97,11 +100,7 @@ fn main() -> Result<()> {
             return Ok(());
         }
     };
-    assert_eq!(
-        keys.len(),
-        values.len(),
-        "keys and values must be parallel"
-    );
+    assert_eq!(keys.len(), values.len(), "keys and values must be parallel");
     let n = keys.len();
     let max_value = values.iter().copied().max().unwrap_or(0);
     let distinct: std::collections::HashSet<_> = values.iter().copied().collect();
@@ -109,6 +108,32 @@ fn main() -> Result<()> {
         "n = {n}, distinct values = {}, max value = {max_value}",
         distinct.len()
     );
+
+    // ── Diagnostic: what does our Huffman codec produce? ──
+    {
+        use std::collections::HashMap;
+        use sux::func::codec::{Codec, Coder, Huffman};
+        let mut freqs: HashMap<u64, u64> = HashMap::new();
+        for &v in &values {
+            *freqs.entry(v).or_insert(0) += 1;
+        }
+        let coder = Huffman::new().build_coder(&freqs);
+        let mut total_bits: u64 = 0;
+        let mut by_len: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
+        for (&v, &f) in &freqs {
+            let l = coder.codeword_length(v);
+            total_bits += f * l as u64;
+            *by_len.entry(l).or_insert(0) += 1;
+        }
+        eprintln!(
+            "Rust Huffman: total = {} bits, avg = {:.4} b/codeword",
+            total_bits,
+            total_bits as f64 / n as f64
+        );
+        for (l, c) in &by_len {
+            eprintln!("  length {l}: {c} symbols");
+        }
+    }
 
     eprintln!("Building CompVFunc...");
     let t0 = Instant::now();
@@ -127,7 +152,12 @@ fn main() -> Result<()> {
     let mut rng = SmallRng::seed_from_u64(0);
     for _ in 0..1024 {
         let i = rng.random::<u64>() as usize % n;
-        assert_eq!(func.get(keys[i]), values[i], "round-trip failure at key {}", keys[i]);
+        assert_eq!(
+            func.get(keys[i]),
+            values[i],
+            "round-trip failure at key {}",
+            keys[i]
+        );
     }
     eprintln!("1024-sample round-trip OK");
 

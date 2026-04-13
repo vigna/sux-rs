@@ -207,10 +207,7 @@ impl Huffman {
     /// lengths in the canonical decoding table; `entropy_threshold` is
     /// the cumulative-entropy fraction beyond which infrequent symbols
     /// are diverted to the escape codeword.
-    pub const fn length_limited(
-        max_decoding_table_length: usize,
-        entropy_threshold: f64,
-    ) -> Self {
+    pub const fn length_limited(max_decoding_table_length: usize, entropy_threshold: f64) -> Self {
         Self {
             max_decoding_table_length,
             entropy_threshold,
@@ -253,9 +250,7 @@ impl Coder for HuffmanCoder {
     type Decoder = HuffmanDecoder;
 
     fn encode(&self, symbol: u64) -> Option<u64> {
-        self.symbol_to_rank
-            .get(&symbol)
-            .map(|&r| self.codeword[r])
+        self.symbol_to_rank.get(&symbol).map(|&r| self.codeword[r])
     }
 
     fn codeword_length(&self, symbol: u64) -> u32 {
@@ -501,9 +496,8 @@ impl HuffmanDecoder {
             let lcp1 = *self.last_codeword_plus_one.get_unchecked(idx);
             let s = *self.shift.get_unchecked(idx) as u32;
             let off = (value >> s).wrapping_sub(lcp1 >> s);
-            let sym_idx = off
-                .wrapping_add(*self.how_many_up_to_block.get_unchecked(idx) as u64)
-                as usize;
+            let sym_idx =
+                off.wrapping_add(*self.how_many_up_to_block.get_unchecked(idx) as u64) as usize;
             *self.symbol.get_unchecked(sym_idx)
         }
     }
@@ -684,9 +678,7 @@ fn build_huffman_coder(
 
     HuffmanCoder {
         codeword: codeword.into_boxed_slice(),
-        codeword_length: length[..cutpoint + 1]
-            .to_vec()
-            .into_boxed_slice(),
+        codeword_length: length[..cutpoint + 1].to_vec().into_boxed_slice(),
         symbol: symbol_kept.into_boxed_slice(),
         symbol_to_rank,
         escaped_symbol_length: max_length_escaped,

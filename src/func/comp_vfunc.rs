@@ -39,7 +39,6 @@ use crate::bits::{BitFieldVec, BitVec, BitVecU};
 use crate::func::VBuilder;
 use crate::func::codec::{Codec, Coder, Decoder, ESCAPE, Huffman, HuffmanCoder, HuffmanDecoder};
 use crate::func::shard_edge::{FuseLge3Shards, ShardEdge};
-use value_traits::slices::SliceByValueMut;
 use crate::traits::bit_vec_ops::BitVecValueOps;
 use crate::traits::{TryIntoUnaligned, UnalignedConversionError};
 use crate::utils::mod2_sys::{Modulo2Equation, Modulo2System};
@@ -51,15 +50,18 @@ use mem_dbg::{MemDbg, MemSize};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::marker::PhantomData;
+use value_traits::slices::SliceByValueMut;
 
 // ── Layout constants ────────────────────────────────────────────────
 //
-// No `DELTA_*` constants any more: the per-shard variable count comes
-// from `ShardEdge::set_up_graphs`, which picks the right `c` (= 1/δ)
-// based on the number of equations. For small data it returns a
-// conservative `c = 1.125` (with LGE fallback); for large data it
-// returns the asymptotic fuse-graph value `c(3, n) ≈ 1.105` with pure
-// peeling.
+// CompVFunc uses a single large shard with fuse-graph structure, so
+// its `c` is bounded below by the fuse-graph peeling threshold. The
+// peel+LGE pipeline only closes a *small* unpeeled core efficiently,
+// so pushing `c` much below the peeling threshold leaves a large core
+// and LGE blows up. We therefore let `ShardEdge::set_up_graphs` pick
+// `c` from its peeling-tuned table (1.105 … 1.125) and accept the
+// corresponding ~0.08 b/key gap vs Sux4J, whose small-bucket + LGE
+// architecture can safely sit at the Gaussian threshold.
 
 // ── CompVFunc struct ────────────────────────────────────────────────
 
@@ -118,12 +120,8 @@ pub struct CompVFunc<K: ?Sized, D = BitVec<Box<[usize]>>, S = [u64; 2], E = Fuse
 
 // ── Query path ──────────────────────────────────────────────────────
 
-impl<
-    K: ?Sized + ToSig<S>,
-    D: BitVecValueOps<usize>,
-    S: Sig,
-    E: ShardEdge<S, 3>,
-> CompVFunc<K, D, S, E>
+impl<K: ?Sized + ToSig<S>, D: BitVecValueOps<usize>, S: Sig, E: ShardEdge<S, 3>>
+    CompVFunc<K, D, S, E>
 {
     /// Returns the value associated with `key`, or an arbitrary value
     /// if `key` is not in the original key set.
@@ -300,92 +298,47 @@ fn check_unaligned_usize(width: usize) -> Result<(), UnalignedConversionError> {
 // multi-edge layout then adds `(w − 1 − l)` per codeword bit to each
 // base position.
 
-// ── Builder ─────────────────────────────────────────────────────────
+// ── Entry points ────────────────────────────────────────────────────
+//
+// CompVFunc shares its parallel infrastructure with
+// [`VBuilder`](crate::func::VBuilder): callers pass a
+// `VBuilder<BitFieldVec<Box<[usize]>>, S, E>` configured with the
+// usual VBuilder knobs (offline, check-dups, low-mem, threads, eps,
+// seed). The only CompVFunc-specific configuration is the
+// [`Huffman`] codec used for values; the default is unlimited-length
+// Huffman.
 
-/// Builder for [`CompVFunc`].
-///
-/// Mirrors the configuration surface of [`VBuilder`](crate::func::VBuilder)
-/// in spirit. Construction is currently single-threaded; on a peeling
-/// failure the whole build retries with a new global seed (just like
-/// [`VFunc`](crate::func::VFunc)).
-#[derive(Debug, Clone)]
-pub struct CompVBuilder {
-    /// Initial PRNG seed; subsequent build attempts (if any) draw
-    /// fresh seeds from this PRNG.
-    pub seed: u64,
-    /// Use peel-only (`δ = 1.23`, +12 % space) instead of peel + LGE
-    /// fallback (`δ = 1.10`). Peel-only is faster to construct (no
-    /// LGE on the unpeeled remainder) but uses ~12 % more space.
-    pub peel_only: bool,
-    /// Length-limited Huffman parameters; the default is unlimited.
-    pub huffman: Huffman,
-    /// Target relative space loss due to ε-cost sharding. Same role
-    /// as [`VBuilder::eps`](crate::func::VBuilder); 0.001 is the
-    /// usual default.
-    pub eps: f64,
-    /// Maximum number of build attempts before giving up.
-    pub max_attempts: u32,
-}
-
-impl Default for CompVBuilder {
-    fn default() -> Self {
-        Self {
-            seed: 0,
-            // With the fuse-graph structure injected via
-            // `shard_edge.local_edge(local_sig) + (w − 1 − l)`, the
-            // graph inherits the fuse-graph peeling threshold (δ ≈
-            // 1.105 for large shards), so we *don't* need the
-            // +12 % peel-only padding that plain random 3-uniform
-            // would demand. The `δ` is actually picked by
-            // `ShardEdge::set_up_graphs` based on the edge count;
-            // `peel_only` here just forces the solver to refuse the
-            // LGE fallback (useful for benchmarking and for data
-            // sets where we want to verify pure-peeling behavior).
-            peel_only: false,
-            huffman: Huffman::new(),
-            eps: 0.001,
-            max_attempts: 16,
-        }
-    }
-}
-
-impl CompVBuilder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn seed(mut self, seed: u64) -> Self {
-        self.seed = seed;
-        self
-    }
-
-    pub fn peel_only(mut self, peel_only: bool) -> Self {
-        self.peel_only = peel_only;
-        self
-    }
-
-    pub fn huffman(mut self, huffman: Huffman) -> Self {
-        self.huffman = huffman;
-        self
-    }
-
-    pub fn eps(mut self, eps: f64) -> Self {
-        self.eps = eps;
-        self
-    }
-
-    pub fn max_attempts(mut self, max_attempts: u32) -> Self {
-        self.max_attempts = max_attempts;
-        self
+impl<K, S, E> CompVFunc<K, BitVec<Box<[usize]>>, S, E>
+where
+    K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+    crate::utils::SigVal<S, u64>: rdst::RadixKey,
+{
+    /// Builds a [`CompVFunc`] from parallel slices of keys and values
+    /// using default [`VBuilder`] and [`Huffman`] settings.
+    ///
+    /// See also [`try_new_with_builder`](Self::try_new_with_builder) for
+    /// the full configuration surface.
+    pub fn try_new<B: Borrow<K> + Sync>(keys: &[B], values: &[u64]) -> Result<Self> {
+        Self::try_new_with_builder(keys, values, Huffman::new(), VBuilder::default())
     }
 
     /// Builds a [`CompVFunc`] from parallel slices of keys and values
-    /// using the default [`ShardEdge`] (`FuseLge3Shards`).
-    pub fn try_build<K: ?Sized + ToSig<[u64; 2]> + std::fmt::Debug + Sync, B: Borrow<K> + Sync>(
-        self,
+    /// using the given [`Huffman`] codec and [`VBuilder`] configuration.
+    ///
+    /// The `builder` argument controls every VBuilder-side construction
+    /// knob (offline mode, thread count, sharding ε, PRNG seed, etc.);
+    /// the `huffman` argument controls the codec used for the values.
+    /// The data backend is pinned internally to
+    /// `BitFieldVec<Box<[usize]>>` — the query-side [`BitVec`] is
+    /// obtained by re-wrapping the raw storage at the end.
+    pub fn try_new_with_builder<B: Borrow<K> + Sync>(
         keys: &[B],
         values: &[u64],
-    ) -> Result<CompVFunc<K>> {
+        huffman: Huffman,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+    ) -> Result<Self> {
         if keys.len() != values.len() {
             bail!(
                 "keys and values must have the same length ({} vs {})",
@@ -393,22 +346,7 @@ impl CompVBuilder {
                 values.len()
             );
         }
-        build_inner::<K, B>(self, keys, values)
-    }
-}
-
-/// Convenience entry points analogous to [`VFunc::try_new`](crate::func::VFunc).
-impl<K: ?Sized + ToSig<[u64; 2]> + std::fmt::Debug + Sync> CompVFunc<K> {
-    pub fn try_new<B: Borrow<K> + Sync>(keys: &[B], values: &[u64]) -> Result<Self> {
-        CompVBuilder::default().try_build::<K, B>(keys, values)
-    }
-
-    pub fn try_new_with_builder<B: Borrow<K> + Sync>(
-        keys: &[B],
-        values: &[u64],
-        builder: CompVBuilder,
-    ) -> Result<Self> {
-        builder.try_build::<K, B>(keys, values)
+        build_inner::<K, B, S, E>(huffman, builder, keys, values)
     }
 }
 
@@ -430,14 +368,18 @@ impl<K: ?Sized + ToSig<[u64; 2]> + std::fmt::Debug + Sync> CompVFunc<K> {
 // so the query path keeps its `BitVec::get_value` / `BitVecU`
 // unaligned-read interface.
 
-fn build_inner<K, B>(
-    cfg: CompVBuilder,
+fn build_inner<K, B, S, E>(
+    huffman: Huffman,
+    builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
     keys: &[B],
     values: &[u64],
-) -> Result<CompVFunc<K, BitVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>>
+) -> Result<CompVFunc<K, BitVec<Box<[usize]>>, S, E>>
 where
-    K: ?Sized + ToSig<[u64; 2]> + std::fmt::Debug + Sync,
+    K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
     B: Borrow<K> + Sync,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+    crate::utils::SigVal<S, u64>: rdst::RadixKey,
 {
     let n = keys.len();
 
@@ -447,7 +389,7 @@ where
         *frequencies.entry(v).or_insert(0) += 1;
     }
 
-    let coder: HuffmanCoder = cfg.huffman.build_coder(&frequencies);
+    let coder: HuffmanCoder = huffman.build_coder(&frequencies);
     let global_max_codeword_length = coder.max_codeword_length();
     let escape_length = coder.escape_length();
     let escaped_symbol_length = coder.escaped_symbol_length();
@@ -455,11 +397,11 @@ where
     let escape_codeword = coder.escape();
 
     if n == 0 {
-        let mut shard_edge = FuseLge3Shards::default();
-        shard_edge.set_up_shards(0, cfg.eps);
+        let mut shard_edge = E::default();
+        shard_edge.set_up_shards(0, builder.eps);
         return Ok(CompVFunc {
             shard_edge,
-            seed: cfg.seed,
+            seed: 0,
             num_keys: 0,
             shard_size: 0,
             global_max_codeword_length,
@@ -490,27 +432,21 @@ where
         (bits, len)
     };
 
-    // VBuilder instance for orchestration. `D =
-    // BitFieldVec<Box<[usize]>>` is the only data type we thread
-    // through; the query-side `BitVec` is obtained by re-wrapping
-    // the raw storage at the end.
-    let mut builder =
-        <VBuilder<BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>>::default()
-            .seed(cfg.seed)
-            .eps(cfg.eps)
-            .expected_num_keys(n);
-
-    // Captured, per-attempt outputs from the build_fn closure.
-    let peel_only = cfg.peel_only;
+    // Caller-supplied VBuilder is our orchestrator. We override
+    // `expected_num_keys` so sharding is set up against the actual
+    // key count, independently of anything the caller might have
+    // set; all other VBuilder-side knobs (offline, check-dups,
+    // low-mem, threads, eps, seed) are preserved.
+    let mut builder = builder.expected_num_keys(n);
     let values_ref = values;
 
     let build_result: Result<(BitFieldVec<Box<[usize]>>, u64, usize)> = builder
         .try_par_populate_and_build(
             keys,
             &move |i: usize| values_ref[i],
-            &mut |vb: &mut VBuilder<BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>,
+            &mut |vb: &mut VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
                   attempt_seed: u64,
-                  mut store: Box<dyn ShardStore<[u64; 2], u64> + Send + Sync>,
+                  mut store: Box<dyn ShardStore<S, u64> + Send + Sync>,
                   _max_val: u64,
                   _num_keys: usize,
                   _pl: &mut _,
@@ -531,10 +467,12 @@ where
                 }
 
                 // ── b) Re-call `set_up_graphs` with edge counts. ──
-                let _ = vb.shard_edge.set_up_graphs(
-                    total_edges.max(1) as usize,
-                    max_shard_edges.max(1) as usize,
-                );
+                // VBuilder already called it with the *key* count, but
+                // our multi-edge construction has avg ≈ entropy more
+                // equations than keys, so the shard-edge has to be
+                // resized against the actual edge count.
+                vb.shard_edge
+                    .set_up_graphs(total_edges.max(1) as usize, max_shard_edges.max(1) as usize);
 
                 // ── c) Compute the per-shard stride and allocate. ──
                 let num_vertices_per_shard = vb.shard_edge.num_vertices();
@@ -551,8 +489,7 @@ where
                 // product `chunk_size * bit_width` to be a multiple
                 // of `usize::BITS`. Since `bit_width = 1`, chunk
                 // size must itself be a multiple of `usize::BITS`.
-                let stride =
-                    raw_stride.next_multiple_of(usize::BITS as usize);
+                let stride = raw_stride.next_multiple_of(usize::BITS as usize);
                 let padding = stride - num_vertices_per_shard;
                 let total_bits = num_shards
                     .checked_mul(stride)
@@ -567,15 +504,9 @@ where
                 // `raw_stride` is the real variable count for the
                 // solver; everything above it up to `stride` is word
                 // alignment padding and stays zero.
-                let solve_shard = |this: &VBuilder<
-                    BitFieldVec<Box<[usize]>>,
-                    [u64; 2],
-                    FuseLge3Shards,
-                >,
+                let solve_shard = |this: &VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
                                    _shard_index: usize,
-                                   shard: std::sync::Arc<
-                    Vec<crate::utils::SigVal<[u64; 2], u64>>,
-                >,
+                                   shard: std::sync::Arc<Vec<crate::utils::SigVal<S, u64>>>,
                                    mut shard_data: BitFieldVec<&mut [usize]>,
                                    _pl: &mut _|
                  -> Result<(), ()> {
@@ -597,8 +528,7 @@ where
                         }
                     }
 
-                    let solution =
-                        solve_system(raw_stride, &edges, &rhs, peel_only).map_err(|_| ())?;
+                    let solution = solve_system(raw_stride, &edges, &rhs).map_err(|_| ())?;
                     for (i, &bit) in solution.iter().enumerate() {
                         // SAFETY: `i < raw_stride <= stride`, and
                         // shard_data has length `stride`.
@@ -670,12 +600,7 @@ struct PartialPeel {
 /// unpeeled remainder, then complete the peeled edges in reverse order.
 ///
 /// [`VBuilder`]: crate::func::VBuilder
-fn solve_system(
-    num_variables: usize,
-    edges: &[[u32; 3]],
-    rhs: &[bool],
-    peel_only: bool,
-) -> Result<Vec<bool>> {
+fn solve_system(num_variables: usize, edges: &[[u32; 3]], rhs: &[bool]) -> Result<Vec<bool>> {
     let peel = peel_partial(num_variables, edges);
     let n_peeled = peel.stack.len();
     let n_total = edges.len();
@@ -683,20 +608,11 @@ fn solve_system(
     let mut solution = vec![false; num_variables];
 
     if n_peeled < n_total {
-        if peel_only {
-            bail!(
-                "peel-only mode: {} of {} edges remain unpeeled",
-                n_total - n_peeled,
-                n_total
-            );
-        }
-
         // Build LGE system on the non-peeled edges only. Variables that
         // do not appear in any non-peeled equation get value 0 from
         // LGE; the reverse-peel pass will overwrite the peeled-edge
         // pivots in `solution` afterwards.
-        let mut equations: Vec<Modulo2Equation<usize>> =
-            Vec::with_capacity(n_total - n_peeled);
+        let mut equations: Vec<Modulo2Equation<usize>> = Vec::with_capacity(n_total - n_peeled);
         for (i, &was_peeled) in peel.peeled.iter().enumerate() {
             if was_peeled {
                 continue;
@@ -726,8 +642,7 @@ fn solve_system(
         }
 
         // SAFETY: see comment on the per-equation push above.
-        let mut system =
-            unsafe { Modulo2System::<usize>::from_parts(num_variables, equations) };
+        let mut system = unsafe { Modulo2System::<usize>::from_parts(num_variables, equations) };
         let lge_solution = system
             .lazy_gaussian_elimination()
             .map_err(|e| anyhow!("LGE failed: {e}"))?;
@@ -855,15 +770,10 @@ fn peel_partial(num_variables: usize, edges: &[[u32; 3]]) -> PartialPeel {
 mod tests {
     use super::*;
 
-    fn build_and_check(values: &[u64], peel_only: bool) {
+    fn build_and_check(values: &[u64]) {
         let n = values.len();
         let keys: Vec<u64> = (0..n as u64).collect();
-        let func = CompVFunc::<u64>::try_new_with_builder(
-            &keys,
-            values,
-            CompVBuilder::default().peel_only(peel_only),
-        )
-        .expect("build");
+        let func = CompVFunc::<u64>::try_new(&keys, values).expect("build");
         for (i, &v) in values.iter().enumerate() {
             assert_eq!(func.get(keys[i]), v, "mismatch at key {}", keys[i]);
         }
@@ -882,7 +792,7 @@ mod tests {
     fn test_single_value_distribution() {
         // 100 keys, all mapping to value 7. ZeroCodec-like behavior.
         let values: Vec<u64> = vec![7; 100];
-        build_and_check(&values, false);
+        build_and_check(&values);
     }
 
     #[test]
@@ -896,7 +806,7 @@ mod tests {
                 _ => 2,
             });
         }
-        build_and_check(&values, false);
+        build_and_check(&values);
     }
 
     #[test]
@@ -978,7 +888,8 @@ mod tests {
         let func = CompVFunc::<u64>::try_new_with_builder(
             &keys,
             &values,
-            CompVBuilder::default().huffman(Huffman::length_limited(8, 0.95)),
+            Huffman::length_limited(8, 0.95),
+            VBuilder::default(),
         )
         .expect("build");
         for (i, &v) in values.iter().enumerate() {

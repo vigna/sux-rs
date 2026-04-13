@@ -1571,8 +1571,7 @@ impl<
         let result = std::thread::scope(|scope| {
             scope.spawn(move || {
                 let _ = thread_priority::set_current_thread_priority(ThreadPriority::Max);
-                let shard_stride =
-                    self.shard_edge.num_vertices() + shard_stride_padding;
+                let shard_stride = self.shard_edge.num_vertices() + shard_stride_padding;
                 for val in shard_iter
                     .into_iter()
                     .zip(data.try_chunks_mut(shard_stride).unwrap())
