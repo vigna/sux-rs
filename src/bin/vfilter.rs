@@ -35,7 +35,7 @@ use value_traits::slices::SliceByValueMut;
 ))]
 struct Args {
     /// The number of keys; if no filename is provided, use the 64-bit keys
-    /// [0..n).​
+    /// [0 . . n).​
     #[arg(short, long)]
     n: Option<usize>,
     /// A file containing UTF-8 keys, one per line (at most N keys will be read); it can be compressed with any format supported by the deko crate.​
@@ -46,6 +46,10 @@ struct Args {
     /// The number of bits of the hashes used by the filter.​
     #[arg(short, long, default_value_t = 8)]
     bits: usize,
+    #[clap(flatten)]
+    builder: BuilderArgs,
+    #[clap(flatten)]
+    sharding: ShardingArgs,
     /// Use slower edge logic reducing the probability of duplicate arcs for big
     /// shards.​
     #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
@@ -54,10 +58,6 @@ struct Args {
     #[cfg(feature = "mwhc")]
     #[arg(long, conflicts_with_all = ["sig64", "full_sigs"])]
     mwhc: bool,
-    #[clap(flatten)]
-    sharding: ShardingArgs,
-    #[clap(flatten)]
-    builder: BuilderArgs,
 }
 
 macro_rules! fuse {

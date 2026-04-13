@@ -74,7 +74,7 @@ fn gen_query_indices(n: usize) -> Vec<usize> {
 
 fn build_comp_vfunc(n: usize, values: &[u64]) -> CompVFunc<usize> {
     let keys: Vec<usize> = (0..n).collect();
-    CompVFunc::<usize>::try_new(&keys, values).expect("CompVFunc build failed")
+    CompVFunc::<usize>::try_par_new(&keys, values).expect("CompVFunc build failed")
 }
 
 // ── Benchmarks ──────────────────────────────────────────────────────

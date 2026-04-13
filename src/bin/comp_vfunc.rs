@@ -28,7 +28,9 @@ use sux::func::codec::Huffman;
 use sux::func::shard_edge::{FuseLge3NoShards, FuseLge3Shards, ShardEdge};
 use sux::func::{CompVFunc, VBuilder};
 use sux::init_env_logger;
-use sux::utils::{DekoBufLineLender, Sig, SigVal, ToSig};
+use sux::utils::{
+    DekoBufLineLender, FromCloneableIntoIterator, Sig, SigVal, ToSig,
+};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -45,7 +47,7 @@ use sux::utils::{DekoBufLineLender, Sig, SigVal, ToSig};
 ))]
 struct Args {
     /// The number of keys; if no filename is provided, use the 64-bit keys
-    /// [0 . . n).​
+    /// [0 . . n).​
     #[arg(short, long)]
     n: Option<usize>,
     /// A file containing UTF-8 keys, one per line (at most N keys will
@@ -61,9 +63,9 @@ struct Args {
     /// A name for the ε-serde serialized function.​
     func: Option<String>,
     #[clap(flatten)]
-    sharding: ShardingArgs,
-    #[clap(flatten)]
     builder: BuilderArgs,
+    #[clap(flatten)]
+    sharding: ShardingArgs,
 }
 
 fn read_values(path: &str) -> Result<Vec<u64>> {
@@ -119,26 +121,15 @@ where
     let n_values = values.len();
 
     if let Some(filename) = &args.filename {
-        let n_cap = args.n.unwrap_or(usize::MAX);
-        let mut keys: Vec<String> = Vec::with_capacity(n_values.min(n_cap));
-        let mut lender = DekoBufLineLender::from_path(filename)?;
-        while let Some(k) = FallibleLender::next(&mut lender)? {
-            keys.push(k.to_owned());
-            if keys.len() >= n_cap {
-                break;
-            }
-        }
-        if keys.len() != n_values {
-            bail!(
-                "keys ({}) and values ({}) count mismatch",
-                keys.len(),
-                n_values
-            );
-        }
-
-        let refs: Vec<&str> = keys.iter().map(String::as_str).collect();
+        // Stream keys directly from disk: `DekoBufLineLender` is a
+        // fallible rewindable lender of `&str`, so keys never all
+        // live in memory at once. The ε-serde-side `n` equals the
+        // values count (the `--values` file is compulsory and must
+        // match the key count).
+        let n = n_values;
+        let keys = DekoBufLineLender::from_path(filename)?.take(n);
         let func = <CompVFunc<str, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
-            &refs, &values, huffman, vbuilder,
+            keys, &values, n, huffman, vbuilder,
         )?;
         if let Some(out) = args.func {
             unsafe { func.store(&out)? };
@@ -148,9 +139,11 @@ where
         if n != n_values {
             bail!("n={n} but the values file has {n_values} entries");
         }
-        let keys: Vec<usize> = (0..n).collect();
+        // Stream the integer range through a lender instead of
+        // materializing a `Vec<usize>`.
+        let keys = FromCloneableIntoIterator::from(0_usize..n);
         let func = <CompVFunc<usize, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
-            &keys, &values, huffman, vbuilder,
+            keys, &values, n, huffman, vbuilder,
         )?;
         if let Some(out) = args.func {
             unsafe { func.store(&out)? };

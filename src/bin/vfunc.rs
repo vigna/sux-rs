@@ -48,6 +48,10 @@ struct Args {
     /// Sign the function using hashes of this type.​
     #[arg(long)]
     hash_type: Option<HashTypes>,
+    #[clap(flatten)]
+    builder: BuilderArgs,
+    #[clap(flatten)]
+    sharding: ShardingArgs,
     /// Use slower edge logic reducing the probability of duplicate arcs for big
     /// shards.​
     #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
@@ -56,10 +60,6 @@ struct Args {
     #[cfg(feature = "mwhc")]
     #[arg(long, conflicts_with_all = ["sig64", "full_sigs"])]
     mwhc: bool,
-    #[clap(flatten)]
-    sharding: ShardingArgs,
-    #[clap(flatten)]
-    builder: BuilderArgs,
 }
 
 fn main() -> Result<()> {

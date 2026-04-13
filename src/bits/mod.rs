@@ -52,11 +52,11 @@ pub use crate::bit_vec;
 ///
 /// * For reads at positions that are multiples of the value width
 ///   ([`BitFieldVec`](crate::bits::BitFieldVec)), use
-///   [`test_unaligned!`] — the check here.
+///   this test.
 /// * For a single read at a *specific* arbitrary position, use
 ///   [`test_unaligned_pos!`].
-/// * For bulk eligibility — "can every width-`$bw` read succeed
-///   regardless of where it lands?" — use [`test_unaligned_any_pos!`].
+/// * For bulk eligibility, that is, "can every width-`$bw` read succeed
+///   regardless of where it lands?", use [`test_unaligned_any_pos!`].
 macro_rules! test_unaligned {
     ($ty:ty, $bw:expr) => {{
         let bits = <$ty>::BITS as usize;
@@ -74,9 +74,8 @@ pub(crate) use test_unaligned;
 /// Use this when you know both the position and the width of a
 /// specific read.
 ///
-/// For a position-independent check — i.e., "can every read of this
-/// width succeed regardless of where it lands?" — use
-/// [`test_unaligned_any_pos!`].
+/// For a position-independent check, that is, "can every read of this width
+/// succeed regardless of where it lands?", use [`test_unaligned_any_pos!`].
 ///
 /// This differs from [`test_unaligned!`], which models
 /// [`BitFieldVec`](crate::bits::BitFieldVec)-style width-aligned
@@ -98,7 +97,7 @@ pub(crate) use test_unaligned_pos;
 /// The bound is `$bw <= <$ty>::BITS - 7`, covering the worst case
 /// `pos % 8 == 7`. Use this when you need to guarantee that every
 /// read of a given width succeeds regardless of where it lands —
-/// e.g., when deciding whether a compound structure can be bulk-
+/// that is, when deciding whether a compound structure can be bulk-
 /// converted to its unaligned variant.
 ///
 /// For a position-dependent check against a specific position, use

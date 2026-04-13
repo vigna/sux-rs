@@ -41,12 +41,16 @@ use crate::func::codec::{Codec, Coder, Decoder, ESCAPE, Huffman, HuffmanCoder, H
 use crate::func::shard_edge::{FuseLge3Shards, ShardEdge};
 use crate::traits::bit_vec_ops::BitVecValueOps;
 use crate::traits::{TryIntoUnaligned, UnalignedConversionError};
+use crate::utils::lenders::FromSlice;
 use crate::utils::mod2_sys::{Modulo2Equation, Modulo2System};
 use crate::utils::sig_store::ShardStore;
-use crate::utils::{Sig, ToSig};
+use crate::utils::{FallibleRewindableLender, Sig, SigVal, ToSig};
 use anyhow::{Result, anyhow, bail};
+use core::error::Error;
 use dsi_progress_logger::no_logging;
+use lender::FallibleLending;
 use mem_dbg::{MemDbg, MemSize};
+use rdst::RadixKey;
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -289,30 +293,101 @@ impl<K: ?Sized, S, E> From<CompVFunc<K, BitVecU<Box<[usize]>>, S, E>>
 
 impl<K, S, E> CompVFunc<K, BitVec<Box<[usize]>>, S, E>
 where
+    K: ?Sized + ToSig<S> + std::fmt::Debug,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+    SigVal<S, u64>: RadixKey,
+{
+    /// Builds a [`CompVFunc`] from lender-based streams of keys and a
+    /// slice of values using default [`VBuilder`] and [`Huffman`]
+    /// settings.
+    ///
+    /// Keys are consumed one at a time through the lender; this path
+    /// is the right choice for input coming from disk
+    /// ([`DekoBufLineLender`](crate::utils::DekoBufLineLender)) or
+    /// synthetic ranges. The whole key set never needs to live in
+    /// memory at once. Values, however, are passed as a slice because
+    /// CompVFunc has to iterate them once to build the Huffman codec
+    /// before starting construction.
+    ///
+    /// `n` is the expected number of keys. If it is significantly
+    /// wrong, construction still works but may do extra retries.
+    ///
+    /// If keys are available as a slice and you want to parallelize
+    /// the hashing phase, use [`try_par_new`](Self::try_par_new)
+    /// instead.
+    ///
+    /// See also [`try_new_with_builder`](Self::try_new_with_builder)
+    /// for the full configuration surface.
+    pub fn try_new<L, B>(keys: L, values: &[u64], n: usize) -> Result<Self>
+    where
+        B: ?Sized + Borrow<K>,
+        L: FallibleRewindableLender<
+                RewindError: Error + Send + Sync + 'static,
+                Error: Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+    {
+        Self::try_new_with_builder(keys, values, n, Huffman::new(), VBuilder::default())
+    }
+
+    /// Builds a [`CompVFunc`] from a lender of keys and a slice of
+    /// values using the given [`Huffman`] codec and [`VBuilder`]
+    /// configuration.
+    ///
+    /// See [`try_new`](Self::try_new) for the streaming semantics.
+    /// The `builder` argument controls every VBuilder-side
+    /// construction knob (offline mode, thread count, sharding ε,
+    /// PRNG seed, etc.); the `huffman` argument controls the codec
+    /// used for the values. The data backend is pinned internally to
+    /// `BitFieldVec<Box<[usize]>>` — the query-side [`BitVec`] is
+    /// obtained by re-wrapping the raw storage at the end.
+    pub fn try_new_with_builder<L, B>(
+        keys: L,
+        values: &[u64],
+        n: usize,
+        huffman: Huffman,
+        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+    ) -> Result<Self>
+    where
+        B: ?Sized + Borrow<K>,
+        L: FallibleRewindableLender<
+                RewindError: Error + Send + Sync + 'static,
+                Error: Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+    {
+        build_inner_seq::<K, B, S, E, L>(huffman, builder, keys, values, n)
+    }
+}
+
+impl<K, S, E> CompVFunc<K, BitVec<Box<[usize]>>, S, E>
+where
     K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
-    crate::utils::SigVal<S, u64>: rdst::RadixKey,
+    SigVal<S, u64>: RadixKey,
 {
     /// Builds a [`CompVFunc`] from parallel slices of keys and values
     /// using default [`VBuilder`] and [`Huffman`] settings.
     ///
-    /// See also [`try_new_with_builder`](Self::try_new_with_builder) for
-    /// the full configuration surface.
-    pub fn try_new<B: Borrow<K> + Sync>(keys: &[B], values: &[u64]) -> Result<Self> {
-        Self::try_new_with_builder(keys, values, Huffman::new(), VBuilder::default())
+    /// This is the parallel counterpart of [`try_new`](Self::try_new):
+    /// hashes are computed on a rayon worker pool and deposited
+    /// directly into their sig-store buckets. Faster than the
+    /// lender-based path for large in-memory key sets, but requires
+    /// the whole key set to be addressable as a slice.
+    ///
+    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
+    /// for the full configuration surface.
+    pub fn try_par_new<B: Borrow<K> + Sync>(keys: &[B], values: &[u64]) -> Result<Self> {
+        Self::try_par_new_with_builder(keys, values, Huffman::new(), VBuilder::default())
     }
 
     /// Builds a [`CompVFunc`] from parallel slices of keys and values
     /// using the given [`Huffman`] codec and [`VBuilder`] configuration.
     ///
-    /// The `builder` argument controls every VBuilder-side construction
-    /// knob (offline mode, thread count, sharding ε, PRNG seed, etc.);
-    /// the `huffman` argument controls the codec used for the values.
-    /// The data backend is pinned internally to
-    /// `BitFieldVec<Box<[usize]>>` — the query-side [`BitVec`] is
-    /// obtained by re-wrapping the raw storage at the end.
-    pub fn try_new_with_builder<B: Borrow<K> + Sync>(
+    /// See [`try_par_new`](Self::try_par_new) for the parallel
+    /// semantics and [`try_new_with_builder`](Self::try_new_with_builder)
+    /// for the lender-based variant.
+    pub fn try_par_new_with_builder<B: Borrow<K> + Sync>(
         keys: &[B],
         values: &[u64],
         huffman: Huffman,
@@ -325,20 +400,26 @@ where
                 values.len()
             );
         }
-        build_inner::<K, B, S, E>(huffman, builder, keys, values)
+        build_inner_par::<K, B, S, E>(huffman, builder, keys, values)
     }
 }
 
 // ── Builder core ───────────────────────────────────────────────────
 //
-// `build_inner` is a thin adapter around
-// [`VBuilder::try_par_populate_and_build`]: it delegates the sig-store
-// population, retry loop, duplicate check, and parallel shard solving
-// to VBuilder, and only contributes a CompVFunc-specific `build_fn`
-// closure that (a) calls `set_up_graphs` on the shard edge with
-// *equation* counts rather than key counts and (b) calls
-// [`VBuilder::par_solve`] with a per-shard closure doing the
+// Both `build_inner_seq` and `build_inner_par` are thin adapters
+// around VBuilder's retry loop: they delegate the sig-store population,
+// duplicate check, and shard solving to VBuilder, and contribute a
+// CompVFunc-specific `build_fn` closure that (a) calls `set_up_graphs`
+// on the shard edge with *equation* counts rather than key counts and
+// (b) calls [`VBuilder::par_solve`] with a per-shard closure doing the
 // multi-edge expansion, peel + LGE on remainder, and assignment.
+//
+// The only difference between the two is the VBuilder entry point:
+// `try_populate_and_build` for the lender-based sequential path,
+// `try_par_populate_and_build` for the slice-based parallel path.
+// Everything else — the Huffman setup, the build_fn closure, the
+// output re-wrapping — is shared via `codec_setup` and
+// `make_build_fn` below.
 //
 // Storage during construction is `BitFieldVec<Box<[usize]>>` with
 // `bit_width = 1` so it satisfies VBuilder's `D: BitFieldSlice +
@@ -347,57 +428,73 @@ where
 // so the query path keeps its `BitVec::get_value` / `BitVecU`
 // unaligned-read interface.
 
-fn build_inner<K, B, S, E>(
-    huffman: Huffman,
-    builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
-    keys: &[B],
-    values: &[u64],
-) -> Result<CompVFunc<K, BitVec<Box<[usize]>>, S, E>>
-where
-    K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
-    B: Borrow<K> + Sync,
-    S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
-    crate::utils::SigVal<S, u64>: rdst::RadixKey,
-{
-    let n = keys.len();
+/// Huffman setup output: everything `build_inner_{seq,par}` needs
+/// after the first frequency pass.
+struct CodecSetup {
+    coder: HuffmanCoder,
+    global_max_codeword_length: u32,
+    escape_length: u32,
+    escaped_symbol_length: u32,
+    escape_codeword: u64,
+    w: usize,
+}
 
-    // ── Phase 1: frequencies + codec (independent of seed) ────────
+fn codec_setup(huffman: Huffman, values: &[u64]) -> CodecSetup {
     let mut frequencies: HashMap<u64, u64> = HashMap::new();
     for &v in values {
         *frequencies.entry(v).or_insert(0) += 1;
     }
-
     let coder: HuffmanCoder = huffman.build_coder(&frequencies);
     let global_max_codeword_length = coder.max_codeword_length();
     let escape_length = coder.escape_length();
     let escaped_symbol_length = coder.escaped_symbol_length();
-    let w = global_max_codeword_length as usize;
     let escape_codeword = coder.escape();
-
-    if n == 0 {
-        let mut shard_edge = E::default();
-        shard_edge.set_up_shards(0, builder.eps);
-        return Ok(CompVFunc {
-            shard_edge,
-            seed: 0,
-            num_keys: 0,
-            shard_size: 0,
-            global_max_codeword_length,
-            escape_length,
-            escaped_symbol_length,
-            data: BitVec::<Vec<usize>>::new_padded(0),
-            decoder: coder.into_decoder(),
-            _marker: PhantomData,
-        });
+    let w = global_max_codeword_length as usize;
+    CodecSetup {
+        coder,
+        global_max_codeword_length,
+        escape_length,
+        escaped_symbol_length,
+        escape_codeword,
+        w,
     }
+}
 
+/// Returns the `build_fn` closure shared by both entry points.
+///
+/// The closure is called once per retry by VBuilder's populate-and-
+/// build loop: it (a) recomputes the per-shard total codeword length
+/// and re-sizes the fuse graph via `set_up_graphs`, (b) allocates the
+/// data array with the correct per-shard stride, and (c) dispatches
+/// `par_solve` with the multi-edge per-shard solver.
+#[allow(clippy::type_complexity)]
+fn make_build_fn<'c, S, E, P>(
+    coder: &'c HuffmanCoder,
+    w: usize,
+    escape_codeword: u64,
+    escape_length: u32,
+    escaped_symbol_length: u32,
+) -> impl FnMut(
+    &mut VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+    u64,
+    Box<dyn ShardStore<S, u64> + Send + Sync>,
+    u64,
+    usize,
+    &mut P,
+    &mut (),
+) -> Result<(BitFieldVec<Box<[usize]>>, u64, usize)>
+       + 'c
+where
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+    SigVal<S, u64>: RadixKey,
+    P: dsi_progress_logger::ProgressLog + Clone + Send + Sync,
+{
     // Encode a single `(bits, len)` pair for a value. Used by both
-    // the sum-computation pass and the per-shard closure.
-    let coder_ref = &coder;
+    // the initial edge-count pass and the per-shard solver.
     let encode_val = move |v: u64| -> (u64, u32) {
-        let len = coder_ref.codeword_length(v);
-        let bits = match coder_ref.encode(v) {
+        let len = coder.codeword_length(v);
+        let bits = match coder.encode(v) {
             Some(cw) => cw,
             None => {
                 let lit = if escaped_symbol_length == 0 {
@@ -411,155 +508,261 @@ where
         (bits, len)
     };
 
-    // Caller-supplied VBuilder is our orchestrator. We override
-    // `expected_num_keys` so sharding is set up against the actual
-    // key count, independently of anything the caller might have
-    // set; all other VBuilder-side knobs (offline, check-dups,
-    // low-mem, threads, eps, seed) are preserved.
-    let mut builder = builder.expected_num_keys(n);
-    let values_ref = values;
+    move |vb: &mut VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+          attempt_seed: u64,
+          mut store: Box<dyn ShardStore<S, u64> + Send + Sync>,
+          _max_val: u64,
+          _num_keys: usize,
+          _pl: &mut P,
+          _state: &mut ()| {
+        // ── a) Compute per-shard sum of codeword lengths. ──
+        // VBuilder's set_up_graphs was sized for the *key* count;
+        // our graph has ~avg_codeword_length × more equations, so
+        // we re-size here.
+        let mut total_edges: u64 = 0;
+        let mut max_shard_edges: u64 = 0;
+        for shard in store.iter() {
+            let mut sum: u64 = 0;
+            for sv in shard.iter() {
+                sum += encode_val(sv.val).1 as u64;
+            }
+            total_edges += sum;
+            max_shard_edges = max_shard_edges.max(sum);
+        }
 
-    let build_result: Result<(BitFieldVec<Box<[usize]>>, u64, usize)> = builder
-        .try_par_populate_and_build(
-            keys,
-            &move |i: usize| values_ref[i],
-            &mut |vb: &mut VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
-                  attempt_seed: u64,
-                  mut store: Box<dyn ShardStore<S, u64> + Send + Sync>,
-                  _max_val: u64,
-                  _num_keys: usize,
-                  _pl: &mut _,
-                  _state: &mut ()| {
-                // ── a) Compute per-shard sum of codeword lengths. ──
-                // VBuilder's set_up_graphs was sized for the *key*
-                // count; our graph has ~`avg_codeword_length` ×
-                // more equations, so we re-size here.
-                let mut total_edges: u64 = 0;
-                let mut max_shard_edges: u64 = 0;
-                for shard in store.iter() {
-                    let mut sum: u64 = 0;
-                    for sv in shard.iter() {
-                        sum += encode_val(sv.val).1 as u64;
-                    }
-                    total_edges += sum;
-                    max_shard_edges = max_shard_edges.max(sum);
+        // ── b) Re-call `set_up_graphs` with edge counts. ──
+        vb.shard_edge
+            .set_up_graphs(total_edges.max(1) as usize, max_shard_edges.max(1) as usize);
+
+        // ── c) Compute the per-shard stride and allocate. ──
+        let num_vertices_per_shard = vb.shard_edge.num_vertices();
+        let num_shards = vb.shard_edge.num_shards();
+        // `par_solve` derives `num_threads.ilog2()` for its internal
+        // buffer size; ensure it's initialized to a positive value.
+        // VFunc sets this inside `try_build_from_shard_iter`, which
+        // we're side-stepping, so we must set it ourselves.
+        vb.num_threads = num_shards.min(vb.max_num_threads).max(1);
+        let raw_stride = num_vertices_per_shard + w;
+        // `par_solve` chunks the data via `BitFieldVec::try_chunks_mut`,
+        // which requires the product `chunk_size * bit_width` to be
+        // a multiple of `usize::BITS`. Since `bit_width = 1`, chunk
+        // size must itself be a multiple of `usize::BITS`.
+        let stride = raw_stride.next_multiple_of(usize::BITS as usize);
+        let padding = stride - num_vertices_per_shard;
+        let total_bits = num_shards
+            .checked_mul(stride)
+            .ok_or_else(|| anyhow!("data size overflow"))?;
+
+        let mut data = BitFieldVec::<Box<[usize]>>::new_padded(1, total_bits);
+
+        // ── d) Call `par_solve` with the multi-edge closure. ──
+        // The closure captures `encode_val` (which holds
+        // `&HuffmanCoder`, shared across threads) and
+        // `raw_stride`.
+        let solve_shard = |this: &VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+                           _shard_index: usize,
+                           shard: std::sync::Arc<Vec<SigVal<S, u64>>>,
+                           mut shard_data: BitFieldVec<&mut [usize]>,
+                           _pl: &mut _|
+         -> Result<(), ()> {
+            let shard_edge = &this.shard_edge;
+            let mut edges: Vec<[u32; 3]> = Vec::new();
+            let mut rhs: Vec<bool> = Vec::new();
+            for sv in shard.iter() {
+                let (bits, len) = encode_val(sv.val);
+                let local_sig = shard_edge.local_sig(sv.sig);
+                let base = shard_edge.local_edge(local_sig);
+                for l in 0..len as usize {
+                    let off = w - 1 - l;
+                    edges.push([
+                        (base[0] + off) as u32,
+                        (base[1] + off) as u32,
+                        (base[2] + off) as u32,
+                    ]);
+                    rhs.push(((bits >> l) & 1) == 1);
                 }
+            }
 
-                // ── b) Re-call `set_up_graphs` with edge counts. ──
-                // VBuilder already called it with the *key* count, but
-                // our multi-edge construction has avg ≈ entropy more
-                // equations than keys, so the shard-edge has to be
-                // resized against the actual edge count.
-                vb.shard_edge
-                    .set_up_graphs(total_edges.max(1) as usize, max_shard_edges.max(1) as usize);
+            let solution = solve_system(raw_stride, &edges, &rhs).map_err(|_| ())?;
+            for (i, &bit) in solution.iter().enumerate() {
+                // SAFETY: `i < raw_stride <= stride`, and shard_data
+                // has length `stride`.
+                unsafe {
+                    shard_data.set_value_unchecked(i, bit as usize);
+                }
+            }
+            Ok(())
+        };
 
-                // ── c) Compute the per-shard stride and allocate. ──
-                let num_vertices_per_shard = vb.shard_edge.num_vertices();
-                let num_shards = vb.shard_edge.num_shards();
-                // `par_solve` derives `num_threads.ilog2()` for its
-                // internal buffer size; ensure it's initialized to a
-                // positive value. VFunc sets this inside
-                // `try_build_from_shard_iter`, which we're
-                // side-stepping, so we must set it ourselves.
-                vb.num_threads = num_shards.min(vb.max_num_threads).max(1);
-                let raw_stride = num_vertices_per_shard + w;
-                // `par_solve` chunks the data via
-                // `BitFieldVec::try_chunks_mut`, which requires the
-                // product `chunk_size * bit_width` to be a multiple
-                // of `usize::BITS`. Since `bit_width = 1`, chunk
-                // size must itself be a multiple of `usize::BITS`.
-                let stride = raw_stride.next_multiple_of(usize::BITS as usize);
-                let padding = stride - num_vertices_per_shard;
-                let total_bits = num_shards
-                    .checked_mul(stride)
-                    .ok_or_else(|| anyhow!("data size overflow"))?;
-
-                let mut data = BitFieldVec::<Box<[usize]>>::new_padded(1, total_bits);
-
-                // ── d) Call `par_solve` with the multi-edge closure. ──
-                // The closure captures `coder_ref` (an `&HuffmanCoder`
-                // shared across threads — HashMap<u64, usize> is
-                // Sync) and the three escape-related constants.
-                // `raw_stride` is the real variable count for the
-                // solver; everything above it up to `stride` is word
-                // alignment padding and stays zero.
-                let solve_shard = |this: &VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
-                                   _shard_index: usize,
-                                   shard: std::sync::Arc<Vec<crate::utils::SigVal<S, u64>>>,
-                                   mut shard_data: BitFieldVec<&mut [usize]>,
-                                   _pl: &mut _|
-                 -> Result<(), ()> {
-                    let shard_edge = &this.shard_edge;
-                    let mut edges: Vec<[u32; 3]> = Vec::new();
-                    let mut rhs: Vec<bool> = Vec::new();
-                    for sv in shard.iter() {
-                        let (bits, len) = encode_val(sv.val);
-                        let local_sig = shard_edge.local_sig(sv.sig);
-                        let base = shard_edge.local_edge(local_sig);
-                        for l in 0..len as usize {
-                            let off = w - 1 - l;
-                            edges.push([
-                                (base[0] + off) as u32,
-                                (base[1] + off) as u32,
-                                (base[2] + off) as u32,
-                            ]);
-                            rhs.push(((bits >> l) & 1) == 1);
-                        }
-                    }
-
-                    let solution = solve_system(raw_stride, &edges, &rhs).map_err(|_| ())?;
-                    for (i, &bit) in solution.iter().enumerate() {
-                        // SAFETY: `i < raw_stride <= stride`, and
-                        // shard_data has length `stride`.
-                        unsafe {
-                            shard_data.set_value_unchecked(i, bit as usize);
-                        }
-                    }
-                    Ok(())
-                };
-
-                // Propagate the SolveError *unwrapped* so that
-                // `try_par_populate_and_build`'s retry loop can
-                // downcast it and re-roll the seed on
-                // UnsolvableShard / MaxShardTooBig / duplicate-sig
-                // outcomes.
-                vb.par_solve(
-                    store.drain(),
-                    &mut data,
-                    padding,
-                    solve_shard,
-                    no_logging![],
-                    no_logging![],
-                )
-                .map_err(anyhow::Error::from)?;
-
-                Ok((data, attempt_seed, stride))
-            },
+        // Propagate the SolveError *unwrapped* so that
+        // VBuilder's retry loop can downcast it and re-roll the
+        // seed on UnsolvableShard / MaxShardTooBig / duplicate-sig
+        // outcomes.
+        vb.par_solve(
+            store.drain(),
+            &mut data,
+            padding,
+            solve_shard,
             no_logging![],
-            (),
-        );
+            no_logging![],
+        )
+        .map_err(anyhow::Error::from)?;
 
-    let (data_bfv, seed_used, shard_size) = build_result?;
-    let shard_edge = builder.shard_edge;
+        Ok((data, attempt_seed, stride))
+    }
+}
 
-    // Re-wrap the raw `Box<[usize]>` as a `BitVec` — same byte
-    // layout, different meta. The padding word from `new_padded`
-    // carries over.
+/// Finalizes a successful build by re-wrapping the construction-side
+/// `BitFieldVec<Box<[usize]>>` (bit width 1) as the query-side
+/// [`BitVec`]. Same byte layout, different wrapper.
+fn finish_build<K, S, E>(
+    shard_edge: E,
+    cs: CodecSetup,
+    data_bfv: BitFieldVec<Box<[usize]>>,
+    seed_used: u64,
+    num_keys: usize,
+    shard_size: usize,
+) -> CompVFunc<K, BitVec<Box<[usize]>>, S, E>
+where
+    K: ?Sized,
+{
     let (raw_bits, _bit_width, len_in_elements) = data_bfv.into_raw_parts();
     let data = unsafe { BitVec::<Box<[usize]>>::from_raw_parts(raw_bits, len_in_elements) };
-
-    Ok(CompVFunc {
+    CompVFunc {
         shard_edge,
         seed: seed_used,
-        num_keys: n,
+        num_keys,
         shard_size,
-        global_max_codeword_length,
-        escape_length,
-        escaped_symbol_length,
+        global_max_codeword_length: cs.global_max_codeword_length,
+        escape_length: cs.escape_length,
+        escaped_symbol_length: cs.escaped_symbol_length,
         data,
-        decoder: coder.into_decoder(),
+        decoder: cs.coder.into_decoder(),
         _marker: PhantomData,
-    })
+    }
+}
+
+/// Empty-function short-circuit shared by both entry points.
+fn empty_comp_vfunc<K, S, E>(
+    cs: CodecSetup,
+    eps: f64,
+) -> CompVFunc<K, BitVec<Box<[usize]>>, S, E>
+where
+    K: ?Sized,
+    E: ShardEdge<S, 3>,
+{
+    let mut shard_edge = E::default();
+    shard_edge.set_up_shards(0, eps);
+    CompVFunc {
+        shard_edge,
+        seed: 0,
+        num_keys: 0,
+        shard_size: 0,
+        global_max_codeword_length: cs.global_max_codeword_length,
+        escape_length: cs.escape_length,
+        escaped_symbol_length: cs.escaped_symbol_length,
+        data: BitVec::<Vec<usize>>::new_padded(0),
+        decoder: cs.coder.into_decoder(),
+        _marker: PhantomData,
+    }
+}
+
+/// Lender-based sequential path.
+fn build_inner_seq<K, B, S, E, L>(
+    huffman: Huffman,
+    builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+    keys: L,
+    values: &[u64],
+    n: usize,
+) -> Result<CompVFunc<K, BitVec<Box<[usize]>>, S, E>>
+where
+    K: ?Sized + ToSig<S> + std::fmt::Debug,
+    B: ?Sized + Borrow<K>,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+    SigVal<S, u64>: RadixKey,
+    L: FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+{
+    let cs = codec_setup(huffman, values);
+
+    if n == 0 {
+        return Ok(empty_comp_vfunc::<K, S, E>(cs, builder.eps));
+    }
+
+    let mut builder = builder.expected_num_keys(n);
+    // Nested scope so that `build_fn` (which borrows `cs.coder`) is
+    // dropped before we move `cs` into `finish_build`.
+    let (data_bfv, seed_used, shard_size) = {
+        let mut build_fn = make_build_fn::<S, E, _>(
+            &cs.coder,
+            cs.w,
+            cs.escape_codeword,
+            cs.escape_length,
+            cs.escaped_symbol_length,
+        );
+        let ((data_bfv, seed_used, shard_size), _keys) = builder.try_populate_and_build(
+            keys,
+            FromSlice::new(values),
+            &mut build_fn,
+            no_logging![],
+            (),
+        )?;
+        (data_bfv, seed_used, shard_size)
+    };
+    let shard_edge = builder.shard_edge;
+    Ok(finish_build::<K, S, E>(
+        shard_edge, cs, data_bfv, seed_used, n, shard_size,
+    ))
+}
+
+/// Slice-based parallel path.
+fn build_inner_par<K, B, S, E>(
+    huffman: Huffman,
+    builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+    keys: &[B],
+    values: &[u64],
+) -> Result<CompVFunc<K, BitVec<Box<[usize]>>, S, E>>
+where
+    K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
+    B: Borrow<K> + Sync,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+    SigVal<S, u64>: RadixKey,
+{
+    let n = keys.len();
+    let cs = codec_setup(huffman, values);
+
+    if n == 0 {
+        return Ok(empty_comp_vfunc::<K, S, E>(cs, builder.eps));
+    }
+
+    let mut builder = builder.expected_num_keys(n);
+    let values_ref = values;
+    // Nested scope so that `build_fn` (which borrows `cs.coder`) is
+    // dropped before we move `cs` into `finish_build`.
+    let (data_bfv, seed_used, shard_size) = {
+        let mut build_fn = make_build_fn::<S, E, _>(
+            &cs.coder,
+            cs.w,
+            cs.escape_codeword,
+            cs.escape_length,
+            cs.escaped_symbol_length,
+        );
+        builder.try_par_populate_and_build(
+            keys,
+            &move |i: usize| values_ref[i],
+            &mut build_fn,
+            no_logging![],
+            (),
+        )?
+    };
+    let shard_edge = builder.shard_edge;
+    Ok(finish_build::<K, S, E>(
+        shard_edge, cs, data_bfv, seed_used, n, shard_size,
+    ))
 }
 
 // ── Linear-system solver ───────────────────────────────────────────
@@ -752,7 +955,7 @@ mod tests {
     fn build_and_check(values: &[u64]) {
         let n = values.len();
         let keys: Vec<u64> = (0..n as u64).collect();
-        let func = CompVFunc::<u64>::try_new(&keys, values).expect("build");
+        let func = CompVFunc::<u64>::try_par_new(&keys, values).expect("build");
         for (i, &v) in values.iter().enumerate() {
             assert_eq!(func.get(keys[i]), v, "mismatch at key {}", keys[i]);
         }
@@ -762,9 +965,29 @@ mod tests {
     fn test_empty() {
         let values: Vec<u64> = vec![];
         let keys: Vec<u64> = vec![];
-        let func = CompVFunc::<u64>::try_new(&keys, &values).expect("build");
+        let func = CompVFunc::<u64>::try_par_new(&keys, &values).expect("build");
         assert!(func.is_empty());
         assert_eq!(func.len(), 0);
+    }
+
+    #[test]
+    fn test_streaming_construction() {
+        // Exercises the lender-based `try_new` path. Uses
+        // `FromCloneableIntoIterator` as the key lender (mirrors the
+        // `-n` mode of the `comp_vfunc` binary) so that keys are
+        // consumed one at a time, not materialized as a slice.
+        use crate::utils::FromCloneableIntoIterator;
+        let n = 1000usize;
+        let values: Vec<u64> = (0..n as u64).map(|i| i % 5).collect();
+        let func = CompVFunc::<usize>::try_new(
+            FromCloneableIntoIterator::from(0_usize..n),
+            &values,
+            n,
+        )
+        .expect("build");
+        for i in 0..n {
+            assert_eq!(func.get(i), values[i], "mismatch at key {i}");
+        }
     }
 
     #[test]
@@ -804,7 +1027,7 @@ mod tests {
             })
             .collect();
         let keys: Vec<u64> = (0..n as u64).collect();
-        let func = CompVFunc::<u64>::try_new(&keys, &values).expect("build");
+        let func = CompVFunc::<u64>::try_par_new(&keys, &values).expect("build");
         for (i, &v) in values.iter().enumerate() {
             assert_eq!(func.get(keys[i]), v, "mismatch at key {}", keys[i]);
         }
@@ -816,7 +1039,7 @@ mod tests {
         let n = 300usize;
         let keys: Vec<String> = (0..n).map(|i| format!("key-{i:08}")).collect();
         let values: Vec<u64> = (0..n as u64).map(|i| i % 5).collect();
-        let func = CompVFunc::<String>::try_new(&keys, &values).expect("build");
+        let func = CompVFunc::<String>::try_par_new(&keys, &values).expect("build");
         for (k, &v) in keys.iter().zip(values.iter()) {
             assert_eq!(func.get(k), v, "mismatch at {k}");
         }
@@ -829,7 +1052,7 @@ mod tests {
         let n = 1500usize;
         let keys: Vec<u64> = (0..n as u64).collect();
         let values: Vec<u64> = (0..n as u64).map(|i| i % 7).collect();
-        let func = CompVFunc::<u64>::try_new(&keys, &values).expect("build");
+        let func = CompVFunc::<u64>::try_par_new(&keys, &values).expect("build");
         let unaligned = func.try_into_unaligned().expect("convert");
         for (k, &v) in keys.iter().zip(values.iter()) {
             assert_eq!(unaligned.get(*k), v, "mismatch at {k}");
@@ -864,7 +1087,7 @@ mod tests {
             values.push(v);
         }
         let keys: Vec<u64> = (0..values.len() as u64).collect();
-        let func = CompVFunc::<u64>::try_new_with_builder(
+        let func = CompVFunc::<u64>::try_par_new_with_builder(
             &keys,
             &values,
             Huffman::length_limited(8, 0.95),
