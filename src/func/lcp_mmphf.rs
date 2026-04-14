@@ -135,6 +135,8 @@ impl<K: PrimitiveInteger> ToSig<[u64; 1]> for IntBitPrefix<K> {
 
 #[cfg(feature = "rayon")]
 mod build {
+    use std::ops::{BitXor, BitXorAssign};
+
     use super::*;
     use crate::func::VBuilder;
     use anyhow::{Result, bail};
@@ -170,9 +172,9 @@ mod build {
     where
         IntBitPrefix<K>: ToSig<S1>,
         SigVal<S0, usize>: RadixKey,
-        SigVal<E0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+        SigVal<E0::LocalSig, usize>: BitXor + BitXorAssign,
         SigVal<S1, usize>: RadixKey,
-        SigVal<E1::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+        SigVal<E1::LocalSig, usize>: BitXor + BitXorAssign,
     {
         /// Creates a new LCP-based monotone minimal perfect hash function
         /// for integers using default [`VBuilder`] settings.
@@ -666,9 +668,9 @@ mod build {
     where
         BitPrefix: ToSig<S1>,
         SigVal<S0, usize>: RadixKey,
-        SigVal<E0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+        SigVal<E0::LocalSig, usize>: BitXor + BitXorAssign,
         SigVal<S1, usize>: RadixKey,
-        SigVal<E1::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+        SigVal<E1::LocalSig, usize>: BitXor + BitXorAssign,
     {
         /// Creates a new LCP-based monotone minimal perfect hash function for
         /// byte-sequence keys using default [`VBuilder`] settings.

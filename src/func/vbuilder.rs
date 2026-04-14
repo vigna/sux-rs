@@ -271,11 +271,6 @@ enum PeelResult<
     },
 }
 
-// `XorGraph`, `DoubleStack`, `FastStack` and the `remove_edge!` macro
-// have moved to [`crate::func::peeling`] so they can be shared with
-// [`crate::func::CompVFunc`]. The detailed design notes that used to
-// live here have moved alongside them.
-
 /// An iterator over segments of data associated with each shard.
 type ShardDataIter<'a, D> = <D as SliceByValueMut>::ChunksMut<'a>;
 /// A segment of data associated with a specific shard.
@@ -1246,54 +1241,11 @@ impl<
     }
 }
 
-// XorGraph, DoubleStack, FastStack and remove_edge! moved to
-// [`crate::func::peeling`]. VBuilder's peelers now delegate to the
-// generic peeling primitives there; only `DoubleStack` is named
-// directly (in [`PeelResult::Partial`]).
-use crate::func::peeling::{DoubleStack, XorGraph};
-
-/// Builds the [`XorGraph`] for a `peel_by_data_*` peeler from a
-/// `Vec<SigVal>` shard.
-///
-/// Both [`VBuilder::peel_by_sig_vals_high_mem`] and
-/// [`VBuilder::peel_by_sig_vals_low_mem`] share an identical
-/// graph-construction loop: this helper returns the corresponding
-/// `gen_edges` closure (a `FnOnce` that takes ownership of `shard`
-/// and lets it drop at end-of-closure, freeing the signature store
-/// before peeling begins). The closure also calls `inspect` on each
-/// `sig_val` for the duplicate-signature check.
-#[inline(always)]
-fn sig_val_gen_edges<'a, S, E, V, H>(
-    shard: Arc<Vec<SigVal<S, V>>>,
-    shard_edge: &'a E,
-    inspect: &'a H,
-) -> impl FnOnce(&mut XorGraph<SigVal<E::LocalSig, V>>) + 'a
-where
-    S: Sig + 'a,
-    E: ShardEdge<S, 3> + 'a,
-    V: BinSafe + 'a,
-    H: Fn(&SigVal<S, V>) + 'a,
-    SigVal<E::LocalSig, V>: BitXor + BitXorAssign + Default,
-{
-    move |xg| {
-        for &sig_val in shard.iter() {
-            inspect(&sig_val);
-            let local_sig = shard_edge.local_sig(sig_val.sig);
-            for (side, &v) in shard_edge.local_edge(local_sig).iter().enumerate() {
-                xg.add(
-                    v,
-                    SigVal {
-                        sig: local_sig,
-                        val: sig_val.val,
-                    },
-                    side,
-                );
-            }
-        }
-        // `shard` drops here — the consuming iterator over the
-        // sig store has been read, and the closure is FnOnce.
-    }
-}
+// `XorGraph`, `DoubleStack`, `FastStack`, and the `remove_edge!`
+// macro live in [`crate::func::peeling`] so they can be shared with
+// [`crate::func::CompVFunc`]. VBuilder's peeler bodies are otherwise
+// unchanged.
+use crate::func::peeling::{DoubleStack, FastStack, XorGraph, remove_edge};
 
 impl<
     D: BitFieldSlice<Value: Word + BinSafe + Send + Sync>
@@ -1625,70 +1577,98 @@ impl<
     ) -> Result<PeelResult<'a, D, S, E, V>, ()> {
         let shard_edge = &self.shard_edge;
         let num_vertices = shard_edge.num_vertices();
-        let num_edges = shard.len();
         let num_shards = shard_edge.num_shards();
 
         pl.start(format!(
-            "Peeling shard {}/{} by edge indices...",
+            "Generating graph for shard {}/{}...",
             shard_index + 1,
             num_shards
         ));
 
-        // Generic peeler core: graph construction is a closure that
-        // borrows the shard, the lookup closure does the same. Both
-        // share an immutable borrow of `shard`, which compose.
-        #[allow(clippy::redundant_closure)] // generic associated fn
-        let output = crate::func::peeling::peel_by_index::<E::Vertex, _, _, _, _>(
-            num_vertices,
-            num_edges,
-            &self.failed,
-            |v| E::Vertex::as_from(v),
-            |i| i.as_to::<usize>(),
-            |xg| {
-                for (edge_index, sig_val) in shard.iter().enumerate() {
-                    inspect(sig_val);
-                    for (side, &v) in shard_edge
-                        .local_edge(shard_edge.local_sig(sig_val.sig))
-                        .iter()
-                        .enumerate()
-                    {
-                        xg.add(v, E::Vertex::as_from(edge_index), side);
-                    }
-                }
-            },
-            |edge_index| {
-                let edge: usize = edge_index.as_to();
-                shard_edge.local_edge(shard_edge.local_sig(shard[edge].sig))
-            },
-        )?;
-
-        pl.done_with_count(num_edges);
-
-        let (double_stack, sides_stack) = match output {
-            crate::func::peeling::IndexPeelOutput::Partial {
-                double_stack,
-                sides_stack,
-            } => {
-                pl.info(format_args!(
-                    "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
-                    shard_index + 1,
-                    num_shards,
-                    double_stack.upper_len(),
-                    num_edges,
-                ));
-                return Ok(PeelResult::Partial {
-                    shard_index,
-                    shard,
-                    data,
-                    double_stack,
-                    sides_stack,
-                });
+        let mut xor_graph = XorGraph::<E::Vertex>::new(num_vertices);
+        for (edge_index, sig_val) in shard.iter().enumerate() {
+            inspect(sig_val);
+            for (side, &v) in shard_edge
+                .local_edge(shard_edge.local_sig(sig_val.sig))
+                .iter()
+                .enumerate()
+            {
+                xor_graph.add(v, E::Vertex::as_from(edge_index), side);
             }
-            crate::func::peeling::IndexPeelOutput::Complete {
+        }
+        pl.done_with_count(shard.len());
+
+        assert!(
+            !xor_graph.overflow,
+            "Degree overflow for shard {}/{}",
+            shard_index + 1,
+            num_shards
+        );
+
+        if self.failed.load(Ordering::Relaxed) {
+            return Err(());
+        }
+
+        // The lower stack contains vertices to be visited. The upper stack
+        // contains peeled edges.
+        let mut double_stack = DoubleStack::<E::Vertex>::new(num_vertices);
+        let mut sides_stack = Vec::<u8>::new();
+
+        pl.start(format!(
+            "Peeling graph for shard {}/{} by edge indices...",
+            shard_index + 1,
+            num_shards
+        ));
+
+        // Preload all vertices of degree one in the visit stack
+        for (v, degree) in xor_graph.degrees().enumerate() {
+            if degree == 1 {
+                double_stack.push_lower(E::Vertex::as_from(v));
+            }
+        }
+
+        while let Some(v) = double_stack.pop_lower() {
+            let v: usize = v.as_to();
+            if xor_graph.degree(v) == 0 {
+                continue;
+            }
+            debug_assert!(xor_graph.degree(v) == 1);
+            let (edge_index, side) = xor_graph.edge_and_side(v);
+            xor_graph.zero(v);
+            double_stack.push_upper(edge_index);
+            sides_stack.push(side as u8);
+            let edge: usize = edge_index.as_to();
+
+            let e = shard_edge.local_edge(shard_edge.local_sig(shard[edge].sig));
+            remove_edge!(
+                xor_graph,
+                e,
+                side,
+                edge_index,
+                double_stack,
+                push_lower,
+                E::Vertex::as_from
+            );
+        }
+
+        pl.done();
+
+        if shard.len() != double_stack.upper_len() {
+            pl.info(format_args!(
+                "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
+                shard_index + 1,
+                num_shards,
+                double_stack.upper_len(),
+                shard.len(),
+            ));
+            return Ok(PeelResult::Partial {
+                shard_index,
+                shard,
+                data,
                 double_stack,
                 sides_stack,
-            } => (double_stack, sides_stack),
-        };
+            });
+        }
 
         self.assign(
             shard_index,
@@ -1761,43 +1741,102 @@ impl<
         let shard_edge = &self.shard_edge;
         let num_vertices = shard_edge.num_vertices();
         let num_shards = shard_edge.num_shards();
-        let num_edges = shard.len();
+        let shard_len = shard.len();
 
         pl.start(format!(
-            "Peeling shard {}/{} by signatures (high-mem)...",
+            "Generating graph for shard {}/{}...",
             shard_index + 1,
             num_shards
         ));
 
-        let output = crate::func::peeling::peel_by_data_high_mem::<
-            SigVal<E::LocalSig, V>,
-            _,
-            _,
-        >(
-            num_vertices,
-            num_edges,
-            &self.failed,
-            sig_val_gen_edges(shard, shard_edge, inspect),
-            |sig_val| shard_edge.local_edge(sig_val.sig),
-        )?;
+        let mut xor_graph = XorGraph::<SigVal<E::LocalSig, V>>::new(num_vertices);
+        for &sig_val in shard.iter() {
+            inspect(&sig_val);
+            let local_sig = shard_edge.local_sig(sig_val.sig);
+            for (side, &v) in shard_edge.local_edge(local_sig).iter().enumerate() {
+                xor_graph.add(
+                    v,
+                    SigVal {
+                        sig: local_sig,
+                        val: sig_val.val,
+                    },
+                    side,
+                );
+            }
+        }
+        pl.done_with_count(shard.len());
 
-        pl.done_with_count(num_edges);
+        // We are using a consuming iterator over the shard store, so this
+        // drop will free the memory used by the signatures
+        drop(shard);
 
-        let Some(output) = output else {
+        assert!(
+            !xor_graph.overflow,
+            "Degree overflow for shard {}/{}",
+            shard_index + 1,
+            num_shards
+        );
+
+        if self.failed.load(Ordering::Relaxed) {
+            return Err(());
+        }
+
+        let mut sig_vals_stack = FastStack::<SigVal<E::LocalSig, V>>::new(shard_len);
+        let mut sides_stack = FastStack::<u8>::new(shard_len);
+        // Experimentally this stack never grows beyond a little more than
+        // num_vertices / 4
+        let mut visit_stack = Vec::<E::Vertex>::with_capacity(num_vertices / 3);
+
+        pl.start(format!(
+            "Peeling graph for shard {}/{} by signatures (high-mem)...",
+            shard_index + 1,
+            num_shards
+        ));
+
+        // Preload all vertices of degree one in the visit stack
+        for (v, degree) in xor_graph.degrees().enumerate() {
+            if degree == 1 {
+                visit_stack.push(E::Vertex::as_from(v));
+            }
+        }
+
+        while let Some(v) = visit_stack.pop() {
+            let v: usize = v.as_to();
+            if xor_graph.degree(v) == 0 {
+                continue;
+            }
+            let (sig_val, side) = xor_graph.edge_and_side(v);
+            xor_graph.zero(v);
+            sig_vals_stack.push(sig_val);
+            sides_stack.push(side as u8);
+
+            let e = self.shard_edge.local_edge(sig_val.sig);
+            remove_edge!(xor_graph, e, side, sig_val, visit_stack, push, |v| {
+                E::Vertex::as_from(v)
+            });
+        }
+
+        pl.done();
+
+        if shard_len != sig_vals_stack.len() {
             pl.info(format_args!(
-                "Peeling failed for shard {}/{}",
+                "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
                 shard_index + 1,
                 num_shards,
+                sig_vals_stack.len(),
+                shard_len
             ));
             return Err(());
-        };
+        }
 
         self.assign(
             shard_index,
             data,
-            output.iter_reverse_peel().map(|(sig_val, side)| {
-                ((sig_val.sig, get_val(shard_edge, sig_val)), side)
-            }),
+            sig_vals_stack
+                .iter()
+                .rev()
+                .map(|&sig_val| (sig_val.sig, get_val(shard_edge, sig_val)))
+                .zip(sides_stack.iter().copied().rev()),
             pl,
         );
 
@@ -1844,42 +1883,95 @@ impl<
         let shard_edge = &self.shard_edge;
         let num_vertices = shard_edge.num_vertices();
         let num_shards = shard_edge.num_shards();
-        let num_edges = shard.len();
+        let shard_len = shard.len();
 
         pl.start(format!(
-            "Peeling shard {}/{} by signatures (low-mem)...",
+            "Generating graph for shard {}/{}...",
+            shard_index + 1,
+            num_shards,
+        ));
+
+        let mut xor_graph = XorGraph::<SigVal<E::LocalSig, V>>::new(num_vertices);
+        for &sig_val in shard.iter() {
+            inspect(&sig_val);
+            let local_sig = shard_edge.local_sig(sig_val.sig);
+            for (side, &v) in shard_edge.local_edge(local_sig).iter().enumerate() {
+                xor_graph.add(
+                    v,
+                    SigVal {
+                        sig: local_sig,
+                        val: sig_val.val,
+                    },
+                    side,
+                );
+            }
+        }
+        pl.done_with_count(shard.len());
+
+        // We are using a consuming iterator over the shard store, so this
+        // drop will free the memory used by the signatures
+        drop(shard);
+
+        assert!(
+            !xor_graph.overflow,
+            "Degree overflow for shard {}/{}",
+            shard_index + 1,
+            num_shards
+        );
+
+        if self.failed.load(Ordering::Relaxed) {
+            return Err(());
+        }
+
+        let mut visit_stack = DoubleStack::<E::Vertex>::new(num_vertices);
+
+        pl.start(format!(
+            "Peeling graph for shard {}/{} by signatures (low-mem)...",
             shard_index + 1,
             num_shards
         ));
 
-        let output = crate::func::peeling::peel_by_data_low_mem::<
-            SigVal<E::LocalSig, V>,
-            _,
-            _,
-        >(
-            num_vertices,
-            num_edges,
-            &self.failed,
-            sig_val_gen_edges(shard, shard_edge, inspect),
-            |sig_val| shard_edge.local_edge(sig_val.sig),
-        )?;
+        // Preload all vertices of degree one in the visit stack
+        for (v, degree) in xor_graph.degrees().enumerate() {
+            if degree == 1 {
+                visit_stack.push_lower(E::Vertex::as_from(v));
+            }
+        }
 
-        pl.done_with_count(num_edges);
+        while let Some(v) = visit_stack.pop_lower() {
+            let v: usize = v.as_to();
+            if xor_graph.degree(v) == 0 {
+                continue;
+            }
+            let (sig_val, side) = xor_graph.edge_and_side(v);
+            xor_graph.zero(v);
+            visit_stack.push_upper(E::Vertex::as_from(v));
 
-        let Some(output) = output else {
+            let e = self.shard_edge.local_edge(sig_val.sig);
+            remove_edge!(xor_graph, e, side, sig_val, visit_stack, push_lower, |v| {
+                E::Vertex::as_from(v)
+            });
+        }
+
+        pl.done();
+
+        if shard_len != visit_stack.upper_len() {
             pl.info(format_args!(
-                "Peeling failed for shard {}/{}",
+                "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
                 shard_index + 1,
                 num_shards,
+                visit_stack.upper_len(),
+                shard_len
             ));
             return Err(());
-        };
+        }
 
         self.assign(
             shard_index,
             data,
-            output.iter_reverse_peel().map(|(sig_val, side)| {
-                ((sig_val.sig, get_val(shard_edge, sig_val)), side)
+            visit_stack.iter_upper().map(|&v| {
+                let (sig_val, side) = xor_graph.edge_and_side(v.as_to());
+                ((sig_val.sig, get_val(shard_edge, sig_val)), side as u8)
             }),
             pl,
         );

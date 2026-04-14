@@ -108,7 +108,8 @@ use crate::bits::test_unaligned_pos;
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::ambassador_impl_BitLength;
 use crate::traits::{
-    AtomicBitIter, AtomicBitVecOps, Backend, BitIter, BitVecOps, BitVecValueOps, Word,
+    AtomicBitIter, AtomicBitVecOps, Backend, BitFieldSlice, BitFieldSliceMut, BitIter, BitVecOps,
+    BitVecOpsMut, BitVecValueOps, BitWidth, Word,
 };
 use crate::utils::SelectInWord;
 use crate::{
@@ -125,8 +126,10 @@ use core::borrow::BorrowMut;
 use core::fmt;
 use mem_dbg::*;
 use num_primitive::PrimitiveInteger;
+use std::iter::FusedIterator;
 use std::mem::size_of;
 use std::{ops::Index, sync::atomic::Ordering};
+use value_traits::slices::{SliceByValue, SliceByValueMut};
 
 /// A bit vector.
 ///
@@ -583,7 +586,9 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVecValueOps<B::Word> for BitV
             pos + width,
             self.len
         );
-        unsafe { self.get_value_unchecked(pos, width) }
+        // Disambiguate: `SliceByValue::get_value_unchecked` now also
+        // exists for `BitVec`, but with a different signature.
+        unsafe { <Self as BitVecValueOps<B::Word>>::get_value_unchecked(self, pos, width) }
     }
 
     #[inline]
@@ -795,6 +800,181 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> fmt::Display for BitVec<B> {
         }
         write!(f, "]")?;
         Ok(())
+    }
+}
+
+/// An iterator over contiguous mutable chunks of a [`BitVec`], yielding
+/// [`BitVec<&mut [W]>`] views.
+///
+/// This struct is created by [`BitVec`]'s [`try_chunks_mut`]
+/// implementation. When the vector length is not evenly divided by the
+/// chunk size, the last chunk will be shorter.
+///
+/// [`try_chunks_mut`]: SliceByValueMut::try_chunks_mut
+pub struct BitVecChunksMut<'a, W: Word> {
+    remaining: usize,
+    chunk_size: usize,
+    iter: std::slice::ChunksMut<'a, W>,
+}
+
+impl<'a, W: Word> Iterator for BitVecChunksMut<'a, W> {
+    type Item = BitVec<&'a mut [W]>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|chunk| {
+            let size = Ord::min(self.chunk_size, self.remaining);
+            // SAFETY: `size` is bounded by the original length; the
+            // backing slice contains `size.div_ceil(W::BITS)` words,
+            // which is exactly what `std::slice::ChunksMut` hands us.
+            let next = unsafe { BitVec::from_raw_parts(chunk, size) };
+            self.remaining -= size;
+            next
+        })
+    }
+}
+
+impl<'a, W: Word> ExactSizeIterator for BitVecChunksMut<'a, W> where
+    std::slice::ChunksMut<'a, W>: ExactSizeIterator
+{
+}
+
+impl<'a, W: Word> FusedIterator for BitVecChunksMut<'a, W> where
+    std::slice::ChunksMut<'a, W>: FusedIterator
+{
+}
+
+/// Error returned when [`BitVec::try_chunks_mut`] cannot align the
+/// requested chunk size to word boundaries.
+///
+/// [`BitVec::try_chunks_mut`]: SliceByValueMut::try_chunks_mut
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BitVecChunksMutError<W: Word> {
+    chunk_size: usize,
+    _marker: core::marker::PhantomData<W>,
+}
+
+impl<W: Word> fmt::Display for BitVecChunksMutError<W> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "try_chunks_mut needs the chunk size ({}) to be a multiple of W::BITS ({}) to return more than one chunk",
+            self.chunk_size,
+            W::BITS as usize
+        )
+    }
+}
+
+impl<W: Word> std::error::Error for BitVecChunksMutError<W> {}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> SliceByValue for BitVec<B> {
+    type Value = B::Word;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    #[inline(always)]
+    unsafe fn get_value_unchecked(&self, index: usize) -> B::Word {
+        let bits = B::Word::BITS as usize;
+        let word_index = index / bits;
+        let bit_index = index % bits;
+        // SAFETY: forwarded from the caller's invariant (index < len).
+        unsafe { (*self.bits.as_ref().get_unchecked(word_index) >> bit_index) & B::Word::ONE }
+    }
+}
+
+impl<B: Backend<Word: Word>> BitWidth for BitVec<B> {
+    #[inline(always)]
+    fn bit_width(&self) -> usize {
+        1
+    }
+}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldSlice for BitVec<B> {
+    #[inline(always)]
+    fn as_slice(&self) -> &[Self::Value] {
+        self.bits.as_ref()
+    }
+}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueMut for BitVec<B> {
+    #[inline(always)]
+    unsafe fn set_value_unchecked(&mut self, index: usize, value: B::Word) {
+        let bits = B::Word::BITS as usize;
+        let word_index = index / bits;
+        let bit_index = index % bits;
+        let data = self.bits.as_mut();
+        // Branchless RMW with compile-time mask = 1.
+        unsafe {
+            let mut word = *data.get_unchecked(word_index);
+            word &= !(B::Word::ONE << bit_index);
+            word |= (value & B::Word::ONE) << bit_index;
+            *data.get_unchecked_mut(word_index) = word;
+        }
+    }
+
+    type ChunksMut<'a>
+        = BitVecChunksMut<'a, B::Word>
+    where
+        Self: 'a;
+
+    type ChunksMutError = BitVecChunksMutError<B::Word>;
+
+    /// # Errors
+    ///
+    /// Returns an error if `chunk_size` is not a multiple of
+    /// `W::BITS` and more than one chunk must be returned.
+    fn try_chunks_mut(
+        &mut self,
+        chunk_size: usize,
+    ) -> Result<Self::ChunksMut<'_>, BitVecChunksMutError<B::Word>> {
+        let len = self.len;
+        let bits = B::Word::BITS as usize;
+        if len <= chunk_size || chunk_size % bits == 0 {
+            // `std::slice::ChunksMut::new` panics on chunk_size 0, so
+            // use 1 when the chunk is empty; the iterator will yield
+            // empty views anyway.
+            let words_per_chunk = Ord::max(1, chunk_size.div_ceil(bits));
+            Ok(BitVecChunksMut {
+                remaining: len,
+                chunk_size,
+                iter: self.bits.as_mut()[..len.div_ceil(bits)].chunks_mut(words_per_chunk),
+            })
+        } else {
+            Err(BitVecChunksMutError {
+                chunk_size,
+                _marker: core::marker::PhantomData,
+            })
+        }
+    }
+}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> BitFieldSliceMut for BitVec<B> {
+    fn reset(&mut self) {
+        <Self as BitVecOpsMut<B::Word>>::fill(self, false);
+    }
+
+    #[cfg(feature = "rayon")]
+    fn par_reset(&mut self) {
+        use rayon::prelude::*;
+        let bits_per_word = B::Word::BITS as usize;
+        let full_words = self.len / bits_per_word;
+        let residual = self.len % bits_per_word;
+        let data = self.bits.as_mut();
+        data[..full_words]
+            .par_iter_mut()
+            .with_min_len(crate::RAYON_MIN_LEN)
+            .for_each(|x| *x = B::Word::ZERO);
+        if residual != 0 {
+            data[full_words] &= B::Word::MAX << residual;
+        }
+    }
+
+    #[inline(always)]
+    fn as_mut_slice(&mut self) -> &mut [Self::Value] {
+        self.bits.as_mut()
     }
 }
 

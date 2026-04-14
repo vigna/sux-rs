@@ -35,7 +35,7 @@
 //! [`ShardEdge`]: crate::func::shard_edge::ShardEdge
 //! [`ToSig`]: crate::utils::ToSig
 
-use crate::bits::{BitFieldVec, BitVec, BitVecU, test_unaligned_any_pos};
+use crate::bits::{BitVec, BitVecU, test_unaligned_any_pos};
 use crate::func::VBuilder;
 use crate::func::codec::{Codec, Coder, Decoder, ESCAPE, Huffman, HuffmanCoder, HuffmanDecoder};
 use crate::func::shard_edge::{FuseLge3Shards, ShardEdge};
@@ -54,7 +54,7 @@ use rdst::RadixKey;
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use value_traits::slices::{SliceByValue, SliceByValueMut};
+use value_traits::slices::SliceByValueMut;
 
 // ── CompVFunc struct ────────────────────────────────────────────────
 
@@ -293,7 +293,7 @@ impl<K: ?Sized, S, E> From<CompVFunc<K, BitVecU<Box<[usize]>>, S, E>>
 //
 // CompVFunc shares its parallel infrastructure with
 // [`VBuilder`](crate::func::VBuilder): callers pass a
-// `VBuilder<BitFieldVec<Box<[usize]>>, S, E>` configured with the
+// `VBuilder<BitVec<Box<[usize]>>, S, E>` configured with the
 // usual VBuilder knobs (offline, check-dups, low-mem, threads, eps,
 // seed). The only CompVFunc-specific configuration is the
 // [`Huffman`] codec used for values; the default is unlimited-length
@@ -347,14 +347,13 @@ where
     /// construction knob (offline mode, thread count, sharding ε,
     /// PRNG seed, etc.); the `huffman` argument controls the codec
     /// used for the values. The data backend is pinned internally to
-    /// `BitFieldVec<Box<[usize]>>` — the query-side [`BitVec`] is
-    /// obtained by re-wrapping the raw storage at the end.
+    /// [`BitVec<Box<[usize]>>`] — the same type used at query time.
     pub fn try_new_with_builder<L, B>(
         keys: L,
         values: &[u64],
         n: usize,
         huffman: Huffman,
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
     ) -> Result<Self>
     where
         B: ?Sized + Borrow<K>,
@@ -399,7 +398,7 @@ where
         keys: &[B],
         values: &[u64],
         huffman: Huffman,
-        builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
     ) -> Result<Self> {
         if keys.len() != values.len() {
             bail!(
@@ -429,12 +428,12 @@ where
 // output re-wrapping — is shared via `codec_setup` and
 // `make_build_fn` below.
 //
-// Storage during construction is `BitFieldVec<Box<[usize]>>` with
-// `bit_width = 1` so it satisfies VBuilder's `D: BitFieldSlice +
-// BitFieldSliceMut` bounds. After the build, we re-wrap the raw
-// `Box<[usize]>` as a `BitVec` (same byte layout, different wrapper)
-// so the query path keeps its `BitVec::get_value` / `BitVecU`
-// unaligned-read interface.
+// Storage during construction is `BitVec<Box<[usize]>>`, which
+// implements `SliceByValueMut<Value = bool>` with a word-aligned
+// `try_chunks_mut` — exactly what VBuilder's `par_solve` requires.
+// The same `BitVec` is handed to `finish_build` unchanged, so the
+// query path gets its `get_value_unaligned` / `BitVecU` read
+// interface with zero re-wrapping.
 
 /// Builds a [`HuffmanCoder`] from the value distribution. Used by
 /// both `build_inner_seq` and `build_inner_par`.
@@ -457,15 +456,15 @@ fn build_coder(huffman: Huffman, values: &[u64]) -> HuffmanCoder {
 fn make_build_fn<'c, S, E, P>(
     coder: &'c HuffmanCoder,
 ) -> impl FnMut(
-    &mut VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+    &mut VBuilder<BitVec<Box<[usize]>>, S, E>,
     u64,
     Box<dyn ShardStore<S, u64> + Send + Sync>,
     u64,
     usize,
     &mut P,
     &mut (),
-) -> Result<(BitFieldVec<Box<[usize]>>, u64, usize)>
-       + 'c
+) -> Result<(BitVec<Box<[usize]>>, u64, usize)>
++ 'c
 where
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
@@ -482,6 +481,14 @@ where
 
     // Encode a single `(bits, len)` pair for a value. Used by both
     // the initial edge-count pass and the per-shard solver.
+    //
+    // The `escaped_symbol_length == 0` guard handles a degenerate
+    // corner: the only escaped symbol is the value `0`, whose bit
+    // length is 0. Without the guard, `64 - escaped_symbol_length`
+    // would be `64` and the shift on the `else` branch would be
+    // undefined (Rust panics in debug, unspecified in release). When
+    // we hit this case, the literal field is zero bits wide and the
+    // escape codeword alone identifies the symbol.
     let encode_val = move |v: u64| -> (u64, u32) {
         let len = coder.codeword_length(v);
         let bits = match coder.encode(v) {
@@ -498,7 +505,7 @@ where
         (bits, len)
     };
 
-    move |vb: &mut VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+    move |vb: &mut VBuilder<BitVec<Box<[usize]>>, S, E>,
           attempt_seed: u64,
           mut store: Box<dyn ShardStore<S, u64> + Send + Sync>,
           _max_val: u64,
@@ -521,14 +528,17 @@ where
         }
 
         // ── b) Re-call `set_up_graphs` with edge counts. ──
-        // Capture `lge`: `true` means the graph's `c` is at/below
-        // the peeling threshold and we *must* use LGE as a fallback
-        // for the unpeeled core. `false` means `c` is above the
-        // peeling threshold and pure peeling is expected to succeed.
-        let (_c, require_lge) = vb
+        // VBuilder already called it with the *key* count, but our
+        // multi-edge construction has avg ≈ entropy more equations
+        // than keys, so the shard-edge has to be resized against the
+        // actual edge count. The returned `lge` flag tells us whether
+        // `set_up_graphs` picked a *dense* layout (small expected core
+        // → cheap LGE fallback) or a *sparse* one (pure peel expected
+        // to succeed; a failing peel leaves a large core that LGE
+        // cannot chew through, so we must retry the shard instead).
+        let (_c, lge) = vb
             .shard_edge
-            .set_up_graphs(total_edges.max(1) as usize, max_shard_edges.max(1) as usize);
-        vb.lge = require_lge;
+            .set_up_graphs(total_edges as usize, max_shard_edges as usize);
 
         // ── c) Compute the per-shard stride and allocate. ──
         let num_vertices_per_shard = vb.shard_edge.num_vertices();
@@ -539,181 +549,59 @@ where
         // we're side-stepping, so we must set it ourselves.
         vb.num_threads = num_shards.min(vb.max_num_threads).max(1);
 
-        // Peeling-strategy selection mirrors VBuilder's logic in
-        // `try_build_func_and_store`:
-        //
-        //   * `require_lge == true`                      → by-index + LGE
-        //   * `low_mem == Some(true)` (or auto: threads>3 and
-        //     num_shards>2)                              → data low-mem
-        //   * otherwise                                   → data high-mem
-        //
-        // The two "data" peelers drop the flat `edges`/`rhs`
-        // buffers after building the XorGraph, so peak memory is
-        // dominated by the XorGraph itself. They do **not** support
-        // LGE fallback — if peeling fails we bail with
-        // `SolveError::UnsolvableShard` and VBuilder retries with a
-        // new seed (the same recovery path used by the two sibling
-        // peelers in VFunc).
-        let low_mem_auto = vb.num_threads > 3 && num_shards > 2;
-        let strategy = if require_lge {
-            PeelStrategy::ByIndexLge
-        } else if vb.low_mem == Some(true) || (vb.low_mem.is_none() && low_mem_auto) {
-            PeelStrategy::DataLowMem
-        } else {
-            PeelStrategy::DataHighMem
-        };
         let raw_stride = num_vertices_per_shard + w;
-        // `par_solve` chunks the data via `BitFieldVec::try_chunks_mut`,
-        // which requires the product `chunk_size * bit_width` to be
-        // a multiple of `usize::BITS`. Since `bit_width = 1`, chunk
-        // size must itself be a multiple of `usize::BITS`.
+        // `par_solve` chunks the data via `BitVec::try_chunks_mut`,
+        // which requires `chunk_size` to be a multiple of `usize::BITS`.
         let stride = raw_stride.next_multiple_of(usize::BITS as usize);
         let padding = stride - num_vertices_per_shard;
         let total_bits = num_shards
             .checked_mul(stride)
             .ok_or_else(|| anyhow!("data size overflow"))?;
 
-        let mut data = BitFieldVec::<Box<[usize]>>::new_padded(1, total_bits);
+        // `new_padded` is defined on `BitVec<Vec<W>>` but returns a
+        // `BitVec<Box<[W]>>`, matching the query-side storage type.
+        let mut data = BitVec::<Vec<usize>>::new_padded(total_bits);
 
         // ── d) Call `par_solve` with the multi-edge closure. ──
-        //
-        // The new design eliminates the previous `Vec<[u32; 3]> +
-        // Vec<bool>` intermediate buffers entirely: edges are
-        // generated on the fly by `gen_edges` closures handed to the
-        // generic peelers in [`crate::func::peeling`]. Each strategy
-        // dispatches differently:
-        //
-        // * **ByIndexLge**: payload = `u32` encoding `key_idx * w +
-        //   l`. The peeler borrows the shard via the `gen_edges` and
-        //   `verts_of` closures, so the shard stays alive for the
-        //   reverse-peel assignment — and for the LGE residual pass
-        //   on a partial peel.
-        //
-        // * **DataHighMem** / **DataLowMem**: payload = `PackedEdge`
-        //   (`u128` packing `v0 | v1 | v2 | rhs`). The `gen_edges`
-        //   closure takes the shard *by value* and lets it drop at
-        //   end-of-closure — the peeler then proceeds with only the
-        //   `XorGraph` in memory.
-        let solve_shard = move |this: &VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
-                                _shard_index: usize,
-                                shard: std::sync::Arc<Vec<SigVal<S, u64>>>,
-                                mut shard_data: BitFieldVec<&mut [usize]>,
-                                _pl: &mut _|
-              -> Result<(), ()> {
+        // The per-shard body builds a flat `Vec<[u32; 3]>` + `Vec<bool>`
+        // of multi-edges via `encode_val`, then hands them to
+        // [`solve_system`] (peel + LGE fallback). This mirrors
+        // the `26efbe0` baseline committed by the user; attempts to
+        // split the solver into multiple strategies + a `PackedEdge`
+        // payload were reverted because they modified the primitive
+        // data structures without a benchmark.
+        let solve_shard = |this: &VBuilder<BitVec<Box<[usize]>>, S, E>,
+                           _shard_index: usize,
+                           shard: std::sync::Arc<Vec<SigVal<S, u64>>>,
+                           mut shard_data: BitVec<&mut [usize]>,
+                           _pl: &mut _|
+         -> Result<(), ()> {
             let shard_edge = &this.shard_edge;
-            let failed = &this.failed;
-
-            // First pass over the shard to compute the exact edge
-            // count for this build (sum of codeword lengths). The
-            // peelers need it to size their internal stacks and to
-            // detect partial peels (`upper_len() == num_edges`).
-            let num_edges: usize = shard
-                .iter()
-                .map(|sv| encode_val(sv.val).1 as usize)
-                .sum();
-
-            match strategy {
-                PeelStrategy::ByIndexLge => {
-                    // Bound check on the `key_idx * w + l` encoding:
-                    // we use `u32` for the `XorGraph` payload, so the
-                    // id space must fit. For all practical inputs
-                    // this is comfortable (e.g. 100 M keys × w=20 =
-                    // 2 G).
-                    let id_space = shard.len().checked_mul(w).expect("id space overflow");
-                    assert!(
-                        id_space <= u32::MAX as usize,
-                        "ByIndexLge id space ({} keys × w={}) exceeds u32::MAX",
-                        shard.len(),
-                        w
-                    );
-
-                    let output = peel_by_index::<u32, _, _, _, _>(
-                        raw_stride,
-                        num_edges,
-                        failed,
-                        |v| v as u32,
-                        |i| i as usize,
-                        |xg| {
-                            // Both gen_edges and verts_of below
-                            // borrow `shard` immutably. Shared
-                            // borrows compose, so this is fine.
-                            for (id, [a, b, c], _rhs) in
-                                iter_multi_edges(&shard, shard_edge, &encode_val, w)
-                            {
-                                xg.add(a, id, 0);
-                                xg.add(b, id, 1);
-                                xg.add(c, id, 2);
-                            }
-                        },
-                        |id| decode_multi_edge(id, &shard, shard_edge, &encode_val, w).0,
-                    )?;
-
-                    match output {
-                        IndexPeelOutput::Complete { .. } => {
-                            // Direct reverse-peel into `shard_data`.
-                            for (id, side) in output.iter_reverse_peel() {
-                                let (verts, rhs_bit) =
-                                    decode_multi_edge(id, &shard, shard_edge, &encode_val, w);
-                                assign_pivot(&mut shard_data, verts, rhs_bit, side);
-                            }
-                        }
-                        IndexPeelOutput::Partial {
-                            double_stack,
-                            sides_stack,
-                        } => {
-                            // LGE fallback on the unpeeled core.
-                            lge_fallback(
-                                &shard,
-                                shard_edge,
-                                &encode_val,
-                                w,
-                                raw_stride,
-                                &mut shard_data,
-                                double_stack,
-                                sides_stack,
-                            )
-                            .map_err(|_| ())?;
-                        }
-                    }
-                }
-                PeelStrategy::DataHighMem => {
-                    // gen_edges takes `shard` by value (move) so it
-                    // drops as soon as the graph is built; verts_of
-                    // operates on the self-contained `PackedEdge`
-                    // payload alone.
-                    let shard_for_gen = shard;
-                    let Some(output) = peel_by_data_high_mem::<PackedEdge, _, _>(
-                        raw_stride,
-                        num_edges,
-                        failed,
-                        move |xg| {
-                            add_packed_edges(xg, &shard_for_gen, shard_edge, &encode_val, w)
-                        },
-                        |pe: PackedEdge| pe.unpack().0,
-                    )?
-                    else {
-                        return Err(());
-                    };
-                    assign_packed_edge_record(&mut shard_data, output.iter_reverse_peel());
-                }
-                PeelStrategy::DataLowMem => {
-                    let shard_for_gen = shard;
-                    let Some(output) = peel_by_data_low_mem::<PackedEdge, _, _>(
-                        raw_stride,
-                        num_edges,
-                        failed,
-                        move |xg| {
-                            add_packed_edges(xg, &shard_for_gen, shard_edge, &encode_val, w)
-                        },
-                        |pe: PackedEdge| pe.unpack().0,
-                    )?
-                    else {
-                        return Err(());
-                    };
-                    assign_packed_edge_record(&mut shard_data, output.iter_reverse_peel());
+            let mut edges: Vec<[u32; 3]> = Vec::new();
+            let mut rhs: Vec<bool> = Vec::new();
+            for sv in shard.iter() {
+                let (bits, len) = encode_val(sv.val);
+                let local_sig = shard_edge.local_sig(sv.sig);
+                let base = shard_edge.local_edge(local_sig);
+                for l in 0..len as usize {
+                    let off = w - 1 - l;
+                    edges.push([
+                        (base[0] + off) as u32,
+                        (base[1] + off) as u32,
+                        (base[2] + off) as u32,
+                    ]);
+                    rhs.push(((bits >> l) & 1) == 1);
                 }
             }
 
+            let solution = solve_system(raw_stride, &edges, &rhs, lge).map_err(|_| ())?;
+            for (i, &bit) in solution.iter().enumerate() {
+                // SAFETY: `i < raw_stride <= stride`, and shard_data
+                // has length `stride`.
+                unsafe {
+                    shard_data.set_value_unchecked(i, bit as usize);
+                }
+            }
             Ok(())
         };
 
@@ -735,13 +623,12 @@ where
     }
 }
 
-/// Finalizes a successful build by re-wrapping the construction-side
-/// `BitFieldVec<Box<[usize]>>` (bit width 1) as the query-side
-/// [`BitVec`]. Same byte layout, different wrapper.
+/// Finalizes a successful build by packing the construction-side
+/// [`BitVec`] into a [`CompVFunc`].
 fn finish_build<K, S, E>(
     shard_edge: E,
     coder: HuffmanCoder,
-    data_bfv: BitFieldVec<Box<[usize]>>,
+    data: BitVec<Box<[usize]>>,
     seed_used: u64,
     num_keys: usize,
     shard_size: usize,
@@ -749,8 +636,6 @@ fn finish_build<K, S, E>(
 where
     K: ?Sized,
 {
-    let (raw_bits, _bit_width, len_in_elements) = data_bfv.into_raw_parts();
-    let data = unsafe { BitVec::<Box<[usize]>>::from_raw_parts(raw_bits, len_in_elements) };
     CompVFunc {
         shard_edge,
         seed: seed_used,
@@ -793,7 +678,7 @@ where
 /// Lender-based sequential path.
 fn build_inner_seq<K, B, S, E, L>(
     huffman: Huffman,
-    builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+    builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
     keys: L,
     values: &[u64],
     n: usize,
@@ -817,7 +702,7 @@ where
 
     let mut builder = builder.expected_num_keys(n);
     let mut build_fn = make_build_fn::<S, E, _>(&coder);
-    let ((data_bfv, seed_used, shard_size), _keys) = builder.try_populate_and_build(
+    let ((data, seed_used, shard_size), _keys) = builder.try_populate_and_build(
         keys,
         FromSlice::new(values),
         &mut build_fn,
@@ -827,14 +712,14 @@ where
     drop(build_fn);
     let shard_edge = builder.shard_edge;
     Ok(finish_build::<K, S, E>(
-        shard_edge, coder, data_bfv, seed_used, n, shard_size,
+        shard_edge, coder, data, seed_used, n, shard_size,
     ))
 }
 
 /// Slice-based parallel path.
 fn build_inner_par<K, B, S, E>(
     huffman: Huffman,
-    builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
+    builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
     keys: &[B],
     values: &[u64],
 ) -> Result<CompVFunc<K, BitVec<Box<[usize]>>, S, E>>
@@ -854,7 +739,7 @@ where
 
     let mut builder = builder.expected_num_keys(n);
     let mut build_fn = make_build_fn::<S, E, _>(&coder);
-    let (data_bfv, seed_used, shard_size) = builder.try_par_populate_and_build(
+    let (data, seed_used, shard_size) = builder.try_par_populate_and_build(
         keys,
         &|i: usize| values[i],
         &mut build_fn,
@@ -864,342 +749,208 @@ where
     drop(build_fn);
     let shard_edge = builder.shard_edge;
     Ok(finish_build::<K, S, E>(
-        shard_edge, coder, data_bfv, seed_used, n, shard_size,
+        shard_edge, coder, data, seed_used, n, shard_size,
     ))
 }
 
 // ── Linear-system solver ───────────────────────────────────────────
-//
-// CompVFunc shares the same three-strategy peeling architecture as
-// [`VFunc`]: an index peeler with LGE fallback (the only strategy that
-// can recover from a partial peel) plus two data-payload peelers
-// (one fast/high-mem, one low-mem) that can drop the shard
-// immediately after building the [`XorGraph`].
-//
-// Where VFunc has **one edge per key** (its `SigVal` is a "natural"
-// edge id), CompVFunc has **L ≥ 1 edges per key** — one per codeword
-// bit of the encoded value, at vertices `base + (w − 1 − l)`. This
-// section threads the multi-edge structure through the **generic**
-// peelers in [`crate::func::peeling`] via two closures:
-//
-// 1. `gen_edges`: iterates the shard, calls `encode_val(sv.val)` to
-//    get `(bits, len)`, computes the `len` multi-edge vertices, and
-//    adds them to the [`XorGraph`].
-// 2. `verts_of`: given the `XorGraph` payload of a peeled edge,
-//    recovers the 3 vertices.
-//
-// For the index peeler (`PeelStrategy::ByIndexLge`), the payload is a
-// `u32` encoding `key_idx * w + l`. The closure recovers `(key_idx,
-// l)` by integer division and then re-derives the vertices from the
-// shard. The LGE fallback iterates the shard a second time, recomputes
-// each `(key_idx, l)` edge, and adds the non-peeled ones to a residual
-// `Modulo2System`.
-//
-// For the data peelers (`PeelStrategy::Data{High,Low}Mem`), the
-// payload is a [`PackedEdge`] (`u128` packing `(v0, v1, v2, rhs)`) so
-// the closure that takes ownership of the shard can drop it right
-// after building the `XorGraph` — the payload alone is enough for
-// reverse-peel assignment.
-//
-// `PeelStrategy::Data{High,Low}Mem` do **not** support LGE fallback:
-// once the shard is dropped we can't reconstruct the residual system.
-// On peeling failure they bail with `SolveError::UnsolvableShard` and
-// VBuilder's retry loop re-rolls the seed (the same recovery path
-// VFunc uses).
 
-use crate::func::peeling::{
-    DoubleStack, IndexPeelOutput, peel_by_data_high_mem, peel_by_data_low_mem, peel_by_index,
-};
-
-/// Dispatch selector for the per-shard peeling strategy. Mirrors
-/// VBuilder's selection logic in `try_build_func_and_store`, adapted
-/// for the multi-edge CompVFunc case.
-#[derive(Copy, Clone, Debug)]
-enum PeelStrategy {
-    /// Index peeler + LGE fallback on the unpeeled core. Required
-    /// when `c` sits at or below the fuse-graph peeling threshold;
-    /// the shard stays alive so the LGE residual system can be
-    /// reconstructed if peeling can't complete on its own.
-    ByIndexLge,
-    /// Data peeler with packed-edge `XorGraph` payload and a
-    /// `FastStack` of payloads for the peel record. Drops the shard
-    /// after graph construction. Fastest at assign time, highest
-    /// memory.
-    DataHighMem,
-    /// Data peeler with the same packed-edge payload but a
-    /// `DoubleStack<u32>` for peel-order tracking (half the stack
-    /// memory of the high-mem variant).
-    DataLowMem,
+/// Result of a partial peeling attempt.
+struct PartialPeel {
+    /// `peeled[i]` is `true` iff edge `i` was successfully peeled.
+    peeled: Vec<bool>,
+    /// `(pivot, edge_index)` pairs in **peel order**: the first push
+    /// is the deepest peel, the last push is the most recent. The
+    /// reverse-peel assignment iterates this in reverse.
+    stack: Vec<(u32, u32)>,
 }
 
-/// Packed edge payload for the `by_data` peelers.
+/// Solves a 3-uniform F₂ system.
 ///
-/// Layout (low → high): `v0` (32b) | `v1` (32b) | `v2` (32b) | `rhs`
-/// (32b). The `rhs` slot is 32 bits wide only because `u128` has no
-/// finer alignment — it really carries a single bit. The whole struct
-/// supports `BitXorAssign + Default + Copy` so it can be stored
-/// inside an [`XorGraph`].
+/// If `lge` is `false`, the graph was sized for pure peeling: we peel
+/// and bail out with an error on any unpeeled remainder, so the caller
+/// can retry the shard with a fresh seed. If `lge` is `true`, the graph
+/// was sized for a small LGE core: we mirror [`VBuilder`]'s `lge_shard`
+/// and run lazy Gaussian elimination on the unpeeled remainder, then
+/// complete the peeled edges in reverse order.
 ///
-/// When three incidences of the same edge have been added to an
-/// `XorGraph`, each of its 3 vertices holds the same `PackedEdge`. As
-/// peeling removes the edge from two of its vertices, the XOR
-/// contributions cancel pairwise and the third vertex is left with
-/// the edge's full payload — from which we recover its three
-/// endpoints and RHS.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-#[repr(transparent)]
-struct PackedEdge(u128);
-
-impl PackedEdge {
-    #[inline(always)]
-    fn new(v0: u32, v1: u32, v2: u32, rhs: bool) -> Self {
-        PackedEdge(
-            (v0 as u128)
-                | ((v1 as u128) << 32)
-                | ((v2 as u128) << 64)
-                | ((rhs as u128) << 96),
-        )
-    }
-
-    #[inline(always)]
-    fn unpack(self) -> ([usize; 3], bool) {
-        let v0 = self.0 as u32 as usize;
-        let v1 = (self.0 >> 32) as u32 as usize;
-        let v2 = (self.0 >> 64) as u32 as usize;
-        let rhs = ((self.0 >> 96) & 1) != 0;
-        ([v0, v1, v2], rhs)
-    }
-}
-
-impl core::ops::BitXorAssign for PackedEdge {
-    #[inline(always)]
-    fn bitxor_assign(&mut self, rhs: Self) {
-        self.0 ^= rhs.0;
-    }
-}
-
-/// Adds every multi-edge of `shard` to a `PackedEdge`-backed
-/// [`XorGraph`]. Used as the body of the `gen_edges` closure for both
-/// `peel_by_data_high_mem` and `peel_by_data_low_mem`.
-#[inline]
-fn add_packed_edges<S, E, F>(
-    xg: &mut crate::func::peeling::XorGraph<PackedEdge>,
-    shard: &[SigVal<S, u64>],
-    shard_edge: &E,
-    encode_val: &F,
-    w: usize,
-) where
-    S: Sig,
-    E: ShardEdge<S, 3>,
-    F: Fn(u64) -> (u64, u32),
-{
-    for (_id, [v0, v1, v2], rhs) in iter_multi_edges(shard, shard_edge, encode_val, w) {
-        let pe = PackedEdge::new(v0 as u32, v1 as u32, v2 as u32, rhs);
-        xg.add(v0, pe, 0);
-        xg.add(v1, pe, 1);
-        xg.add(v2, pe, 2);
-    }
-}
-
-/// Drives the reverse-peel assignment for a `PackedEdge`-based peel
-/// record (the output of either `peel_by_data_high_mem` or
-/// `peel_by_data_low_mem`). Iterates `(payload, side)` in
-/// reverse-peel order and writes each pivot into `shard_data`.
-#[inline]
-fn assign_packed_edge_record(
-    shard_data: &mut BitFieldVec<&mut [usize]>,
-    iter: impl Iterator<Item = (PackedEdge, u8)>,
-) {
-    for (pe, side) in iter {
-        let (verts, rhs_bit) = pe.unpack();
-        assign_pivot(shard_data, verts, rhs_bit, side);
-    }
-}
-
-/// Reverse-peel pivot assignment: writes `solution[pivot] = rhs ⊕
-/// solution[other1] ⊕ solution[other2]` into the shard data, where
-/// `pivot` is `verts[side]` and `other1`/`other2` are the other two
-/// vertices of the edge.
+/// Running LGE on a shard that was sized for pure peeling would be
+/// catastrophic: if peeling fails, the unpeeled core can be a large
+/// fraction of the shard, and LGE is cubic in the core size.
 ///
-/// `shard_data` is read-then-written: the "other two" vertices are
-/// either non-pivots (still 0 in the shard data) or pivots of edges
-/// that were peeled later than the current one (already assigned in
-/// this reverse-peel loop, since we iterate newest-first). For the
-/// LGE-fallback path, the LGE solver writes the residual values into
-/// `shard_data` *before* the reverse peel runs, so reads of vertices
-/// in the unpeeled core return the LGE-supplied values.
-#[inline(always)]
-fn assign_pivot(
-    shard_data: &mut BitFieldVec<&mut [usize]>,
-    verts: [usize; 3],
-    rhs_bit: bool,
-    side: u8,
-) {
-    let [a, b, c] = verts;
-    unsafe {
-        let xor_other = match side {
-            0 => shard_data.get_value_unchecked(b) ^ shard_data.get_value_unchecked(c),
-            1 => shard_data.get_value_unchecked(a) ^ shard_data.get_value_unchecked(c),
-            2 => shard_data.get_value_unchecked(a) ^ shard_data.get_value_unchecked(b),
-            _ => core::hint::unreachable_unchecked(),
-        };
-        let pivot = verts[side as usize];
-        shard_data.set_value_unchecked(pivot, (rhs_bit as usize) ^ xor_other);
-    }
-}
+/// [`VBuilder`]: crate::func::VBuilder
+fn solve_system(
+    num_variables: usize,
+    edges: &[[u32; 3]],
+    rhs: &[bool],
+    lge: bool,
+) -> Result<Vec<bool>> {
+    let peel = peel_partial(num_variables, edges);
+    let n_peeled = peel.stack.len();
+    let n_total = edges.len();
 
-/// Recovers `(verts, rhs_bit)` for a multi-edge id encoded as
-/// `key_idx * w + l`.
-///
-/// Used by the `ByIndexLge` strategy at both peel-time
-/// (`peel_by_index`'s `verts_of` closure, where we need a single
-/// random-access lookup) and assignment time (reverse-peel).
-#[inline(always)]
-fn decode_multi_edge<S, E>(
-    id: u32,
-    shard: &[SigVal<S, u64>],
-    shard_edge: &E,
-    encode_val: &impl Fn(u64) -> (u64, u32),
-    w: usize,
-) -> ([usize; 3], bool)
-where
-    S: Sig,
-    E: ShardEdge<S, 3>,
-{
-    let key_idx = (id as usize) / w;
-    let l = (id as usize) % w;
-    let sv = &shard[key_idx];
-    let (bits, _len) = encode_val(sv.val);
-    let local_sig = shard_edge.local_sig(sv.sig);
-    let base = shard_edge.local_edge(local_sig);
-    let off = w - 1 - l;
-    let verts = [base[0] + off, base[1] + off, base[2] + off];
-    let rhs = ((bits >> l) & 1) != 0;
-    (verts, rhs)
-}
+    let mut solution = vec![false; num_variables];
 
-/// Iterates the multi-edges of a shard in `(id, verts, rhs)` order,
-/// where `id = key_idx * w + l` is the [`peel_by_index`] payload
-/// encoding and `verts` are the 3 vertices of the *l*-th codeword
-/// edge for that key.
-///
-/// This is the **single source of truth** for the multi-edge
-/// generation logic — both the [`peel_by_index`] `gen_edges` closure
-/// and the [`lge_fallback`] residual-system loop iterate via this
-/// function. It avoids inlining the same `for sv in shard { for l
-/// in 0..len { ... } }` body in three different places.
-#[inline]
-fn iter_multi_edges<'a, S, E, F>(
-    shard: &'a [SigVal<S, u64>],
-    shard_edge: &'a E,
-    encode_val: &'a F,
-    w: usize,
-) -> impl Iterator<Item = (u32, [usize; 3], bool)> + 'a
-where
-    S: Sig + 'a,
-    E: ShardEdge<S, 3> + 'a,
-    F: Fn(u64) -> (u64, u32) + 'a,
-{
-    let w_u32 = w as u32;
-    shard.iter().enumerate().flat_map(move |(key_idx, sv)| {
-        let (bits, len) = encode_val(sv.val);
-        let local_sig = shard_edge.local_sig(sv.sig);
-        let base = shard_edge.local_edge(local_sig);
-        let key_idx_u32 = key_idx as u32;
-        (0..len).map(move |l| {
-            let off = w - 1 - l as usize;
-            let id = key_idx_u32 * w_u32 + l;
-            let verts = [base[0] + off, base[1] + off, base[2] + off];
-            let rhs = ((bits >> l) & 1) != 0;
-            (id, verts, rhs)
-        })
-    })
-}
+    if n_peeled < n_total {
+        if !lge {
+            // Graph was sized for pure peeling; a non-empty core means
+            // we hit a bad seed. Bail out so `par_solve` can retry.
+            bail!("peeling failed on a non-LGE graph ({} unpeeled)", n_total - n_peeled);
+        }
+        // Build LGE system on the non-peeled edges only. Variables that
+        // do not appear in any non-peeled equation get value 0 from
+        // LGE; the reverse-peel pass will overwrite the peeled-edge
+        // pivots in `solution` afterwards.
+        let mut equations: Vec<Modulo2Equation<usize>> = Vec::with_capacity(n_total - n_peeled);
+        for (i, &was_peeled) in peel.peeled.iter().enumerate() {
+            if was_peeled {
+                continue;
+            }
+            let mut vs = edges[i];
+            vs.sort_unstable();
+            // F₂ pair cancellation for duplicate vertices in an edge.
+            let vars: Vec<u32> = if vs[0] == vs[1] && vs[1] == vs[2] {
+                vec![]
+            } else if vs[0] == vs[1] {
+                vec![vs[2]]
+            } else if vs[1] == vs[2] {
+                vec![vs[0]]
+            } else if vs[0] == vs[2] {
+                // Sorted, vs[0]==vs[2] would imply all equal.
+                vec![]
+            } else {
+                vs.to_vec()
+            };
+            let r = rhs[i] as usize;
+            if vars.is_empty() && r != 0 {
+                bail!("trivial unsolvable equation");
+            }
+            // SAFETY: `vars` is sorted; entries come from `[u32; 3]`
+            // indices that the caller bounds by `num_variables`.
+            equations.push(unsafe { Modulo2Equation::<usize>::from_parts(vars, r) });
+        }
 
-/// LGE fallback for the `ByIndexLge` strategy: builds the residual
-/// system from the non-peeled multi-edges of the shard, solves it
-/// with lazy Gaussian elimination, writes the solution into
-/// `shard_data`, then drives the reverse peel from `double_stack` /
-/// `sides_stack`.
-fn lge_fallback<S, E>(
-    shard: &[SigVal<S, u64>],
-    shard_edge: &E,
-    encode_val: &impl Fn(u64) -> (u64, u32),
-    w: usize,
-    num_vertices: usize,
-    shard_data: &mut BitFieldVec<&mut [usize]>,
-    double_stack: DoubleStack<u32>,
-    sides_stack: Vec<u8>,
-) -> Result<()>
-where
-    S: Sig,
-    E: ShardEdge<S, 3>,
-{
-    let id_space = shard.len() * w;
-    let mut peeled_mask = vec![false; id_space];
-    for &id in double_stack.iter_upper() {
-        peeled_mask[id as usize] = true;
+        // SAFETY: see comment on the per-equation push above.
+        let mut system = unsafe { Modulo2System::<usize>::from_parts(num_variables, equations) };
+        let lge_solution = system
+            .lazy_gaussian_elimination()
+            .map_err(|e| anyhow!("LGE failed: {e}"))?;
+        for (v, &val) in lge_solution.iter().enumerate() {
+            solution[v] = (val & 1) != 0;
+        }
     }
 
-    // Build LGE system from non-peeled multi-edges. Reuses
-    // `iter_multi_edges` so the encoding stays in lockstep with the
-    // peeler's `gen_edges` closure.
-    let mut equations: Vec<Modulo2Equation<usize>> = Vec::new();
-    for (id, verts, rhs_bit) in iter_multi_edges(shard, shard_edge, encode_val, w) {
-        if peeled_mask[id as usize] {
+    // Reverse-peel assignment. By the peeling-order argument, when we
+    // process stack[i] in reverse the *other* two vertices are either
+    // (a) variables that never became a pivot (left at their LGE/zero
+    // value) or (b) pivots of edges peeled *later* (i.e. processed
+    // earlier in this reverse loop, hence already assigned).
+    for &(pivot, edge_idx) in peel.stack.iter().rev() {
+        let [a, b, c] = edges[edge_idx as usize];
+        let mut val = rhs[edge_idx as usize];
+        if a != pivot {
+            val ^= solution[a as usize];
+        }
+        if b != pivot {
+            val ^= solution[b as usize];
+        }
+        if c != pivot {
+            val ^= solution[c as usize];
+        }
+        solution[pivot as usize] = val;
+    }
+
+    // Debug-only sanity check: every edge must be satisfied after
+    // peeling + LGE + reverse-peel assignment.
+    #[cfg(debug_assertions)]
+    for (i, &[a, b, c]) in edges.iter().enumerate() {
+        let val = solution[a as usize] ^ solution[b as usize] ^ solution[c as usize];
+        debug_assert_eq!(
+            val, rhs[i],
+            "edge {i} not satisfied: vars=[{a},{b},{c}] rhs={} got={}",
+            rhs[i] as u8, val as u8,
+        );
+    }
+
+    Ok(solution)
+}
+
+/// Greedy 3-uniform peeling. Returns the set of peeled edges and the
+/// peel-order `(pivot, edge_index)` stack.
+///
+/// Degenerate edges (with two or three repeated vertices) are handled
+/// naturally: the double increment of the repeated vertex's degree and
+/// the double XOR of the edge index into its `edge_xor` both match the
+/// F₂ semantics (`x + x = 0`), and the reverse-peel assignment XORs
+/// `solution[b]` twice for `[a, b, b]` which cancels. Skipping
+/// degenerate edges at insert time would leave the repeated vertex
+/// eligible to be peeled as the pivot of some *other* edge, and the
+/// reverse-peel would then overwrite the LGE-imposed constraint on
+/// that vertex — violating the degenerate edge.
+fn peel_partial(num_variables: usize, edges: &[[u32; 3]]) -> PartialPeel {
+    let n_edges = edges.len();
+    let mut peeled = vec![false; n_edges];
+    let mut stack: Vec<(u32, u32)> = Vec::with_capacity(n_edges);
+
+    let mut edge_xor: Vec<u32> = vec![0; num_variables];
+    let mut degree: Vec<u8> = vec![0; num_variables];
+
+    // Store `idx + 1` in edge_xor so that the default value `0`
+    // unambiguously means "no edge incident on this vertex". Storing
+    // the raw `idx` would make edge 0 collide with the "no edge"
+    // sentinel because `0 ^ x = x` is the identity.
+    //
+    // Slots are processed *sequentially* so that a degenerate edge
+    // `[v, v, u]` increments `degree[v]` twice (once per slot). A
+    // naive parallel increment would read the same old `degree[v]`
+    // for both slots and overwrite itself, producing `+1` instead of
+    // `+2` and breaking the `degree == sum_of_slots` invariant.
+    for (i, &[a, b, c]) in edges.iter().enumerate() {
+        let stored = (i + 1) as u32;
+        for &v in &[a, b, c] {
+            let v = v as usize;
+            edge_xor[v] ^= stored;
+            let (new_deg, overflow) = degree[v].overflowing_add(1);
+            if overflow {
+                // Degree overflow: any vertex with ≥256 incident
+                // slots is hopeless to peel. Bail; LGE will handle
+                // the whole remainder.
+                return PartialPeel { peeled, stack };
+            }
+            degree[v] = new_deg;
+        }
+    }
+
+    let mut to_visit: Vec<u32> = (0..num_variables as u32)
+        .filter(|&v| degree[v as usize] == 1)
+        .collect();
+
+    while let Some(v) = to_visit.pop() {
+        let vu = v as usize;
+        if degree[vu] != 1 {
             continue;
         }
-        let mut vs = verts;
-        vs.sort_unstable();
-        // F₂ pair cancellation for degenerate edges (repeated
-        // vertices). Note that all three vertices are derived from
-        // `base + off`, so the only way to get a repeated vertex is
-        // for the underlying ShardEdge to produce one.
-        let vars: Vec<u32> = if vs[0] == vs[1] && vs[1] == vs[2] {
-            vec![]
-        } else if vs[0] == vs[1] {
-            vec![vs[2] as u32]
-        } else if vs[1] == vs[2] {
-            vec![vs[0] as u32]
-        } else if vs[0] == vs[2] {
-            vec![]
-        } else {
-            vec![vs[0] as u32, vs[1] as u32, vs[2] as u32]
-        };
-        let r = rhs_bit as usize;
-        if vars.is_empty() && r != 0 {
-            bail!("trivial unsolvable equation");
-        }
-        // SAFETY: `vars` is sorted; entries come from
-        // `local_edge`-derived offsets bounded by `num_vertices`.
-        equations.push(unsafe { Modulo2Equation::<usize>::from_parts(vars, r) });
-    }
-
-    let mut system = unsafe { Modulo2System::<usize>::from_parts(num_vertices, equations) };
-    let lge_solution = system
-        .lazy_gaussian_elimination()
-        .map_err(|e| anyhow!("LGE failed: {e}"))?;
-
-    // Write LGE values into shard_data BEFORE the reverse peel, so
-    // that subsequent `get_value_unchecked` calls in `assign_pivot`
-    // see the LGE-supplied values for vertices in the unpeeled core.
-    for (v, &val) in lge_solution.iter().enumerate() {
-        if (val & 1) != 0 {
-            // SAFETY: `v < num_vertices ≤ shard_data.len()`.
-            unsafe {
-                shard_data.set_value_unchecked(v, 1);
+        // Decode 1-based stored value back to a 0-based edge index.
+        let stored = edge_xor[vu];
+        debug_assert_ne!(
+            stored, 0,
+            "degree[v]=1 but edge_xor[v]=0 (invariant broken)"
+        );
+        let edge_idx = (stored - 1) as u32;
+        peeled[edge_idx as usize] = true;
+        stack.push((v, edge_idx));
+        let [a, b, c] = edges[edge_idx as usize];
+        for &u in &[a, b, c] {
+            let uu = u as usize;
+            degree[uu] -= 1;
+            edge_xor[uu] ^= stored;
+            if degree[uu] == 1 {
+                to_visit.push(u);
             }
         }
     }
 
-    // Reverse-peel. `iter_upper()` yields peeled edge ids
-    // newest-first; `sides_stack.iter().rev()` matches.
-    for (&id, &side) in double_stack.iter_upper().zip(sides_stack.iter().rev()) {
-        let (verts, rhs_bit) = decode_multi_edge(id, shard, shard_edge, encode_val, w);
-        assign_pivot(shard_data, verts, rhs_bit, side);
-    }
-
-    Ok(())
+    PartialPeel { peeled, stack }
 }
 
 // ── Tests ───────────────────────────────────────────────────────────
@@ -1235,12 +986,9 @@ mod tests {
         use crate::utils::FromCloneableIntoIterator;
         let n = 1000usize;
         let values: Vec<u64> = (0..n as u64).map(|i| i % 5).collect();
-        let func = CompVFunc::<usize>::try_new(
-            FromCloneableIntoIterator::from(0_usize..n),
-            &values,
-            n,
-        )
-        .expect("build");
+        let func =
+            CompVFunc::<usize>::try_new(FromCloneableIntoIterator::from(0_usize..n), &values, n)
+                .expect("build");
         for i in 0..n {
             assert_eq!(func.get(i), values[i], "mismatch at key {i}");
         }

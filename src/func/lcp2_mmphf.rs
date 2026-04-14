@@ -194,6 +194,7 @@ mod build {
     use lender::*;
     use rdst::RadixKey;
     use std::borrow::Borrow;
+    use std::ops::{BitXor, BitXorAssign};
     use sync_cell_slice::SyncSlice;
 
     #[cfg(target_pointer_width = "64")]
@@ -213,12 +214,12 @@ mod build {
         IntBitPrefix<K>: ToSig<S1>,
         SigVal<S0, usize>: RadixKey,
         SigVal<S0, u64>: RadixKey,
-        SigVal<E0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
-        SigVal<E0::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
-        SigVal<F0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
-        SigVal<F0::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
+        SigVal<E0::LocalSig, usize>: BitXor + BitXorAssign,
+        SigVal<E0::LocalSig, u64>: BitXor + BitXorAssign,
+        SigVal<F0::LocalSig, usize>: BitXor + BitXorAssign,
+        SigVal<F0::LocalSig, u64>: BitXor + BitXorAssign,
         SigVal<S1, usize>: RadixKey,
-        SigVal<E1::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+        SigVal<E1::LocalSig, usize>: BitXor + BitXorAssign,
     {
         /// Creates a two-step LCP-based MMPHF for integers using default
         /// [`VBuilder`] settings.
@@ -1009,12 +1010,12 @@ mod build {
         BitPrefix: ToSig<S1>,
         SigVal<S0, usize>: RadixKey,
         SigVal<S0, u64>: RadixKey,
-        SigVal<E0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
-        SigVal<E0::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
-        SigVal<F0::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
-        SigVal<F0::LocalSig, u64>: std::ops::BitXor + std::ops::BitXorAssign,
+        SigVal<E0::LocalSig, usize>: BitXor + BitXorAssign,
+        SigVal<E0::LocalSig, u64>: BitXor + BitXorAssign,
+        SigVal<F0::LocalSig, usize>: BitXor + BitXorAssign,
+        SigVal<F0::LocalSig, u64>: BitXor + BitXorAssign,
         SigVal<S1, usize>: RadixKey,
-        SigVal<E1::LocalSig, usize>: std::ops::BitXor + std::ops::BitXorAssign,
+        SigVal<E1::LocalSig, usize>: BitXor + BitXorAssign,
     {
         /// Creates a two-step LCP-based monotone minimal perfect hash function for
         /// byte-sequence keys using default [`VBuilder`] settings.
