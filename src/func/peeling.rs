@@ -270,22 +270,76 @@ macro_rules! remove_edge {
 
 /// Output of [`peel_by_index`].
 ///
-/// The peel stack lives in the upper half of `double_stack`; entries
-/// are in **newest-first** order (because [`DoubleStack::push_upper`]
-/// writes to decreasing indices). `sides_stack[i]` is the pivot side of
-/// the *i*-th push, in **oldest-first** order — to iterate both in
-/// reverse peel order, reverse only `sides_stack`.
-pub(crate) struct IndexPeelOutput<I: Copy + Default> {
-    pub(crate) double_stack: DoubleStack<I>,
-    pub(crate) sides_stack: Vec<u8>,
-    /// `true` iff the peeler removed all `num_edges` edges.
-    pub(crate) complete: bool,
+/// In both variants, the peel stack lives in the upper half of
+/// `double_stack`; entries are in **newest-first** order (because
+/// [`DoubleStack::push_upper`] writes to decreasing indices).
+/// `sides_stack[i]` is the pivot side of the *i*-th push, in
+/// **oldest-first** order — to iterate both in reverse peel order,
+/// reverse only `sides_stack`. The helper [`iter_reverse_peel`]
+/// on each variant performs that reversal for you.
+///
+/// [`iter_reverse_peel`]: IndexPeelOutput::iter_reverse_peel
+pub(crate) enum IndexPeelOutput<I: Copy + Default> {
+    /// Every edge was peeled. The caller can drive reverse-peel
+    /// assignment directly from `double_stack` / `sides_stack`.
+    Complete {
+        double_stack: DoubleStack<I>,
+        sides_stack: Vec<u8>,
+    },
+    /// Peeling left a non-empty core. The caller can fall back to
+    /// lazy Gaussian elimination on the unpeeled remainder, then
+    /// drive the reverse peel from the same stacks.
+    Partial {
+        double_stack: DoubleStack<I>,
+        sides_stack: Vec<u8>,
+    },
+}
+
+impl<I: Copy + Default> IndexPeelOutput<I> {
+    /// Iterates `(edge_id, side)` pairs in **reverse peel order**
+    /// (newest peeled first) — the order in which a reverse-peel
+    /// assignment loop should consume them. Works for both
+    /// [`Complete`](IndexPeelOutput::Complete) and
+    /// [`Partial`](IndexPeelOutput::Partial) (the partial variant
+    /// also exposes its peeled portion this way).
+    pub(crate) fn iter_reverse_peel(&self) -> impl Iterator<Item = (I, u8)> + '_ {
+        let (double_stack, sides_stack) = match self {
+            IndexPeelOutput::Complete {
+                double_stack,
+                sides_stack,
+            }
+            | IndexPeelOutput::Partial {
+                double_stack,
+                sides_stack,
+            } => (double_stack, sides_stack),
+        };
+        double_stack
+            .iter_upper()
+            .copied()
+            .zip(sides_stack.iter().copied().rev())
+    }
 }
 
 /// Output of [`peel_by_data_high_mem`].
 pub(crate) struct DataHighMemPeelOutput<X: Copy + Default> {
     pub(crate) payloads: FastStack<X>,
     pub(crate) sides: FastStack<u8>,
+}
+
+impl<X: Copy + Default> DataHighMemPeelOutput<X> {
+    /// Iterates `(payload, side)` pairs in **reverse peel order**
+    /// (newest peeled first), the order in which the caller's
+    /// reverse-peel assignment loop should consume them.
+    ///
+    /// Hides the `iter().rev().zip(sides.iter().copied().rev())`
+    /// idiom so call sites don't have to remember it.
+    pub(crate) fn iter_reverse_peel(&self) -> impl Iterator<Item = (X, u8)> + '_ {
+        self.payloads
+            .iter()
+            .copied()
+            .rev()
+            .zip(self.sides.iter().copied().rev())
+    }
 }
 
 /// Output of [`peel_by_data_low_mem`].
@@ -297,6 +351,18 @@ pub(crate) struct DataHighMemPeelOutput<X: Copy + Default> {
 pub(crate) struct DataLowMemPeelOutput<X: Copy + Default + BitXorAssign> {
     pub(crate) visit_stack: DoubleStack<u32>,
     pub(crate) xor_graph: XorGraph<X>,
+}
+
+impl<X: Copy + Default + BitXorAssign> DataLowMemPeelOutput<X> {
+    /// Iterates `(payload, side)` pairs in **reverse peel order**
+    /// (newest peeled first) by re-querying the [`XorGraph`] for
+    /// each pivot vertex stored in the upper half of `visit_stack`.
+    pub(crate) fn iter_reverse_peel(&self) -> impl Iterator<Item = (X, u8)> + '_ {
+        self.visit_stack.iter_upper().map(move |&v| {
+            let (payload, side) = self.xor_graph.edge_and_side(v as usize);
+            (payload, side as u8)
+        })
+    }
 }
 
 /// Index-based peeler.
@@ -381,12 +447,17 @@ where
         );
     }
 
-    let complete = double_stack.upper_len() == num_edges;
-    Ok(IndexPeelOutput {
-        double_stack,
-        sides_stack,
-        complete,
-    })
+    if double_stack.upper_len() == num_edges {
+        Ok(IndexPeelOutput::Complete {
+            double_stack,
+            sides_stack,
+        })
+    } else {
+        Ok(IndexPeelOutput::Partial {
+            double_stack,
+            sides_stack,
+        })
+    }
 }
 
 /// Data-based peeler with a [`FastStack`] of payloads + sides

@@ -23,7 +23,8 @@ from [the DSI Utilities] and new structures.
   prefix omission].
 - new state-of-the-art structures for [static functions] and [static filters],
   scaling to trillions of keys, and providing very fast queries;
-- [monotone minimal perfect hash functions] based on longest common prefixes;
+- [monotone minimal perfect hash functions] based on longest common prefixes,
+  which are [the fastest available](https://github.com/vigna/MMPHF-Experiments);
 - support for [signed minimal perfect hash functions];
 - [partial arrays], that is, “arrays with holes”, implemented using ranking or
   Elias–Fano;
@@ -35,7 +36,10 @@ and support for [unaligned access]) and on flexible composability (e.g., you can
 fine-tune your [`EliasFano`] instance by choosing different types of internal
 indices, and whether to index zeros or ones). Whenever possible, there are
 mapping methods that replace an underlying structure with another one, provided
-it is compatible.
+it is compatible. You can check
+[these](https://github.com/Cydhra/vers_benchmarks) and
+[these](https://github.com/beling/bsuccinct-rs/tree/main/cseq_benchmark)
+benchmarks.
 
 This crate does not provide high-level genericity on bit vectors: [operations on
 bit vectors] are based on a word type `W`, on the [`BitLength`] trait, which

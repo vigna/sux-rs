@@ -27,6 +27,7 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use rand_distr::{Distribution, Geometric, Zipf};
 use std::hint::black_box;
+use std::time::Instant;
 use sux::func::CompVFunc;
 use sux::traits::TryIntoUnaligned;
 
@@ -93,11 +94,19 @@ fn bench_query(c: &mut Criterion) {
             let max_val = values.iter().copied().max().unwrap_or(0);
             let queries = gen_query_indices(n);
 
+            // Single-shot wall-clock build timing — reported here
+            // because Criterion's per-iteration construction harness
+            // is run only at the small size (see `bench_construction`),
+            // and for 100M keys the amortization cost would be
+            // impractical.
+            let t0 = Instant::now();
             let func = build_comp_vfunc(n, &values);
+            let build_secs = t0.elapsed().as_secs_f64();
             let bytes = func.mem_size(SizeFlags::default());
             let bpk = bytes as f64 * 8.0 / n as f64;
+            let ns_per_key = build_secs * 1e9 / n as f64;
             eprintln!(
-                "CompVFunc {dist_name} n={label}: {bytes} B, {bpk:.2} bits/key (max_val={max_val}, w={}, esc_len={}, esym_len={})",
+                "CompVFunc {dist_name} n={label}: built in {build_secs:.2}s ({ns_per_key:.0} ns/key), {bytes} B, {bpk:.2} bits/key (max_val={max_val}, w={}, esc_len={}, esym_len={})",
                 func.global_max_codeword_length(),
                 func.escape_length(),
                 func.escaped_symbol_length(),
@@ -131,10 +140,12 @@ fn bench_construction(c: &mut Criterion) {
         let mut group = c.benchmark_group(format!("comp_vfunc_construction_{dist_name}"));
         group.sample_size(10);
 
-        // Construction is intentionally only run at the smaller size:
-        // building a 100M-key compressed function in a Criterion timing
-        // loop is impractical (and unnecessary — we already report
-        // build-once timings via eprintln in `bench_query`).
+        // Criterion-managed construction timing is only run at the
+        // smaller size: building a 100M-key compressed function in a
+        // Criterion timing loop (with ≥10 iterations for statistical
+        // stability) is impractical. For the large size we instead
+        // report a single-shot wall-clock build time via the eprintln
+        // in `bench_query`.
         let n = 1_000_000;
         let values = gen_fn(n);
 

@@ -104,9 +104,7 @@
 //! [`bit_vec!`]: macro@crate::bits::bit_vec
 
 use crate::ambassador_impl_Index;
-use crate::bits::{
-    assert_unaligned_pos, debug_assert_unaligned_pos, test_unaligned_pos,
-};
+use crate::bits::test_unaligned_pos;
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::ambassador_impl_BitLength;
 use crate::traits::{
@@ -641,7 +639,14 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVec<B> {
     /// `width + (pos % 8)` exceeds `W::BITS`, or if the read would
     /// exceed the allocation.
     pub fn get_value_unaligned(&self, pos: usize, width: usize) -> B::Word {
-        assert_unaligned_pos!(B::Word, pos, width);
+        assert!(
+            test_unaligned_pos!(B::Word, pos, width),
+            "bit width {} at bit position {} does not fit in a single unaligned read on word type {} (width + (pos % 8) must be <= {})",
+            width,
+            pos,
+            stringify!(B::Word),
+            B::Word::BITS as usize,
+        );
         assert!(
             pos + width <= self.len,
             "bit range {}..{} out of bounds for length {}",
@@ -675,7 +680,14 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVec<B> {
     ///   does not exceed the allocation.
     #[inline]
     pub unsafe fn get_value_unaligned_unchecked(&self, pos: usize, width: usize) -> B::Word {
-        debug_assert_unaligned_pos!(B::Word, pos, width);
+        debug_assert!(
+            test_unaligned_pos!(B::Word, pos, width),
+            "bit width {} at bit position {} does not fit in a single unaligned read on word type {} (width + (pos % 8) must be <= {})",
+            width,
+            pos,
+            stringify!(B::Word),
+            B::Word::BITS as usize,
+        );
         if width == 0 {
             return B::Word::ZERO;
         }

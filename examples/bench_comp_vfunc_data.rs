@@ -24,9 +24,11 @@ use std::env;
 use std::fs;
 use std::hint::black_box;
 use std::time::Instant;
-use sux::bits::BitVecU;
-use sux::func::CompVFunc;
+use dsi_progress_logger::no_logging;
+use sux::bits::{BitFieldVec, BitVecU};
+use sux::func::{CompVFunc, VFunc};
 use sux::traits::TryIntoUnaligned;
+use sux::utils::FromSlice;
 
 trait GetU {
     fn get_u(&self, key: usize) -> u64;
@@ -138,14 +140,41 @@ fn main() -> Result<()> {
     eprintln!("Building CompVFunc...");
     let t0 = Instant::now();
     let func = CompVFunc::<usize>::try_par_new(&keys, &values).expect("build");
-    let build_secs = t0.elapsed().as_secs_f64();
+    let comp_build_secs = t0.elapsed().as_secs_f64();
     let bytes = func.mem_size(SizeFlags::default());
     let bpk = bytes as f64 * 8.0 / n as f64;
     eprintln!(
-        "Built in {build_secs:.2}s. Size: {bytes} B = {bpk:.2} bits/key (w = {}, esc_len = {}, esym_len = {})",
+        "Built in {comp_build_secs:.2}s. Size: {bytes} B = {bpk:.2} bits/key (w = {}, esc_len = {}, esym_len = {})",
         func.global_max_codeword_length(),
         func.escape_length(),
         func.escaped_symbol_length(),
+    );
+
+    // ── Comparison build: flat VFunc on the same keys/values ──
+    // Fits each value in `ceil(log2(max + 1))` bits. Build time
+    // should be proportional to the peeling work, which is ~ one
+    // edge per key — so CompVFunc/VFunc ≈ average codeword length
+    // (the empirical entropy of the value distribution, rounded up
+    // by the codec) if the peelers are equally efficient.
+    let values_usize: Vec<usize> = values.iter().map(|&v| v as usize).collect();
+    let flat_t0 = Instant::now();
+    let flat = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
+        FromSlice::new(&keys),
+        FromSlice::new(&values_usize),
+        n,
+        Default::default(),
+        no_logging![],
+    )
+    .expect("VFunc build");
+    let flat_build_secs = flat_t0.elapsed().as_secs_f64();
+    let flat_bytes = flat.mem_size(SizeFlags::default());
+    let flat_bpk = flat_bytes as f64 * 8.0 / n as f64;
+    eprintln!(
+        "Flat VFunc built in {flat_build_secs:.2}s. Size: {flat_bytes} B = {flat_bpk:.2} bits/key"
+    );
+    eprintln!(
+        "CompVFunc / VFunc build ratio: {:.2}×  (target ≈ entropy of the value distribution)",
+        comp_build_secs / flat_build_secs.max(1e-9)
     );
 
     // Verify a sample of keys round-trip correctly.

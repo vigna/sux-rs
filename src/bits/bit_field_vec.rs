@@ -315,7 +315,15 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
     ///
     /// This method will panic if the constraints above are not respected.
     pub fn get_unaligned(&self, index: usize) -> B::Word {
-        assert_unaligned!(B::Word, self.bit_width);
+        assert!(
+            test_unaligned!(B::Word, self.bit_width),
+            "bit width {} does not satisfy the constraints for unaligned reads on word type {} (must be <= {}, or == {}, or == {})",
+            self.bit_width,
+            stringify!(B::Word),
+            B::Word::BITS as usize - 6,
+            B::Word::BITS as usize - 4,
+            B::Word::BITS as usize,
+        );
         panic_if_out_of_bounds!(index, self.len);
         // Check that the read_unaligned of size_of::<W>() bytes starting at
         // byte offset start_bit / 8 does not exceed the allocation.
@@ -340,7 +348,15 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
     /// This method will panic in debug mode if the safety constraints are not
     /// respected.
     pub unsafe fn get_unaligned_unchecked(&self, index: usize) -> B::Word {
-        debug_assert_unaligned!(B::Word, self.bit_width);
+        debug_assert!(
+            test_unaligned!(B::Word, self.bit_width),
+            "bit width {} does not satisfy the constraints for unaligned reads on word type {} (must be <= {}, or == {}, or == {})",
+            self.bit_width,
+            stringify!(B::Word),
+            B::Word::BITS as usize - 6,
+            B::Word::BITS as usize - 4,
+            B::Word::BITS as usize,
+        );
         let base_ptr = self.bits.as_ref().as_ptr() as *const u8;
         let start_bit = index * self.bit_width;
         // Check that the read_unaligned of size_of::<W>() bytes starting at
@@ -1981,7 +1997,16 @@ impl<W: Word> crate::traits::TryIntoUnaligned for BitFieldVec<Box<[W]>> {
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         let bw = self.bit_width();
-        ensure_unaligned!(W, bw);
+        if !test_unaligned!(W, bw) {
+            return Err(crate::traits::UnalignedConversionError(format!(
+                "bit width {} does not satisfy the constraints for unaligned reads on word type {} (must be <= {}, or == {}, or == {})",
+                bw,
+                stringify!(W),
+                W::BITS as usize - 6,
+                W::BITS as usize - 4,
+                W::BITS as usize,
+            )));
+        }
         let needed = (SliceByValue::len(&self) * bw).div_ceil(W::BITS as usize);
         if self.as_slice().len() > needed {
             // Padding word already present (e.g., built with new_padded).

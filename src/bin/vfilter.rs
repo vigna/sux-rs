@@ -114,17 +114,6 @@ fn main() -> Result<()> {
     }
 }
 
-fn set_builder<D: Send + Sync, S, E: ShardEdge<S, 3>>(
-    builder: VBuilder<D, S, E>,
-    args: &Args,
-) -> VBuilder<D, S, E> {
-    let mut builder = args.builder.configure(builder);
-    if let Some(n) = args.n {
-        builder = builder.expected_num_keys(n);
-    }
-    builder
-}
-
 fn main_with_types_boxed_slice<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
     args: Args,
 ) -> Result<()>
@@ -153,7 +142,10 @@ where
 
     if let Some(filename) = &args.filename {
         let n = args.n.unwrap_or(usize::MAX);
-        let builder = set_builder(VBuilder::<Box<[W]>, S, E>::default(), &args);
+        let mut builder = args.builder.configure(VBuilder::<Box<[W]>, S, E>::default());
+        if let Some(n_hint) = args.n {
+            builder = builder.expected_num_keys(n_hint);
+        }
         let filter = <VFilter<VFunc<str, Box<[W]>, S, E>>>::try_new_with_builder(
             DekoBufLineLender::from_path(filename)?.take(n),
             args.n.unwrap_or(0),
@@ -165,7 +157,10 @@ where
         }
     } else {
         let n = args.n.unwrap();
-        let builder = set_builder(VBuilder::<Box<[W]>, S, E>::default(), &args);
+        let builder = args
+            .builder
+            .configure(VBuilder::<Box<[W]>, S, E>::default())
+            .expected_num_keys(n);
         let filter = <VFilter<VFunc<usize, Box<[W]>, S, E>>>::try_new_with_builder(
             FromCloneableIntoIterator::from(0_usize..n),
             n,
@@ -200,7 +195,12 @@ where
 
     if let Some(filename) = &args.filename {
         let n = args.n.unwrap_or(usize::MAX);
-        let builder = set_builder(VBuilder::<BitFieldVec<Box<[W]>>, S, E>::default(), &args);
+        let mut builder = args
+            .builder
+            .configure(VBuilder::<BitFieldVec<Box<[W]>>, S, E>::default());
+        if let Some(n_hint) = args.n {
+            builder = builder.expected_num_keys(n_hint);
+        }
         let filter = <VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
             DekoBufLineLender::from_path(filename)?.take(n),
             args.n.unwrap_or(0),
@@ -213,8 +213,10 @@ where
         }
     } else {
         let n = args.n.unwrap();
-        let mut builder = set_builder(VBuilder::<BitFieldVec<Box<[W]>>, S, E>::default(), &args);
-        builder = builder.expected_num_keys(n);
+        let builder = args
+            .builder
+            .configure(VBuilder::<BitFieldVec<Box<[W]>>, S, E>::default())
+            .expected_num_keys(n);
         let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
             FromCloneableIntoIterator::from(0_usize..n),
             n,

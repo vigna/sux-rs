@@ -51,6 +51,9 @@ pub mod vfunc2;
 pub use vfunc2::*;
 
 #[cfg(feature = "rayon")]
+pub(crate) mod peeling;
+
+#[cfg(feature = "rayon")]
 mod vbuilder;
 #[cfg(feature = "rayon")]
 pub use vbuilder::*;
