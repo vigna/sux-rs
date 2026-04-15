@@ -103,13 +103,15 @@ fn build_single(
         }
         Some(ref ht) => {
             // Signed variants need the keys addressable a second time
-            // (for signing, after the main build). For the sequential
-            // path we rewind a `FromSlice` over `Vec<String>`; for the
-            // parallel path we materialise a `Vec<&str>` over a single
-            // concatenated buffer (one big allocation, cache-friendly).
+            // (for signing, after the main build), so we materialise
+            // them as a `Vec<&str>` over a single concatenated buffer
+            // — one big allocation, cache-friendly access — usable
+            // by both paths (sequential rewinds via `FromSlice`,
+            // parallel consumes the slice directly).
+            let (buffer, offsets) = read_lines_concatenated(&args.filename, n)?;
+            let keys = str_slice_from_offsets(&buffer, &offsets);
+            let n = keys.len();
             if args.sequential {
-                let keys = read_keys(&args.filename, n)?;
-                let n = keys.len();
                 macro_rules! build_seq {
                     ($h:ty) => {{
                         let mmphf: SignedFunc<LcpMmphfStr, Box<[$h]>> =
@@ -131,8 +133,6 @@ fn build_single(
                     HashTypes::U64 => build_seq!(u64),
                 }
             } else {
-                let (buffer, offsets) = read_lines_concatenated(&args.filename, n)?;
-                let keys = str_slice_from_offsets(&buffer, &offsets);
                 macro_rules! build_par {
                     ($h:ty) => {{
                         let mmphf: SignedFunc<LcpMmphfStr, Box<[$h]>> =
@@ -182,9 +182,13 @@ fn build_two_step(
             }
         }
         Some(ref ht) => {
+            // See the comment in `build_single`: signed paths
+            // materialise keys through a single concatenated buffer
+            // for both sequential and parallel variants.
+            let (buffer, offsets) = read_lines_concatenated(&args.filename, n)?;
+            let keys = str_slice_from_offsets(&buffer, &offsets);
+            let n = keys.len();
             if args.sequential {
-                let keys = read_keys(&args.filename, n)?;
-                let n = keys.len();
                 macro_rules! build_seq {
                     ($h:ty) => {{
                         let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =
@@ -205,8 +209,6 @@ fn build_two_step(
                     HashTypes::U64 => build_seq!(u64),
                 }
             } else {
-                let (buffer, offsets) = read_lines_concatenated(&args.filename, n)?;
-                let keys = str_slice_from_offsets(&buffer, &offsets);
                 macro_rules! build_par {
                     ($h:ty) => {{
                         let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =
@@ -226,19 +228,4 @@ fn build_two_step(
         }
     }
     Ok(())
-}
-
-/// Reads keys into memory (needed for Clone lender in signed variants).
-fn read_keys(filename: &str, max_n: usize) -> Result<Vec<String>> {
-    let mut keys = Vec::new();
-    let mut lender = DekoBufLineLender::from_path(filename)?;
-    let mut count = 0usize;
-    while let Some(key) = FallibleLender::next(&mut lender)? {
-        keys.push(key.to_owned());
-        count += 1;
-        if count >= max_n {
-            break;
-        }
-    }
-    Ok(keys)
 }
