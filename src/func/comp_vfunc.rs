@@ -509,8 +509,8 @@ where
           attempt_seed: u64,
           mut store: Box<dyn ShardStore<S, u64> + Send + Sync>,
           _max_val: u64,
-          _num_keys: usize,
-          _pl: &mut P,
+          num_keys: usize,
+          pl: &mut P,
           _state: &mut ()| {
         // ── a) Compute per-shard sum of codeword lengths. ──
         // VBuilder's set_up_graphs was sized for the *key* count;
@@ -536,9 +536,11 @@ where
         // → cheap LGE fallback) or a *sparse* one (pure peel expected
         // to succeed; a failing peel leaves a large core that LGE
         // cannot chew through, so we must retry the shard instead).
-        let (_c, lge) = vb
+        let (c, lge) = vb
             .shard_edge
             .set_up_graphs(total_edges, max_shard_edges);
+        vb.c = c;
+        vb.lge = lge;
 
         // ── c) Compute the per-shard stride and allocate. ──
         let num_vertices_per_shard = vb.shard_edge.num_vertices();
@@ -548,6 +550,33 @@ where
         // VFunc sets this inside `try_build_from_shard_iter`, which
         // we're side-stepping, so we must set it ourselves.
         vb.num_threads = num_shards.min(vb.max_num_threads).max(1);
+
+        // ── Progress-log info mirroring VBuilder's
+        // `try_build_from_shard_iter` (vbuilder.rs:1202–1218) plus
+        // CompVFunc-specific entropy metrics: average codeword
+        // length (≈ H(values) in bits, the information-theoretic
+        // optimum) and the actual bits/key ratio.
+        pl.info(format_args!("{}", vb.shard_edge));
+        let entropy = total_edges as f64 / num_keys as f64;
+        pl.info(format_args!(
+            "Huffman: max codeword length {}, escape length {}, escaped symbol length {}",
+            coder.max_codeword_length(),
+            coder.escape_length(),
+            coder.escaped_symbol_length()
+        ));
+        pl.info(format_args!(
+            "Average codeword length (entropy): {:.4} bits/key  (total edges: {}, {} shards, max shard edges: {})",
+            entropy, total_edges, num_shards, max_shard_edges
+        ));
+        pl.info(format_args!(
+            "c: {}, Number of threads: {}",
+            c, vb.num_threads
+        ));
+        if lge {
+            pl.info(format_args!(
+                "Peeling with lazy Gaussian elimination fallback"
+            ));
+        }
 
         let raw_stride = num_vertices_per_shard + w;
         // `par_solve` chunks the data via `BitVec::try_chunks_mut`,

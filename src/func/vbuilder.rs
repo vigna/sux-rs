@@ -177,7 +177,7 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) num_keys: usize,
     /// The ratio between the number of vertices and the number of edges
     /// (i.e., between the number of variables and the number of equations).
-    c: f64,
+    pub(crate) c: f64,
     /// Whether we should use [lazy Gaussian elimination].
     ///
     /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
@@ -805,6 +805,7 @@ impl<
         SigVal<S, V>: RadixKey,
     {
         let mut rs = self.retry_state(pl);
+        let total_start = Instant::now();
 
         loop {
             let seed = rs.next_seed();
@@ -831,6 +832,13 @@ impl<
             };
 
             if let Some(r) = rs.handle_solve_result(result, pl)? {
+                let num_keys = self.num_keys;
+                info!(
+                    "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                    total_start.elapsed().as_secs_f64(),
+                    num_keys,
+                    total_start.elapsed().as_nanos() as f64 / num_keys as f64
+                );
                 return Ok((r, keys));
             }
 
@@ -880,6 +888,7 @@ impl<
     {
         let mut rs = self.retry_state(pl);
         let n = keys.len();
+        let total_start = Instant::now();
 
         loop {
             let seed = rs.next_seed();
@@ -898,6 +907,8 @@ impl<
                     std::mem::size_of::<S>() * 8,
                 ));
 
+                let start = Instant::now();
+
                 let maybe_max_value = sig_store.par_populate(n, self.max_num_threads, |i| SigVal {
                     sig: K::to_sig(keys[i].borrow(), seed),
                     val: val_fn(i),
@@ -906,6 +917,13 @@ impl<
                 pl.done();
 
                 let num_keys = sig_store.len();
+
+                info!(
+                    "Computation of signatures from inputs completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                    start.elapsed().as_secs_f64(),
+                    num_keys,
+                    start.elapsed().as_nanos() as f64 / num_keys as f64
+                );
                 // When `shard_size_hint` is set (e.g. by CompVFunc with
                 // `total_edges` after building the Huffman coder), the
                 // sharding strategy is sized for the hinted workload
@@ -924,11 +942,27 @@ impl<
                     (self.c, self.lge) = shard_edge.set_up_graphs(num_keys, max_shard);
                     self.num_keys = num_keys;
                     let store = Box::new(shard_store) as Box<dyn ShardStore<S, V> + Send + Sync>;
+                    let start = Instant::now();
                     build_fn(self, seed, store, maybe_max_value, num_keys, pl, &mut state)
+                        .inspect(|_| {
+                            info!(
+                                "Analysis of signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                                start.elapsed().as_secs_f64(),
+                                num_keys,
+                                start.elapsed().as_nanos() as f64 / num_keys as f64
+                            );
+                        })
                 }
             };
 
             if let Some(r) = rs.handle_solve_result(result, pl)? {
+                let num_keys = self.num_keys;
+                info!(
+                    "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                    total_start.elapsed().as_secs_f64(),
+                    num_keys,
+                    total_start.elapsed().as_nanos() as f64 / num_keys as f64
+                );
                 return Ok(r);
             }
             // Keys and values are slices — no rewind needed.
@@ -1114,7 +1148,7 @@ impl<
 
         build_fn(self, seed, store, maybe_max_value, num_keys, pl, state).inspect(|_| {
             info!(
-                "Construction from signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                "Analysis of signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",
                 start.elapsed().as_secs_f64(),
                 num_keys,
                 start.elapsed().as_nanos() as f64 / num_keys as f64
