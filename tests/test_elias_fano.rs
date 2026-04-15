@@ -183,6 +183,18 @@ fn test_elias_fano() -> Result<()> {
         for upper_bound in 0..first {
             assert_eq!(None, ef.pred(upper_bound));
         }
+
+        // rank(v) = number of elements strictly less than v
+        // partition_point gives the insertion point = count of elements < v
+        for v in 0..=u {
+            let expected = values.partition_point(|&x| x < v);
+            assert_eq!(
+                ef.rank(v),
+                expected,
+                "rank({v}) wrong for n={n} u={u}: got {}, expected {expected}",
+                ef.rank(v)
+            );
+        }
     }
 
     Ok(())
