@@ -26,8 +26,8 @@
 //!   position in the dictionary.
 //! - [`SuccUnchecked`]/[`Succ`] provide the successor of a value in a sorted
 //!   dictionary.
-//! - [`PredUnchecked`]/[`Pred`] provide the predecessor of a value in a sorted
-//!   dictionary.
+//! - [`PredUnchecked`]/[`Pred`] provide the predecessor of a value or just
+//!   its rank in a sorted dictionary.
 //!
 //! [`IndexedSeq`], [`IndexedDict`], [`SuccUnchecked`], and [`PredUnchecked`]
 //! are independent. A structure may implement any combination of them, provided
@@ -461,6 +461,23 @@ where
         &self,
         value: impl Borrow<Self::Input>,
     ) -> (usize, Self::BidiIter<'_>);
+
+    /// Returns the number of elements strictly less than the given value.
+    ///
+    /// The default implementation just calls [`pred_unchecked`] and returns the
+    /// index of the predecessor plus one if it exists, or 0 otherwise, but
+    /// implementations can provide a faster, specialized version exploiting the
+    /// fact that the predecessor is not returned.
+    ///
+    /// # Safety
+    ///
+    /// There must be at least one element strictly less than `value`.
+    ///
+    /// [`pred_unchecked`]: PredUnchecked::pred_unchecked
+    #[inline]
+    unsafe fn rank_unchecked(&self, value: impl Borrow<Self::Input>) -> usize {
+        unsafe { self.pred_unchecked::<true>(value) }.0 + 1
+    }
 }
 
 impl<T: PredUnchecked + ?Sized> PredUnchecked for &T
@@ -500,6 +517,11 @@ where
     ) -> (usize, Self::BidiIter<'_>) {
         unsafe { (*self).iter_bidi_from_pred_unchecked::<STRICT>(value) }
     }
+
+    #[inline(always)]
+    unsafe fn rank_unchecked(&self, value: impl Borrow<Self::Input>) -> usize {
+        unsafe { (*self).rank_unchecked(value) }
+    }
 }
 
 /// Predecessor computation for dictionaries whose values are monotonically increasing.
@@ -528,6 +550,19 @@ where
     /// If there are repeated values, the index of the one returned
     /// depends on the implementation.
     fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)>;
+
+    /// Returns the number of elements strictly less than the given value.
+    ///
+    /// The default implementation just calls [`pred_strict`] and returns the
+    /// index of the predecessor plus one if it exists, or 0 otherwise, but
+    /// implementations can provide a faster, specialized version exploiting the
+    /// fact that the predecessor is not returned.
+    ///
+    /// [`pred_strict`]: Pred::pred_strict
+    #[inline]
+    fn rank(&self, value: impl Borrow<Self::Input>) -> usize {
+        self.pred_strict(value).map_or(0, |(idx, _)| idx + 1)
+    }
 
     /// Returns the index of the predecessor and a backward iterator starting
     /// at the predecessor, or [`None`] if there is no predecessor.
@@ -605,6 +640,11 @@ where
         value: impl Borrow<Self::Input>,
     ) -> Option<(usize, Self::BidiIter<'_>)> {
         (*self).iter_bidi_from_pred_strict(value)
+    }
+
+    #[inline(always)]
+    fn rank(&self, value: impl Borrow<Self::Input>) -> usize {
+        (*self).rank(value)
     }
 }
 

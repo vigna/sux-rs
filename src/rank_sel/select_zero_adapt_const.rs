@@ -159,11 +159,11 @@ pub struct SelectZeroAdaptConst<
     B,
     I = Box<[usize]>,
     const LOG2_ZEROS_PER_INVENTORY: usize = {
-        select_adapt::default_target_inventory_span(
+        (select_adapt::default_target_inventory_span(
             select_adapt::DEFAULT_LOG2_WORDS_PER_SUBINVENTORY,
         )
-        .ilog2() as usize
-            - 1
+        .ilog2() as usize)
+            .saturating_sub(1) // density 50%
     },
     const LOG2_WORDS_PER_SUBINVENTORY: usize = {
         select_adapt::DEFAULT_LOG2_WORDS_PER_SUBINVENTORY

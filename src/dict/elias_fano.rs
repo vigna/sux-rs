@@ -1010,6 +1010,47 @@ where
         }
     }
 
+    #[inline]
+    unsafe fn rank_unchecked(&self, value: impl Borrow<V>) -> usize {
+        let value = *value.borrow();
+        let zeros_to_skip: usize = (value >> self.l).try_into().unwrap();
+
+        // sel_high = position of the zeros_to_skip-th zero = end-of-bucket separator
+        let mut sel_high = unsafe { self.high_bits.select_zero_unchecked(zeros_to_skip) };
+
+        // rank_low = number of ones before sel_high = count of elements with high_part ≤ zeros_to_skip
+        let mut rank_low = sel_high - zeros_to_skip;
+        if rank_low == 0 {
+            return 0;
+        }
+
+        let val_low = value & ((V::ONE << self.l) - V::ONE);
+        let mut iter_back = self.low_bits.into_unchecked_iter_back_from(rank_low);
+
+        loop {
+            if sel_high == 0 {
+                return 0;
+            }
+            sel_high -= 1;
+            rank_low = rank_low.wrapping_sub(1);
+
+            // Check high bit first: if zero, we've left the bucket — no low bits read needed
+            let word_idx = sel_high / (usize::BITS as usize);
+            let bit_idx = sel_high % (usize::BITS as usize);
+            let high_word = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
+
+            if high_word & (1_usize << bit_idx) == 0 {
+                return rank_low.wrapping_add(1);
+            }
+
+            // Still in bucket: consecutive backward access, so use iterator
+            let lower_bits = unsafe { iter_back.next_unchecked() };
+            if lower_bits < val_low {
+                return rank_low + 1;
+            }
+        }
+    }
+
     unsafe fn iter_back_from_pred_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
@@ -1177,6 +1218,18 @@ where
             None
         } else {
             Some(unsafe { self.pred_unchecked::<true>(value) })
+        }
+    }
+
+    #[inline]
+    fn rank(&self, value: impl Borrow<V>) -> usize {
+        let value = *value.borrow();
+        if value <= self.first_val {
+            0
+        } else if value > self.last_val {
+            self.n
+        } else {
+            unsafe { self.rank_unchecked(value) }
         }
     }
 
