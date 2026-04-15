@@ -493,6 +493,73 @@ mod build {
                 .map(|(r, _keys)| r)
         }
 
+        /// Builds a [`VFunc2`] from in-memory key and value slices,
+        /// parallelizing hash computation and sig-store population with
+        /// rayon, using default [`VBuilder`] settings.
+        ///
+        /// This is the parallel counterpart of [`try_new`]: each key is
+        /// hashed on a rayon worker thread and deposited directly into
+        /// its sig-store bucket. Faster than the lender-based path for
+        /// large in-memory key sets, but requires the key and value
+        /// inputs to be addressable as slices.
+        ///
+        /// This is a convenience wrapper around
+        /// [`try_par_new_with_builder`] with `VBuilder::default()`.
+        ///
+        /// [`try_new`]: Self::try_new
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        pub fn try_par_new<B: Borrow<K> + Sync>(
+            keys: &[B],
+            values: &[W],
+            pl: &mut (impl ProgressLog + Clone + Send + Sync),
+        ) -> anyhow::Result<Self>
+        where
+            K: Sync,
+            S: Send,
+        {
+            Self::try_par_new_with_builder(keys, values, VBuilder::default(), pl)
+        }
+
+        /// Builds a [`VFunc2`] from in-memory key and value slices,
+        /// parallelizing hash computation and sig-store population with
+        /// rayon, using the given [`VBuilder`] configuration.
+        ///
+        /// See [`try_par_new`](Self::try_par_new) for parallel-path
+        /// semantics and [`try_new_with_builder`] for the lender-based
+        /// variant.
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        pub fn try_par_new_with_builder<B: Borrow<K> + Sync>(
+            keys: &[B],
+            values: &[W],
+            builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
+            pl: &mut (impl ProgressLog + Clone + Send + Sync),
+        ) -> anyhow::Result<Self>
+        where
+            K: Sync,
+            S: Send,
+        {
+            let n = keys.len();
+            builder.expected_num_keys(n).try_par_populate_and_build(
+                keys,
+                &|i| values[i],
+                &mut |builder, seed, mut store, _max_value, _num_keys, pl, _state: &mut ()| {
+                    Self::try_build_from_store::<W>(
+                        seed,
+                        builder.shard_edge,
+                        &mut *store,
+                        &|v| v,
+                        VBuilder::default()
+                            .max_num_threads(builder.max_num_threads)
+                            .eps(builder.eps),
+                        pl,
+                    )
+                },
+                pl,
+                (),
+            )
+        }
+
         /// Builds a [`VFunc2`] from an existing [`ShardStore`].
         ///
         /// This is the low-level constructor used when multiple VFuncs are

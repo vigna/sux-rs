@@ -355,29 +355,53 @@ fn main_two_step(args: Args) -> Result<()> {
             pl.info(format_args!("Found {count} keys"));
             count
         };
-        let func: VFunc2<str, BitFieldVec<Box<[usize]>>> = VFunc2::try_new_with_builder(
-            DekoBufLineLender::from_path(filename)?.take(n),
-            FromCloneableIntoIterator::from(0_usize..),
-            n,
-            builder,
-            &mut pl,
-        )?;
-        if let Some(filename) = args.func {
-            unsafe { func.store(filename) }?;
+        if args.sequential {
+            let func: VFunc2<str, BitFieldVec<Box<[usize]>>> = VFunc2::try_new_with_builder(
+                DekoBufLineLender::from_path(filename)?.take(n),
+                FromCloneableIntoIterator::from(0_usize..),
+                n,
+                builder,
+                &mut pl,
+            )?;
+            if let Some(filename) = args.func {
+                unsafe { func.store(filename) }?;
+            }
+        } else {
+            let (buffer, offsets) = read_lines_concatenated(filename, n)?;
+            let keys = str_slice_from_offsets(&buffer, &offsets);
+            if keys.len() != n {
+                bail!("key count mismatch: read {} keys, expected {n}", keys.len());
+            }
+            let values: Vec<usize> = (0..n).collect();
+            let func: VFunc2<str, BitFieldVec<Box<[usize]>>> =
+                VFunc2::try_par_new_with_builder(&keys, &values, builder, &mut pl)?;
+            if let Some(filename) = args.func {
+                unsafe { func.store(filename) }?;
+            }
         }
     } else {
         let n = args.n.unwrap();
-        let keys: Vec<usize> = (0..n).collect();
-        let vals: Vec<usize> = (0..n).collect();
-        let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> = VFunc2::try_new_with_builder(
-            FromSlice::new(&keys),
-            FromSlice::new(&vals),
-            n,
-            builder,
-            &mut pl,
-        )?;
-        if let Some(filename) = args.func {
-            unsafe { func.store(filename) }?;
+        if args.sequential {
+            let keys: Vec<usize> = (0..n).collect();
+            let vals: Vec<usize> = (0..n).collect();
+            let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> = VFunc2::try_new_with_builder(
+                FromSlice::new(&keys),
+                FromSlice::new(&vals),
+                n,
+                builder,
+                &mut pl,
+            )?;
+            if let Some(filename) = args.func {
+                unsafe { func.store(filename) }?;
+            }
+        } else {
+            let keys: Vec<usize> = (0..n).collect();
+            let values: Vec<usize> = (0..n).collect();
+            let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> =
+                VFunc2::try_par_new_with_builder(&keys, &values, builder, &mut pl)?;
+            if let Some(filename) = args.func {
+                unsafe { func.store(filename) }?;
+            }
         }
     }
 

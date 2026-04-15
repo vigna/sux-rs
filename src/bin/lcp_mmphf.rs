@@ -102,29 +102,54 @@ fn build_single(
             }
         }
         Some(ref ht) => {
-            // Signed variants always materialise the keys because
-            // signing reads them a second time after the main build.
-            let keys = read_keys(&args.filename, n)?;
-            let n = keys.len();
-            macro_rules! build_seq {
-                ($h:ty) => {{
-                    let mmphf: SignedFunc<LcpMmphfStr, Box<[$h]>> =
-                        <SignedFunc<LcpMmphfStr, Box<[$h]>>>::try_new_with_builder(
-                            FromSlice::new(&keys),
-                            n,
-                            builder,
-                            pl,
-                        )?;
-                    if let Some(ref f) = args.func {
-                        unsafe { mmphf.store(f) }?;
-                    }
-                }};
-            }
-            match ht {
-                HashTypes::U8 => build_seq!(u8),
-                HashTypes::U16 => build_seq!(u16),
-                HashTypes::U32 => build_seq!(u32),
-                HashTypes::U64 => build_seq!(u64),
+            // Signed variants need the keys addressable a second time
+            // (for signing, after the main build). For the sequential
+            // path we rewind a `FromSlice` over `Vec<String>`; for the
+            // parallel path we materialise a `Vec<&str>` over a single
+            // concatenated buffer (one big allocation, cache-friendly).
+            if args.sequential {
+                let keys = read_keys(&args.filename, n)?;
+                let n = keys.len();
+                macro_rules! build_seq {
+                    ($h:ty) => {{
+                        let mmphf: SignedFunc<LcpMmphfStr, Box<[$h]>> =
+                            <SignedFunc<LcpMmphfStr, Box<[$h]>>>::try_new_with_builder(
+                                FromSlice::new(&keys),
+                                n,
+                                builder,
+                                pl,
+                            )?;
+                        if let Some(ref f) = args.func {
+                            unsafe { mmphf.store(f) }?;
+                        }
+                    }};
+                }
+                match ht {
+                    HashTypes::U8 => build_seq!(u8),
+                    HashTypes::U16 => build_seq!(u16),
+                    HashTypes::U32 => build_seq!(u32),
+                    HashTypes::U64 => build_seq!(u64),
+                }
+            } else {
+                let (buffer, offsets) = read_lines_concatenated(&args.filename, n)?;
+                let keys = str_slice_from_offsets(&buffer, &offsets);
+                macro_rules! build_par {
+                    ($h:ty) => {{
+                        let mmphf: SignedFunc<LcpMmphfStr, Box<[$h]>> =
+                            <SignedFunc<LcpMmphfStr, Box<[$h]>>>::try_par_new_with_builder(
+                                &keys, builder, pl,
+                            )?;
+                        if let Some(ref f) = args.func {
+                            unsafe { mmphf.store(f) }?;
+                        }
+                    }};
+                }
+                match ht {
+                    HashTypes::U8 => build_par!(u8),
+                    HashTypes::U16 => build_par!(u16),
+                    HashTypes::U32 => build_par!(u32),
+                    HashTypes::U64 => build_par!(u64),
+                }
             }
         }
     }
@@ -157,26 +182,46 @@ fn build_two_step(
             }
         }
         Some(ref ht) => {
-            let keys = read_keys(&args.filename, n)?;
-            let n = keys.len();
-            macro_rules! build_seq {
-                ($h:ty) => {{
-                    let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =
-                        <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_new(
-                            FromSlice::new(&keys),
-                            n,
-                            pl,
-                        )?;
-                    if let Some(ref f) = args.func {
-                        unsafe { mmphf.store(f) }?;
-                    }
-                }};
-            }
-            match ht {
-                HashTypes::U8 => build_seq!(u8),
-                HashTypes::U16 => build_seq!(u16),
-                HashTypes::U32 => build_seq!(u32),
-                HashTypes::U64 => build_seq!(u64),
+            if args.sequential {
+                let keys = read_keys(&args.filename, n)?;
+                let n = keys.len();
+                macro_rules! build_seq {
+                    ($h:ty) => {{
+                        let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =
+                            <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_new(
+                                FromSlice::new(&keys),
+                                n,
+                                pl,
+                            )?;
+                        if let Some(ref f) = args.func {
+                            unsafe { mmphf.store(f) }?;
+                        }
+                    }};
+                }
+                match ht {
+                    HashTypes::U8 => build_seq!(u8),
+                    HashTypes::U16 => build_seq!(u16),
+                    HashTypes::U32 => build_seq!(u32),
+                    HashTypes::U64 => build_seq!(u64),
+                }
+            } else {
+                let (buffer, offsets) = read_lines_concatenated(&args.filename, n)?;
+                let keys = str_slice_from_offsets(&buffer, &offsets);
+                macro_rules! build_par {
+                    ($h:ty) => {{
+                        let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =
+                            <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_par_new(&keys, pl)?;
+                        if let Some(ref f) = args.func {
+                            unsafe { mmphf.store(f) }?;
+                        }
+                    }};
+                }
+                match ht {
+                    HashTypes::U8 => build_par!(u8),
+                    HashTypes::U16 => build_par!(u16),
+                    HashTypes::U32 => build_par!(u32),
+                    HashTypes::U64 => build_par!(u64),
+                }
             }
         }
     }
