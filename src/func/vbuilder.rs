@@ -93,6 +93,26 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     #[derivative(Default(value = "None"))]
     expected_num_keys: Option<usize>,
 
+    /// Override the value used to size the sharding step.
+    ///
+    /// Normally [`set_up_shards`](ShardEdge::set_up_shards) is called
+    /// with the number of keys, which is correct for a construction
+    /// where each key produces exactly one hyperedge (VFunc). When
+    /// each key produces *multiple* hyperedges — as in
+    /// [`CompVFunc`](crate::func::CompVFunc), where each key's
+    /// Huffman-encoded value contributes one edge per codeword bit
+    /// — the graph actually has ≈ entropy × num_keys equations.
+    /// Sizing the shards for the smaller key count leaves every
+    /// shard oversized relative to the sharding strategy's intent.
+    ///
+    /// If this field is `Some(n)`, `n` is passed to
+    /// [`set_up_shards`](ShardEdge::set_up_shards) instead of the
+    /// runtime key count. CompVFunc sets this to the total edge
+    /// count after building the Huffman coder.
+    #[setters(generate = true, strip_option)]
+    #[derivative(Default(value = "None"))]
+    pub(crate) shard_size_hint: Option<usize>,
+
     /// The maximum number of parallel threads to use for both the population
     /// and solve phases. The default is `min(16, available_parallelism)`.
     #[setters(generate = true)]
@@ -886,8 +906,14 @@ impl<
                 pl.done();
 
                 let num_keys = sig_store.len();
+                // When `shard_size_hint` is set (e.g. by CompVFunc with
+                // `total_edges` after building the Huffman coder), the
+                // sharding strategy is sized for the hinted workload
+                // rather than the raw key count. See the doc comment on
+                // [`VBuilder::shard_size_hint`].
+                let shard_n = self.shard_size_hint.unwrap_or(num_keys);
                 let shard_edge = &mut self.shard_edge;
-                shard_edge.set_up_shards(num_keys, self.eps);
+                shard_edge.set_up_shards(shard_n, self.eps);
 
                 let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
                 let max_shard = shard_store.shard_sizes().max().unwrap_or(0);
@@ -1057,8 +1083,13 @@ impl<
             start.elapsed().as_nanos() as f64 / num_keys as f64
         );
 
+        // See the doc comment on [`VBuilder::shard_size_hint`]:
+        // when set, use it to size the sharding strategy instead of
+        // the runtime key count. Used by CompVFunc to pass the total
+        // edge count (≈ entropy × num_keys).
+        let shard_n = self.shard_size_hint.unwrap_or(num_keys);
         let shard_edge = &mut self.shard_edge;
-        shard_edge.set_up_shards(num_keys, self.eps);
+        shard_edge.set_up_shards(shard_n, self.eps);
 
         let start = Instant::now();
 
