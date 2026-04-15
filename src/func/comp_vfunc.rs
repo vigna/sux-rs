@@ -48,7 +48,7 @@ use crate::utils::sig_store::ShardStore;
 use crate::utils::{FallibleRewindableLender, Sig, SigVal, ToSig};
 use anyhow::{Result, anyhow, bail};
 use core::error::Error;
-use dsi_progress_logger::no_logging;
+use dsi_progress_logger::ProgressLog;
 use lender::FallibleLending;
 use mem_dbg::{MemDbg, MemSize};
 use rdst::RadixKey;
@@ -327,7 +327,12 @@ where
     ///
     /// See also [`try_new_with_builder`](Self::try_new_with_builder)
     /// for the full configuration surface.
-    pub fn try_new<L, B>(keys: L, values: &[u64], n: usize) -> Result<Self>
+    pub fn try_new<L, B>(
+        keys: L,
+        values: &[u64],
+        n: usize,
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self>
     where
         B: ?Sized + Borrow<K>,
         L: FallibleRewindableLender<
@@ -335,7 +340,7 @@ where
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
     {
-        Self::try_new_with_builder(keys, values, n, Huffman::new(), VBuilder::default())
+        Self::try_new_with_builder(keys, values, n, Huffman::new(), VBuilder::default(), pl)
     }
 
     /// Builds a [`CompVFunc`] from a lender of keys and a slice of
@@ -348,12 +353,13 @@ where
     /// PRNG seed, etc.); the `huffman` argument controls the codec
     /// used for the values. The data backend is pinned internally to
     /// [`BitVec<Box<[usize]>>`] — the same type used at query time.
-    pub fn try_new_with_builder<L, B>(
+    pub fn try_new_with_builder<L, B, P>(
         keys: L,
         values: &[u64],
         n: usize,
         huffman: Huffman,
         builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
+        pl: &mut P,
     ) -> Result<Self>
     where
         B: ?Sized + Borrow<K>,
@@ -361,8 +367,9 @@ where
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        P: ProgressLog + Clone + Send + Sync,
     {
-        build_inner_seq::<K, B, S, E, L>(huffman, builder, keys, values, n)
+        build_inner_seq::<K, B, S, E, L, P>(huffman, builder, keys, values, n, pl)
     }
 }
 
@@ -384,8 +391,12 @@ where
     ///
     /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
     /// for the full configuration surface.
-    pub fn try_par_new<B: Borrow<K> + Sync>(keys: &[B], values: &[u64]) -> Result<Self> {
-        Self::try_par_new_with_builder(keys, values, Huffman::new(), VBuilder::default())
+    pub fn try_par_new<B: Borrow<K> + Sync>(
+        keys: &[B],
+        values: &[u64],
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        Self::try_par_new_with_builder(keys, values, Huffman::new(), VBuilder::default(), pl)
     }
 
     /// Builds a [`CompVFunc`] from parallel slices of keys and values
@@ -394,12 +405,16 @@ where
     /// See [`try_par_new`](Self::try_par_new) for the parallel
     /// semantics and [`try_new_with_builder`](Self::try_new_with_builder)
     /// for the lender-based variant.
-    pub fn try_par_new_with_builder<B: Borrow<K> + Sync>(
+    pub fn try_par_new_with_builder<B: Borrow<K> + Sync, P>(
         keys: &[B],
         values: &[u64],
         huffman: Huffman,
         builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
-    ) -> Result<Self> {
+        pl: &mut P,
+    ) -> Result<Self>
+    where
+        P: ProgressLog + Clone + Send + Sync,
+    {
         if keys.len() != values.len() {
             bail!(
                 "keys and values must have the same length ({} vs {})",
@@ -407,7 +422,7 @@ where
                 values.len()
             );
         }
-        build_inner_par::<K, B, S, E>(huffman, builder, keys, values)
+        build_inner_par::<K, B, S, E, P>(huffman, builder, keys, values, pl)
     }
 }
 
@@ -677,8 +692,8 @@ where
             &mut data,
             padding,
             solve_shard,
-            no_logging![],
-            no_logging![],
+            &mut pl.concurrent(),
+            pl,
         )
         .map_err(anyhow::Error::from)?;
 
@@ -739,12 +754,13 @@ where
 }
 
 /// Lender-based sequential path.
-fn build_inner_seq<K, B, S, E, L>(
+fn build_inner_seq<K, B, S, E, L, P>(
     huffman: Huffman,
     builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
     keys: L,
     values: &[u64],
     n: usize,
+    pl: &mut P,
 ) -> Result<CompVFunc<K, BitVec<Box<[usize]>>, S, E>>
 where
     K: ?Sized + ToSig<S> + std::fmt::Debug,
@@ -756,6 +772,7 @@ where
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+    P: ProgressLog + Clone + Send + Sync,
 {
     let coder = build_coder(huffman, values);
 
@@ -768,12 +785,12 @@ where
     // per-shard formula regime where `peel_by_data_*` fail with
     // ~50% probability and force a retry.
     let mut builder = builder.expected_num_keys(n);
-    let mut build_fn = make_build_fn::<S, E, _>(&coder);
+    let mut build_fn = make_build_fn::<S, E, P>(&coder);
     let ((data, seed_used, shard_size), _keys) = builder.try_populate_and_build(
         keys,
         FromSlice::new(values),
         &mut build_fn,
-        no_logging![],
+        pl,
         (),
     )?;
     drop(build_fn);
@@ -784,11 +801,12 @@ where
 }
 
 /// Slice-based parallel path.
-fn build_inner_par<K, B, S, E>(
+fn build_inner_par<K, B, S, E, P>(
     huffman: Huffman,
     builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
     keys: &[B],
     values: &[u64],
+    pl: &mut P,
 ) -> Result<CompVFunc<K, BitVec<Box<[usize]>>, S, E>>
 where
     K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
@@ -796,6 +814,7 @@ where
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
     SigVal<S, u64>: RadixKey,
+    P: ProgressLog + Clone + Send + Sync,
 {
     let n = keys.len();
     let coder = build_coder(huffman, values);
@@ -816,12 +835,12 @@ where
     // filter thresholds in `shard_edge.rs` for correlated edge
     // densities; until then, key-based sharding wins.
     let mut builder = builder.expected_num_keys(n);
-    let mut build_fn = make_build_fn::<S, E, _>(&coder);
+    let mut build_fn = make_build_fn::<S, E, P>(&coder);
     let (data, seed_used, shard_size) = builder.try_par_populate_and_build(
         keys,
         &|i: usize| values[i],
         &mut build_fn,
-        no_logging![],
+        pl,
         (),
     )?;
     drop(build_fn);
@@ -1453,11 +1472,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dsi_progress_logger::no_logging;
 
     fn build_and_check(values: &[u64]) {
         let n = values.len();
         let keys: Vec<u64> = (0..n as u64).collect();
-        let func = CompVFunc::<u64>::try_par_new(&keys, values).expect("build");
+        let func = CompVFunc::<u64>::try_par_new(&keys, values, no_logging![]).expect("build");
         for (i, &v) in values.iter().enumerate() {
             assert_eq!(func.get(keys[i]), v, "mismatch at key {}", keys[i]);
         }
@@ -1467,7 +1487,7 @@ mod tests {
     fn test_empty() {
         let values: Vec<u64> = vec![];
         let keys: Vec<u64> = vec![];
-        let func = CompVFunc::<u64>::try_par_new(&keys, &values).expect("build");
+        let func = CompVFunc::<u64>::try_par_new(&keys, &values, no_logging![]).expect("build");
         assert!(func.is_empty());
         assert_eq!(func.len(), 0);
     }
@@ -1481,9 +1501,13 @@ mod tests {
         use crate::utils::FromCloneableIntoIterator;
         let n = 1000usize;
         let values: Vec<u64> = (0..n as u64).map(|i| i % 5).collect();
-        let func =
-            CompVFunc::<usize>::try_new(FromCloneableIntoIterator::from(0_usize..n), &values, n)
-                .expect("build");
+        let func = CompVFunc::<usize>::try_new(
+            FromCloneableIntoIterator::from(0_usize..n),
+            &values,
+            n,
+            no_logging![],
+        )
+        .expect("build");
         for i in 0..n {
             assert_eq!(func.get(i), values[i], "mismatch at key {i}");
         }
@@ -1526,7 +1550,7 @@ mod tests {
             })
             .collect();
         let keys: Vec<u64> = (0..n as u64).collect();
-        let func = CompVFunc::<u64>::try_par_new(&keys, &values).expect("build");
+        let func = CompVFunc::<u64>::try_par_new(&keys, &values, no_logging![]).expect("build");
         for (i, &v) in values.iter().enumerate() {
             assert_eq!(func.get(keys[i]), v, "mismatch at key {}", keys[i]);
         }
@@ -1538,7 +1562,7 @@ mod tests {
         let n = 300usize;
         let keys: Vec<String> = (0..n).map(|i| format!("key-{i:08}")).collect();
         let values: Vec<u64> = (0..n as u64).map(|i| i % 5).collect();
-        let func = CompVFunc::<String>::try_par_new(&keys, &values).expect("build");
+        let func = CompVFunc::<String>::try_par_new(&keys, &values, no_logging![]).expect("build");
         for (k, &v) in keys.iter().zip(values.iter()) {
             assert_eq!(func.get(k), v, "mismatch at {k}");
         }
@@ -1551,7 +1575,7 @@ mod tests {
         let n = 1500usize;
         let keys: Vec<u64> = (0..n as u64).collect();
         let values: Vec<u64> = (0..n as u64).map(|i| i % 7).collect();
-        let func = CompVFunc::<u64>::try_par_new(&keys, &values).expect("build");
+        let func = CompVFunc::<u64>::try_par_new(&keys, &values, no_logging![]).expect("build");
         let unaligned = func.try_into_unaligned().expect("convert");
         for (k, &v) in keys.iter().zip(values.iter()) {
             assert_eq!(unaligned.get(*k), v, "mismatch at {k}");
@@ -1591,6 +1615,7 @@ mod tests {
             &values,
             Huffman::length_limited(8, 0.95),
             VBuilder::default(),
+            no_logging![],
         )
         .expect("build");
         for (i, &v) in values.iter().enumerate() {

@@ -39,6 +39,7 @@
 #![allow(clippy::collapsible_else_if)]
 use anyhow::{Context, Result, bail};
 use clap::{ArgGroup, Parser};
+use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
 use rdst::RadixKey;
@@ -199,11 +200,10 @@ where
     let values = read_values(&args.values)?;
     let n_values = values.len();
 
-    // We time only the constructor call — file I/O, key
-    // materialisation, and value parsing are deliberately excluded.
-    // In realistic usage keys are streamed, so those phases don't
-    // reflect the interesting cost.
-    let t_build = std::time::Instant::now();
+    #[cfg(not(feature = "no_logging"))]
+    let mut pl = ProgressLogger::default();
+    #[cfg(feature = "no_logging")]
+    let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
 
     if let Some(filename) = &args.filename {
         let n = n_values;
@@ -212,12 +212,8 @@ where
             // materialisation.
             let keys = DekoBufLineLender::from_path(filename)?.take(n);
             let func = <CompVFunc<str, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
-                keys, &values, n, huffman, vbuilder,
+                keys, &values, n, huffman, vbuilder, &mut pl,
             )?;
-            eprintln!(
-                "comp_vfunc: construction in {:.3}s",
-                t_build.elapsed().as_secs_f64()
-            );
             maybe_store!(func, args.func);
         } else {
             // Parallel: read all keys into a single concatenated
@@ -232,12 +228,8 @@ where
                 bail!("key count mismatch: read {} keys, expected {n}", keys.len());
             }
             let func = <CompVFunc<str, BitVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
-                &keys, &values, huffman, vbuilder,
+                &keys, &values, huffman, vbuilder, &mut pl,
             )?;
-            eprintln!(
-                "comp_vfunc: construction in {:.3}s",
-                t_build.elapsed().as_secs_f64()
-            );
             maybe_store!(func, args.func);
         }
     } else {
@@ -250,12 +242,8 @@ where
             // materialising `n * 8` bytes of keys.
             let keys = FromCloneableIntoIterator::from(0_usize..n);
             let func = <CompVFunc<usize, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
-                keys, &values, n, huffman, vbuilder,
+                keys, &values, n, huffman, vbuilder, &mut pl,
             )?;
-            eprintln!(
-                "comp_vfunc: construction in {:.3}s",
-                t_build.elapsed().as_secs_f64()
-            );
             maybe_store!(func, args.func);
         } else {
             // Parallel: materialise keys as `Vec<usize>`. Costs
@@ -263,7 +251,7 @@ where
             // phase run on all cores.
             let keys: Vec<usize> = (0..n).collect();
             let func = <CompVFunc<usize, BitVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
-                &keys, &values, huffman, vbuilder,
+                &keys, &values, huffman, vbuilder, &mut pl,
             )?;
             maybe_store!(func, args.func);
         }

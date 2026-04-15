@@ -28,6 +28,7 @@ use rand::{RngExt, SeedableRng};
 use rand_distr::{Distribution, Geometric, Zipf};
 use std::hint::black_box;
 use std::time::Instant;
+use dsi_progress_logger::no_logging;
 use sux::func::CompVFunc;
 use sux::traits::TryIntoUnaligned;
 
@@ -75,7 +76,7 @@ fn gen_query_indices(n: usize) -> Vec<usize> {
 
 fn build_comp_vfunc(n: usize, values: &[u64]) -> CompVFunc<usize> {
     let keys: Vec<usize> = (0..n).collect();
-    CompVFunc::<usize>::try_par_new(&keys, values).expect("CompVFunc build failed")
+    CompVFunc::<usize>::try_par_new(&keys, values, no_logging![]).expect("CompVFunc build failed")
 }
 
 // ── Benchmarks ──────────────────────────────────────────────────────

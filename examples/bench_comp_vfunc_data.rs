@@ -139,7 +139,7 @@ fn main() -> Result<()> {
 
     eprintln!("Building CompVFunc...");
     let t0 = Instant::now();
-    let func = CompVFunc::<usize>::try_par_new(&keys, &values).expect("build");
+    let func = CompVFunc::<usize>::try_par_new(&keys, &values, no_logging![]).expect("build");
     let comp_build_secs = t0.elapsed().as_secs_f64();
     let bytes = func.mem_size(SizeFlags::default());
     let bpk = bytes as f64 * 8.0 / n as f64;
