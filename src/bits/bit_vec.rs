@@ -11,11 +11,9 @@
 //! [`AtomicBitVec`], a mutable, thread-safe bit vector.
 //!
 //! Operations on these structures are provided by the extension traits
-//! [`BitVecOps`], [`BitVecOpsMut`], and [`AtomicBitVecOps`], which must be
-//! pulled in scope as needed. There are also operations that are specific to
-//! certain implementations, such as [`push`].
-//!
-//! [`BitVecOpsMut`]: crate::traits::BitVecOpsMut
+//! [`BitVecOps`], [`BitVecOpsMut`], [`BitVecValueOps`], and
+//! [`AtomicBitVecOps`], which must be pulled in scope as needed. There are also
+//! operations that are specific to certain implementations, such as [`push`].
 //!
 //! These flavors depend on a backend with a word type `W`, and presently we
 //! provide:
@@ -52,9 +50,22 @@
 //! let a: AtomicBitVec = AtomicBitVec::new(10); // OK: B = Box<[Atomic<usize>]>
 //! ```
 //!
-//! The [`bit_vec!`] macro and
-//! [`FromIterator`] / [`Extend`] do not need
+//! The [`bit_vec!`] macro and [`FromIterator`] / [`Extend`] do not need
 //! annotations because the word type is determined by the output context.
+//!
+//! # Slice-by-value support
+//!
+//! [`BitVec`] implement the [`BitFieldSlice`]/[`BitFieldSliceMut`] traits as a
+//! bit-field slice of width one. Note that the methods [`get_value`] and
+//! [`get_value_unchecked`] of [`SliceByValue`] conflicts with those of
+//! [`BitVecValueOps`], so if you absolutely need to pull in both traits you
+//! have to disambiguate the method calls. Moreover, as part of [`SliceByValueMut`]
+//! you can also obtain [mutable chunks] from a bit vector, provided they are
+//! aligned enough.
+//!
+//! [chunks]: SliceByValueMut::try_chunks_mut
+//! [`get_value`]: BitFieldSlice::get_value
+//! [`get_value_unchecked`]: BitFieldSlice::get_value_unchecked
 //!
 //! # Examples
 //!
@@ -418,7 +429,7 @@ impl<W: Word> BitVec<Vec<W>> {
             return None;
         }
         let last_pos = self.len - 1;
-        let result = unsafe { BitVecOps::<W>::get_unchecked(self, last_pos) };
+        let result = unsafe { self.get_unchecked(last_pos) };
         self.len = last_pos;
         Some(result)
     }
@@ -532,6 +543,14 @@ impl<W: Word> BitVec<Vec<W>> {
         unsafe { BitVec::from_raw_parts(self.bits.into_boxed_slice(), self.len) }
     }
 
+    #[deprecated(note = "Use `BitVec<Box<[W]>>::new_padded` instead")]
+    pub fn new_padded(len: usize) -> BitVec<Box<[W]>> {
+        let n_of_words = len.div_ceil(W::BITS as usize);
+        unsafe { BitVec::from_raw_parts(vec![W::ZERO; n_of_words + 1].into_boxed_slice(), len) }
+    }
+}
+
+impl<W: Word> BitVec<Box<[W]>> {
     /// Creates a new bit vector of length `len` initialized to `false`,
     /// with a padding word at the end for safe unaligned reads.
     ///
@@ -877,11 +896,14 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> SliceByValue for BitVec<B> {
 
     #[inline(always)]
     unsafe fn get_value_unchecked(&self, index: usize) -> B::Word {
-        let bits = B::Word::BITS as usize;
-        let word_index = index / bits;
-        let bit_index = index % bits;
-        // SAFETY: forwarded from the caller's invariant (index < len).
-        unsafe { (*self.bits.as_ref().get_unchecked(word_index) >> bit_index) & B::Word::ONE }
+        // Delegate to the canonical `BitVecOps::get_unchecked`; LLVM
+        // collapses the `if` to the same `(word >> bit) & 1` it would
+        // emit for a direct implementation.
+        if unsafe { self.get_unchecked(index) } {
+            B::Word::ONE
+        } else {
+            B::Word::ZERO
+        }
     }
 }
 
@@ -902,17 +924,11 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldSlice for BitVec<B> {
 impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueMut for BitVec<B> {
     #[inline(always)]
     unsafe fn set_value_unchecked(&mut self, index: usize, value: B::Word) {
-        let bits = B::Word::BITS as usize;
-        let word_index = index / bits;
-        let bit_index = index % bits;
-        let data = self.bits.as_mut();
-        // Branchless RMW with compile-time mask = 1.
-        unsafe {
-            let mut word = *data.get_unchecked(word_index);
-            word &= !(B::Word::ONE << bit_index);
-            word |= (value & B::Word::ONE) << bit_index;
-            *data.get_unchecked_mut(word_index) = word;
-        }
+        // Delegate to `BitVecOpsMut::set_unchecked`: its `if value`
+        // form dead-code-eliminates to a single RMW when the caller
+        // passes a compile-time constant, and ties my hand-rolled
+        // branchless form on random-runtime values.
+        unsafe { self.set_unchecked(index, value != B::Word::ZERO) }
     }
 
     type ChunksMut<'a>

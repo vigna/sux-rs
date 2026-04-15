@@ -38,8 +38,9 @@
 use crate::bits::{BitVec, BitVecU, test_unaligned_any_pos};
 use crate::func::VBuilder;
 use crate::func::codec::{Codec, Coder, Decoder, ESCAPE, Huffman, HuffmanCoder, HuffmanDecoder};
+use crate::func::peeling::{DoubleStack, XorGraph, remove_edge};
 use crate::func::shard_edge::{FuseLge3Shards, ShardEdge};
-use crate::traits::bit_vec_ops::BitVecValueOps;
+use crate::traits::bit_vec_ops::{BitVecOpsMut, BitVecValueOps};
 use crate::traits::{TryIntoUnaligned, UnalignedConversionError};
 use crate::utils::lenders::FromSlice;
 use crate::utils::mod2_sys::{Modulo2Equation, Modulo2System};
@@ -516,12 +517,12 @@ where
         // VBuilder's set_up_graphs was sized for the *key* count;
         // our graph has ~avg_codeword_length × more equations, so
         // we re-size here.
-        let mut total_edges: u64 = 0;
-        let mut max_shard_edges: u64 = 0;
+        let mut total_edges: usize = 0;
+        let mut max_shard_edges: usize = 0;
         for shard in store.iter() {
-            let mut sum: u64 = 0;
+            let mut sum: usize = 0;
             for sv in shard.iter() {
-                sum += encode_val(sv.val).1 as u64;
+                sum += encode_val(sv.val).1 as usize;
             }
             total_edges += sum;
             max_shard_edges = max_shard_edges.max(sum);
@@ -538,7 +539,7 @@ where
         // cannot chew through, so we must retry the shard instead).
         let (_c, lge) = vb
             .shard_edge
-            .set_up_graphs(total_edges as usize, max_shard_edges as usize);
+            .set_up_graphs(total_edges, max_shard_edges);
 
         // ── c) Compute the per-shard stride and allocate. ──
         let num_vertices_per_shard = vb.shard_edge.num_vertices();
@@ -560,7 +561,7 @@ where
 
         // `new_padded` is defined on `BitVec<Vec<W>>` but returns a
         // `BitVec<Box<[W]>>`, matching the query-side storage type.
-        let mut data = BitVec::<Vec<usize>>::new_padded(total_bits);
+        let mut data = BitVec::<Box<[usize]>>::new_padded(total_bits);
 
         // ── d) Call `par_solve` with the multi-edge closure. ──
         // The per-shard body builds a flat `Vec<[u32; 3]>` + `Vec<bool>`
@@ -578,7 +579,7 @@ where
          -> Result<(), ()> {
             let shard_edge = &this.shard_edge;
             let mut edges: Vec<[u32; 3]> = Vec::new();
-            let mut rhs: Vec<bool> = Vec::new();
+            let mut rhs: BitVec = BitVec::with_capacity(total_edges);
             for sv in shard.iter() {
                 let (bits, len) = encode_val(sv.val);
                 let local_sig = shard_edge.local_sig(sv.sig);
@@ -594,7 +595,7 @@ where
                 }
             }
 
-            let solution = solve_system(raw_stride, &edges, &rhs, lge).map_err(|_| ())?;
+            let solution = solve_system(raw_stride, &edges, rhs, lge).map_err(|_| ())?;
             for (i, &bit) in solution.iter().enumerate() {
                 // SAFETY: `i < raw_stride <= stride`, and shard_data
                 // has length `stride`.
@@ -669,7 +670,7 @@ where
         global_max_codeword_length: coder.max_codeword_length(),
         escape_length: coder.escape_length(),
         escaped_symbol_length: coder.escaped_symbol_length(),
-        data: BitVec::<Vec<usize>>::new_padded(0),
+        data: BitVec::<Box<[usize]>>::new_padded(0),
         decoder: coder.into_decoder(),
         _marker: PhantomData,
     }
@@ -755,14 +756,27 @@ where
 
 // ── Linear-system solver ───────────────────────────────────────────
 
-/// Result of a partial peeling attempt.
-struct PartialPeel {
-    /// `peeled[i]` is `true` iff edge `i` was successfully peeled.
-    peeled: Vec<bool>,
-    /// `(pivot, edge_index)` pairs in **peel order**: the first push
-    /// is the deepest peel, the last push is the most recent. The
-    /// reverse-peel assignment iterates this in reverse.
-    stack: Vec<(u32, u32)>,
+/// Output of [`peel_by_index`]: the peel-order data needed to drive
+/// the reverse-peel assignment (and, on partial peels, the LGE
+/// fallback). Mirrors the `Partial` variant of
+/// [`crate::func::VBuilder`]'s `PeelResult`: the `XorGraph` itself is
+/// dropped when peeling returns — callers only need the peeled edge
+/// indices and their pivot sides.
+struct PeelByIndexOutput {
+    /// Upper half holds peeled edge indices in peel order (oldest at
+    /// the bottom, newest at the top). Lower half is empty once
+    /// peeling terminates.
+    double_stack: DoubleStack<u32>,
+    /// Pivot side (0, 1, or 2) for each peeled edge, in the same
+    /// order as `double_stack.iter_upper()`.
+    sides_stack: Vec<u8>,
+}
+
+impl PeelByIndexOutput {
+    #[inline]
+    fn n_peeled(&self) -> usize {
+        self.double_stack.upper_len()
+    }
 }
 
 /// Solves a 3-uniform F₂ system.
@@ -782,11 +796,11 @@ struct PartialPeel {
 fn solve_system(
     num_variables: usize,
     edges: &[[u32; 3]],
-    rhs: &[bool],
+    rhs: BitVec,
     lge: bool,
 ) -> Result<Vec<bool>> {
-    let peel = peel_partial(num_variables, edges);
-    let n_peeled = peel.stack.len();
+    let out = peel_by_index(num_variables, edges);
+    let n_peeled = out.n_peeled();
     let n_total = edges.len();
 
     let mut solution = vec![false; num_variables];
@@ -795,15 +809,26 @@ fn solve_system(
         if !lge {
             // Graph was sized for pure peeling; a non-empty core means
             // we hit a bad seed. Bail out so `par_solve` can retry.
-            bail!("peeling failed on a non-LGE graph ({} unpeeled)", n_total - n_peeled);
+            bail!(
+                "peeling failed on a non-LGE graph ({} unpeeled)",
+                n_total - n_peeled
+            );
         }
+        // Mark which edges were peeled so the LGE equation builder
+        // can filter them out. VBuilder's `lge_shard` uses the same
+        // trick: `peeled_edges: BitVec` built from `iter_upper()`.
+        let mut peeled_edges: BitVec = BitVec::new(n_total);
+        for &edge_idx in out.double_stack.iter_upper() {
+            peeled_edges.set(edge_idx as usize, true);
+        }
+
         // Build LGE system on the non-peeled edges only. Variables that
         // do not appear in any non-peeled equation get value 0 from
         // LGE; the reverse-peel pass will overwrite the peeled-edge
         // pivots in `solution` afterwards.
         let mut equations: Vec<Modulo2Equation<usize>> = Vec::with_capacity(n_total - n_peeled);
-        for (i, &was_peeled) in peel.peeled.iter().enumerate() {
-            if was_peeled {
+        for i in 0..n_total {
+            if peeled_edges[i] {
                 continue;
             }
             let mut vs = edges[i];
@@ -840,23 +865,32 @@ fn solve_system(
         }
     }
 
-    // Reverse-peel assignment. By the peeling-order argument, when we
-    // process stack[i] in reverse the *other* two vertices are either
-    // (a) variables that never became a pivot (left at their LGE/zero
-    // value) or (b) pivots of edges peeled *later* (i.e. processed
-    // earlier in this reverse loop, hence already assigned).
-    for &(pivot, edge_idx) in peel.stack.iter().rev() {
+    // Reverse-peel assignment. `DoubleStack::iter_upper()` already
+    // yields items in newest-first order (the upper half grows
+    // downward), which is exactly the order we want: assign the
+    // latest-peeled pivot first, so that by the time a pivot's value
+    // is set, the other two vertices of its edge are either
+    // LGE-assigned or were pivots of edges peeled *later* (already
+    // set earlier in this loop). `sides_stack` is a regular Vec
+    // pushed in peel order, so we reverse it explicitly.
+    //
+    // Matching on `side` instead of the `if pivot != v` chain lets us
+    // name the two non-pivot vertices directly and avoid three
+    // branches per peeled edge.
+    for (&edge_idx, &side) in out
+        .double_stack
+        .iter_upper()
+        .zip(out.sides_stack.iter().rev())
+    {
         let [a, b, c] = edges[edge_idx as usize];
-        let mut val = rhs[edge_idx as usize];
-        if a != pivot {
-            val ^= solution[a as usize];
-        }
-        if b != pivot {
-            val ^= solution[b as usize];
-        }
-        if c != pivot {
-            val ^= solution[c as usize];
-        }
+        let r = rhs[edge_idx as usize];
+        let (pivot, val) = match side {
+            0 => (a, r ^ solution[b as usize] ^ solution[c as usize]),
+            1 => (b, r ^ solution[a as usize] ^ solution[c as usize]),
+            2 => (c, r ^ solution[a as usize] ^ solution[b as usize]),
+            // SAFETY: `side` is a 2-bit field in `XorGraph::degrees_sides`.
+            _ => unsafe { std::hint::unreachable_unchecked() },
+        };
         solution[pivot as usize] = val;
     }
 
@@ -875,82 +909,87 @@ fn solve_system(
     Ok(solution)
 }
 
-/// Greedy 3-uniform peeling. Returns the set of peeled edges and the
-/// peel-order `(pivot, edge_index)` stack.
+/// Peels a 3-uniform F₂ hypergraph by edge index, mirroring
+/// [`VBuilder::peel_by_index`](crate::func::vbuilder). The payload
+/// stored in the [`XorGraph`] is the edge index itself (`u32`), and
+/// the original `edges` slice is kept alive by the caller so the
+/// reverse-peel assignment and LGE fallback can reach back into it.
 ///
-/// Degenerate edges (with two or three repeated vertices) are handled
-/// naturally: the double increment of the repeated vertex's degree and
-/// the double XOR of the edge index into its `edge_xor` both match the
-/// F₂ semantics (`x + x = 0`), and the reverse-peel assignment XORs
-/// `solution[b]` twice for `[a, b, b]` which cancels. Skipping
-/// degenerate edges at insert time would leave the repeated vertex
-/// eligible to be peeled as the pivot of some *other* edge, and the
-/// reverse-peel would then overwrite the LGE-imposed constraint on
-/// that vertex — violating the degenerate edge.
-fn peel_partial(num_variables: usize, edges: &[[u32; 3]]) -> PartialPeel {
+/// The returned [`PeelByIndexOutput`] is always non-partial in shape
+/// — it contains the full XorGraph and the peel-order stacks. The
+/// caller checks [`PeelByIndexOutput::n_peeled`] against `edges.len()`
+/// to decide whether peeling succeeded or LGE fallback is needed.
+///
+/// Degenerate edges (two or three repeated vertices) are handled
+/// naturally by [`XorGraph::add`]: each slot independently bumps the
+/// packed `(degree, side)` byte and XORs the edge index into
+/// `edges[v]`, matching F₂ semantics (`x + x = 0`). The reverse-peel
+/// pass XORs `solution[b]` twice for `[a, b, b]`, which cancels.
+fn peel_by_index(num_variables: usize, edges: &[[u32; 3]]) -> PeelByIndexOutput {
     let n_edges = edges.len();
-    let mut peeled = vec![false; n_edges];
-    let mut stack: Vec<(u32, u32)> = Vec::with_capacity(n_edges);
 
-    let mut edge_xor: Vec<u32> = vec![0; num_variables];
-    let mut degree: Vec<u8> = vec![0; num_variables];
-
-    // Store `idx + 1` in edge_xor so that the default value `0`
-    // unambiguously means "no edge incident on this vertex". Storing
-    // the raw `idx` would make edge 0 collide with the "no edge"
-    // sentinel because `0 ^ x = x` is the identity.
-    //
-    // Slots are processed *sequentially* so that a degenerate edge
-    // `[v, v, u]` increments `degree[v]` twice (once per slot). A
-    // naive parallel increment would read the same old `degree[v]`
-    // for both slots and overwrite itself, producing `+1` instead of
-    // `+2` and breaking the `degree == sum_of_slots` invariant.
+    // Payload per vertex is the edge index (0-based). We never read
+    // `xor_graph.edges[v]` unless `degree(v) == 1`, at which point it
+    // holds the sole remaining incident edge's index.
+    let mut xor_graph: XorGraph<u32> = XorGraph::new(num_variables);
     for (i, &[a, b, c]) in edges.iter().enumerate() {
-        let stored = (i + 1) as u32;
-        for &v in &[a, b, c] {
-            let v = v as usize;
-            edge_xor[v] ^= stored;
-            let (new_deg, overflow) = degree[v].overflowing_add(1);
-            if overflow {
-                // Degree overflow: any vertex with ≥256 incident
-                // slots is hopeless to peel. Bail; LGE will handle
-                // the whole remainder.
-                return PartialPeel { peeled, stack };
-            }
-            degree[v] = new_deg;
+        let idx = i as u32;
+        xor_graph.add(a as usize, idx, 0);
+        xor_graph.add(b as usize, idx, 1);
+        xor_graph.add(c as usize, idx, 2);
+    }
+
+    let mut double_stack: DoubleStack<u32> = DoubleStack::new(num_variables);
+    let mut sides_stack: Vec<u8> = Vec::with_capacity(n_edges);
+
+    if xor_graph.overflow {
+        // Some vertex has degree ≥ 64 (the 6-bit degree field
+        // overflowed). Hopeless to peel; let LGE handle everything.
+        drop(xor_graph);
+        return PeelByIndexOutput {
+            double_stack,
+            sides_stack,
+        };
+    }
+
+    // Seed the visit frontier with every degree-1 vertex.
+    for (v, degree) in xor_graph.degrees().enumerate() {
+        if degree == 1 {
+            double_stack.push_lower(v as u32);
         }
     }
 
-    let mut to_visit: Vec<u32> = (0..num_variables as u32)
-        .filter(|&v| degree[v as usize] == 1)
-        .collect();
-
-    while let Some(v) = to_visit.pop() {
+    while let Some(v) = double_stack.pop_lower() {
         let vu = v as usize;
-        if degree[vu] != 1 {
+        if xor_graph.degree(vu) == 0 {
             continue;
         }
-        // Decode 1-based stored value back to a 0-based edge index.
-        let stored = edge_xor[vu];
-        debug_assert_ne!(
-            stored, 0,
-            "degree[v]=1 but edge_xor[v]=0 (invariant broken)"
+        debug_assert_eq!(xor_graph.degree(vu), 1);
+        let (edge_idx, side) = xor_graph.edge_and_side(vu);
+        xor_graph.zero(vu);
+        double_stack.push_upper(edge_idx);
+        sides_stack.push(side as u8);
+
+        let e_u32 = edges[edge_idx as usize];
+        // `remove_edge!` indexes `$e[..]` directly with usize, so we
+        // convert the vertex triple here.
+        let e: [usize; 3] = [e_u32[0] as usize, e_u32[1] as usize, e_u32[2] as usize];
+        remove_edge!(
+            xor_graph,
+            e,
+            side,
+            edge_idx,
+            double_stack,
+            push_lower,
+            |x: usize| x as u32
         );
-        let edge_idx = (stored - 1) as u32;
-        peeled[edge_idx as usize] = true;
-        stack.push((v, edge_idx));
-        let [a, b, c] = edges[edge_idx as usize];
-        for &u in &[a, b, c] {
-            let uu = u as usize;
-            degree[uu] -= 1;
-            edge_xor[uu] ^= stored;
-            if degree[uu] == 1 {
-                to_visit.push(u);
-            }
-        }
     }
 
-    PartialPeel { peeled, stack }
+    drop(xor_graph);
+    PeelByIndexOutput {
+        double_stack,
+        sides_stack,
+    }
 }
 
 // ── Tests ───────────────────────────────────────────────────────────
