@@ -200,12 +200,13 @@ mod build {
     use std::ops::{BitXor, BitXorAssign};
     use value_traits::slices::SliceByValueMut;
 
-    impl<K, W, S, E> VFunc<K, Box<[W]>, S, E>
-    where
+    impl<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         W: Word + BinSafe,
         S: Sig + Send + Sync,
         E: ShardEdge<S, 3>,
+    > VFunc<K, Box<[W]>, S, E>
+    where
         SigVal<S, W>: RadixKey,
         SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
     {
@@ -482,12 +483,13 @@ mod build {
         }
     }
 
-    impl<K, W, S, E> VFunc<K, BitFieldVec<Box<[W]>>, S, E>
-    where
+    impl<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         W: Word + BinSafe,
         S: Sig + Send + Sync,
         E: ShardEdge<S, 3>,
+    > VFunc<K, BitFieldVec<Box<[W]>>, S, E>
+    where
         SigVal<S, W>: RadixKey,
         SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
     {

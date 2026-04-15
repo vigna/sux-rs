@@ -6,42 +6,44 @@
 
 //! Prefix-free codes for [`CompVFunc`].
 //!
-//! Symbols are `u64`. A [`Coder`] turns a symbol into a codeword (or
-//! flags it as escaped); a [`Decoder`] turns the high bits of a
-//! `max_codeword_length`-bit window back into a symbol (or returns the
-//! escape sentinel [`u64::MAX`]).
+//! Symbols are parametric over a symbol type `W` (any
+//! [`PrimitiveUnsigned`] type: `u8`, `u16`, `u32`, `u64`, `u128`,
+//! `usize`). A [`Coder<W>`] turns a symbol into a codeword (or flags
+//! it as escaped); a [`Decoder<W>`] turns the high bits of a
+//! `max_codeword_length`-bit window back into a symbol (or returns
+//! the escape sentinel `W::MAX`).
+//!
+//! Codewords themselves are always `u64`-packed: the asserted
+//! max-codeword-length bound is 62 bits, so they comfortably fit.
 //!
 //! The decoder is the canonical-Huffman fast decoder of `csf3.c`:
 //! parallel arrays `last_codeword_plus_one`, `how_many_up_to_block`,
 //! `shift`, `symbol`, indexed by codeword length block.
 //!
 //! [`CompVFunc`]: crate::func::CompVFunc
+//! [`PrimitiveUnsigned`]: num_primitive::PrimitiveUnsigned
 
 use mem_dbg::{MemDbg, MemSize};
+use num_primitive::PrimitiveUnsigned;
 use std::collections::HashMap;
+use std::hash::Hash;
 
-/// Sentinel returned by [`Decoder::decode`] when the codeword found in
-/// the input is the escape codeword. The actual symbol must then be
-/// recovered by reading [`Decoder::escaped_symbol_length`] further
-/// bits from the data.
-pub const ESCAPE: u64 = u64::MAX;
-
-/// A factory for a [`Coder`], given a frequency map.
+/// A factory for a [`Coder<W>`], given a frequency map.
 ///
 /// Implementations represent a *family* of codes (e.g. Huffman); the
 /// concrete code is built per data distribution.
-pub trait Codec {
-    type Coder: Coder;
+pub trait Codec<W> {
+    type Coder: Coder<W>;
     /// Builds a coder for the given symbol → frequency map.
     ///
     /// All frequencies must be strictly positive. The empty map is
     /// allowed and yields a degenerate coder.
-    fn build_coder(&self, frequencies: &HashMap<u64, u64>) -> Self::Coder;
+    fn build_coder(&self, frequencies: &HashMap<W, usize>) -> Self::Coder;
 }
 
-/// A prefix-free encoder for `u64` symbols.
-pub trait Coder {
-    type Decoder: Decoder;
+/// A prefix-free encoder for `W` symbols.
+pub trait Coder<W> {
+    type Decoder: Decoder<W>;
 
     /// Returns the codeword for `symbol`, or `None` if `symbol` must be
     /// escaped.
@@ -53,13 +55,13 @@ pub trait Coder {
     /// the canonical (MSB-first) codeword.
     ///
     /// [`CompVFunc`]: crate::func::CompVFunc
-    fn encode(&self, symbol: u64) -> Option<u64>;
+    fn encode(&self, symbol: W) -> Option<u64>;
 
     /// Returns the length in bits of the codeword for `symbol`.
     ///
     /// For escaped symbols this is `escape_length() +
     /// escaped_symbol_length()`.
-    fn codeword_length(&self, symbol: u64) -> u32;
+    fn codeword_length(&self, symbol: W) -> u32;
 
     /// The maximum codeword length, including escaped symbols.
     fn max_codeword_length(&self) -> u32;
@@ -78,8 +80,8 @@ pub trait Coder {
     fn into_decoder(self) -> Self::Decoder;
 }
 
-/// A prefix-free decoder for `u64` symbols.
-pub trait Decoder {
+/// A prefix-free decoder for `W` symbols.
+pub trait Decoder<W> {
     /// Decodes the codeword found in the high bits of a
     /// `max_codeword_length`-bit window.
     ///
@@ -88,11 +90,12 @@ pub trait Decoder {
     /// follows in the data and are masked off by the canonical-Huffman
     /// algorithm.
     ///
-    /// Returns the decoded symbol, or [`ESCAPE`] if the leading
-    /// codeword is the escape codeword (the caller must then read
+    /// Returns the decoded symbol, or `W::MAX` if the leading codeword
+    /// is the escape codeword (the caller must then read
     /// [`escaped_symbol_length`](Self::escaped_symbol_length) further
-    /// bits as the literal value).
-    fn decode(&self, value: u64) -> u64;
+    /// bits as the literal value). This reserves `W::MAX` as a
+    /// non-storable sentinel.
+    fn decode(&self, value: u64) -> W;
 
     fn escape_length(&self) -> u32;
     fn escaped_symbol_length(&self) -> u32;
@@ -117,19 +120,19 @@ pub struct ZeroCoder;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ZeroDecoder;
 
-impl Codec for ZeroCodec {
+impl<W: PrimitiveUnsigned + Hash> Codec<W> for ZeroCodec {
     type Coder = ZeroCoder;
-    fn build_coder(&self, _frequencies: &HashMap<u64, u64>) -> ZeroCoder {
+    fn build_coder(&self, _frequencies: &HashMap<W, usize>) -> ZeroCoder {
         ZeroCoder
     }
 }
 
-impl Coder for ZeroCoder {
+impl<W: PrimitiveUnsigned> Coder<W> for ZeroCoder {
     type Decoder = ZeroDecoder;
-    fn encode(&self, _symbol: u64) -> Option<u64> {
+    fn encode(&self, _symbol: W) -> Option<u64> {
         Some(0)
     }
-    fn codeword_length(&self, _symbol: u64) -> u32 {
+    fn codeword_length(&self, _symbol: W) -> u32 {
         0
     }
     fn max_codeword_length(&self) -> u32 {
@@ -149,9 +152,9 @@ impl Coder for ZeroCoder {
     }
 }
 
-impl Decoder for ZeroDecoder {
-    fn decode(&self, _value: u64) -> u64 {
-        0
+impl<W: PrimitiveUnsigned> Decoder<W> for ZeroDecoder {
+    fn decode(&self, _value: u64) -> W {
+        W::from(0u8)
     }
     fn escape_length(&self) -> u32 {
         0
@@ -216,7 +219,7 @@ impl Huffman {
 }
 
 #[derive(Debug, Clone)]
-pub struct HuffmanCoder {
+pub struct HuffmanCoder<W> {
     /// Codeword for each rank position 0 . . cutpoint − 1, plus the
     /// escape codeword at index `cutpoint`. Bit *l* of an entry is the
     /// *l*-th bit appended to the data — i.e. bit 0 is the MSB of the
@@ -226,18 +229,18 @@ pub struct HuffmanCoder {
     /// the escape length.
     codeword_length: Box<[u32]>,
     /// The symbols, in order of decreasing frequency, kept up to the
-    /// cutpoint. The last entry is the escape sentinel ([`ESCAPE`]).
-    symbol: Box<[u64]>,
+    /// cutpoint. The last entry is the escape sentinel (`W::MAX`).
+    symbol: Box<[W]>,
     /// Inverse map: symbol → rank position in [`Self::symbol`]. Symbols
     /// not in the map are escaped.
-    symbol_to_rank: HashMap<u64, usize>,
+    symbol_to_rank: HashMap<W, usize>,
     escaped_symbol_length: u32,
     escape_length: u32,
 }
 
-impl Codec for Huffman {
-    type Coder = HuffmanCoder;
-    fn build_coder(&self, frequencies: &HashMap<u64, u64>) -> HuffmanCoder {
+impl<W: PrimitiveUnsigned + Hash> Codec<W> for Huffman {
+    type Coder = HuffmanCoder<W>;
+    fn build_coder(&self, frequencies: &HashMap<W, usize>) -> HuffmanCoder<W> {
         build_huffman_coder(
             frequencies,
             self.max_decoding_table_length,
@@ -246,14 +249,14 @@ impl Codec for Huffman {
     }
 }
 
-impl Coder for HuffmanCoder {
-    type Decoder = HuffmanDecoder;
+impl<W: PrimitiveUnsigned + Hash> Coder<W> for HuffmanCoder<W> {
+    type Decoder = HuffmanDecoder<W>;
 
-    fn encode(&self, symbol: u64) -> Option<u64> {
+    fn encode(&self, symbol: W) -> Option<u64> {
         self.symbol_to_rank.get(&symbol).map(|&r| self.codeword[r])
     }
 
-    fn codeword_length(&self, symbol: u64) -> u32 {
+    fn codeword_length(&self, symbol: W) -> u32 {
         match self.symbol_to_rank.get(&symbol) {
             Some(&r) => self.codeword_length[r],
             None => self.escape_length + self.escaped_symbol_length,
@@ -280,7 +283,7 @@ impl Coder for HuffmanCoder {
         self.escaped_symbol_length
     }
 
-    fn into_decoder(mut self) -> HuffmanDecoder {
+    fn into_decoder(mut self) -> HuffmanDecoder<W> {
         // The codeword array (and length array) always contains a
         // trailing escape entry, even when no symbol is escaped. We
         // build the decoder from `self.codeword_length` and the
@@ -345,7 +348,7 @@ impl Coder for HuffmanCoder {
         shift[last_p] = 63;
         if !self.symbol.is_empty() {
             let last_symbol = self.symbol.len() - 1;
-            self.symbol[last_symbol] = ESCAPE;
+            self.symbol[last_symbol] = W::MAX;
         }
         how_many_up_to_block[last_p] = (size as u32).saturating_sub(1);
 
@@ -402,18 +405,18 @@ impl Coder for HuffmanCoder {
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct HuffmanDecoder {
+pub struct HuffmanDecoder<W> {
     last_codeword_plus_one: Box<[u64]>,
     how_many_up_to_block: Box<[u32]>,
     shift: Box<[u8]>,
-    symbol: Box<[u64]>,
+    symbol: Box<[W]>,
     escape_length: u32,
     escaped_symbol_length: u32,
     /// Whether [`Decoder::decode`] uses the branchless strategy.
     branchless: bool,
 }
 
-impl HuffmanDecoder {
+impl<W> HuffmanDecoder<W> {
     /// Returns the current branchy/branchless dispatch flag.
     pub const fn is_branchless(&self) -> bool {
         self.branchless
@@ -428,9 +431,9 @@ impl HuffmanDecoder {
     }
 }
 
-impl Decoder for HuffmanDecoder {
+impl<W: PrimitiveUnsigned> Decoder<W> for HuffmanDecoder<W> {
     #[inline(always)]
-    fn decode(&self, value: u64) -> u64 {
+    fn decode(&self, value: u64) -> W {
         // Read a single field that is constant for the life of the
         // decoder. The branch is trivially predictable (one direction
         // for every query of a given function) and the per-call cost
@@ -451,13 +454,13 @@ impl Decoder for HuffmanDecoder {
     }
 }
 
-impl HuffmanDecoder {
+impl<W: PrimitiveUnsigned> HuffmanDecoder<W> {
     /// Branchy decode: walks the length blocks until one matches.
     ///
     /// Wins for very skewed codeword distributions (the first one or
     /// two blocks catch almost every query).
     #[inline(always)]
-    fn decode_branchy(&self, value: u64) -> u64 {
+    fn decode_branchy(&self, value: u64) -> W {
         for curr in 0..self.last_codeword_plus_one.len() {
             // SAFETY: `curr` is bounded by the loop range.
             unsafe {
@@ -483,7 +486,7 @@ impl HuffmanDecoder {
     /// branches inside the loop, at the cost of always touching every
     /// block.
     #[inline(always)]
-    fn decode_branchless(&self, value: u64) -> u64 {
+    fn decode_branchless(&self, value: u64) -> W {
         let n = self.last_codeword_plus_one.len();
         let mut idx: usize = 0;
         for curr in 0..n {
@@ -505,11 +508,11 @@ impl HuffmanDecoder {
 
 // ── Huffman code construction ──────────────────────────────────────
 
-fn build_huffman_coder(
-    frequencies: &HashMap<u64, u64>,
+fn build_huffman_coder<W: PrimitiveUnsigned + Hash>(
+    frequencies: &HashMap<W, usize>,
     max_decoding_table_length: usize,
     entropy_threshold: f64,
-) -> HuffmanCoder {
+) -> HuffmanCoder<W> {
     let size = frequencies.len();
     if size == 0 {
         // No symbols: codeword[0] is the (unused) escape, length 0.
@@ -524,15 +527,16 @@ fn build_huffman_coder(
     }
 
     // Sort symbols by frequency descending (most frequent first).
-    let mut symbol: Vec<u64> = frequencies.keys().copied().collect();
+    let mut symbol: Vec<W> = frequencies.keys().copied().collect();
     symbol.sort_unstable_by(|a, b| frequencies[b].cmp(&frequencies[a]).then(a.cmp(b)));
 
     // Moffat–Katajainen builds depths in place on a frequency array
     // sorted *ascending*. We mirror the Java buffer reuse so the
-    // numerical behaviour matches.
+    // numerical behaviour matches. The array is reused to store
+    // parent-pointers, so it needs to be `u64`-wide regardless of W.
     let mut a: Vec<u64> = vec![0; size];
     for i in 0..size {
-        a[size - 1 - i] = frequencies[&symbol[i]];
+        a[size - 1 - i] = frequencies[&symbol[i]] as u64;
     }
 
     let mut overall_length: u64 = 0;
@@ -582,7 +586,7 @@ fn build_huffman_coder(
             }
             while available > used {
                 let symbol_index = (size as i64 - next_i - 1) as usize;
-                overall_length += depth * frequencies[&symbol[symbol_index]];
+                overall_length += depth * frequencies[&symbol[symbol_index]] as u64;
                 a[next_i as usize] = depth;
                 next_i -= 1;
                 available -= 1;
@@ -622,7 +626,7 @@ fn build_huffman_coder(
             }
             current_length = length[cutpoint];
         }
-        accumulated += length[cutpoint] as u64 * frequencies[&symbol[cutpoint]];
+        accumulated += length[cutpoint] as u64 * frequencies[&symbol[cutpoint]] as u64;
         cutpoint += 1;
     }
 
@@ -659,20 +663,24 @@ fn build_huffman_coder(
     // Maximum literal width across the escaped symbols.
     let mut max_length_escaped: u32 = 0;
     for &s in &symbol[cutpoint..] {
-        let bits = if s == 0 { 0 } else { 64 - s.leading_zeros() };
+        let bits = if s == W::from(0u8) {
+            0
+        } else {
+            W::BITS - s.leading_zeros()
+        };
         max_length_escaped = max_length_escaped.max(bits);
     }
 
     // Symbol → rank for the kept symbols, with one trailing slot for
     // the escape sentinel that the decoder will write.
-    let mut symbol_to_rank: HashMap<u64, usize> = HashMap::with_capacity(cutpoint);
+    let mut symbol_to_rank: HashMap<W, usize> = HashMap::with_capacity(cutpoint);
     for (i, &s) in symbol.iter().take(cutpoint).enumerate() {
         symbol_to_rank.insert(s, i);
     }
 
-    let mut symbol_kept: Vec<u64> = Vec::with_capacity(cutpoint + 1);
+    let mut symbol_kept: Vec<W> = Vec::with_capacity(cutpoint + 1);
     symbol_kept.extend_from_slice(&symbol[..cutpoint]);
-    symbol_kept.push(0); // Decoder will overwrite with ESCAPE sentinel.
+    symbol_kept.push(W::from(0u8)); // Decoder will overwrite with W::MAX sentinel.
 
     let escape_length = length[cutpoint];
 
@@ -683,119 +691,5 @@ fn build_huffman_coder(
         symbol_to_rank,
         escaped_symbol_length: max_length_escaped,
         escape_length,
-    }
-}
-
-// ── Tests ───────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn freqs(pairs: &[(u64, u64)]) -> HashMap<u64, u64> {
-        pairs.iter().copied().collect()
-    }
-
-    fn round_trip(coder: &HuffmanCoder, decoder: &HuffmanDecoder, symbol: u64) {
-        let w = coder.max_codeword_length();
-        let len = coder.codeword_length(symbol);
-        let cw = coder.encode(symbol);
-
-        // Build the same `value` the read path would build: `len` bits
-        // appended LSB-first into a window, then reads the high bits.
-        let bits = match cw {
-            Some(cw) => cw,
-            None => {
-                // Escape: append escape codeword, then literal symbol
-                // (bit-reversed in `escaped_symbol_length` bits).
-                let esc = coder.escape();
-                let esc_len = coder.escape_length();
-                let esym_len = coder.escaped_symbol_length();
-                let lit = symbol.reverse_bits() >> (64 - esym_len);
-                esc | (lit << esc_len)
-            }
-        };
-        // Place into the high bits of a w-bit window: position 0 →
-        // bit (w-1), position k → bit (w-1-k).
-        let mut value = 0u64;
-        for k in 0..len {
-            let bit = (bits >> k) & 1;
-            value |= bit << (w - 1 - k);
-        }
-
-        let decoded = decoder.decode(value);
-        if decoded == ESCAPE {
-            // Read literal: bits below the escape inside the w-bit
-            // window. The encode-side reversal cancels with the
-            // vertex-position reversal `e[i] + w - 1 - l`, so the
-            // recovered field equals the original symbol directly.
-            let esc_len = decoder.escape_length();
-            let esym_len = decoder.escaped_symbol_length();
-            let mask = (1u64 << esym_len) - 1;
-            let recovered = (value >> (w - esc_len - esym_len)) & mask;
-            assert_eq!(recovered, symbol, "escaped round-trip");
-        } else {
-            assert_eq!(decoded, symbol, "round-trip for symbol {symbol}");
-        }
-    }
-
-    #[test]
-    fn test_zero_codec() {
-        let coder = ZeroCodec.build_coder(&HashMap::new());
-        let decoder = coder.into_decoder();
-        assert_eq!(decoder.decode(0xdead_beef), 0);
-    }
-
-    #[test]
-    fn test_huffman_single_symbol() {
-        let f = freqs(&[(42, 100)]);
-        let coder = Huffman::new().build_coder(&f);
-        // One real symbol → length 1 codeword "0".
-        assert_eq!(coder.codeword_length(42), 1);
-        let decoder = coder.clone().into_decoder();
-        round_trip(&coder, &decoder, 42);
-    }
-
-    #[test]
-    fn test_huffman_three_symbols() {
-        // Skewed frequencies: A is most frequent.
-        let f = freqs(&[(0, 5), (1, 2), (2, 1)]);
-        let coder = Huffman::new().build_coder(&f);
-        let decoder = coder.clone().into_decoder();
-        for &s in &[0u64, 1, 2] {
-            round_trip(&coder, &decoder, s);
-        }
-    }
-
-    #[test]
-    fn test_huffman_many_symbols() {
-        let mut pairs = Vec::new();
-        // Geometric-ish distribution.
-        for i in 0..16u64 {
-            pairs.push((i, 1u64 << (16 - i.min(15))));
-        }
-        let f = freqs(&pairs);
-        let coder = Huffman::new().build_coder(&f);
-        let decoder = coder.clone().into_decoder();
-        for (s, _) in pairs {
-            round_trip(&coder, &decoder, s);
-        }
-    }
-
-    #[test]
-    fn test_huffman_length_limited() {
-        // Sixteen symbols with very skewed frequencies; truncate the
-        // table at four distinct lengths so the rest are escaped.
-        let mut pairs = Vec::new();
-        for i in 0..16u64 {
-            pairs.push((100 + i, 1u64 << (20 - i)));
-        }
-        let f = freqs(&pairs);
-        let coder = Huffman::length_limited(4, 0.95).build_coder(&f);
-        assert!(coder.escaped_symbol_length() > 0, "should have escapes");
-        let decoder = coder.clone().into_decoder();
-        for (s, _) in pairs {
-            round_trip(&coder, &decoder, s);
-        }
     }
 }

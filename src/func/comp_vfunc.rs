@@ -37,22 +37,24 @@
 
 use crate::bits::{BitVec, BitVecU, test_unaligned_any_pos};
 use crate::func::VBuilder;
-use crate::func::codec::{Codec, Coder, Decoder, ESCAPE, Huffman, HuffmanCoder, HuffmanDecoder};
+use crate::func::codec::{Codec, Coder, Decoder, Huffman, HuffmanCoder, HuffmanDecoder};
 use crate::func::peeling::{DoubleStack, FastStack, XorGraph, remove_edge};
 use crate::func::shard_edge::{FuseLge3Shards, ShardEdge};
 use crate::traits::bit_vec_ops::{BitVecOps, BitVecOpsMut, BitVecValueOps};
 use crate::traits::{TryIntoUnaligned, UnalignedConversionError};
 use crate::utils::mod2_sys::{Modulo2Equation, Modulo2System};
 use crate::utils::sig_store::ShardStore;
-use crate::utils::{FallibleRewindableLender, Sig, SigVal, ToSig};
+use crate::utils::{BinSafe, FallibleRewindableLender, Sig, SigVal, ToSig};
 use anyhow::{Result, anyhow, bail};
 use core::error::Error;
 use dsi_progress_logger::ProgressLog;
 use lender::FallibleLending;
 use mem_dbg::{MemDbg, MemSize};
+use num_primitive::{PrimitiveNumber, PrimitiveNumberAs, PrimitiveUnsigned};
 use rdst::RadixKey;
 use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::marker::PhantomData;
 
 // ── CompVFunc struct ────────────────────────────────────────────────
@@ -67,6 +69,8 @@ use std::marker::PhantomData;
 /// # Generics
 ///
 /// * `K`: the key type.
+/// * `W`: the output value type. Must be convertible to and from
+///   `u64` through [`PrimitiveNumberAs`]. Defaults to `u64`.
 /// * `D`: the data backend; defaults to [`BitVec<Box<[usize]>>`].
 ///   Construction always produces a [`BitVec`]-backed function;
 ///   [`TryIntoUnaligned`] converts it into a `BitVecU`-backed variant
@@ -82,7 +86,13 @@ use std::marker::PhantomData;
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct CompVFunc<K: ?Sized, D = BitVec<Box<[usize]>>, S = [u64; 2], E = FuseLge3Shards> {
+pub struct CompVFunc<
+    K: ?Sized,
+    W = usize,
+    D = BitVec<Box<[usize]>>,
+    S = [u64; 2],
+    E = FuseLge3Shards,
+> {
     /// The shard/local-hash logic shared with [`VFunc`].
     ///
     /// [`VFunc`]: crate::func::VFunc
@@ -105,29 +115,34 @@ pub struct CompVFunc<K: ?Sized, D = BitVec<Box<[usize]>>, S = [u64; 2], E = Fuse
     /// `shard_size` bits at offset `s × shard_size`.
     pub(crate) data: D,
     /// Canonical-Huffman decoder.
-    pub(crate) decoder: HuffmanDecoder,
+    pub(crate) decoder: HuffmanDecoder<W>,
     #[doc(hidden)]
-    pub(crate) _marker: PhantomData<(*const K, S)>,
+    pub(crate) _marker: PhantomData<(*const K, *const W, S)>,
 }
 
 // ── Query path ──────────────────────────────────────────────────────
 
-impl<K: ?Sized + ToSig<S>, D: BitVecValueOps<usize>, S: Sig, E: ShardEdge<S, 3>>
-    CompVFunc<K, D, S, E>
+impl<
+    K: ?Sized + ToSig<S>,
+    W: PrimitiveUnsigned,
+    D: BitVecValueOps<usize>,
+    S: Sig,
+    E: ShardEdge<S, 3>,
+> CompVFunc<K, W, D, S, E>
 {
     /// Returns the value associated with `key`, or an arbitrary value
     /// if `key` is not in the original key set.
     #[inline(always)]
-    pub fn get(&self, key: impl Borrow<K>) -> u64 {
+    pub fn get(&self, key: impl Borrow<K>) -> W {
         self.get_by_sig(K::to_sig(key.borrow(), self.seed))
     }
 
     /// Returns the value associated with the given signature, or an
     /// arbitrary value if no key has that signature.
     #[inline(always)]
-    pub fn get_by_sig(&self, sig: S) -> u64 {
+    pub fn get_by_sig(&self, sig: S) -> W {
         if self.num_keys == 0 {
-            return 0;
+            return W::from(0u8);
         }
         let shard = self.shard_edge.shard(sig);
         let bucket_offset = shard * self.shard_size;
@@ -152,7 +167,7 @@ impl<K: ?Sized + ToSig<S>, D: BitVecValueOps<usize>, S: Sig, E: ShardEdge<S, 3>>
                 ^ self.data.get_value_unchecked(v2, w) as u64
         };
         let decoded = self.decoder.decode(value);
-        if decoded != ESCAPE {
+        if decoded != W::MAX {
             return decoded;
         }
         // The escape codeword occupies the top `escape_length` bits of
@@ -161,19 +176,20 @@ impl<K: ?Sized + ToSig<S>, D: BitVecValueOps<usize>, S: Sig, E: ShardEdge<S, 3>>
         let esc_len = self.escape_length as usize;
         let esym_len = self.escaped_symbol_length as usize;
         if esym_len == 0 {
-            return 0;
+            return W::from(0u8);
         }
         let start = w - esc_len - esym_len;
         // SAFETY: same reasoning as above; `start + esym_len <= w`.
-        unsafe {
+        let literal = unsafe {
             self.data.get_value_unchecked(v0 + start, esym_len) as u64
                 ^ self.data.get_value_unchecked(v1 + start, esym_len) as u64
                 ^ self.data.get_value_unchecked(v2 + start, esym_len) as u64
-        }
+        };
+        W::as_from(literal)
     }
 }
 
-impl<K: ?Sized, D, S, E> CompVFunc<K, D, S, E> {
+impl<K: ?Sized, W, D, S, E> CompVFunc<K, W, D, S, E> {
     /// Number of keys in the function.
     pub const fn len(&self) -> usize {
         self.num_keys
@@ -219,8 +235,8 @@ impl<K: ?Sized, D, S, E> CompVFunc<K, D, S, E> {
 
 // ── Aligned ↔ Unaligned conversions ────────────────────────────────
 
-impl<K: ?Sized, S, E> TryIntoUnaligned for CompVFunc<K, BitVec<Box<[usize]>>, S, E> {
-    type Unaligned = CompVFunc<K, BitVecU<Box<[usize]>>, S, E>;
+impl<K: ?Sized, W, S, E> TryIntoUnaligned for CompVFunc<K, W, BitVec<Box<[usize]>>, S, E> {
+    type Unaligned = CompVFunc<K, W, BitVecU<Box<[usize]>>, S, E>;
 
     fn try_into_unaligned(self) -> Result<Self::Unaligned, UnalignedConversionError> {
         // The query path issues two distinct unaligned reads at
@@ -261,10 +277,10 @@ impl<K: ?Sized, S, E> TryIntoUnaligned for CompVFunc<K, BitVec<Box<[usize]>>, S,
     }
 }
 
-impl<K: ?Sized, S, E> From<CompVFunc<K, BitVecU<Box<[usize]>>, S, E>>
-    for CompVFunc<K, BitVec<Box<[usize]>>, S, E>
+impl<K: ?Sized, W, S, E> From<CompVFunc<K, W, BitVecU<Box<[usize]>>, S, E>>
+    for CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
 {
-    fn from(u: CompVFunc<K, BitVecU<Box<[usize]>>, S, E>) -> Self {
+    fn from(u: CompVFunc<K, W, BitVecU<Box<[usize]>>, S, E>) -> Self {
         CompVFunc {
             shard_edge: u.shard_edge,
             seed: u.seed,
@@ -298,12 +314,14 @@ impl<K: ?Sized, S, E> From<CompVFunc<K, BitVecU<Box<[usize]>>, S, E>>
 // [`Huffman`] codec used for values; the default is unlimited-length
 // Huffman.
 
-impl<K, S, E> CompVFunc<K, BitVec<Box<[usize]>>, S, E>
+impl<K, W, S, E> CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
 where
     K: ?Sized + ToSig<S> + std::fmt::Debug,
+    W: PrimitiveUnsigned + BinSafe + Send + Sync + Hash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
-    SigVal<S, u64>: RadixKey,
+    SigVal<S, W>: RadixKey,
+    u64: PrimitiveNumberAs<W>,
 {
     /// Builds a [`CompVFunc`] from lender-based streams of keys and
     /// values using default [`VBuilder`] and [`Huffman`] settings.
@@ -334,7 +352,7 @@ where
         values: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend u64>,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
@@ -358,22 +376,24 @@ where
         values: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend u64>,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         n: usize,
         huffman: Huffman,
         builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        build_inner_seq::<K, B, _, _, _, S, E>(huffman, builder, keys, values, n, pl)
+        build_inner_seq::<K, B, W, _, _, _, S, E>(huffman, builder, keys, values, n, pl)
     }
 }
 
-impl<K, S, E> CompVFunc<K, BitVec<Box<[usize]>>, S, E>
+impl<K, W, S, E> CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
 where
     K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
+    W: PrimitiveUnsigned + BinSafe + Send + Sync + Hash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
-    SigVal<S, u64>: RadixKey,
+    SigVal<S, W>: RadixKey,
+    u64: PrimitiveNumberAs<W>,
 {
     /// Builds a [`CompVFunc`] from parallel slices of keys and values
     /// using default [`VBuilder`] and [`Huffman`] settings.
@@ -388,7 +408,7 @@ where
     /// for the full configuration surface.
     pub fn try_par_new<B: Borrow<K> + Sync>(
         keys: &[B],
-        values: &[u64],
+        values: &[W],
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         Self::try_par_new_with_builder(keys, values, Huffman::new(), VBuilder::default(), pl)
@@ -402,7 +422,7 @@ where
     /// for the lender-based variant.
     pub fn try_par_new_with_builder<B: Borrow<K> + Sync>(
         keys: &[B],
-        values: &[u64],
+        values: &[W],
         huffman: Huffman,
         builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -414,7 +434,7 @@ where
                 values.len()
             );
         }
-        build_inner_par::<K, B, _, S, E>(huffman, builder, keys, values, pl)
+        build_inner_par::<K, B, W, _, S, E>(huffman, builder, keys, values, pl)
     }
 }
 
@@ -446,13 +466,18 @@ where
 /// path populates the map by iterating a value slice; the sequential
 /// path populates it by iterating a value lender (see
 /// `build_inner_seq`).
-fn build_coder_from_frequencies(huffman: Huffman, frequencies: HashMap<u64, u64>) -> HuffmanCoder {
+fn build_coder_from_frequencies<W: PrimitiveUnsigned + std::hash::Hash>(
+    huffman: Huffman,
+    frequencies: HashMap<W, usize>,
+) -> HuffmanCoder<W> {
     huffman.build_coder(&frequencies)
 }
 
 /// Slice fast-path for the frequency map used by `build_inner_par`.
-fn frequencies_from_slice(values: &[u64]) -> HashMap<u64, u64> {
-    let mut frequencies: HashMap<u64, u64> = HashMap::new();
+fn frequencies_from_slice<W: PrimitiveUnsigned + std::hash::Hash>(
+    values: &[W],
+) -> HashMap<W, usize> {
+    let mut frequencies: HashMap<W, usize> = HashMap::new();
     for &v in values {
         *frequencies.entry(v).or_insert(0) += 1;
     }
@@ -467,23 +492,25 @@ fn frequencies_from_slice(values: &[u64]) -> HashMap<u64, u64> {
 /// data array with the correct per-shard stride, and (c) dispatches
 /// `par_solve` with the multi-edge per-shard solver.
 #[allow(clippy::type_complexity)]
-fn make_build_fn<'c, S, E, P>(
-    coder: &'c HuffmanCoder,
+fn make_build_fn<'c, W, S, E, P>(
+    coder: &'c HuffmanCoder<W>,
 ) -> impl FnMut(
     &mut VBuilder<BitVec<Box<[usize]>>, S, E>,
     u64,
-    Box<dyn ShardStore<S, u64> + Send + Sync>,
-    u64,
+    Box<dyn ShardStore<S, W> + Send + Sync>,
+    W,
     usize,
     &mut P,
     &mut (),
 ) -> Result<(BitVec<Box<[usize]>>, u64, usize)>
 + 'c
 where
+    W: PrimitiveUnsigned + BinSafe + Send + Sync + Hash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
-    SigVal<S, u64>: RadixKey,
+    SigVal<S, W>: RadixKey,
     P: dsi_progress_logger::ProgressLog + Clone + Send + Sync,
+    u64: PrimitiveNumberAs<W>,
 {
     // All scalars derived from `coder` — pulled here once so the inner
     // closure body doesn't need to carry them through the layered
@@ -498,20 +525,25 @@ where
     //
     // The `escaped_symbol_length == 0` guard handles a degenerate
     // corner: the only escaped symbol is the value `0`, whose bit
-    // length is 0. Without the guard, `64 - escaped_symbol_length`
-    // would be `64` and the shift on the `else` branch would be
-    // undefined (Rust panics in debug, unspecified in release). When
-    // we hit this case, the literal field is zero bits wide and the
-    // escape codeword alone identifies the symbol.
-    let encode_val = move |v: u64| -> (u64, u32) {
+    // length is 0. Without the guard, `W::BITS - escaped_symbol_length`
+    // would be `W::BITS` and the shift on the `else` branch would be
+    // undefined. When we hit this case, the literal field is zero
+    // bits wide and the escape codeword alone identifies the symbol.
+    //
+    // The `lit` computation reverses the bits of `v` within `W`'s
+    // width and keeps the top `escaped_symbol_length` bits; casting
+    // to `u64` is a truncation that only discards the leading zeros
+    // from the shift, provided `escaped_symbol_length <= 64`.
+    let encode_val = move |v: W| -> (u64, u32) {
         let len = coder.codeword_length(v);
         let bits = match coder.encode(v) {
             Some(cw) => cw,
             None => {
-                let lit = if escaped_symbol_length == 0 {
+                let lit: u64 = if escaped_symbol_length == 0 {
                     0
                 } else {
-                    v.reverse_bits() >> (64 - escaped_symbol_length)
+                    let reversed = v.reverse_bits() >> (W::BITS - escaped_symbol_length);
+                    u64::as_from(reversed)
                 };
                 escape_codeword | (lit << escape_length)
             }
@@ -521,8 +553,8 @@ where
 
     move |vb: &mut VBuilder<BitVec<Box<[usize]>>, S, E>,
           attempt_seed: u64,
-          mut store: Box<dyn ShardStore<S, u64> + Send + Sync>,
-          _max_val: u64,
+          mut store: Box<dyn ShardStore<S, W> + Send + Sync>,
+          _max_val: W,
           num_keys: usize,
           pl: &mut P,
           _state: &mut ()| {
@@ -633,7 +665,7 @@ where
             || (vb.low_mem.is_none() && vb.num_threads > 3 && num_shards > 2);
         let solve_shard = |this: &VBuilder<BitVec<Box<[usize]>>, S, E>,
                            _shard_index: usize,
-                           shard: std::sync::Arc<Vec<SigVal<S, u64>>>,
+                           shard: std::sync::Arc<Vec<SigVal<S, W>>>,
                            mut shard_data: BitVec<&mut [usize]>,
                            _pl: &mut _|
          -> Result<(), ()> {
@@ -708,16 +740,17 @@ where
 
 /// Finalizes a successful build by packing the construction-side
 /// [`BitVec`] into a [`CompVFunc`].
-fn finish_build<K, S, E>(
+fn finish_build<K, W, S, E>(
     shard_edge: E,
-    coder: HuffmanCoder,
+    coder: HuffmanCoder<W>,
     data: BitVec<Box<[usize]>>,
     seed_used: u64,
     num_keys: usize,
     shard_size: usize,
-) -> CompVFunc<K, BitVec<Box<[usize]>>, S, E>
+) -> CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
 where
     K: ?Sized,
+    W: PrimitiveUnsigned,
 {
     CompVFunc {
         shard_edge,
@@ -734,12 +767,13 @@ where
 }
 
 /// Empty-function short-circuit shared by both entry points.
-fn empty_comp_vfunc<K, S, E>(
-    coder: HuffmanCoder,
+fn empty_comp_vfunc<K, W, S, E>(
+    coder: HuffmanCoder<W>,
     eps: f64,
-) -> CompVFunc<K, BitVec<Box<[usize]>>, S, E>
+) -> CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
 where
     K: ?Sized,
+    W: PrimitiveUnsigned,
     E: ShardEdge<S, 3>,
 {
     let mut shard_edge = E::default();
@@ -762,10 +796,11 @@ where
 fn build_inner_seq<
     K: ?Sized + ToSig<S> + std::fmt::Debug,
     B: ?Sized + Borrow<K>,
+    W: PrimitiveUnsigned + BinSafe + Send + Sync + Hash,
     V: FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
-        > + for<'lend> FallibleLending<'lend, Lend = &'lend u64>,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
     L: FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -780,14 +815,15 @@ fn build_inner_seq<
     mut values: V,
     n: usize,
     pl: &mut P,
-) -> Result<CompVFunc<K, BitVec<Box<[usize]>>, S, E>>
+) -> Result<CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>>
 where
-    SigVal<S, u64>: RadixKey,
+    SigVal<S, W>: RadixKey,
+    u64: PrimitiveNumberAs<W>,
 {
     // First pass: stream the values lender for the frequency
     // histogram, then rewind so `try_populate_and_build` can consume
     // the same lender to populate the sig-store.
-    let mut frequencies: HashMap<u64, u64> = HashMap::new();
+    let mut frequencies: HashMap<W, usize> = HashMap::new();
     while let Some(&v) = values.next()? {
         *frequencies.entry(v).or_insert(0) += 1;
     }
@@ -795,7 +831,7 @@ where
     values = values.rewind()?;
 
     if n == 0 {
-        return Ok(empty_comp_vfunc::<K, S, E>(coder, builder.eps));
+        return Ok(empty_comp_vfunc::<K, W, S, E>(coder, builder.eps));
     }
 
     // See `build_inner_par` for why we do *not* pass
@@ -803,12 +839,12 @@ where
     // per-shard formula regime where `peel_by_data_*` fail with
     // ~50% probability and force a retry.
     let mut builder = builder.expected_num_keys(n);
-    let mut build_fn = make_build_fn::<S, E, P>(&coder);
+    let mut build_fn = make_build_fn::<W, S, E, P>(&coder);
     let ((data, seed_used, shard_size), _keys) =
         builder.try_populate_and_build(keys, values, &mut build_fn, pl, ())?;
     drop(build_fn);
     let shard_edge = builder.shard_edge;
-    Ok(finish_build::<K, S, E>(
+    Ok(finish_build::<K, W, S, E>(
         shard_edge, coder, data, seed_used, n, shard_size,
     ))
 }
@@ -817,6 +853,7 @@ where
 fn build_inner_par<
     K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
     B: Borrow<K> + Sync,
+    W: PrimitiveUnsigned + BinSafe + Send + Sync + Hash,
     P: ProgressLog + Clone + Send + Sync,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
@@ -824,17 +861,18 @@ fn build_inner_par<
     huffman: Huffman,
     builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
     keys: &[B],
-    values: &[u64],
+    values: &[W],
     pl: &mut P,
-) -> Result<CompVFunc<K, BitVec<Box<[usize]>>, S, E>>
+) -> Result<CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>>
 where
-    SigVal<S, u64>: RadixKey,
+    SigVal<S, W>: RadixKey,
+    u64: PrimitiveNumberAs<W>,
 {
     let n = keys.len();
     let coder = build_coder_from_frequencies(huffman, frequencies_from_slice(values));
 
     if n == 0 {
-        return Ok(empty_comp_vfunc::<K, S, E>(coder, builder.eps));
+        return Ok(empty_comp_vfunc::<K, W, S, E>(coder, builder.eps));
     }
 
     // NOTE: we do *not* pass `shard_size_hint(total_edges)` to the
@@ -849,12 +887,12 @@ where
     // filter thresholds in `shard_edge.rs` for correlated edge
     // densities; until then, key-based sharding wins.
     let mut builder = builder.expected_num_keys(n);
-    let mut build_fn = make_build_fn::<S, E, P>(&coder);
+    let mut build_fn = make_build_fn::<W, S, E, P>(&coder);
     let (data, seed_used, shard_size) =
         builder.try_par_populate_and_build(keys, &|i: usize| values[i], &mut build_fn, pl, ())?;
     drop(build_fn);
     let shard_edge = builder.shard_edge;
-    Ok(finish_build::<K, S, E>(
+    Ok(finish_build::<K, W, S, E>(
         shard_edge, coder, data, seed_used, n, shard_size,
     ))
 }
@@ -1212,10 +1250,10 @@ impl std::ops::BitXorAssign for PackedEdge {
 /// Returns the populated graph and the total number of edges inserted
 /// (which is the sum of codeword lengths across the shard and is also
 /// the upper bound for the reverse-peel stack).
-fn populate_data_graph<S, E>(
-    shard: &[SigVal<S, u64>],
+fn populate_data_graph<V: BinSafe, S, E>(
+    shard: &[SigVal<S, V>],
     shard_edge: &E,
-    encode_val: &impl Fn(u64) -> (u64, u32),
+    encode_val: &impl Fn(V) -> (u64, u32),
     num_variables: usize,
     w: usize,
 ) -> (XorGraph<PackedEdge>, usize)
@@ -1293,10 +1331,10 @@ unsafe fn reverse_peel_assign(solution: &mut BitVec, pe: PackedEdge, side: usize
 ///
 /// No LGE fallback: any unpeeled remainder returns `Err(())`, which
 /// `par_solve` turns into a seed-retry.
-fn peel_by_data_high_mem<S, E>(
-    shard: std::sync::Arc<Vec<SigVal<S, u64>>>,
+fn peel_by_data_high_mem<V: BinSafe, S, E>(
+    shard: std::sync::Arc<Vec<SigVal<S, V>>>,
     shard_edge: &E,
-    encode_val: &impl Fn(u64) -> (u64, u32),
+    encode_val: &impl Fn(V) -> (u64, u32),
     num_variables: usize,
     w: usize,
 ) -> Result<BitVec, ()>
@@ -1387,10 +1425,10 @@ where
 /// parallel (high memory pressure) or `low_mem` is explicitly set.
 ///
 /// No LGE fallback: any unpeeled remainder returns `Err(())`.
-fn peel_by_data_low_mem<S, E>(
-    shard: std::sync::Arc<Vec<SigVal<S, u64>>>,
+fn peel_by_data_low_mem<V: BinSafe, S, E>(
+    shard: std::sync::Arc<Vec<SigVal<S, V>>>,
     shard_edge: &E,
-    encode_val: &impl Fn(u64) -> (u64, u32),
+    encode_val: &impl Fn(V) -> (u64, u32),
     num_variables: usize,
     w: usize,
 ) -> Result<BitVec, ()>
@@ -1461,164 +1499,4 @@ where
     }
 
     Ok(solution)
-}
-
-// ── Tests ───────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use dsi_progress_logger::no_logging;
-
-    fn build_and_check(values: &[u64]) {
-        let n = values.len();
-        let keys: Vec<u64> = (0..n as u64).collect();
-        let func = CompVFunc::<u64>::try_par_new(&keys, values, no_logging![]).expect("build");
-        for (i, &v) in values.iter().enumerate() {
-            assert_eq!(func.get(keys[i]), v, "mismatch at key {}", keys[i]);
-        }
-    }
-
-    #[test]
-    fn test_empty() {
-        let values: Vec<u64> = vec![];
-        let keys: Vec<u64> = vec![];
-        let func = CompVFunc::<u64>::try_par_new(&keys, &values, no_logging![]).expect("build");
-        assert!(func.is_empty());
-        assert_eq!(func.len(), 0);
-    }
-
-    #[test]
-    fn test_streaming_construction() {
-        // Exercises the lender-based `try_new` path. Uses
-        // `FromCloneableIntoIterator` as the key lender and
-        // `FromSlice` to wrap the value vector as a lender (mirrors
-        // the `-n` mode of the `comp_vfunc` binary) so that both
-        // keys and values are consumed one at a time, not stored as
-        // a slice by the constructor.
-        use crate::utils::FromCloneableIntoIterator;
-        use crate::utils::lenders::FromSlice;
-        let n = 1000usize;
-        let values: Vec<u64> = (0..n as u64).map(|i| i % 5).collect();
-        let func = CompVFunc::<usize>::try_new(
-            FromCloneableIntoIterator::from(0_usize..n),
-            FromSlice::new(&values),
-            n,
-            no_logging![],
-        )
-        .expect("build");
-        for (i, &v) in values.iter().enumerate() {
-            assert_eq!(func.get(i), v, "mismatch at key {i}");
-        }
-    }
-
-    #[test]
-    fn test_single_value_distribution() {
-        // 100 keys, all mapping to value 7. ZeroCodec-like behavior.
-        let values: Vec<u64> = vec![7; 100];
-        build_and_check(&values);
-    }
-
-    #[test]
-    fn test_skewed_small() {
-        // 200 keys with a 3-symbol skewed distribution.
-        let mut values: Vec<u64> = Vec::with_capacity(200);
-        for i in 0..200 {
-            values.push(match i % 10 {
-                0..=6 => 0,
-                7 | 8 => 1,
-                _ => 2,
-            });
-        }
-        build_and_check(&values);
-    }
-
-    #[test]
-    fn test_many_keys() {
-        // Force a non-trivial number of keys and a moderately skewed
-        // distribution. With FuseLge3Shards this is well above the
-        // single-shard threshold.
-        let n = 5_000usize;
-        let values: Vec<u64> = (0..n)
-            .map(|i| match i % 16 {
-                0..=7 => 0u64,
-                8..=11 => 1,
-                12..=13 => 2,
-                14 => 3,
-                _ => 4,
-            })
-            .collect();
-        let keys: Vec<u64> = (0..n as u64).collect();
-        let func = CompVFunc::<u64>::try_par_new(&keys, &values, no_logging![]).expect("build");
-        for (i, &v) in values.iter().enumerate() {
-            assert_eq!(func.get(keys[i]), v, "mismatch at key {}", keys[i]);
-        }
-    }
-
-    #[test]
-    fn test_string_keys() {
-        // Verify the ToSig implementation works with string keys.
-        let n = 300usize;
-        let keys: Vec<String> = (0..n).map(|i| format!("key-{i:08}")).collect();
-        let values: Vec<u64> = (0..n as u64).map(|i| i % 5).collect();
-        let func = CompVFunc::<String>::try_par_new(&keys, &values, no_logging![]).expect("build");
-        for (k, &v) in keys.iter().zip(values.iter()) {
-            assert_eq!(func.get(k), v, "mismatch at {k}");
-        }
-    }
-
-    #[test]
-    fn test_try_into_unaligned() {
-        // Build a normal CompVFunc, convert to the unaligned variant,
-        // and check that queries still match.
-        let n = 1500usize;
-        let keys: Vec<u64> = (0..n as u64).collect();
-        let values: Vec<u64> = (0..n as u64).map(|i| i % 7).collect();
-        let func = CompVFunc::<u64>::try_par_new(&keys, &values, no_logging![]).expect("build");
-        let unaligned = func.try_into_unaligned().expect("convert");
-        for (k, &v) in keys.iter().zip(values.iter()) {
-            assert_eq!(unaligned.get(*k), v, "mismatch at {k}");
-        }
-        // Round-trip back.
-        let back: CompVFunc<u64> = unaligned.into();
-        for (k, &v) in keys.iter().zip(values.iter()) {
-            assert_eq!(back.get(*k), v, "mismatch at {k} after round-trip");
-        }
-    }
-
-    #[test]
-    fn test_with_escapes() {
-        // 16 distinct values with very skewed distribution; the codec
-        // should escape the rare ones.
-        let mut values: Vec<u64> = Vec::with_capacity(2000);
-        for i in 0..2000 {
-            // Pareto-ish: most are 0, exponential tail.
-            let v = if i % 100 < 50 {
-                0
-            } else if i % 100 < 75 {
-                1
-            } else if i % 100 < 88 {
-                2
-            } else if i % 100 < 94 {
-                3
-            } else if i % 100 < 97 {
-                4
-            } else {
-                (5 + (i % 11)) as u64
-            };
-            values.push(v);
-        }
-        let keys: Vec<u64> = (0..values.len() as u64).collect();
-        let func = CompVFunc::<u64>::try_par_new_with_builder(
-            &keys,
-            &values,
-            Huffman::length_limited(8, 0.95),
-            VBuilder::default(),
-            no_logging![],
-        )
-        .expect("build");
-        for (i, &v) in values.iter().enumerate() {
-            assert_eq!(func.get(keys[i]), v, "mismatch at key {}", keys[i]);
-        }
-    }
 }

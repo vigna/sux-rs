@@ -349,13 +349,14 @@ mod build {
         best_r
     }
 
-    impl<K, W, S, E, F> VFunc2<K, BitFieldVec<Box<[W]>>, S, E, F>
-    where
+    impl<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         W: Word + BinSafe + MemSize + mem_dbg::FlatType,
         S: Sig + Send + Sync,
         E: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
         F: ShardEdge<S, 3> + MemSize + mem_dbg::FlatType,
+    > VFunc2<K, BitFieldVec<Box<[W]>>, S, E, F>
+    where
         Box<[W]>: MemSize,
         SigVal<S, W>: RadixKey,
         SigVal<E::LocalSig, W>: BitXor + BitXorAssign,

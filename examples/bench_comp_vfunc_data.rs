@@ -34,10 +34,10 @@ trait GetU {
     fn get_u(&self, key: usize) -> u64;
 }
 
-impl GetU for CompVFunc<usize, BitVecU<Box<[usize]>>> {
+impl GetU for CompVFunc<usize, usize, BitVecU<Box<[usize]>>> {
     #[inline(always)]
     fn get_u(&self, key: usize) -> u64 {
-        self.get(key)
+        self.get(key) as u64
     }
 }
 
@@ -115,16 +115,16 @@ fn main() -> Result<()> {
     {
         use std::collections::HashMap;
         use sux::func::codec::{Codec, Coder, Huffman};
-        let mut freqs: HashMap<u64, u64> = HashMap::new();
+        let mut freqs: HashMap<u64, usize> = HashMap::new();
         for &v in &values {
             *freqs.entry(v).or_insert(0) += 1;
         }
-        let coder = Huffman::new().build_coder(&freqs);
+        let coder = <Huffman as Codec<u64>>::build_coder(&Huffman::new(), &freqs);
         let mut total_bits: u64 = 0;
         let mut by_len: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
         for (&v, &f) in &freqs {
             let l = coder.codeword_length(v);
-            total_bits += f * l as u64;
+            total_bits += f as u64 * l as u64;
             *by_len.entry(l).or_insert(0) += 1;
         }
         eprintln!(
@@ -139,7 +139,8 @@ fn main() -> Result<()> {
 
     eprintln!("Building CompVFunc...");
     let t0 = Instant::now();
-    let func = CompVFunc::<usize>::try_par_new(&keys, &values, no_logging![]).expect("build");
+    let values_usize: Vec<usize> = values.iter().map(|&v| v as usize).collect();
+    let func = CompVFunc::<usize>::try_par_new(&keys, &values_usize, no_logging![]).expect("build");
     let comp_build_secs = t0.elapsed().as_secs_f64();
     let bytes = func.mem_size(SizeFlags::default());
     let bpk = bytes as f64 * 8.0 / n as f64;
@@ -156,7 +157,6 @@ fn main() -> Result<()> {
     // edge per key — so CompVFunc/VFunc ≈ average codeword length
     // (the empirical entropy of the value distribution, rounded up
     // by the codec) if the peelers are equally efficient.
-    let values_usize: Vec<usize> = values.iter().map(|&v| v as usize).collect();
     let flat_t0 = Instant::now();
     let flat = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
         FromSlice::new(&keys),
@@ -182,7 +182,7 @@ fn main() -> Result<()> {
     for _ in 0..1024 {
         let i = rng.random::<u64>() as usize % n;
         assert_eq!(
-            func.get(keys[i]),
+            func.get(keys[i]) as u64,
             values[i],
             "round-trip failure at key {}",
             keys[i]

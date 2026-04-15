@@ -599,12 +599,13 @@ mod build {
     // Constructors — SignedFunc<VFunc<...>>
     // ═══════════════════════════════════════════════════════════════════
 
-    impl<K, S, E, H> SignedFunc<VFunc<K, BitFieldVec<Box<[usize]>>, S, E>, Box<[H]>>
-    where
+    impl<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         S: Sig + Send + Sync,
         E: ShardEdge<S, 3>,
         H: crate::traits::Word,
+    > SignedFunc<VFunc<K, BitFieldVec<Box<[usize]>>, S, E>, Box<[H]>>
+    where
         SigVal<S, usize>: RadixKey,
         SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
     {
@@ -868,12 +869,13 @@ mod build {
     // Constructors — SignedFunc<VFunc<...>, BitFieldVec<...>>
     // ═══════════════════════════════════════════════════════════════════
 
-    impl<K, S, E, H> SignedFunc<VFunc<K, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
-    where
+    impl<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         S: Sig + Send + Sync,
         E: ShardEdge<S, 3>,
         H: crate::traits::Word,
+    > SignedFunc<VFunc<K, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
+    where
         SigVal<S, usize>: RadixKey,
         SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
     {

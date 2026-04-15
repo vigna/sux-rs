@@ -1,5 +1,17 @@
 # Change Log
 
+## unreleased
+
+### New
+
+- New `CompVFunc` compressed static function, using the algorithmic
+  ideas of `VFunc` but representing data using the the zero-th order entropy
+  (i.e., values are represented by a Huffman code).
+
+- New data-access parallel constructors starting from a slice, which are used by
+  default by all CLI utilities; a switch reverts to the classical streaming
+  constructors.
+
 ## [0.14.0] - 2026-04-11
 
 ### New

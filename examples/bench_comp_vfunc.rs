@@ -97,8 +97,8 @@ fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Resu
 where
     str: ToSig<S>,
     usize: ToSig<S>,
-    CompVFunc<usize, BitVec<Box<[usize]>>, S, E>: Deserialize,
-    CompVFunc<str, BitVec<Box<[usize]>>, S, E>: Deserialize,
+    CompVFunc<usize, u64, BitVec<Box<[usize]>>, S, E>: Deserialize,
+    CompVFunc<str, u64, BitVec<Box<[usize]>>, S, E>: Deserialize,
 {
     if let Some(filename) = args.filename {
         let keys: Vec<_> = if args.zstd {
@@ -113,7 +113,8 @@ where
                 .collect()?
         };
 
-        let func = unsafe { CompVFunc::<str, BitVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
+        let func =
+            unsafe { CompVFunc::<str, u64, BitVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
         if args.unaligned {
             let func = func.try_into_unaligned().unwrap();
             bench(args.n, args.repeats, || {
@@ -131,7 +132,7 @@ where
     } else {
         // No filename
         let func =
-            unsafe { CompVFunc::<usize, BitVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
+            unsafe { CompVFunc::<usize, u64, BitVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
 
         if args.unaligned {
             let func = func.try_into_unaligned().unwrap();

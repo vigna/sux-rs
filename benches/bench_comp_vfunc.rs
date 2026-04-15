@@ -51,20 +51,20 @@ const SIZES: &[(usize, &str)] = &[(1_000_000, "1M")];
 /// Geometric with success probability `p = 0.5`. The resulting symbol
 /// distribution is heavily skewed toward small values, which is the
 /// regime where `CompVFunc` should beat a flat-width `VFunc`.
-fn gen_geometric_values(n: usize) -> Vec<u64> {
+fn gen_geometric_values(n: usize) -> Vec<usize> {
     let mut rng = SmallRng::seed_from_u64(42);
     let geo = Geometric::new(0.5).unwrap();
-    (0..n).map(|_| geo.sample(&mut rng)).collect()
+    (0..n).map(|_| geo.sample(&mut rng) as usize).collect()
 }
 
 /// Zipf with exponent 1.5 over a million-symbol alphabet. The user
 /// asked for "Zipf of degree 1"; `rand_distr::Zipf` requires
 /// `s > 1`, so we use the next available exponent that still gives a
 /// pronounced power-law tail.
-fn gen_zipf_values(n: usize) -> Vec<u64> {
+fn gen_zipf_values(n: usize) -> Vec<usize> {
     let mut rng = SmallRng::seed_from_u64(42);
     let zipf = Zipf::<f64>::new(1_000_000.0, 1.5).unwrap();
-    (0..n).map(|_| zipf.sample(&mut rng) as u64 - 1).collect()
+    (0..n).map(|_| zipf.sample(&mut rng) as usize - 1).collect()
 }
 
 fn gen_query_indices(n: usize) -> Vec<usize> {
@@ -74,7 +74,7 @@ fn gen_query_indices(n: usize) -> Vec<usize> {
         .collect()
 }
 
-fn build_comp_vfunc(n: usize, values: &[u64]) -> CompVFunc<usize> {
+fn build_comp_vfunc(n: usize, values: &[usize]) -> CompVFunc<usize> {
     let keys: Vec<usize> = (0..n).collect();
     CompVFunc::<usize>::try_par_new(&keys, values, no_logging![]).expect("CompVFunc build failed")
 }
@@ -82,7 +82,7 @@ fn build_comp_vfunc(n: usize, values: &[u64]) -> CompVFunc<usize> {
 // ── Benchmarks ──────────────────────────────────────────────────────
 
 fn bench_query(c: &mut Criterion) {
-    let distributions: &[(&str, fn(usize) -> Vec<u64>)] = &[
+    let distributions: &[(&str, fn(usize) -> Vec<usize>)] = &[
         ("geometric", gen_geometric_values),
         ("zipf", gen_zipf_values),
     ];
@@ -132,7 +132,7 @@ fn bench_query(c: &mut Criterion) {
 }
 
 fn bench_construction(c: &mut Criterion) {
-    let distributions: &[(&str, fn(usize) -> Vec<u64>)] = &[
+    let distributions: &[(&str, fn(usize) -> Vec<usize>)] = &[
         ("geometric", gen_geometric_values),
         ("zipf", gen_zipf_values),
     ];
