@@ -515,7 +515,6 @@ mod build {
         ) -> anyhow::Result<Self>
         where
             K: Sync,
-            S: Send,
         {
             Self::try_par_new_with_builder(keys, values, VBuilder::default(), pl)
         }
@@ -537,7 +536,6 @@ mod build {
         ) -> anyhow::Result<Self>
         where
             K: Sync,
-            S: Send,
         {
             let n = keys.len();
             builder.expected_num_keys(n).try_par_populate_and_build(

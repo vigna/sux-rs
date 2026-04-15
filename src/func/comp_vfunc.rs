@@ -42,7 +42,6 @@ use crate::func::peeling::{DoubleStack, FastStack, XorGraph, remove_edge};
 use crate::func::shard_edge::{FuseLge3Shards, ShardEdge};
 use crate::traits::bit_vec_ops::{BitVecOps, BitVecOpsMut, BitVecValueOps};
 use crate::traits::{TryIntoUnaligned, UnalignedConversionError};
-use crate::utils::lenders::FromSlice;
 use crate::utils::mod2_sys::{Modulo2Equation, Modulo2System};
 use crate::utils::sig_store::ShardStore;
 use crate::utils::{FallibleRewindableLender, Sig, SigVal, ToSig};
@@ -306,46 +305,44 @@ where
     E: ShardEdge<S, 3>,
     SigVal<S, u64>: RadixKey,
 {
-    /// Builds a [`CompVFunc`] from lender-based streams of keys and a
-    /// slice of values using default [`VBuilder`] and [`Huffman`]
-    /// settings.
+    /// Builds a [`CompVFunc`] from lender-based streams of keys and
+    /// values using default [`VBuilder`] and [`Huffman`] settings.
     ///
-    /// Keys are consumed one at a time through the lender; this path
-    /// is the right choice for input coming from disk
+    /// Keys and values are consumed one at a time through their
+    /// respective lenders; this path is the right choice for input
+    /// coming from disk
     /// ([`DekoBufLineLender`](crate::utils::DekoBufLineLender)) or
-    /// synthetic ranges. The whole key set never needs to live in
-    /// memory at once. Values, however, are passed as a slice because
-    /// CompVFunc has to iterate them once to build the Huffman codec
-    /// before starting construction.
+    /// synthetic ranges. Neither the key set nor the value set needs
+    /// to live in memory at once: the values lender is rewound once
+    /// during construction (first pass for the Huffman frequency
+    /// analysis, second pass to populate the sig-store).
     ///
     /// `n` is the expected number of keys. If it is significantly
     /// wrong, construction still works but may do extra retries.
     ///
-    /// If keys are available as a slice and you want to parallelize
-    /// the hashing phase, use [`try_par_new`](Self::try_par_new)
-    /// instead.
+    /// If keys and values are available as slices and you want to
+    /// parallelize the hashing phase, use
+    /// [`try_par_new`](Self::try_par_new) instead.
     ///
     /// See also [`try_new_with_builder`](Self::try_new_with_builder)
     /// for the full configuration surface.
-    pub fn try_new<L, B>(
-        keys: L,
-        values: &[u64],
+    pub fn try_new<B: ?Sized + Borrow<K>>(
+        keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        values: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend u64>,
         n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
-    ) -> Result<Self>
-    where
-        B: ?Sized + Borrow<K>,
-        L: FallibleRewindableLender<
-                RewindError: Error + Send + Sync + 'static,
-                Error: Error + Send + Sync + 'static,
-            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-    {
+    ) -> Result<Self> {
         Self::try_new_with_builder(keys, values, n, Huffman::new(), VBuilder::default(), pl)
     }
 
-    /// Builds a [`CompVFunc`] from a lender of keys and a slice of
-    /// values using the given [`Huffman`] codec and [`VBuilder`]
-    /// configuration.
+    /// Builds a [`CompVFunc`] from lenders of keys and values using
+    /// the given [`Huffman`] codec and [`VBuilder`] configuration.
     ///
     /// See [`try_new`](Self::try_new) for the streaming semantics.
     /// The `builder` argument controls every VBuilder-side
@@ -353,23 +350,21 @@ where
     /// PRNG seed, etc.); the `huffman` argument controls the codec
     /// used for the values. The data backend is pinned internally to
     /// [`BitVec<Box<[usize]>>`] — the same type used at query time.
-    pub fn try_new_with_builder<L, B, P>(
-        keys: L,
-        values: &[u64],
+    pub fn try_new_with_builder<B: ?Sized + Borrow<K>>(
+        keys: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        values: impl FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend u64>,
         n: usize,
         huffman: Huffman,
         builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
-        pl: &mut P,
-    ) -> Result<Self>
-    where
-        B: ?Sized + Borrow<K>,
-        L: FallibleRewindableLender<
-                RewindError: Error + Send + Sync + 'static,
-                Error: Error + Send + Sync + 'static,
-            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-        P: ProgressLog + Clone + Send + Sync,
-    {
-        build_inner_seq::<K, B, S, E, L, P>(huffman, builder, keys, values, n, pl)
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
+        build_inner_seq::<K, B, _, _, _, S, E>(huffman, builder, keys, values, n, pl)
     }
 }
 
@@ -405,16 +400,13 @@ where
     /// See [`try_par_new`](Self::try_par_new) for the parallel
     /// semantics and [`try_new_with_builder`](Self::try_new_with_builder)
     /// for the lender-based variant.
-    pub fn try_par_new_with_builder<B: Borrow<K> + Sync, P>(
+    pub fn try_par_new_with_builder<B: Borrow<K> + Sync>(
         keys: &[B],
         values: &[u64],
         huffman: Huffman,
         builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
-        pl: &mut P,
-    ) -> Result<Self>
-    where
-        P: ProgressLog + Clone + Send + Sync,
-    {
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> Result<Self> {
         if keys.len() != values.len() {
             bail!(
                 "keys and values must have the same length ({} vs {})",
@@ -422,7 +414,7 @@ where
                 values.len()
             );
         }
-        build_inner_par::<K, B, S, E, P>(huffman, builder, keys, values, pl)
+        build_inner_par::<K, B, _, S, E>(huffman, builder, keys, values, pl)
     }
 }
 
@@ -450,14 +442,21 @@ where
 // query path gets its `get_value_unaligned` / `BitVecU` read
 // interface with zero re-wrapping.
 
-/// Builds a [`HuffmanCoder`] from the value distribution. Used by
-/// both `build_inner_seq` and `build_inner_par`.
-fn build_coder(huffman: Huffman, values: &[u64]) -> HuffmanCoder {
+/// Builds a [`HuffmanCoder`] from a frequency map. The parallel
+/// path populates the map by iterating a value slice; the sequential
+/// path populates it by iterating a value lender (see
+/// `build_inner_seq`).
+fn build_coder_from_frequencies(huffman: Huffman, frequencies: HashMap<u64, u64>) -> HuffmanCoder {
+    huffman.build_coder(&frequencies)
+}
+
+/// Slice fast-path for the frequency map used by `build_inner_par`.
+fn frequencies_from_slice(values: &[u64]) -> HashMap<u64, u64> {
     let mut frequencies: HashMap<u64, u64> = HashMap::new();
     for &v in values {
         *frequencies.entry(v).or_insert(0) += 1;
     }
-    huffman.build_coder(&frequencies)
+    frequencies
 }
 
 /// Returns the `build_fn` closure shared by both entry points.
@@ -760,27 +759,40 @@ where
 }
 
 /// Lender-based sequential path.
-fn build_inner_seq<K, B, S, E, L, P>(
-    huffman: Huffman,
-    builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
-    keys: L,
-    values: &[u64],
-    n: usize,
-    pl: &mut P,
-) -> Result<CompVFunc<K, BitVec<Box<[usize]>>, S, E>>
-where
+fn build_inner_seq<
     K: ?Sized + ToSig<S> + std::fmt::Debug,
     B: ?Sized + Borrow<K>,
-    S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
-    SigVal<S, u64>: RadixKey,
+    V: FallibleRewindableLender<
+            RewindError: Error + Send + Sync + 'static,
+            Error: Error + Send + Sync + 'static,
+        > + for<'lend> FallibleLending<'lend, Lend = &'lend u64>,
     L: FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
     P: ProgressLog + Clone + Send + Sync,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+>(
+    huffman: Huffman,
+    builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
+    keys: L,
+    mut values: V,
+    n: usize,
+    pl: &mut P,
+) -> Result<CompVFunc<K, BitVec<Box<[usize]>>, S, E>>
+where
+    SigVal<S, u64>: RadixKey,
 {
-    let coder = build_coder(huffman, values);
+    // First pass: stream the values lender for the frequency
+    // histogram, then rewind so `try_populate_and_build` can consume
+    // the same lender to populate the sig-store.
+    let mut frequencies: HashMap<u64, u64> = HashMap::new();
+    while let Some(&v) = values.next()? {
+        *frequencies.entry(v).or_insert(0) += 1;
+    }
+    let coder = build_coder_from_frequencies(huffman, frequencies);
+    values = values.rewind()?;
 
     if n == 0 {
         return Ok(empty_comp_vfunc::<K, S, E>(coder, builder.eps));
@@ -793,7 +805,7 @@ where
     let mut builder = builder.expected_num_keys(n);
     let mut build_fn = make_build_fn::<S, E, P>(&coder);
     let ((data, seed_used, shard_size), _keys) =
-        builder.try_populate_and_build(keys, FromSlice::new(values), &mut build_fn, pl, ())?;
+        builder.try_populate_and_build(keys, values, &mut build_fn, pl, ())?;
     drop(build_fn);
     let shard_edge = builder.shard_edge;
     Ok(finish_build::<K, S, E>(
@@ -802,7 +814,13 @@ where
 }
 
 /// Slice-based parallel path.
-fn build_inner_par<K, B, S, E, P>(
+fn build_inner_par<
+    K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
+    B: Borrow<K> + Sync,
+    P: ProgressLog + Clone + Send + Sync,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3>,
+>(
     huffman: Huffman,
     builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
     keys: &[B],
@@ -810,15 +828,10 @@ fn build_inner_par<K, B, S, E, P>(
     pl: &mut P,
 ) -> Result<CompVFunc<K, BitVec<Box<[usize]>>, S, E>>
 where
-    K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
-    B: Borrow<K> + Sync,
-    S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
     SigVal<S, u64>: RadixKey,
-    P: ProgressLog + Clone + Send + Sync,
 {
     let n = keys.len();
-    let coder = build_coder(huffman, values);
+    let coder = build_coder_from_frequencies(huffman, frequencies_from_slice(values));
 
     if n == 0 {
         return Ok(empty_comp_vfunc::<K, S, E>(coder, builder.eps));
@@ -1478,15 +1491,18 @@ mod tests {
     #[test]
     fn test_streaming_construction() {
         // Exercises the lender-based `try_new` path. Uses
-        // `FromCloneableIntoIterator` as the key lender (mirrors the
-        // `-n` mode of the `comp_vfunc` binary) so that keys are
-        // consumed one at a time, not materialized as a slice.
+        // `FromCloneableIntoIterator` as the key lender and
+        // `FromSlice` to wrap the value vector as a lender (mirrors
+        // the `-n` mode of the `comp_vfunc` binary) so that both
+        // keys and values are consumed one at a time, not stored as
+        // a slice by the constructor.
         use crate::utils::FromCloneableIntoIterator;
+        use crate::utils::lenders::FromSlice;
         let n = 1000usize;
         let values: Vec<u64> = (0..n as u64).map(|i| i % 5).collect();
         let func = CompVFunc::<usize>::try_new(
             FromCloneableIntoIterator::from(0_usize..n),
-            &values,
+            FromSlice::new(&values),
             n,
             no_logging![],
         )

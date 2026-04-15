@@ -19,6 +19,7 @@ use sux::func::codec::Huffman;
 use sux::func::shard_edge::{FuseLge3NoShards, FuseLge3Shards, ShardEdge};
 use sux::func::{CompVFunc, VBuilder};
 use sux::init_env_logger;
+use sux::utils::lenders::FromSlice;
 use sux::utils::{DekoBufLineLender, FromCloneableIntoIterator, Sig, SigVal, ToSig};
 
 #[derive(Parser, Debug)]
@@ -152,7 +153,12 @@ where
             // materialisation.
             let keys = DekoBufLineLender::from_path(filename)?.take(n);
             let func = <CompVFunc<str, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
-                keys, &values, n, huffman, vbuilder, &mut pl,
+                keys,
+                FromSlice::new(&values),
+                n,
+                huffman,
+                vbuilder,
+                &mut pl,
             )?;
             maybe_store!(func, args.func);
         } else {
@@ -182,7 +188,12 @@ where
             // materialising `n * 8` bytes of keys.
             let keys = FromCloneableIntoIterator::from(0_usize..n);
             let func = <CompVFunc<usize, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
-                keys, &values, n, huffman, vbuilder, &mut pl,
+                keys,
+                FromSlice::new(&values),
+                n,
+                huffman,
+                vbuilder,
+                &mut pl,
             )?;
             maybe_store!(func, args.func);
         } else {

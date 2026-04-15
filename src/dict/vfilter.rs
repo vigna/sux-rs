@@ -430,7 +430,6 @@ mod build {
         ) -> Result<Self>
         where
             K: Sync,
-            S: Send,
         {
             Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
         }
@@ -483,7 +482,6 @@ mod build {
         ) -> Result<Self>
         where
             K: Sync,
-            S: Send,
         {
             let n = keys.len();
             let filter_mask = W::MAX;
@@ -730,7 +728,6 @@ mod build {
         ) -> Result<Self>
         where
             K: Sync,
-            S: Send,
         {
             Self::try_par_new_with_builder(keys, filter_bits, VBuilder::default(), pl)
         }
@@ -786,7 +783,6 @@ mod build {
         ) -> Result<Self>
         where
             K: Sync,
-            S: Send,
         {
             assert!(filter_bits > 0);
             assert!(filter_bits <= W::BITS as usize);

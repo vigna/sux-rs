@@ -393,8 +393,6 @@ mod build {
         ) -> Result<Self>
         where
             K: Sync,
-            S: Send,
-            W: Copy,
             for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
                 BitFieldSliceMut,
             for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
@@ -452,8 +450,6 @@ mod build {
         ) -> Result<Self>
         where
             K: Sync,
-            S: Send,
-            W: Copy,
             for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
                 BitFieldSliceMut,
             for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
@@ -670,8 +666,6 @@ mod build {
         ) -> Result<Self>
         where
             K: Sync,
-            S: Send,
-            W: Copy,
         {
             Self::try_par_new_with_builder(keys, values, VBuilder::default(), pl)
         }
@@ -728,8 +722,6 @@ mod build {
         ) -> Result<Self>
         where
             K: Sync,
-            S: Send,
-            W: Copy,
         {
             let n = keys.len();
             builder.expected_num_keys(n).try_par_populate_and_build(

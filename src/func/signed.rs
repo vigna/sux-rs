@@ -797,7 +797,6 @@ mod build {
         ) -> Result<Self>
         where
             K: Sync,
-            S: Send,
             u64: PrimitiveNumberAs<H>,
         {
             Self::try_par_new_with_builder(keys, VBuilder::default(), pl)
@@ -854,7 +853,6 @@ mod build {
         ) -> Result<Self>
         where
             K: Sync,
-            S: Send,
             u64: PrimitiveNumberAs<H>,
         {
             let values: Vec<usize> = (0..keys.len()).collect();
@@ -1087,7 +1085,6 @@ mod build {
         ) -> Result<Self>
         where
             K: Sync,
-            S: Send,
             u64: PrimitiveNumberAs<H>,
         {
             Self::try_par_new_with_builder(keys, hash_width, VBuilder::default(), pl)
@@ -1146,7 +1143,6 @@ mod build {
         ) -> Result<Self>
         where
             K: Sync,
-            S: Send,
             u64: PrimitiveNumberAs<H>,
         {
             assert!(hash_width > 0);
