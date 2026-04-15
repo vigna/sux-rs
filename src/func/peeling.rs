@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Shared primitives for 3-uniform F₂ hypergraph peeling.
+//! Shared primitives for 3-uniform **F**₂ hypergraph peeling.
 //!
 //! This module holds [`XorGraph`], [`DoubleStack`], [`FastStack`] and
 //! the [`remove_edge!`] macro — the data structures used by

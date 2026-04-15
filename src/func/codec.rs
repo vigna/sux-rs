@@ -97,6 +97,12 @@ pub trait Decoder<W> {
     /// non-storable sentinel.
     fn decode(&self, value: u64) -> W;
 
+    /// The total width in bits of the read window used by
+    /// [`decode`](Self::decode). For Huffman this is `escape_length +
+    /// escaped_symbol_length`, which equals the maximum codeword
+    /// length.
+    fn max_codeword_length(&self) -> u32;
+
     fn escape_length(&self) -> u32;
     fn escaped_symbol_length(&self) -> u32;
 }
@@ -155,6 +161,9 @@ impl<W: PrimitiveUnsigned> Coder<W> for ZeroCoder {
 impl<W: PrimitiveUnsigned> Decoder<W> for ZeroDecoder {
     fn decode(&self, _value: u64) -> W {
         W::from(0u8)
+    }
+    fn max_codeword_length(&self) -> u32 {
+        0
     }
     fn escape_length(&self) -> u32 {
         0
@@ -445,10 +454,17 @@ impl<W: PrimitiveUnsigned> Decoder<W> for HuffmanDecoder<W> {
         }
     }
 
+    #[inline(always)]
+    fn max_codeword_length(&self) -> u32 {
+        self.escape_length + self.escaped_symbol_length
+    }
+
+    #[inline(always)]
     fn escape_length(&self) -> u32 {
         self.escape_length
     }
 
+    #[inline(always)]
     fn escaped_symbol_length(&self) -> u32 {
         self.escaped_symbol_length
     }

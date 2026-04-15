@@ -107,14 +107,12 @@ pub struct CompVFunc<
     /// shard `s` inside [`Self::data`] is `s × shard_size`. No
     /// cumulative offset table.
     pub(crate) shard_size: usize,
-    /// `w` — the maximum codeword length, including escaped symbols.
-    pub(crate) global_max_codeword_length: u32,
-    pub(crate) escape_length: u32,
-    pub(crate) escaped_symbol_length: u32,
     /// All shards concatenated into one bit vector. Each shard owns
     /// `shard_size` bits at offset `s × shard_size`.
     pub(crate) data: D,
-    /// Canonical-Huffman decoder.
+    /// Canonical-Huffman decoder. `w` (the max codeword length),
+    /// `escape_length`, and `escaped_symbol_length` are read from here
+    /// via the [`Decoder`] trait — no duplicated fields on `CompVFunc`.
     pub(crate) decoder: HuffmanDecoder<W>,
     #[doc(hidden)]
     pub(crate) _marker: PhantomData<(*const K, *const W, S)>,
@@ -146,7 +144,7 @@ impl<
         }
         let shard = self.shard_edge.shard(sig);
         let bucket_offset = shard * self.shard_size;
-        let w = self.global_max_codeword_length as usize;
+        let w = self.decoder.max_codeword_length() as usize;
         // Reuse the fuse-graph `local_edge` to derive the three base
         // positions inside the shard. For the multi-edge layout, bit
         // `l` of the codeword is stored at offset `w − 1 − l` above
@@ -173,8 +171,8 @@ impl<
         // The escape codeword occupies the top `escape_length` bits of
         // the read window; the literal sits immediately below it,
         // `escaped_symbol_length` bits wide.
-        let esc_len = self.escape_length as usize;
-        let esym_len = self.escaped_symbol_length as usize;
+        let esc_len = self.decoder.escape_length() as usize;
+        let esym_len = self.decoder.escaped_symbol_length() as usize;
         if esym_len == 0 {
             return W::from(0u8);
         }
@@ -189,7 +187,7 @@ impl<
     }
 }
 
-impl<K: ?Sized, W, D, S, E> CompVFunc<K, W, D, S, E> {
+impl<K: ?Sized, W: PrimitiveUnsigned, D, S, E> CompVFunc<K, W, D, S, E> {
     /// Number of keys in the function.
     pub const fn len(&self) -> usize {
         self.num_keys
@@ -201,20 +199,20 @@ impl<K: ?Sized, W, D, S, E> CompVFunc<K, W, D, S, E> {
     }
 
     /// The maximum codeword length used by the underlying code (`w`).
-    pub const fn global_max_codeword_length(&self) -> u32 {
-        self.global_max_codeword_length
+    pub fn global_max_codeword_length(&self) -> u32 {
+        self.decoder.max_codeword_length()
     }
 
     /// Length of the escape codeword (0 when there are no escaped
     /// symbols).
-    pub const fn escape_length(&self) -> u32 {
-        self.escape_length
+    pub fn escape_length(&self) -> u32 {
+        Decoder::escape_length(&self.decoder)
     }
 
     /// Width in bits of the literal field used to encode escaped
     /// symbols (0 when there are no escaped symbols).
-    pub const fn escaped_symbol_length(&self) -> u32 {
-        self.escaped_symbol_length
+    pub fn escaped_symbol_length(&self) -> u32 {
+        Decoder::escaped_symbol_length(&self.decoder)
     }
 
     /// Returns `true` if the underlying [`HuffmanDecoder`] is using
@@ -227,7 +225,7 @@ impl<K: ?Sized, W, D, S, E> CompVFunc<K, W, D, S, E> {
     /// (early-exit) or branchless (always-touch-all-blocks) decode
     /// strategy. The default is chosen at construction time based on
     /// the number of length blocks; this method overrides it.
-    pub fn set_decoder_branchless(&mut self, branchless: bool) -> &mut Self {
+    pub fn decoder_branchless(&mut self, branchless: bool) -> &mut Self {
         self.decoder.branchless(branchless);
         self
     }
@@ -235,7 +233,9 @@ impl<K: ?Sized, W, D, S, E> CompVFunc<K, W, D, S, E> {
 
 // ── Aligned ↔ Unaligned conversions ────────────────────────────────
 
-impl<K: ?Sized, W, S, E> TryIntoUnaligned for CompVFunc<K, W, BitVec<Box<[usize]>>, S, E> {
+impl<K: ?Sized, W: PrimitiveUnsigned, S, E> TryIntoUnaligned
+    for CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
+{
     type Unaligned = CompVFunc<K, W, BitVecU<Box<[usize]>>, S, E>;
 
     fn try_into_unaligned(self) -> Result<Self::Unaligned, UnalignedConversionError> {
@@ -248,8 +248,8 @@ impl<K: ?Sized, W, S, E> TryIntoUnaligned for CompVFunc<K, W, BitVec<Box<[usize]
         // arbitrary-position bound (`width <= W::BITS - 7`) — not the
         // looser `BitFieldVec`-style bound used by
         // `BitVec::try_into_unaligned`.
-        let w = self.global_max_codeword_length as usize;
-        let esym = self.escaped_symbol_length as usize;
+        let w = self.decoder.max_codeword_length() as usize;
+        let esym = Decoder::escaped_symbol_length(&self.decoder) as usize;
         let unaligned_max = usize::BITS as usize - 7;
         let unaligned_err = |bw: usize| {
             UnalignedConversionError(format!(
@@ -267,9 +267,6 @@ impl<K: ?Sized, W, S, E> TryIntoUnaligned for CompVFunc<K, W, BitVec<Box<[usize]
             seed: self.seed,
             num_keys: self.num_keys,
             shard_size: self.shard_size,
-            global_max_codeword_length: self.global_max_codeword_length,
-            escape_length: self.escape_length,
-            escaped_symbol_length: self.escaped_symbol_length,
             data: self.data.try_into_unaligned()?,
             decoder: self.decoder,
             _marker: PhantomData,
@@ -286,9 +283,6 @@ impl<K: ?Sized, W, S, E> From<CompVFunc<K, W, BitVecU<Box<[usize]>>, S, E>>
             seed: u.seed,
             num_keys: u.num_keys,
             shard_size: u.shard_size,
-            global_max_codeword_length: u.global_max_codeword_length,
-            escape_length: u.escape_length,
-            escaped_symbol_length: u.escaped_symbol_length,
             data: u.data.into(),
             decoder: u.decoder,
             _marker: PhantomData,
@@ -558,31 +552,36 @@ where
           num_keys: usize,
           pl: &mut P,
           _state: &mut ()| {
-        // ── a) Compute per-shard sum of codeword lengths. ──
-        // VBuilder's set_up_graphs was sized for the *key* count;
-        // our graph has ~avg_codeword_length × more equations, so
-        // we re-size here.
+        // ── a) Compute per-shard sums of codeword lengths and
+        //      key counts. The shard-edge has to be resized against
+        //      the actual edge count and key count, since the
+        //      multi-edge expansion is what determines the band
+        //      density (edges) while c is set from the key count
+        //      (the correlation-aware variant from corr_peel_sweep).
         let mut total_edges: usize = 0;
         let mut max_shard_edges: usize = 0;
+        let mut max_shard_keys: usize = 0;
         for shard in store.iter() {
-            let mut sum: usize = 0;
+            let mut edges_in_shard: usize = 0;
+            let keys_in_shard = shard.len();
             for sv in shard.iter() {
-                sum += encode_val(sv.val).1 as usize;
+                edges_in_shard += encode_val(sv.val).1 as usize;
             }
-            total_edges += sum;
-            max_shard_edges = max_shard_edges.max(sum);
+            total_edges += edges_in_shard;
+            max_shard_edges = max_shard_edges.max(edges_in_shard);
+            max_shard_keys = max_shard_keys.max(keys_in_shard);
         }
 
-        // ── b) Re-call `set_up_graphs` with edge counts. ──
-        // VBuilder already called it with the *key* count, but our
-        // multi-edge construction has avg ≈ entropy more equations
-        // than keys, so the shard-edge has to be resized against the
-        // actual edge count. The returned `lge` flag tells us whether
-        // `set_up_graphs` picked a *dense* layout (small expected core
-        // → cheap LGE fallback) or a *sparse* one (pure peel expected
-        // to succeed; a failing peel leaves a large core that LGE
-        // cannot chew through, so we must retry the shard instead).
-        let (c, lge) = vb.shard_edge.set_up_graphs(total_edges, max_shard_edges);
+        // ── b) Call the correlated-graph setup on the shard edge.
+        // This dispatches to each ShardEdge's `set_up_correlated_graphs`,
+        // which keys `c` at `max_shard_keys` (with a small safety
+        // margin) and `log2_seg_size` at `max_shard_edges`. The
+        // returned `lge` flag tells us whether the layout uses LGE
+        // (dense, cheap fallback) or pure peel (sparse, retry on
+        // failure).
+        let (c, lge) =
+            vb.shard_edge
+                .set_up_correlated_graphs(num_keys, max_shard_keys, max_shard_edges);
         vb.c = c;
         vb.lge = lge;
 
@@ -671,7 +670,15 @@ where
          -> Result<(), ()> {
             let shard_edge = &this.shard_edge;
 
-            let solution: BitVec = if force_index_peeler {
+            // Each peeler writes its solution directly into
+            // `shard_data` (the per-shard slice of the global
+            // `data` array, supplied to us by `par_solve`). No
+            // intermediate `BitVec` allocation, no copy. The slice
+            // is zero-initialised (the global `data` is
+            // `BitVec::new_padded`-built, all zero), and the
+            // peelers only call `set_unchecked` on pivots / LGE
+            // assignments — bits we never touch stay zero.
+            if force_index_peeler {
                 // Materialise edges/rhs so LGE (or the fallback
                 // index peeler) can iterate the unpeeled remainder.
                 // Same as the pre-streaming codepath.
@@ -691,26 +698,26 @@ where
                         rhs.push(((bits >> l) & 1) == 1);
                     }
                 }
-                solve_system(raw_stride, &edges, rhs, lge).map_err(|_| ())?
+                solve_system(raw_stride, &edges, rhs, lge, &mut shard_data).map_err(|_| ())?;
             } else if use_low_mem {
-                peel_by_data_low_mem(shard, shard_edge, &encode_val, raw_stride, w)?
+                peel_by_data_low_mem(
+                    shard,
+                    shard_edge,
+                    &encode_val,
+                    raw_stride,
+                    w,
+                    &mut shard_data,
+                )?;
             } else {
-                peel_by_data_high_mem(shard, shard_edge, &encode_val, raw_stride, w)?
-            };
-
-            // Copy the local `BitVec` solution into `shard_data` via
-            // a word-level `copy_from_slice` instead of a bit-by-bit
-            // loop. Both vectors are `usize`-backed with bit 0 at
-            // word 0 / bit 0, so the layout matches exactly. We copy
-            // `raw_stride.div_ceil(usize::BITS)` words, which may
-            // include a few padding bits past `raw_stride` — those
-            // are in the same shard's reserved region in `shard_data`
-            // (length `stride = raw_stride.next_multiple_of(...)`),
-            // so the write stays in-bounds.
-            let n_words = raw_stride.div_ceil(usize::BITS as usize);
-            let src: &[usize] = solution.as_ref();
-            let dst: &mut [usize] = shard_data.as_mut();
-            dst[..n_words].copy_from_slice(&src[..n_words]);
+                peel_by_data_high_mem(
+                    shard,
+                    shard_edge,
+                    &encode_val,
+                    raw_stride,
+                    w,
+                    &mut shard_data,
+                )?;
+            }
             Ok(())
         };
 
@@ -757,9 +764,6 @@ where
         seed: seed_used,
         num_keys,
         shard_size,
-        global_max_codeword_length: coder.max_codeword_length(),
-        escape_length: coder.escape_length(),
-        escaped_symbol_length: coder.escaped_symbol_length(),
         data,
         decoder: coder.into_decoder(),
         _marker: PhantomData,
@@ -783,9 +787,6 @@ where
         seed: 0,
         num_keys: 0,
         shard_size: 0,
-        global_max_codeword_length: coder.max_codeword_length(),
-        escape_length: coder.escape_length(),
-        escaped_symbol_length: coder.escaped_symbol_length(),
         data: BitVec::<Box<[usize]>>::new_padded(0),
         decoder: coder.into_decoder(),
         _marker: PhantomData,
@@ -922,7 +923,7 @@ impl PeelByIndexOutput {
     }
 }
 
-/// Solves a 3-uniform F₂ system.
+/// Solves a 3-uniform **F**₂ system.
 ///
 /// If `lge` is `false`, the graph was sized for pure peeling: we peel
 /// and bail out with an error on any unpeeled remainder, so the caller
@@ -941,14 +942,17 @@ fn solve_system(
     edges: &[[u32; 3]],
     rhs: BitVec,
     lge: bool,
-) -> Result<BitVec> {
+    solution: &mut BitVec<&mut [usize]>,
+) -> Result<()> {
     let out = peel_by_index(num_variables, edges);
     let n_peeled = out.n_peeled();
     let n_total = edges.len();
 
-    // Solution is a `BitVec` (1 bit per variable) instead of
-    // `Vec<bool>` (1 byte). At 100M keys this saves ~220 MB peak.
-    let mut solution: BitVec = BitVec::new(num_variables);
+    // The caller supplies `solution` as a `BitVec<&mut [usize]>`
+    // pointing at the per-shard slice of the global `data` array.
+    // It is zero-initialised (the global `data` is built via
+    // `BitVec::new_padded`), so we can leave bits unset and only
+    // call `set_unchecked` on pivots / LGE-assigned variables.
 
     if n_peeled < n_total {
         if !lge {
@@ -1069,10 +1073,10 @@ fn solve_system(
         );
     }
 
-    Ok(solution)
+    Ok(())
 }
 
-/// Peels a 3-uniform F₂ hypergraph by edge index, mirroring
+/// Peels a 3-uniform **F**₂ hypergraph by edge index, mirroring
 /// [`VBuilder::peel_by_index`](crate::func::vbuilder). The payload
 /// stored in the [`XorGraph`] is the edge index itself (`u32`), and
 /// the original `edges` slice is kept alive by the caller so the
@@ -1086,7 +1090,7 @@ fn solve_system(
 /// Degenerate edges (two or three repeated vertices) are handled
 /// naturally by [`XorGraph::add`]: each slot independently bumps the
 /// packed `(degree, side)` byte and XORs the edge index into
-/// `edges[v]`, matching F₂ semantics (`x + x = 0`). The reverse-peel
+/// `edges[v]`, matching **F**₂ semantics (`x + x = 0`). The reverse-peel
 /// pass XORs `solution[b]` twice for `[a, b, b]`, which cancels.
 fn peel_by_index(num_variables: usize, edges: &[[u32; 3]]) -> PeelByIndexOutput {
     let n_edges = edges.len();
@@ -1294,9 +1298,9 @@ where
 /// All three vertex indices must be in-range for `solution`. This
 /// holds by construction: the edge was built from vertex indices
 /// derived from `base[i] + off` with `base[i] + off < num_variables`,
-/// and `solution` has length `num_variables`.
+/// and `solution.len() >= num_variables` by caller contract.
 #[inline(always)]
-unsafe fn reverse_peel_assign(solution: &mut BitVec, pe: PackedEdge, side: usize) {
+unsafe fn reverse_peel_assign(solution: &mut BitVec<&mut [usize]>, pe: PackedEdge, side: usize) {
     let ([a, b, c], r) = pe.unpack();
     let (pivot, val) = unsafe {
         match side {
@@ -1337,7 +1341,8 @@ fn peel_by_data_high_mem<V: BinSafe, S, E>(
     encode_val: &impl Fn(V) -> (u64, u32),
     num_variables: usize,
     w: usize,
-) -> Result<BitVec, ()>
+    solution: &mut BitVec<&mut [usize]>,
+) -> Result<(), ()>
 where
     S: Sig,
     E: ShardEdge<S, 3>,
@@ -1390,25 +1395,25 @@ where
 
     drop(xor_graph);
 
-    // Reverse-peel assignment. Iterate newest-first over both stacks
-    // (they were pushed in peel order, oldest first). The intermediate
-    // solution is a `BitVec` (1 bit per variable) instead of
-    // `Vec<bool>` (1 byte per variable); at 100M keys this cuts the
-    // intermediate from ~250 MB to ~30 MB.
-    let mut solution: BitVec = BitVec::new(num_variables);
+    // Reverse-peel assignment writes pivots directly into `solution`
+    // (the per-shard slice of the global `data` array, supplied by
+    // the caller). Iterate newest-first over both stacks (they were
+    // pushed in peel order, oldest first). No intermediate BitVec
+    // allocation, no copy.
     for (&pe, &side) in peeled_edges_stack
         .iter()
         .rev()
         .zip(sides_stack.iter().rev())
     {
         // SAFETY: all vertex indices in `pe` are bounded by
-        // `num_variables = solution.len()` from edge construction.
+        // `num_variables`, and `solution.len() >= num_variables` by
+        // caller contract.
         unsafe {
-            reverse_peel_assign(&mut solution, pe, side as usize);
+            reverse_peel_assign(solution, pe, side as usize);
         }
     }
 
-    Ok(solution)
+    Ok(())
 }
 
 /// Streamed peeler for CompVFunc — low-memory variant. Mirrors
@@ -1431,7 +1436,8 @@ fn peel_by_data_low_mem<V: BinSafe, S, E>(
     encode_val: &impl Fn(V) -> (u64, u32),
     num_variables: usize,
     w: usize,
-) -> Result<BitVec, ()>
+    solution: &mut BitVec<&mut [usize]>,
+) -> Result<(), ()>
 where
     S: Sig,
     E: ShardEdge<S, 3>,
@@ -1484,19 +1490,19 @@ where
         return Err(());
     }
 
-    // Reverse-peel assignment. `iter_upper()` yields pivots in
-    // newest-first order, which is exactly reverse peel order.
-    // Using a `BitVec` for `solution` instead of `Vec<bool>` saves
-    // ~220 MB peak memory at 100M keys.
-    let mut solution: BitVec = BitVec::new(num_variables);
+    // Reverse-peel assignment writes pivots directly into `solution`
+    // (the per-shard slice supplied by the caller). `iter_upper()`
+    // yields pivots in newest-first order, exactly reverse peel
+    // order. No intermediate BitVec, no copy.
     for &pivot_v in double_stack.iter_upper() {
         let (pe, side) = xor_graph.edge_and_side(pivot_v as usize);
         // SAFETY: all vertex indices in `pe` are bounded by
-        // `num_variables = solution.len()` from edge construction.
+        // `num_variables`, and `solution.len() >= num_variables`
+        // by caller contract.
         unsafe {
-            reverse_peel_assign(&mut solution, pe, side);
+            reverse_peel_assign(solution, pe, side);
         }
     }
 
-    Ok(solution)
+    Ok(())
 }

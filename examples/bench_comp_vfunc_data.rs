@@ -243,12 +243,12 @@ fn main() -> Result<()> {
         );
     }
 
-    func_u.set_decoder_branchless(false);
+    func_u.decoder_branchless(false);
     eprintln!("=== branchy decoder (forced) ===");
     bench_stream("seq  branchy   ", &seq_queries, &func_u, repeats);
     bench_stream("rnd  branchy   ", &rnd_queries, &func_u, repeats);
 
-    func_u.set_decoder_branchless(true);
+    func_u.decoder_branchless(true);
     eprintln!("=== branchless decoder (forced) ===");
     bench_stream("seq  branchless", &seq_queries, &func_u, repeats);
     bench_stream("rnd  branchless", &rnd_queries, &func_u, repeats);
