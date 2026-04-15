@@ -3,3 +3,6 @@ rustflags = ["-C", "target-cpu=native"]
 
 [target.wasm32-wasip1]
 runner = "wasmtime"
+
+[alias]
+cli = "build --features=cli,rayon,deko,epserde --release --bin"
