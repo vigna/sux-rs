@@ -335,10 +335,19 @@ pub const DEFAULT_LOG2_WORDS_PER_SUBINVENTORY: usize = 3;
 /// entries in *M* words is *M* · `usize::BITS` / 16, this requires *T* / (*M* ·
 /// `usize::BITS` / 16) = 4 · `usize::BITS`, where *T* is the target inventory
 /// span and *M* = 2^`log2_words_per_subinventory`. Solving for *T* gives *M* ·
-/// `usize::BITS`² / 4. At the end we halve the span to compensate for uneven
-/// density.
+/// `usize::BITS`² / 4.
+///
+/// At the end, in the 64-bit case we halve the span to compensate for uneven
+/// density (in the 32-bit case that leads to excessive space occupancy, so we
+/// do not halve the span).
 pub const fn default_target_inventory_span(log2_words_per_subinventory: usize) -> usize {
-    (((usize::BITS as usize * usize::BITS as usize) / 4) << log2_words_per_subinventory) / 2
+    let target = ((usize::BITS as usize * usize::BITS as usize) / 4) << log2_words_per_subinventory;
+    #[cfg(target_pointer_width = "64")]
+    {
+        target / 2
+    }
+    #[cfg(target_pointer_width = "32")]
+    target
 }
 
 /// Maximum bit-vector length supported by the inventory encoding.
