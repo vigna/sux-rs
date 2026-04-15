@@ -7,14 +7,14 @@
 #![allow(clippy::collapsible_else_if)]
 use std::ops::{BitXor, BitXorAssign};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
-use sux::cli::{BuilderArgs, ShardingArgs};
+use sux::cli::{BuilderArgs, ShardingArgs, read_lines_concatenated, str_slice_from_offsets};
 use sux::dict::VFilter;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
@@ -46,6 +46,13 @@ struct Args {
     /// The number of bits of the hashes used by the filter.​
     #[arg(short, long, default_value_t = 8)]
     bits: usize,
+    /// Use the single-threaded *sequential* construction path that
+    /// streams keys through a lender instead of materialising them
+    /// in memory. Slower for large builds (sig-store population is
+    /// the bottleneck) but useful when keys don't fit in RAM. The
+    /// default is the parallel, in-memory path.​
+    #[arg(short, long)]
+    sequential: bool,
     #[clap(flatten)]
     builder: BuilderArgs,
     #[clap(flatten)]
@@ -142,18 +149,39 @@ where
 
     if let Some(filename) = &args.filename {
         let n = args.n.unwrap_or(usize::MAX);
-        let mut builder = args.builder.configure(VBuilder::<Box<[W]>, S, E>::default());
+        let mut builder = args
+            .builder
+            .configure(VBuilder::<Box<[W]>, S, E>::default());
         if let Some(n_hint) = args.n {
             builder = builder.expected_num_keys(n_hint);
         }
-        let filter = <VFilter<VFunc<str, Box<[W]>, S, E>>>::try_new_with_builder(
-            DekoBufLineLender::from_path(filename)?.take(n),
-            args.n.unwrap_or(0),
-            builder,
-            &mut pl,
-        )?;
-        if let Some(filename) = args.filter {
-            unsafe { filter.store(filename) }?;
+        if args.sequential {
+            let filter = <VFilter<VFunc<str, Box<[W]>, S, E>>>::try_new_with_builder(
+                DekoBufLineLender::from_path(filename)?.take(n),
+                args.n.unwrap_or(0),
+                builder,
+                &mut pl,
+            )?;
+            if let Some(filename) = args.filter {
+                unsafe { filter.store(filename) }?;
+            }
+        } else {
+            let (buffer, offsets) = read_lines_concatenated(filename, n)?;
+            let keys = str_slice_from_offsets(&buffer, &offsets);
+            if let Some(n_hint) = args.n {
+                if keys.len() != n_hint {
+                    bail!(
+                        "key count mismatch: read {} keys, expected {n_hint}",
+                        keys.len()
+                    );
+                }
+            }
+            let filter = <VFilter<VFunc<str, Box<[W]>, S, E>>>::try_par_new_with_builder(
+                &keys, builder, &mut pl,
+            )?;
+            if let Some(filename) = args.filter {
+                unsafe { filter.store(filename) }?;
+            }
         }
     } else {
         let n = args.n.unwrap();
@@ -161,14 +189,24 @@ where
             .builder
             .configure(VBuilder::<Box<[W]>, S, E>::default())
             .expected_num_keys(n);
-        let filter = <VFilter<VFunc<usize, Box<[W]>, S, E>>>::try_new_with_builder(
-            FromCloneableIntoIterator::from(0_usize..n),
-            n,
-            builder,
-            &mut pl,
-        )?;
-        if let Some(filename) = args.filter {
-            unsafe { filter.store(filename) }?;
+        if args.sequential {
+            let filter = <VFilter<VFunc<usize, Box<[W]>, S, E>>>::try_new_with_builder(
+                FromCloneableIntoIterator::from(0_usize..n),
+                n,
+                builder,
+                &mut pl,
+            )?;
+            if let Some(filename) = args.filter {
+                unsafe { filter.store(filename) }?;
+            }
+        } else {
+            let keys: Vec<usize> = (0..n).collect();
+            let filter = <VFilter<VFunc<usize, Box<[W]>, S, E>>>::try_par_new_with_builder(
+                &keys, builder, &mut pl,
+            )?;
+            if let Some(filename) = args.filter {
+                unsafe { filter.store(filename) }?;
+            }
         }
     }
 
@@ -201,15 +239,35 @@ where
         if let Some(n_hint) = args.n {
             builder = builder.expected_num_keys(n_hint);
         }
-        let filter = <VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
-            DekoBufLineLender::from_path(filename)?.take(n),
-            args.n.unwrap_or(0),
-            args.bits,
-            builder,
-            &mut pl,
-        )?;
-        if let Some(filename) = args.filter {
-            unsafe { filter.store(filename)? };
+        if args.sequential {
+            let filter = <VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
+                DekoBufLineLender::from_path(filename)?.take(n),
+                args.n.unwrap_or(0),
+                args.bits,
+                builder,
+                &mut pl,
+            )?;
+            if let Some(filename) = args.filter {
+                unsafe { filter.store(filename)? };
+            }
+        } else {
+            let (buffer, offsets) = read_lines_concatenated(filename, n)?;
+            let keys = str_slice_from_offsets(&buffer, &offsets);
+            if let Some(n_hint) = args.n {
+                if keys.len() != n_hint {
+                    bail!(
+                        "key count mismatch: read {} keys, expected {n_hint}",
+                        keys.len()
+                    );
+                }
+            }
+            let filter =
+                <VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>>::try_par_new_with_builder(
+                    &keys, args.bits, builder, &mut pl,
+                )?;
+            if let Some(filename) = args.filter {
+                unsafe { filter.store(filename)? };
+            }
         }
     } else {
         let n = args.n.unwrap();
@@ -217,15 +275,27 @@ where
             .builder
             .configure(VBuilder::<BitFieldVec<Box<[W]>>, S, E>::default())
             .expected_num_keys(n);
-        let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
-            FromCloneableIntoIterator::from(0_usize..n),
-            n,
-            args.bits,
-            builder,
-            &mut pl,
-        )?;
-        if let Some(filename) = args.filter {
-            unsafe { filter.store(filename)? };
+        if args.sequential {
+            let filter =
+                <VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
+                    FromCloneableIntoIterator::from(0_usize..n),
+                    n,
+                    args.bits,
+                    builder,
+                    &mut pl,
+                )?;
+            if let Some(filename) = args.filter {
+                unsafe { filter.store(filename)? };
+            }
+        } else {
+            let keys: Vec<usize> = (0..n).collect();
+            let filter =
+                <VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>>::try_par_new_with_builder(
+                    &keys, args.bits, builder, &mut pl,
+                )?;
+            if let Some(filename) = args.filter {
+                unsafe { filter.store(filename)? };
+            }
         }
     }
 

@@ -9,7 +9,7 @@ use clap::Parser;
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
-use sux::cli::{BuilderArgs, HashTypes};
+use sux::cli::{BuilderArgs, HashTypes, read_lines_concatenated, str_slice_from_offsets};
 use sux::func::lcp_mmphf::*;
 use sux::func::lcp2_mmphf::*;
 use sux::func::signed::*;
@@ -34,6 +34,13 @@ struct Args {
     /// Sign the function using hashes of this type.​
     #[arg(long)]
     hash_type: Option<HashTypes>,
+    /// Use the single-threaded *sequential* construction path that
+    /// streams keys through a lender instead of materialising them
+    /// in memory. Slower for large builds (sig-store population is
+    /// the bottleneck) but useful when keys don't fit in RAM. The
+    /// default is the parallel, in-memory path.​
+    #[arg(short, long)]
+    sequential: bool,
     #[clap(flatten)]
     builder: BuilderArgs,
 }
@@ -77,16 +84,29 @@ fn build_single(
 ) -> Result<()> {
     match args.hash_type {
         None => {
-            let lender = DekoBufLineLender::from_path(&args.filename)?;
-            let mmphf: LcpMmphfStr = LcpMmphfStr::try_new_with_builder(lender, n, builder, pl)?;
-            if let Some(ref f) = args.func {
-                unsafe { mmphf.store(f) }?;
+            if args.sequential {
+                let lender = DekoBufLineLender::from_path(&args.filename)?;
+                let mmphf: LcpMmphfStr = LcpMmphfStr::try_new_with_builder(lender, n, builder, pl)?;
+                if let Some(ref f) = args.func {
+                    unsafe { mmphf.store(f) }?;
+                }
+            } else {
+                // Parallel: read all keys into a single concatenated
+                // buffer, then build a `Vec<&str>` of slices into it.
+                let (buffer, offsets) = read_lines_concatenated(&args.filename, n)?;
+                let keys = str_slice_from_offsets(&buffer, &offsets);
+                let mmphf: LcpMmphfStr = LcpMmphfStr::try_par_new_with_builder(&keys, builder, pl)?;
+                if let Some(ref f) = args.func {
+                    unsafe { mmphf.store(f) }?;
+                }
             }
         }
         Some(ref ht) => {
+            // Signed variants always materialise the keys because
+            // signing reads them a second time after the main build.
             let keys = read_keys(&args.filename, n)?;
             let n = keys.len();
-            macro_rules! build {
+            macro_rules! build_seq {
                 ($h:ty) => {{
                     let mmphf: SignedFunc<LcpMmphfStr, Box<[$h]>> =
                         <SignedFunc<LcpMmphfStr, Box<[$h]>>>::try_new_with_builder(
@@ -101,10 +121,10 @@ fn build_single(
                 }};
             }
             match ht {
-                HashTypes::U8 => build!(u8),
-                HashTypes::U16 => build!(u16),
-                HashTypes::U32 => build!(u32),
-                HashTypes::U64 => build!(u64),
+                HashTypes::U8 => build_seq!(u8),
+                HashTypes::U16 => build_seq!(u16),
+                HashTypes::U32 => build_seq!(u32),
+                HashTypes::U64 => build_seq!(u64),
             }
         }
     }
@@ -119,16 +139,27 @@ fn build_two_step(
 ) -> Result<()> {
     match args.hash_type {
         None => {
-            let lender = DekoBufLineLender::from_path(&args.filename)?;
-            let mmphf: Lcp2MmphfStr = Lcp2MmphfStr::try_new_with_builder(lender, n, builder, pl)?;
-            if let Some(ref f) = args.func {
-                unsafe { mmphf.store(f) }?;
+            if args.sequential {
+                let lender = DekoBufLineLender::from_path(&args.filename)?;
+                let mmphf: Lcp2MmphfStr =
+                    Lcp2MmphfStr::try_new_with_builder(lender, n, builder, pl)?;
+                if let Some(ref f) = args.func {
+                    unsafe { mmphf.store(f) }?;
+                }
+            } else {
+                let (buffer, offsets) = read_lines_concatenated(&args.filename, n)?;
+                let keys = str_slice_from_offsets(&buffer, &offsets);
+                let mmphf: Lcp2MmphfStr =
+                    Lcp2MmphfStr::try_par_new_with_builder(&keys, builder, pl)?;
+                if let Some(ref f) = args.func {
+                    unsafe { mmphf.store(f) }?;
+                }
             }
         }
         Some(ref ht) => {
             let keys = read_keys(&args.filename, n)?;
             let n = keys.len();
-            macro_rules! build {
+            macro_rules! build_seq {
                 ($h:ty) => {{
                     let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =
                         <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_new(
@@ -142,10 +173,10 @@ fn build_two_step(
                 }};
             }
             match ht {
-                HashTypes::U8 => build!(u8),
-                HashTypes::U16 => build!(u16),
-                HashTypes::U32 => build!(u32),
-                HashTypes::U64 => build!(u64),
+                HashTypes::U8 => build_seq!(u8),
+                HashTypes::U16 => build_seq!(u16),
+                HashTypes::U32 => build_seq!(u32),
+                HashTypes::U64 => build_seq!(u64),
             }
         }
     }

@@ -7,14 +7,16 @@
 #![allow(clippy::collapsible_else_if)]
 use std::ops::{BitXor, BitXorAssign};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
-use sux::cli::{BuilderArgs, HashTypes, ShardingArgs};
+use sux::cli::{
+    BuilderArgs, HashTypes, ShardingArgs, read_lines_concatenated, str_slice_from_offsets,
+};
 use sux::func::signed::SignedFunc;
 use sux::func::vfunc2::VFunc2;
 use sux::func::{shard_edge::*, *};
@@ -48,6 +50,13 @@ struct Args {
     /// Sign the function using hashes of this type.​
     #[arg(long)]
     hash_type: Option<HashTypes>,
+    /// Use the single-threaded *sequential* construction path that
+    /// streams keys through a lender instead of materialising them
+    /// in memory. Slower for large builds (sig-store population is
+    /// the bottleneck) but useful when keys don't fit in RAM. The
+    /// default is the parallel, in-memory path.​
+    #[arg(short, long)]
+    sequential: bool,
     #[clap(flatten)]
     builder: BuilderArgs,
     #[clap(flatten)]
@@ -95,7 +104,9 @@ fn main() -> Result<()> {
     }
 }
 
-macro_rules! filename_save_sign(
+// ── Sequential (lender-based) build macros ─────────────────────────
+
+macro_rules! filename_save_sign_seq(
     ($h: ty, $builder:expr, $filename: expr, $func: expr, $n: expr, $pl: expr) => {{
         let func =
             <SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_new_with_builder(
@@ -110,12 +121,42 @@ macro_rules! filename_save_sign(
     }}
 );
 
-macro_rules! n_save_sign(
+macro_rules! n_save_sign_seq(
     ($h: ty, $builder:expr, $n: expr, $func: expr, $pl: expr) => {{
         let func =
             <SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_new_with_builder(
                 FromCloneableIntoIterator::new(0_usize..$n),
                 $n,
+                $builder,
+                &mut $pl,
+            )?;
+        if let Some(filename) = $func {
+            unsafe { func.store(filename) }?;
+        }
+    }}
+);
+
+// ── Parallel (slice-based) build macros ────────────────────────────
+
+macro_rules! filename_save_sign_par(
+    ($h: ty, $builder:expr, $keys:expr, $func: expr, $pl: expr) => {{
+        let func =
+            <SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_par_new_with_builder(
+                $keys,
+                $builder,
+                &mut $pl,
+            )?;
+        if let Some(filename) = $func {
+            unsafe { func.store(filename) }?;
+        }
+    }}
+);
+
+macro_rules! n_save_sign_par(
+    ($h: ty, $builder:expr, $keys:expr, $func: expr, $pl: expr) => {{
+        let func =
+            <SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_par_new_with_builder(
+                $keys,
                 $builder,
                 &mut $pl,
             )?;
@@ -159,30 +200,70 @@ where
         if let Some(n_hint) = args.n {
             builder = builder.expected_num_keys(n_hint);
         }
-        match args.hash_type {
-            None => {
-                let func = <VFunc<str, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
-                    DekoBufLineLender::from_path(filename)?.take(n),
-                    FromCloneableIntoIterator::from(0_usize..),
-                    n,
-                    builder,
-                    &mut pl,
-                )?;
-                if let Some(filename) = args.func {
-                    unsafe { func.store(filename) }?;
+        if args.sequential {
+            match args.hash_type {
+                None => {
+                    let func = <VFunc<str, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
+                        DekoBufLineLender::from_path(filename)?.take(n),
+                        FromCloneableIntoIterator::from(0_usize..),
+                        n,
+                        builder,
+                        &mut pl,
+                    )?;
+                    if let Some(filename) = args.func {
+                        unsafe { func.store(filename) }?;
+                    }
+                }
+                Some(HashTypes::U8) => {
+                    filename_save_sign_seq!(u8, builder, filename, args.func, n, pl)
+                }
+                Some(HashTypes::U16) => {
+                    filename_save_sign_seq!(u16, builder, filename, args.func, n, pl)
+                }
+                Some(HashTypes::U32) => {
+                    filename_save_sign_seq!(u32, builder, filename, args.func, n, pl)
+                }
+                Some(HashTypes::U64) => {
+                    filename_save_sign_seq!(u64, builder, filename, args.func, n, pl)
                 }
             }
-            Some(HashTypes::U8) => {
-                filename_save_sign!(u8, builder, filename, args.func, n, pl)
+        } else {
+            // Parallel: read all keys into a single concatenated
+            // buffer, then build a `Vec<&str>` of slices into it for
+            // cache-friendly access during sig hashing.
+            let (buffer, offsets) = read_lines_concatenated(filename, n)?;
+            let keys = str_slice_from_offsets(&buffer, &offsets);
+            if let Some(n_hint) = args.n {
+                if keys.len() != n_hint {
+                    bail!(
+                        "key count mismatch: read {} keys, expected {n_hint}",
+                        keys.len()
+                    );
+                }
             }
-            Some(HashTypes::U16) => {
-                filename_save_sign!(u16, builder, filename, args.func, n, pl)
-            }
-            Some(HashTypes::U32) => {
-                filename_save_sign!(u32, builder, filename, args.func, n, pl)
-            }
-            Some(HashTypes::U64) => {
-                filename_save_sign!(u64, builder, filename, args.func, n, pl)
+            match args.hash_type {
+                None => {
+                    let values: Vec<usize> = (0..keys.len()).collect();
+                    let func =
+                        <VFunc<str, BitFieldVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
+                            &keys, &values, builder, &mut pl,
+                        )?;
+                    if let Some(filename) = args.func {
+                        unsafe { func.store(filename) }?;
+                    }
+                }
+                Some(HashTypes::U8) => {
+                    filename_save_sign_par!(u8, builder, &keys, args.func, pl)
+                }
+                Some(HashTypes::U16) => {
+                    filename_save_sign_par!(u16, builder, &keys, args.func, pl)
+                }
+                Some(HashTypes::U32) => {
+                    filename_save_sign_par!(u32, builder, &keys, args.func, pl)
+                }
+                Some(HashTypes::U64) => {
+                    filename_save_sign_par!(u64, builder, &keys, args.func, pl)
+                }
             }
         }
     } else {
@@ -190,30 +271,62 @@ where
         let builder = args
             .builder
             .configure(VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default());
-        match args.hash_type {
-            None => {
-                let func = <VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
-                    FromCloneableIntoIterator::from(0_usize..n),
-                    FromCloneableIntoIterator::from(0_usize..),
-                    n,
-                    builder,
-                    &mut pl,
-                )?;
-                if let Some(filename) = args.func {
-                    unsafe { func.store(filename) }?;
+        if args.sequential {
+            match args.hash_type {
+                None => {
+                    let func =
+                        <VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
+                            FromCloneableIntoIterator::from(0_usize..n),
+                            FromCloneableIntoIterator::from(0_usize..),
+                            n,
+                            builder,
+                            &mut pl,
+                        )?;
+                    if let Some(filename) = args.func {
+                        unsafe { func.store(filename) }?;
+                    }
+                }
+                Some(HashTypes::U8) => {
+                    n_save_sign_seq!(u8, builder, n, args.func, pl)
+                }
+                Some(HashTypes::U16) => {
+                    n_save_sign_seq!(u16, builder, n, args.func, pl)
+                }
+                Some(HashTypes::U32) => {
+                    n_save_sign_seq!(u32, builder, n, args.func, pl)
+                }
+                Some(HashTypes::U64) => {
+                    n_save_sign_seq!(u64, builder, n, args.func, pl)
                 }
             }
-            Some(HashTypes::U8) => {
-                n_save_sign!(u8, builder, n, args.func, pl)
-            }
-            Some(HashTypes::U16) => {
-                n_save_sign!(u16, builder, n, args.func, pl)
-            }
-            Some(HashTypes::U32) => {
-                n_save_sign!(u32, builder, n, args.func, pl)
-            }
-            Some(HashTypes::U64) => {
-                n_save_sign!(u64, builder, n, args.func, pl)
+        } else {
+            // Parallel: materialise keys as `Vec<usize>`. Costs `n * 8`
+            // bytes of memory but lets the sig-hashing phase run on all
+            // cores.
+            let keys: Vec<usize> = (0..n).collect();
+            match args.hash_type {
+                None => {
+                    let values: Vec<usize> = (0..n).collect();
+                    let func =
+                        <VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
+                            &keys, &values, builder, &mut pl,
+                        )?;
+                    if let Some(filename) = args.func {
+                        unsafe { func.store(filename) }?;
+                    }
+                }
+                Some(HashTypes::U8) => {
+                    n_save_sign_par!(u8, builder, &keys, args.func, pl)
+                }
+                Some(HashTypes::U16) => {
+                    n_save_sign_par!(u16, builder, &keys, args.func, pl)
+                }
+                Some(HashTypes::U32) => {
+                    n_save_sign_par!(u32, builder, &keys, args.func, pl)
+                }
+                Some(HashTypes::U64) => {
+                    n_save_sign_par!(u64, builder, &keys, args.func, pl)
+                }
             }
         }
     }

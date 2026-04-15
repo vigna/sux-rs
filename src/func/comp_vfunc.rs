@@ -551,9 +551,7 @@ where
         // → cheap LGE fallback) or a *sparse* one (pure peel expected
         // to succeed; a failing peel leaves a large core that LGE
         // cannot chew through, so we must retry the shard instead).
-        let (c, lge) = vb
-            .shard_edge
-            .set_up_graphs(total_edges, max_shard_edges);
+        let (c, lge) = vb.shard_edge.set_up_graphs(total_edges, max_shard_edges);
         vb.c = c;
         vb.lge = lge;
 
@@ -580,12 +578,14 @@ where
             coder.escaped_symbol_length()
         ));
         pl.info(format_args!(
-            "Average codeword length (entropy): {:.4} bits/key  (total edges: {}, {} shards, max shard edges: {})",
+            "Average codeword length (entropy): {:.4} bits/key (total edges: {}, shards: {}, max shard edges: {})",
             entropy, total_edges, num_shards, max_shard_edges
         ));
         pl.info(format_args!(
-            "c: {}, Number of threads: {}",
-            c, vb.num_threads
+            "c: {}, Overhead: {:+.4}% Number of threads: {}",
+            c,
+            100.0 * ((num_vertices_per_shard * num_shards) as f64 / (total_edges as f64) - 1.),
+            vb.num_threads
         ));
         if lge {
             pl.info(format_args!(
@@ -697,6 +697,12 @@ where
         )
         .map_err(anyhow::Error::from)?;
 
+        pl.info(format_args!(
+            "Bits/keys: {} ({:+.4}%)",
+            data.len() as f64 / num_keys as f64,
+            100.0 * (data.len() as f64 / total_edges as f64 - 1.),
+        ));
+
         Ok((data, attempt_seed, stride))
     }
 }
@@ -786,13 +792,8 @@ where
     // ~50% probability and force a retry.
     let mut builder = builder.expected_num_keys(n);
     let mut build_fn = make_build_fn::<S, E, P>(&coder);
-    let ((data, seed_used, shard_size), _keys) = builder.try_populate_and_build(
-        keys,
-        FromSlice::new(values),
-        &mut build_fn,
-        pl,
-        (),
-    )?;
+    let ((data, seed_used, shard_size), _keys) =
+        builder.try_populate_and_build(keys, FromSlice::new(values), &mut build_fn, pl, ())?;
     drop(build_fn);
     let shard_edge = builder.shard_edge;
     Ok(finish_build::<K, S, E>(
@@ -836,13 +837,8 @@ where
     // densities; until then, key-based sharding wins.
     let mut builder = builder.expected_num_keys(n);
     let mut build_fn = make_build_fn::<S, E, P>(&coder);
-    let (data, seed_used, shard_size) = builder.try_par_populate_and_build(
-        keys,
-        &|i: usize| values[i],
-        &mut build_fn,
-        pl,
-        (),
-    )?;
+    let (data, seed_used, shard_size) =
+        builder.try_par_populate_and_build(keys, &|i: usize| values[i], &mut build_fn, pl, ())?;
     drop(build_fn);
     let shard_edge = builder.shard_edge;
     Ok(finish_build::<K, S, E>(
@@ -986,18 +982,15 @@ fn solve_system(
             match side {
                 0 => (
                     a,
-                    r ^ solution.get_unchecked(b as usize)
-                        ^ solution.get_unchecked(c as usize),
+                    r ^ solution.get_unchecked(b as usize) ^ solution.get_unchecked(c as usize),
                 ),
                 1 => (
                     b,
-                    r ^ solution.get_unchecked(a as usize)
-                        ^ solution.get_unchecked(c as usize),
+                    r ^ solution.get_unchecked(a as usize) ^ solution.get_unchecked(c as usize),
                 ),
                 2 => (
                     c,
-                    r ^ solution.get_unchecked(a as usize)
-                        ^ solution.get_unchecked(b as usize),
+                    r ^ solution.get_unchecked(a as usize) ^ solution.get_unchecked(b as usize),
                 ),
                 // SAFETY: `side` is a 2-bit field in `XorGraph::degrees_sides`.
                 _ => std::hint::unreachable_unchecked(),
@@ -1258,18 +1251,15 @@ unsafe fn reverse_peel_assign(solution: &mut BitVec, pe: PackedEdge, side: usize
         match side {
             0 => (
                 a,
-                r ^ solution.get_unchecked(b as usize)
-                    ^ solution.get_unchecked(c as usize),
+                r ^ solution.get_unchecked(b as usize) ^ solution.get_unchecked(c as usize),
             ),
             1 => (
                 b,
-                r ^ solution.get_unchecked(a as usize)
-                    ^ solution.get_unchecked(c as usize),
+                r ^ solution.get_unchecked(a as usize) ^ solution.get_unchecked(c as usize),
             ),
             2 => (
                 c,
-                r ^ solution.get_unchecked(a as usize)
-                    ^ solution.get_unchecked(b as usize),
+                r ^ solution.get_unchecked(a as usize) ^ solution.get_unchecked(b as usize),
             ),
             // SAFETY: `side` is a 2-bit field in `XorGraph::degrees_sides`.
             _ => std::hint::unreachable_unchecked(),
@@ -1339,15 +1329,8 @@ where
 
         let ([v0, v1, v2], _rhs) = pe.unpack();
         let e: [usize; 3] = [v0 as usize, v1 as usize, v2 as usize];
-        remove_edge!(
-            xor_graph,
-            e,
-            side,
-            pe,
-            visit_stack,
-            push,
-            |x: usize| x as u32
-        );
+        remove_edge!(xor_graph, e, side, pe, visit_stack, push, |x: usize| x
+            as u32);
     }
 
     if peeled_edges_stack.len() != n_edges {
@@ -1508,8 +1491,8 @@ mod tests {
             no_logging![],
         )
         .expect("build");
-        for i in 0..n {
-            assert_eq!(func.get(i), values[i], "mismatch at key {i}");
+        for (i, &v) in values.iter().enumerate() {
+            assert_eq!(func.get(i), v, "mismatch at key {i}");
         }
     }
 

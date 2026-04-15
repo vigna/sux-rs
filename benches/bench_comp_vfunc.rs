@@ -22,13 +22,13 @@
 #![allow(clippy::type_complexity)]
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use dsi_progress_logger::no_logging;
 use mem_dbg::{MemSize, SizeFlags};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use rand_distr::{Distribution, Geometric, Zipf};
 use std::hint::black_box;
 use std::time::Instant;
-use dsi_progress_logger::no_logging;
 use sux::func::CompVFunc;
 use sux::traits::TryIntoUnaligned;
 

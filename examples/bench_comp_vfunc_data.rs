@@ -16,6 +16,7 @@
 //! ```
 
 use anyhow::{Context, Result};
+use dsi_progress_logger::no_logging;
 use mem_dbg::{MemSize, SizeFlags};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
@@ -24,7 +25,6 @@ use std::env;
 use std::fs;
 use std::hint::black_box;
 use std::time::Instant;
-use dsi_progress_logger::no_logging;
 use sux::bits::{BitFieldVec, BitVecU};
 use sux::func::{CompVFunc, VFunc};
 use sux::traits::TryIntoUnaligned;

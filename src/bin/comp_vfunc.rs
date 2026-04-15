@@ -4,38 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Builds a [`CompVFunc`](sux::func::CompVFunc) and serializes it with
-//! ε-serde.
-//!
-//! Mirrors the `vfunc` binary's parameter surface, minus the two-step
-//! variant (CompVFunc is already the "compressed" two-step analog). A
-//! compulsory `--values` file supplies the per-key values as ASCII
-//! decimal integers, one per line. Internal output type is `u64`
-//! (which on 64-bit targets is identical to `usize`); see the
-//! `--values` documentation for the ASCII integer format.
-//!
-//! # Key-loading strategy
-//!
-//! By default the CLI runs the *parallel* construction path, which
-//! requires the keys to be available as a `&[B]` slice. For
-//! integer-range mode (`--n`) we just collect `0..n` into a
-//! `Vec<usize>`. For filename mode we read the entire keys file into
-//! a single concatenated `String` buffer and build a `Vec<&str>`
-//! whose elements point into that buffer — far more cache-friendly
-//! than `Vec<String>` (one allocation plus fixed-size references,
-//! instead of `n` independent heap allocations).
-//!
-//! The `--sequential` flag switches to the streaming lender path,
-//! which hashes signatures on a single thread but avoids
-//! materialising all keys in memory at once. This is slower but
-//! useful when the key set doesn't fit in RAM.
-//!
-//! # Test-speed note
-//!
-//! For benchmarking build speed, the default (parallel, in-memory)
-//! path is the intended one — it matches what the `bench_comp_vfunc`
-//! and `profile_comp_vfunc` examples use.
-
 #![allow(clippy::collapsible_else_if)]
 use anyhow::{Context, Result, bail};
 use clap::{ArgGroup, Parser};
@@ -46,7 +14,7 @@ use rdst::RadixKey;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use sux::bits::BitVec;
-use sux::cli::{BuilderArgs, ShardingArgs};
+use sux::cli::{BuilderArgs, ShardingArgs, read_lines_concatenated, str_slice_from_offsets};
 use sux::func::codec::Huffman;
 use sux::func::shard_edge::{FuseLge3NoShards, FuseLge3Shards, ShardEdge};
 use sux::func::{CompVFunc, VBuilder};
@@ -68,7 +36,7 @@ use sux::utils::{DekoBufLineLender, FromCloneableIntoIterator, Sig, SigVal, ToSi
 ))]
 struct Args {
     /// The number of keys; if no filename is provided, use the 64-bit keys
-    /// [0 . . n).​
+    /// [0 . . n).​
     #[arg(short, long)]
     n: Option<usize>,
     /// A file containing UTF-8 keys, one per line (at most N keys will
@@ -79,7 +47,7 @@ struct Args {
     /// A file containing the values, one ASCII decimal integer per
     /// line. Compulsory. The number of values must match the number
     /// of keys.​
-    #[arg(long)]
+    #[arg(short, long)]
     values: String,
     /// A name for the ε-serde serialized function.​
     func: Option<String>,
@@ -88,7 +56,7 @@ struct Args {
     /// in memory. Slower for large builds (sig-store population is
     /// the bottleneck) but useful when keys don't fit in RAM. The
     /// default is the parallel, in-memory path.​
-    #[arg(long)]
+    #[arg(short, long)]
     sequential: bool,
     /// Cap on the number of distinct codeword lengths in the Huffman
     /// decoding table. Rare symbols beyond the cap are diverted to the
@@ -98,8 +66,8 @@ struct Args {
     /// Cumulative-entropy fraction beyond which infrequent symbols are
     /// diverted to the escape codeword. Truncates the Huffman table
     /// once the kept symbols cover this fraction of the total bit
-    /// budget. Default `1.0` (no truncation).​
-    #[arg(long, default_value_t = 1.0)]
+    /// budget.​
+    #[arg(long, default_value_t = 0.9)]
     huffman_entropy_threshold: f64,
     #[clap(flatten)]
     builder: BuilderArgs,
@@ -126,34 +94,6 @@ fn read_values(path: &str) -> Result<Vec<u64>> {
         values.push(v);
     }
     Ok(values)
-}
-
-/// Reads up to `n` lines from `filename` (optionally compressed) into
-/// a single concatenated [`String`] buffer, returning the buffer
-/// together with an `offsets` vector such that line `i` is
-/// `&buffer[offsets[i] .. offsets[i+1]]`. The caller builds a
-/// `Vec<&str>` from this with [`str_slice_from_offsets`] to get a
-/// slice the parallel constructor can consume.
-fn read_lines_concatenated(filename: &str, n: usize) -> Result<(String, Vec<usize>)> {
-    let mut buffer = String::new();
-    let mut offsets: Vec<usize> = Vec::with_capacity(n + 1);
-    offsets.push(0);
-    let mut lender = DekoBufLineLender::from_path(filename)?;
-    let mut count = 0usize;
-    while let Some(line) = lender.next()? {
-        if count == n {
-            break;
-        }
-        buffer.push_str(line);
-        offsets.push(buffer.len());
-        count += 1;
-    }
-    Ok((buffer, offsets))
-}
-
-#[inline]
-fn str_slice_from_offsets<'a>(buffer: &'a str, offsets: &[usize]) -> Vec<&'a str> {
-    offsets.windows(2).map(|w| &buffer[w[0]..w[1]]).collect()
 }
 
 /// Store the built function to `out`, if provided. Extracted so the

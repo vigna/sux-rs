@@ -11,6 +11,44 @@ use std::fmt::Display;
 use crate::bits::BitFieldVec;
 use crate::func::VBuilder;
 use crate::func::shard_edge::ShardEdge;
+use crate::utils::DekoBufLineLender;
+use anyhow::Result;
+use lender::FallibleLender;
+
+/// Reads up to `n` lines from `filename` (optionally compressed) into a
+/// single concatenated [`String`] buffer, returning the buffer together
+/// with an `offsets` vector such that line `i` is
+/// `&buffer[offsets[i] .. offsets[i+1]]`.
+///
+/// Used by the parallel in-memory construction path of the CLI
+/// utilities: callers build a `Vec<&str>` of slices into the buffer via
+/// [`str_slice_from_offsets`], giving cache-friendly access during
+/// signature hashing — one big allocation plus fixed-size `&str`
+/// references, instead of `n` independent heap allocations as with a
+/// `Vec<String>`.
+pub fn read_lines_concatenated(filename: &str, n: usize) -> Result<(String, Vec<usize>)> {
+    let mut buffer = String::new();
+    let mut offsets: Vec<usize> = Vec::with_capacity(n.saturating_add(1));
+    offsets.push(0);
+    let mut lender = DekoBufLineLender::from_path(filename)?;
+    let mut count = 0usize;
+    while let Some(line) = lender.next()? {
+        if count == n {
+            break;
+        }
+        buffer.push_str(line);
+        offsets.push(buffer.len());
+        count += 1;
+    }
+    Ok((buffer, offsets))
+}
+
+/// Builds a `Vec<&str>` of slices into `buffer` using the offsets
+/// produced by [`read_lines_concatenated`].
+#[inline]
+pub fn str_slice_from_offsets<'a>(buffer: &'a str, offsets: &[usize]) -> Vec<&'a str> {
+    offsets.windows(2).map(|w| &buffer[w[0]..w[1]]).collect()
+}
 
 /// Hash types for signed functions.​
 #[derive(clap::ValueEnum, Clone, Debug)]
