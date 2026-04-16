@@ -6,12 +6,13 @@
 
 //! A compressed static function.
 //!
-//! [`CompVFunc`] is a sux-rs port of Sux4J's `GV3CompressedFunction`.
-//! It maps `n` keys to `u64` values, but instead of allocating a fixed
-//! `bit_width`-bit slot per key it represents each value with a
-//! [prefix-free codeword][crate::func::codec::Codec] (by default a
-//! length-limited Huffman code) and stores those codewords by solving a
-//! random 3-uniform linear system on **F**₂ over the data array.
+//! [`CompVFunc`] maps `n` keys to values of any [`PrimitiveInteger`] type
+//! `W` (both signed and unsigned: `i8` . . `i128`, `u8` . . `u128`,
+//! `isize`, `usize`), representing each value with a [prefix-free
+//! codeword][crate::func::codec::Codec] (by default a length-limited
+//! [Huffman code][crate::func::codec::Huffman]) and storing the
+//! codewords by solving a random 3-uniform linear system on **F**₂ over
+//! the data array.
 //!
 //! When the value distribution is skewed, this uses much less space
 //! than [`VFunc`]: roughly the empirical entropy of the value list plus
@@ -24,11 +25,16 @@
 //!
 //! Within each shard, every key contributes `L` (= codeword length)
 //! linear equations, all sharing the same three base vertex positions
-//! and shifted by `l = 0..L−1`. The solver peels the resulting graph
-//! and falls back to lazy Gaussian elimination on the unpeeled
+//! and shifted by `l = 0 . . L − 1`. The solver peels the resulting
+//! graph and falls back to lazy Gaussian elimination on the unpeeled
 //! remainder, mirroring [`VBuilder`]'s `lge_shard`. At query time we
-//! read three `w`-bit windows (with `w` = `global_max_codeword_length`)
-//! at the per-shard base positions, XOR them, and decode.
+//! read three `w`-bit windows (with `w` =
+//! [`max_codeword_length`](crate::func::codec::Decoder::max_codeword_length))
+//! at the per-shard base positions, XOR them, and
+//! [decode](crate::func::codec::Decoder::decode). No value is reserved
+//! as a sentinel: the entire `W` range is available for storage.
+//!
+//! [`PrimitiveInteger`]: num_primitive::PrimitiveInteger
 //!
 //! [`VFunc`]: crate::func::VFunc
 //! [`VBuilder`]: crate::func::VBuilder
@@ -50,7 +56,7 @@ use core::error::Error;
 use dsi_progress_logger::ProgressLog;
 use lender::FallibleLending;
 use mem_dbg::{MemDbg, MemSize};
-use num_primitive::{PrimitiveNumber, PrimitiveNumberAs, PrimitiveUnsigned};
+use num_primitive::{PrimitiveInteger, PrimitiveNumber, PrimitiveNumberAs};
 use rdst::RadixKey;
 use std::borrow::Borrow;
 use std::collections::HashMap;
@@ -69,8 +75,10 @@ use std::marker::PhantomData;
 /// # Generics
 ///
 /// * `K`: the key type.
-/// * `W`: the output value type. Must be convertible to and from
-///   `u64` through [`PrimitiveNumberAs`]. Defaults to `u64`.
+/// * `W`: the output value type — any [`PrimitiveInteger`]
+///   (`u8` . . `u128`, `i8` . . `i128`, `usize`, `isize`). Must be
+///   convertible to and from `u64` through [`PrimitiveNumberAs`].
+///   Defaults to `usize`.
 /// * `D`: the data backend; defaults to [`BitVec<Box<[usize]>>`].
 ///   Construction always produces a [`BitVec`]-backed function;
 ///   [`TryIntoUnaligned`] converts it into a `BitVecU`-backed variant
@@ -122,7 +130,7 @@ pub struct CompVFunc<
 
 impl<
     K: ?Sized + ToSig<S>,
-    W: PrimitiveUnsigned,
+    W: PrimitiveInteger,
     D: BitVecValueOps<usize>,
     S: Sig,
     E: ShardEdge<S, 3>,
@@ -140,7 +148,7 @@ impl<
     #[inline(always)]
     pub fn get_by_sig(&self, sig: S) -> W {
         if self.num_keys == 0 {
-            return W::from(0u8);
+            return W::default();
         }
         let shard = self.shard_edge.shard(sig);
         let bucket_offset = shard * self.shard_size;
@@ -164,8 +172,7 @@ impl<
                 ^ self.data.get_value_unchecked(v1, w) as u64
                 ^ self.data.get_value_unchecked(v2, w) as u64
         };
-        let decoded = self.decoder.decode(value);
-        if decoded != W::MAX {
+        if let Some(decoded) = self.decoder.decode(value) {
             return decoded;
         }
         // The escape codeword occupies the top `escape_length` bits of
@@ -174,7 +181,7 @@ impl<
         let esc_len = self.decoder.escape_length() as usize;
         let esym_len = self.decoder.escaped_symbol_length() as usize;
         if esym_len == 0 {
-            return W::from(0u8);
+            return W::default();
         }
         let start = w - esc_len - esym_len;
         // SAFETY: same reasoning as above; `start + esym_len <= w`.
@@ -187,7 +194,7 @@ impl<
     }
 }
 
-impl<K: ?Sized, W: PrimitiveUnsigned, D, S, E> CompVFunc<K, W, D, S, E> {
+impl<K: ?Sized, W: PrimitiveInteger, D, S, E> CompVFunc<K, W, D, S, E> {
     /// Number of keys in the function.
     pub const fn len(&self) -> usize {
         self.num_keys
@@ -233,7 +240,7 @@ impl<K: ?Sized, W: PrimitiveUnsigned, D, S, E> CompVFunc<K, W, D, S, E> {
 
 // ── Aligned ↔ Unaligned conversions ────────────────────────────────
 
-impl<K: ?Sized, W: PrimitiveUnsigned, S, E> TryIntoUnaligned
+impl<K: ?Sized, W: PrimitiveInteger, S, E> TryIntoUnaligned
     for CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
 {
     type Unaligned = CompVFunc<K, W, BitVecU<Box<[usize]>>, S, E>;
@@ -311,7 +318,7 @@ impl<K: ?Sized, W, S, E> From<CompVFunc<K, W, BitVecU<Box<[usize]>>, S, E>>
 impl<K, W, S, E> CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
 where
     K: ?Sized + ToSig<S> + std::fmt::Debug,
-    W: PrimitiveUnsigned + BinSafe + Send + Sync + Hash,
+    W: PrimitiveInteger + BinSafe + Send + Sync + Hash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
     SigVal<S, W>: RadixKey,
@@ -383,7 +390,7 @@ where
 impl<K, W, S, E> CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
 where
     K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
-    W: PrimitiveUnsigned + BinSafe + Send + Sync + Hash,
+    W: PrimitiveInteger + BinSafe + Send + Sync + Hash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
     SigVal<S, W>: RadixKey,
@@ -460,7 +467,7 @@ where
 /// path populates the map by iterating a value slice; the sequential
 /// path populates it by iterating a value lender (see
 /// `build_inner_seq`).
-fn build_coder_from_frequencies<W: PrimitiveUnsigned + std::hash::Hash>(
+fn build_coder_from_frequencies<W: PrimitiveInteger + std::hash::Hash>(
     huffman: Huffman,
     frequencies: HashMap<W, usize>,
 ) -> HuffmanCoder<W> {
@@ -468,7 +475,7 @@ fn build_coder_from_frequencies<W: PrimitiveUnsigned + std::hash::Hash>(
 }
 
 /// Slice fast-path for the frequency map used by `build_inner_par`.
-fn frequencies_from_slice<W: PrimitiveUnsigned + std::hash::Hash>(
+fn frequencies_from_slice<W: PrimitiveInteger + std::hash::Hash>(
     values: &[W],
 ) -> HashMap<W, usize> {
     let mut frequencies: HashMap<W, usize> = HashMap::new();
@@ -499,7 +506,7 @@ fn make_build_fn<'c, W, S, E, P>(
 ) -> Result<(BitVec<Box<[usize]>>, u64, usize)>
 + 'c
 where
-    W: PrimitiveUnsigned + BinSafe + Send + Sync + Hash,
+    W: PrimitiveInteger + BinSafe + Send + Sync + Hash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
     SigVal<S, W>: RadixKey,
@@ -757,7 +764,7 @@ fn finish_build<K, W, S, E>(
 ) -> CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
 where
     K: ?Sized,
-    W: PrimitiveUnsigned,
+    W: PrimitiveInteger,
 {
     CompVFunc {
         shard_edge,
@@ -777,7 +784,7 @@ fn empty_comp_vfunc<K, W, S, E>(
 ) -> CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
 where
     K: ?Sized,
-    W: PrimitiveUnsigned,
+    W: PrimitiveInteger,
     E: ShardEdge<S, 3>,
 {
     let mut shard_edge = E::default();
@@ -797,7 +804,7 @@ where
 fn build_inner_seq<
     K: ?Sized + ToSig<S> + std::fmt::Debug,
     B: ?Sized + Borrow<K>,
-    W: PrimitiveUnsigned + BinSafe + Send + Sync + Hash,
+    W: PrimitiveInteger + BinSafe + Send + Sync + Hash,
     V: FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -854,7 +861,7 @@ where
 fn build_inner_par<
     K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
     B: Borrow<K> + Sync,
-    W: PrimitiveUnsigned + BinSafe + Send + Sync + Hash,
+    W: PrimitiveInteger + BinSafe + Send + Sync + Hash,
     P: ProgressLog + Clone + Send + Sync,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,

@@ -64,8 +64,8 @@
 //! aligned enough.
 //!
 //! [chunks]: SliceByValueMut::try_chunks_mut
-//! [`get_value`]: BitFieldSlice::get_value
-//! [`get_value_unchecked`]: BitFieldSlice::get_value_unchecked
+//! [`get_value`]: SliceByValue::get_value
+//! [`get_value_unchecked`]: SliceByValue::get_value_unchecked
 //!
 //! # Examples
 //!
