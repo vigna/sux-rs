@@ -280,11 +280,10 @@ fn baseline_c(c_kind: ShardEdgeKind, formula_input: usize) -> (f64, bool) {
             fuselge3_c(formula_input),
             fuselge3_expects_lge(formula_input),
         ),
-        ShardEdgeKind::Fuse3 => (
-            fuse3_c(formula_input),
-            fuse3_expects_lge(formula_input),
-        ),
-        ShardEdgeKind::Maxseg => panic!("--shard-edge maxseg has no c formula; use it only via --seg-formula"),
+        ShardEdgeKind::Fuse3 => (fuse3_c(formula_input), fuse3_expects_lge(formula_input)),
+        ShardEdgeKind::Maxseg => {
+            panic!("--shard-edge maxseg has no c formula; use it only via --seg-formula")
+        }
     }
 }
 
@@ -294,8 +293,9 @@ fn baseline_log2_seg(seg_kind: ShardEdgeKind, formula_input: usize) -> u32 {
     match seg_kind {
         ShardEdgeKind::Fuselge3 => fuselge3_log2_seg_size(formula_input),
         ShardEdgeKind::Fuse3 => fuse3_log2_seg_size(formula_input),
-        ShardEdgeKind::Maxseg => fuse3_log2_seg_size(formula_input)
-            .max(fuselge3_log2_seg_size(formula_input)),
+        ShardEdgeKind::Maxseg => {
+            fuse3_log2_seg_size(formula_input).max(fuselge3_log2_seg_size(formula_input))
+        }
     }
 }
 
@@ -644,7 +644,11 @@ fn hash_seed(s: usize, w: usize, seg_delta: i32, c_delta: f64, trial: usize) -> 
 
 fn parse_n_list(s: &str) -> Vec<usize> {
     s.split(',')
-        .map(|tok| tok.trim().parse().expect("--n-list must be comma-separated integers"))
+        .map(|tok| {
+            tok.trim()
+                .parse()
+                .expect("--n-list must be comma-separated integers")
+        })
         .collect()
 }
 
@@ -666,7 +670,11 @@ fn build_cells(args: &Args) -> Vec<Cell> {
         DistKind::Uniform | DistKind::ShiftedGeom => match &args.w_list {
             Some(s) => s
                 .split(',')
-                .map(|t| t.trim().parse().expect("--w-list must be comma-separated integers"))
+                .map(|t| {
+                    t.trim()
+                        .parse()
+                        .expect("--w-list must be comma-separated integers")
+                })
                 .collect(),
             None => (args.w_min..=args.w_max).collect(),
         },

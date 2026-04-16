@@ -1086,17 +1086,9 @@ mod fuse {
             let (c, lge);
 
             (c, self.log2_seg_size, lge) = if num_keys <= 100 {
-                (
-                    1.23,
-                    FuseLge3Shards::lin_log2_seg_size(3, num_edges),
-                    true,
-                )
+                (1.23, FuseLge3Shards::lin_log2_seg_size(3, num_edges), true)
             } else if num_keys <= 2 * FuseLge3Shards::HALF_MAX_LIN_SHARD_SIZE {
-                (
-                    1.13,
-                    FuseLge3Shards::lin_log2_seg_size(3, num_edges),
-                    true,
-                )
+                (1.13, FuseLge3Shards::lin_log2_seg_size(3, num_edges), true)
             } else {
                 (
                     Self::c(3, num_keys) + 0.005,

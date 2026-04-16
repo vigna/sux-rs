@@ -572,7 +572,7 @@ where
             let mut edges_in_shard: usize = 0;
             let keys_in_shard = shard.len();
             for sv in shard.iter() {
-                edges_in_shard += encode_val(sv.val).1 as usize;
+                edges_in_shard += coder.codeword_length(sv.val) as usize;
             }
             total_edges += edges_in_shard;
             max_shard_edges = max_shard_edges.max(edges_in_shard);
@@ -675,6 +675,9 @@ where
                            mut shard_data: BitVec<&mut [usize]>,
                            _pl: &mut _|
          -> Result<(), ()> {
+            if this.failed.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err(());
+            }
             let shard_edge = &this.shard_edge;
 
             // Each peeler writes its solution directly into
@@ -689,8 +692,8 @@ where
                 // Materialise edges/rhs so LGE (or the fallback
                 // index peeler) can iterate the unpeeled remainder.
                 // Same as the pre-streaming codepath.
-                let mut edges: Vec<[u32; 3]> = Vec::new();
-                let mut rhs: BitVec = BitVec::with_capacity(total_edges);
+                let mut edges: Vec<[u32; 3]> = Vec::with_capacity(max_shard_edges);
+                let mut rhs: BitVec = BitVec::with_capacity(max_shard_edges);
                 for sv in shard.iter() {
                     let (bits, len) = encode_val(sv.val);
                     let local_sig = shard_edge.local_sig(sv.sig);
@@ -704,6 +707,9 @@ where
                         ]);
                         rhs.push(((bits >> l) & 1) == 1);
                     }
+                }
+                if this.failed.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err(());
                 }
                 solve_system(raw_stride, &edges, rhs, lge, &mut shard_data).map_err(|_| ())?;
             } else if use_low_mem {
@@ -978,10 +984,10 @@ fn solve_system(
             peeled_edges.set(edge_idx as usize, true);
         }
 
-        // Build LGE system on the non-peeled edges only. Variables that
-        // do not appear in any non-peeled equation get value 0 from
-        // LGE; the reverse-peel pass will overwrite the peeled-edge
-        // pivots in `solution` afterwards.
+        // Build LGE system on the non-peeled edges only. Track which
+        // variables appear so the write-back can skip unused ones
+        // (same as VBuilder's `lge_shard`).
+        let mut used_vars: BitVec = BitVec::new(num_variables);
         let mut equations: Vec<Modulo2Equation<usize>> = Vec::with_capacity(n_total - n_peeled);
         for i in 0..n_total {
             if peeled_edges[i] {
@@ -1002,6 +1008,9 @@ fn solve_system(
             } else {
                 vs.to_vec()
             };
+            for &v in &vars {
+                used_vars.set(v as usize, true);
+            }
             let r = rhs[i] as usize;
             if vars.is_empty() && r != 0 {
                 bail!("trivial unsolvable equation");
@@ -1016,7 +1025,11 @@ fn solve_system(
         let lge_solution = system
             .lazy_gaussian_elimination()
             .map_err(|e| anyhow!("LGE failed: {e}"))?;
-        for (v, &val) in lge_solution.iter().enumerate() {
+        for (v, &val) in lge_solution
+            .iter()
+            .enumerate()
+            .filter(|(v, _)| used_vars[*v])
+        {
             solution.set(v, (val & 1) != 0);
         }
     }

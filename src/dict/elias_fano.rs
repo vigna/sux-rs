@@ -66,16 +66,14 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 ///
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or a different selection structure altogether.
-pub type EfSeq<V = usize> =
-    EliasFano<V, SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
+pub type EfSeq<V = usize> = EliasFano<V, SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>>>;
 
 /// The default type for an Elias–Fano structure implementing
 /// [`IndexedDict`], [`Succ`], and [`Pred`].
 ///
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or a different selection structure altogether.
-pub type EfDict<V = usize> =
-    EliasFano<V, SelectZeroAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
+pub type EfDict<V = usize> = EliasFano<V, SelectZeroAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>>>;
 
 /// The default type for an Elias–Fano structure implementing an
 /// [`IndexedSeq`], [`IndexedDict`], [`Succ`], and [`Pred`].
@@ -84,12 +82,7 @@ pub type EfDict<V = usize> =
 /// different const parameters or different selection structures altogether.
 pub type EfSeqDict<V = usize> = EliasFano<
     V,
-    SelectZeroAdaptConst<
-        SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>,
-        Box<[usize]>,
-        12,
-        3,
-    >,
+    SelectZeroAdaptConst<SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>>, Box<[usize]>>,
 >;
 
 /// A structure that stores a monotone sequence of integers of type `V` using
@@ -2227,7 +2220,7 @@ impl<V: Word + PrimitiveNumberAs<usize>> EliasFanoBuilder<V> {
     #[must_use]
     pub fn build_with_seq(self) -> EfSeq<V> {
         let ef = self.build();
-        unsafe { ef.map_high_bits(SelectAdaptConst::<_, _, 12, 3>::new) }
+        unsafe { ef.map_high_bits(SelectAdaptConst::new) }
     }
 
     /// Builds an Elias–Fano structure with constant-time successor and
@@ -2238,7 +2231,7 @@ impl<V: Word + PrimitiveNumberAs<usize>> EliasFanoBuilder<V> {
     #[must_use]
     pub fn build_with_dict(self) -> EfDict<V> {
         let ef = self.build();
-        unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _, 12, 3>::new) }
+        unsafe { ef.map_high_bits(SelectZeroAdaptConst::new) }
     }
 
     /// Builds an Elias–Fano structure with constant-time access, successor,
@@ -2250,8 +2243,8 @@ impl<V: Word + PrimitiveNumberAs<usize>> EliasFanoBuilder<V> {
     pub fn build_with_seq_and_dict(self) -> EfSeqDict<V> {
         let ef = self.build();
         unsafe {
-            ef.map_high_bits(SelectAdaptConst::<_, _, 12, 3>::new)
-                .map_high_bits(SelectZeroAdaptConst::<_, _, 12, 3>::new)
+            ef.map_high_bits(SelectAdaptConst::new)
+                .map_high_bits(SelectZeroAdaptConst::new)
         }
     }
 }
@@ -2428,7 +2421,7 @@ where
     #[must_use]
     pub fn build_with_seq(self) -> EfSeq<V> {
         let ef = self.build();
-        unsafe { ef.map_high_bits(SelectAdaptConst::<_, _, 12, 3>::new) }
+        unsafe { ef.map_high_bits(SelectAdaptConst::new) }
     }
 
     /// Builds an Elias–Fano structure with constant-time successor and
@@ -2439,7 +2432,7 @@ where
     #[must_use]
     pub fn build_with_dict(self) -> EfDict<V> {
         let ef = self.build();
-        unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _, 12, 3>::new) }
+        unsafe { ef.map_high_bits(SelectZeroAdaptConst::new) }
     }
 
     /// Builds an Elias–Fano structure with constant-time access, successor,
@@ -2451,8 +2444,8 @@ where
     pub fn build_with_seq_and_dict(self) -> EfSeqDict<V> {
         let ef = self.build();
         unsafe {
-            ef.map_high_bits(SelectAdaptConst::<_, _, 12, 3>::new)
-                .map_high_bits(SelectZeroAdaptConst::<_, _, 12, 3>::new)
+            ef.map_high_bits(SelectAdaptConst::new)
+                .map_high_bits(SelectZeroAdaptConst::new)
         }
     }
 }

@@ -47,7 +47,7 @@ type DenseIndex = Rank9<BitVec<Box<[u64]>>>;
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SparseIndex<D, L = BitFieldVec<Box<[u64]>>> {
-    ef: EliasFano<u64, SelectZeroAdaptConst<BitVec<D>, Box<[usize]>, 12, 3>, L>,
+    ef: EliasFano<u64, SelectZeroAdaptConst<BitVec<D>, Box<[usize]>>, L>,
     /// self.ef should not be queried for values >= self.first_invalid_position
     first_invalid_pos: usize,
 }

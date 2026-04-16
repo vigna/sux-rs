@@ -145,7 +145,9 @@ fn gen_values(args: &Args, n: usize, seed: u64) -> Vec<u64> {
     let mut rng = SmallRng::seed_from_u64(seed);
     match args.distribution {
         DistKind::Constant => vec![args.constant_value; n],
-        DistKind::Uniform => (0..n).map(|_| rng.random::<u64>() % args.uniform_max).collect(),
+        DistKind::Uniform => (0..n)
+            .map(|_| rng.random::<u64>() % args.uniform_max)
+            .collect(),
         DistKind::Geom => {
             let g = Geometric::new(0.5).unwrap();
             (0..n).map(|_| g.sample(&mut rng) + 1).collect()
@@ -312,7 +314,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let n_list: Vec<usize> = args
         .n_list
         .split(',')
-        .map(|s| s.trim().parse().expect("n_list must be comma-separated integers"))
+        .map(|s| {
+            s.trim()
+                .parse()
+                .expect("n_list must be comma-separated integers")
+        })
         .collect();
 
     eprintln!(
