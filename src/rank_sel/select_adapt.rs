@@ -989,6 +989,7 @@ impl<
     I: AsRef<[usize]>,
 > SelectUnchecked for SelectAdapt<B, I>
 {
+    #[inline]
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         unsafe {
             let inventory = self.inventory.as_ref();
@@ -1016,6 +1017,26 @@ impl<
                     .select_hinted::<{ usize::MAX }>(rank, hint_pos, rank - residual);
             }
 
+            self.select_unchecked_cold(rank, inventory_start_pos, inventory_rank, subrank)
+        }
+    }
+}
+
+impl<
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength + SelectHinted,
+    I: AsRef<[usize]>,
+> SelectAdapt<B, I>
+{
+    #[inline(never)]
+    unsafe fn select_unchecked_cold(
+        &self,
+        rank: usize,
+        inventory_start_pos: usize,
+        inventory_rank: usize,
+        subrank: usize,
+    ) -> usize {
+        unsafe {
+            let inventory = self.inventory.as_ref();
             let words_per_subinventory = 1 << self.log2_words_per_subinventory;
 
             if inventory_rank.is_u32_span() {

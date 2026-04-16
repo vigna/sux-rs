@@ -605,6 +605,7 @@ impl<
     I: AsRef<[usize]>,
 > SelectZeroUnchecked for SelectZeroAdapt<B, I>
 {
+    #[inline]
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
         unsafe {
             let inventory = self.inventory.as_ref();
@@ -634,6 +635,26 @@ impl<
                 );
             }
 
+            self.select_zero_unchecked_cold(rank, inventory_start_pos, inventory_rank, subrank)
+        }
+    }
+}
+
+impl<
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength + SelectZeroHinted,
+    I: AsRef<[usize]>,
+> SelectZeroAdapt<B, I>
+{
+    #[inline(never)]
+    unsafe fn select_zero_unchecked_cold(
+        &self,
+        rank: usize,
+        inventory_start_pos: usize,
+        inventory_rank: usize,
+        subrank: usize,
+    ) -> usize {
+        unsafe {
+            let inventory = self.inventory.as_ref();
             let words_per_subinventory = 1 << self.log2_words_per_subinventory;
 
             if inventory_rank.is_u32_span() {
