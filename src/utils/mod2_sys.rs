@@ -83,24 +83,39 @@ impl<W: Word> Modulo2Equation<W> {
         }
     }
 
-    pub fn add(&mut self, other: &Modulo2Equation<W>) {
+    /// Adds `other` into `self`, using `scratch` as a working buffer to avoid
+    /// per-call allocation.
+    ///
+    /// After the call, `scratch` holds what used to be `self.vars` (with its
+    /// original capacity intact), ready to be reused on the next call. Over
+    /// many calls, `scratch`'s capacity grows to the peak merge size and
+    /// further calls allocate nothing.
+    pub(crate) fn add_into(&mut self, other: &Modulo2Equation<W>, scratch: &mut Vec<u32>) {
+        scratch.clear();
+        scratch.reserve(self.vars.len() + other.vars.len());
+        let dst = scratch.as_mut_ptr();
+
         let left_range = self.vars.as_ptr_range();
-        let left = left_range.start;
-        let left_end = left_range.end;
         let right_range = other.vars.as_ptr_range();
-        let right = right_range.start;
-        let right_end = right_range.end;
-        let mut vars = Vec::with_capacity(self.vars.len() + other.vars.len());
-        let dst = vars.as_mut_ptr();
 
         unsafe {
-            let copied =
-                Self::add_ptr(left, left_end, right, right_end, dst).offset_from(dst) as usize;
-            vars.set_len(copied);
+            let end = Self::add_ptr(
+                left_range.start,
+                left_range.end,
+                right_range.start,
+                right_range.end,
+                dst,
+            );
+            scratch.set_len(end.offset_from(dst) as usize);
         }
 
-        self.vars = vars;
         self.c ^= other.c;
+        std::mem::swap(&mut self.vars, scratch);
+    }
+
+    pub fn add(&mut self, other: &Modulo2Equation<W>) {
+        let mut scratch = Vec::new();
+        self.add_into(other, &mut scratch);
     }
 
     /// Checks whether the equation is unsolvable.
@@ -177,6 +192,7 @@ impl<W: Word> Modulo2System<W> {
         if equations.is_empty() {
             return Ok(());
         }
+        let mut scratch: Vec<u32> = Vec::new();
         'main: for i in 0..equations.len() - 1 {
             ensure!(!equations[i].vars.is_empty());
             for j in i + 1..equations.len() {
@@ -187,7 +203,7 @@ impl<W: Word> Modulo2System<W> {
                 let first_var_j = eq_j.vars[0];
 
                 if eq_i.vars[0] == first_var_j {
-                    eq_i.add(eq_j);
+                    eq_i.add_into(eq_j, &mut scratch);
                     if eq_i.is_unsolvable() {
                         bail!("System is unsolvable");
                     }
@@ -306,6 +322,7 @@ impl<W: Word> Modulo2System<W> {
 
         let equations = &mut self.equations;
         let mut idle = bit_vec![true; num_vars];
+        let mut scratch: Vec<u32> = Vec::new();
 
         let mut remaining = equations.len();
 
@@ -354,9 +371,9 @@ impl<W: Word> Modulo2System<W> {
                         let hi = eq.max(first);
                         let (left, right) = equations.split_at_mut(hi);
                         if eq < first {
-                            left[lo].add(&right[0]);
+                            left[lo].add_into(&right[0], &mut scratch);
                         } else {
-                            right[0].add(&left[lo]);
+                            right[0].add_into(&left[lo], &mut scratch);
                         }
 
                         priority[eq] -= 1;
