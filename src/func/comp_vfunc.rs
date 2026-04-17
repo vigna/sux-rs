@@ -45,7 +45,7 @@ use crate::bits::{BitVec, BitVecU, test_unaligned_any_pos};
 use crate::func::VBuilder;
 use crate::func::codec::{Codec, Coder, Decoder, Huffman, HuffmanCoder, HuffmanDecoder};
 use crate::func::peeling::{DoubleStack, FastStack, XorGraph, remove_edge};
-use crate::func::shard_edge::{FuseLge3Shards, ShardEdge};
+use crate::func::shard_edge::{Fuse3Shards, ShardEdge};
 use crate::traits::bit_vec_ops::{BitVecOps, BitVecOpsMut, BitVecValueOps};
 use crate::traits::{TryIntoUnaligned, UnalignedConversionError};
 use crate::utils::mod2_sys::{Modulo2Equation, Modulo2System};
@@ -85,7 +85,7 @@ use std::marker::PhantomData;
 ///   that uses (faster, branchless) unaligned reads.
 /// * `S`: the signature type; defaults to `[u64; 2]`.
 /// * `E`: the [`ShardEdge`] used for *sharding* (and the local hash).
-///   Defaults to [`FuseLge3Shards`]. Note that `CompVFunc` only uses
+///   Defaults to [`Fuse3Shards`]. Note that `CompVFunc` only uses
 ///   `ShardEdge` for **sharding** and as the source of the local hash
 ///   (`local_sig` + `edge_hash`); the per-shard edge generation is
 ///   *not* the one in `ShardEdge::local_edge` because each compressed
@@ -99,7 +99,7 @@ pub struct CompVFunc<
     W = usize,
     D = BitVec<Box<[usize]>>,
     S = [u64; 2],
-    E = FuseLge3Shards,
+    E = Fuse3Shards,
 > {
     /// The shard/local-hash logic shared with [`VFunc`].
     ///
@@ -580,17 +580,14 @@ where
         }
 
         // ── b) Call the correlated-graph setup on the shard edge.
-        // This dispatches to each ShardEdge's `set_up_correlated_graphs`,
-        // which keys `c` at `max_shard_keys` (with a small safety
-        // margin) and `log2_seg_size` at `max_shard_edges`. The
-        // returned `lge` flag tells us whether the layout uses LGE
-        // (dense, cheap fallback) or pure peel (sparse, retry on
-        // failure).
+        // `c` is keyed at `max_shard_keys`, `log2_seg_size` at
+        // `max_shard_edges`. CompVFunc never uses LGE.
         let (c, lge) =
             vb.shard_edge
-                .set_up_correlated_graphs(num_keys, max_shard_keys, max_shard_edges);
+                .set_up_correlated_graphs(total_edges, max_shard_keys, max_shard_edges);
+        assert!(!lge, "CompVFunc does not support LGE");
         vb.c = c;
-        vb.lge = lge;
+        vb.lge = false;
 
         // ── c) Compute the per-shard stride and allocate. ──
         let num_vertices_per_shard = vb.shard_edge.num_vertices();
@@ -845,18 +842,20 @@ where
     while let Some(&v) = values.next()? {
         *frequencies.entry(v).or_insert(0) += 1;
     }
-    let coder = build_coder_from_frequencies(huffman, frequencies);
+    let coder = huffman.build_coder(&frequencies);
+    let total_edges: usize = frequencies
+        .iter()
+        .map(|(&v, &count)| coder.codeword_length(v) as usize * count)
+        .sum();
     values = values.rewind()?;
 
     if n == 0 {
         return Ok(empty_comp_vfunc::<K, W, S, E>(coder, builder.eps));
     }
 
-    // See `build_inner_par` for why we do *not* pass
-    // `shard_size_hint(total_edges)`: it drops CompVFunc into a
-    // per-shard formula regime where `peel_by_data_*` fail with
-    // ~50% probability and force a retry.
-    let mut builder = builder.expected_num_keys(n);
+    let mut builder = builder
+        .expected_num_keys(n)
+        .shard_size_hint(total_edges);
     let mut build_fn = make_build_fn::<W, S, E, P>(&coder);
     let ((data, seed_used, shard_size), _keys) =
         builder.try_populate_and_build(keys, values, &mut build_fn, pl, ())?;
@@ -893,18 +892,13 @@ where
         return Ok(empty_comp_vfunc::<K, W, S, E>(coder, builder.eps));
     }
 
-    // NOTE: we do *not* pass `shard_size_hint(total_edges)` to the
-    // VBuilder here. Empirically, sharding on the edge count drops
-    // CompVFunc into a per-shard formula regime (~12M edges/shard,
-    // c=1.11, small-formula log2_seg_size in `shard_edge.rs`)
-    // where peeling fails ~50% of the time for CompVFunc's
-    // correlated multi-edge hypergraphs. The old, key-based
-    // sharding (8 shards × ~25M edges each) lands in the large-
-    // formula regime (c=1.105, larger seg_size) where peeling is
-    // reliable. Fixing this properly requires tuning the fuse
-    // filter thresholds in `shard_edge.rs` for correlated edge
-    // densities; until then, key-based sharding wins.
-    let mut builder = builder.expected_num_keys(n);
+    let total_edges: usize = values
+        .iter()
+        .map(|v| coder.codeword_length(*v) as usize)
+        .sum();
+    let mut builder = builder
+        .expected_num_keys(n)
+        .shard_size_hint(total_edges);
     let mut build_fn = make_build_fn::<W, S, E, P>(&coder);
     let (data, seed_used, shard_size) =
         builder.try_par_populate_and_build(keys, &|i: usize| values[i], &mut build_fn, pl, ())?;
@@ -1414,6 +1408,12 @@ where
     }
 
     if peeled_edges_stack.len() != n_edges {
+        log::info!(
+            "Peeling failed (peeled {} out of {} edges, {:.2}% unpeeled)",
+            peeled_edges_stack.len(),
+            n_edges,
+            100.0 * (n_edges - peeled_edges_stack.len()) as f64 / n_edges as f64,
+        );
         return Err(());
     }
 
@@ -1511,6 +1511,12 @@ where
     }
 
     if double_stack.upper_len() != n_edges {
+        log::info!(
+            "Peeling failed (peeled {} out of {} edges, {:.2}% unpeeled)",
+            double_stack.upper_len(),
+            n_edges,
+            100.0 * (n_edges - double_stack.upper_len()) as f64 / n_edges as f64,
+        );
         return Err(());
     }
 

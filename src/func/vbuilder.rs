@@ -936,7 +936,9 @@ impl<
                 let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
                 let max_shard = shard_store.shard_sizes().max().unwrap_or(0);
 
-                if max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64 {
+                if self.shard_size_hint.is_none()
+                    && max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64
+                {
                     Err(SolveError::MaxShardTooBig.into())
                 } else {
                     (self.c, self.lge) = shard_edge.set_up_graphs(num_keys, max_shard);
@@ -1137,7 +1139,9 @@ impl<
             ));
         }
 
-        if max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64 {
+        if self.shard_size_hint.is_none()
+            && max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64
+        {
             return Err(SolveError::MaxShardTooBig.into());
         }
 
@@ -1720,11 +1724,12 @@ impl<
 
         if shard.len() != double_stack.upper_len() {
             pl.info(format_args!(
-                "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
+                "Peeling failed for shard {}/{} (peeled {} out of {} edges, {:.2}% unpeeled)",
                 shard_index + 1,
                 num_shards,
                 double_stack.upper_len(),
                 shard.len(),
+                100.0 * (shard.len() - double_stack.upper_len()) as f64 / shard.len() as f64,
             ));
             return Ok(PeelResult::Partial {
                 shard_index,
@@ -1885,11 +1890,12 @@ impl<
 
         if shard_len != sig_vals_stack.len() {
             pl.info(format_args!(
-                "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
+                "Peeling failed for shard {}/{} (peeled {} out of {} edges, {:.2}% unpeeled)",
                 shard_index + 1,
                 num_shards,
                 sig_vals_stack.len(),
-                shard_len
+                shard_len,
+                100.0 * (shard_len - sig_vals_stack.len()) as f64 / shard_len as f64,
             ));
             return Err(());
         }
@@ -2022,11 +2028,12 @@ impl<
 
         if shard_len != visit_stack.upper_len() {
             pl.info(format_args!(
-                "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
+                "Peeling failed for shard {}/{} (peeled {} out of {} edges, {:.2}% unpeeled)",
                 shard_index + 1,
                 num_shards,
                 visit_stack.upper_len(),
-                shard_len
+                shard_len,
+                100.0 * (shard_len - visit_stack.upper_len()) as f64 / shard_len as f64,
             ));
             return Err(());
         }

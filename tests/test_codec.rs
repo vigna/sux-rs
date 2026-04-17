@@ -198,6 +198,30 @@ fn test_huffman_u128_large_values() {
 }
 
 #[test]
+fn test_huffman_u128_large_values_unlimited() {
+    let mut pairs: Vec<(u128, usize)> = Vec::new();
+    let base: u128 = 1u128 << 100;
+    for i in 0..8u128 {
+        pairs.push((base + i, 1usize << (16 - i)));
+    }
+    let f: HashMap<u128, usize> = pairs.iter().copied().collect();
+    let coder = <Huffman as Codec<u128>>::build_coder(&Huffman::unlimited(), &f);
+    let decoder = coder.clone().into_decoder();
+    for (s, _) in &pairs {
+        let w = coder.max_codeword_length();
+        let len = coder.codeword_length(*s);
+        let bits = coder.encode(*s).expect("symbol must be in the table");
+        let mut value = 0u64;
+        for k in 0..len {
+            let bit = (bits >> k) & 1;
+            value |= bit << (w - 1 - k);
+        }
+        let decoded = decoder.decode(value).expect("should not be escape");
+        assert_eq!(decoded, *s, "u128 round-trip for {s:x}");
+    }
+}
+
+#[test]
 fn test_huffman_length_limited() {
     // Sixteen symbols with very skewed frequencies; truncate the
     // table at four distinct lengths so the rest are escaped.

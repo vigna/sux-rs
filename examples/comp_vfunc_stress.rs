@@ -35,23 +35,13 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::sync::Mutex;
 use std::time::Instant;
-use sux::func::shard_edge::{
-    Fuse3NoShards, Fuse3Shards, FuseLge3FullSigs, FuseLge3NoShards, FuseLge3Shards,
-};
+use sux::func::shard_edge::{Fuse3NoShards, Fuse3Shards};
 #[cfg(feature = "mwhc")]
 use sux::func::shard_edge::{Mwhc3NoShards, Mwhc3Shards};
 use sux::func::{CompVFunc, VBuilder};
 
 #[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
 enum ShardEdgeKind {
-    /// `FuseLge3Shards` with `[u64; 2]` (production default).
-    FuseLge3Shards,
-    /// `FuseLge3NoShards` with `[u64; 2]`.
-    FuseLge3NoShards2,
-    /// `FuseLge3NoShards` with `[u64; 1]`.
-    FuseLge3NoShards1,
-    /// `FuseLge3FullSigs` (newtype around `FuseLge3Shards`).
-    FuseLge3FullSigs,
     /// `Fuse3Shards` with `[u64; 2]`.
     Fuse3Shards,
     /// `Fuse3NoShards` with `[u64; 2]`.
@@ -209,39 +199,6 @@ fn run_trial(
 
     let t0 = Instant::now();
     let result: Result<usize, String> = match args.shard_edge {
-        ShardEdgeKind::FuseLge3Shards => {
-            build_and_verify!(&keys, &values, [u64; 2], FuseLge3Shards, args.queries, rng)
-        }
-        ShardEdgeKind::FuseLge3NoShards2 => {
-            build_and_verify!(
-                &keys,
-                &values,
-                [u64; 2],
-                FuseLge3NoShards,
-                args.queries,
-                rng
-            )
-        }
-        ShardEdgeKind::FuseLge3NoShards1 => {
-            build_and_verify!(
-                &keys,
-                &values,
-                [u64; 1],
-                FuseLge3NoShards,
-                args.queries,
-                rng
-            )
-        }
-        ShardEdgeKind::FuseLge3FullSigs => {
-            build_and_verify!(
-                &keys,
-                &values,
-                [u64; 2],
-                FuseLge3FullSigs,
-                args.queries,
-                rng
-            )
-        }
         ShardEdgeKind::Fuse3Shards => {
             build_and_verify!(&keys, &values, [u64; 2], Fuse3Shards, args.queries, rng)
         }

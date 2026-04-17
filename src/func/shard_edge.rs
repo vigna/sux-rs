@@ -205,18 +205,26 @@ pub trait ShardEdge<S, const K: usize>: Default + Display + Clone + Copy + Send 
     /// `max_shard_edges` so band density matches the actual edge
     /// count.
     ///
-    /// There is intentionally no default implementation: every
-    /// [`ShardEdge`] must make a conscious decision about how it
-    /// handles correlated builds, since the regular formulas were
-    /// tuned for the non-correlated case.
+    /// The default implementation fails at compile time: every
+    /// [`ShardEdge`] used with [`CompVFunc`] must override this
+    /// method.
     ///
     /// [`set_up_graphs`]: ShardEdge::set_up_graphs
+    /// [`CompVFunc`]: crate::func::CompVFunc
     fn set_up_correlated_graphs(
         &mut self,
-        num_keys: usize,
-        max_shard_keys: usize,
-        max_shard_edges: usize,
-    ) -> (f64, bool);
+        _num_keys: usize,
+        _max_shard_keys: usize,
+        _max_shard_edges: usize,
+    ) -> (f64, bool) {
+        const {
+            assert!(
+                align_of::<Self>() == 0,
+                "set_up_correlated_graphs must be implemented for use with CompVFunc"
+            );
+        }
+        unreachable!()
+    }
 
     /// Returns the number of high bits used for sharding.
     fn shard_high_bits(&self) -> u32;
@@ -725,8 +733,11 @@ mod fuse {
         fn c(arity: usize, n: usize) -> f64 {
             match arity {
                 3 => {
-                    debug_assert!(n > 2 * Self::HALF_MAX_LIN_SHARD_SIZE);
-                    if n <= Self::MIN_FUSE_SHARD / 2 {
+                    // debug_assert!(n > 2 * Self::HALF_MAX_LIN_SHARD_SIZE);
+                    if n <= 2 * Self::HALF_MAX_LIN_SHARD_SIZE {
+                        let n = n.max(2) as f64;
+                        0.875 + 0.25 * (1.0_f64).max((1e6_f64).ln() / n.ln())
+                    } else if n <= Self::MIN_FUSE_SHARD / 2 {
                         1.125
                     } else if n <= Self::MIN_FUSE_SHARD {
                         1.12
@@ -868,57 +879,7 @@ mod fuse {
             (c, lge)
         }
 
-        fn set_up_correlated_graphs(
-            &mut self,
-            num_keys: usize,
-            max_shard_keys: usize,
-            max_shard_edges: usize,
-        ) -> (f64, bool) {
-            // Correlated multi-edge variant of `set_up_graphs`.
-            //
-            // Mirrors the same regime structure (regime selected
-            // by total `num_keys`) but feeds the formulas
-            // differently:
-            //
-            // * `c` is keyed at `max_shard_keys` (Variant C in the
-            //   `corr_peel_sweep` analysis): correlated multi-edges
-            //   need more vertex headroom than independent edges,
-            //   so we use the (larger) `c` value the formula
-            //   would assign to a key-count-sized graph.
-            //
-            // * `log2_seg_size` is keyed at `max_shard_edges`,
-            //   matching the actual band density.
-            //
-            // * `+0.005` safety margin on top of `c`. Validated
-            //   against the `corr_peel_sweep` matrix on uniform
-            //   distributions up to w=57 and `n` up to 100M.
-            //
-            // The LGE regimes (n ≤ 100, n ≤ MAX_LIN_SIZE) are kept
-            // as-is — the existing constants in those regimes are
-            // designed for LGE to fix the unpeelable core.
-            let (c, lge);
-            (c, self.log2_seg_size, lge) = if num_keys <= 100 {
-                (1.23, Self::lin_log2_seg_size(3, max_shard_edges), true)
-            } else if num_keys <= Self::MAX_LIN_SIZE {
-                (1.125, Self::lin_log2_seg_size(3, max_shard_edges), true)
-            } else {
-                (
-                    Self::c(3, max_shard_keys) + 0.005,
-                    Self::log2_seg_size(3, max_shard_edges),
-                    false,
-                )
-            };
-
-            self.l = ((c * max_shard_edges as f64).ceil() as usize)
-                .div_ceil(1 << self.log2_seg_size)
-                .saturating_sub(2)
-                .max(1)
-                .try_into()
-                .unwrap();
-
-            assert!(((self.l as usize + 2) << self.log2_seg_size) - 1 <= u32::MAX as usize);
-            (c, lge)
-        }
+        // set_up_correlated_graphs temporarily removed for const-guard test
 
         #[inline(always)]
         fn shard_high_bits(&self) -> u32 {
@@ -1640,24 +1601,6 @@ mod fuse {
             (n.log2() - subexpr / (2.0_f64.ln() * lambert_w0(subexpr))).floor() as u32
         }
 
-        /// Correlated multi-edge variant of [`Self::c`]: same
-        /// formula plus a `+0.005` safety margin (see
-        /// `corr_peel_sweep` validation).
-        fn corr_c(n: usize) -> f64 {
-            Self::c(n) + 0.005
-        }
-
-        /// Correlated multi-edge variant of [`Self::log2_seg_size`].
-        ///
-        /// Reuses [`FuseLge3Shards::log2_seg_size`] which switches
-        /// to the ε-cost-sharding-paper formula at 20M edges (vs
-        /// our 100M `LARGE_SHARD_THRESHOLD`). Slightly larger
-        /// segments in the [20M, 100M] range absorb the multi-edge
-        /// correlation without changing the non-correlated
-        /// `log2_seg_size` (which stays tuned for cache locality).
-        fn corr_log2_seg_size(n: usize) -> u32 {
-            FuseLge3Shards::log2_seg_size(3, n)
-        }
     }
 
     impl ShardEdge<[u64; 2], 3> for Fuse3Shards {
@@ -1699,11 +1642,11 @@ mod fuse {
             max_shard_edges: usize,
         ) -> (f64, bool) {
             // Correlated multi-edge variant: c keyed at
-            // max_shard_keys (with +0.005), seg_size from
-            // `corr_log2_seg_size` keyed at max_shard_edges. l is
-            // computed from the new c and the actual edge count.
-            let c = Self::corr_c(max_shard_keys);
-            self.log2_seg_size = Self::corr_log2_seg_size(max_shard_edges);
+            // max_shard_keys, log2_seg_size keyed at
+            // max_shard_edges. l is computed from c and the
+            // actual edge count.
+            let c = Self::c(max_shard_keys);
+            self.log2_seg_size = Self::log2_seg_size(max_shard_edges);
 
             self.l = ((c * max_shard_edges as f64).ceil() as usize)
                 .div_ceil(1 << self.log2_seg_size)
@@ -1825,16 +1768,6 @@ mod fuse {
 
         fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
             self.0.set_up_graphs(n, max_shard)
-        }
-
-        fn set_up_correlated_graphs(
-            &mut self,
-            num_keys: usize,
-            max_shard_keys: usize,
-            max_shard_edges: usize,
-        ) -> (f64, bool) {
-            self.0
-                .set_up_correlated_graphs(num_keys, max_shard_keys, max_shard_edges)
         }
 
         #[inline(always)]

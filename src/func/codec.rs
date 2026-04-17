@@ -198,39 +198,54 @@ impl<W: PrimitiveInteger> Decoder<W> for ZeroDecoder {
 #[derive(Debug, Clone, Copy)]
 pub struct Huffman {
     /// Hard cap on the number of distinct codeword lengths kept in
-    /// the decoding table. The default is `usize::MAX` (no cap).
+    /// the decoding table. Symbols whose codeword length exceeds
+    /// this limit are encoded via the escape codeword followed by
+    /// a literal. Default: 20.
     pub max_decoding_table_length: usize,
     /// Cumulative-entropy fraction threshold: the table is cut once
     /// the cumulative bit length of the codewords kept exceeds this
-    /// fraction of the overall bit length. The default is `1.0`
-    /// (no cut).
+    /// fraction of the overall bit length. Symbols beyond the cut
+    /// are diverted to the escape codeword. Default: 0.9.
     pub entropy_threshold: f64,
 }
 
 impl Default for Huffman {
     fn default() -> Self {
         Self {
-            max_decoding_table_length: usize::MAX,
-            entropy_threshold: 1.0,
+            max_decoding_table_length: 20,
+            entropy_threshold: 0.9,
         }
     }
 }
 
 impl Huffman {
-    /// New unlimited Huffman codec (table grows as needed, no escapes).
+    /// New Huffman codec with sensible defaults (table length 20,
+    /// entropy threshold 0.9).
     pub const fn new() -> Self {
+        Self {
+            max_decoding_table_length: 20,
+            entropy_threshold: 0.9,
+        }
+    }
+
+    /// Unlimited Huffman codec: no cap on codeword lengths, no
+    /// entropy cut. All symbols get a codeword; no escape mechanism
+    /// is used. This can produce very long codewords for skewed
+    /// distributions.
+    pub const fn unlimited() -> Self {
         Self {
             max_decoding_table_length: usize::MAX,
             entropy_threshold: 1.0,
         }
     }
 
-    /// Length-limited Huffman codec.
+    /// Huffman codec with custom limits.
     ///
-    /// `max_decoding_table_length` caps the number of distinct codeword
-    /// lengths in the canonical decoding table; `entropy_threshold` is
-    /// the cumulative-entropy fraction beyond which infrequent symbols
-    /// are diverted to the escape codeword. Reasonable values are 20 and 0.9.
+    /// `max_decoding_table_length` caps the number of distinct
+    /// codeword lengths in the canonical decoding table;
+    /// `entropy_threshold` is the cumulative-entropy fraction
+    /// beyond which infrequent symbols are diverted to the escape
+    /// codeword.
     pub const fn length_limited(max_decoding_table_length: usize, entropy_threshold: f64) -> Self {
         Self {
             max_decoding_table_length,
@@ -670,6 +685,28 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
         }
         accumulated += length[cutpoint] as u64 * frequencies[&symbol[cutpoint]] as u64;
         cutpoint += 1;
+    }
+
+    // If escaping would produce codewords wider than 62 bits
+    // (escape_length + literal_width > 62), extend the cutpoint to
+    // keep all symbols — the decoder uses a u64 lookup window and
+    // cannot handle wider encodings.
+    if cutpoint < size {
+        let escape_len = length[cutpoint.saturating_sub(1).max(0)];
+        let max_escaped_bits = symbol[cutpoint..]
+            .iter()
+            .map(|&s| {
+                if s == W::default() {
+                    0
+                } else {
+                    W::BITS - s.leading_zeros()
+                }
+            })
+            .max()
+            .unwrap_or(0);
+        if escape_len + max_escaped_bits > 62 {
+            cutpoint = size;
+        }
     }
 
     // Assign canonical codewords for the kept symbols.

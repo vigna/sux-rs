@@ -295,7 +295,7 @@ fn test_i8_with_negatives_and_escapes() {
                 -1i8 // dominant value
             } else {
                 // Rare values spanning the full i8 range.
-                -128 + (i % 256) as i8
+                (i % 256) as i8
             }
         })
         .collect();
