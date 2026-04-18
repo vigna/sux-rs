@@ -94,13 +94,8 @@ use std::marker::PhantomData;
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct CompVFunc<
-    K: ?Sized,
-    W = usize,
-    D = BitVec<Box<[usize]>>,
-    S = [u64; 2],
-    E = Fuse3Shards,
-> {
+pub struct CompVFunc<K: ?Sized, W = usize, D = BitVec<Box<[usize]>>, S = [u64; 2], E = Fuse3Shards>
+{
     /// The shard/local-hash logic shared with [`VFunc`].
     ///
     /// [`VFunc`]: crate::func::VFunc
@@ -584,7 +579,7 @@ where
         // `max_shard_edges`. CompVFunc never uses LGE.
         let (c, lge) =
             vb.shard_edge
-                .set_up_correlated_graphs(total_edges, max_shard_keys, max_shard_edges);
+                .set_up_corr_graphs(total_edges, max_shard_keys, max_shard_edges);
         assert!(!lge, "CompVFunc does not support LGE");
         vb.c = c;
         vb.lge = false;
@@ -853,9 +848,7 @@ where
         return Ok(empty_comp_vfunc::<K, W, S, E>(coder, builder.eps));
     }
 
-    let mut builder = builder
-        .expected_num_keys(n)
-        .shard_size_hint(total_edges);
+    let mut builder = builder.expected_num_keys(n).shard_size_hint(total_edges);
     let mut build_fn = make_build_fn::<W, S, E, P>(&coder);
     let ((data, seed_used, shard_size), _keys) =
         builder.try_populate_and_build(keys, values, &mut build_fn, pl, ())?;
@@ -896,9 +889,7 @@ where
         .iter()
         .map(|v| coder.codeword_length(*v) as usize)
         .sum();
-    let mut builder = builder
-        .expected_num_keys(n)
-        .shard_size_hint(total_edges);
+    let mut builder = builder.expected_num_keys(n).shard_size_hint(total_edges);
     let mut build_fn = make_build_fn::<W, S, E, P>(&coder);
     let (data, seed_used, shard_size) =
         builder.try_par_populate_and_build(keys, &|i: usize| values[i], &mut build_fn, pl, ())?;

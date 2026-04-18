@@ -186,32 +186,30 @@ pub trait ShardEdge<S, const K: usize>: Default + Display + Clone + Copy + Send 
     /// [`set_up_shards`]: ShardEdge::set_up_shards
     fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool);
 
-    /// Sets up the edge logic for a *correlated multi-edge* build,
-    /// where `num_keys` distinct keys produce `num_keys × ε > num_keys`
-    /// total edges (each key contributing several correlated edges,
-    /// as in [`CompVFunc`](crate::func::CompVFunc)).
+    /// Sets up the edge logic for a *correlated multi-edge* build, where `each
+    /// key contributes several correlated edges, as in
+    /// [`CompVFunc`](crate::func::CompVFunc)).
+    ///
+    /// # Arguments
     ///
     /// * `num_keys` — total number of keys (regime selector,
     ///   analogous to `n` in [`set_up_graphs`]).
+    ///
     /// * `max_shard_keys` — largest per-shard key count.
+    ///
     /// * `max_shard_edges` — largest per-shard edge count.
     ///
-    /// Returns `(c, lge)` analogously to [`set_up_graphs`] and
-    /// stores per-shard layout in `self`. Implementors are expected
-    /// to apply correlated-graph-specific tweaks on top of the
-    /// regular non-correlated formulas: typically, key `c` at
-    /// `max_shard_keys` to give the multi-edge layout enough vertex
-    /// headroom, while keying the segment-size formula at
-    /// `max_shard_edges` so band density matches the actual edge
-    /// count.
+    /// Returns `(c, lge)` analogously to [`set_up_graphs`] and stores per-shard
+    /// layout in `self`.
     ///
-    /// The default implementation fails at compile time: every
-    /// [`ShardEdge`] used with [`CompVFunc`] must override this
-    /// method.
+    /// The default implementation fails at compile time: every [`ShardEdge`]
+    /// used with [`CompVFunc`] must override this method. Implementing types
+    /// that do not support correlated multi-edge builds are in this way automatically
+    /// prevented to be used as type parameters.
     ///
     /// [`set_up_graphs`]: ShardEdge::set_up_graphs
     /// [`CompVFunc`]: crate::func::CompVFunc
-    fn set_up_correlated_graphs(
+    fn set_up_corr_graphs(
         &mut self,
         _num_keys: usize,
         _max_shard_keys: usize,
@@ -219,8 +217,10 @@ pub trait ShardEdge<S, const K: usize>: Default + Display + Clone + Copy + Send 
     ) -> (f64, bool) {
         const {
             assert!(
+                // This useless call forces compilation of this assert at
+                // monomorphization time
                 align_of::<Self>() == 0,
-                "set_up_correlated_graphs must be implemented for use with CompVFunc"
+                "set_up_corr_graphs must be implemented for use with CompVFunc"
             );
         }
         unreachable!()
@@ -445,7 +445,7 @@ mod mwhc {
             (1.23, false)
         }
 
-        fn set_up_correlated_graphs(
+        fn set_up_corr_graphs(
             &mut self,
             _num_keys: usize,
             _max_shard_keys: usize,
@@ -543,13 +543,13 @@ mod mwhc {
             (1.23, false)
         }
 
-        fn set_up_correlated_graphs(
+        fn set_up_corr_graphs(
             &mut self,
             _num_keys: usize,
             _max_shard_keys: usize,
             max_shard_edges: usize,
         ) -> (f64, bool) {
-            // See `Mwhc3Shards::set_up_correlated_graphs`: MWHC has
+            // See `Mwhc3Shards::set_up_corr_graphs`: MWHC has
             // no per-key correlation structure, so multi-edges look
             // identical to independent edges.
             self.set_up_graphs(max_shard_edges, 0)
@@ -879,7 +879,7 @@ mod fuse {
             (c, lge)
         }
 
-        // set_up_correlated_graphs temporarily removed for const-guard test
+        // set_up_corr_graphs temporarily removed for const-guard test
 
         #[inline(always)]
         fn shard_high_bits(&self) -> u32 {
@@ -1031,48 +1031,6 @@ mod fuse {
 
             (c, lge)
         }
-
-        /// Correlated multi-edge variant of [`Self::set_up_graphs`].
-        ///
-        /// See `FuseLge3Shards::set_up_correlated_graphs` for the
-        /// design rationale: c keyed at `num_keys` (with a +0.005
-        /// safety margin), segment size keyed at `num_edges`. The
-        /// LGE regime constants are unchanged.
-        fn set_up_correlated_graphs(
-            &mut self,
-            num_keys: usize,
-            num_edges: usize,
-            max_vertices: u128,
-        ) -> (f64, bool) {
-            let (c, lge);
-
-            (c, self.log2_seg_size, lge) = if num_keys <= 100 {
-                (1.23, FuseLge3Shards::lin_log2_seg_size(3, num_edges), true)
-            } else if num_keys <= 2 * FuseLge3Shards::HALF_MAX_LIN_SHARD_SIZE {
-                (1.13, FuseLge3Shards::lin_log2_seg_size(3, num_edges), true)
-            } else {
-                (
-                    Self::c(3, num_keys) + 0.005,
-                    Self::log2_seg_size(3, num_edges).min(18),
-                    false,
-                )
-            };
-
-            let num_vertices = (c * num_edges as f64).ceil() as u128;
-            assert!(
-                num_vertices <= max_vertices,
-                "FuseLge3NoShards does not support more than {max_vertices} vertices, but you are requesting {num_vertices}"
-            );
-
-            self.l = num_vertices
-                .div_ceil(1 << self.log2_seg_size)
-                .saturating_sub(2)
-                .max(1)
-                .try_into()
-                .unwrap();
-
-            (c, lge)
-        }
     }
 
     impl ShardEdge<[u64; 2], 3> for FuseLge3NoShards {
@@ -1084,22 +1042,6 @@ mod fuse {
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
             FuseLge3NoShards::set_up_graphs(self, n, Self::Vertex::MAX as u128 + 1)
-        }
-
-        fn set_up_correlated_graphs(
-            &mut self,
-            num_keys: usize,
-            _max_shard_keys: usize,
-            max_shard_edges: usize,
-        ) -> (f64, bool) {
-            // No sharding: max_shard_keys == num_keys and
-            // max_shard_edges == num_edges.
-            FuseLge3NoShards::set_up_correlated_graphs(
-                self,
-                num_keys,
-                max_shard_edges,
-                Self::Vertex::MAX as u128 + 1,
-            )
         }
 
         #[inline(always)]
@@ -1156,20 +1098,6 @@ mod fuse {
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
             FuseLge3NoShards::set_up_graphs(self, n, Self::Vertex::MAX as u128 + 1)
-        }
-
-        fn set_up_correlated_graphs(
-            &mut self,
-            num_keys: usize,
-            _max_shard_keys: usize,
-            max_shard_edges: usize,
-        ) -> (f64, bool) {
-            FuseLge3NoShards::set_up_correlated_graphs(
-                self,
-                num_keys,
-                max_shard_edges,
-                Self::Vertex::MAX as u128 + 1,
-            )
         }
 
         #[inline(always)]
@@ -1274,27 +1202,6 @@ mod fuse {
             let n = n.max(1) as f64;
             (n.ln() / (3.33_f64).ln() + 2.25).floor() as u32
         }
-
-        /// Correlated multi-edge variant of [`Self::c`]: the same
-        /// formula plus a `+0.005` safety margin tuned via the
-        /// `corr_peel_sweep` validation matrix.
-        fn corr_c(n: usize) -> f64 {
-            Self::c(n) + 0.005
-        }
-
-        /// Correlated multi-edge variant of [`Self::log2_seg_size`].
-        ///
-        /// Reuses [`FuseLge3Shards::log2_seg_size`] which switches
-        /// to the ε-cost-sharding-paper segment formula at 20M
-        /// edges (vs the standard formula's 100M threshold here in
-        /// `Fuse3`). This gives correlated builds slightly larger
-        /// segments in the [20M, 100M] range, just enough headroom
-        /// to absorb the multi-edge correlation without changing
-        /// the non-correlated `log2_seg_size` (which stays tuned
-        /// for the cache-locality optimum at standard builds).
-        fn corr_log2_seg_size(n: usize) -> u32 {
-            FuseLge3Shards::log2_seg_size(3, n)
-        }
     }
 
     impl ShardEdge<[u64; 1], 3> for Fuse3NoShards {
@@ -1324,18 +1231,14 @@ mod fuse {
             (c, false) // false = no Gaussian elimination
         }
 
-        fn set_up_correlated_graphs(
+        fn set_up_corr_graphs(
             &mut self,
-            num_keys: usize,
-            _max_shard_keys: usize,
+            _num_keys: usize,
+            max_shard_keys: usize,
             max_shard_edges: usize,
         ) -> (f64, bool) {
-            // Correlated multi-edge variant: c keyed at num_keys
-            // (with +0.005), seg_size from `corr_log2_seg_size`
-            // (which uses FuseLge3's 20M-threshold formula). No
-            // sharding here, so per-shard maxima equal the totals.
-            let c = Self::corr_c(num_keys);
-            self.log2_seg_size = Fuse3NoShards::corr_log2_seg_size(max_shard_edges);
+            let c = Self::c(max_shard_keys);
+            self.log2_seg_size = Self::log2_seg_size(max_shard_edges);
             let num_vertices = (c * max_shard_edges as f64).ceil() as u128;
             assert!(
                 num_vertices <= Self::Vertex::MAX as u128 + 1,
@@ -1425,14 +1328,14 @@ mod fuse {
             (c, false)
         }
 
-        fn set_up_correlated_graphs(
+        fn set_up_corr_graphs(
             &mut self,
-            num_keys: usize,
-            _max_shard_keys: usize,
+            _num_keys: usize,
+            max_shard_keys: usize,
             max_shard_edges: usize,
         ) -> (f64, bool) {
-            let c = Self::corr_c(num_keys);
-            self.log2_seg_size = Fuse3NoShards::corr_log2_seg_size(max_shard_edges);
+            let c = Self::c(max_shard_keys);
+            self.log2_seg_size = Self::log2_seg_size(max_shard_edges);
             let num_vertices = (c * max_shard_edges as f64).ceil() as u128;
             assert!(
                 num_vertices <= Self::Vertex::MAX as u128 + 1,
@@ -1567,6 +1470,11 @@ mod fuse {
 
         /// Threshold above which the ε-cost sharding segment size formula
         /// is used instead of the standard fuse formula.
+        ///
+        /// This switch is necessary because the standard fuse formula provides
+        /// smaller segments which measurably reduce construction time and query
+        /// time. However, at large sizes the segments are too small to keep the
+        /// probability of duplicate edges low.
         const LARGE_SHARD_THRESHOLD: usize = 100_000_000;
 
         /// Returns the log₂ of segment size for fuse 3-hypergraphs.
@@ -1600,7 +1508,6 @@ mod fuse {
                 (1. / (2. * Self::A)) * (-n / (2. * c * (1. - eta).ln()) - 2. * Self::B).log2();
             (n.log2() - subexpr / (2.0_f64.ln() * lambert_w0(subexpr))).floor() as u32
         }
-
     }
 
     impl ShardEdge<[u64; 2], 3> for Fuse3Shards {
@@ -1635,7 +1542,7 @@ mod fuse {
             (c, false) // false = no Gaussian elimination
         }
 
-        fn set_up_correlated_graphs(
+        fn set_up_corr_graphs(
             &mut self,
             _num_keys: usize,
             max_shard_keys: usize,

@@ -8,10 +8,10 @@
 //! and Zipf(1, 1_000_000), logging shard/entropy/overhead details.
 
 use dsi_progress_logger::{ProgressLog, ProgressLogger};
+use mem_dbg::{MemSize, SizeFlags};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::time::Instant;
-use mem_dbg::{MemSize, SizeFlags};
 use sux::func::codec::Huffman;
 use sux::func::{CompVFunc, VBuilder};
 
@@ -59,10 +59,13 @@ fn run(n: usize, values: &[usize]) {
             let bits_per_key = bits as f64 / n as f64;
             let entropy: f64 = values[..n]
                 .iter()
-                .fold(std::collections::HashMap::<usize, usize>::new(), |mut m, &v| {
-                    *m.entry(v).or_default() += 1;
-                    m
-                })
+                .fold(
+                    std::collections::HashMap::<usize, usize>::new(),
+                    |mut m, &v| {
+                        *m.entry(v).or_default() += 1;
+                        m
+                    },
+                )
                 .values()
                 .map(|&c| {
                     let p = c as f64 / n as f64;
@@ -93,10 +96,14 @@ fn main() {
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
         .init();
-    let max_n = 10_000_000;
-    let sizes = [
-        10, 100, 1000, 5000, 10000, 50000, 80000, 90000, 99000, 100000, 101000, 110000, 150000,
-        200000, 400000, 800000, 1000000, 10000000,
+    let max_n = 10_000_000_000;
+    let sizes: Vec<usize> = vec![
+        100_000_000,
+        200_000_000,
+        500_000_000,
+        1_000_000_000,
+        2_000_000_000,
+        10_000_000_000,
     ];
 
     // ── Uniform(0..256) ──
