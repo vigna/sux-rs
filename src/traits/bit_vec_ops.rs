@@ -65,7 +65,7 @@ macro_rules! panic_if_out_of_bounds {
 /// [`AsRef<[W]>`](core::convert::AsRef) to provide word-based access to a bit
 /// vector on words of type `W`.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait BitLength {
     /// Returns a length in bits.
     fn len(&self) -> usize;

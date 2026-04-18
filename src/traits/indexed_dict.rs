@@ -60,7 +60,7 @@ use crate::{debug_assert_bounds, panic_if_out_of_bounds};
 
 /// The types of the dictionary.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait Types {
     type Input: for<'a> PartialEq<Self::Output<'a>> + PartialEq + ?Sized;
     type Output<'a>: PartialEq<Self::Input> + PartialEq;
@@ -90,7 +90,7 @@ pub trait Types {
 /// [`EliasFano`]: crate::dict::elias_fano::EliasFano
 /// [module documentation]: crate::traits::indexed_dict
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait IndexedSeq: Types {
     /// Returns the value at the specified index.
     ///
@@ -155,7 +155,7 @@ pub trait IndexedSeq: Types {
 
 /// Access by value to the dictionary.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait IndexedDict: Types {
     /// Returns the index of the given value if the dictionary contains it and
     /// `None` otherwise.
@@ -287,7 +287,7 @@ where
 }
 
 /// Successor computation for dictionaries whose values are monotonically increasing.
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait Succ: SuccUnchecked
 where
     Self::Input: for<'a> PartialOrd<Self::Output<'a>> + PartialOrd,
@@ -525,7 +525,7 @@ where
 }
 
 /// Predecessor computation for dictionaries whose values are monotonically increasing.
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait Pred: PredUnchecked
 where
     Self::Input: for<'a> PartialOrd<Self::Output<'a>> + PartialOrd,

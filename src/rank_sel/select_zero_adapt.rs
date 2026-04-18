@@ -275,6 +275,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     /// See [`SelectAdapt::with_inv`].
     ///
     /// [`SelectAdapt::with_inv`]: super::SelectAdapt::with_inv
+    #[must_use]
     pub fn with_inv(
         bits: B,
         log2_ones_per_inventory: usize,
@@ -293,6 +294,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     /// See [`SelectAdapt::with_overhead`].
     ///
     /// [`SelectAdapt::with_overhead`]: super::SelectAdapt::with_overhead
+    #[must_use]
     pub fn with_overhead(
         bits: B,
         overhead_percentage: f64,

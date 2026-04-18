@@ -32,7 +32,7 @@ use crate::traits::bit_vec_ops::{BitLength, ambassador_impl_BitLength};
 /// version, use [`NumBits`]. If you need to cache the result
 /// of these methods, you can use [`AddNumBits`].
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait BitCount: BitLength {
     /// Returns the number of ones in the underlying bit vector,
     /// with a possibly expensive computation; see [`NumBits::num_ones`]
@@ -57,7 +57,7 @@ pub trait BitCount: BitLength {
 /// If you need to implement this trait on a structure that already
 /// implements [`BitCount`], you can use [`AddNumBits`].
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait NumBits: BitLength {
     /// Returns the number of ones in the underlying bit vector
     /// in constant time. If you can be content with a potentially
@@ -87,7 +87,7 @@ pub trait NumBits: BitLength {
 /// # }
 /// ```
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait Rank: BitLength + NumBits + RankUnchecked {
     /// Returns the number of ones preceding the specified position.
     ///
@@ -114,7 +114,7 @@ pub trait Rank: BitLength + NumBits + RankUnchecked {
 ///
 /// [`rank_unchecked`]: RankUnchecked::rank_unchecked
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait RankUnchecked {
     /// Returns the number of ones preceding the specified position.
     ///
@@ -177,7 +177,7 @@ pub trait RankUnchecked {
 ///
 /// Note that this is just an extension trait for [`Rank`].
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait RankZero: Rank {
     /// Returns the number of zeros preceding the specified position.
     ///
@@ -216,7 +216,7 @@ pub trait RankZero: Rank {
 ///
 /// If the bound is not known at compile time, pass `usize::MAX` to fall back to
 /// an unbounded scan.
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait RankHinted {
     /// Returns the number of ones preceding the specified position,
     /// provided a preceding position and its associated rank.
@@ -289,7 +289,7 @@ impl<T: RankHinted + ?Sized> RankHinted for Box<T> {
 ///
 /// [`select_unchecked`]: SelectUnchecked::select_unchecked
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait SelectUnchecked {
     /// Returns the position of the one of given rank.
     ///
@@ -314,7 +314,7 @@ pub trait SelectUnchecked {
 /// assert_eq!(sel.select(5), None);
 /// ```
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait Select: SelectUnchecked + NumBits {
     /// Returns the position of the one of given rank, or `None` if no such
     /// bit exists.
@@ -329,7 +329,7 @@ pub trait Select: SelectUnchecked + NumBits {
 
 /// Selection of zeros over a bit vector without bound checks.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait SelectZeroUnchecked {
     /// Returns the position of the zero of given rank.
     ///
@@ -355,7 +355,7 @@ pub trait SelectZeroUnchecked {
 /// # }
 /// ```
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait SelectZero: SelectZeroUnchecked + NumBits {
     /// Returns the position of the zero of given rank, or `None` if no such
     /// bit exists.
@@ -379,7 +379,7 @@ pub trait SelectZero: SelectZeroUnchecked + NumBits {
 /// selection), pass `usize::MAX` to fall back to an unbounded scan.
 ///
 /// [`SelectAdapt`]: crate::rank_sel::SelectAdapt
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait SelectHinted {
     /// Selects the one of given rank, provided the position of a preceding one
     /// and its rank.
@@ -446,7 +446,7 @@ impl<T: SelectHinted + ?Sized> SelectHinted for Box<T> {
 /// The const parameter `WORDS_PER_SUBBLOCK` bounds the maximum number of words
 /// scanned from `hint_pos`. If the bound is not known (as it is typical in
 /// selection), pass `usize::MAX` to fall back to an unbounded scan.
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait SelectZeroHinted {
     /// Selects the zero of given rank, provided the position of a preceding zero
     /// and its rank.

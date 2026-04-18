@@ -633,6 +633,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     ///
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
     /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
+    #[must_use]
     pub fn with_inv(
         bits: B,
         log2_ones_per_inventory: usize,
@@ -683,6 +684,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
     /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit), or if
     /// `overhead_percentage` is not positive.
+    #[must_use]
     pub fn with_overhead(
         bits: B,
         overhead_percentage: f64,

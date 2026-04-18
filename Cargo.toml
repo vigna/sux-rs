@@ -33,7 +33,8 @@ rdst = "0.20.12"
 mem_dbg = ">=0.4.1"
 rayon = { version = "1.8.1", optional = true }
 env_logger = { version = "0.11.0" }
-ambassador = { version = "0.5.0" }
+#ambassador = { version = "0.5.0" }
+ambassador = { git = "https://github.com/vigna/ambassador.git" }
 impl-tools = "0.11.2"
 clap = { version = "4.4.18", features = ["derive", "wrap_help"], optional = true }
 crossbeam-channel = "0.5.14"

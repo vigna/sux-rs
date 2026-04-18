@@ -60,7 +60,7 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 
 /// Common method for [`BitFieldSlice`], [`BitFieldSliceMut`], and
 /// [`AtomicBitFieldSlice`].
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait BitWidth {
     /// Returns the bit width of the slice.
@@ -75,7 +75,7 @@ pub trait BitWidth {
 /// it provides the method [`as_slice`] to access the backend of the slice.
 ///
 /// [`as_slice`]: BitFieldSlice::as_slice
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 pub trait BitFieldSlice: SliceByValue + BitWidth {
     /// Returns the backend of the slice as a slice of `Self::Value`.

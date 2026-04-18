@@ -396,7 +396,7 @@ impl<
         self.n
     }
 
-    #[inline(always)]
+    #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> V {
         unsafe {
             let high_bits = V::as_from(self.high_bits.select_unchecked(index) - index);
@@ -424,6 +424,7 @@ impl<
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = V>,
 {
+    #[inline]
     fn index_of(&self, value: impl Borrow<Self::Input>) -> Option<usize> {
         let value = *value.borrow();
         if value > self.u {
@@ -483,7 +484,7 @@ where
     for<'b> &'b L: IntoUncheckedIterator<Item = V>,
 {
     /// Returns a forward iterator over the values of the sequence.
-    #[inline(always)]
+    #[inline]
     pub fn iter(&self) -> EliasFanoIter<'_, V, H, L> {
         EliasFanoIter::new(self)
     }
@@ -500,6 +501,7 @@ where
     /// This method does not require [`SelectUnchecked`] on the high bits,
     /// as it finds the last word by scanning from the end of the high-bits
     /// array.
+    #[inline]
     pub fn iter_back(&self) -> EliasFanoBackIter<'_, V, H, L> {
         let high = self.high_bits.as_ref();
         let (word_idx, window) = if high.is_empty() {
@@ -599,7 +601,7 @@ impl<
 {
     type IntoIterBidiFrom = EliasFanoBidiIter<'a, V, H, L>;
 
-    #[inline(always)]
+    #[inline]
     fn into_iter_bidi_from(self, from: usize) -> EliasFanoBidiIter<'a, V, H, L> {
         if from > self.n {
             panic!("Index out of bounds: {} > {}", from, self.n);
@@ -707,6 +709,7 @@ where
     where
         Self: 'a;
 
+    #[inline]
     unsafe fn succ_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
@@ -754,6 +757,7 @@ where
         }
     }
 
+    #[inline]
     unsafe fn iter_from_succ_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
@@ -803,6 +807,7 @@ where
         }
     }
 
+    #[inline]
     unsafe fn iter_bidi_from_succ_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
@@ -948,6 +953,7 @@ where
     where
         Self: 'a;
 
+    #[inline]
     unsafe fn pred_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
@@ -1041,6 +1047,7 @@ where
         }
     }
 
+    #[inline]
     unsafe fn iter_back_from_pred_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
@@ -1113,6 +1120,7 @@ where
         }
     }
 
+    #[inline]
     unsafe fn iter_bidi_from_pred_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
@@ -1283,9 +1291,11 @@ impl<
 {
     type Value = V;
 
+    #[inline(always)]
     fn len(&self) -> usize {
         self.n
     }
+    #[inline(always)]
     unsafe fn get_value_unchecked(&self, index: usize) -> Self::Value {
         unsafe { <Self as IndexedSeq>::get_unchecked(self, index) }
     }
@@ -1312,6 +1322,7 @@ impl<
 where
     for<'c> &'c L: IntoUncheckedIterator<Item = V>,
 {
+    #[inline(always)]
     fn iter_value(&self) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
         self.iter_from(0)
     }
@@ -1338,6 +1349,7 @@ impl<
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = V>,
 {
+    #[inline(always)]
     fn iter_value_from(
         &self,
         from: usize,
@@ -1369,6 +1381,7 @@ impl<
 where
     for<'c> &'c L: IntoUncheckedIterator<Item = V>,
 {
+    #[inline(always)]
     fn iter_value(&self) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
         self.slice.iter_from(0)
     }
@@ -1397,6 +1410,7 @@ impl<
 where
     for<'c> &'c L: IntoUncheckedIterator<Item = V>,
 {
+    #[inline(always)]
     fn iter_value_from(
         &self,
         from: usize,
@@ -1430,6 +1444,7 @@ impl<'a, V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = V>,
 {
+    #[inline]
     pub fn new(ef: &'a EliasFano<V, H, L>) -> Self {
         let window = if ef.high_bits.as_ref().is_empty() {
             0
@@ -1456,6 +1471,7 @@ impl<
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = V>,
 {
+    #[inline]
     pub fn new_from(ef: &'a EliasFano<V, H, L>, start_index: usize) -> Self {
         if start_index > ef.len() {
             panic!("Index out of bounds: {} > {}", start_index, ef.len());
@@ -1501,7 +1517,7 @@ where
 {
     type Item = V;
 
-    #[inline(always)]
+    #[inline]
     unsafe fn next_unchecked(&mut self) -> V {
         // find the next word with ones
         while self.window == 0 {
@@ -1529,7 +1545,7 @@ where
 {
     type Item = V;
 
-    #[inline(always)]
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.index >= self.ef.len() {
             return None;
@@ -1537,17 +1553,15 @@ where
         Some(unsafe { self.next_unchecked() })
     }
 
-    #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len(), Some(self.len()))
     }
 
-    #[inline(always)]
     fn count(self) -> usize {
         self.ef.len() - self.index
     }
 
-    #[inline(always)]
+    #[inline]
     fn last(self) -> Option<Self::Item> {
         if self.index >= self.ef.n {
             return None;
@@ -1566,7 +1580,7 @@ where
         Some(V::as_from(high_bits) << self.ef.l | low)
     }
 
-    #[inline(always)]
+    #[inline]
     fn fold<B, F>(mut self, init: B, mut f: F) -> B
     where
         F: FnMut(B, Self::Item) -> B,
@@ -1611,6 +1625,7 @@ where
     /// in decreasing order. The high-bits window is converted using XOR with
     /// the original word, and the low-bits backward iterator is created from
     /// the current index.
+    #[inline]
     pub fn backward(self) -> EliasFanoBackIter<'a, V, H, L> {
         // When the forward iterator is exhausted (index >= n), the
         // word_idx/window state may not reflect the actual end position
@@ -1675,6 +1690,7 @@ where
     /// onward in increasing order. The high-bits window is converted using
     /// XOR with the original word, and the low-bits forward iterator is
     /// created from the current index.
+    #[inline]
     pub fn forward(self) -> EliasFanoIter<'a, V, H, L> {
         let window = if self.ef.high_bits.as_ref().is_empty() {
             self.window
@@ -1698,7 +1714,7 @@ where
 {
     type Item = V;
 
-    #[inline(always)]
+    #[inline]
     unsafe fn next_unchecked(&mut self) -> V {
         while self.window == 0 {
             self.word_idx -= 1;
@@ -1720,7 +1736,7 @@ where
 {
     type Item = V;
 
-    #[inline(always)]
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.index == 0 {
             return None;
@@ -1728,17 +1744,16 @@ where
         Some(unsafe { self.next_unchecked() })
     }
 
-    #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len(), Some(self.len()))
     }
 
-    #[inline(always)]
+    #[inline]
     fn count(self) -> usize {
         self.index
     }
 
-    #[inline(always)]
+    #[inline]
     fn last(self) -> Option<Self::Item> {
         if self.index == 0 {
             return None;
@@ -1756,7 +1771,7 @@ where
         Some(V::as_from(high_bits) << self.ef.l | low)
     }
 
-    #[inline(always)]
+    #[inline]
     fn fold<B, F>(mut self, init: B, mut f: F) -> B
     where
         F: FnMut(B, Self::Item) -> B,
@@ -1846,7 +1861,7 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
 {
     type Item = V;
 
-    #[inline(always)]
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.index >= self.ef.n {
             return None;
@@ -1865,7 +1880,7 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
         Some((V::as_from(high_bits) << self.ef.l) | low)
     }
 
-    #[inline(always)]
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         let remaining = self.ef.n - self.index;
         (remaining, Some(remaining))
@@ -1876,7 +1891,7 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
         self.ef.n - self.index
     }
 
-    #[inline(always)]
+    #[inline]
     fn last(self) -> Option<Self::Item> {
         if self.index >= self.ef.n {
             return None;
@@ -1895,7 +1910,7 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
         Some((V::as_from(high_bits) << self.ef.l) | low)
     }
 
-    #[inline(always)]
+    #[inline]
     fn fold<B, F>(mut self, init: B, mut f: F) -> B
     where
         F: FnMut(B, Self::Item) -> B,
@@ -1942,7 +1957,7 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
         SwappedIter(self)
     }
 
-    #[inline(always)]
+    #[inline]
     fn prev(&mut self) -> Option<V> {
         if self.index == 0 {
             return None;
@@ -1961,17 +1976,16 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
         Some((V::as_from(high_bits) << self.ef.l) | low)
     }
 
-    #[inline(always)]
     fn prev_size_hint(&self) -> (usize, Option<usize>) {
         (self.index, Some(self.index))
     }
 
-    #[inline(always)]
+    #[inline]
     fn prev_count(self) -> usize {
         self.index
     }
 
-    #[inline(always)]
+    #[inline]
     fn prev_last(self) -> Option<V> {
         if self.index == 0 {
             return None;
@@ -1989,7 +2003,7 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
         Some((V::as_from(high_bits) << self.ef.l) | low)
     }
 
-    #[inline(always)]
+    #[inline]
     fn prev_fold<B, F>(mut self, init: B, mut f: F) -> B
     where
         F: FnMut(B, Self::Item) -> B,
@@ -2134,6 +2148,7 @@ impl<V: Word + PrimitiveNumberAs<u128>> EliasFanoBuilder<V> {
     /// # Panics
     /// May panic if the value is smaller than the last provided
     /// value, or if too many values are provided.
+    #[inline]
     pub fn push(&mut self, value: V) {
         if self.count == self.n {
             panic!("Too many values");
@@ -2153,6 +2168,7 @@ impl<V: Word + PrimitiveNumberAs<u128>> EliasFanoBuilder<V> {
     ///
     /// Values passed to this function must be smaller than or equal to `u` and must be monotone.
     /// Moreover, the function should not be called more than `n` times.
+    #[inline]
     pub unsafe fn push_unchecked(&mut self, value: V) {
         let low = value & ((V::ONE << self.l) - V::ONE);
         self.low_bits.set_value(self.count, low);
@@ -2169,6 +2185,7 @@ impl<V: Word + PrimitiveNumberAs<u128>> EliasFanoBuilder<V> {
     }
 
     /// Returns the number of values added so far.
+    #[inline(always)]
     pub fn count(&self) -> usize {
         self.count
     }
@@ -2334,6 +2351,7 @@ where
     /// - All values must be smaller than or equal to `u`.
     /// - All indices must be smaller than `n`.
     /// - You must call this function exactly `n` times.
+    #[inline]
     pub unsafe fn set(&self, index: usize, value: V)
     where
         V: PrimitiveNumberAs<usize>,

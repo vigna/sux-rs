@@ -13,6 +13,7 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::time::Instant;
 use sux::func::codec::Huffman;
+use sux::func::shard_edge::Fuse3Shards;
 use sux::func::{CompVFunc, VBuilder};
 
 fn zipf_cdf(s: f64, n: usize) -> Vec<f64> {
@@ -42,7 +43,7 @@ fn run(n: usize, values: &[usize]) {
         &keys,
         &values[..n],
         Huffman::new(),
-        VBuilder::default(),
+        VBuilder::<_, _, Fuse3Shards>::default(),
         &mut pl,
     );
     let dt = t0.elapsed();
@@ -96,14 +97,14 @@ fn main() {
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
         .init();
-    let max_n = 10_000_000_000;
+    let max_n = 10_000_000_000_usize;
     let sizes: Vec<usize> = vec![
         100_000_000,
         200_000_000,
         500_000_000,
         1_000_000_000,
         2_000_000_000,
-        10_000_000_000,
+        10_000_000_000_usize,
     ];
 
     // ── Uniform(0..256) ──

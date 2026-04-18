@@ -44,7 +44,7 @@ use std::ops::Index;
 ///
 /// [`SelectSmall`]: crate::rank_sel::SelectSmall
 /// [`SelectZeroSmall`]: crate::rank_sel::SelectZeroSmall
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
     fn upper_counts(&self) -> &[u64];
     fn counts(&self) -> &[Block32Counters<NUM_U32S, COUNTER_WIDTH>];

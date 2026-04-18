@@ -247,6 +247,9 @@ pub enum BuildError {
     /// A value is too large for the specified bit size.
     #[error("Value too large for specified bit size")]
     ValueTooLarge,
+    /// All shards remained unsolvable after multiple attempts.
+    #[error("Unsolvable shard after multiple attempts")]
+    UnsolvableShard,
 }
 
 /// Transient error during the build, leading to trying with a different seed.
@@ -410,6 +413,7 @@ pub(crate) struct RetryState {
     prng: SmallRng,
     dup_count: u32,
     local_dup_count: u32,
+    unsolvable_count: u32,
 }
 
 impl RetryState {
@@ -461,6 +465,11 @@ impl RetryState {
                         Ok(None)
                     }
                     SolveError::UnsolvableShard => {
+                        self.unsolvable_count += 1;
+                        if self.unsolvable_count >= 20 {
+                            pl.error(format_args!("Unsolvable shard after 20 attempts"));
+                            return Err(BuildError::UnsolvableShard.into());
+                        }
                         pl.warn(format_args!(
                             "Unsolvable shard, trying again with a different seed..."
                         ));
@@ -746,6 +755,7 @@ impl<
             prng: SmallRng::seed_from_u64(self.seed),
             dup_count: 0,
             local_dup_count: 0,
+            unsolvable_count: 0,
         }
     }
 
