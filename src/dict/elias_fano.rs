@@ -1018,7 +1018,6 @@ where
         }
 
         let val_low = value & ((V::ONE << self.l) - V::ONE);
-        let mut iter_back = self.low_bits.into_unchecked_iter_back_from(rank_low);
 
         loop {
             if sel_high == 0 {
@@ -1027,7 +1026,6 @@ where
             sel_high -= 1;
             rank_low = rank_low.wrapping_sub(1);
 
-            // Check high bit first: if zero, we've left the bucket — no low bits read needed
             let word_idx = sel_high / (usize::BITS as usize);
             let bit_idx = sel_high % (usize::BITS as usize);
             let high_word = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
@@ -1036,8 +1034,7 @@ where
                 return rank_low.wrapping_add(1);
             }
 
-            // Still in bucket: consecutive backward access, so use iterator
-            let lower_bits = unsafe { iter_back.next_unchecked() };
+            let lower_bits = unsafe { self.low_bits.get_value_unchecked(rank_low) };
             if lower_bits < val_low {
                 return rank_low + 1;
             }
