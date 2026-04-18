@@ -99,6 +99,7 @@ pub trait IndexedSeq: Types {
     /// May panic if the index is not in [0..[len]).
     ///
     /// [len]: IndexedSeq::len
+    #[inline]
     fn get(&self, index: usize) -> Self::Output<'_> {
         panic_if_out_of_bounds!(index, self.len());
         unsafe { self.get_unchecked(index) }
@@ -166,6 +167,7 @@ pub trait IndexedDict: Types {
     /// The default implementation just calls [`index_of`].
     ///
     /// [`index_of`]: IndexedDict::index_of
+    #[inline]
     fn contains(&self, value: impl Borrow<Self::Input>) -> bool {
         self.index_of(value).is_some()
     }
@@ -474,7 +476,7 @@ where
     /// There must be at least one element strictly less than `value`.
     ///
     /// [`pred_unchecked`]: PredUnchecked::pred_unchecked
-    #[inline]
+    #[inline(always)]
     unsafe fn rank_unchecked(&self, value: impl Borrow<Self::Input>) -> usize {
         unsafe { self.pred_unchecked::<true>(value) }.0 + 1
     }
@@ -679,16 +681,19 @@ macro_rules! impl_indexed_seq {
                 self[index]
             }
 
+            #[inline(always)]
             unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
                 debug_assert_bounds!(index, self.len());
                 // SAFETY: the caller must ensure index < self.len()
                 unsafe { *self.get_unchecked(index) }
             }
 
+            #[inline(always)]
             fn len(&self) -> usize {
                 self.len()
             }
 
+            #[inline(always)]
             fn is_empty(&self) -> bool {
                 self.is_empty()
             }
@@ -699,6 +704,7 @@ macro_rules! impl_indexed_seq {
                 self[index]
             }
 
+            #[inline(always)]
             unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
                 use std::ops::Deref;
                 debug_assert_bounds!(index, self.len());
@@ -706,10 +712,12 @@ macro_rules! impl_indexed_seq {
                 unsafe { *self.deref().get_unchecked(index) }
             }
 
+            #[inline(always)]
             fn len(&self) -> usize {
                 self.len()
             }
 
+            #[inline(always)]
             fn is_empty(&self) -> bool {
                 self.is_empty()
             }
@@ -720,16 +728,19 @@ macro_rules! impl_indexed_seq {
                 self[index]
             }
 
+            #[inline(always)]
             unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
                 debug_assert_bounds!(index, self.len());
                 // SAFETY: the caller must ensure index < self.len()
                 unsafe { *self.as_slice().get_unchecked(index) }
             }
 
+            #[inline(always)]
             fn len(&self) -> usize {
                 self.as_slice().len()
             }
 
+            #[inline(always)]
             fn is_empty(&self) -> bool {
                 self.as_slice().is_empty()
             }

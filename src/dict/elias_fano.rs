@@ -396,7 +396,7 @@ impl<
         self.n
     }
 
-    #[inline]
+    #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> V {
         unsafe {
             let high_bits = V::as_from(self.high_bits.select_unchecked(index) - index);
