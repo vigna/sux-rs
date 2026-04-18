@@ -24,21 +24,22 @@ UNIT_TO_NS = {
     "\u00b5s": 1000.0,
     "us": 1000.0,
     "ms": 1_000_000.0,
+    "s": 1_000_000_000.0,
 }
 
 SINGLE_RE = re.compile(
     r"^(\S+)\s+time:\s+\["
-    r"[0-9.]+ (?:ps|ns|\xb5s|us|ms)\s+"
-    r"([0-9.]+) (ps|ns|\xb5s|us|ms)\s+"
-    r"[0-9.]+ (?:ps|ns|\xb5s|us|ms)"
+    r"[0-9.]+ (?:ps|ns|\xb5s|us|ms|s)\s+"
+    r"([0-9.]+) (ps|ns|\xb5s|us|ms|s)\s+"
+    r"[0-9.]+ (?:ps|ns|\xb5s|us|ms|s)"
     r"\]",
 )
 
 TIME_RE = re.compile(
     r"time:\s+\["
-    r"[0-9.]+ (?:ps|ns|\xb5s|us|ms)\s+"
-    r"([0-9.]+) (ps|ns|\xb5s|us|ms)\s+"
-    r"[0-9.]+ (?:ps|ns|\xb5s|us|ms)"
+    r"[0-9.]+ (?:ps|ns|\xb5s|us|ms|s)\s+"
+    r"([0-9.]+) (ps|ns|\xb5s|us|ms|s)\s+"
+    r"[0-9.]+ (?:ps|ns|\xb5s|us|ms|s)"
     r"\]",
 )
 
@@ -49,9 +50,16 @@ OP_LABELS = {
     "ef_succ": "succ",
     "ef_pred_unchecked": "pred (unchecked)",
     "ef_pred": "pred",
+    "ef_rank_unchecked": "rank (unchecked)",
+    "ef_rank": "rank",
+    "ef_build_seq": "build (seq)",
+    "ef_build_conc": "build (conc)",
 }
 
 OP_ORDER = list(OP_LABELS.keys())
+
+QUERY_GROUPS = [k for k in OP_LABELS if not k.startswith("ef_build")]
+BUILD_GROUPS = [k for k in OP_LABELS if k.startswith("ef_build")]
 
 
 def parse(lines):
@@ -79,21 +87,49 @@ def parse(lines):
     entries = []
     for name, ns_per_op in raw.items():
         parts = name.split("/")
-        if len(parts) != 4:
-            continue
-        group, backend, size, l_str = parts
-        if not l_str.startswith("l="):
-            continue
-        entries.append(
-            {
-                "group": group,
-                "op": OP_LABELS.get(group, group),
-                "backend": backend,
-                "size": size,
-                "l": int(l_str[2:]),
-                "ns_per_op": round(ns_per_op, 2),
-            }
-        )
+
+        # Query benchmarks: group/backend/size/l=N
+        if len(parts) == 4 and parts[3].startswith("l="):
+            group, backend, size, l_str = parts
+            entries.append(
+                {
+                    "group": group,
+                    "op": OP_LABELS.get(group, group),
+                    "backend": backend,
+                    "size": size,
+                    "l": int(l_str[2:]),
+                    "threads": 0,
+                    "ns_per_op": round(ns_per_op, 2),
+                }
+            )
+        # Build sequential: group/push/size/l=N
+        elif len(parts) == 4 and parts[1] == "push" and parts[3].startswith("l="):
+            group, _, size, l_str = parts
+            entries.append(
+                {
+                    "group": group,
+                    "op": OP_LABELS.get(group, group),
+                    "backend": "push",
+                    "size": size,
+                    "l": int(l_str[2:]),
+                    "threads": 1,
+                    "ns_per_op": round(ns_per_op, 2),
+                }
+            )
+        # Build concurrent: group/set/size/l=N/t=T
+        elif len(parts) == 5 and parts[1] == "set" and parts[3].startswith("l=") and parts[4].startswith("t="):
+            group, _, size, l_str, t_str = parts
+            entries.append(
+                {
+                    "group": group,
+                    "op": OP_LABELS.get(group, group),
+                    "backend": f"set/t={t_str[2:]}",
+                    "size": size,
+                    "l": int(l_str[2:]),
+                    "threads": int(t_str[2:]),
+                    "ns_per_op": round(ns_per_op, 2),
+                }
+            )
 
     return entries
 
@@ -150,6 +186,15 @@ HTML_TEMPLATE = """\
     font-weight: 600;
   }}
   .toggle-group button.on + button:not(.on) {{ border-left-color: #4a7cff; }}
+  #tg-view button.on {{
+    background: #2d5aa0;
+    border-color: #2d5aa0;
+    font-size: 1em;
+  }}
+  #tg-view button {{
+    font-size: 1em;
+    padding: 0.4em 1.4em;
+  }}
   canvas {{ background: white; border-radius: 8px; margin-top: 0.8em; }}
   .hint {{
     text-align: center;
@@ -161,21 +206,41 @@ HTML_TEMPLATE = """\
 </head>
 <body>
 <h1>Elias\u2013Fano benchmarks</h1>
-<p class="hint">Toggle any combination \u2014 each bar is a (size, l, backend) triple.</p>
 
 <div class="row">
-  <label>Ops</label>
-  <div class="toggle-group" id="tg-ops"></div>
+  <div class="toggle-group" id="tg-view"></div>
 </div>
-<div class="row">
-  <label>Size</label>
-  <div class="toggle-group" id="tg-size"></div>
 
-  <label>l</label>
-  <div class="toggle-group" id="tg-l"></div>
+<div id="view-query">
+  <p class="hint">Toggle any combination \u2014 each bar is a (size, l, backend) triple.</p>
+  <div class="row">
+    <label>Ops</label>
+    <div class="toggle-group" id="tg-q-ops"></div>
+  </div>
+  <div class="row">
+    <label>Size</label>
+    <div class="toggle-group" id="tg-q-size"></div>
+    <label>l</label>
+    <div class="toggle-group" id="tg-q-l"></div>
+    <label>Backend</label>
+    <div class="toggle-group" id="tg-q-backend"></div>
+  </div>
+</div>
 
-  <label>Backend</label>
-  <div class="toggle-group" id="tg-backend"></div>
+<div id="view-build" style="display:none">
+  <p class="hint">Toggle any combination \u2014 each bar is a (size, l, method) triple.</p>
+  <div class="row">
+    <label>Ops</label>
+    <div class="toggle-group" id="tg-b-ops"></div>
+  </div>
+  <div class="row">
+    <label>Size</label>
+    <div class="toggle-group" id="tg-b-size"></div>
+    <label>l</label>
+    <div class="toggle-group" id="tg-b-l"></div>
+    <label>Method</label>
+    <div class="toggle-group" id="tg-b-method"></div>
+  </div>
 </div>
 
 <canvas id="chart"></canvas>
@@ -184,22 +249,27 @@ HTML_TEMPLATE = """\
 const DATA = {data_json};
 const OP_ORDER = {op_order_json};
 
-// ── Discover dimensions from data ──
+const QUERY_GROUPS = {query_groups_json};
+const BUILD_GROUPS = {build_groups_json};
 
 function unique(arr) {{ return [...new Set(arr)]; }}
 
-const SIZES    = unique(DATA.map(d => d.size));
-const LS       = unique(DATA.map(d => d.l)).sort((a, b) => a - b);
-const BACKENDS = ['aligned', 'unaligned'];
-const seenOps  = unique(DATA.map(d => d.group));
-const OPS      = OP_ORDER.filter(g => seenOps.includes(g))
-                          .concat(seenOps.filter(g => !OP_ORDER.includes(g)));
 const OP_LABEL = Object.fromEntries(DATA.map(d => [d.group, d.op]));
 
+const queryData = DATA.filter(d => QUERY_GROUPS.includes(d.group));
+const buildData = DATA.filter(d => BUILD_GROUPS.includes(d.group));
+
+const Q_OPS      = OP_ORDER.filter(g => queryData.some(d => d.group === g));
+const Q_SIZES    = unique(queryData.map(d => d.size));
+const Q_LS       = unique(queryData.map(d => d.l)).sort((a, b) => a - b);
+const Q_BACKENDS = unique(queryData.map(d => d.backend));
+
+const B_OPS     = OP_ORDER.filter(g => buildData.some(d => d.group === g));
+const B_SIZES   = unique(buildData.map(d => d.size));
+const B_LS      = unique(buildData.map(d => d.l)).sort((a, b) => a - b);
+const B_METHODS = unique(buildData.map(d => d.backend));
+
 // ── Color palette ──
-// Hue encodes l; shade encodes backend (dark = aligned, light = unaligned).
-// Opacity distinguishes sizes when both are shown.
-// Uses Tableau-inspired paired colors.
 
 const HUE_PAIRS = [
   ['#4e79a7', '#a0cbe8'],   // blue
@@ -212,20 +282,25 @@ const HUE_PAIRS = [
   ['#9c755f', '#c9a88e'],   // brown
 ];
 
-const lHue = {{}};
-LS.forEach((l, i) => {{ lHue[l] = HUE_PAIRS[i % HUE_PAIRS.length]; }});
-
-function barColor(l, backend, size) {{
-  const pair = lHue[l] || ['#bab0ab', '#d4ccc8'];
-  const hex  = backend === 'aligned' ? pair[0] : pair[1];
-  // Add alpha for multi-size distinction (1G = semi-transparent).
-  if (SIZES.length > 1 && size !== SIZES[0]) {{
-    return hex + 'a0';
-  }}
-  return hex;
+function makeColorMap(ls, backends) {{
+  const lHue = {{}};
+  ls.forEach((l, i) => {{ lHue[l] = HUE_PAIRS[i % HUE_PAIRS.length]; }});
+  const bkList = [...backends];
+  return function(l, backend, size, sizes) {{
+    const pair = lHue[l] || ['#bab0ab', '#d4ccc8'];
+    const bkIdx = bkList.indexOf(backend);
+    const hex = pair[bkIdx % pair.length];
+    if (sizes.length > 1 && size !== sizes[0]) {{
+      return hex + 'a0';
+    }}
+    return hex;
+  }};
 }}
 
-// ── Toggle buttons (multi-select) ──
+const qColor = makeColorMap(Q_LS, Q_BACKENDS);
+const bColor = makeColorMap(B_LS, B_METHODS);
+
+// ── Toggle buttons ──
 
 let chart = null;
 
@@ -246,57 +321,139 @@ function selected(id) {{
     .map(b => b.dataset.value);
 }}
 
-// Default: first size, all l, both backends, all ops.
-makeToggles('tg-ops',     OPS,      g => OP_LABEL[g] || g, OPS);
-makeToggles('tg-size',    SIZES,    s => s,                 [SIZES[0]]);
-makeToggles('tg-l',       LS,       l => 'l=' + l,         LS);
-makeToggles('tg-backend', BACKENDS, b => b,                 BACKENDS);
+// ── View toggle (exclusive) ──
 
-// ── Build chart data ──
+let currentView = 'query';
 
-function buildChart() {{
-  const ops  = selected('tg-ops');
-  const szs  = selected('tg-size');
-  const ls   = selected('tg-l').map(Number);
-  const bks  = selected('tg-backend');
+function setupViewToggle() {{
+  const c = document.getElementById('tg-view');
+  ['Queries', 'Build'].forEach(label => {{
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.dataset.value = label.toLowerCase().replace('queries', 'query');
+    if (b.dataset.value === currentView) b.classList.add('on');
+    b.onclick = () => {{
+      currentView = b.dataset.value;
+      c.querySelectorAll('button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      document.getElementById('view-query').style.display =
+        currentView === 'query' ? '' : 'none';
+      document.getElementById('view-build').style.display =
+        currentView === 'build' ? '' : 'none';
+      render();
+    }};
+    c.appendChild(b);
+  }});
+}}
 
-  const labels   = ops.map(g => OP_LABEL[g] || g);
-  const datasets = [];
+setupViewToggle();
 
-  for (const size of szs) {{
-    for (const l of ls) {{
-      for (const bk of bks) {{
-        const data = ops.map(g => {{
-          const d = DATA.find(e =>
-            e.group === g && e.size === size && e.l === l && e.backend === bk);
-          return d ? d.ns_per_op : null;
-        }});
+// ── Populate toggles ──
 
-        // Smart label: omit dimensions with only one selection.
-        const parts = [];
-        if (szs.length > 1) parts.push(size);
-        if (ls.length > 1)  parts.push('l=' + l);
-        if (bks.length > 1) parts.push(bk);
-        // If everything is single-select, show at least backend.
-        if (parts.length === 0) parts.push(bk);
+makeToggles('tg-q-ops',     Q_OPS,      g => OP_LABEL[g] || g, Q_OPS);
+makeToggles('tg-q-size',    Q_SIZES,    s => s,                 Q_SIZES.length ? [Q_SIZES[0]] : []);
+makeToggles('tg-q-l',       Q_LS,       l => 'l=' + l,         Q_LS);
+makeToggles('tg-q-backend', Q_BACKENDS, b => b,                 Q_BACKENDS);
 
-        datasets.push({{
-          label: parts.join(' '),
-          data,
-          backgroundColor: barColor(l, bk, size),
-          skipNull: true,
-        }});
+makeToggles('tg-b-ops',     B_OPS,      g => OP_LABEL[g] || g, B_OPS);
+makeToggles('tg-b-size',    B_SIZES,    s => s,                 B_SIZES.length ? [B_SIZES[0]] : []);
+makeToggles('tg-b-l',       B_LS,       l => 'l=' + l,         B_LS);
+makeToggles('tg-b-method',  B_METHODS,  m => m,                 B_METHODS);
+
+// ── Chart data ──
+
+function buildChartData() {{
+  if (currentView === 'query') {{
+    const ops = selected('tg-q-ops');
+    const szs = selected('tg-q-size');
+    const ls  = selected('tg-q-l').map(Number);
+    const bks = selected('tg-q-backend');
+
+    const labels   = ops.map(g => OP_LABEL[g] || g);
+    const datasets = [];
+
+    for (const size of szs) {{
+      for (const l of ls) {{
+        for (const bk of bks) {{
+          const data = ops.map(g => {{
+            const d = queryData.find(e =>
+              e.group === g && e.size === size && e.l === l && e.backend === bk);
+            return d ? d.ns_per_op : null;
+          }});
+          const parts = [];
+          if (szs.length > 1) parts.push(size);
+          if (ls.length > 1)  parts.push('l=' + l);
+          if (bks.length > 1) parts.push(bk);
+          if (parts.length === 0) parts.push(bk);
+          datasets.push({{
+            label: parts.join(' '),
+            data,
+            backgroundColor: qColor(l, bk, size, szs),
+            skipNull: true,
+          }});
+        }}
       }}
     }}
-  }}
+    return {{ labels, datasets }};
 
-  return {{ labels, datasets }};
+  }} else {{
+    const ops = selected('tg-b-ops');
+    const szs = selected('tg-b-size');
+    const ls  = selected('tg-b-l').map(Number);
+    const mts = selected('tg-b-method');
+
+    const labels   = ops.map(g => OP_LABEL[g] || g);
+    const datasets = [];
+
+    for (const size of szs) {{
+      for (const l of ls) {{
+        for (const mt of mts) {{
+          const data = ops.map(g => {{
+            const d = buildData.find(e =>
+              e.group === g && e.size === size && e.l === l && e.backend === mt);
+            return d ? d.ns_per_op : null;
+          }});
+          const parts = [];
+          if (szs.length > 1) parts.push(size);
+          if (ls.length > 1)  parts.push('l=' + l);
+          if (mts.length > 1) parts.push(mt);
+          if (parts.length === 0) parts.push(mt);
+          datasets.push({{
+            label: parts.join(' '),
+            data,
+            backgroundColor: bColor(l, mt, size, szs),
+            skipNull: true,
+          }});
+        }}
+      }}
+    }}
+    return {{ labels, datasets }};
+  }}
+}}
+
+// ── Auto-scale time unit ──
+
+function bestUnit(datasets) {{
+  let maxVal = 0;
+  for (const ds of datasets) {{
+    for (const v of ds.data) {{
+      if (v != null && v > maxVal) maxVal = v;
+    }}
+  }}
+  if (maxVal >= 1e9) return {{ divisor: 1e9, label: 's / op',  suffix: ' s'  }};
+  if (maxVal >= 1e6) return {{ divisor: 1e6, label: 'ms / op', suffix: ' ms' }};
+  if (maxVal >= 1e3) return {{ divisor: 1e3, label: '\u00b5s / op', suffix: ' \u00b5s' }};
+  return {{ divisor: 1, label: 'ns / op', suffix: ' ns' }};
 }}
 
 // ── Render ──
 
 function render() {{
-  const cfg = buildChart();
+  const cfg = buildChartData();
+  const unit = bestUnit(cfg.datasets);
+  for (const ds of cfg.datasets) {{
+    ds.data = ds.data.map(v => v == null ? null : v / unit.divisor);
+  }}
   if (chart) chart.destroy();
   chart = new Chart(document.getElementById('chart'), {{
     type: 'bar',
@@ -309,7 +466,7 @@ function render() {{
             label: ctx => {{
               const v = ctx.parsed.y;
               if (v == null) return null;
-              return ctx.dataset.label + ': ' + v.toFixed(1) + ' ns/op';
+              return ctx.dataset.label + ': ' + v.toFixed(2) + unit.suffix;
             }},
           }},
         }},
@@ -318,7 +475,7 @@ function render() {{
       scales: {{
         y: {{
           beginAtZero: true,
-          title: {{ display: true, text: 'Time (ns / op)' }},
+          title: {{ display: true, text: 'Time (' + unit.label + ')' }},
         }},
         x: {{
           ticks: {{ autoSkip: false }},
@@ -359,6 +516,8 @@ def main():
     html = HTML_TEMPLATE.format(
         data_json=json.dumps(entries, indent=2),
         op_order_json=json.dumps(OP_ORDER),
+        query_groups_json=json.dumps(QUERY_GROUPS),
+        build_groups_json=json.dumps(BUILD_GROUPS),
     )
 
     sys.stdout.write(html)

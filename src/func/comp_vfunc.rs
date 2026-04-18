@@ -322,24 +322,23 @@ where
     /// Builds a [`CompVFunc`] from lender-based streams of keys and
     /// values using default [`VBuilder`] and [`Huffman`] settings.
     ///
-    /// Keys and values are consumed one at a time through their
-    /// respective lenders; this path is the right choice for input
-    /// coming from disk
-    /// ([`DekoBufLineLender`](crate::utils::DekoBufLineLender)) or
-    /// synthetic ranges. Neither the key set nor the value set needs
-    /// to live in memory at once: the values lender is rewound once
-    /// during construction (first pass for the Huffman frequency
-    /// analysis, second pass to populate the sig-store).
+    /// Keys and values are consumed one at a time through their respective
+    /// lenders; this path is the right choice for input coming from disk or
+    /// synthetic ranges. Neither the key set nor the value set needs to live in
+    /// memory at once: the values lender is rewound once during construction
+    /// (first pass for the Huffman frequency analysis, second pass to populate
+    /// the sig-store).
     ///
-    /// `n` is the expected number of keys. If it is significantly
-    /// wrong, construction still works but may do extra retries.
+    /// `n` is the expected number of keys; a significantly wrong value may
+    /// degrade performance or cause extra retries.
     ///
-    /// If keys and values are available as slices and you want to
-    /// parallelize the hashing phase, use
-    /// [`try_par_new`](Self::try_par_new) instead.
+    /// This is a convenience wrapper around [`try_new_with_builder`] with
+    /// `VBuilder::default()`.
     ///
-    /// See also [`try_new_with_builder`](Self::try_new_with_builder)
-    /// for the full configuration surface.
+    /// If keys and values are available as slices and you want to parallelize
+    /// the hashing phase, use [`try_par_new`](Self::try_par_new) instead.
+    ///
+    /// [`try_new_with_builder`]: Self::try_new_with_builder
     pub fn try_new<B: ?Sized + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
@@ -394,14 +393,14 @@ where
     /// Builds a [`CompVFunc`] from parallel slices of keys and values
     /// using default [`VBuilder`] and [`Huffman`] settings.
     ///
-    /// This is the parallel counterpart of [`try_new`](Self::try_new):
-    /// hashes are computed on a rayon worker pool and deposited
-    /// directly into their sig-store buckets. Faster than the
-    /// lender-based path for large in-memory key sets, but requires
-    /// the whole key set to be addressable as a slice.
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new`] instead.
     ///
-    /// See also [`try_par_new_with_builder`](Self::try_par_new_with_builder)
-    /// for the full configuration surface.
+    /// This is a convenience wrapper around [`try_par_new_with_builder`] with
+    /// `VBuilder::default()`.
+    ///
+    /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+    /// [`try_new`]: Self::try_new
     pub fn try_par_new<B: Borrow<K> + Sync>(
         keys: &[B],
         values: &[W],
@@ -413,9 +412,10 @@ where
     /// Builds a [`CompVFunc`] from parallel slices of keys and values
     /// using the given [`Huffman`] codec and [`VBuilder`] configuration.
     ///
-    /// See [`try_par_new`](Self::try_par_new) for the parallel
-    /// semantics and [`try_new_with_builder`](Self::try_new_with_builder)
-    /// for the lender-based variant.
+    /// If keys are produced sequentially (e.g., from a file), use
+    /// [`try_new_with_builder`] instead.
+    ///
+    /// [`try_new_with_builder`]: Self::try_new_with_builder
     pub fn try_par_new_with_builder<B: Borrow<K> + Sync>(
         keys: &[B],
         values: &[W],

@@ -16,7 +16,7 @@
 //!
 //! [`CompVFunc`]: crate::func::CompVFunc
 //! [`PrimitiveInteger`]: num_primitive::PrimitiveInteger
-//! [`max_codeword_length`]: Self::max_codeword_length
+//! [`max_codeword_length`]: Decoder::max_codeword_length
 
 use mem_dbg::{MemDbg, MemSize};
 use num_primitive::PrimitiveInteger;
@@ -188,12 +188,12 @@ impl<W: PrimitiveInteger> Decoder<W> for ZeroDecoder {
 /// encoding]. *Communications of the ACM* 7(3), pp. 166-169, 1964.
 ///
 /// Marco Genuzio, Giuseppe Ottaviano, and Sebastiano Vigna. [Fast scalable
-/// construction of ([compressed] static | minimal perfect hash) functions].
-/// Information and Computation, 273:104517, 2020.
+/// construction of (\[compressed\] static | minimal perfect hash)
+/// functions](https://doi.org/10.1016/j.ic.2020.104517). Information and
+/// Computation, 273:104517, 2020.
 ///
 /// [In-place calculation of minimum-redundancy codes]: https://dl.acm.org/doi/10.5555/645930.672864
 /// [Generating a canonical prefix encoding]: https://doi.org/10.1145/363958.363991
-/// [Fast scalable construction of (compressed static | minimal perfect hash) functions]: https://doi.org/10.1016/j.ic.2020.104517
 /// [canonical codes]: https://doi.org/10.1145/363958.363991
 #[derive(Debug, Clone, Copy)]
 pub struct Huffman {

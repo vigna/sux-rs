@@ -242,3 +242,4 @@ Union nor the Italian MUR can be held responsible for them.
 [`TryIntoUnaligned`]: https://docs.rs/sux/latest/sux/traits/trait.TryIntoUnaligned.html
 [`try_into_unaligned`]: https://docs.rs/sux/latest/sux/traits/trait.TryIntoUnaligned.html#tymethod.try_into_unaligned
 [`Deref`]: https://doc.rust-lang.org/core/ops/deref/trait.Deref.html
+[vectors of bit fields]: https://docs.rs/sux/latest/sux/bits/bit_field_vec/struct.BitFieldVec.html

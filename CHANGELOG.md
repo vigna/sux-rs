@@ -12,6 +12,11 @@
   default by all CLI utilities; a switch reverts to the classical streaming
   constructors.
 
+- New `Pred::rank` method, implemented by default using `Pred::pred`, but
+  implemented much more efficiently for `EliasFano`.
+
+- Several new trait implementations for `BitVec`, such as `SliceByValue`.
+
 ## [0.14.0] - 2026-04-11
 
 ### New

@@ -2,8 +2,11 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
+use sux::dict::EliasFanoConcurrentBuilder;
 use sux::prelude::*;
-use sux::traits::{IndexedSeq, Pred, PredUnchecked, Succ, SuccUnchecked, TryIntoUnaligned};
+use sux::traits::{
+    IndexedSeq, Pred, PredUnchecked, Succ, SuccUnchecked, TryIntoUnaligned,
+};
 
 /// Number of pregenerated queries (must be a power of 2 for masking).
 const NUM_QUERIES: usize = 1 << 20;
@@ -179,6 +182,76 @@ bench_ef!(
 
 bench_ef!(value, bench_pred, "ef_pred", |ef, v| Pred::pred(ef, v));
 
+bench_ef!(
+    value,
+    bench_rank_unchecked,
+    "ef_rank_unchecked",
+    |ef, v| unsafe { PredUnchecked::rank_unchecked(ef, v) }
+);
+
+bench_ef!(value, bench_rank, "ef_rank", |ef, v| Pred::rank(ef, v));
+
+fn bench_build_sequential(c: &mut Criterion) {
+    let mut group = c.benchmark_group("ef_build_seq");
+    for &(n, l) in CONFIGS {
+        let u = (1u64 << l) * n as u64;
+        let mut rng = SmallRng::seed_from_u64(0);
+        let mut values: Vec<u64> = (0..n).map(|_| rng.random_range(0..u)).collect();
+        values.sort_unstable();
+        let param = format!("{}/l={}", n_label(n), l);
+
+        group.bench_function(BenchmarkId::new("push", &param), |b| {
+            b.iter(|| {
+                let mut builder = EliasFanoBuilder::new(n, u);
+                for &v in &values {
+                    builder.push(v);
+                }
+                black_box(builder.build());
+            })
+        });
+    }
+    group.finish();
+}
+
+fn bench_build_concurrent(c: &mut Criterion) {
+    let thread_counts = [4, 8, 16];
+    let mut group = c.benchmark_group("ef_build_conc");
+    for &(n, l) in CONFIGS {
+        let u = (1u64 << l) * n as u64;
+        let mut rng = SmallRng::seed_from_u64(0);
+        let mut values: Vec<u64> = (0..n).map(|_| rng.random_range(0..u)).collect();
+        values.sort_unstable();
+
+        for num_threads in thread_counts {
+            let param = format!("{}/l={}/t={}", n_label(n), l, num_threads);
+            let chunk_size = n.div_ceil(num_threads);
+            let chunks: Vec<(usize, &[u64])> = values
+                .chunks(chunk_size)
+                .enumerate()
+                .map(|(i, chunk)| (i * chunk_size, chunk))
+                .collect();
+
+            group.bench_function(BenchmarkId::new("set", &param), |b| {
+                b.iter(|| {
+                    let efcb = EliasFanoConcurrentBuilder::new(n, u);
+                    std::thread::scope(|s| {
+                        for &(start, chunk) in &chunks {
+                            let efcb = &efcb;
+                            s.spawn(move || {
+                                for (j, &v) in chunk.iter().enumerate() {
+                                    unsafe { efcb.set(start + j, v) };
+                                }
+                            });
+                        }
+                    });
+                    black_box(efcb.build());
+                })
+            });
+        }
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_get_unchecked,
@@ -187,5 +260,9 @@ criterion_group!(
     bench_succ,
     bench_pred_unchecked,
     bench_pred,
+    bench_rank_unchecked,
+    bench_rank,
+    bench_build_sequential,
+    bench_build_concurrent,
 );
 criterion_main!(benches);

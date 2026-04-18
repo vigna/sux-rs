@@ -11,9 +11,6 @@ use std::fmt::Display;
 use crate::bits::BitFieldVec;
 use crate::func::VBuilder;
 use crate::func::shard_edge::ShardEdge;
-use crate::utils::DekoBufLineLender;
-use anyhow::Result;
-use lender::FallibleLender;
 
 /// Reads up to `n` lines from `filename` (optionally compressed) into a
 /// single concatenated [`String`] buffer, returning the buffer together
@@ -26,11 +23,14 @@ use lender::FallibleLender;
 /// signature hashing — one big allocation plus fixed-size `&str`
 /// references, instead of `n` independent heap allocations as with a
 /// `Vec<String>`.
-pub fn read_lines_concatenated(filename: &str, n: usize) -> Result<(String, Vec<usize>)> {
+#[cfg(feature = "deko")]
+pub fn read_lines_concatenated(filename: &str, n: usize) -> anyhow::Result<(String, Vec<usize>)> {
+    use lender::FallibleLender;
+
     let mut buffer = String::new();
     let mut offsets: Vec<usize> = Vec::with_capacity(n.saturating_add(1));
     offsets.push(0);
-    let mut lender = DekoBufLineLender::from_path(filename)?;
+    let mut lender = crate::utils::DekoBufLineLender::from_path(filename)?;
     let mut count = 0usize;
     while let Some(line) = lender.next()? {
         if count == n {
