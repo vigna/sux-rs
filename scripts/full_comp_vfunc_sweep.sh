@@ -29,7 +29,7 @@ log() { echo "[$(date +%Y-%m-%d' '%H:%M:%S)] $*" | tee -a "$LOG"; }
 log "Building stress binary..."
 cargo build --release --features "cli epserde deko rayon mwhc" \
     --example comp_vfunc_stress 2>&1 | tee -a "$LOG"
-BIN=target/release/examples/comp_vfunc_stress
+BIN=${CARGO_TARGET_DIR:-target}/release/examples/comp_vfunc_stress
 
 run_cell() {
     local bin="$1" shard="$2" dist="$3" zipf_s="$4" nlist="$5"
