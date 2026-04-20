@@ -16,7 +16,7 @@ use std::io::{BufRead, BufReader};
 use sux::bits::BitVec;
 use sux::cli::{BuilderArgs, ShardingArgs, read_lines_concatenated, str_slice_from_offsets};
 use sux::func::codec::Huffman;
-use sux::func::shard_edge::{FuseLge3NoShards, FuseLge3Shards, ShardEdge};
+use sux::func::shard_edge::{Fuse3NoShards, Fuse3Shards, ShardEdge};
 use sux::func::{CompVFunc, VBuilder};
 use sux::init_env_logger;
 use sux::utils::lenders::FromSlice;
@@ -114,12 +114,12 @@ fn main() -> Result<()> {
 
     if args.sharding.no_shards {
         if args.sharding.sig64 {
-            main_with_types::<[u64; 1], FuseLge3NoShards>(args)
+            main_with_types::<[u64; 1], Fuse3NoShards>(args)
         } else {
-            main_with_types::<[u64; 2], FuseLge3NoShards>(args)
+            main_with_types::<[u64; 2], Fuse3NoShards>(args)
         }
     } else {
-        main_with_types::<[u64; 2], FuseLge3Shards>(args)
+        main_with_types::<[u64; 2], Fuse3Shards>(args)
     }
 }
 

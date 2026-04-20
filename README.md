@@ -24,7 +24,7 @@ from [the DSI Utilities] and new structures.
 - new state-of-the-art structures for [static functions] and [static filters],
   scaling to trillions of keys, and providing very fast queries;
 - [monotone minimal perfect hash functions] based on longest common prefixes,
-  which are [the fastest available](https://github.com/vigna/MMPHF-Experiments);
+  which are [the fastest available] (using less than log₂*n* space);
 - support for [signed minimal perfect hash functions];
 - [partial arrays], that is, “arrays with holes”, implemented using ranking or
   Elias–Fano;
@@ -36,10 +36,12 @@ and support for [unaligned access]) and on flexible composability (e.g., you can
 fine-tune your [`EliasFano`] instance by choosing different types of internal
 indices, and whether to index zeros or ones). Whenever possible, there are
 mapping methods that replace an underlying structure with another one, provided
-it is compatible. You can check
-[these](https://github.com/Cydhra/vers_benchmarks) and
-[these](https://github.com/beling/bsuccinct-rs/tree/main/cseq_benchmark)
-benchmarks.
+it is compatible. You can run the
+
+You can run the [`vers_benchmarks`] and the [`cseq_benchmark`] benchmarks to see
+the performance of different implementations on your hardware. In our tests the
+structures in this crate are almost always as fast or faster than the ones in
+other libraries.
 
 This crate does not provide high-level genericity on bit vectors: [operations on
 bit vectors] are based on a word type `W`, on the [`BitLength`] trait, which
@@ -243,3 +245,6 @@ Union nor the Italian MUR can be held responsible for them.
 [`try_into_unaligned`]: https://docs.rs/sux/latest/sux/traits/trait.TryIntoUnaligned.html#tymethod.try_into_unaligned
 [`Deref`]: https://doc.rust-lang.org/core/ops/deref/trait.Deref.html
 [vectors of bit fields]: https://docs.rs/sux/latest/sux/bits/bit_field_vec/struct.BitFieldVec.html
+[the fastest available]: https://github.com/vigna/MMPHF-Experiments
+[`vers_benchmarks`]: https://github.com/Cydhra/vers_benchmarks
+[`cseq_benchmark`]: https://github.com/beling/bsuccinct-rs/
