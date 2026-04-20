@@ -493,7 +493,7 @@ impl PartEliasFanoBuilder {
             u,
             eps1: 0.03,
             eps2: 0.3,
-            fix_cost: 2700,
+            fix_cost: 448,
             values: Vec::with_capacity(n),
         }
     }
