@@ -67,7 +67,7 @@ impl Chunk {
             Chunk::EliasFano { ef, .. } => unsafe { ef.succ_unchecked::<true>(value) },
             Chunk::Dense { bv, universe, .. } => {
                 let rank = if value >= *universe {
-                    unsafe { bv.rank_unchecked(*universe) } + 1
+                    (unsafe { bv.rank_unchecked(*universe) }) + 1
                 } else {
                     unsafe { bv.rank_unchecked(value + 1) }
                 };
