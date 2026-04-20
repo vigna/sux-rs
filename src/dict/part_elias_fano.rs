@@ -188,6 +188,12 @@ impl BidiIterator for PartEliasFanoBidiIter<'_> {
     }
 }
 
+impl PartEliasFano {
+    pub fn num_partitions(&self) -> usize {
+        self.chunks.len()
+    }
+}
+
 // -- Trait implementations --
 
 impl Types for PartEliasFano {
@@ -487,7 +493,7 @@ impl PartEliasFanoBuilder {
             u,
             eps1: 0.03,
             eps2: 0.3,
-            fix_cost: 64,
+            fix_cost: 2700,
             values: Vec::with_capacity(n),
         }
     }
@@ -587,21 +593,29 @@ impl PartEliasFanoBuilder {
     }
 }
 
+/// Cost in bits of an Elias-Fano representation.
+/// `universe` is the range size (max_value + 1), `n` is the element count.
 fn ef_cost(universe: usize, n: usize) -> usize {
     if n == 0 {
         return 0;
     }
-    if universe == 0 {
+    if universe <= 1 {
         return n;
     }
-    let l = (universe as f64 / n as f64).log2().floor().max(0.0) as usize;
-    let high_bits = n + (universe >> l);
+    let l = if universe > n {
+        (universe / n).ilog2() as usize
+    } else {
+        0
+    };
+    let high_bits = n + (universe >> l) + 2;
     let low_bits = n * l;
     high_bits + low_bits
 }
 
+/// Cost in bits of a dense bitvector representation.
+/// `universe` is the range size (max_value + 1).
 fn dense_cost(universe: usize) -> usize {
-    universe + 1
+    universe
 }
 
 fn chunk_cost(universe: usize, n: usize) -> usize {
@@ -609,7 +623,7 @@ fn chunk_cost(universe: usize, n: usize) -> usize {
 }
 
 fn build_chunk(values: &[usize], base: usize, universe: usize, n: usize) -> Chunk {
-    let use_dense = dense_cost(universe) < ef_cost(universe, n);
+    let use_dense = dense_cost(universe + 1) < ef_cost(universe + 1, n);
 
     if use_dense {
         let mut bv = BitVec::new(universe + 1);
@@ -634,6 +648,14 @@ fn build_chunk(values: &[usize], base: usize, universe: usize, n: usize) -> Chun
     }
 }
 
+struct CostWindow {
+    start: usize,
+    end: usize,
+    min_p: usize,
+    max_p: usize,
+    cost_upper_bound: usize,
+}
+
 fn optimal_partition(
     values: &[usize],
     eps1: f64,
@@ -648,76 +670,76 @@ fn optimal_partition(
         return vec![0, 1];
     }
 
-    let single_block_cost = chunk_cost(values[n - 1] - values[0], n) + fix_cost;
+    let cost_fun = |universe: usize, n: usize| -> usize {
+        chunk_cost(universe, n) + fix_cost
+    };
 
-    let cost_lb = fix_cost + 1;
-    let cost_ub = (fix_cost as f64 / eps1) as usize;
-    let cost_ub = cost_ub.min(single_block_cost);
-
-    // Generate cost window levels
-    let mut window_costs: Vec<usize> = Vec::new();
-    let mut c = cost_lb as f64;
-    while (c as usize) <= cost_ub {
-        window_costs.push(c as usize);
-        c *= 1.0 + eps2;
-    }
-    window_costs.push(cost_ub);
-
-    let num_windows = window_costs.len();
+    let single_block_cost = cost_fun(values[n - 1] - values[0] + 1, n);
 
     let mut min_cost = vec![single_block_cost; n + 1];
     min_cost[0] = 0;
     let mut path = vec![0usize; n + 1];
 
-    // For each window level, track the current end position
-    let mut window_ends: Vec<usize> = vec![0; num_windows];
-
-    for i in 0..n {
-        if min_cost[i] == usize::MAX {
-            continue;
+    let cost_lb = cost_fun(1, 1);
+    let mut windows: Vec<CostWindow> = Vec::new();
+    let mut cost_bound = cost_lb;
+    loop {
+        windows.push(CostWindow {
+            start: 0,
+            end: 0,
+            min_p: values[0],
+            max_p: 0,
+            cost_upper_bound: cost_bound,
+        });
+        if cost_bound >= single_block_cost {
+            break;
         }
-
-        for w in 0..num_windows {
-            let cost_bound = window_costs[w];
-
-            // Advance window end as far as possible while cost stays within bound
-            let end = &mut window_ends[w];
-            *end = (*end).max(i + 1);
-
-            while *end < n {
-                let universe = values[*end] - values[i];
-                let chunk_n = *end - i + 1;
-                let c = chunk_cost(universe, chunk_n) + fix_cost;
-                if c > cost_bound {
-                    break;
-                }
-                *end += 1;
-            }
-
-            // The window covers positions [i+1, *end] as valid partition endpoints
-            // Update costs for the endpoint at *end (the first position that exceeded the bound)
-            // Actually, any endpoint j in [i+1, *end] has cost <= cost_bound
-            // We only need to update the endpoint at *end since shorter partitions
-            // are covered by smaller windows
-            let j = *end;
-            if j <= n {
-                let universe = if j > i + 1 {
-                    values[j - 1] - values[i]
-                } else {
-                    0
-                };
-                let chunk_n = j - i;
-                let c = chunk_cost(universe, chunk_n) + fix_cost;
-                let total = min_cost[i] + c;
-                if total < min_cost[j] {
-                    min_cost[j] = total;
-                    path[j] = i;
-                }
-            }
+        if eps1 == 0.0 {
+            break;
+        }
+        let next = ((cost_bound as f64) * (1.0 + eps2)) as usize;
+        cost_bound = next.max(cost_bound + 1);
+        if (cost_bound as f64) >= (cost_lb as f64) / eps1 {
+            break;
         }
     }
 
-    // Backtrack to find partition points
+    for i in 0..n {
+        let mut last_end = i + 1;
+        for w in windows.iter_mut() {
+            assert_eq!(w.start, i);
+
+            while w.end < last_end {
+                w.max_p = values[w.end];
+                w.end += 1;
+            }
+
+            loop {
+                let universe = w.max_p - w.min_p + 1;
+                let size = w.end - w.start;
+                let window_cost = cost_fun(universe, size);
+
+                if min_cost[i] + window_cost < min_cost[w.end] {
+                    min_cost[w.end] = min_cost[i] + window_cost;
+                    path[w.end] = i;
+                }
+
+                last_end = w.end;
+                if w.end == n {
+                    break;
+                }
+                if window_cost >= w.cost_upper_bound {
+                    break;
+                }
+                w.max_p = values[w.end];
+                w.end += 1;
+            }
+
+            w.min_p = values[w.start] + 1;
+            w.start += 1;
+        }
+    }
+
     let mut result = Vec::new();
     let mut pos = n;
     while pos > 0 {
@@ -855,5 +877,76 @@ mod tests {
         } else {
             panic!("iter_from_succ should not be None");
         }
+    }
+
+    #[test]
+    fn test_dense_chunks() {
+        // ~50% density forces the partitioner to pick dense bitvector encoding
+        use rand::rngs::SmallRng;
+        use rand::{RngExt, SeedableRng};
+
+        let universe = 2000;
+        let n = 1000; // 50% density
+        let mut rng = SmallRng::seed_from_u64(42);
+        let mut values: Vec<usize> = (0..universe)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter(|_| rng.random_bool(0.5))
+            .take(n)
+            .collect();
+        values.sort_unstable();
+        values.dedup();
+
+        let n = values.len();
+        let u = *values.last().unwrap();
+
+        let mut builder = PartEliasFanoBuilder::new(n, u);
+        for &v in &values {
+            builder.push(v);
+        }
+        let pef = builder.build();
+
+        // Verify at least one chunk is dense
+        let has_dense = pef.chunks.iter().any(|c| matches!(c, Chunk::Dense { .. }));
+        assert!(has_dense, "Expected at least one dense chunk at 50% density");
+
+        // Test get
+        for (i, &expected) in values.iter().enumerate() {
+            assert_eq!(pef.get(i), expected, "get({i})");
+        }
+
+        // Test succ
+        for (i, &v) in values.iter().enumerate() {
+            assert_eq!(pef.succ(v), Some((i, v)), "succ({v})");
+        }
+        // Values just after each element
+        for i in 0..values.len() - 1 {
+            if values[i] + 1 < values[i + 1] {
+                assert_eq!(
+                    pef.succ(values[i] + 1),
+                    Some((i + 1, values[i + 1])),
+                    "succ({} + 1)",
+                    values[i]
+                );
+            }
+        }
+        assert_eq!(pef.succ(u + 1), None);
+
+        // Test pred
+        for (i, &v) in values.iter().enumerate() {
+            assert_eq!(pef.pred(v), Some((i, v)), "pred({v})");
+        }
+        // Values just before each element
+        for i in 1..values.len() {
+            if values[i] - 1 > values[i - 1] {
+                assert_eq!(
+                    pef.pred(values[i] - 1),
+                    Some((i - 1, values[i - 1])),
+                    "pred({} - 1)",
+                    values[i]
+                );
+            }
+        }
+        assert_eq!(pef.pred(values[0].wrapping_sub(1)), None);
     }
 }
