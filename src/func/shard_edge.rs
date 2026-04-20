@@ -308,9 +308,9 @@ pub trait ShardEdge<S, const K: usize>: Default + Display + Clone + Copy + Send 
 
 /// Inversion by 64-bit fixed-point arithmetic.
 ///
-/// This macro computes the inversion ⌊⍺*n*⌋, where ⍺ ∈ [0..1), using 64-bit
-/// fixed-point arithmetic, that is, computing ⌊*xn* / 2³²⌋, where *x* is
-/// 32-bit unsigned integer representing ⍺.
+/// This macro computes the inversion ⌊⍺*n*⌋, where ⍺ ∈ [0 . . 1), using 64-bit
+/// fixed-point arithmetic, that is, computing ⌊*xn* / 2³²⌋, where *x* is 32-bit
+/// unsigned integer representing ⍺.
 macro_rules! fixed_point_inv_64 {
     ($x:expr, $n:expr) => {
         (($x as u64 * $n as u64) >> 32) as usize
@@ -319,9 +319,9 @@ macro_rules! fixed_point_inv_64 {
 
 /// Inversion by 128-bit fixed-point arithmetic.
 ///
-/// This macro computes the inversion ⌊⍺*n*⌋, where ⍺ ∈ [0..1), using 128-bit
-/// fixed-point arithmetic, that is, computing ⌊*xn* / 2⁶⁴⌋, where *x* is
-/// 64-bit unsigned integer representing ⍺.
+/// This macro computes the inversion ⌊⍺*n*⌋, where ⍺ ∈ [0 . . 1), using 128-bit
+/// fixed-point arithmetic, that is, computing ⌊*xn* / 2⁶⁴⌋, where *x* is 64-bit
+/// unsigned integer representing ⍺.
 macro_rules! fixed_point_inv_128 {
     ($x:expr, $n:expr) => {
         (($x as u128 * $n as u128) >> 64) as usize
@@ -1186,8 +1186,16 @@ mod fuse {
         ///
         /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
         fn c(n: usize) -> f64 {
-            let n = n.max(2) as f64;
-            0.875 + 0.25 * (1.0_f64).max((1e6_f64).ln() / n.ln())
+            let c = {
+                let n = n.max(2) as f64;
+                0.875 + 0.25 * (1.0_f64).max((1e6_f64).ln() / n.ln())
+            };
+            // In these ranges the formula fails (multiple or infinite retries)
+            if (12318..=12371).contains(&n) || (37435..=37453).contains(&n) {
+                c + 0.01
+            } else {
+                c
+            }
         }
 
         /// Returns the log₂ of segment size for fuse 3-hypergraphs.
@@ -1479,8 +1487,16 @@ mod fuse {
         ///
         /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
         fn c(n: usize) -> f64 {
-            let n = n.max(2) as f64;
-            0.875 + 0.25 * (1.0_f64).max((1e6_f64).ln() / n.ln())
+            let c = {
+                let n = n.max(2) as f64;
+                0.875 + 0.25 * (1.0_f64).max((1e6_f64).ln() / n.ln())
+            };
+            // In these ranges the formula fails (multiple or infinite retries)
+            if (12318..=12371).contains(&n) || (37435..=37453).contains(&n) {
+                c + 0.01
+            } else {
+                c
+            }
         }
 
         const A: f64 = 0.41;
