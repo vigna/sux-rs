@@ -54,5 +54,8 @@ pub use mapped_rear_coded_list::{MappedRearCodedListSliceU8, MappedRearCodedList
 mod slice_seq;
 pub use slice_seq::SliceSeq;
 
+pub mod part_elias_fano;
+pub use part_elias_fano::{PartEliasFano, PartEliasFanoBuilder};
+
 pub mod vfilter;
 pub use vfilter::VFilter;
