@@ -57,5 +57,8 @@ pub use slice_seq::SliceSeq;
 pub mod part_elias_fano;
 pub use part_elias_fano::{PartEliasFano, PartEliasFanoBuilder};
 
+pub mod flat_part_elias_fano;
+pub use flat_part_elias_fano::{FlatPartEliasFano, FlatPartEliasFanoBuilder};
+
 pub mod vfilter;
 pub use vfilter::VFilter;

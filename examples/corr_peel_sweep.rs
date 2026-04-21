@@ -142,8 +142,15 @@ struct Args {
     #[arg(long)]
     n_list: Option<String>,
 
+    /// Minimum value of `s` to sweep (continuous range mode). When
+    /// `--s-min` is set, sweeps every integer in `s_min..=s_max`.
+    /// When unset, uses the sparse geometric progression from 2^16.​
+    #[arg(long)]
+    s_min: Option<usize>,
+
     /// Maximum value of `s` (number of groups/keys) to sweep, when
-    /// `--n-list` is unset. The outer loop starts at `2^16` and
+    /// `--n-list` is unset. If `--s-min` is also set, sweeps every
+    /// integer in `s_min..=s_max`. Otherwise starts at `2^16` and
     /// multiplies by 1.5 until it exceeds this.​
     #[arg(long, default_value_t = 20_000_000)]
     s_max: usize,
@@ -713,6 +720,8 @@ fn build_cells(args: &Args) -> Vec<Cell> {
             }
         }
         return cells;
+    } else if let Some(s_min) = args.s_min {
+        (s_min..=args.s_max).collect()
     } else {
         let mut s: usize = 1 << 16;
         let mut out = Vec::new();

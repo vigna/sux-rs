@@ -623,7 +623,7 @@ fn chunk_cost(universe: usize, n: usize) -> usize {
 }
 
 fn build_chunk(values: &[usize], base: usize, universe: usize, n: usize) -> Chunk {
-    let use_dense = dense_cost(universe + 1) < ef_cost(universe + 1, n);
+    let use_dense = n <= universe + 1 && dense_cost(universe + 1) < ef_cost(universe + 1, n);
 
     if use_dense {
         let mut bv = BitVec::new(universe + 1);
@@ -656,11 +656,22 @@ struct CostWindow {
     cost_upper_bound: usize,
 }
 
-fn optimal_partition(
+pub(super) fn optimal_partition(
     values: &[usize],
     eps1: f64,
     eps2: f64,
     fix_cost: usize,
+) -> Vec<usize> {
+    optimal_partition_with(values, eps1, eps2, |universe, n| {
+        chunk_cost(universe, n) + fix_cost
+    })
+}
+
+pub(super) fn optimal_partition_with(
+    values: &[usize],
+    eps1: f64,
+    eps2: f64,
+    cost_fun: impl Fn(usize, usize) -> usize,
 ) -> Vec<usize> {
     let n = values.len();
     if n == 0 {
@@ -669,10 +680,6 @@ fn optimal_partition(
     if n == 1 {
         return vec![0, 1];
     }
-
-    let cost_fun = |universe: usize, n: usize| -> usize {
-        chunk_cost(universe, n) + fix_cost
-    };
 
     let single_block_cost = cost_fun(values[n - 1] - values[0] + 1, n);
 
@@ -715,7 +722,7 @@ fn optimal_partition(
             }
 
             loop {
-                let universe = w.max_p - w.min_p + 1;
+                let universe = w.max_p.saturating_sub(w.min_p) + 1;
                 let size = w.end - w.start;
                 let window_cost = cost_fun(universe, size);
 
