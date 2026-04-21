@@ -10,8 +10,10 @@ use crate::rank_sel::{RankSmall, SelectSmall};
 use crate::traits::indexed_dict::Types;
 use crate::traits::iter::{BidiIterator, SwappedIter};
 use crate::traits::{
-    BitVecOpsMut, IndexedSeq, Pred, PredUnchecked, RankUnchecked, SelectUnchecked, Succ,
-    SuccUnchecked,
+    BitVecOpsMut, IndexedSeq, Pred, PredBidiIter, PredBidiIterUnchecked, PredIter, PredIterBack,
+    PredIterBackUnchecked, PredIterUnchecked, PredUnchecked, RankUnchecked, SelectUnchecked, Succ,
+    SuccBidiIter, SuccBidiIterUnchecked, SuccIter, SuccIterBack, SuccIterBackUnchecked,
+    SuccIterUnchecked, SuccUnchecked,
 };
 use mem_dbg::{MemDbg, MemSize};
 use std::borrow::Borrow;
@@ -220,9 +222,6 @@ impl IndexedSeq for PartEliasFano {
 }
 
 impl SuccUnchecked for PartEliasFano {
-    type Iter<'a> = PartEliasFanoIter<'a>;
-    type BidiIter<'a> = PartEliasFanoBidiIter<'a>;
-
     unsafe fn succ_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<usize>,
@@ -249,6 +248,10 @@ impl SuccUnchecked for PartEliasFano {
         };
         (partition_start + local_idx, local_val + base)
     }
+}
+
+impl SuccIterUnchecked for PartEliasFano {
+    type Iter<'a> = PartEliasFanoIter<'a>;
 
     unsafe fn iter_from_succ_unchecked<const STRICT: bool>(
         &self,
@@ -257,6 +260,10 @@ impl SuccUnchecked for PartEliasFano {
         let (idx, _) = unsafe { self.succ_unchecked::<STRICT>(value) };
         (idx, PartEliasFanoIter { pef: self, pos: idx })
     }
+}
+
+impl SuccBidiIterUnchecked for PartEliasFano {
+    type BidiIter<'a> = PartEliasFanoBidiIter<'a>;
 
     unsafe fn iter_bidi_from_succ_unchecked<const STRICT: bool>(
         &self,
@@ -266,6 +273,24 @@ impl SuccUnchecked for PartEliasFano {
         (
             idx,
             PartEliasFanoBidiIter { pef: self, pos: idx },
+        )
+    }
+}
+
+impl SuccIterBackUnchecked for PartEliasFano {
+    type BackIter<'a> = SwappedIter<PartEliasFanoBidiIter<'a>>;
+
+    unsafe fn iter_back_from_succ_unchecked<const STRICT: bool>(
+        &self,
+        value: impl Borrow<usize>,
+    ) -> (usize, Self::BackIter<'_>) {
+        let (idx, _) = unsafe { self.succ_unchecked::<STRICT>(value) };
+        (
+            idx,
+            SwappedIter(PartEliasFanoBidiIter {
+                pef: self,
+                pos: idx + 1,
+            }),
         )
     }
 }
@@ -288,11 +313,13 @@ impl Succ for PartEliasFano {
             Some(unsafe { self.succ_unchecked::<true>(value) })
         }
     }
+}
 
+impl SuccIter for PartEliasFano {
     fn iter_from_succ(
         &self,
         value: impl Borrow<usize>,
-    ) -> Option<(usize, <Self as SuccUnchecked>::Iter<'_>)> {
+    ) -> Option<(usize, <Self as SuccIterUnchecked>::Iter<'_>)> {
         let value = *value.borrow();
         if self.n == 0 || value > unsafe { self.get_unchecked(self.n - 1) } {
             None
@@ -304,7 +331,7 @@ impl Succ for PartEliasFano {
     fn iter_from_succ_strict(
         &self,
         value: impl Borrow<usize>,
-    ) -> Option<(usize, <Self as SuccUnchecked>::Iter<'_>)> {
+    ) -> Option<(usize, <Self as SuccIterUnchecked>::Iter<'_>)> {
         let value = *value.borrow();
         if value >= unsafe { self.get_unchecked(self.n - 1) } {
             None
@@ -312,11 +339,13 @@ impl Succ for PartEliasFano {
             Some(unsafe { self.iter_from_succ_unchecked::<true>(value) })
         }
     }
+}
 
+impl SuccBidiIter for PartEliasFano {
     fn iter_bidi_from_succ(
         &self,
         value: impl Borrow<usize>,
-    ) -> Option<(usize, <Self as SuccUnchecked>::BidiIter<'_>)> {
+    ) -> Option<(usize, <Self as SuccBidiIterUnchecked>::BidiIter<'_>)> {
         let value = *value.borrow();
         if self.n == 0 || value > unsafe { self.get_unchecked(self.n - 1) } {
             None
@@ -328,7 +357,7 @@ impl Succ for PartEliasFano {
     fn iter_bidi_from_succ_strict(
         &self,
         value: impl Borrow<usize>,
-    ) -> Option<(usize, <Self as SuccUnchecked>::BidiIter<'_>)> {
+    ) -> Option<(usize, <Self as SuccBidiIterUnchecked>::BidiIter<'_>)> {
         let value = *value.borrow();
         if value >= unsafe { self.get_unchecked(self.n - 1) } {
             None
@@ -338,10 +367,33 @@ impl Succ for PartEliasFano {
     }
 }
 
-impl PredUnchecked for PartEliasFano {
-    type BackIter<'a> = SwappedIter<PartEliasFanoBidiIter<'a>>;
-    type BidiIter<'a> = PartEliasFanoBidiIter<'a>;
+impl SuccIterBack for PartEliasFano {
+    fn iter_back_from_succ(
+        &self,
+        value: impl Borrow<usize>,
+    ) -> Option<(usize, <Self as SuccIterBackUnchecked>::BackIter<'_>)> {
+        let value = *value.borrow();
+        if self.n == 0 || value > unsafe { self.get_unchecked(self.n - 1) } {
+            None
+        } else {
+            Some(unsafe { self.iter_back_from_succ_unchecked::<false>(value) })
+        }
+    }
 
+    fn iter_back_from_succ_strict(
+        &self,
+        value: impl Borrow<usize>,
+    ) -> Option<(usize, <Self as SuccIterBackUnchecked>::BackIter<'_>)> {
+        let value = *value.borrow();
+        if value >= unsafe { self.get_unchecked(self.n - 1) } {
+            None
+        } else {
+            Some(unsafe { self.iter_back_from_succ_unchecked::<true>(value) })
+        }
+    }
+}
+
+impl PredUnchecked for PartEliasFano {
     unsafe fn pred_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<usize>,
@@ -377,6 +429,22 @@ impl PredUnchecked for PartEliasFano {
         };
         (partition_start + local_idx, local_val + base)
     }
+}
+
+impl PredIterUnchecked for PartEliasFano {
+    type Iter<'a> = PartEliasFanoIter<'a>;
+
+    unsafe fn iter_from_pred_unchecked<const STRICT: bool>(
+        &self,
+        value: impl Borrow<usize>,
+    ) -> (usize, Self::Iter<'_>) {
+        let (idx, _) = unsafe { self.pred_unchecked::<STRICT>(value) };
+        (idx, PartEliasFanoIter { pef: self, pos: idx })
+    }
+}
+
+impl PredIterBackUnchecked for PartEliasFano {
+    type BackIter<'a> = SwappedIter<PartEliasFanoBidiIter<'a>>;
 
     unsafe fn iter_back_from_pred_unchecked<const STRICT: bool>(
         &self,
@@ -391,6 +459,10 @@ impl PredUnchecked for PartEliasFano {
             }),
         )
     }
+}
+
+impl PredBidiIterUnchecked for PartEliasFano {
+    type BidiIter<'a> = PartEliasFanoBidiIter<'a>;
 
     unsafe fn iter_bidi_from_pred_unchecked<const STRICT: bool>(
         &self,
@@ -425,11 +497,39 @@ impl Pred for PartEliasFano {
             Some(unsafe { self.pred_unchecked::<true>(value) })
         }
     }
+}
 
+impl PredIter for PartEliasFano {
+    fn iter_from_pred(
+        &self,
+        value: impl Borrow<usize>,
+    ) -> Option<(usize, <Self as PredIterUnchecked>::Iter<'_>)> {
+        let value = *value.borrow();
+        if self.n == 0 || value < unsafe { self.get_unchecked(0) } {
+            None
+        } else {
+            Some(unsafe { self.iter_from_pred_unchecked::<false>(value) })
+        }
+    }
+
+    fn iter_from_pred_strict(
+        &self,
+        value: impl Borrow<usize>,
+    ) -> Option<(usize, <Self as PredIterUnchecked>::Iter<'_>)> {
+        let value = *value.borrow();
+        if value <= unsafe { self.get_unchecked(0) } {
+            None
+        } else {
+            Some(unsafe { self.iter_from_pred_unchecked::<true>(value) })
+        }
+    }
+}
+
+impl PredIterBack for PartEliasFano {
     fn iter_back_from_pred(
         &self,
         value: impl Borrow<usize>,
-    ) -> Option<(usize, Self::BackIter<'_>)> {
+    ) -> Option<(usize, <Self as PredIterBackUnchecked>::BackIter<'_>)> {
         let value = *value.borrow();
         if self.n == 0 || value < unsafe { self.get_unchecked(0) } {
             None
@@ -441,7 +541,7 @@ impl Pred for PartEliasFano {
     fn iter_back_from_pred_strict(
         &self,
         value: impl Borrow<usize>,
-    ) -> Option<(usize, Self::BackIter<'_>)> {
+    ) -> Option<(usize, <Self as PredIterBackUnchecked>::BackIter<'_>)> {
         let value = *value.borrow();
         if value <= unsafe { self.get_unchecked(0) } {
             None
@@ -449,11 +549,13 @@ impl Pred for PartEliasFano {
             Some(unsafe { self.iter_back_from_pred_unchecked::<true>(value) })
         }
     }
+}
 
+impl PredBidiIter for PartEliasFano {
     fn iter_bidi_from_pred(
         &self,
         value: impl Borrow<usize>,
-    ) -> Option<(usize, Self::BidiIter<'_>)> {
+    ) -> Option<(usize, <Self as PredBidiIterUnchecked>::BidiIter<'_>)> {
         let value = *value.borrow();
         if self.n == 0 || value < unsafe { self.get_unchecked(0) } {
             None
@@ -465,7 +567,7 @@ impl Pred for PartEliasFano {
     fn iter_bidi_from_pred_strict(
         &self,
         value: impl Borrow<usize>,
-    ) -> Option<(usize, Self::BidiIter<'_>)> {
+    ) -> Option<(usize, <Self as PredBidiIterUnchecked>::BidiIter<'_>)> {
         let value = *value.borrow();
         if value <= unsafe { self.get_unchecked(0) } {
             None

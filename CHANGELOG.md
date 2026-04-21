@@ -8,14 +8,17 @@
   ideas of `VFunc` but representing data using the the zero-th order entropy
   (i.e., values are represented by a Huffman code).
 
-- New data-access parallel constructors starting from a slice, which are used by
-  default by all CLI utilities; a switch reverts to the classical streaming
-  constructors.
+- New data-access parallel constructors starting from a slice, which are
+  used by default by all CLI utilities; a switch reverts to the classical
+  streaming constructors.
 
 - New `Pred::rank` method, implemented by default using `Pred::pred`, but
   implemented much more efficiently for `EliasFano`.
 
 - Several new trait implementations for `BitVec`, such as `SliceByValue`.
+
+- Iterator from successors and predecessors in indexed dictionaries have
+  been extracted into separate traits.
 
 ## [0.14.0] - 2026-04-11
 

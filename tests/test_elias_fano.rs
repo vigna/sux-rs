@@ -1076,37 +1076,37 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
 
     // Call the trait methods explicitly to exercise the defaults
     // (EF's inherent methods shadow them in normal usage)
-    let succ_result = Succ::iter_bidi_from_succ(&ef, 25);
+    let succ_result = SuccBidiIter::iter_bidi_from_succ(&ef, 25);
     assert!(succ_result.is_some());
     let (idx, mut bidi) = succ_result.unwrap();
     assert_eq!(idx, 2);
     assert_eq!(bidi.next(), Some(30u64));
 
-    let succ_strict_result = Succ::iter_bidi_from_succ_strict(&ef, 30);
+    let succ_strict_result = SuccBidiIter::iter_bidi_from_succ_strict(&ef, 30);
     assert!(succ_strict_result.is_some());
     let (idx, mut bidi) = succ_strict_result.unwrap();
     assert_eq!(idx, 3);
     assert_eq!(bidi.next(), Some(40u64));
 
-    // Succ trait: no successor case
-    assert!(Succ::iter_bidi_from_succ(&ef, 51).is_none());
-    assert!(Succ::iter_bidi_from_succ_strict(&ef, 50).is_none());
+    // SuccBidiIter trait: no successor case
+    assert!(SuccBidiIter::iter_bidi_from_succ(&ef, 51).is_none());
+    assert!(SuccBidiIter::iter_bidi_from_succ_strict(&ef, 50).is_none());
 
-    let pred_result = Pred::iter_bidi_from_pred(&ef, 35);
+    let pred_result = PredBidiIter::iter_bidi_from_pred(&ef, 35);
     assert!(pred_result.is_some());
     let (idx, mut bidi) = pred_result.unwrap();
     assert_eq!(idx, 2);
     assert_eq!(bidi.next(), Some(30u64));
 
-    let pred_strict_result = Pred::iter_bidi_from_pred_strict(&ef, 30);
+    let pred_strict_result = PredBidiIter::iter_bidi_from_pred_strict(&ef, 30);
     assert!(pred_strict_result.is_some());
     let (idx, mut bidi) = pred_strict_result.unwrap();
     assert_eq!(idx, 1);
     assert_eq!(bidi.next(), Some(20u64));
 
-    // Pred trait: no predecessor case
-    assert!(Pred::iter_bidi_from_pred(&ef, 5).is_none());
-    assert!(Pred::iter_bidi_from_pred_strict(&ef, 10).is_none());
+    // PredBidiIter trait: no predecessor case
+    assert!(PredBidiIter::iter_bidi_from_pred(&ef, 5).is_none());
+    assert!(PredBidiIter::iter_bidi_from_pred_strict(&ef, 10).is_none());
 
     Ok(())
 }
