@@ -95,8 +95,14 @@ impl Chunk {
     unsafe fn pred_strict_unchecked(&self, value: usize) -> (usize, usize) {
         match self {
             Chunk::EliasFano { ef, .. } => unsafe { ef.pred_unchecked::<true>(value) },
-            Chunk::Dense { bv, .. } => {
+            Chunk::Dense { bv, len, universe } => {
                 let rank = unsafe { bv.rank_unchecked(value) };
+                assert!(
+                    rank > 0,
+                    "rank=0 in pred_strict Dense: value={value}, len={len}, \
+                     universe={universe}, first={}",
+                    unsafe { bv.select_unchecked(0) }
+                );
                 (rank - 1, unsafe { bv.select_unchecked(rank - 1) })
             }
         }
@@ -110,7 +116,6 @@ pub struct PartEliasFano {
     u: usize,
     endpoints: EfSeqDict<usize>,
     upper_bounds: EfSeqDict<usize>,
-    bases: Vec<usize>,
     chunks: Vec<Chunk>,
 }
 
@@ -212,8 +217,13 @@ impl IndexedSeq for PartEliasFano {
         } else {
             unsafe { self.endpoints.get_unchecked(partition_idx - 1) }
         };
+        let base = if partition_idx == 0 {
+            0
+        } else {
+            unsafe { self.upper_bounds.get_unchecked(partition_idx - 1) }
+        };
         let local_index = index - partition_start;
-        (unsafe { self.chunks[partition_idx].get_unchecked(local_index) }) + self.bases[partition_idx]
+        (unsafe { self.chunks[partition_idx].get_unchecked(local_index) }) + base
     }
 
     fn len(&self) -> usize {
@@ -227,18 +237,21 @@ impl SuccUnchecked for PartEliasFano {
         value: impl Borrow<usize>,
     ) -> (usize, usize) {
         let value = *value.borrow();
-        let (partition_idx, _) = unsafe { self.upper_bounds.succ_unchecked::<false>(value) };
-        let base = self.bases[partition_idx];
+        let (partition_idx, mut iter) = unsafe {
+            self.upper_bounds
+                .iter_back_from_succ_unchecked::<false>(value)
+        };
+        let _upper_bound = iter.next().unwrap();
+        let base = if partition_idx == 0 {
+            0
+        } else {
+            iter.next().unwrap()
+        };
         let partition_start = if partition_idx == 0 {
             0
         } else {
             unsafe { self.endpoints.get_unchecked(partition_idx - 1) }
         };
-
-        if value < base {
-            let local_val = unsafe { self.chunks[partition_idx].get_unchecked(0) };
-            return (partition_start, local_val + base);
-        }
 
         let relative = value - base;
         let (local_idx, local_val) = if STRICT {
@@ -258,7 +271,13 @@ impl SuccIterUnchecked for PartEliasFano {
         value: impl Borrow<usize>,
     ) -> (usize, Self::Iter<'_>) {
         let (idx, _) = unsafe { self.succ_unchecked::<STRICT>(value) };
-        (idx, PartEliasFanoIter { pef: self, pos: idx })
+        (
+            idx,
+            PartEliasFanoIter {
+                pef: self,
+                pos: idx,
+            },
+        )
     }
 }
 
@@ -272,7 +291,10 @@ impl SuccBidiIterUnchecked for PartEliasFano {
         let (idx, _) = unsafe { self.succ_unchecked::<STRICT>(value) };
         (
             idx,
-            PartEliasFanoBidiIter { pef: self, pos: idx },
+            PartEliasFanoBidiIter {
+                pef: self,
+                pos: idx,
+            },
         )
     }
 }
@@ -399,29 +421,47 @@ impl PredUnchecked for PartEliasFano {
         value: impl Borrow<usize>,
     ) -> (usize, usize) {
         let value = *value.borrow();
-        let (partition_idx, _) = unsafe { self.upper_bounds.succ_unchecked::<false>(value) };
-        let base = self.bases[partition_idx];
+        let (partition_idx, mut iter) = unsafe {
+            self.upper_bounds
+                .iter_back_from_succ_unchecked::<false>(value)
+        };
+        let _upper_bound = iter.next().unwrap();
+        let base = if partition_idx == 0 {
+            0
+        } else {
+            iter.next().unwrap()
+        };
         let partition_start = if partition_idx == 0 {
             0
         } else {
             unsafe { self.endpoints.get_unchecked(partition_idx - 1) }
         };
-
-        if value < base {
-            // pred is in the previous partition (last element)
+        let relative = value - base;
+        let first_elem = unsafe { self.chunks[partition_idx].get_unchecked(0) };
+        if relative < first_elem || (STRICT && relative == first_elem) {
             let prev_part = partition_idx - 1;
-            let prev_end = if prev_part == 0 {
-                (unsafe { self.endpoints.get_unchecked(0) }) - 1
+            let prev_base = if prev_part == 0 {
+                0
             } else {
-                (unsafe { self.endpoints.get_unchecked(prev_part) }) - 1
+                unsafe { self.upper_bounds.get_unchecked(prev_part - 1) }
             };
-            let prev_base = self.bases[prev_part];
-            let local_last = self.chunks[prev_part].len() - 1;
+            let prev_start = if prev_part == 0 {
+                0
+            } else {
+                unsafe { self.endpoints.get_unchecked(prev_part - 1) }
+            };
+            let prev_n = partition_start - prev_start;
+            let local_last = prev_n - 1;
             let local_val = unsafe { self.chunks[prev_part].get_unchecked(local_last) };
-            return (prev_end, local_val + prev_base);
+            return (prev_start + local_last, local_val + prev_base);
         }
 
-        let relative = value - base;
+        assert!(
+            relative > first_elem || (!STRICT && relative >= first_elem),
+            "pred guard failed: value={value}, base={base}, relative={relative}, \
+             first_elem={first_elem}, partition_idx={partition_idx}, \
+             partition_start={partition_start}, STRICT={STRICT}"
+        );
         let (local_idx, local_val) = if STRICT {
             unsafe { self.chunks[partition_idx].pred_strict_unchecked(relative) }
         } else {
@@ -439,7 +479,13 @@ impl PredIterUnchecked for PartEliasFano {
         value: impl Borrow<usize>,
     ) -> (usize, Self::Iter<'_>) {
         let (idx, _) = unsafe { self.pred_unchecked::<STRICT>(value) };
-        (idx, PartEliasFanoIter { pef: self, pos: idx })
+        (
+            idx,
+            PartEliasFanoIter {
+                pef: self,
+                pos: idx,
+            },
+        )
     }
 }
 
@@ -636,20 +682,13 @@ impl PartEliasFanoBuilder {
                     efb.build_with_seq_and_dict()
                 },
                 upper_bounds: empty_ef,
-                bases: Vec::new(),
                 chunks: Vec::new(),
             };
         }
 
-        let partition_points = optimal_partition(
-            &self.values,
-            self.eps1,
-            self.eps2,
-            self.fix_cost,
-        );
+        let partition_points = optimal_partition(&self.values, self.eps1, self.eps2, self.fix_cost);
 
         let num_partitions = partition_points.len() - 1;
-        let mut bases = Vec::with_capacity(num_partitions);
         let mut chunks = Vec::with_capacity(num_partitions);
         let mut cumulative_sizes = Vec::with_capacity(num_partitions);
         let mut upper_bound_values = Vec::with_capacity(num_partitions);
@@ -662,9 +701,8 @@ impl PartEliasFanoBuilder {
             cumulative += chunk_size;
             cumulative_sizes.push(cumulative);
 
-            let base = self.values[start];
             let upper = self.values[end - 1];
-            bases.push(base);
+            let base = if p == 0 { 0 } else { upper_bound_values[p - 1] };
             upper_bound_values.push(upper);
 
             let universe = upper - base;
@@ -689,7 +727,6 @@ impl PartEliasFanoBuilder {
             u: self.u,
             endpoints,
             upper_bounds,
-            bases,
             chunks,
         }
     }
@@ -1017,7 +1054,10 @@ mod tests {
 
         // Verify at least one chunk is dense
         let has_dense = pef.chunks.iter().any(|c| matches!(c, Chunk::Dense { .. }));
-        assert!(has_dense, "Expected at least one dense chunk at 50% density");
+        assert!(
+            has_dense,
+            "Expected at least one dense chunk at 50% density"
+        );
 
         // Test get
         for (i, &expected) in values.iter().enumerate() {

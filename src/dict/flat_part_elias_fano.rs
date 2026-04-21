@@ -478,13 +478,12 @@ impl SuccUnchecked for FlatPartEliasFano {
     ) -> (usize, usize) {
         let value = *value.borrow();
         let (partition_idx, mut iter) =
-            unsafe { self.upper_bounds.iter_bidi_from_succ_unchecked::<false>(value) };
+            unsafe { self.upper_bounds.iter_back_from_succ_unchecked::<false>(value) };
         let upper_bound = iter.next().unwrap();
         let base = if partition_idx == 0 {
             0
         } else {
-            iter.prev();
-            iter.prev().unwrap()
+            iter.next().unwrap()
         };
         let universe = upper_bound - base;
         let partition_start = if partition_idx == 0 {
@@ -881,13 +880,12 @@ impl PredUnchecked for FlatPartEliasFano {
     ) -> (usize, usize) {
         let value = *value.borrow();
         let (partition_idx, mut iter) =
-            unsafe { self.upper_bounds.iter_bidi_from_succ_unchecked::<false>(value) };
+            unsafe { self.upper_bounds.iter_back_from_succ_unchecked::<false>(value) };
         let upper_bound = iter.next().unwrap();
         let base = if partition_idx == 0 {
             0
         } else {
-            iter.prev();
-            iter.prev().unwrap()
+            iter.next().unwrap()
         };
         let universe = upper_bound - base;
         let endpoint = unsafe { self.endpoints.get_value_unchecked(partition_idx) };
