@@ -1185,16 +1185,27 @@ mod fuse {
         /// Than Xor Filters]".
         ///
         /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
+        /// Returns the expansion factor for fuse 3-hypergraphs.
         fn c(n: usize) -> f64 {
-            let c = {
-                let n = n.max(2) as f64;
-                0.875 + 0.25 * (1.0_f64).max((1e6_f64).ln() / n.ln())
-            };
-            // In these ranges the formula fails (multiple or infinite retries)
-            if (12318..=12371).contains(&n) || (37435..=37453).contains(&n) {
-                c + 0.01
+            if n <= 1_000_000 {
+                // From Table 1 (3-wise) of "Binary Fuse Filters: Fast and
+                // Smaller Than Xor Filters"
+                0.875
+                    + 0.25
+                        * (1.0_f64)
+                            .max((1e6_f64).ln() / ((n as f64).max(core::f64::consts::E)).ln())
+                    + 0.01
+                        // In these ranges the formula fails (large number of retries)
+                        * ((12318..=12371).contains(&n) || (37435..=37453).contains(&n)) as usize
+                            as f64
+            } else if n <= 5_000_000 {
+                1.125
+            } else if n <= 10_000_000 {
+                1.12
+            } else if n <= 20_000_000 {
+                1.11
             } else {
-                c
+                1.105
             }
         }
 
@@ -1206,27 +1217,6 @@ mod fuse {
         fn log2_seg_size(n: usize) -> u32 {
             let n = n.max(1) as f64;
             (n.ln() / (3.33_f64).ln() + 2.25).floor() as u32
-        }
-
-        /// Correlated multi-edge variant of [`Self::c`]: the same
-        /// formula plus a `+0.005` safety margin tuned via the
-        /// `corr_peel_sweep` validation matrix.
-        fn corr_c(n: usize) -> f64 {
-            Self::c(n) + 0.005
-        }
-
-        /// Correlated multi-edge variant of [`Self::log2_seg_size`].
-        ///
-        /// Reuses [`FuseLge3Shards::log2_seg_size`] which switches
-        /// to the ε-cost-sharding-paper segment formula at 20M
-        /// edges (vs the standard formula's 100M threshold here in
-        /// `Fuse3`). This gives correlated builds slightly larger
-        /// segments in the [20M, 100M] range, just enough headroom
-        /// to absorb the multi-edge correlation without changing
-        /// the non-correlated `log2_seg_size` (which stays tuned
-        /// for the cache-locality optimum at standard builds).
-        fn corr_log2_seg_size(n: usize) -> u32 {
-            FuseLge3Shards::log2_seg_size(3, n)
         }
     }
 
@@ -1263,8 +1253,8 @@ mod fuse {
             max_shard_keys: usize,
             max_shard_edges: usize,
         ) -> (f64, bool) {
-            let c = Self::corr_c(max_shard_keys);
-            self.log2_seg_size = Self::corr_log2_seg_size(max_shard_edges);
+            let c = Fuse3NoShards::c(max_shard_keys) + 0.005;
+            self.log2_seg_size = FuseLge3Shards::log2_seg_size(3, max_shard_edges);
             let num_vertices = (c * max_shard_edges as f64).ceil() as u128;
             assert!(
                 num_vertices <= Self::Vertex::MAX as u128 + 1,
@@ -1360,8 +1350,8 @@ mod fuse {
             max_shard_keys: usize,
             max_shard_edges: usize,
         ) -> (f64, bool) {
-            let c = Self::corr_c(max_shard_keys);
-            self.log2_seg_size = Self::corr_log2_seg_size(max_shard_edges);
+            let c = Fuse3NoShards::c(max_shard_keys) + 0.005;
+            self.log2_seg_size = FuseLge3Shards::log2_seg_size(3, max_shard_edges);
             let num_vertices = (c * max_shard_edges as f64).ceil() as u128;
             assert!(
                 num_vertices <= Self::Vertex::MAX as u128 + 1,
@@ -1481,22 +1471,8 @@ mod fuse {
         const MIN_SHARD: usize = 10_000_000;
 
         /// Returns the expansion factor for fuse 3-hypergraphs.
-        ///
-        /// From Table 1 (3-wise) of "[Binary Fuse Filters: Fast and Smaller
-        /// Than Xor Filters]".
-        ///
-        /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
         fn c(n: usize) -> f64 {
-            let c = {
-                let n = n.max(2) as f64;
-                0.875 + 0.25 * (1.0_f64).max((1e6_f64).ln() / n.ln())
-            };
-            // In these ranges the formula fails (multiple or infinite retries)
-            if (12318..=12371).contains(&n) || (37435..=37453).contains(&n) {
-                c + 0.01
-            } else {
-                c
-            }
+            Fuse3NoShards::c(n)
         }
 
         const A: f64 = 0.41;
@@ -1526,25 +1502,6 @@ mod fuse {
             } else {
                 (Self::A * n.ln() * n.ln().max(1.).ln() + Self::B).floor() as u32
             }
-        }
-
-        /// Correlated multi-edge variant of [`Self::c`]: same
-        /// formula plus a `+0.005` safety margin (see
-        /// `corr_peel_sweep` validation).
-        fn corr_c(n: usize) -> f64 {
-            Self::c(n) + 0.005
-        }
-
-        /// Correlated multi-edge variant of [`Self::log2_seg_size`].
-        ///
-        /// Reuses [`FuseLge3Shards::log2_seg_size`] which switches
-        /// to the ε-cost-sharding-paper formula at 20M edges (vs
-        /// our 100M `LARGE_SHARD_THRESHOLD`). Slightly larger
-        /// segments in the [20M, 100M] range absorb the multi-edge
-        /// correlation without changing the non-correlated
-        /// `log2_seg_size` (which stays tuned for cache locality).
-        fn corr_log2_seg_size(n: usize) -> u32 {
-            FuseLge3Shards::log2_seg_size(3, n)
         }
 
         /// Returns the maximum number of high bits for sharding the given
@@ -1601,8 +1558,8 @@ mod fuse {
             max_shard_keys: usize,
             max_shard_edges: usize,
         ) -> (f64, bool) {
-            let c = Self::corr_c(max_shard_keys);
-            self.log2_seg_size = Self::corr_log2_seg_size(max_shard_edges);
+            let c = Self::c(max_shard_keys) + 0.005;
+            self.log2_seg_size = FuseLge3Shards::log2_seg_size(3, max_shard_edges);
 
             self.l = ((c * max_shard_edges as f64).ceil() as usize)
                 .div_ceil(1 << self.log2_seg_size)
