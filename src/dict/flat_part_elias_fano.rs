@@ -10,8 +10,8 @@
 //! bitvectors for dense) is stored in a single contiguous `Box<[usize]>`,
 //! eliminating per-chunk allocation overhead.
 
-use crate::bits::BitVec;
-use crate::dict::elias_fano::{EfSeqDict, EliasFanoBuilder};
+use crate::bits::{BitFieldVec, BitVec};
+use crate::dict::elias_fano::{EfDict, EliasFanoBuilder};
 use crate::traits::indexed_dict::Types;
 use crate::traits::iter::{BidiIterator, SwappedIter};
 use crate::traits::{
@@ -20,25 +20,14 @@ use crate::traits::{
 use crate::utils::SelectInWord;
 use mem_dbg::{MemDbg, MemSize};
 use std::borrow::Borrow;
+use value_traits::slices::SliceByValue;
 
-// --- Constants for the inline SelectAdaptConst (u16-only, no spill) ---
+const DEFAULT_LOG2_SAMPLING1: usize = 8;
 
-const LOG2_ONES_PER_INVENTORY: usize = 11;
-const ONES_PER_INVENTORY: usize = 1 << LOG2_ONES_PER_INVENTORY;
-const ONES_PER_INVENTORY_MASK: usize = ONES_PER_INVENTORY - 1;
-const LOG2_WORDS_PER_SUBINVENTORY: usize = 3;
-const WORDS_PER_SUBINVENTORY: usize = 1 << LOG2_WORDS_PER_SUBINVENTORY;
-const WORDS_PER_INVENTORY_ENTRY: usize = WORDS_PER_SUBINVENTORY + 1; // 9
-const LOG2_U16_PER_USIZE: usize = (usize::BITS / 16).ilog2() as usize;
-const LOG2_ONES_PER_SUB16: usize =
-    LOG2_ONES_PER_INVENTORY.saturating_sub(LOG2_WORDS_PER_SUBINVENTORY + LOG2_U16_PER_USIZE);
-const ONES_PER_SUB16_MASK: usize = (1 << LOG2_ONES_PER_SUB16) - 1;
+// --- Constants for ds2i-style rank blocks ---
 
-// --- Constants for inline RankSmall<64, 1, 10> ---
-
-const RANK_BLOCK_WORDS: usize = 16; // 1024 bits per block
-const RANK_BLOCK_BITS: usize = RANK_BLOCK_WORDS * 64;
-const RANK_SUBBLOCK_WORDS: usize = 4; // 256 bits per subblock
+const LOG2_RANK_SAMPLING: usize = 9;
+const RANK_SAMPLING: usize = 1 << LOG2_RANK_SAMPLING;
 
 // --- Main structure ---
 
@@ -46,8 +35,13 @@ const RANK_SUBBLOCK_WORDS: usize = 4; // 256 bits per subblock
 pub struct FlatPartEliasFano {
     n: usize,
     u: usize,
-    endpoints: EfSeqDict<usize>,
-    upper_bounds: EfSeqDict<usize>,
+    log2_sampling1: usize,
+    /// Cumulative element counts per partition (for index → partition lookup).
+    endpoints: BitFieldVec<Box<[usize]>>,
+    /// Upper bound values per partition (for value → partition lookup via succ).
+    upper_bounds: EfDict<usize>,
+    /// Upper bound values per partition (random access by index).
+    upper_bound_values: BitFieldVec<Box<[usize]>>,
     /// One bit per chunk: 0 = sparse (EF), 1 = dense (bitvector).
     chunk_kinds: BitVec<Box<[usize]>>,
     /// Offset into `data` for each chunk.
@@ -106,50 +100,42 @@ unsafe fn select_zero_hinted_raw(
     }
 }
 
-/// Select the `rank`-th one using the inline inventory (u16-only spans).
+/// Select the `rank`-th one using ds2i-style sampled pointers.
 #[inline]
-unsafe fn inline_select(inventory: &[usize], high_bits: &[usize], rank: usize) -> usize {
-    let inventory_index = rank >> LOG2_ONES_PER_INVENTORY;
-    let inventory_start_pos = inventory_index * WORDS_PER_INVENTORY_ENTRY;
-
-    let inventory_rank = unsafe { *inventory.get_unchecked(inventory_start_pos) };
-    let subrank = rank & ONES_PER_INVENTORY_MASK;
-
-    let subinventory: &[u16] = unsafe {
-        inventory
-            .get_unchecked(inventory_start_pos + 1..)
-            .align_to::<u16>()
-            .1
+unsafe fn inline_select(
+    pointers1: &[usize],
+    high_bits: &[usize],
+    rank: usize,
+    ptr_width: usize,
+    log2_sampling: usize,
+) -> usize {
+    let block = rank >> log2_sampling;
+    let (hint_pos, hint_rank) = if block == 0 {
+        (0, 0)
+    } else {
+        let pos = unsafe { get_low_bits(pointers1, block - 1, ptr_width) };
+        (pos, block << log2_sampling)
     };
-
-    let hint_pos =
-        inventory_rank + unsafe { *subinventory.get_unchecked(subrank >> LOG2_ONES_PER_SUB16) } as usize;
-    let residual = subrank & ONES_PER_SUB16_MASK;
-
-    unsafe { select_hinted_raw(high_bits, rank, hint_pos, rank - residual) }
+    unsafe { select_hinted_raw(high_bits, rank, hint_pos, hint_rank) }
 }
 
-/// Select the `rank`-th zero using the inline inventory (u16-only spans).
+/// Select the `rank`-th zero using ds2i-style sampled pointers.
 #[inline]
-unsafe fn inline_select_zero(inventory: &[usize], high_bits: &[usize], rank: usize) -> usize {
-    let inventory_index = rank >> LOG2_ONES_PER_INVENTORY;
-    let inventory_start_pos = inventory_index * WORDS_PER_INVENTORY_ENTRY;
-
-    let inventory_rank = unsafe { *inventory.get_unchecked(inventory_start_pos) };
-    let subrank = rank & ONES_PER_INVENTORY_MASK;
-
-    let subinventory: &[u16] = unsafe {
-        inventory
-            .get_unchecked(inventory_start_pos + 1..)
-            .align_to::<u16>()
-            .1
+unsafe fn inline_select_zero(
+    pointers0: &[usize],
+    high_bits: &[usize],
+    rank: usize,
+    ptr_width: usize,
+    log2_sampling: usize,
+) -> usize {
+    let block = rank >> log2_sampling;
+    let (hint_pos, hint_rank) = if block == 0 {
+        (0, 0)
+    } else {
+        let pos = unsafe { get_low_bits(pointers0, block - 1, ptr_width) };
+        (pos, block << log2_sampling)
     };
-
-    let hint_pos =
-        inventory_rank + unsafe { *subinventory.get_unchecked(subrank >> LOG2_ONES_PER_SUB16) } as usize;
-    let residual = subrank & ONES_PER_SUB16_MASK;
-
-    unsafe { select_zero_hinted_raw(high_bits, rank, hint_pos, rank - residual) }
+    unsafe { select_zero_hinted_raw(high_bits, rank, hint_pos, hint_rank) }
 }
 
 /// Read a value of `bit_width` bits at position `index` from packed low bits.
@@ -170,69 +156,53 @@ unsafe fn get_low_bits(low_bits: &[usize], index: usize, bit_width: usize) -> us
     }
 }
 
-/// Rank (count of ones up to but not including `pos`) using inline
-/// RankSmall<64, 1, 10> counters.
+/// Rank (count of ones up to but not including `pos`) using ds2i-style
+/// packed rank samples (one per 512 bits).
 #[inline]
-unsafe fn inline_rank(counters: &[usize], bv: &[usize], pos: usize) -> usize {
-    let word_pos = pos / 64;
-    let block = word_pos / RANK_BLOCK_WORDS;
-    let subblock = (word_pos % RANK_BLOCK_WORDS) / RANK_SUBBLOCK_WORDS;
-
-    let counter_word = unsafe { *counters.get_unchecked(block) };
-    let absolute = counter_word as u32 as usize;
-    let relative_packed = (counter_word >> 32) as u32;
-    let rel = ((relative_packed as u64) >> (10 * (subblock ^ 3))) as usize & 0x3FF;
-    let hint_rank = absolute + rel;
-
-    // Popcount from subblock start to pos
-    let hint_word_pos = block * RANK_BLOCK_WORDS + subblock * RANK_SUBBLOCK_WORDS;
-    let mut rank = hint_rank;
-    let mut wp = hint_word_pos;
-    while (wp + 1) * 64 <= pos {
+unsafe fn inline_rank(
+    rank_samples: &[usize],
+    bv: &[usize],
+    pos: usize,
+    rank_sample_width: usize,
+) -> usize {
+    let block = pos >> LOG2_RANK_SAMPLING;
+    let (base_rank, start_word) = if block == 0 {
+        (0, 0)
+    } else {
+        (
+            unsafe { get_low_bits(rank_samples, block - 1, rank_sample_width) },
+            (block << LOG2_RANK_SAMPLING) / 64,
+        )
+    };
+    let target_word = pos / 64;
+    let mut rank = base_rank;
+    let mut wp = start_word;
+    while wp < target_word {
         rank += unsafe { *bv.get_unchecked(wp) }.count_ones() as usize;
         wp += 1;
     }
     rank + (unsafe { *bv.get_unchecked(wp) } & ((1usize << (pos % 64)) - 1)).count_ones() as usize
 }
 
-/// Select the `rank`-th one in a dense bitvector by linear scan over
-/// RankSmall<64,1,10> counters then forward scan.
+/// Select the `rank`-th one in a dense bitvector using ds2i-style sampled
+/// select pointers.
 #[inline]
-unsafe fn inline_dense_select(counters: &[usize], bv: &[usize], rank: usize) -> usize {
-    let num_blocks = counters.len();
-
-    // Binary search over block absolute counters
-    let mut lo = 0usize;
-    let mut hi = num_blocks;
-    while lo < hi {
-        let mid = lo + (hi - lo) / 2;
-        let abs = unsafe { *counters.get_unchecked(mid) } as u32 as usize;
-        if abs <= rank {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    // lo is the first block whose absolute > rank, so target is in block lo-1
-    let block = lo - 1;
-    let counter_word = unsafe { *counters.get_unchecked(block) };
-    let absolute = counter_word as u32 as usize;
-    let relative_packed = (counter_word >> 32) as u32;
-
-    // Find the subblock within this block
-    let mut hint_rank = absolute;
-    let mut subblock = 0usize;
-    for sb in 1..4 {
-        let rel = ((relative_packed as u64) >> (10 * (sb ^ 3))) as usize & 0x3FF;
-        if absolute + rel <= rank {
-            hint_rank = absolute + rel;
-            subblock = sb;
-        } else {
-            break;
-        }
-    }
-
-    let hint_pos = (block * RANK_BLOCK_WORDS + subblock * RANK_SUBBLOCK_WORDS) * 64;
+unsafe fn inline_dense_select(
+    select_pointers: &[usize],
+    bv: &[usize],
+    rank: usize,
+    select_ptr_width: usize,
+    log2_sampling1: usize,
+) -> usize {
+    let block = rank >> log2_sampling1;
+    let (hint_pos, hint_rank) = if block == 0 {
+        (0, 0)
+    } else {
+        (
+            unsafe { get_low_bits(select_pointers, block - 1, select_ptr_width) },
+            block << log2_sampling1,
+        )
+    };
     unsafe { select_hinted_raw(bv, rank, hint_pos, hint_rank) }
 }
 
@@ -250,107 +220,121 @@ fn ef_params(n: usize, universe: usize) -> (usize, usize, usize) {
     (l, high_bits_len, high_bits_len - n)
 }
 
-/// Number of words for a select inventory (ones or zeros).
+/// Number of bits needed to represent values in [0, len).
 #[inline]
-fn inventory_words(num_items: usize) -> usize {
-    let inventory_size = num_items.div_ceil(ONES_PER_INVENTORY);
-    inventory_size * WORDS_PER_INVENTORY_ENTRY + 1
+fn pointer_width(len: usize) -> usize {
+    if len <= 1 {
+        0
+    } else {
+        usize::BITS as usize - (len - 1).leading_zeros() as usize
+    }
+}
+
+/// Number of words for sampled pointers (ones and zeros combined).
+#[inline]
+fn sampled_pointers_words(
+    n: usize,
+    num_zeros: usize,
+    high_bits_len: usize,
+    log2_sampling1: usize,
+) -> (usize, usize) {
+    let ptr_width = pointer_width(high_bits_len);
+    let sampling1 = 1usize << log2_sampling1;
+    let sampling0 = 1usize << (log2_sampling1 + 1);
+    let num_ptr1 = if n == 0 { 0 } else { (n - 1) / sampling1 };
+    let num_ptr0 = if num_zeros == 0 {
+        0
+    } else {
+        (num_zeros - 1) / sampling0
+    };
+    let ptr1_words = (num_ptr1 * ptr_width).div_ceil(64);
+    let ptr0_words = (num_ptr0 * ptr_width).div_ceil(64);
+    (ptr1_words, ptr0_words)
 }
 
 // --- Chunk views for accessing flat data ---
 
 struct SparseView<'a> {
-    sel1_inv: &'a [usize],
-    sel0_inv: &'a [usize],
+    pointers1: &'a [usize],
+    pointers0: &'a [usize],
     high_bits: &'a [usize],
     low_bits: &'a [usize],
     n: usize,
     l: usize,
+    ptr_width: usize,
+    log2_sampling1: usize,
 }
 
 struct DenseView<'a> {
-    counters: &'a [usize],
+    rank_samples: &'a [usize],
+    select_pointers: &'a [usize],
     bv: &'a [usize],
-    n: usize,
-    universe: usize,
+    rank_sample_width: usize,
+    select_ptr_width: usize,
+    log2_sampling1: usize,
 }
 
 impl FlatPartEliasFano {
     pub fn num_partitions(&self) -> usize {
-        self.chunk_offsets.len()
+        (*self.chunk_offsets).len()
     }
 
     #[inline]
-    fn chunk_n(&self, p: usize) -> usize {
-        let end = unsafe { self.endpoints.get_unchecked(p) };
-        if p == 0 {
-            end
-        } else {
-            end - unsafe { self.endpoints.get_unchecked(p - 1) }
-        }
-    }
-
-    #[inline]
-    fn base(&self, p: usize) -> usize {
-        if p == 0 {
-            0
-        } else {
-            unsafe { self.upper_bounds.get_unchecked(p - 1) }
-        }
-    }
-
-    #[inline]
-    fn chunk_universe(&self, p: usize) -> usize {
-        (unsafe { self.upper_bounds.get_unchecked(p) }) - self.base(p)
-    }
-
-    #[inline]
-    fn sparse_view(&self, p: usize) -> SparseView<'_> {
+    fn sparse_view(&self, p: usize, n: usize, universe: usize) -> SparseView<'_> {
         let offset = self.chunk_offsets[p];
-        let n = self.chunk_n(p);
-        let universe = self.chunk_universe(p);
         let (l, high_bits_len, num_zeros) = ef_params(n, universe + 1);
+        let ptr_width = pointer_width(high_bits_len);
 
-        let sel1_words = inventory_words(n);
-        let sel0_words = inventory_words(num_zeros);
+        let (ptr1_words, ptr0_words) =
+            sampled_pointers_words(n, num_zeros, high_bits_len, self.log2_sampling1);
         let high_words = high_bits_len.div_ceil(64);
-        // low_bits follow high_bits
 
-        let sel1_inv = &self.data[offset..offset + sel1_words];
-        let sel0_inv = &self.data[offset + sel1_words..offset + sel1_words + sel0_words];
-        let high_start = offset + sel1_words + sel0_words;
+        let pointers1 = &self.data[offset..offset + ptr1_words];
+        let pointers0 = &self.data[offset + ptr1_words..offset + ptr1_words + ptr0_words];
+        let high_start = offset + ptr1_words + ptr0_words;
         let high_bits = &self.data[high_start..high_start + high_words];
         let low_start = high_start + high_words;
         let low_words = (n * l).div_ceil(64);
         let low_bits = &self.data[low_start..low_start + low_words];
 
         SparseView {
-            sel1_inv,
-            sel0_inv,
+            pointers1,
+            pointers0,
             high_bits,
             low_bits,
             n,
             l,
+            ptr_width,
+            log2_sampling1: self.log2_sampling1,
         }
     }
 
     #[inline]
-    fn dense_view(&self, p: usize) -> DenseView<'_> {
+    fn dense_view(&self, p: usize, n: usize, universe: usize) -> DenseView<'_> {
         let offset = self.chunk_offsets[p];
-        let n = self.chunk_n(p);
-        let universe = self.chunk_universe(p) + 1; // bitvector length
 
-        let num_counters = universe.div_ceil(RANK_BLOCK_BITS);
+        let rank_sample_width = pointer_width(n + 1);
+        let select_ptr_width = pointer_width(universe);
+        let num_rank_samples = universe >> LOG2_RANK_SAMPLING;
+        let sampling1 = 1usize << self.log2_sampling1;
+        let num_select_pointers = if n == 0 { 0 } else { (n - 1) / sampling1 };
+
+        let rank_words = (num_rank_samples * rank_sample_width).div_ceil(64);
+        let select_words = (num_select_pointers * select_ptr_width).div_ceil(64);
         let bv_words = universe.div_ceil(64);
 
-        let counters = &self.data[offset..offset + num_counters];
-        let bv = &self.data[offset + num_counters..offset + num_counters + bv_words];
+        let rank_samples = &self.data[offset..offset + rank_words];
+        let select_pointers = &self.data[offset + rank_words..offset + rank_words + select_words];
+        let bv_start = offset + rank_words + select_words;
+        let bv = &self.data[bv_start..bv_start + bv_words];
 
         DenseView {
-            counters,
+            rank_samples,
+            select_pointers,
             bv,
-            n,
-            universe,
+            rank_sample_width,
+            select_ptr_width,
+            log2_sampling1: self.log2_sampling1,
         }
     }
 
@@ -370,25 +354,37 @@ impl Types for FlatPartEliasFano {
 impl IndexedSeq for FlatPartEliasFano {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> usize {
-        let (partition_idx, _) = unsafe { self.endpoints.succ_unchecked::<false>(index + 1) };
+        let num_partitions = (*self.chunk_offsets).len();
+        let mut lo = 0usize;
+        let mut hi = num_partitions;
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if unsafe { self.endpoints.get_value_unchecked(mid) } <= index {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        let partition_idx = lo;
+        let endpoint = unsafe { self.endpoints.get_value_unchecked(partition_idx) };
         let partition_start = if partition_idx == 0 {
             0
         } else {
-            unsafe { self.endpoints.get_unchecked(partition_idx - 1) }
+            unsafe { self.endpoints.get_value_unchecked(partition_idx - 1) }
         };
         let local_index = index - partition_start;
-        let base = self.base(partition_idx);
+        let n = endpoint - partition_start;
 
-        if self.is_dense(partition_idx) {
-            let view = self.dense_view(partition_idx);
-            base + unsafe { inline_dense_select(view.counters, view.bv, local_index) }
+        let upper_bound =
+            unsafe { self.upper_bound_values.get_value_unchecked(partition_idx) };
+        let base = if partition_idx == 0 {
+            0
         } else {
-            let view = self.sparse_view(partition_idx);
-            let high = unsafe { inline_select(view.sel1_inv, view.high_bits, local_index) }
-                - local_index;
-            let low = unsafe { get_low_bits(view.low_bits, local_index, view.l) };
-            base + ((high << view.l) | low)
-        }
+            unsafe { self.upper_bound_values.get_value_unchecked(partition_idx - 1) }
+        };
+        let universe = upper_bound - base;
+
+        (unsafe { self.chunk_get_unchecked(partition_idx, local_index, n, universe) }) + base
     }
 
     fn len(&self) -> usize {
@@ -481,19 +477,27 @@ impl SuccUnchecked for FlatPartEliasFano {
         value: impl Borrow<usize>,
     ) -> (usize, usize) {
         let value = *value.borrow();
-        let (partition_idx, _) = unsafe { self.upper_bounds.succ_unchecked::<false>(value) };
-        let base = self.base(partition_idx);
+        let (partition_idx, upper_bound) =
+            unsafe { self.upper_bounds.succ_unchecked::<false>(value) };
+        let base = if partition_idx == 0 {
+            0
+        } else {
+            unsafe { self.upper_bound_values.get_value_unchecked(partition_idx - 1) }
+        };
+        let universe = upper_bound - base;
         let partition_start = if partition_idx == 0 {
             0
         } else {
-            unsafe { self.endpoints.get_unchecked(partition_idx - 1) }
+            unsafe { self.endpoints.get_value_unchecked(partition_idx - 1) }
         };
+        let endpoint = unsafe { self.endpoints.get_value_unchecked(partition_idx) };
+        let n = endpoint - partition_start;
 
         let relative = value - base;
         let (local_idx, local_val) = if STRICT {
-            unsafe { self.chunk_succ_strict(partition_idx, relative) }
+            unsafe { self.chunk_succ_strict(partition_idx, relative, n, universe) }
         } else {
-            unsafe { self.chunk_succ(partition_idx, relative) }
+            unsafe { self.chunk_succ(partition_idx, relative, n, universe) }
         };
         (partition_start + local_idx, local_val + base)
     }
@@ -517,77 +521,109 @@ impl SuccUnchecked for FlatPartEliasFano {
 
 impl FlatPartEliasFano {
     #[inline]
-    unsafe fn chunk_get_unchecked(&self, p: usize, index: usize) -> usize {
+    unsafe fn chunk_get_unchecked(
+        &self,
+        p: usize,
+        index: usize,
+        n: usize,
+        universe: usize,
+    ) -> usize {
         if self.is_dense(p) {
-            let view = self.dense_view(p);
-            unsafe { inline_dense_select(view.counters, view.bv, index) }
+            let view = self.dense_view(p, n, universe + 1);
+            unsafe { inline_dense_select(view.select_pointers, view.bv, index, view.select_ptr_width, view.log2_sampling1) }
         } else {
-            let view = self.sparse_view(p);
-            let high =
-                unsafe { inline_select(view.sel1_inv, view.high_bits, index) } - index;
+            let view = self.sparse_view(p, n, universe);
+            let high = unsafe {
+                inline_select(view.pointers1, view.high_bits, index, view.ptr_width, view.log2_sampling1)
+            } - index;
             let low = unsafe { get_low_bits(view.low_bits, index, view.l) };
             (high << view.l) | low
         }
     }
 
     #[inline]
-    unsafe fn chunk_succ(&self, p: usize, value: usize) -> (usize, usize) {
+    unsafe fn chunk_succ(
+        &self,
+        p: usize,
+        value: usize,
+        n: usize,
+        universe: usize,
+    ) -> (usize, usize) {
         if self.is_dense(p) {
-            let view = self.dense_view(p);
-            let rank = unsafe { inline_rank(view.counters, view.bv, value) };
-            let pos = unsafe { inline_dense_select(view.counters, view.bv, rank) };
+            let view = self.dense_view(p, n, universe + 1);
+            let rank = unsafe { inline_rank(view.rank_samples, view.bv, value, view.rank_sample_width) };
+            let pos = unsafe { inline_dense_select(view.select_pointers, view.bv, rank, view.select_ptr_width, view.log2_sampling1) };
             if pos >= value {
                 (rank, pos)
             } else {
-                (rank + 1, unsafe { inline_dense_select(view.counters, view.bv, rank + 1) })
+                (rank + 1, unsafe { inline_dense_select(view.select_pointers, view.bv, rank + 1, view.select_ptr_width, view.log2_sampling1) })
             }
         } else {
-            let view = self.sparse_view(p);
+            let view = self.sparse_view(p, n, universe);
             unsafe { ef_succ_raw::<false>(&view, value) }
         }
     }
 
     #[inline]
-    unsafe fn chunk_succ_strict(&self, p: usize, value: usize) -> (usize, usize) {
+    unsafe fn chunk_succ_strict(
+        &self,
+        p: usize,
+        value: usize,
+        n: usize,
+        universe: usize,
+    ) -> (usize, usize) {
         if self.is_dense(p) {
-            let view = self.dense_view(p);
-            let universe = view.universe;
-            let rank = if value >= universe {
-                (unsafe { inline_rank(view.counters, view.bv, universe) }) + 1
+            let view = self.dense_view(p, n, universe + 1);
+            let bv_len = universe + 1;
+            let rank = if value >= bv_len {
+                (unsafe { inline_rank(view.rank_samples, view.bv, bv_len, view.rank_sample_width) }) + 1
             } else {
-                unsafe { inline_rank(view.counters, view.bv, value + 1) }
+                unsafe { inline_rank(view.rank_samples, view.bv, value + 1, view.rank_sample_width) }
             };
-            (rank, unsafe { inline_dense_select(view.counters, view.bv, rank) })
+            (rank, unsafe { inline_dense_select(view.select_pointers, view.bv, rank, view.select_ptr_width, view.log2_sampling1) })
         } else {
-            let view = self.sparse_view(p);
+            let view = self.sparse_view(p, n, universe);
             unsafe { ef_succ_raw::<true>(&view, value) }
         }
     }
 
     #[inline]
-    unsafe fn chunk_pred(&self, p: usize, value: usize) -> (usize, usize) {
+    unsafe fn chunk_pred(
+        &self,
+        p: usize,
+        value: usize,
+        n: usize,
+        universe: usize,
+    ) -> (usize, usize) {
         if self.is_dense(p) {
-            let view = self.dense_view(p);
-            let rank = if value >= view.universe {
-                view.n
+            let view = self.dense_view(p, n, universe + 1);
+            let bv_len = universe + 1;
+            let rank = if value >= bv_len {
+                n
             } else {
-                unsafe { inline_rank(view.counters, view.bv, value + 1) }
+                unsafe { inline_rank(view.rank_samples, view.bv, value + 1, view.rank_sample_width) }
             };
-            (rank - 1, unsafe { inline_dense_select(view.counters, view.bv, rank - 1) })
+            (rank - 1, unsafe { inline_dense_select(view.select_pointers, view.bv, rank - 1, view.select_ptr_width, view.log2_sampling1) })
         } else {
-            let view = self.sparse_view(p);
+            let view = self.sparse_view(p, n, universe);
             unsafe { ef_pred_raw::<false>(&view, value) }
         }
     }
 
     #[inline]
-    unsafe fn chunk_pred_strict(&self, p: usize, value: usize) -> (usize, usize) {
+    unsafe fn chunk_pred_strict(
+        &self,
+        p: usize,
+        value: usize,
+        n: usize,
+        universe: usize,
+    ) -> (usize, usize) {
         if self.is_dense(p) {
-            let view = self.dense_view(p);
-            let rank = unsafe { inline_rank(view.counters, view.bv, value) };
-            (rank - 1, unsafe { inline_dense_select(view.counters, view.bv, rank - 1) })
+            let view = self.dense_view(p, n, universe + 1);
+            let rank = unsafe { inline_rank(view.rank_samples, view.bv, value, view.rank_sample_width) };
+            (rank - 1, unsafe { inline_dense_select(view.select_pointers, view.bv, rank - 1, view.select_ptr_width, view.log2_sampling1) })
         } else {
-            let view = self.sparse_view(p);
+            let view = self.sparse_view(p, n, universe);
             unsafe { ef_pred_raw::<true>(&view, value) }
         }
     }
@@ -600,7 +636,9 @@ unsafe fn ef_succ_raw<const STRICT: bool>(view: &SparseView<'_>, value: usize) -
     let bit_pos = if zeros_to_skip == 0 {
         0
     } else {
-        (unsafe { inline_select_zero(view.sel0_inv, view.high_bits, zeros_to_skip - 1) }) + 1
+        (unsafe {
+            inline_select_zero(view.pointers0, view.high_bits, zeros_to_skip - 1, view.ptr_width, view.log2_sampling1 + 1)
+        }) + 1
     };
 
     let mut rank = bit_pos - zeros_to_skip;
@@ -631,17 +669,16 @@ unsafe fn ef_succ_raw<const STRICT: bool>(view: &SparseView<'_>, value: usize) -
 /// Predecessor search within a sparse (EF) chunk.
 #[inline]
 unsafe fn ef_pred_raw<const STRICT: bool>(view: &SparseView<'_>, value: usize) -> (usize, usize) {
-    // Find succ, then go back one
     let zeros_to_skip = (value >> view.l) + 1;
-    // Find the position just past all elements with high bits <= value >> l
     let bit_pos = if zeros_to_skip == 0 {
         0
     } else {
-        let num_zeros_in_high = view.high_bits.len() * 64 - view.n; // approximate
+        let num_zeros_in_high = view.high_bits.len() * 64 - view.n;
         if zeros_to_skip > num_zeros_in_high {
-            // value is beyond all elements
             let last_idx = view.n - 1;
-            let high = unsafe { inline_select(view.sel1_inv, view.high_bits, last_idx) } - last_idx;
+            let high = unsafe {
+                inline_select(view.pointers1, view.high_bits, last_idx, view.ptr_width, view.log2_sampling1)
+            } - last_idx;
             let low = unsafe { get_low_bits(view.low_bits, last_idx, view.l) };
             let last_val = (high << view.l) | low;
             if STRICT {
@@ -652,55 +689,54 @@ unsafe fn ef_pred_raw<const STRICT: bool>(view: &SparseView<'_>, value: usize) -
                 return (last_idx, last_val);
             }
         }
-        (unsafe { inline_select_zero(view.sel0_inv, view.high_bits, zeros_to_skip - 1) }) + 1
+        (unsafe {
+            inline_select_zero(view.pointers0, view.high_bits, zeros_to_skip - 1, view.ptr_width, view.log2_sampling1 + 1)
+        }) + 1
     };
 
-    // rank = number of ones before bit_pos
     let rank = bit_pos - zeros_to_skip;
 
-    // Scan backwards from rank to find the predecessor
     if STRICT {
-        // Find largest element < value
-        // The element at rank-1 has value < value (since its high bits < zeros_to_skip)
-        // But we might need to check if element at rank has the same high bits
-        // and a smaller low value
-        // Actually, let's use a simpler approach: binary-search back from rank
         if rank == 0 {
-            // Check if first element works
-            let high = unsafe { inline_select(view.sel1_inv, view.high_bits, 0) };
+            let high = unsafe {
+                inline_select(view.pointers1, view.high_bits, 0, view.ptr_width, view.log2_sampling1)
+            };
             let low = unsafe { get_low_bits(view.low_bits, 0, view.l) };
-            let val = ((high) << view.l) | low;
-            return (0, val); // caller guarantees pred exists
+            let val = (high << view.l) | low;
+            return (0, val);
         }
-        // Check element at rank-1 — it must be < value since its high bits are at most
-        // value >> l, and if equal, the linear scan in succ would have found it
         let idx = rank - 1;
-        let high = unsafe { inline_select(view.sel1_inv, view.high_bits, idx) } - idx;
+        let high = unsafe {
+            inline_select(view.pointers1, view.high_bits, idx, view.ptr_width, view.log2_sampling1)
+        } - idx;
         let low = unsafe { get_low_bits(view.low_bits, idx, view.l) };
         let val = (high << view.l) | low;
         if val < value {
             return (idx, val);
         }
-        // Need to go further back
         if idx == 0 {
             panic!("pred_strict called but no predecessor exists");
         }
         let idx2 = idx - 1;
-        let high2 = unsafe { inline_select(view.sel1_inv, view.high_bits, idx2) } - idx2;
+        let high2 = unsafe {
+            inline_select(view.pointers1, view.high_bits, idx2, view.ptr_width, view.log2_sampling1)
+        } - idx2;
         let low2 = unsafe { get_low_bits(view.low_bits, idx2, view.l) };
         (idx2, (high2 << view.l) | low2)
     } else {
-        // Find largest element <= value
-        // Start from rank and scan backwards
         let mut idx = rank;
         loop {
             if idx == 0 {
-                let high = unsafe { inline_select(view.sel1_inv, view.high_bits, 0) };
+                let high = unsafe {
+                    inline_select(view.pointers1, view.high_bits, 0, view.ptr_width, view.log2_sampling1)
+                };
                 let low = unsafe { get_low_bits(view.low_bits, 0, view.l) };
-                return (0, ((high) << view.l) | low);
+                return (0, (high << view.l) | low);
             }
             idx -= 1;
-            let high = unsafe { inline_select(view.sel1_inv, view.high_bits, idx) } - idx;
+            let high = unsafe {
+                inline_select(view.pointers1, view.high_bits, idx, view.ptr_width, view.log2_sampling1)
+            } - idx;
             let low = unsafe { get_low_bits(view.low_bits, idx, view.l) };
             let val = (high << view.l) | low;
             if val <= value {
@@ -789,34 +825,50 @@ impl PredUnchecked for FlatPartEliasFano {
         value: impl Borrow<usize>,
     ) -> (usize, usize) {
         let value = *value.borrow();
-        let (partition_idx, _) = unsafe { self.upper_bounds.succ_unchecked::<false>(value) };
-        let base = self.base(partition_idx);
+        let (partition_idx, upper_bound) =
+            unsafe { self.upper_bounds.succ_unchecked::<false>(value) };
+        let base = if partition_idx == 0 {
+            0
+        } else {
+            unsafe { self.upper_bound_values.get_value_unchecked(partition_idx - 1) }
+        };
+        let universe = upper_bound - base;
+        let endpoint = unsafe { self.endpoints.get_value_unchecked(partition_idx) };
         let partition_start = if partition_idx == 0 {
             0
         } else {
-            unsafe { self.endpoints.get_unchecked(partition_idx - 1) }
+            unsafe { self.endpoints.get_value_unchecked(partition_idx - 1) }
         };
+        let n = endpoint - partition_start;
 
         let relative = value - base;
-        let first_elem = unsafe { self.chunk_get_unchecked(partition_idx, 0) };
+        let first_elem =
+            unsafe { self.chunk_get_unchecked(partition_idx, 0, n, universe) };
         if relative < first_elem || (STRICT && relative == first_elem) {
             let prev_part = partition_idx - 1;
+            let prev_base = if prev_part == 0 {
+                0
+            } else {
+                unsafe { self.upper_bound_values.get_value_unchecked(prev_part - 1) }
+            };
+            let prev_upper = base;
+            let prev_universe = prev_upper - prev_base;
             let prev_start = if prev_part == 0 {
                 0
             } else {
-                unsafe { self.endpoints.get_unchecked(prev_part - 1) }
+                unsafe { self.endpoints.get_value_unchecked(prev_part - 1) }
             };
-            let prev_n = self.chunk_n(prev_part);
-            let prev_base = self.base(prev_part);
+            let prev_n = partition_start - prev_start;
             let local_last = prev_n - 1;
-            let local_val = unsafe { self.chunk_get_unchecked(prev_part, local_last) };
+            let local_val =
+                unsafe { self.chunk_get_unchecked(prev_part, local_last, prev_n, prev_universe) };
             return (prev_start + local_last, local_val + prev_base);
         }
 
         let (local_idx, local_val) = if STRICT {
-            unsafe { self.chunk_pred_strict(partition_idx, relative) }
+            unsafe { self.chunk_pred_strict(partition_idx, relative, n, universe) }
         } else {
-            unsafe { self.chunk_pred(partition_idx, relative) }
+            unsafe { self.chunk_pred(partition_idx, relative, n, universe) }
         };
         (partition_start + local_idx, local_val + base)
     }
@@ -920,14 +972,11 @@ impl Pred for FlatPartEliasFano {
 
 // --- Builder ---
 
-/// Cost in bits of a sparse (EF) chunk in the flat layout, including select
-/// inventory overhead.
-fn flat_ef_cost(universe: usize, n: usize) -> usize {
+/// Cost in bits of a sparse (EF) chunk in the flat layout, including sampled
+/// pointer overhead.
+fn flat_ef_cost(universe: usize, n: usize, log2_sampling1: usize) -> usize {
     if n == 0 {
         return 0;
-    }
-    if universe <= 1 {
-        return n + inventory_words(n) * 64 + inventory_words(0) * 64;
     }
     let l = if universe > n {
         (universe / n).ilog2() as usize
@@ -936,23 +985,35 @@ fn flat_ef_cost(universe: usize, n: usize) -> usize {
     };
     let high_bits_len = n + (universe >> l) + 2;
     let num_zeros = high_bits_len - n;
-    let raw_bits = high_bits_len + n * l;
-    raw_bits + inventory_words(n) * 64 + inventory_words(num_zeros) * 64
-}
-
-/// Cost in bits of a dense chunk in the flat layout, including rank counter
-/// overhead.
-fn flat_dense_cost(universe: usize) -> usize {
-    let num_counters = universe.div_ceil(RANK_BLOCK_BITS);
-    universe + num_counters * 64
-}
-
-fn flat_chunk_cost(universe: usize, n: usize) -> usize {
-    if n > universe {
-        // Duplicates: dense encoding not possible
-        flat_ef_cost(universe, n)
+    let ptr_width = pointer_width(high_bits_len);
+    let sampling1 = 1usize << log2_sampling1;
+    let sampling0 = 1usize << (log2_sampling1 + 1);
+    let num_ptr1 = (n - 1) / sampling1;
+    let num_ptr0 = if num_zeros == 0 {
+        0
     } else {
-        flat_ef_cost(universe, n).min(flat_dense_cost(universe))
+        (num_zeros - 1) / sampling0
+    };
+    let ptr_bits = (num_ptr1 + num_ptr0) * ptr_width;
+    high_bits_len + n * l + ptr_bits
+}
+
+/// Cost in bits of a dense chunk in the flat layout (ds2i compact_ranked_bitvector).
+fn flat_dense_cost(universe: usize, n: usize, log2_sampling1: usize) -> usize {
+    let num_rank_samples = universe >> LOG2_RANK_SAMPLING;
+    let rank_sample_width = pointer_width(n + 1);
+    let sampling1 = 1usize << log2_sampling1;
+    let num_select_pointers = if n == 0 { 0 } else { (n - 1) / sampling1 };
+    let select_ptr_width = pointer_width(universe);
+    universe + num_rank_samples * rank_sample_width + num_select_pointers * select_ptr_width
+}
+
+fn flat_chunk_cost(universe: usize, n: usize, log2_sampling1: usize) -> usize {
+    if n > universe {
+        flat_ef_cost(universe, n, log2_sampling1)
+    } else {
+        flat_ef_cost(universe, n, log2_sampling1)
+            .min(flat_dense_cost(universe, n, log2_sampling1))
     }
 }
 
@@ -971,6 +1032,7 @@ pub struct FlatPartEliasFanoBuilder {
     eps1: f64,
     eps2: f64,
     fix_cost: usize,
+    log2_sampling1: usize,
     values: Vec<usize>,
 }
 
@@ -982,6 +1044,7 @@ impl FlatPartEliasFanoBuilder {
             eps1: 0.03,
             eps2: 0.3,
             fix_cost: 64,
+            log2_sampling1: DEFAULT_LOG2_SAMPLING1,
             values: Vec::with_capacity(n),
         }
     }
@@ -1001,6 +1064,11 @@ impl FlatPartEliasFanoBuilder {
         self
     }
 
+    pub fn log2_sampling1(mut self, log2_sampling1: usize) -> Self {
+        self.log2_sampling1 = log2_sampling1;
+        self
+    }
+
     pub fn push(&mut self, value: usize) {
         debug_assert!(
             self.values.is_empty() || value >= *self.values.last().unwrap(),
@@ -1012,16 +1080,13 @@ impl FlatPartEliasFanoBuilder {
     pub fn build(self) -> FlatPartEliasFano {
         assert_eq!(self.values.len(), self.n);
         if self.n == 0 {
-            let efb = EliasFanoBuilder::new(0, 0usize);
-            let empty_ef = efb.build_with_seq_and_dict();
             return FlatPartEliasFano {
                 n: 0,
                 u: self.u,
-                endpoints: {
-                    let efb = EliasFanoBuilder::new(0, 0usize);
-                    efb.build_with_seq_and_dict()
-                },
-                upper_bounds: empty_ef,
+                log2_sampling1: self.log2_sampling1,
+                endpoints: BitFieldVec::<Vec<usize>>::new(1, 0).into_padded(),
+                upper_bounds: EliasFanoBuilder::new(0, 0usize).build_with_dict(),
+                upper_bound_values: BitFieldVec::<Vec<usize>>::new(1, 0).into_padded(),
                 chunk_kinds: BitVec::new(0).into(),
                 chunk_offsets: Box::new([]),
                 data: Box::new([]),
@@ -1029,11 +1094,12 @@ impl FlatPartEliasFanoBuilder {
         }
 
         let fix_cost = self.fix_cost;
+        let log2_sampling1 = self.log2_sampling1;
         let partition_points = super::part_elias_fano::optimal_partition_with(
             &self.values,
             self.eps1,
             self.eps2,
-            |universe, n| flat_chunk_cost(universe, n) + fix_cost,
+            |universe, n| flat_chunk_cost(universe, n, log2_sampling1) + fix_cost,
         );
 
         let num_partitions = partition_points.len() - 1;
@@ -1062,21 +1128,28 @@ impl FlatPartEliasFanoBuilder {
             let has_duplicates = self.values[start..end].windows(2).any(|w| w[0] == w[1]);
             let use_dense = !has_duplicates
                 && chunk_n <= universe + 1
-                && flat_dense_cost(universe + 1) < flat_ef_cost(universe + 1, chunk_n);
+                && flat_dense_cost(universe + 1, chunk_n, log2_sampling1)
+                    < flat_ef_cost(universe + 1, chunk_n, log2_sampling1);
             chunk_kinds_vec.push(use_dense);
 
             let data_words = if use_dense {
                 let bv_bits = universe + 1;
-                let num_counters = bv_bits.div_ceil(RANK_BLOCK_BITS);
+                let num_rank_samples = bv_bits >> LOG2_RANK_SAMPLING;
+                let rank_sample_width = pointer_width(chunk_n + 1);
+                let sampling1 = 1usize << log2_sampling1;
+                let num_select_pointers = if chunk_n == 0 { 0 } else { (chunk_n - 1) / sampling1 };
+                let select_ptr_width = pointer_width(bv_bits);
+                let rank_words = (num_rank_samples * rank_sample_width).div_ceil(64);
+                let select_words = (num_select_pointers * select_ptr_width).div_ceil(64);
                 let bv_words = bv_bits.div_ceil(64);
-                num_counters + bv_words
+                rank_words + select_words + bv_words
             } else {
                 let (l, high_bits_len, num_zeros) = ef_params(chunk_n, universe + 1);
-                let sel1_words = inventory_words(chunk_n);
-                let sel0_words = inventory_words(num_zeros);
+                let (ptr1_words, ptr0_words) =
+                    sampled_pointers_words(chunk_n, num_zeros, high_bits_len, log2_sampling1);
                 let high_words = high_bits_len.div_ceil(64);
                 let low_words = (chunk_n * l).div_ceil(64);
-                sel1_words + sel0_words + high_words + low_words
+                ptr1_words + ptr0_words + high_words + low_words
             };
 
             chunk_infos.push(ChunkInfo {
@@ -1117,24 +1190,36 @@ impl FlatPartEliasFanoBuilder {
             }
         }
 
-        // Build master EF structures
-        let mut ep_builder = EliasFanoBuilder::new(num_partitions, self.n);
+        // Build endpoints as BitFieldVec
+        let ep_width = pointer_width(self.n + 1);
+        let mut endpoints = BitFieldVec::<Vec<usize>>::new(ep_width, 0);
         for &c in &cumulative_sizes {
-            unsafe { ep_builder.push_unchecked(c) };
+            endpoints.push(c);
         }
-        let endpoints = ep_builder.build_with_seq_and_dict();
+        let endpoints = endpoints.into_padded();
 
+        // Build upper_bounds as EfDict (for succ/pred by value)
         let mut ub_builder = EliasFanoBuilder::new(num_partitions, self.u);
         for &ub in &upper_bound_values {
             unsafe { ub_builder.push_unchecked(ub) };
         }
-        let upper_bounds = ub_builder.build_with_seq_and_dict();
+        let upper_bounds = ub_builder.build_with_dict();
+
+        // Build upper_bound_values as BitFieldVec (for random access by index)
+        let ubv_width = pointer_width(self.u + 1);
+        let mut ubv = BitFieldVec::<Vec<usize>>::new(ubv_width, 0);
+        for &ub in &upper_bound_values {
+            ubv.push(ub);
+        }
+        let upper_bound_values_bfv = ubv.into_padded();
 
         FlatPartEliasFano {
             n: self.n,
             u: self.u,
+            log2_sampling1,
             endpoints,
             upper_bounds,
+            upper_bound_values: upper_bound_values_bfv,
             chunk_kinds: chunk_kinds.into(),
             chunk_offsets: chunk_offsets.into_boxed_slice(),
             data: data.into_boxed_slice(),
@@ -1142,12 +1227,21 @@ impl FlatPartEliasFanoBuilder {
     }
 
     fn build_dense_chunk(&self, data: &mut [usize], offset: usize, info: &ChunkInfo) {
+        let chunk_n = info.end - info.start;
         let bv_bits = info.universe + 1;
-        let num_counters = bv_bits.div_ceil(RANK_BLOCK_BITS);
+        let num_rank_samples = bv_bits >> LOG2_RANK_SAMPLING;
+        let rank_sample_width = pointer_width(chunk_n + 1);
+        let sampling1 = 1usize << self.log2_sampling1;
+        let num_select_pointers = if chunk_n == 0 { 0 } else { (chunk_n - 1) / sampling1 };
+        let select_ptr_width = pointer_width(bv_bits);
+
+        let rank_words = (num_rank_samples * rank_sample_width).div_ceil(64);
+        let select_words = (num_select_pointers * select_ptr_width).div_ceil(64);
         let bv_words = bv_bits.div_ceil(64);
 
-        // Layout: [counters: num_counters words] [bitvector: bv_words words]
-        let bv_start = offset + num_counters;
+        let rank_start = offset;
+        let select_start = offset + rank_words;
+        let bv_start = select_start + select_words;
 
         // Fill bitvector
         for &v in &self.values[info.start..info.end] {
@@ -1155,44 +1249,47 @@ impl FlatPartEliasFanoBuilder {
             data[bv_start + bit / 64] |= 1usize << (bit % 64);
         }
 
-        // Build RankSmall<64, 1, 10> counters
-        // Matches the original pattern: record absolute, then for each word j
-        // in the block, record relative counter at subblock boundaries (j%4==0
-        // for j>0), then count word j.
-        let mut past_ones = 0usize;
-        for block in 0..num_counters {
-            let absolute = past_ones as u32;
-            let block_word_start = block * RANK_BLOCK_WORDS;
-
-            let mut relative_packed: u32 = 0;
-            for j in 0..RANK_BLOCK_WORDS {
-                if j > 0 && j % RANK_SUBBLOCK_WORDS == 0 {
-                    let sb = j / RANK_SUBBLOCK_WORDS;
-                    let rel_count = past_ones - absolute as usize;
-                    relative_packed |= (rel_count as u32) << (10 * (sb ^ 3));
+        // Build rank samples: rank_sample[k] = number of ones in [0, (k+1)*512)
+        if rank_sample_width > 0 {
+            let mut past_ones = 0usize;
+            let rank_block_words = RANK_SAMPLING / 64;
+            for k in 0..num_rank_samples {
+                let block_word_start = k * rank_block_words;
+                for j in 0..rank_block_words {
+                    let word_idx = block_word_start + j;
+                    if word_idx < bv_words {
+                        past_ones += data[bv_start + word_idx].count_ones() as usize;
+                    }
                 }
-                let word_idx = block_word_start + j;
-                if word_idx < bv_words {
-                    past_ones += data[bv_start + word_idx].count_ones() as usize;
+                // Write packed rank sample
+                let pos = k * rank_sample_width;
+                let w_idx = pos / 64;
+                let b_idx = pos % 64;
+                data[rank_start + w_idx] |= past_ones << b_idx;
+                if b_idx + rank_sample_width > 64 {
+                    data[rank_start + w_idx + 1] |= past_ones >> (64 - b_idx);
                 }
             }
-
-            data[offset + block] = absolute as usize | ((relative_packed as usize) << 32);
         }
+
+        // Build select pointers using the same mechanism as sparse chunks
+        Self::build_sampled_pointers(
+            data, select_start, bv_start, bv_words, chunk_n, sampling1, select_ptr_width, true,
+        );
     }
 
     fn build_sparse_chunk(&self, data: &mut [usize], offset: usize, info: &ChunkInfo) {
         let chunk_n = info.end - info.start;
         let (l, high_bits_len, num_zeros) = ef_params(chunk_n, info.universe + 1);
+        let ptr_width = pointer_width(high_bits_len);
 
-        let sel1_words = inventory_words(chunk_n);
-        let sel0_words = inventory_words(num_zeros);
+        let (ptr1_words, ptr0_words) =
+            sampled_pointers_words(chunk_n, num_zeros, high_bits_len, self.log2_sampling1);
         let high_words = high_bits_len.div_ceil(64);
-        let _low_words = (chunk_n * l).div_ceil(64);
 
-        let sel1_start = offset;
-        let sel0_start = offset + sel1_words;
-        let high_start = sel0_start + sel0_words;
+        let ptr1_start = offset;
+        let ptr0_start = offset + ptr1_words;
+        let high_start = ptr0_start + ptr0_words;
         let low_start = high_start + high_words;
 
         // Fill high bits and low bits
@@ -1201,11 +1298,9 @@ impl FlatPartEliasFanoBuilder {
             let high = relative >> l;
             let low = relative & ((1 << l) - 1);
 
-            // High bit: set position (i + high) in the high bits unary code
             let high_pos = i + high;
             data[high_start + high_pos / 64] |= 1usize << (high_pos % 64);
 
-            // Low bits: store l-bit value at position i
             if l > 0 {
                 let bit_pos = i * l;
                 let word_idx = bit_pos / 64;
@@ -1217,116 +1312,65 @@ impl FlatPartEliasFanoBuilder {
             }
         }
 
-        // Build select-ones inventory on high bits
-        Self::build_select_inventory(data, sel1_start, high_start, high_words, chunk_n, high_bits_len, true);
+        let sampling1 = 1usize << self.log2_sampling1;
+        let sampling0 = 1usize << (self.log2_sampling1 + 1);
 
-        // Build select-zeros inventory on high bits
-        Self::build_select_inventory(data, sel0_start, high_start, high_words, num_zeros, high_bits_len, false);
+        Self::build_sampled_pointers(
+            data, ptr1_start, high_start, high_words, chunk_n, sampling1, ptr_width, true,
+        );
+
+        Self::build_sampled_pointers(
+            data, ptr0_start, high_start, high_words, num_zeros, sampling0, ptr_width, false,
+        );
     }
 
-    /// Build a u16-only select inventory for ones (if `ones=true`) or zeros
-    /// (if `ones=false`) in `bits` at `bits_offset..bits_offset+bits_words`,
-    /// writing the inventory to `data[inv_start..]`.
-    fn build_select_inventory(
+    /// Build ds2i-style sampled pointers for ones or zeros in the high bits.
+    /// Writes packed pointers (each `ptr_width` bits) to `data[ptr_start..]`.
+    fn build_sampled_pointers(
         data: &mut [usize],
-        inv_start: usize,
+        ptr_start: usize,
         bits_offset: usize,
         bits_words: usize,
-        num_target: usize,
-        num_bits: usize,
+        num_targets: usize,
+        sampling: usize,
+        ptr_width: usize,
         ones: bool,
     ) {
-        let inventory_size = num_target.div_ceil(ONES_PER_INVENTORY);
-        // Layout: inventory_size * 9 words + 1 sentinel word
+        if ptr_width == 0 || num_targets == 0 {
+            return;
+        }
+        let num_pointers = (num_targets - 1) / sampling;
+        if num_pointers == 0 {
+            return;
+        }
 
         let mut past_targets = 0usize;
-        let mut next_quantum = 0usize;
+        let mut next_record_rank = sampling;
+        let mut ptr_idx = 0usize;
 
-        // First phase: build primary inventory entries
-        for i in 0..bits_words {
-            let raw_word = data[bits_offset + i];
+        for word_i in 0..bits_words {
+            let raw_word = data[bits_offset + word_i];
             let effective_word = if ones { raw_word } else { !raw_word };
             let targets_in_word = effective_word.count_ones() as usize;
 
-            while past_targets + targets_in_word > next_quantum {
-                let in_word_index = effective_word.select_in_word(next_quantum - past_targets);
-                let index = i * 64 + in_word_index;
+            while past_targets + targets_in_word > next_record_rank && ptr_idx < num_pointers {
+                let in_word_pos =
+                    effective_word.select_in_word(next_record_rank - past_targets);
+                let bit_position = word_i * 64 + in_word_pos;
 
-                let inv_idx = next_quantum / ONES_PER_INVENTORY;
-                let entry_start = inv_start + inv_idx * WORDS_PER_INVENTORY_ENTRY;
-                data[entry_start] = index;
+                // Write packed pointer
+                let pos = ptr_idx * ptr_width;
+                let w_idx = pos / 64;
+                let b_idx = pos % 64;
+                data[ptr_start + w_idx] |= bit_position << b_idx;
+                if b_idx + ptr_width > 64 {
+                    data[ptr_start + w_idx + 1] |= bit_position >> (64 - b_idx);
+                }
 
-                next_quantum += ONES_PER_INVENTORY;
+                ptr_idx += 1;
+                next_record_rank += sampling;
             }
             past_targets += targets_in_word;
-        }
-
-        // Sentinel: total number of bits
-        let sentinel_pos = inv_start + inventory_size * WORDS_PER_INVENTORY_ENTRY;
-        data[sentinel_pos] = num_bits;
-
-        // Second phase: fill subinventories
-        for inv_idx in 0..inventory_size {
-            let entry_start = inv_start + inv_idx * WORDS_PER_INVENTORY_ENTRY;
-            let start_bit_idx = data[entry_start];
-            let next_entry_start = entry_start + WORDS_PER_INVENTORY_ENTRY;
-            let end_bit_idx = data[next_entry_start];
-
-            let quantum = 1usize << LOG2_ONES_PER_SUB16;
-            let mut subinventory_idx = 1usize;
-            let mut next_sub_quantum = inv_idx * ONES_PER_INVENTORY + quantum;
-
-            let mut past_targets_local = inv_idx * ONES_PER_INVENTORY;
-            let mut word_idx = start_bit_idx / 64;
-            let end_word_idx = end_bit_idx.div_ceil(64);
-            let bit_idx = start_bit_idx % 64;
-
-            let first_word = if ones {
-                data[bits_offset + word_idx]
-            } else {
-                !data[bits_offset + word_idx]
-            };
-            let mut word = (first_word >> bit_idx) << bit_idx;
-
-            'outer: loop {
-                let targets_in_word = word.count_ones() as usize;
-
-                while past_targets_local + targets_in_word > next_sub_quantum {
-                    let in_word_index = word.select_in_word(next_sub_quantum - past_targets_local);
-                    let bit_index = word_idx * 64 + in_word_index;
-
-                    if bit_index >= end_bit_idx {
-                        break 'outer;
-                    }
-
-                    let sub_offset = (bit_index - start_bit_idx) as u16;
-
-                    let subinv_slice: &mut [u16] = unsafe {
-                        let ptr = data
-                            .as_mut_ptr()
-                            .add(entry_start + 1) as *mut u16;
-                        std::slice::from_raw_parts_mut(ptr, WORDS_PER_SUBINVENTORY * 4)
-                    };
-                    subinv_slice[subinventory_idx] = sub_offset;
-                    subinventory_idx += 1;
-
-                    if subinventory_idx << LOG2_ONES_PER_SUB16 == ONES_PER_INVENTORY {
-                        break 'outer;
-                    }
-                    next_sub_quantum += quantum;
-                }
-
-                past_targets_local += targets_in_word;
-                word_idx += 1;
-                if word_idx >= end_word_idx {
-                    break;
-                }
-                word = if ones {
-                    data[bits_offset + word_idx]
-                } else {
-                    !data[bits_offset + word_idx]
-                };
-            }
         }
     }
 }
