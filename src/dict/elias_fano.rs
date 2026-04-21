@@ -927,8 +927,7 @@ where
             let found = if STRICT { res > value } else { res >= value };
             if found {
                 let full_word = unsafe { *self.high_bits.as_ref().get_unchecked(word_idx) };
-                let window =
-                    full_word & (usize::MAX >> (usize::BITS as usize - 1 - bit_idx));
+                let window = full_word & (usize::MAX >> (usize::BITS as usize - 1 - bit_idx));
                 return (
                     rank,
                     EliasFanoBackIter {
@@ -1448,6 +1447,8 @@ where
     fn pred_strict(&self, value: impl Borrow<V>) -> Option<(usize, V)> {
         if *value.borrow() <= self.first_val {
             None
+        } else if *value.borrow() > self.last_val {
+            Some((self.n - 1, self.last_val))
         } else {
             Some(unsafe { self.pred_unchecked::<true>(value) })
         }
@@ -1455,10 +1456,9 @@ where
 
     #[inline]
     fn rank(&self, value: impl Borrow<V>) -> usize {
-        let value = *value.borrow();
-        if value <= self.first_val {
+        if *value.borrow() <= self.first_val {
             0
-        } else if value > self.last_val {
+        } else if *value.borrow() > self.last_val {
             self.n
         } else {
             unsafe { self.rank_unchecked(value) }

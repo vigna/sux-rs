@@ -95,14 +95,8 @@ impl Chunk {
     unsafe fn pred_strict_unchecked(&self, value: usize) -> (usize, usize) {
         match self {
             Chunk::EliasFano { ef, .. } => unsafe { ef.pred_unchecked::<true>(value) },
-            Chunk::Dense { bv, len, universe } => {
+            Chunk::Dense { bv, .. } => {
                 let rank = unsafe { bv.rank_unchecked(value) };
-                assert!(
-                    rank > 0,
-                    "rank=0 in pred_strict Dense: value={value}, len={len}, \
-                     universe={universe}, first={}",
-                    unsafe { bv.select_unchecked(0) }
-                );
                 (rank - 1, unsafe { bv.select_unchecked(rank - 1) })
             }
         }
@@ -114,6 +108,8 @@ impl Chunk {
 pub struct PartEliasFano {
     n: usize,
     u: usize,
+    first_val: usize,
+    last_val: usize,
     endpoints: EfSeqDict<usize>,
     upper_bounds: EfSeqDict<usize>,
     chunks: Vec<Chunk>,
@@ -320,7 +316,7 @@ impl SuccIterBackUnchecked for PartEliasFano {
 impl Succ for PartEliasFano {
     fn succ(&self, value: impl Borrow<usize>) -> Option<(usize, usize)> {
         let value = *value.borrow();
-        if self.n == 0 || value > unsafe { self.get_unchecked(self.n - 1) } {
+        if self.n == 0 || value > self.last_val {
             None
         } else {
             Some(unsafe { self.succ_unchecked::<false>(value) })
@@ -329,7 +325,7 @@ impl Succ for PartEliasFano {
 
     fn succ_strict(&self, value: impl Borrow<usize>) -> Option<(usize, usize)> {
         let value = *value.borrow();
-        if value >= unsafe { self.get_unchecked(self.n - 1) } {
+        if value >= self.last_val {
             None
         } else {
             Some(unsafe { self.succ_unchecked::<true>(value) })
@@ -343,7 +339,7 @@ impl SuccIter for PartEliasFano {
         value: impl Borrow<usize>,
     ) -> Option<(usize, <Self as SuccIterUnchecked>::Iter<'_>)> {
         let value = *value.borrow();
-        if self.n == 0 || value > unsafe { self.get_unchecked(self.n - 1) } {
+        if self.n == 0 || value > self.last_val {
             None
         } else {
             Some(unsafe { self.iter_from_succ_unchecked::<false>(value) })
@@ -355,7 +351,7 @@ impl SuccIter for PartEliasFano {
         value: impl Borrow<usize>,
     ) -> Option<(usize, <Self as SuccIterUnchecked>::Iter<'_>)> {
         let value = *value.borrow();
-        if value >= unsafe { self.get_unchecked(self.n - 1) } {
+        if value >= self.last_val {
             None
         } else {
             Some(unsafe { self.iter_from_succ_unchecked::<true>(value) })
@@ -369,7 +365,7 @@ impl SuccBidiIter for PartEliasFano {
         value: impl Borrow<usize>,
     ) -> Option<(usize, <Self as SuccBidiIterUnchecked>::BidiIter<'_>)> {
         let value = *value.borrow();
-        if self.n == 0 || value > unsafe { self.get_unchecked(self.n - 1) } {
+        if self.n == 0 || value > self.last_val {
             None
         } else {
             Some(unsafe { self.iter_bidi_from_succ_unchecked::<false>(value) })
@@ -381,7 +377,7 @@ impl SuccBidiIter for PartEliasFano {
         value: impl Borrow<usize>,
     ) -> Option<(usize, <Self as SuccBidiIterUnchecked>::BidiIter<'_>)> {
         let value = *value.borrow();
-        if value >= unsafe { self.get_unchecked(self.n - 1) } {
+        if value >= self.last_val {
             None
         } else {
             Some(unsafe { self.iter_bidi_from_succ_unchecked::<true>(value) })
@@ -395,7 +391,7 @@ impl SuccIterBack for PartEliasFano {
         value: impl Borrow<usize>,
     ) -> Option<(usize, <Self as SuccIterBackUnchecked>::BackIter<'_>)> {
         let value = *value.borrow();
-        if self.n == 0 || value > unsafe { self.get_unchecked(self.n - 1) } {
+        if self.n == 0 || value > self.last_val {
             None
         } else {
             Some(unsafe { self.iter_back_from_succ_unchecked::<false>(value) })
@@ -407,7 +403,7 @@ impl SuccIterBack for PartEliasFano {
         value: impl Borrow<usize>,
     ) -> Option<(usize, <Self as SuccIterBackUnchecked>::BackIter<'_>)> {
         let value = *value.borrow();
-        if value >= unsafe { self.get_unchecked(self.n - 1) } {
+        if value >= self.last_val {
             None
         } else {
             Some(unsafe { self.iter_back_from_succ_unchecked::<true>(value) })
@@ -456,12 +452,6 @@ impl PredUnchecked for PartEliasFano {
             return (prev_start + local_last, local_val + prev_base);
         }
 
-        assert!(
-            relative > first_elem || (!STRICT && relative >= first_elem),
-            "pred guard failed: value={value}, base={base}, relative={relative}, \
-             first_elem={first_elem}, partition_idx={partition_idx}, \
-             partition_start={partition_start}, STRICT={STRICT}"
-        );
         let (local_idx, local_val) = if STRICT {
             unsafe { self.chunks[partition_idx].pred_strict_unchecked(relative) }
         } else {
@@ -528,8 +518,10 @@ impl PredBidiIterUnchecked for PartEliasFano {
 impl Pred for PartEliasFano {
     fn pred(&self, value: impl Borrow<usize>) -> Option<(usize, usize)> {
         let value = *value.borrow();
-        if self.n == 0 || value < unsafe { self.get_unchecked(0) } {
+        if self.n == 0 || value < self.first_val {
             None
+        } else if value > self.last_val {
+            Some((self.n - 1, self.last_val))
         } else {
             Some(unsafe { self.pred_unchecked::<false>(value) })
         }
@@ -537,8 +529,10 @@ impl Pred for PartEliasFano {
 
     fn pred_strict(&self, value: impl Borrow<usize>) -> Option<(usize, usize)> {
         let value = *value.borrow();
-        if value <= unsafe { self.get_unchecked(0) } {
+        if value <= self.first_val {
             None
+        } else if value > self.last_val {
+            Some((self.n - 1, self.last_val))
         } else {
             Some(unsafe { self.pred_unchecked::<true>(value) })
         }
@@ -551,8 +545,10 @@ impl PredIter for PartEliasFano {
         value: impl Borrow<usize>,
     ) -> Option<(usize, <Self as PredIterUnchecked>::Iter<'_>)> {
         let value = *value.borrow();
-        if self.n == 0 || value < unsafe { self.get_unchecked(0) } {
+        if self.n == 0 || value < self.first_val {
             None
+        } else if value > self.last_val {
+            Some((self.n - 1, PartEliasFanoIter { pef: self, pos: self.n - 1 }))
         } else {
             Some(unsafe { self.iter_from_pred_unchecked::<false>(value) })
         }
@@ -563,8 +559,10 @@ impl PredIter for PartEliasFano {
         value: impl Borrow<usize>,
     ) -> Option<(usize, <Self as PredIterUnchecked>::Iter<'_>)> {
         let value = *value.borrow();
-        if value <= unsafe { self.get_unchecked(0) } {
+        if value <= self.first_val {
             None
+        } else if value > self.last_val {
+            Some((self.n - 1, PartEliasFanoIter { pef: self, pos: self.n - 1 }))
         } else {
             Some(unsafe { self.iter_from_pred_unchecked::<true>(value) })
         }
@@ -577,8 +575,13 @@ impl PredIterBack for PartEliasFano {
         value: impl Borrow<usize>,
     ) -> Option<(usize, <Self as PredIterBackUnchecked>::BackIter<'_>)> {
         let value = *value.borrow();
-        if self.n == 0 || value < unsafe { self.get_unchecked(0) } {
+        if self.n == 0 || value < self.first_val {
             None
+        } else if value > self.last_val {
+            Some((
+                self.n - 1,
+                SwappedIter(PartEliasFanoBidiIter { pef: self, pos: self.n }),
+            ))
         } else {
             Some(unsafe { self.iter_back_from_pred_unchecked::<false>(value) })
         }
@@ -589,8 +592,13 @@ impl PredIterBack for PartEliasFano {
         value: impl Borrow<usize>,
     ) -> Option<(usize, <Self as PredIterBackUnchecked>::BackIter<'_>)> {
         let value = *value.borrow();
-        if value <= unsafe { self.get_unchecked(0) } {
+        if value <= self.first_val {
             None
+        } else if value > self.last_val {
+            Some((
+                self.n - 1,
+                SwappedIter(PartEliasFanoBidiIter { pef: self, pos: self.n }),
+            ))
         } else {
             Some(unsafe { self.iter_back_from_pred_unchecked::<true>(value) })
         }
@@ -603,8 +611,10 @@ impl PredBidiIter for PartEliasFano {
         value: impl Borrow<usize>,
     ) -> Option<(usize, <Self as PredBidiIterUnchecked>::BidiIter<'_>)> {
         let value = *value.borrow();
-        if self.n == 0 || value < unsafe { self.get_unchecked(0) } {
+        if self.n == 0 || value < self.first_val {
             None
+        } else if value > self.last_val {
+            Some((self.n - 1, PartEliasFanoBidiIter { pef: self, pos: self.n }))
         } else {
             Some(unsafe { self.iter_bidi_from_pred_unchecked::<false>(value) })
         }
@@ -615,8 +625,10 @@ impl PredBidiIter for PartEliasFano {
         value: impl Borrow<usize>,
     ) -> Option<(usize, <Self as PredBidiIterUnchecked>::BidiIter<'_>)> {
         let value = *value.borrow();
-        if value <= unsafe { self.get_unchecked(0) } {
+        if value <= self.first_val {
             None
+        } else if value > self.last_val {
+            Some((self.n - 1, PartEliasFanoBidiIter { pef: self, pos: self.n }))
         } else {
             Some(unsafe { self.iter_bidi_from_pred_unchecked::<true>(value) })
         }
@@ -677,6 +689,8 @@ impl PartEliasFanoBuilder {
             return PartEliasFano {
                 n: 0,
                 u: self.u,
+                first_val: 0,
+                last_val: 0,
                 endpoints: {
                     let efb = EliasFanoBuilder::new(0, 0usize);
                     efb.build_with_seq_and_dict()
@@ -725,6 +739,8 @@ impl PartEliasFanoBuilder {
         PartEliasFano {
             n: self.n,
             u: self.u,
+            first_val: self.values[0],
+            last_val: self.values[self.n - 1],
             endpoints,
             upper_bounds,
             chunks,
