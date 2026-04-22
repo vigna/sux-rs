@@ -6,7 +6,7 @@
 #   Phase 1: n=100M, all ShardEdges, all distributions, 5 trials
 #   MWHC:    n=10..100M, both MWHC variants, all distributions, 5 trials
 #   Phase 2: n=1G, production ShardEdges, 2-3 trials
-#   Phase 3: n=1..1M (dense), FuseLge3 variants, 3 distributions, 5 trials
+#   Phase 3: n=1..1M (dense), Fuse3 variants, 3 distributions, 5 trials
 #
 # Output: one CSV per (shard_edge, distribution) cell in $OUTDIR.
 # Summary: run  python3 scripts/stress_summary.py $OUTDIR/*.csv
@@ -75,16 +75,16 @@ done
 # ── Phase 2: n=1G, production ShardEdges ────────────────────────────
 log "=== PHASE 2: n=1G ==="
 for dist in constant uniform geom zipf; do
-    run_cell "$BIN" fuse-lge3-shards "$dist" 1.0 "$NLIST_1G" 3
+    run_cell "$BIN" fuse3-shards "$dist" 1.0 "$NLIST_1G" 3
 done
-run_cell "$BIN" fuse-lge3-shards zipf 2.0 "$NLIST_1G" 3 1024 _s2
+run_cell "$BIN" fuse3-shards zipf 2.0 "$NLIST_1G" 3 1024 _s2
 
 for dist in constant geom uniform zipf; do
-    run_cell "$BIN" fuse-lge3-no-shards2 "$dist" 1.0 "$NLIST_1G" 2
+    run_cell "$BIN" fuse3-no-shards1 "$dist" 1.0 "$NLIST_1G" 2
 done
 
 for dist in constant geom zipf; do
-    run_cell "$BIN" fuse3-shards "$dist" 1.0 "$NLIST_1G" 2
+    run_cell "$BIN" fuse3-no-shards2 "$dist" 1.0 "$NLIST_1G" 2
 done
 
 for dist in constant geom zipf; do
