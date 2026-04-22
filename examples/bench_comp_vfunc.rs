@@ -65,10 +65,6 @@ struct Args {
     /// Use unaligned reads.​
     #[arg(long)]
     unaligned: bool,
-    /// Use slower edge logic reducing the probability of duplicate arcs for big
-    /// shards.​
-    #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
-    full_sigs: bool,
 }
 
 fn main() -> Result<()> {
@@ -80,16 +76,12 @@ fn main() -> Result<()> {
 
     if args.no_shards {
         if args.sig64 {
-            main_with_types::<[u64; 1], FuseLge3NoShards>(args)
+            main_with_types::<[u64; 1], Fuse3NoShards>(args)
         } else {
-            main_with_types::<[u64; 2], FuseLge3NoShards>(args)
+            main_with_types::<[u64; 2], Fuse3NoShards>(args)
         }
     } else {
-        if args.full_sigs {
-            main_with_types::<[u64; 2], FuseLge3FullSigs>(args)
-        } else {
-            main_with_types::<[u64; 2], FuseLge3Shards>(args)
-        }
+        main_with_types::<[u64; 2], Fuse3Shards>(args)
     }
 }
 
