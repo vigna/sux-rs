@@ -734,15 +734,7 @@ mod fuse {
             match arity {
                 3 => {
                     debug_assert!(n > 2 * Self::HALF_MAX_LIN_SHARD_SIZE);
-                    if n <= Self::MIN_FUSE_SHARD / 2 {
-                        1.125
-                    } else if n <= Self::MIN_FUSE_SHARD {
-                        1.12
-                    } else if n <= 2 * Self::MIN_FUSE_SHARD {
-                        1.11
-                    } else {
-                        1.105
-                    }
+                    Fuse3NoShards::c(n)
                 }
 
                 _ => unimplemented!("only arity 3 is supported, got {arity}"),
@@ -1180,12 +1172,6 @@ mod fuse {
 
     impl Fuse3NoShards {
         /// Returns the expansion factor for fuse 3-hypergraphs.
-        ///
-        /// From Table 1 (3-wise) of "[Binary Fuse Filters: Fast and Smaller
-        /// Than Xor Filters]".
-        ///
-        /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
-        /// Returns the expansion factor for fuse 3-hypergraphs.
         fn c(n: usize) -> f64 {
             if n <= 1_000_000 {
                 // From Table 1 (3-wise) of "Binary Fuse Filters: Fast and
@@ -1201,6 +1187,7 @@ mod fuse {
             } else if n <= 5_000_000 {
                 1.125
             } else if n <= 10_000_000 {
+                // Beyond this point the formula above gives too large a value, losing space
                 1.12
             } else if n <= 20_000_000 {
                 1.11
