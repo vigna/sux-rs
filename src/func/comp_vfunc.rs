@@ -46,8 +46,8 @@ use crate::func::VBuilder;
 use crate::func::codec::{Codec, Coder, Decoder, Huffman, HuffmanCoder, HuffmanDecoder};
 use crate::func::peeling::{DoubleStack, FastStack, XorGraph, remove_edge};
 use crate::func::shard_edge::{Fuse3Shards, ShardEdge};
-use crate::traits::bit_vec_ops::{BitVecOps, BitVecOpsMut, BitVecValueOps};
-use crate::traits::{TryIntoUnaligned, UnalignedConversionError};
+use crate::traits::bit_vec_ops::{BitVecOps, BitVecOpsMut};
+use crate::traits::{BitLength, TryIntoUnaligned, UnalignedConversionError};
 use crate::utils::mod2_sys::{Modulo2Equation, Modulo2System};
 use crate::utils::sig_store::ShardStore;
 use crate::utils::{BinSafe, FallibleRewindableLender, Sig, SigVal, ToSig};
@@ -126,7 +126,7 @@ pub struct CompVFunc<K: ?Sized, W = usize, D = BitVec<Box<[usize]>>, S = [u64; 2
 impl<
     K: ?Sized + ToSig<S>,
     W: PrimitiveInteger,
-    D: BitVecValueOps<usize>,
+    D: AsRef<[usize]> + BitLength,
     S: Sig,
     E: ShardEdge<S, 3>,
 > CompVFunc<K, W, D, S, E>
@@ -163,9 +163,9 @@ impl<
         // SAFETY: by construction `v_i + w <= bucket_offset + m + w =
         // bucket_offset + shard_size`, which is within `data.len()`.
         let value = unsafe {
-            self.data.get_value_unchecked(v0, w) as u64
-                ^ self.data.get_value_unchecked(v1, w) as u64
-                ^ self.data.get_value_unchecked(v2, w) as u64
+            self.data.get_unaligned_unchecked(v0) as u64
+                ^ self.data.get_unaligned_unchecked(v1) as u64
+                ^ self.data.get_unaligned_unchecked(v2) as u64
         };
         if let Some(decoded) = self.decoder.decode(value) {
             return decoded;
@@ -181,9 +181,9 @@ impl<
         let start = w - esc_len - esym_len;
         // SAFETY: same reasoning as above; `start + esym_len <= w`.
         let literal = unsafe {
-            self.data.get_value_unchecked(v0 + start, esym_len) as u64
-                ^ self.data.get_value_unchecked(v1 + start, esym_len) as u64
-                ^ self.data.get_value_unchecked(v2 + start, esym_len) as u64
+            self.data.get_unaligned_unchecked(v0 + start) as u64
+                ^ self.data.get_unaligned_unchecked(v1 + start) as u64
+                ^ self.data.get_unaligned_unchecked(v2 + start) as u64
         };
         W::as_from(literal)
     }
