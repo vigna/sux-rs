@@ -47,7 +47,7 @@ use crate::func::codec::{Codec, Coder, Decoder, Huffman, HuffmanCoder, HuffmanDe
 use crate::func::peeling::{DoubleStack, FastStack, XorGraph, remove_edge};
 use crate::func::shard_edge::{Fuse3Shards, ShardEdge};
 use crate::traits::bit_vec_ops::{BitVecOps, BitVecOpsMut};
-use crate::traits::{BitLength, TryIntoUnaligned, UnalignedConversionError};
+use crate::traits::{BitLength, BitVecValueOps, TryIntoUnaligned, UnalignedConversionError};
 use crate::utils::mod2_sys::{Modulo2Equation, Modulo2System};
 use crate::utils::sig_store::ShardStore;
 use crate::utils::{BinSafe, FallibleRewindableLender, Sig, SigVal, ToSig};
@@ -126,7 +126,7 @@ pub struct CompVFunc<K: ?Sized, W = usize, D = BitVec<Box<[usize]>>, S = [u64; 2
 impl<
     K: ?Sized + ToSig<S>,
     W: PrimitiveInteger,
-    D: AsRef<[usize]> + BitLength,
+    D: AsRef<[usize]> + BitLength + BitVecValueOps<usize>,
     S: Sig,
     E: ShardEdge<S, 3>,
 > CompVFunc<K, W, D, S, E>
@@ -183,14 +183,11 @@ impl<
         }
         let start = w - esc_len - esym_len;
         // SAFETY: same reasoning as above; `start + esym_len <= w`.
-        let l = usize::BITS - esym_len as u32;
         unsafe {
             W::as_from(
-                (self.data.get_unaligned_unchecked(v0 + start)
-                    ^ self.data.get_unaligned_unchecked(v1 + start)
-                    ^ self.data.get_unaligned_unchecked(v2 + start))
-                    << l
-                    >> l,
+                self.data.get_value_unchecked(v0 + start, esym_len)
+                    ^ self.data.get_value_unchecked(v1 + start, esym_len)
+                    ^ self.data.get_value_unchecked(v2 + start, esym_len),
             )
         }
     }
