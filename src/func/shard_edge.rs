@@ -534,7 +534,7 @@ mod mwhc {
     impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
         type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
-        type Vertex = usize;
+        type Vertex = u64;
 
         fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 
@@ -868,8 +868,6 @@ mod fuse {
             (c, lge)
         }
 
-        // set_up_corr_graphs temporarily removed for const-guard test
-
         #[inline(always)]
         fn shard_high_bits(&self) -> u32 {
             63 - self.shard_bits_shift
@@ -1025,7 +1023,7 @@ mod fuse {
     impl ShardEdge<[u64; 2], 3> for FuseLge3NoShards {
         type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
-        type Vertex = usize;
+        type Vertex = u64;
 
         fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 
@@ -1240,7 +1238,7 @@ mod fuse {
             max_shard_keys: usize,
             max_shard_edges: usize,
         ) -> (f64, bool) {
-            let c = Fuse3NoShards::c(max_shard_keys) + 0.005;
+            let c = Fuse3NoShards::c(max_shard_keys);
             self.log2_seg_size = FuseLge3Shards::log2_seg_size(3, max_shard_edges);
             let num_vertices = (c * max_shard_edges as f64).ceil() as u128;
             assert!(
@@ -1307,7 +1305,7 @@ mod fuse {
     impl ShardEdge<[u64; 2], 3> for Fuse3NoShards {
         type SortSigVal<V: BinSafe> = SigVal<[u64; 1], V>;
         type LocalSig = [u64; 1];
-        type Vertex = u32;
+        type Vertex = u64;
 
         fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 
@@ -1337,7 +1335,7 @@ mod fuse {
             max_shard_keys: usize,
             max_shard_edges: usize,
         ) -> (f64, bool) {
-            let c = Fuse3NoShards::c(max_shard_keys) + 0.005;
+            let c = Fuse3NoShards::c(max_shard_keys);
             self.log2_seg_size = FuseLge3Shards::log2_seg_size(3, max_shard_edges);
             let num_vertices = (c * max_shard_edges as f64).ceil() as u128;
             assert!(
@@ -1545,7 +1543,7 @@ mod fuse {
             max_shard_keys: usize,
             max_shard_edges: usize,
         ) -> (f64, bool) {
-            let c = Self::c(max_shard_keys) + 0.005;
+            let c = Self::c(max_shard_keys);
             self.log2_seg_size = FuseLge3Shards::log2_seg_size(3, max_shard_edges);
 
             self.l = ((c * max_shard_edges as f64).ceil() as usize)

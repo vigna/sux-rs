@@ -580,6 +580,7 @@ where
         let (c, lge) =
             vb.shard_edge
                 .set_up_corr_graphs(total_edges, max_shard_keys, max_shard_edges);
+        dbg!(num_keys, max_shard_keys, max_shard_edges);
         assert!(!lge, "CompVFunc does not support LGE");
         vb.c = c;
         vb.lge = false;
