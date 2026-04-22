@@ -10,10 +10,11 @@ use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
 use sux::cli::{BuilderArgs, HashTypes, read_lines_concatenated, str_slice_from_offsets};
-use sux::func::lcp_mmphf::*;
 use sux::func::lcp2_mmphf::*;
+use sux::func::lcp_mmphf::*;
 use sux::func::signed::*;
 use sux::init_env_logger;
+use sux::traits::TryIntoUnaligned;
 use sux::utils::{DekoBufLineLender, FromSlice};
 
 #[derive(Parser, Debug)]
@@ -23,6 +24,9 @@ struct Args {
     /// A file containing sorted UTF-8 keys, one per line; it can be
     /// compressed with any format supported by the deko crate.​
     filename: String,
+    /// Save the structure in unaligned form (faster, if available).​
+    #[arg(long)]
+    unaligned: bool,
     /// A name for the ε-serde serialized function.​
     func: Option<String>,
     /// The number of keys (if not given, a counting pass is performed).​
@@ -88,7 +92,11 @@ fn build_single(
                 let lender = DekoBufLineLender::from_path(&args.filename)?;
                 let mmphf: LcpMmphfStr = LcpMmphfStr::try_new_with_builder(lender, n, builder, pl)?;
                 if let Some(ref f) = args.func {
-                    unsafe { mmphf.store(f) }?;
+                    if args.unaligned {
+                        unsafe { mmphf.try_into_unaligned().unwrap().store(f) }?;
+                    } else {
+                        unsafe { mmphf.store(f) }?;
+                    }
                 }
             } else {
                 // Parallel: read all keys into a single concatenated
@@ -97,7 +105,11 @@ fn build_single(
                 let keys = str_slice_from_offsets(&buffer, &offsets);
                 let mmphf: LcpMmphfStr = LcpMmphfStr::try_par_new_with_builder(&keys, builder, pl)?;
                 if let Some(ref f) = args.func {
-                    unsafe { mmphf.store(f) }?;
+                    if args.unaligned {
+                        unsafe { mmphf.try_into_unaligned().unwrap().store(f) }?;
+                    } else {
+                        unsafe { mmphf.store(f) }?;
+                    }
                 }
             }
         }
@@ -122,7 +134,11 @@ fn build_single(
                                 pl,
                             )?;
                         if let Some(ref f) = args.func {
-                            unsafe { mmphf.store(f) }?;
+                            if args.unaligned {
+                                unsafe { mmphf.try_into_unaligned().unwrap().store(f) }?;
+                            } else {
+                                unsafe { mmphf.store(f) }?;
+                            }
                         }
                     }};
                 }
@@ -140,7 +156,11 @@ fn build_single(
                                 &keys, builder, pl,
                             )?;
                         if let Some(ref f) = args.func {
-                            unsafe { mmphf.store(f) }?;
+                            if args.unaligned {
+                                unsafe { mmphf.try_into_unaligned().unwrap().store(f) }?;
+                            } else {
+                                unsafe { mmphf.store(f) }?;
+                            }
                         }
                     }};
                 }
@@ -169,7 +189,11 @@ fn build_two_step(
                 let mmphf: Lcp2MmphfStr =
                     Lcp2MmphfStr::try_new_with_builder(lender, n, builder, pl)?;
                 if let Some(ref f) = args.func {
-                    unsafe { mmphf.store(f) }?;
+                    if args.unaligned {
+                        unsafe { mmphf.try_into_unaligned().unwrap().store(f) }?;
+                    } else {
+                        unsafe { mmphf.store(f) }?;
+                    }
                 }
             } else {
                 let (buffer, offsets) = read_lines_concatenated(&args.filename, n)?;
@@ -177,7 +201,11 @@ fn build_two_step(
                 let mmphf: Lcp2MmphfStr =
                     Lcp2MmphfStr::try_par_new_with_builder(&keys, builder, pl)?;
                 if let Some(ref f) = args.func {
-                    unsafe { mmphf.store(f) }?;
+                    if args.unaligned {
+                        unsafe { mmphf.try_into_unaligned().unwrap().store(f) }?;
+                    } else {
+                        unsafe { mmphf.store(f) }?;
+                    }
                 }
             }
         }
@@ -198,7 +226,11 @@ fn build_two_step(
                                 pl,
                             )?;
                         if let Some(ref f) = args.func {
-                            unsafe { mmphf.store(f) }?;
+                            if args.unaligned {
+                                unsafe { mmphf.try_into_unaligned().unwrap().store(f) }?;
+                            } else {
+                                unsafe { mmphf.store(f) }?;
+                            }
                         }
                     }};
                 }
@@ -214,7 +246,11 @@ fn build_two_step(
                         let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =
                             <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_par_new(&keys, pl)?;
                         if let Some(ref f) = args.func {
-                            unsafe { mmphf.store(f) }?;
+                            if args.unaligned {
+                                unsafe { mmphf.try_into_unaligned().unwrap().store(f) }?;
+                            } else {
+                                unsafe { mmphf.store(f) }?;
+                            }
                         }
                     }};
                 }

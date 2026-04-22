@@ -19,6 +19,7 @@ use sux::func::codec::Huffman;
 use sux::func::shard_edge::{Fuse3NoShards, Fuse3Shards, ShardEdge};
 use sux::func::{CompVFunc, VBuilder};
 use sux::init_env_logger;
+use sux::traits::TryIntoUnaligned;
 use sux::utils::lenders::FromSlice;
 use sux::utils::{DekoBufLineLender, FromCloneableIntoIterator, Sig, SigVal, ToSig};
 
@@ -50,6 +51,9 @@ struct Args {
     /// of keys.​
     #[arg(short, long)]
     values: String,
+    /// Save the structure in unaligned form (faster, if available).​
+    #[arg(long)]
+    unaligned: bool,
     /// A name for the ε-serde serialized function.​
     func: Option<String>,
     /// Use the single-threaded *sequential* construction path that
@@ -97,12 +101,17 @@ fn read_values(path: &str) -> Result<Vec<u64>> {
     Ok(values)
 }
 
-/// Store the built function to `out`, if provided. Extracted so the
-/// four branches below each call it once at their tail.
+/// Optionally convert to unaligned form and store the built function
+/// to `out`, if provided. Extracted so the four branches below each
+/// call it once at their tail.
 macro_rules! maybe_store {
-    ($func:expr, $out:expr) => {
+    ($func:expr, $out:expr, $unaligned:expr) => {
         if let Some(out) = $out {
-            unsafe { $func.store(&out)? };
+            if $unaligned {
+                unsafe { $func.try_into_unaligned().unwrap().store(&out)? };
+            } else {
+                unsafe { $func.store(&out)? };
+            }
         }
     };
 }
@@ -128,8 +137,10 @@ where
     str: ToSig<S>,
     usize: ToSig<S>,
     SigVal<S, u64>: RadixKey,
-    CompVFunc<str, u64, BitVec<Box<[usize]>>, S, E>: Serialize,
-    CompVFunc<usize, u64, BitVec<Box<[usize]>>, S, E>: Serialize,
+    CompVFunc<str, u64, BitVec<Box<[usize]>>, S, E>:
+        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    CompVFunc<usize, u64, BitVec<Box<[usize]>>, S, E>:
+        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
 {
     let vbuilder: VBuilder<BitVec<Box<[usize]>>, S, E> =
         args.builder.configure(VBuilder::default());
@@ -157,7 +168,7 @@ where
                 vbuilder,
                 &mut pl,
             )?;
-            maybe_store!(func, args.func);
+            maybe_store!(func, args.func, args.unaligned);
         } else {
             // Parallel: read all keys into a single concatenated
             // buffer, then build a `Vec<&str>` of slices into it.
@@ -173,7 +184,7 @@ where
             let func = <CompVFunc<str, u64, BitVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
                 &keys, &values, huffman, vbuilder, &mut pl,
             )?;
-            maybe_store!(func, args.func);
+            maybe_store!(func, args.func, args.unaligned);
         }
     } else {
         let n = args.n.unwrap();
@@ -192,7 +203,7 @@ where
                 vbuilder,
                 &mut pl,
             )?;
-            maybe_store!(func, args.func);
+            maybe_store!(func, args.func, args.unaligned);
         } else {
             // Parallel: materialise keys as `Vec<usize>`. Costs
             // `n * 8` bytes of memory but lets the sig-hashing
@@ -202,7 +213,7 @@ where
                 <CompVFunc<usize, u64, BitVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
                     &keys, &values, huffman, vbuilder, &mut pl,
                 )?;
-            maybe_store!(func, args.func);
+            maybe_store!(func, args.func, args.unaligned);
         }
     }
 

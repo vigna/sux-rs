@@ -22,6 +22,7 @@ use sux::func::vfunc2::VFunc2;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
 use sux::prelude::VBuilder;
+use sux::traits::TryIntoUnaligned;
 use sux::utils::{
     DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, FromSlice, Sig, SigVal, ToSig,
 };
@@ -42,6 +43,9 @@ struct Args {
     /// A file containing UTF-8 keys, one per line (at most N keys will be read); it can be compressed with any format supported by the deko crate.​
     #[arg(short, long)]
     filename: Option<String>,
+    /// Save the structure in unaligned form (faster, if available).​
+    #[arg(long)]
+    unaligned: bool,
     /// A name for the ε-serde serialized function.​
     func: Option<String>,
     /// Use the two-step variant (less space for skewed distributions, slightly slower queries).​
@@ -107,7 +111,7 @@ fn main() -> Result<()> {
 // ── Sequential (lender-based) build macros ─────────────────────────
 
 macro_rules! filename_save_sign_seq(
-    ($h: ty, $builder:expr, $filename: expr, $func: expr, $n: expr, $pl: expr) => {{
+    ($h: ty, $builder:expr, $filename: expr, $func: expr, $unaligned: expr, $n: expr, $pl: expr) => {{
         let func =
             <SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_new_with_builder(
                 DekoBufLineLender::from_path($filename)?.take($n),
@@ -116,13 +120,17 @@ macro_rules! filename_save_sign_seq(
                 &mut $pl,
             )?;
         if let Some(filename) = $func {
-            unsafe { func.store(filename) }?;
+            if $unaligned {
+                unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+            } else {
+                unsafe { func.store(filename) }?;
+            }
         }
     }}
 );
 
 macro_rules! n_save_sign_seq(
-    ($h: ty, $builder:expr, $n: expr, $func: expr, $pl: expr) => {{
+    ($h: ty, $builder:expr, $n: expr, $func: expr, $unaligned: expr, $pl: expr) => {{
         let func =
             <SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_new_with_builder(
                 FromCloneableIntoIterator::new(0_usize..$n),
@@ -131,7 +139,11 @@ macro_rules! n_save_sign_seq(
                 &mut $pl,
             )?;
         if let Some(filename) = $func {
-            unsafe { func.store(filename) }?;
+            if $unaligned {
+                unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+            } else {
+                unsafe { func.store(filename) }?;
+            }
         }
     }}
 );
@@ -139,7 +151,7 @@ macro_rules! n_save_sign_seq(
 // ── Parallel (slice-based) build macros ────────────────────────────
 
 macro_rules! filename_save_sign_par(
-    ($h: ty, $builder:expr, $keys:expr, $func: expr, $pl: expr) => {{
+    ($h: ty, $builder:expr, $keys:expr, $func: expr, $unaligned: expr, $pl: expr) => {{
         let func =
             <SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_par_new_with_builder(
                 $keys,
@@ -147,13 +159,17 @@ macro_rules! filename_save_sign_par(
                 &mut $pl,
             )?;
         if let Some(filename) = $func {
-            unsafe { func.store(filename) }?;
+            if $unaligned {
+                unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+            } else {
+                unsafe { func.store(filename) }?;
+            }
         }
     }}
 );
 
 macro_rules! n_save_sign_par(
-    ($h: ty, $builder:expr, $keys:expr, $func: expr, $pl: expr) => {{
+    ($h: ty, $builder:expr, $keys:expr, $func: expr, $unaligned: expr, $pl: expr) => {{
         let func =
             <SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_par_new_with_builder(
                 $keys,
@@ -161,7 +177,11 @@ macro_rules! n_save_sign_par(
                 &mut $pl,
             )?;
         if let Some(filename) = $func {
-            unsafe { func.store(filename) }?;
+            if $unaligned {
+                unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+            } else {
+                unsafe { func.store(filename) }?;
+            }
         }
     }}
 );
@@ -174,18 +194,28 @@ where
     SigVal<S, EmptyVal>: RadixKey,
     SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
     SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
-    VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>: Serialize,
-    VFunc<str, BitFieldVec<Box<[usize]>>, S, E>: Serialize,
+    VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>:
+        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    VFunc<str, BitFieldVec<Box<[usize]>>, S, E>:
+        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
     VFunc<usize, Box<[u8]>, S, E>: Serialize,
     VFunc<str, Box<[u8]>, S, E>: Serialize,
-    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>: Serialize,
-    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u16]>>: Serialize,
-    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u32]>>: Serialize,
-    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>: Serialize,
-    SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>: Serialize,
-    SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u16]>>: Serialize,
-    SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u32]>>: Serialize,
-    SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>: Serialize,
+    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>:
+        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u16]>>:
+        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u32]>>:
+        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>:
+        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>:
+        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u16]>>:
+        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u32]>>:
+        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>:
+        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
 {
     #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
@@ -211,20 +241,24 @@ where
                         &mut pl,
                     )?;
                     if let Some(filename) = args.func {
-                        unsafe { func.store(filename) }?;
+                        if args.unaligned {
+                            unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                        } else {
+                            unsafe { func.store(filename) }?;
+                        }
                     }
                 }
                 Some(HashTypes::U8) => {
-                    filename_save_sign_seq!(u8, builder, filename, args.func, n, pl)
+                    filename_save_sign_seq!(u8, builder, filename, args.func, args.unaligned, n, pl)
                 }
                 Some(HashTypes::U16) => {
-                    filename_save_sign_seq!(u16, builder, filename, args.func, n, pl)
+                    filename_save_sign_seq!(u16, builder, filename, args.func, args.unaligned, n, pl)
                 }
                 Some(HashTypes::U32) => {
-                    filename_save_sign_seq!(u32, builder, filename, args.func, n, pl)
+                    filename_save_sign_seq!(u32, builder, filename, args.func, args.unaligned, n, pl)
                 }
                 Some(HashTypes::U64) => {
-                    filename_save_sign_seq!(u64, builder, filename, args.func, n, pl)
+                    filename_save_sign_seq!(u64, builder, filename, args.func, args.unaligned, n, pl)
                 }
             }
         } else {
@@ -249,20 +283,24 @@ where
                             &keys, &values, builder, &mut pl,
                         )?;
                     if let Some(filename) = args.func {
-                        unsafe { func.store(filename) }?;
+                        if args.unaligned {
+                            unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                        } else {
+                            unsafe { func.store(filename) }?;
+                        }
                     }
                 }
                 Some(HashTypes::U8) => {
-                    filename_save_sign_par!(u8, builder, &keys, args.func, pl)
+                    filename_save_sign_par!(u8, builder, &keys, args.func, args.unaligned, pl)
                 }
                 Some(HashTypes::U16) => {
-                    filename_save_sign_par!(u16, builder, &keys, args.func, pl)
+                    filename_save_sign_par!(u16, builder, &keys, args.func, args.unaligned, pl)
                 }
                 Some(HashTypes::U32) => {
-                    filename_save_sign_par!(u32, builder, &keys, args.func, pl)
+                    filename_save_sign_par!(u32, builder, &keys, args.func, args.unaligned, pl)
                 }
                 Some(HashTypes::U64) => {
-                    filename_save_sign_par!(u64, builder, &keys, args.func, pl)
+                    filename_save_sign_par!(u64, builder, &keys, args.func, args.unaligned, pl)
                 }
             }
         }
@@ -283,20 +321,24 @@ where
                             &mut pl,
                         )?;
                     if let Some(filename) = args.func {
-                        unsafe { func.store(filename) }?;
+                        if args.unaligned {
+                            unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                        } else {
+                            unsafe { func.store(filename) }?;
+                        }
                     }
                 }
                 Some(HashTypes::U8) => {
-                    n_save_sign_seq!(u8, builder, n, args.func, pl)
+                    n_save_sign_seq!(u8, builder, n, args.func, args.unaligned, pl)
                 }
                 Some(HashTypes::U16) => {
-                    n_save_sign_seq!(u16, builder, n, args.func, pl)
+                    n_save_sign_seq!(u16, builder, n, args.func, args.unaligned, pl)
                 }
                 Some(HashTypes::U32) => {
-                    n_save_sign_seq!(u32, builder, n, args.func, pl)
+                    n_save_sign_seq!(u32, builder, n, args.func, args.unaligned, pl)
                 }
                 Some(HashTypes::U64) => {
-                    n_save_sign_seq!(u64, builder, n, args.func, pl)
+                    n_save_sign_seq!(u64, builder, n, args.func, args.unaligned, pl)
                 }
             }
         } else {
@@ -312,20 +354,24 @@ where
                             &keys, &values, builder, &mut pl,
                         )?;
                     if let Some(filename) = args.func {
-                        unsafe { func.store(filename) }?;
+                        if args.unaligned {
+                            unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                        } else {
+                            unsafe { func.store(filename) }?;
+                        }
                     }
                 }
                 Some(HashTypes::U8) => {
-                    n_save_sign_par!(u8, builder, &keys, args.func, pl)
+                    n_save_sign_par!(u8, builder, &keys, args.func, args.unaligned, pl)
                 }
                 Some(HashTypes::U16) => {
-                    n_save_sign_par!(u16, builder, &keys, args.func, pl)
+                    n_save_sign_par!(u16, builder, &keys, args.func, args.unaligned, pl)
                 }
                 Some(HashTypes::U32) => {
-                    n_save_sign_par!(u32, builder, &keys, args.func, pl)
+                    n_save_sign_par!(u32, builder, &keys, args.func, args.unaligned, pl)
                 }
                 Some(HashTypes::U64) => {
-                    n_save_sign_par!(u64, builder, &keys, args.func, pl)
+                    n_save_sign_par!(u64, builder, &keys, args.func, args.unaligned, pl)
                 }
             }
         }
@@ -364,7 +410,11 @@ fn main_two_step(args: Args) -> Result<()> {
                 &mut pl,
             )?;
             if let Some(filename) = args.func {
-                unsafe { func.store(filename) }?;
+                if args.unaligned {
+                    unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                } else {
+                    unsafe { func.store(filename) }?;
+                }
             }
         } else {
             let (buffer, offsets) = read_lines_concatenated(filename, n)?;
@@ -376,7 +426,11 @@ fn main_two_step(args: Args) -> Result<()> {
             let func: VFunc2<str, BitFieldVec<Box<[usize]>>> =
                 VFunc2::try_par_new_with_builder(&keys, &values, builder, &mut pl)?;
             if let Some(filename) = args.func {
-                unsafe { func.store(filename) }?;
+                if args.unaligned {
+                    unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                } else {
+                    unsafe { func.store(filename) }?;
+                }
             }
         }
     } else {
@@ -392,7 +446,11 @@ fn main_two_step(args: Args) -> Result<()> {
                 &mut pl,
             )?;
             if let Some(filename) = args.func {
-                unsafe { func.store(filename) }?;
+                if args.unaligned {
+                    unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                } else {
+                    unsafe { func.store(filename) }?;
+                }
             }
         } else {
             let keys: Vec<usize> = (0..n).collect();
@@ -400,7 +458,11 @@ fn main_two_step(args: Args) -> Result<()> {
             let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> =
                 VFunc2::try_par_new_with_builder(&keys, &values, builder, &mut pl)?;
             if let Some(filename) = args.func {
-                unsafe { func.store(filename) }?;
+                if args.unaligned {
+                    unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                } else {
+                    unsafe { func.store(filename) }?;
+                }
             }
         }
     }

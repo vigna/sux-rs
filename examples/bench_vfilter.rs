@@ -11,10 +11,10 @@ use epserde::prelude::*;
 use fallible_iterator::FallibleIterator;
 use lender::*;
 use sux::{
-    bits::BitFieldVec,
+    bits::{BitFieldVec, BitFieldVecU},
     dict::VFilter,
     func::{shard_edge::*, *},
-    traits::{BitFieldSlice, TryIntoUnaligned, Word},
+    traits::{BitFieldSlice, Word},
     utils::{BinSafe, LineLender, Sig, ToSig, ZstdLineLender},
 };
 
@@ -202,6 +202,8 @@ where
     u64: num_primitive::PrimitiveNumberAs<W>,
     VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>: Deserialize,
     VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>: Deserialize,
+    VFilter<VFunc<usize, BitFieldVecU<Box<[W]>>, S, E>>: Deserialize,
+    VFilter<VFunc<str, BitFieldVecU<Box<[W]>>, S, E>>: Deserialize,
 {
     if let Some(filename) = args.filename {
         let keys: Vec<_> = if args.zstd {
@@ -216,17 +218,19 @@ where
                 .collect()?
         };
 
-        let filter =
-            unsafe { VFilter::<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func) }?;
-
         if args.unaligned {
-            let filter = filter.try_into_unaligned().unwrap();
+            let filter = unsafe {
+                VFilter::<VFunc<str, BitFieldVecU<Box<[W]>>, S, E>>::load_full(&args.func)
+            }?;
             bench(args.n, args.repeats, || {
                 for key in &keys {
                     std::hint::black_box(filter.contains(key.as_str()));
                 }
             });
         } else {
+            let filter = unsafe {
+                VFilter::<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func)
+            }?;
             bench(args.n, args.repeats, || {
                 for key in &keys {
                     std::hint::black_box(filter.contains(key.as_str()));
@@ -234,12 +238,10 @@ where
             });
         }
     } else {
-        // No filename
-        let filter =
-            unsafe { VFilter::<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func) }?;
-
         if args.unaligned {
-            let filter = filter.try_into_unaligned().unwrap();
+            let filter = unsafe {
+                VFilter::<VFunc<usize, BitFieldVecU<Box<[W]>>, S, E>>::load_full(&args.func)
+            }?;
             bench(args.n, args.repeats, || {
                 let mut key: usize = 0;
                 for _ in 0..args.n {
@@ -248,6 +250,9 @@ where
                 }
             });
         } else {
+            let filter = unsafe {
+                VFilter::<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func)
+            }?;
             bench(args.n, args.repeats, || {
                 let mut key: usize = 0;
                 for _ in 0..args.n {

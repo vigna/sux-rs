@@ -19,7 +19,7 @@ use sux::dict::VFilter;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
 use sux::prelude::VBuilder;
-use sux::traits::{BitFieldSliceMut, Word};
+use sux::traits::{BitFieldSliceMut, TryIntoUnaligned, Word};
 use sux::utils::{
     BinSafe, DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig,
 };
@@ -41,6 +41,9 @@ struct Args {
     /// A file containing UTF-8 keys, one per line (at most N keys will be read); it can be compressed with any format supported by the deko crate.​
     #[arg(short, long)]
     filename: Option<String>,
+    /// Save the structure in unaligned form (faster, if available).​
+    #[arg(long)]
+    unaligned: bool,
     /// An optional name for the ε-serde serialized filter.​
     filter: Option<String>,
     /// The number of bits of the hashes used by the filter.​
@@ -142,6 +145,10 @@ where
     VFilter<VFunc<usize, Box<[W]>, S, E>>: Serialize,
     VFilter<VFunc<str, Box<[W]>, S, E>>: Serialize,
 {
+    if args.unaligned {
+        bail!("--unaligned is not supported for backend Box<[W]>; use a custom bit width");
+    }
+
     #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
     #[cfg(feature = "no_logging")]
@@ -223,8 +230,10 @@ where
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     SigVal<E::LocalSig, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>: Serialize,
-    VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>: Serialize,
+    VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>:
+        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>:
+        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
 {
     #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
@@ -248,7 +257,11 @@ where
                 &mut pl,
             )?;
             if let Some(filename) = args.filter {
-                unsafe { filter.store(filename)? };
+                if args.unaligned {
+                    unsafe { filter.try_into_unaligned().unwrap().store(filename)? };
+                } else {
+                    unsafe { filter.store(filename)? };
+                }
             }
         } else {
             let (buffer, offsets) = read_lines_concatenated(filename, n)?;
@@ -266,7 +279,11 @@ where
                     &keys, args.bits, builder, &mut pl,
                 )?;
             if let Some(filename) = args.filter {
-                unsafe { filter.store(filename)? };
+                if args.unaligned {
+                    unsafe { filter.try_into_unaligned().unwrap().store(filename)? };
+                } else {
+                    unsafe { filter.store(filename)? };
+                }
             }
         }
     } else {
@@ -285,7 +302,11 @@ where
                     &mut pl,
                 )?;
             if let Some(filename) = args.filter {
-                unsafe { filter.store(filename)? };
+                if args.unaligned {
+                    unsafe { filter.try_into_unaligned().unwrap().store(filename)? };
+                } else {
+                    unsafe { filter.store(filename)? };
+                }
             }
         } else {
             let keys: Vec<usize> = (0..n).collect();
@@ -294,7 +315,11 @@ where
                     &keys, args.bits, builder, &mut pl,
                 )?;
             if let Some(filename) = args.filter {
-                unsafe { filter.store(filename)? };
+                if args.unaligned {
+                    unsafe { filter.try_into_unaligned().unwrap().store(filename)? };
+                } else {
+                    unsafe { filter.store(filename)? };
+                }
             }
         }
     }
