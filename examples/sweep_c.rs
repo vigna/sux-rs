@@ -34,7 +34,10 @@ fn try_build(n: usize, seed: u64) -> bool {
     let mut pl = dsi_progress_logger::no_logging![];
 
     VFunc::<u64, Box<[usize]>, _, _>::try_par_new_with_builder(
-        &keys, &values, builder, &mut pl.clone(),
+        &keys,
+        &values,
+        builder,
+        &mut pl.clone(),
     )
     .is_ok()
 }
@@ -46,7 +49,10 @@ fn main() {
 
     let args: Vec<String> = std::env::args().collect();
     let start: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(1);
-    let end: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1_000_000);
+    let end: usize = args
+        .get(2)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1_000_000);
     let trials: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(5);
 
     eprintln!("Sweep n={start}..={end}, {trials} trials per n");
@@ -57,9 +63,7 @@ fn main() {
     let results: Vec<(usize, usize)> = (start..=end)
         .into_par_iter()
         .map(|n| {
-            let failures: usize = (0..trials)
-                .filter(|&t| !try_build(n, t as u64))
-                .count();
+            let failures: usize = (0..trials).filter(|&t| !try_build(n, t as u64)).count();
 
             let t = tested.fetch_add(1, Ordering::Relaxed) + 1;
             if failures > 0 {

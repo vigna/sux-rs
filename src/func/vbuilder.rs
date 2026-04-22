@@ -1137,6 +1137,12 @@ impl<
         let shard_edge = &mut self.shard_edge;
         shard_edge.set_up_shards(shard_n, self.eps);
 
+        pl.info(format_args!(
+            "{} with {} signatures",
+            shard_edge,
+            core::any::type_name::<S>()
+        ));
+
         let start = Instant::now();
 
         let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
@@ -1247,7 +1253,12 @@ impl<
         let shard_edge = &self.shard_edge;
         self.num_threads = shard_edge.num_shards().min(self.max_num_threads);
 
-        pl.info(format_args!("{}", self.shard_edge));
+        pl.info(format_args!(
+            "{} with {} signatures",
+            shard_edge,
+            core::any::type_name::<S>()
+        ));
+
         pl.info(format_args!(
             "c: {}, Overhead: {:+.4}% Number of threads: {}",
             self.c,

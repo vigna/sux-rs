@@ -4,9 +4,7 @@ use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
 use sux::dict::EliasFanoConcurrentBuilder;
 use sux::prelude::*;
-use sux::traits::{
-    IndexedSeq, Pred, PredUnchecked, Succ, SuccUnchecked, TryIntoUnaligned,
-};
+use sux::traits::{IndexedSeq, Pred, PredUnchecked, Succ, SuccUnchecked, TryIntoUnaligned};
 
 /// Number of pregenerated queries (must be a power of 2 for masking).
 const NUM_QUERIES: usize = 1 << 20;

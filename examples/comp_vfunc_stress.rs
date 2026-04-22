@@ -27,6 +27,7 @@
 
 use clap::{Parser, ValueEnum};
 use dsi_progress_logger::no_logging;
+use dsi_progress_logger::progress_logger;
 use rand::distr::Distribution;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
@@ -39,6 +40,7 @@ use sux::func::shard_edge::{Fuse3NoShards, Fuse3Shards};
 #[cfg(feature = "mwhc")]
 use sux::func::shard_edge::{Mwhc3NoShards, Mwhc3Shards};
 use sux::func::{CompVFunc, VBuilder};
+use sux::init_env_logger;
 
 #[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
 enum ShardEdgeKind {
@@ -164,7 +166,7 @@ macro_rules! build_and_verify {
             $values,
             sux::func::codec::Huffman::new(),
             VBuilder::default(),
-            no_logging![],
+            &mut progress_logger![],
         );
         match func {
             Ok(f) => {
@@ -267,6 +269,8 @@ fn run_trial(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init_env_logger()?;
+
     let args = Args::parse();
     let n_list: Vec<usize> = args
         .n_list

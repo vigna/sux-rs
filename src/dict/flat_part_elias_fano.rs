@@ -371,16 +371,15 @@ impl IndexedSeq for FlatPartEliasFano {
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> usize {
         // Step 1: pred on endpoints → partition_idx, partition_start, n
-        let (partition_idx, partition_start, n) =
-            if index < self.first_endpoint {
-                (0, 0, self.first_endpoint)
-            } else {
-                let (pred_idx, mut ep_iter) =
-                    unsafe { self.endpoints.iter_from_pred_unchecked::<false>(index) };
-                let partition_start = unsafe { ep_iter.next_unchecked() };
-                let endpoint = unsafe { ep_iter.next_unchecked() };
-                (pred_idx + 1, partition_start, endpoint - partition_start)
-            };
+        let (partition_idx, partition_start, n) = if index < self.first_endpoint {
+            (0, 0, self.first_endpoint)
+        } else {
+            let (pred_idx, mut ep_iter) =
+                unsafe { self.endpoints.iter_from_pred_unchecked::<false>(index) };
+            let partition_start = unsafe { ep_iter.next_unchecked() };
+            let endpoint = unsafe { ep_iter.next_unchecked() };
+            (pred_idx + 1, partition_start, endpoint - partition_start)
+        };
         let local_index = index - partition_start;
 
         // Step 2: iter_from on upper_bounds → base, universe

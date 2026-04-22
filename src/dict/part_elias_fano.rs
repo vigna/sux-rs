@@ -35,13 +35,6 @@ enum Chunk {
 }
 
 impl Chunk {
-    fn len(&self) -> usize {
-        match self {
-            Chunk::EliasFano { len, .. } => *len,
-            Chunk::Dense { len, .. } => *len,
-        }
-    }
-
     unsafe fn get_unchecked(&self, index: usize) -> usize {
         match self {
             Chunk::EliasFano { ef, .. } => unsafe { ef.get_unchecked(index) },
@@ -548,7 +541,13 @@ impl PredIter for PartEliasFano {
         if self.n == 0 || value < self.first_val {
             None
         } else if value > self.last_val {
-            Some((self.n - 1, PartEliasFanoIter { pef: self, pos: self.n - 1 }))
+            Some((
+                self.n - 1,
+                PartEliasFanoIter {
+                    pef: self,
+                    pos: self.n - 1,
+                },
+            ))
         } else {
             Some(unsafe { self.iter_from_pred_unchecked::<false>(value) })
         }
@@ -562,7 +561,13 @@ impl PredIter for PartEliasFano {
         if value <= self.first_val {
             None
         } else if value > self.last_val {
-            Some((self.n - 1, PartEliasFanoIter { pef: self, pos: self.n - 1 }))
+            Some((
+                self.n - 1,
+                PartEliasFanoIter {
+                    pef: self,
+                    pos: self.n - 1,
+                },
+            ))
         } else {
             Some(unsafe { self.iter_from_pred_unchecked::<true>(value) })
         }
@@ -580,7 +585,10 @@ impl PredIterBack for PartEliasFano {
         } else if value > self.last_val {
             Some((
                 self.n - 1,
-                SwappedIter(PartEliasFanoBidiIter { pef: self, pos: self.n }),
+                SwappedIter(PartEliasFanoBidiIter {
+                    pef: self,
+                    pos: self.n,
+                }),
             ))
         } else {
             Some(unsafe { self.iter_back_from_pred_unchecked::<false>(value) })
@@ -597,7 +605,10 @@ impl PredIterBack for PartEliasFano {
         } else if value > self.last_val {
             Some((
                 self.n - 1,
-                SwappedIter(PartEliasFanoBidiIter { pef: self, pos: self.n }),
+                SwappedIter(PartEliasFanoBidiIter {
+                    pef: self,
+                    pos: self.n,
+                }),
             ))
         } else {
             Some(unsafe { self.iter_back_from_pred_unchecked::<true>(value) })
@@ -614,7 +625,13 @@ impl PredBidiIter for PartEliasFano {
         if self.n == 0 || value < self.first_val {
             None
         } else if value > self.last_val {
-            Some((self.n - 1, PartEliasFanoBidiIter { pef: self, pos: self.n }))
+            Some((
+                self.n - 1,
+                PartEliasFanoBidiIter {
+                    pef: self,
+                    pos: self.n,
+                },
+            ))
         } else {
             Some(unsafe { self.iter_bidi_from_pred_unchecked::<false>(value) })
         }
@@ -628,7 +645,13 @@ impl PredBidiIter for PartEliasFano {
         if value <= self.first_val {
             None
         } else if value > self.last_val {
-            Some((self.n - 1, PartEliasFanoBidiIter { pef: self, pos: self.n }))
+            Some((
+                self.n - 1,
+                PartEliasFanoBidiIter {
+                    pef: self,
+                    pos: self.n,
+                },
+            ))
         } else {
             Some(unsafe { self.iter_bidi_from_pred_unchecked::<true>(value) })
         }

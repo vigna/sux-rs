@@ -580,7 +580,7 @@ where
         let (c, lge) =
             vb.shard_edge
                 .set_up_corr_graphs(total_edges, max_shard_keys, max_shard_edges);
-        dbg!(num_keys, max_shard_keys, max_shard_edges);
+        // This should never really happen--we have static checks
         assert!(!lge, "CompVFunc does not support LGE");
         vb.c = c;
         vb.lge = false;
@@ -599,7 +599,11 @@ where
         // CompVFunc-specific entropy metrics: average codeword
         // length (≈ H(values) in bits, the information-theoretic
         // optimum) and the actual bits/key ratio.
-        pl.info(format_args!("{}", vb.shard_edge));
+        pl.info(format_args!(
+            "{} with {} signatures",
+            vb.shard_edge,
+            core::any::type_name::<S>()
+        ));
         let entropy = total_edges as f64 / num_keys as f64;
         pl.info(format_args!(
             "Huffman: max codeword length {}, escape length {}, escaped symbol length {}",

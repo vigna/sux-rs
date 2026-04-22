@@ -57,9 +57,7 @@ fn build_pef(values: &[usize]) -> sux::dict::PartEliasFano {
 
 fn gen_indices(n: usize) -> Vec<usize> {
     let mut rng = SmallRng::seed_from_u64(1);
-    (0..NUM_QUERIES)
-        .map(|_| rng.random_range(0..n))
-        .collect()
+    (0..NUM_QUERIES).map(|_| rng.random_range(0..n)).collect()
 }
 
 fn gen_values(values: &[usize]) -> Vec<usize> {

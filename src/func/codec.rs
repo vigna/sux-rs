@@ -692,7 +692,7 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
     // keep all symbols — the decoder uses a u64 lookup window and
     // cannot handle wider encodings.
     if cutpoint < size {
-        let escape_len = length[cutpoint.saturating_sub(1).max(0)];
+        let escape_len = length[cutpoint.saturating_sub(1)];
         let max_escaped_bits = symbol[cutpoint..]
             .iter()
             .map(|&s| {
