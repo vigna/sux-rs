@@ -162,12 +162,15 @@ impl<
         let v2 = bucket_offset + local_edge[2];
         // SAFETY: by construction `v_i + w <= bucket_offset + m + w =
         // bucket_offset + shard_size`, which is within `data.len()`.
+        let l = usize::BITS - w as u32;
         let value = unsafe {
-            self.data.get_unaligned_unchecked(v0) as u64
-                ^ self.data.get_unaligned_unchecked(v1) as u64
-                ^ self.data.get_unaligned_unchecked(v2) as u64
+            (self.data.get_unaligned_unchecked(v0)
+                ^ self.data.get_unaligned_unchecked(v1)
+                ^ self.data.get_unaligned_unchecked(v2))
+                << l
+                >> l
         };
-        if let Some(decoded) = self.decoder.decode(value) {
+        if let Some(decoded) = self.decoder.decode(value as u64) {
             return decoded;
         }
         // The escape codeword occupies the top `escape_length` bits of
@@ -180,12 +183,16 @@ impl<
         }
         let start = w - esc_len - esym_len;
         // SAFETY: same reasoning as above; `start + esym_len <= w`.
-        let literal = unsafe {
-            self.data.get_unaligned_unchecked(v0 + start) as u64
-                ^ self.data.get_unaligned_unchecked(v1 + start) as u64
-                ^ self.data.get_unaligned_unchecked(v2 + start) as u64
-        };
-        W::as_from(literal)
+        let l = usize::BITS - esym_len as u32;
+        unsafe {
+            W::as_from(
+                (self.data.get_unaligned_unchecked(v0 + start)
+                    ^ self.data.get_unaligned_unchecked(v1 + start)
+                    ^ self.data.get_unaligned_unchecked(v2 + start))
+                    << l
+                    >> l,
+            )
+        }
     }
 }
 
