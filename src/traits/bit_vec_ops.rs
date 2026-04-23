@@ -187,15 +187,30 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
         ((word >> (pos % 8)) << l) >> l
     }
 
+    /// Return the result of an unaligned read of a full word starting at bit
+    /// position `pos` checking that the read does not exceed the allocation.
+    ///
+    /// The actual number of valid bits in the word is `W::BITS - (pos % 8)`.
     fn get_unaligned(&self, pos: usize) -> W {
         assert!(
             pos / 8 + size_of::<W>() <= std::mem::size_of_val(self.as_ref()),
             "unaligned read at bit position {} would exceed allocation",
             pos,
         );
+        // SAFETY: we just checked that the read does not exceed the allocation
         unsafe { self.get_unaligned_unchecked(pos) }
     }
 
+    /// Return the result of an unaligned read of a full word starting at bit
+    /// position `pos` without checking that the read does not exceed the
+    /// allocation.
+    ///
+    /// The actual number of valid bits in the word is `W::BITS - (pos % 8)`.
+    ///
+    /// # Safety
+    ///
+    /// Reading `size_of::<W>()` bytes starting at byte offset `pos / 8`
+    /// must not exceed the allocation.
     #[inline(always)]
     unsafe fn get_unaligned_unchecked(&self, pos: usize) -> W {
         let base_ptr = self.as_ref().as_ptr() as *const u8;
