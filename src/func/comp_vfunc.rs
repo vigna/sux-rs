@@ -245,28 +245,13 @@ impl<K: ?Sized, W: PrimitiveInteger, S, E> TryIntoUnaligned
     type Unaligned = CompVFunc<K, W, BitVecU<Box<[usize]>>, S, E>;
 
     fn try_into_unaligned(self) -> Result<Self::Unaligned, UnalignedConversionError> {
-        // The query path issues two distinct unaligned reads at
-        // arbitrary shard-relative positions: a `w`-bit one for the
-        // codeword window, and (for escaped keys) an
-        // `escaped_symbol_length`-bit one for the literal field.
-        // Both positions come from `ShardEdge::local_edge` and can
-        // land at any `pos % 8`, so we need the strict
-        // arbitrary-position bound (`width <= W::BITS - 7`) — not the
-        // looser `BitFieldVec`-style bound used by
-        // `BitVec::try_into_unaligned`.
-        let w = self.decoder.max_codeword_length() as usize;
         let esym = Decoder::escaped_symbol_length(&self.decoder) as usize;
-        let unaligned_max = usize::BITS as usize - 7;
-        let unaligned_err = |bw: usize| {
-            UnalignedConversionError(format!(
-                "bit width {bw} does not satisfy the constraints for arbitrary-position unaligned reads on usize (must be <= {unaligned_max})"
-            ))
-        };
-        if !test_unaligned_any_pos!(usize, w) {
-            return Err(unaligned_err(w));
-        }
         if esym > 0 && !test_unaligned_any_pos!(usize, esym) {
-            return Err(unaligned_err(esym));
+            return Err(UnalignedConversionError(format!(
+                "escaped-symbol bit width {esym} does not satisfy the constraints \
+                 for arbitrary-position unaligned reads on usize (must be <= {})",
+                usize::BITS as usize - 7
+            )));
         }
         Ok(CompVFunc {
             shard_edge: self.shard_edge,
@@ -470,7 +455,16 @@ fn build_coder_from_frequencies<W: PrimitiveInteger + std::hash::Hash>(
     huffman: Huffman,
     frequencies: HashMap<W, usize>,
 ) -> HuffmanCoder<W> {
-    huffman.build_coder(&frequencies)
+    let coder = huffman.build_coder(&frequencies);
+    // The codeword is read via get_unaligned_unchecked, which reads a
+    // full usize and shifts right by up to 7 bits.
+    let w = coder.max_codeword_length();
+    let max = usize::BITS - 7;
+    assert!(
+        w <= max,
+        "max codeword length {w} exceeds the unaligned-read limit of {max}"
+    );
+    coder
 }
 
 /// Slice fast-path for the frequency map used by `build_inner_par`.
@@ -847,6 +841,12 @@ where
         *frequencies.entry(v).or_insert(0) += 1;
     }
     let coder = huffman.build_coder(&frequencies);
+    let w = coder.max_codeword_length();
+    let max = usize::BITS - 7;
+    assert!(
+        w <= max,
+        "max codeword length {w} exceeds the unaligned-read limit of {max}"
+    );
     let total_edges: usize = frequencies
         .iter()
         .map(|(&v, &count)| coder.codeword_length(v) as usize * count)
