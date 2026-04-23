@@ -910,7 +910,7 @@ impl<
                     self.expected_num_keys,
                 )?;
 
-                pl.expected_updates(Some(n));
+                pl.expected_updates(n);
                 pl.item_name("key");
                 pl.start(format!(
                     "Computing and storing {}-bit signatures in memory (parallel) using seed 0x{seed:016x}...",
@@ -1428,7 +1428,7 @@ impl<
     {
         main_pl
             .item_name("shard")
-            .expected_updates(Some(self.shard_edge.num_shards()))
+            .expected_updates(self.shard_edge.num_shards())
             .display_memory(true)
             .start("Solving shards...");
 

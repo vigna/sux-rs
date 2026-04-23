@@ -738,7 +738,7 @@ mod build {
 
             // Enumerate the store and extract hashes using the same method as filters
             pl.item_name("hash");
-            pl.expected_updates(Some(num_keys));
+            pl.expected_updates(num_keys);
             pl.start("Storing hashes...");
 
             for shard in store.iter() {
@@ -1026,7 +1026,7 @@ mod build {
 
             // Enumerate the store and extract hashes
             pl.item_name("hash");
-            pl.expected_updates(Some(num_keys));
+            pl.expected_updates(num_keys);
             pl.start("Storing hashes...");
 
             for shard in store.iter() {
