@@ -33,7 +33,7 @@ use sux::utils::{
             ArgGroup::new("input")
                 .required(true)
                 .multiple(true)
-                .args(&["filename", "n"]),
+                .args(["filename", "n"]),
 ))]
 struct Args {
     /// The number of keys; if no filename is provided, use the 64-bit keys
@@ -196,8 +196,7 @@ where
     SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
     VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>:
         Serialize + TryIntoUnaligned<Unaligned: Serialize>,
-    VFunc<str, BitFieldVec<Box<[usize]>>, S, E>:
-        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    VFunc<str, BitFieldVec<Box<[usize]>>, S, E>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
     VFunc<usize, Box<[u8]>, S, E>: Serialize,
     VFunc<str, Box<[u8]>, S, E>: Serialize,
     SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>:
@@ -252,13 +251,37 @@ where
                     filename_save_sign_seq!(u8, builder, filename, args.func, args.unaligned, n, pl)
                 }
                 Some(HashTypes::U16) => {
-                    filename_save_sign_seq!(u16, builder, filename, args.func, args.unaligned, n, pl)
+                    filename_save_sign_seq!(
+                        u16,
+                        builder,
+                        filename,
+                        args.func,
+                        args.unaligned,
+                        n,
+                        pl
+                    )
                 }
                 Some(HashTypes::U32) => {
-                    filename_save_sign_seq!(u32, builder, filename, args.func, args.unaligned, n, pl)
+                    filename_save_sign_seq!(
+                        u32,
+                        builder,
+                        filename,
+                        args.func,
+                        args.unaligned,
+                        n,
+                        pl
+                    )
                 }
                 Some(HashTypes::U64) => {
-                    filename_save_sign_seq!(u64, builder, filename, args.func, args.unaligned, n, pl)
+                    filename_save_sign_seq!(
+                        u64,
+                        builder,
+                        filename,
+                        args.func,
+                        args.unaligned,
+                        n,
+                        pl
+                    )
                 }
             }
         } else {

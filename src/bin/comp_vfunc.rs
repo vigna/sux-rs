@@ -34,7 +34,7 @@ use sux::utils::{DekoBufLineLender, FromCloneableIntoIterator, Sig, SigVal, ToSi
     ArgGroup::new("input")
         .required(true)
         .multiple(true)
-        .args(&["filename", "n"]),
+        .args(["filename", "n"]),
 ))]
 struct Args {
     /// The number of keys; if no filename is provided, use the 64-bit keys

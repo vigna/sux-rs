@@ -145,9 +145,8 @@ where
         }
     } else {
         if args.unaligned {
-            let func = unsafe {
-                VFunc::<usize, BitFieldVecU<Box<[usize]>>, S, E>::load_full(&args.func)
-            }?;
+            let func =
+                unsafe { VFunc::<usize, BitFieldVecU<Box<[usize]>>, S, E>::load_full(&args.func) }?;
             bench(args.n, args.repeats, || {
                 let mut key: usize = 0;
                 for _ in 0..args.n {
@@ -156,9 +155,8 @@ where
                 }
             });
         } else {
-            let func = unsafe {
-                VFunc::<usize, BitFieldVec<Box<[usize]>>, S, E>::load_full(&args.func)
-            }?;
+            let func =
+                unsafe { VFunc::<usize, BitFieldVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
             bench(args.n, args.repeats, || {
                 let mut key: usize = 0;
                 for _ in 0..args.n {

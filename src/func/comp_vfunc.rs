@@ -982,6 +982,8 @@ fn solve_system(
             peeled_edges.set(edge_idx as usize, true);
         }
 
+        // TODO: we don't use LGE anymore
+
         // Build LGE system on the non-peeled edges only. Track which
         // variables appear so the write-back can skip unused ones
         // (same as VBuilder's `lge_shard`).
