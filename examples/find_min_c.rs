@@ -33,6 +33,7 @@
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use rayon::prelude::*;
+use std::cell::RefCell;
 
 fn log2_seg_size(n: usize) -> u32 {
     let n = n.max(1) as f64;
@@ -48,53 +49,57 @@ fn fuse_dims(n: usize, c: f64) -> (usize, usize, u32) {
     (num_vertices, l, log2_seg)
 }
 
-fn gen_fuse_graph(n: usize, l: usize, log2_seg: u32, seed: u64) -> Vec<[u32; 3]> {
+fn gen_fuse_graph(n: usize, l: usize, log2_seg: u32, seed: u64, edges: &mut Vec<[u32; 3]>) {
     use rand::RngExt;
-    let seg_size = 1u64 << log2_seg;
+    let seg_mask = (1u64 << log2_seg) - 1;
     let mut rng = SmallRng::seed_from_u64(seed);
-    let mut edges = Vec::with_capacity(n);
+    edges.clear();
     for _ in 0..n {
         let s: u64 = rng.random_range(0..l as u64);
-        let o0: u64 = rng.random_range(0..seg_size);
-        let o1: u64 = rng.random_range(0..seg_size);
-        let o2: u64 = rng.random_range(0..seg_size);
+        let o0: u64 = rng.random::<u64>() & seg_mask;
+        let o1: u64 = rng.random::<u64>() & seg_mask;
+        let o2: u64 = rng.random::<u64>() & seg_mask;
         edges.push([
-            (s * seg_size + o0) as u32,
-            ((s + 1) * seg_size + o1) as u32,
-            ((s + 2) * seg_size + o2) as u32,
+            ((s << log2_seg) + o0) as u32,
+            (((s + 1) << log2_seg) + o1) as u32,
+            (((s + 2) << log2_seg) + o2) as u32,
         ]);
     }
-    edges
 }
 
-fn peel(num_vertices: usize, edges: &[[u32; 3]]) -> bool {
+fn peel(num_vertices: usize, edges: &[[u32; 3]], bufs: &mut PeelBufs) -> bool {
     let n = edges.len();
-    let mut edge_xor = vec![0u32; num_vertices];
-    let mut degree = vec![0u8; num_vertices];
+    bufs.edge_xor.clear();
+    bufs.edge_xor.resize(num_vertices, 0u32);
+    bufs.degree.clear();
+    bufs.degree.resize(num_vertices, 0u8);
+    bufs.stack.clear();
 
     for (i, &[a, b, c]) in edges.iter().enumerate() {
         let stored = (i + 1) as u32;
         for &v in &[a, b, c] {
-            let (d, overflow) = degree[v as usize].overflowing_add(1);
+            let (d, overflow) = bufs.degree[v as usize].overflowing_add(1);
             if overflow {
                 return false;
             }
-            degree[v as usize] = d;
-            edge_xor[v as usize] ^= stored;
+            bufs.degree[v as usize] = d;
+            bufs.edge_xor[v as usize] ^= stored;
         }
     }
 
-    let mut stack: Vec<u32> = (0..num_vertices as u32)
-        .filter(|&v| degree[v as usize] == 1)
-        .collect();
+    for v in 0..num_vertices as u32 {
+        if bufs.degree[v as usize] == 1 {
+            bufs.stack.push(v);
+        }
+    }
 
     let mut n_peeled = 0usize;
-    while let Some(v) = stack.pop() {
+    while let Some(v) = bufs.stack.pop() {
         let vu = v as usize;
-        if degree[vu] != 1 {
+        if bufs.degree[vu] != 1 {
             continue;
         }
-        let stored = edge_xor[vu];
+        let stored = bufs.edge_xor[vu];
         if stored == 0 {
             break;
         }
@@ -102,15 +107,31 @@ fn peel(num_vertices: usize, edges: &[[u32; 3]]) -> bool {
         let [a, b, c] = edges[(stored - 1) as usize];
         for &u in &[a, b, c] {
             let uu = u as usize;
-            degree[uu] -= 1;
-            edge_xor[uu] ^= stored;
-            if degree[uu] == 1 {
-                stack.push(u);
+            bufs.degree[uu] -= 1;
+            bufs.edge_xor[uu] ^= stored;
+            if bufs.degree[uu] == 1 {
+                bufs.stack.push(u);
             }
         }
     }
 
     n_peeled == n
+}
+
+struct PeelBufs {
+    edge_xor: Vec<u32>,
+    degree: Vec<u8>,
+    stack: Vec<u32>,
+}
+
+impl PeelBufs {
+    fn new() -> Self {
+        Self {
+            edge_xor: Vec::new(),
+            degree: Vec::new(),
+            stack: Vec::new(),
+        }
+    }
 }
 
 fn required_success_rate(n: usize) -> f64 {
@@ -125,16 +146,20 @@ fn required_success_rate(n: usize) -> f64 {
     }
 }
 
+thread_local! {
+    static BUFS: RefCell<(Vec<[u32; 3]>, PeelBufs)> = RefCell::new((Vec::new(), PeelBufs::new()));
+}
+
 fn try_c(n: usize, c: f64, trials: usize) -> f64 {
     let (num_vertices, l, log2_seg) = fuse_dims(n, c);
     let successes: usize = (0..trials)
         .into_par_iter()
         .filter(|&t| {
-            let seed = (n as u64)
-                .wrapping_mul(0x9e3779b97f4a7c15)
-                .wrapping_add(t as u64);
-            let edges = gen_fuse_graph(n, l, log2_seg, seed);
-            peel(num_vertices, &edges)
+            BUFS.with(|cell| {
+                let (edges, bufs) = &mut *cell.borrow_mut();
+                gen_fuse_graph(n, l, log2_seg, t as u64, edges);
+                peel(num_vertices, edges, bufs)
+            })
         })
         .count();
     successes as f64 / trials as f64
@@ -149,7 +174,7 @@ fn main() {
     eprintln!("find_min_c: n={start}..={end}, {trials} trials per (n, c)");
     println!("n\tc\tsuccess_rate");
 
-    let step: f64 = 0.005;
+    let step: f64 = 0.01;
 
     for n in start..=end {
         if n == 0 {
@@ -159,10 +184,10 @@ fn main() {
 
         let threshold = required_success_rate(n);
 
-        // Start from 2.0 and descend until we fail.
-        let mut best_c: f64 = 2.0;
-        let mut c = 2.0 - step;
-        while c >= 0.88 {
+        // Start from 1.35 and descend until we fail.
+        let mut best_c: f64 = 1.35;
+        let mut c = 1.35 - step;
+        while c >= 1.10 {
             if try_c(n, c, trials) >= threshold {
                 best_c = c;
                 c -= step;
