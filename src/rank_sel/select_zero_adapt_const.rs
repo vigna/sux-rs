@@ -275,11 +275,6 @@ impl<
         let num_bits = max(1, bits.len());
         let inventory_size = num_ones.div_ceil(Self::ONES_PER_INVENTORY);
 
-        // We use a smaller value than max_log2_words_per_subinventory when with a
-        // smaller value we can still index, in the 16-bit case, all bits the
-        // subinventory. This can happen only in extremely sparse vectors, or
-        // if a very small value of LOG2_ZEROS_PER_INVENTORY is set directly.
-
         let words_per_subinventory = 1 << LOG2_WORDS_PER_SUBINVENTORY;
         // A u64 for the inventory, and words_per_inventory for the subinventory
         let words_per_inventory = words_per_subinventory + 1;

@@ -57,6 +57,14 @@
 //! The [`bit_vec!`] macro and [`FromIterator`] / [`Extend`] do not need
 //! annotations because the word type is determined by the output context.
 //!
+//! # Conversions
+//!
+//! A wide range of conversion is available between the different flavors of bit
+//! vectors, using [`From`]/[`Into`] and [`TryFrom`]/[`TryInto`] as needed. For
+//! example, you can convert from a non-atomic to an atomic bit vector if the
+//! alignment requirements are satisfied, and you can convert from a growable
+//! bit vector to a fixed-size one by converting the backend to a boxed slice.
+//!
 //! # Slice-by-value support
 //!
 //! [`BitVec`] implement the [`BitFieldSlice`]/[`BitFieldSliceMut`] traits as a
@@ -1028,18 +1036,41 @@ impl<'a, B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word
 
 // Conversions
 
-/// This conversion may fail if the alignment of `W` is not the same as
-/// that of `W::Atomic`.
-impl<'a, W: AtomicPrimitive> TryFrom<BitVec<&'a [W]>> for AtomicBitVec<&'a [W::Atomic]> {
-    type Error = CannotCastToAtomicError<W>;
-    fn try_from(value: BitVec<&'a [W]>) -> Result<Self, Self::Error> {
-        if core::mem::align_of::<W>() != core::mem::align_of::<W::Atomic>() {
-            return Err(CannotCastToAtomicError::default());
-        }
-        Ok(AtomicBitVec {
-            bits: unsafe { core::mem::transmute::<&'a [W], &'a [W::Atomic]>(value.bits) },
+impl<'a, B: Backend + AsRef<[B::Word]>> From<&'a BitVec<B>> for BitVec<&'a [B::Word]> {
+    fn from(value: &'a BitVec<B>) -> Self {
+        BitVec {
+            bits: value.bits.as_ref(),
             len: value.len,
-        })
+        }
+    }
+}
+
+impl<'a, B: Backend + AsRef<[B::Word]>> From<&'a AtomicBitVec<B>> for AtomicBitVec<&'a [B::Word]> {
+    fn from(value: &'a AtomicBitVec<B>) -> Self {
+        AtomicBitVec {
+            bits: value.bits.as_ref(),
+            len: value.len,
+        }
+    }
+}
+
+impl<'a, B: Backend + AsMut<[B::Word]>> From<&'a mut BitVec<B>> for BitVec<&'a mut [B::Word]> {
+    fn from(value: &'a mut BitVec<B>) -> Self {
+        BitVec {
+            bits: value.bits.as_mut(),
+            len: value.len,
+        }
+    }
+}
+
+impl<'a, B: Backend + AsMut<[B::Word]>> From<&'a mut AtomicBitVec<B>>
+    for AtomicBitVec<&'a mut [B::Word]>
+{
+    fn from(value: &'a mut AtomicBitVec<B>) -> Self {
+        AtomicBitVec {
+            bits: value.bits.as_mut(),
+            len: value.len,
+        }
     }
 }
 
@@ -1089,15 +1120,6 @@ impl<W: AtomicPrimitive + Copy> From<BitVec<Box<[W]>>> for AtomicBitVec<Box<[W::
     fn from(value: BitVec<Box<[W]>>) -> Self {
         AtomicBitVec {
             bits: transmute_boxed_slice_into_atomic::<W>(value.bits),
-            len: value.len,
-        }
-    }
-}
-
-impl<'a, W: AtomicPrimitive> From<AtomicBitVec<&'a [W::Atomic]>> for BitVec<&'a [W]> {
-    fn from(value: AtomicBitVec<&'a [W::Atomic]>) -> Self {
-        BitVec {
-            bits: unsafe { core::mem::transmute::<&'a [W::Atomic], &'a [W]>(value.bits) },
             len: value.len,
         }
     }
