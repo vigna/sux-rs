@@ -348,7 +348,7 @@ fn build_zipf(s: f64, n: usize) -> ZipfData {
     let coder = <Huffman as Codec<u64>>::build_coder(&Huffman::new(), &freqs);
     let mut lengths = vec![0u32; n + 1];
     for rank in 1..=n {
-        let len = coder.codeword_length(rank as u64);
+        let len = coder.encoded_length(rank as u64);
         // Codeword length 0 happens only for the degenerate single-
         // symbol case; clamp to 1 so peels see at least one edge.
         lengths[rank] = len.max(1);

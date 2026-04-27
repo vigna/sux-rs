@@ -28,82 +28,98 @@ fn round_trip_generic<W: PrimitiveInteger + std::hash::Hash + std::fmt::Display>
     u64: PrimitiveNumberAs<W>,
 {
     let w = coder.max_codeword_length();
-    let len = coder.codeword_length(symbol);
-    let cw = coder.encode(symbol);
 
-    let bits = match cw {
-        Some(cw) => cw,
-        None => {
-            let esc = coder.escape();
-            let esc_len = coder.escape_length();
-            let esym_len = coder.escaped_symbol_length();
-            let lit = symbol.reverse_bits() >> (W::BITS - esym_len);
-            esc | (u64::as_from(lit) << esc_len)
-        }
-    };
-    let mut value = 0u64;
-    for k in 0..len {
-        let bit = (bits >> k) & 1;
-        value |= bit << (w - 1 - k);
-    }
-
-    match decoder.decode(value) {
-        Some(decoded) => {
-            assert_eq!(decoded, symbol, "round-trip for symbol {symbol}");
+    match coder.encode(symbol) {
+        Some(cw) => {
+            let len = coder.codeword_length(symbol);
+            let mut value = 0u64;
+            for k in 0..len {
+                value |= ((cw >> k) & 1) << (w - 1 - k);
+            }
+            let decoded = decoder.decode(value);
+            assert_eq!(decoded, Some(symbol), "round-trip for symbol {symbol}");
         }
         None => {
-            let esc_len = decoder.escape_length();
-            let esym_len = decoder.escaped_symbol_length();
-            let mask = (1u64 << esym_len) - 1;
-            let recovered = (value >> (w - esc_len - esym_len)) & mask;
-            assert_eq!(
-                W::as_from(recovered),
-                symbol,
-                "escaped round-trip for symbol {symbol}"
+            let esc = coder.escape_codeword();
+            let esc_len = coder.escape_codeword_length();
+            let esym_len = coder.escaped_symbols_length();
+
+            // Verify escape codeword is recognized
+            let mut value = 0u64;
+            for k in 0..esc_len {
+                value |= ((esc >> k) & 1) << (w - 1 - k);
+            }
+            assert!(
+                decoder.decode(value).is_none(),
+                "escape should return None for {symbol}"
             );
+
+            // Verify literal round-trip: the double bit-reversal in
+            // CompVFunc's encoding places the original value in the
+            // low esym_len bits of the stored window.
+            if esym_len > 0 {
+                let lit = u64::as_from(symbol.reverse_bits() >> (W::BITS - esym_len));
+                let full_bits: u128 = esc as u128 | ((lit as u128) << esc_len);
+                let total_len = esc_len + esym_len;
+                let mut full_window = 0u128;
+                for k in 0..total_len {
+                    full_window |= ((full_bits >> k) & 1) << (total_len - 1 - k);
+                }
+                let mask = (1u128 << esym_len) - 1;
+                assert_eq!(
+                    W::as_from((full_window & mask) as u64),
+                    symbol,
+                    "escaped round-trip for symbol {symbol}"
+                );
+            }
         }
     }
 }
 
 fn round_trip(coder: &HuffmanCoder<u64>, decoder: &HuffmanDecoder<u64>, symbol: u64) {
     let w = coder.max_codeword_length();
-    let len = coder.codeword_length(symbol);
-    let cw = coder.encode(symbol);
 
-    // Build the same `value` the read path would build: `len` bits
-    // appended LSB-first into a window, then reads the high bits.
-    let bits = match cw {
-        Some(cw) => cw,
-        None => {
-            // Escape: append escape codeword, then literal symbol
-            // (bit-reversed in `escaped_symbol_length` bits).
-            let esc = coder.escape();
-            let esc_len = coder.escape_length();
-            let esym_len = coder.escaped_symbol_length();
-            let lit = symbol.reverse_bits() >> (64 - esym_len);
-            esc | (lit << esc_len)
-        }
-    };
-    // Place into the high bits of a w-bit window: position 0 →
-    // bit (w-1), position k → bit (w-1-k).
-    let mut value = 0u64;
-    for k in 0..len {
-        let bit = (bits >> k) & 1;
-        value |= bit << (w - 1 - k);
-    }
-
-    match decoder.decode(value) {
-        Some(decoded) => {
-            assert_eq!(decoded, symbol, "round-trip for symbol {symbol}");
+    match coder.encode(symbol) {
+        Some(cw) => {
+            let len = coder.codeword_length(symbol);
+            let mut value = 0u64;
+            for k in 0..len {
+                value |= ((cw >> k) & 1) << (w - 1 - k);
+            }
+            let decoded = decoder.decode(value);
+            assert_eq!(decoded, Some(symbol), "round-trip for symbol {symbol}");
         }
         None => {
-            // Escape: read literal bits below the escape inside the
-            // w-bit window.
-            let esc_len = decoder.escape_length();
-            let esym_len = decoder.escaped_symbol_length();
-            let mask = (1u64 << esym_len) - 1;
-            let recovered = (value >> (w - esc_len - esym_len)) & mask;
-            assert_eq!(recovered, symbol, "escaped round-trip");
+            let esc = coder.escape_codeword();
+            let esc_len = coder.escape_codeword_length();
+            let esym_len = coder.escaped_symbols_length();
+
+            // Verify escape codeword is recognized
+            let mut value = 0u64;
+            for k in 0..esc_len {
+                value |= ((esc >> k) & 1) << (w - 1 - k);
+            }
+            assert!(
+                decoder.decode(value).is_none(),
+                "escape should return None for {symbol}"
+            );
+
+            // Verify literal round-trip
+            if esym_len > 0 {
+                let lit = symbol.reverse_bits() >> (64 - esym_len);
+                let full_bits: u128 = esc as u128 | ((lit as u128) << esc_len);
+                let total_len = esc_len + esym_len;
+                let mut full_window = 0u128;
+                for k in 0..total_len {
+                    full_window |= ((full_bits >> k) & 1) << (total_len - 1 - k);
+                }
+                let mask = (1u128 << esym_len) - 1;
+                assert_eq!(
+                    (full_window & mask) as u64,
+                    symbol,
+                    "escaped round-trip for symbol {symbol}"
+                );
+            }
         }
     }
 }
@@ -231,7 +247,7 @@ fn test_huffman_length_limited() {
     }
     let f = freqs(&pairs);
     let coder = Huffman::length_limited(4, 0.95).build_coder(&f);
-    assert!(coder.escaped_symbol_length() > 0, "should have escapes");
+    assert!(coder.escaped_symbols_length() > 0, "should have escapes");
     let decoder = coder.clone().into_decoder();
     for (s, _) in pairs {
         round_trip(&coder, &decoder, s);
@@ -260,7 +276,7 @@ fn test_huffman_i8_with_escapes() {
     }
     let f = freqs_i8(&pairs);
     let coder = <Huffman as Codec<i8>>::build_coder(&Huffman::length_limited(3, 0.6), &f);
-    assert!(coder.escaped_symbol_length() > 0, "should have escapes");
+    assert!(coder.escaped_symbols_length() > 0, "should have escapes");
     let decoder = coder.clone().into_decoder();
     for (s, _) in pairs {
         round_trip_generic(&coder, &decoder, s);

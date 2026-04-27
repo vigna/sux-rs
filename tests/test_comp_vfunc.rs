@@ -175,10 +175,10 @@ fn test_u128_forced_escape() {
     // Same forced-escape scenario as `test_u8_forced_escape`, but
     // with u128 values: the escaped literals are stored under the W
     // → u64 cast in `encode_val`, so this proves that the escape
-    // path round-trips u128 values whose bit width fits in the
-    // 62-bit codeword budget. We pick a small `base` (2^16) to keep
-    // the per-shard literal width — and therefore the multi-edge
-    // codeword layout — tractable for a unit test.
+    // path round-trips u128 values whose bit width fits in 64 bits.
+    // We pick a small `base` (2^16) to keep the per-shard literal
+    // width — and therefore the multi-edge codeword layout —
+    // tractable for a unit test.
     let n = 600usize;
     let base: u128 = 1u128 << 16;
     let values: Vec<u128> = (0..n)
@@ -308,6 +308,51 @@ fn test_i8_with_negatives_and_escapes() {
         no_logging![],
     )
     .expect("build");
+    for (i, &v) in values.iter().enumerate() {
+        assert_eq!(func.get(keys[i]), v, "mismatch at key {}", keys[i]);
+    }
+}
+
+#[test]
+fn test_u64_forced_escape() {
+    // Force escaped storage of full 64-bit values. The dominant value
+    // gets a short Huffman codeword; the rare ones span the entire
+    // u64 range and must survive the escape + literal round-trip.
+    let n = 600usize;
+    let rare: [u64; 5] = [
+        u64::MAX,
+        0xDEAD_BEEF_CAFE_BABE,
+        1,
+        (1u64 << 63) | 1,
+        0x0123_4567_89AB_CDEF,
+    ];
+    let values: Vec<u64> = (0..n)
+        .map(|i| {
+            if i % 12 < 9 {
+                0
+            } else {
+                rare[i % rare.len()]
+            }
+        })
+        .collect();
+    let keys: Vec<u64> = (0..n as u64).collect();
+    let func = CompVFunc::<u64, u64>::try_par_new_with_builder(
+        &keys,
+        &values,
+        Huffman::length_limited(1, 1.0),
+        VBuilder::default(),
+        no_logging![],
+    )
+    .expect("build");
+    assert!(
+        func.escaped_symbol_length() > 0,
+        "test must exercise the escape path"
+    );
+    assert!(
+        func.escaped_symbol_length() >= 64,
+        "escaped symbol length must cover full 64-bit values, got {}",
+        func.escaped_symbol_length()
+    );
     for (i, &v) in values.iter().enumerate() {
         assert_eq!(func.get(keys[i]), v, "mismatch at key {}", keys[i]);
     }

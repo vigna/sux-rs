@@ -123,7 +123,7 @@ fn main() -> Result<()> {
         let mut total_bits: u64 = 0;
         let mut by_len: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
         for (&v, &f) in &freqs {
-            let l = coder.codeword_length(v);
+            let l = coder.encoded_length(v);
             total_bits += f as u64 * l as u64;
             *by_len.entry(l).or_insert(0) += 1;
         }

@@ -9,10 +9,12 @@
 //! Symbols are parametric over a symbol type `W` (any [`PrimitiveInteger`]). A
 //! [`Coder<W>`] turns a symbol into a codeword (or flags it as escaped); a
 //! [`Decoder<W>`] turns the high bits of a [`max_codeword_length`]-bit window
-//! back into a symbol (or returns the escape sentinel `W::MAX`).
+//! back into a symbol (or returns `None` for the escape codeword).
 //!
-//! Codewords themselves are always `u64`-packed: [`max_codeword_length`] is at
-//! most 62 bits.
+//! [`max_codeword_length`] is the depth of the prefix code tree (at most
+//! 62 bits). Escaped symbols carry an additional literal field whose
+//! width is [`escaped_symbol_length`](Decoder::escaped_symbol_length);
+//! the total encoded length is reported by [`Coder::encoded_length`].
 //!
 //! [`CompVFunc`]: crate::func::CompVFunc
 //! [`PrimitiveInteger`]: num_primitive::PrimitiveInteger
@@ -46,30 +48,45 @@ pub trait Coder<W> {
     /// The returned codeword is `codeword_length(symbol)` bits wide and
     /// is laid out so that bit *l* of the returned `u64` is the *l*-th
     /// bit appended to the data array. With the layout used by
-    /// [`CompVFunc`], that means bit 0 is the *most significant* bit of
+    /// [`CompVFunc`], that means bit 0 is the most significant bit of
     /// the canonical (MSB-first) codeword.
     ///
     /// [`CompVFunc`]: crate::func::CompVFunc
     fn encode(&self, symbol: W) -> Option<u64>;
 
-    /// Returns the length in bits of the codeword for `symbol`.
+    /// Returns the prefix code length in bits for `symbol`.
     ///
-    /// For escaped symbols this is `escape_length() +
-    /// escaped_symbol_length()`.
+    /// For escaped symbols this is [`escape_length()`].
+    ///
+    /// [`escape_length()`]: Self::escape_length
     fn codeword_length(&self, symbol: W) -> u32;
 
-    /// The maximum codeword length, including escaped symbols.
+    /// Returns the total encoded length in bits for `symbol`.
+    ///
+    /// For non-escaped symbols this equals [`codeword_length`]. For escaped
+    /// symbols this is [`escape_length`] + [`escaped_symbol_length`].
+    ///
+    /// [`escape_length`]: Self::escape_length
+    /// [`escaped_symbol_length`]: Self::escaped_symbol_length
+    /// [`codeword_length`]: Self::codeword_length
+    fn encoded_length(&self, symbol: W) -> u32;
+
+    /// The maximum prefix code length across all symbols.
     fn max_codeword_length(&self) -> u32;
 
-    /// The escape codeword (length is `escape_length()`).
-    fn escape(&self) -> u64;
+    /// The escape codeword (length is [`escape_length`]).
+    ///
+    /// [`escape_length`]: Self::escape_length
+    fn escape_codeword(&self) -> u64;
 
-    /// The length in bits of the escape codeword.
-    fn escape_length(&self) -> u32;
+    /// The length in bits of the [escape codeword].
+    ///
+    /// [escape codeword]: Self::escape
+    fn escape_codeword_length(&self) -> u32;
 
-    /// The length in bits of an escaped symbol, or zero if the code has
+    /// The length in bits of escaped symbols, or zero if the code has
     /// no escape.
-    fn escaped_symbol_length(&self) -> u32;
+    fn escaped_symbols_length(&self) -> u32;
 
     /// Builds the matching decoder.
     fn into_decoder(self) -> Self::Decoder;
@@ -77,8 +94,8 @@ pub trait Coder<W> {
 
 /// A prefix-free decoder for `W` symbols.
 pub trait Decoder<W> {
-    /// Decodes the codeword found in the high bits of a
-    /// `max_codeword_length`-bit window.
+    /// Decodes the prefix codeword found in the high bits of a
+    /// [`max_codeword_length`](Self::max_codeword_length)-bit window.
     ///
     /// The first bit of the codeword is at bit position
     /// `max_codeword_length - 1` of `value`; lower bits hold whatever
@@ -86,19 +103,22 @@ pub trait Decoder<W> {
     /// algorithm.
     ///
     /// Returns `Some(symbol)` for a normal codeword, or `None` if
-    /// the leading codeword is the escape codeword (the caller must
-    /// then read [`escaped_symbol_length`](Self::escaped_symbol_length)
-    /// further bits as the literal value).
+    /// the codeword is the escape codeword (the caller must then
+    /// read the literal value separately).
     fn decode(&self, value: u64) -> Option<W>;
 
-    /// The total width in bits of the read window used by
-    /// [`decode`](Self::decode). For Huffman this is `escape_length +
-    /// escaped_symbol_length`, which equals the maximum codeword
-    /// length.
+    /// The maximum prefix code length in bits. This is the width of
+    /// the read window expected by [`decode`](Self::decode).
     fn max_codeword_length(&self) -> u32;
 
-    fn escape_length(&self) -> u32;
-    fn escaped_symbol_length(&self) -> u32;
+    /// The length in bits of the [escape codeword].
+    ///
+    /// [escape codeword]: Self::escape
+    fn escape_codeword_length(&self) -> u32;
+
+    /// The length in bits of escaped symbols, or zero if the code has
+    /// no escape.
+    fn escaped_symbols_length(&self) -> u32;
 }
 
 // ── ZeroCodec ───────────────────────────────────────────────────────
@@ -135,16 +155,19 @@ impl<W: PrimitiveInteger> Coder<W> for ZeroCoder {
     fn codeword_length(&self, _symbol: W) -> u32 {
         0
     }
+    fn encoded_length(&self, _symbol: W) -> u32 {
+        0
+    }
     fn max_codeword_length(&self) -> u32 {
         0
     }
-    fn escape(&self) -> u64 {
+    fn escape_codeword(&self) -> u64 {
         0
     }
-    fn escape_length(&self) -> u32 {
+    fn escape_codeword_length(&self) -> u32 {
         0
     }
-    fn escaped_symbol_length(&self) -> u32 {
+    fn escaped_symbols_length(&self) -> u32 {
         0
     }
     fn into_decoder(self) -> ZeroDecoder {
@@ -159,10 +182,10 @@ impl<W: PrimitiveInteger> Decoder<W> for ZeroDecoder {
     fn max_codeword_length(&self) -> u32 {
         0
     }
-    fn escape_length(&self) -> u32 {
+    fn escape_codeword_length(&self) -> u32 {
         0
     }
-    fn escaped_symbol_length(&self) -> u32 {
+    fn escaped_symbols_length(&self) -> u32 {
         0
     }
 }
@@ -297,6 +320,13 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
     fn codeword_length(&self, symbol: W) -> u32 {
         match self.symbol_to_rank.get(&symbol) {
             Some(&r) => self.codeword_length[r],
+            None => self.escape_length,
+        }
+    }
+
+    fn encoded_length(&self, symbol: W) -> u32 {
+        match self.symbol_to_rank.get(&symbol) {
+            Some(&r) => self.codeword_length[r],
             None => self.escape_length + self.escaped_symbol_length,
         }
     }
@@ -305,19 +335,19 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
         if self.codeword_length.is_empty() {
             0
         } else {
-            self.codeword_length[self.codeword_length.len() - 1] + self.escaped_symbol_length
+            self.codeword_length[self.codeword_length.len() - 1]
         }
     }
 
-    fn escape(&self) -> u64 {
+    fn escape_codeword(&self) -> u64 {
         *self.codeword.last().unwrap_or(&0)
     }
 
-    fn escape_length(&self) -> u32 {
+    fn escape_codeword_length(&self) -> u32 {
         self.escape_length
     }
 
-    fn escaped_symbol_length(&self) -> u32 {
+    fn escaped_symbols_length(&self) -> u32 {
         self.escaped_symbol_length
     }
 
@@ -487,16 +517,16 @@ impl<W: PrimitiveInteger> Decoder<W> for HuffmanDecoder<W> {
 
     #[inline(always)]
     fn max_codeword_length(&self) -> u32 {
-        self.escape_length + self.escaped_symbol_length
-    }
-
-    #[inline(always)]
-    fn escape_length(&self) -> u32 {
         self.escape_length
     }
 
     #[inline(always)]
-    fn escaped_symbol_length(&self) -> u32 {
+    fn escape_codeword_length(&self) -> u32 {
+        self.escape_length
+    }
+
+    #[inline(always)]
+    fn escaped_symbols_length(&self) -> u32 {
         self.escaped_symbol_length
     }
 }
@@ -687,12 +717,10 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
         cutpoint += 1;
     }
 
-    // If escaping would produce codewords wider than 62 bits
-    // (escape_length + literal_width > 62), extend the cutpoint to
-    // keep all symbols — the decoder uses a u64 lookup window and
-    // cannot handle wider encodings.
+    // If the escaped literal would need more than 64 bits, extend
+    // the cutpoint to keep all symbols — the construction path
+    // packs the literal into a u64 intermediate.
     if cutpoint < size {
-        let escape_len = length[cutpoint.saturating_sub(1)];
         let max_escaped_bits = symbol[cutpoint..]
             .iter()
             .map(|&s| {
@@ -704,7 +732,7 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
             })
             .max()
             .unwrap_or(0);
-        if escape_len + max_escaped_bits > 62 {
+        if max_escaped_bits > 64 {
             cutpoint = size;
         }
     }

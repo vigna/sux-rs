@@ -7,39 +7,28 @@
 //! A compressed static function.
 //!
 //! [`CompVFunc`] maps `n` keys to values of any [`PrimitiveInteger`] type
-//! `W` (both signed and unsigned: `i8` . . `i128`, `u8` . . `u128`,
+//! `W` (both signed and unsigned: `i8` . . `i128`, `u8` . . `u128`,
 //! `isize`, `usize`), representing each value with a [prefix-free
 //! codeword][crate::func::codec::Codec] (by default a length-limited
 //! [Huffman code][crate::func::codec::Huffman]) and storing the
-//! codewords by solving a random 3-uniform linear system on **F**₂ over
-//! the data array.
+//! codewords by peeling a fuse graph, as in the case of [`VFunc`].
 //!
 //! When the value distribution is skewed, this uses much less space
 //! than [`VFunc`]: roughly the empirical entropy of the value list plus
-//! ~10 % overhead. Sharding follows the same ε-cost approach as the rest
-//! of sux-rs (via the [`ShardEdge`] trait): keys are partitioned by the
-//! high bits of the signature into a small number of large shards, and
-//! each shard is solved independently. The single global seed is shared
-//! with [`ToSig`] just like [`VFunc`]; on a peeling failure (rare for
-//! the large shards used here) the whole build retries with a new seed.
+//! ≈10% overhead.
 //!
-//! Within each shard, every key contributes `L` (= codeword length)
-//! linear equations, all sharing the same three base vertex positions
-//! and shifted by `l = 0 . . L − 1`. The solver peels the resulting
-//! graph and falls back to lazy Gaussian elimination on the unpeeled
-//! remainder, mirroring [`VBuilder`]'s `lge_shard`. At query time we
-//! read three `w`-bit windows (with `w` =
-//! [`max_codeword_length`](crate::func::codec::Decoder::max_codeword_length))
-//! at the per-shard base positions, XOR them, and
-//! [decode](crate::func::codec::Decoder::decode). No value is reserved
-//! as a sentinel: the entire `W` range is available for storage.
+//! Within each shard, every key contributes `L` (= codeword length) linear
+//! equations, all sharing the same three base vertex positions and shifted by
+//! `l = 0 . . L − 1`. At query time we read three *w*-bit windows (with *w* the
+//! length of the longest keyword) at the per-shard base positions, XOR them,
+//! and [decode].
 //!
 //! [`PrimitiveInteger`]: num_primitive::PrimitiveInteger
-//!
 //! [`VFunc`]: crate::func::VFunc
 //! [`VBuilder`]: crate::func::VBuilder
 //! [`ShardEdge`]: crate::func::shard_edge::ShardEdge
 //! [`ToSig`]: crate::utils::ToSig
+//! [decode]: crate::func::codec::Decoder::decode
 
 use crate::bits::{BitVec, BitVecU, test_unaligned_any_pos};
 use crate::func::VBuilder;
@@ -48,7 +37,6 @@ use crate::func::peeling::{DoubleStack, FastStack, XorGraph, remove_edge};
 use crate::func::shard_edge::{Fuse3Shards, ShardEdge};
 use crate::traits::bit_vec_ops::{BitVecOps, BitVecOpsMut};
 use crate::traits::{BitLength, BitVecValueOps, TryIntoUnaligned, UnalignedConversionError};
-use crate::utils::mod2_sys::{Modulo2Equation, Modulo2System};
 use crate::utils::sig_store::ShardStore;
 use crate::utils::{BinSafe, FallibleRewindableLender, Sig, SigVal, ToSig};
 use anyhow::{Result, anyhow, bail};
@@ -65,59 +53,40 @@ use std::marker::PhantomData;
 
 // ── CompVFunc struct ────────────────────────────────────────────────
 
-/// A static function whose values are stored in a prefix-free
-/// compressed form.
+/// A static function whose values are stored in a prefix-free compressed form.
 ///
-/// See the [module documentation](crate::func::comp_vfunc) for an
-/// overview. Build with [`CompVFunc::try_new`] /
-/// [`CompVFunc::try_new_with_builder`].
+/// See the [module documentation](crate::func::comp_vfunc) for an overview.
+///
+/// Instances of this structure are immutable; they are built using [`try_new`]
+/// or one of its variants, and can be serialized using [ε-serde].
+///
+/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access.
 ///
 /// # Generics
 ///
-/// * `K`: the key type.
-/// * `W`: the output value type — any [`PrimitiveInteger`]
-///   (`u8` . . `u128`, `i8` . . `i128`, `usize`, `isize`). Must be
+/// * `K` - the key type.
+/// * `W` - the output value type — any [`PrimitiveInteger`]
+///   (`u8` . . `u128`, `i8` . . `i128`, `usize`, `isize`). Must be
 ///   convertible to and from `u64` through [`PrimitiveNumberAs`].
 ///   Defaults to `usize`.
-/// * `D`: the data backend; defaults to [`BitVec<Box<[usize]>>`].
-///   Construction always produces a [`BitVec`]-backed function;
-///   [`TryIntoUnaligned`] converts it into a `BitVecU`-backed variant
-///   that uses (faster, branchless) unaligned reads.
+/// * `D` - the data backend; defaults to [`BitVec<Box<[usize]>>`](crate::bits::BitVec).
 /// * `S`: the signature type; defaults to `[u64; 2]`.
-/// * `E`: the [`ShardEdge`] used for *sharding* (and the local hash).
-///   Defaults to [`Fuse3Shards`]. Note that `CompVFunc` only uses
-///   `ShardEdge` for **sharding** and as the source of the local hash
-///   (`local_sig` + `edge_hash`); the per-shard edge generation is
-///   *not* the one in `ShardEdge::local_edge` because each compressed
-///   key needs `L` related equations whose vertex positions don't fit
-///   the one-edge-per-key contract.
+/// * `E`: the [`ShardEdge`] used for *sharding* and local hashing.
+///   Defaults to [`Fuse3Shards`].
+///
+/// [`try_new`]: Self::try_new
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CompVFunc<K: ?Sized, W = usize, D = BitVec<Box<[usize]>>, S = [u64; 2], E = Fuse3Shards>
 {
-    /// The shard/local-hash logic shared with [`VFunc`].
-    ///
-    /// [`VFunc`]: crate::func::VFunc
     pub(crate) shard_edge: E,
-    /// Global hash seed; identical role to [`VFunc::seed`](crate::func::VFunc).
     pub(crate) seed: u64,
-    /// Total number of keys.
     pub(crate) num_keys: usize,
-    /// Number of bits assigned to *every* shard. Shards are uniform
-    /// because we size them once globally as
-    /// `max_per_shard_codeword_bits × δ + w`. The bit position of
-    /// shard `s` inside [`Self::data`] is `s × shard_size`. No
-    /// cumulative offset table.
-    pub(crate) shard_size: usize,
-    /// All shards concatenated into one bit vector. Each shard owns
-    /// `shard_size` bits at offset `s × shard_size`.
     pub(crate) data: D,
-    /// Canonical-Huffman decoder. `w` (the max codeword length),
-    /// `escape_length`, and `escaped_symbol_length` are read from here
-    /// via the [`Decoder`] trait — no duplicated fields on `CompVFunc`.
+    pub(crate) shard_size: usize,
     pub(crate) decoder: HuffmanDecoder<W>,
-    #[doc(hidden)]
     pub(crate) _marker: PhantomData<(*const K, *const W, S)>,
 }
 
@@ -145,49 +114,42 @@ impl<
         if self.num_keys == 0 {
             return W::default();
         }
+        // Here we compute manually the edge vertices. We cannot use
+        // ShardEdge::edge because its edge computation derives the number of
+        // vertices from the segment size, whereas here we have to includes a
+        // w-bit padding and a rounding to a usize::BITS multiple, which is
+        // why we cache the value in shard_size.
         let shard = self.shard_edge.shard(sig);
-        let bucket_offset = shard * self.shard_size;
+        let shard_offset = shard * self.shard_size;
         let w = self.decoder.max_codeword_length() as usize;
-        // Reuse the fuse-graph `local_edge` to derive the three base
-        // positions inside the shard. For the multi-edge layout, bit
-        // `l` of the codeword is stored at offset `w − 1 − l` above
-        // each base vertex — the band structure of fuse graphs is
-        // preserved because the offset is vanishingly small relative
-        // to the segment size.
+        let esym_len = self.decoder.escaped_symbols_length() as usize;
         let local_sig = self.shard_edge.local_sig(sig);
         let local_edge = self.shard_edge.local_edge(local_sig);
 
-        let v0 = bucket_offset + local_edge[0];
-        let v1 = bucket_offset + local_edge[1];
-        let v2 = bucket_offset + local_edge[2];
-        // SAFETY: by construction `v_i + w <= bucket_offset + m + w =
-        // bucket_offset + shard_size`, which is within `data.len()`.
+        let v0 = shard_offset + local_edge[0];
+        let v1 = shard_offset + local_edge[1];
+        let v2 = shard_offset + local_edge[2];
+        // The codeword is stored at the high end of the per-key layout
+        // (offsets [esym_len . . esym_len + w)), so we read at v + esym_len.
         let l = usize::BITS - w as u32;
+        // SAFETY: the bit vector is padded.
         let value = unsafe {
-            (self.data.get_unaligned_unchecked(v0)
-                ^ self.data.get_unaligned_unchecked(v1)
-                ^ self.data.get_unaligned_unchecked(v2))
+            (self.data.get_unaligned_unchecked(v0 + esym_len)
+                ^ self.data.get_unaligned_unchecked(v1 + esym_len)
+                ^ self.data.get_unaligned_unchecked(v2 + esym_len))
                 << l
                 >> l
         };
         if let Some(decoded) = self.decoder.decode(value as u64) {
             return decoded;
         }
-        // The escape codeword occupies the top `escape_length` bits of
-        // the read window; the literal sits immediately below it,
-        // `escaped_symbol_length` bits wide.
-        let esc_len = self.decoder.escape_length() as usize;
-        let esym_len = self.decoder.escaped_symbol_length() as usize;
-        if esym_len == 0 {
-            return W::default();
-        }
-        let start = w - esc_len - esym_len;
-        // SAFETY: same reasoning as above; `start + esym_len <= w`.
+        // The literal sits at the low end [0 . . esym_len).
+        // SAFETY: the bit vector is padded.
         unsafe {
             W::as_from(
-                self.data.get_value_unchecked(v0 + start, esym_len)
-                    ^ self.data.get_value_unchecked(v1 + start, esym_len)
-                    ^ self.data.get_value_unchecked(v2 + start, esym_len),
+                self.data.get_value_unchecked(v0, esym_len)
+                    ^ self.data.get_value_unchecked(v1, esym_len)
+                    ^ self.data.get_value_unchecked(v2, esym_len),
             )
         }
     }
@@ -212,13 +174,13 @@ impl<K: ?Sized, W: PrimitiveInteger, D, S, E> CompVFunc<K, W, D, S, E> {
     /// Length of the escape codeword (0 when there are no escaped
     /// symbols).
     pub fn escape_length(&self) -> u32 {
-        Decoder::escape_length(&self.decoder)
+        Decoder::escape_codeword_length(&self.decoder)
     }
 
     /// Width in bits of the literal field used to encode escaped
     /// symbols (0 when there are no escaped symbols).
     pub fn escaped_symbol_length(&self) -> u32 {
-        Decoder::escaped_symbol_length(&self.decoder)
+        Decoder::escaped_symbols_length(&self.decoder)
     }
 
     /// Returns `true` if the underlying [`HuffmanDecoder`] is using
@@ -245,7 +207,7 @@ impl<K: ?Sized, W: PrimitiveInteger, S, E> TryIntoUnaligned
     type Unaligned = CompVFunc<K, W, BitVecU<Box<[usize]>>, S, E>;
 
     fn try_into_unaligned(self) -> Result<Self::Unaligned, UnalignedConversionError> {
-        let esym = Decoder::escaped_symbol_length(&self.decoder) as usize;
+        let esym = Decoder::escaped_symbols_length(&self.decoder) as usize;
         if esym > 0 && !test_unaligned_any_pos!(usize, esym) {
             return Err(UnalignedConversionError(format!(
                 "escaped-symbol bit width {esym} does not satisfy the constraints \
@@ -281,14 +243,6 @@ impl<K: ?Sized, W, S, E> From<CompVFunc<K, W, BitVecU<Box<[usize]>>, S, E>>
     }
 }
 
-// ── Hashing helpers ─────────────────────────────────────────────────
-//
-// Both build- and query-side edge generation go through
-// `ShardEdge::local_edge(shard_edge.local_sig(sig))`, which provides
-// fuse-graph structured base positions in `[0, num_vertices)`. The
-// multi-edge layout then adds `(w − 1 − l)` per codeword bit to each
-// base position.
-
 // ── Entry points ────────────────────────────────────────────────────
 //
 // CompVFunc shares its parallel infrastructure with
@@ -298,6 +252,12 @@ impl<K: ?Sized, W, S, E> From<CompVFunc<K, W, BitVecU<Box<[usize]>>, S, E>>
 // seed). The only CompVFunc-specific configuration is the
 // [`Huffman`] codec used for values; the default is unlimited-length
 // Huffman.
+//
+// Both build- and query-side edge generation go through
+// `ShardEdge::local_edge(shard_edge.local_sig(sig))`, which provides
+// fuse-graph structured base positions in `[0, num_vertices)`. The
+// multi-edge layout then adds `(w − 1 − l)` per codeword bit to each
+// base position.
 
 impl<K, W, S, E> CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
 where
@@ -308,15 +268,14 @@ where
     SigVal<S, W>: RadixKey,
     u64: PrimitiveNumberAs<W>,
 {
-    /// Builds a [`CompVFunc`] from lender-based streams of keys and
-    /// values using default [`VBuilder`] and [`Huffman`] settings.
+    /// Builds a [`CompVFunc`] from keys and values using default [`VBuilder`]
+    /// and [`Huffman`] codec settings.
     ///
     /// Keys and values are consumed one at a time through their respective
     /// lenders; this path is the right choice for input coming from disk or
     /// synthetic ranges. Neither the key set nor the value set needs to live in
-    /// memory at once: the values lender is rewound once during construction
-    /// (first pass for the Huffman frequency analysis, second pass to populate
-    /// the sig-store).
+    /// memory at once: the values lender is rewound at least once during
+    /// construction.
     ///
     /// `n` is the expected number of keys; a significantly wrong value may
     /// degrade performance or cause extra retries.
@@ -428,17 +387,18 @@ where
 // Both `build_inner_seq` and `build_inner_par` are thin adapters
 // around VBuilder's retry loop: they delegate the sig-store population,
 // duplicate check, and shard solving to VBuilder, and contribute a
-// CompVFunc-specific `build_fn` closure that (a) calls `set_up_graphs`
-// on the shard edge with *equation* counts rather than key counts and
-// (b) calls [`VBuilder::par_solve`] with a per-shard closure doing the
-// multi-edge expansion, peel + LGE on remainder, and assignment.
+// CompVFunc-specific `build_fn` closure that (a) calls
+// `set_up_corr_graphs` on the shard edge with *equation* counts
+// rather than key counts and (b) calls [`VBuilder::par_solve`] with
+// a per-shard closure doing the multi-edge expansion, peeling, and
+// reverse-peel assignment.
 //
 // The only difference between the two is the VBuilder entry point:
 // `try_populate_and_build` for the lender-based sequential path,
 // `try_par_populate_and_build` for the slice-based parallel path.
 // Everything else — the Huffman setup, the build_fn closure, the
-// output re-wrapping — is shared via `codec_setup` and
-// `make_build_fn` below.
+// output re-wrapping — is shared via `build_coder_from_frequencies`
+// and `make_build_fn` below.
 //
 // Storage during construction is `BitVec<Box<[usize]>>`, which
 // implements `SliceByValueMut<Value = bool>` with a word-aligned
@@ -482,9 +442,10 @@ fn frequencies_from_slice<W: PrimitiveInteger + std::hash::Hash>(
 ///
 /// The closure is called once per retry by VBuilder's populate-and-
 /// build loop: it (a) recomputes the per-shard total codeword length
-/// and re-sizes the fuse graph via `set_up_graphs`, (b) allocates the
-/// data array with the correct per-shard stride, and (c) dispatches
-/// `par_solve` with the multi-edge per-shard solver.
+/// and re-sizes the fuse graph via `set_up_corr_graphs`,
+/// (b) allocates the data array with the correct per-shard stride,
+/// and (c) dispatches `par_solve` with the multi-edge per-shard
+/// solver.
 #[allow(clippy::type_complexity)]
 fn make_build_fn<'c, W, S, E, P>(
     coder: &'c HuffmanCoder<W>,
@@ -509,13 +470,19 @@ where
     // All scalars derived from `coder` — pulled here once so the inner
     // closure body doesn't need to carry them through the layered
     // closures by hand.
-    let w = coder.max_codeword_length() as usize;
-    let escape_length = coder.escape_length();
-    let escaped_symbol_length = coder.escaped_symbol_length();
-    let escape_codeword = coder.escape();
+    //
+    // `w` is the total encoded width (prefix code + literal for
+    // escaped symbols). This is the per-key stride in the multi-edge
+    // layout — NOT `max_codeword_length()`, which is only the prefix
+    // code depth.
+    let escape_length = coder.escape_codeword_length();
+    let escaped_symbol_length = coder.escaped_symbols_length();
+    let w = escape_length as usize + escaped_symbol_length as usize;
+    let escape_codeword = coder.escape_codeword();
 
-    // Encode a single `(bits, len)` pair for a value. Used by both
-    // the initial edge-count pass and the per-shard solver.
+    // Encode a single `(bits, len)` pair for a value. The bits are
+    // packed into a `u128` so that escape codeword + literal (up to
+    // 64 bits) fit without overflow.
     //
     // The `escaped_symbol_length == 0` guard handles a degenerate
     // corner: the only escaped symbol is the value `0`, whose bit
@@ -523,15 +490,10 @@ where
     // would be `W::BITS` and the shift on the `else` branch would be
     // undefined. When we hit this case, the literal field is zero
     // bits wide and the escape codeword alone identifies the symbol.
-    //
-    // The `lit` computation reverses the bits of `v` within `W`'s
-    // width and keeps the top `escaped_symbol_length` bits; casting
-    // to `u64` is a truncation that only discards the leading zeros
-    // from the shift, provided `escaped_symbol_length <= 64`.
-    let encode_val = move |v: W| -> (u64, u32) {
-        let len = coder.codeword_length(v);
-        let bits = match coder.encode(v) {
-            Some(cw) => cw,
+    let encode_val = move |v: W| -> (u128, u32) {
+        let len = coder.encoded_length(v);
+        let bits: u128 = match coder.encode(v) {
+            Some(cw) => cw as u128,
             None => {
                 let lit: u64 = if escaped_symbol_length == 0 {
                     0
@@ -539,7 +501,7 @@ where
                     let reversed = v.reverse_bits() >> (W::BITS - escaped_symbol_length);
                     u64::as_from(reversed)
                 };
-                escape_codeword | (lit << escape_length)
+                escape_codeword as u128 | ((lit as u128) << escape_length)
             }
         };
         (bits, len)
@@ -565,7 +527,7 @@ where
             let mut edges_in_shard: usize = 0;
             let keys_in_shard = shard.len();
             for sv in shard.iter() {
-                edges_in_shard += coder.codeword_length(sv.val) as usize;
+                edges_in_shard += coder.encoded_length(sv.val) as usize;
             }
             total_edges += edges_in_shard;
             max_shard_edges = max_shard_edges.max(edges_in_shard);
@@ -574,7 +536,7 @@ where
 
         // ── b) Call the correlated-graph setup on the shard edge.
         // `c` is keyed at `max_shard_keys`, `log2_seg_size` at
-        // `max_shard_edges`. CompVFunc never uses LGE.
+        // `max_shard_edges`.
         let (c, lge) =
             vb.shard_edge
                 .set_up_corr_graphs(total_edges, max_shard_keys, max_shard_edges);
@@ -606,8 +568,8 @@ where
         pl.info(format_args!(
             "Huffman: max codeword length {}, escape length {}, escaped symbol length {}",
             coder.max_codeword_length(),
-            coder.escape_length(),
-            coder.escaped_symbol_length()
+            coder.escape_codeword_length(),
+            coder.escaped_symbols_length()
         ));
         pl.info(format_args!(
             "Average codeword length (entropy): {:.4} bits/key (total edges: {}, shards: {}, max shard edges: {})",
@@ -619,11 +581,6 @@ where
             100.0 * ((num_vertices_per_shard * num_shards) as f64 / (total_edges as f64) - 1.),
             vb.num_threads
         ));
-        if lge {
-            pl.info(format_args!(
-                "Peeling with lazy Gaussian elimination fallback"
-            ));
-        }
 
         let raw_stride = num_vertices_per_shard + w;
         // `par_solve` chunks the data via `BitVec::try_chunks_mut`,
@@ -639,29 +596,31 @@ where
         let mut data = BitVec::<Box<[usize]>>::new_padded(total_bits);
 
         // ── d) Call `par_solve` with the multi-edge closure. ──
-        // Dispatch on `lge` and `low_mem` exactly like
-        // [`VBuilder::try_build_from_shard_iter`] does for VFunc
-        // (vbuilder.rs:1184):
         //
-        // * `lge == true`  → materialise the edges/rhs and drive
-        //   [`solve_system`] (peel_by_index + LGE fallback). LGE
-        //   needs the original edge list alive.
+        // Two peeler families:
         //
-        // * `lge == false` → stream edges directly into
-        //   [`XorGraph<PackedEdge>`] via either
-        //   [`peel_by_data_low_mem`] or [`peel_by_data_high_mem`],
-        //   no LGE fallback. The low-mem heuristic mirrors VBuilder
-        //   exactly: pick low-mem when explicitly requested, or by
+        // * **Index peeler** (`solve_system` via `peel_by_index`):
+        //   materialises the full `edges: Vec<[u32; 3]>` and
+        //   `rhs: BitVec` upfront, then peels by edge index. Used
+        //   when per-shard vertex count exceeds
+        //   `PackedEdge::MAX_VERTEX` (the streamed peelers steal the
+        //   top bit of `v2` for the rhs flag and cannot represent
+        //   vertex indices ≥ 2³¹). This only triggers for very large
+        //   single-shard builds (typically `Fuse3NoShards` with
+        //   >800M keys).
+        //
+        // * **Data peelers** (`peel_by_data_high_mem` /
+        //   `peel_by_data_low_mem`): stream edges directly into an
+        //   `XorGraph<PackedEdge>`. The low-mem heuristic mirrors
+        //   VBuilder: pick low-mem when explicitly requested, or by
         //   default when `num_threads > 3 && num_shards > 2` (i.e.
         //   the parallel build is memory-pressured).
-        // Force the `peel_by_index` + LGE path when per-shard
-        // vertex count exceeds `PackedEdge::MAX_VERTEX`: the
-        // streamed peelers steal the top bit of `v2` for the rhs
-        // flag and cannot represent vertex indices ≥ 2^31. This
-        // only triggers for very large single-shard builds
-        // (typically `FuseLge3NoShards` with >800M keys).
+        //
+        // None of the peelers use a Gaussian elimination fallback:
+        // on any unpeeled remainder the shard is retried with a new
+        // seed.
         let packed_edge_safe = raw_stride <= PackedEdge::MAX_VERTEX as usize;
-        let force_index_peeler = lge || !packed_edge_safe;
+        let force_index_peeler = !packed_edge_safe;
         let use_low_mem = vb.low_mem == Some(true)
             || (vb.low_mem.is_none() && vb.num_threads > 3 && num_shards > 2);
         let solve_shard = |this: &VBuilder<BitVec<Box<[usize]>>, S, E>,
@@ -681,16 +640,11 @@ where
             // intermediate `BitVec` allocation, no copy. The slice
             // is zero-initialised (the global `data` is
             // `BitVec::new_padded`-built, all zero), and the
-            // peelers only call `set_unchecked` on pivots / LGE
-            // assignments — bits we never touch stay zero.
+            // peelers only call `set_unchecked` on pivots — bits
+            // we never touch stay zero.
             if force_index_peeler {
-                // Materialise edges/rhs: profiling (2026-04-16) shows
-                // this costs 0.5% of solve time while LGE dominates
-                // at 97%. The materialized layout (18.15E bytes) also
-                // uses 15% less memory than a streaming
-                // XorGraph<(PackedEdge, u32)> approach (20.91E bytes)
-                // because the edge array is per-edge while the
-                // XorGraph is per-vertex (1.23× larger).
+                // Materialise edges/rhs upfront: needed because
+                // PackedEdge cannot represent vertex indices ≥ 2³¹.
                 let mut edges: Vec<[u32; 3]> = Vec::with_capacity(max_shard_edges);
                 let mut rhs: BitVec = BitVec::with_capacity(max_shard_edges);
                 for sv in shard.iter() {
@@ -710,7 +664,7 @@ where
                 if this.failed.load(std::sync::atomic::Ordering::Relaxed) {
                     return Err(());
                 }
-                solve_system(raw_stride, &edges, rhs, lge, &mut shard_data).map_err(|_| ())?;
+                solve_system(raw_stride, &edges, rhs, &mut shard_data).map_err(|_| ())?;
             } else if use_low_mem {
                 peel_by_data_low_mem(
                     shard,
@@ -849,7 +803,7 @@ where
     );
     let total_edges: usize = frequencies
         .iter()
-        .map(|(&v, &count)| coder.codeword_length(v) as usize * count)
+        .map(|(&v, &count)| coder.encoded_length(v) as usize * count)
         .sum();
     values = values.rewind()?;
 
@@ -896,7 +850,7 @@ where
 
     let total_edges: usize = values
         .iter()
-        .map(|v| coder.codeword_length(*v) as usize)
+        .map(|v| coder.encoded_length(*v) as usize)
         .sum();
     let mut builder = builder.expected_num_keys(n).shard_size_hint(total_edges);
     let mut build_fn = make_build_fn::<W, S, E, P>(&coder);
@@ -909,14 +863,12 @@ where
     ))
 }
 
-// ── Linear-system solver ───────────────────────────────────────────
+// ── Index-based peeler + solver ────────────────────────────────────
 
 /// Output of [`peel_by_index`]: the peel-order data needed to drive
-/// the reverse-peel assignment (and, on partial peels, the LGE
-/// fallback). Mirrors the `Partial` variant of
-/// [`crate::func::VBuilder`]'s `PeelResult`: the `XorGraph` itself is
-/// dropped when peeling returns — callers only need the peeled edge
-/// indices and their pivot sides.
+/// the reverse-peel assignment. The `XorGraph` itself is dropped
+/// when peeling returns — callers only need the peeled edge indices
+/// and their pivot sides.
 struct PeelByIndexOutput {
     /// Upper half holds peeled edge indices in peel order (oldest at
     /// the bottom, newest at the top). Lower half is empty once
@@ -934,118 +886,36 @@ impl PeelByIndexOutput {
     }
 }
 
-/// Solves a 3-uniform **F**₂ system.
+/// Peels a 3-uniform **F**₂ system and performs reverse-peel
+/// assignment.
 ///
-/// If `lge` is `false`, the graph was sized for pure peeling: we peel
-/// and bail out with an error on any unpeeled remainder, so the caller
-/// can retry the shard with a fresh seed. If `lge` is `true`, the graph
-/// was sized for a small LGE core: we mirror [`VBuilder`]'s `lge_shard`
-/// and run lazy Gaussian elimination on the unpeeled remainder, then
-/// complete the peeled edges in reverse order.
-///
-/// Running LGE on a shard that was sized for pure peeling would be
-/// catastrophic: if peeling fails, the unpeeled core can be a large
-/// fraction of the shard, and LGE is cubic in the core size.
-///
-/// [`VBuilder`]: crate::func::VBuilder
+/// If peeling does not succeed completely, returns an error so the
+/// caller can retry the shard with a fresh seed.
 fn solve_system(
     num_variables: usize,
     edges: &[[u32; 3]],
     rhs: BitVec,
-    lge: bool,
     solution: &mut BitVec<&mut [usize]>,
 ) -> Result<()> {
     let out = peel_by_index(num_variables, edges);
     let n_peeled = out.n_peeled();
     let n_total = edges.len();
 
-    // The caller supplies `solution` as a `BitVec<&mut [usize]>`
-    // pointing at the per-shard slice of the global `data` array.
-    // It is zero-initialised (the global `data` is built via
-    // `BitVec::new_padded`), so we can leave bits unset and only
-    // call `set_unchecked` on pivots / LGE-assigned variables.
-
     if n_peeled < n_total {
-        if !lge {
-            // Graph was sized for pure peeling; a non-empty core means
-            // we hit a bad seed. Bail out so `par_solve` can retry.
-            bail!(
-                "peeling failed on a non-LGE graph ({} unpeeled)",
-                n_total - n_peeled
-            );
-        }
-        // Mark which edges were peeled so the LGE equation builder
-        // can filter them out. VBuilder's `lge_shard` uses the same
-        // trick: `peeled_edges: BitVec` built from `iter_upper()`.
-        let mut peeled_edges: BitVec = BitVec::new(n_total);
-        for &edge_idx in out.double_stack.iter_upper() {
-            peeled_edges.set(edge_idx as usize, true);
-        }
-
-        // TODO: we don't use LGE anymore
-
-        // Build LGE system on the non-peeled edges only. Track which
-        // variables appear so the write-back can skip unused ones
-        // (same as VBuilder's `lge_shard`).
-        let mut used_vars: BitVec = BitVec::new(num_variables);
-        let mut equations: Vec<Modulo2Equation<usize>> = Vec::with_capacity(n_total - n_peeled);
-        for i in 0..n_total {
-            if peeled_edges[i] {
-                continue;
-            }
-            let mut vs = edges[i];
-            vs.sort_unstable();
-            // F₂ pair cancellation for duplicate vertices in an edge.
-            let vars: Vec<u32> = if vs[0] == vs[1] && vs[1] == vs[2] {
-                vec![]
-            } else if vs[0] == vs[1] {
-                vec![vs[2]]
-            } else if vs[1] == vs[2] {
-                vec![vs[0]]
-            } else if vs[0] == vs[2] {
-                // Sorted, vs[0]==vs[2] would imply all equal.
-                vec![]
-            } else {
-                vs.to_vec()
-            };
-            for &v in &vars {
-                used_vars.set(v as usize, true);
-            }
-            let r = rhs[i] as usize;
-            if vars.is_empty() && r != 0 {
-                bail!("trivial unsolvable equation");
-            }
-            // SAFETY: `vars` is sorted; entries come from `[u32; 3]`
-            // indices that the caller bounds by `num_variables`.
-            equations.push(unsafe { Modulo2Equation::<usize>::from_parts(vars, r) });
-        }
-
-        // SAFETY: see comment on the per-equation push above.
-        let mut system = unsafe { Modulo2System::<usize>::from_parts(num_variables, equations) };
-        let lge_solution = system
-            .lazy_gaussian_elimination()
-            .map_err(|e| anyhow!("LGE failed: {e}"))?;
-        for (v, &val) in lge_solution
-            .iter()
-            .enumerate()
-            .filter(|(v, _)| used_vars[*v])
-        {
-            solution.set(v, (val & 1) != 0);
-        }
+        bail!(
+            "peeling failed ({} unpeeled out of {})",
+            n_total - n_peeled,
+            n_total
+        );
     }
 
-    // Reverse-peel assignment. `DoubleStack::iter_upper()` already
-    // yields items in newest-first order (the upper half grows
-    // downward), which is exactly the order we want: assign the
-    // latest-peeled pivot first, so that by the time a pivot's value
-    // is set, the other two vertices of its edge are either
-    // LGE-assigned or were pivots of edges peeled *later* (already
-    // set earlier in this loop). `sides_stack` is a regular Vec
-    // pushed in peel order, so we reverse it explicitly.
-    //
-    // Matching on `side` instead of the `if pivot != v` chain lets us
-    // name the two non-pivot vertices directly and avoid three
-    // branches per peeled edge.
+    // Reverse-peel assignment. `DoubleStack::iter_upper()` yields
+    // items in newest-first order (the upper half grows downward),
+    // which is exactly the order we need: assign the latest-peeled
+    // pivot first, so that by the time a pivot's value is set, the
+    // other two vertices of its edge were pivots of edges peeled
+    // *later* (already set earlier in this loop). `sides_stack` is a
+    // regular Vec pushed in peel order, so we reverse it explicitly.
     for (&edge_idx, &side) in out
         .double_stack
         .iter_upper()
@@ -1077,8 +947,6 @@ fn solve_system(
         }
     }
 
-    // Debug-only sanity check: every edge must be satisfied after
-    // peeling + LGE + reverse-peel assignment.
     #[cfg(debug_assertions)]
     for (i, &[a, b, c]) in edges.iter().enumerate() {
         let val = unsafe {
@@ -1100,12 +968,10 @@ fn solve_system(
 /// [`VBuilder::peel_by_index`](crate::func::vbuilder). The payload
 /// stored in the [`XorGraph`] is the edge index itself (`u32`), and
 /// the original `edges` slice is kept alive by the caller so the
-/// reverse-peel assignment and LGE fallback can reach back into it.
+/// reverse-peel assignment can reach back into it.
 ///
-/// The returned [`PeelByIndexOutput`] is always non-partial in shape
-/// — it contains the full XorGraph and the peel-order stacks. The
-/// caller checks [`PeelByIndexOutput::n_peeled`] against `edges.len()`
-/// to decide whether peeling succeeded or LGE fallback is needed.
+/// The caller checks [`PeelByIndexOutput::n_peeled`] against
+/// `edges.len()` to decide whether peeling succeeded.
 ///
 /// Degenerate edges (two or three repeated vertices) are handled
 /// naturally by [`XorGraph::add`]: each slot independently bumps the
@@ -1131,7 +997,7 @@ fn peel_by_index(num_variables: usize, edges: &[[u32; 3]]) -> PeelByIndexOutput 
 
     if xor_graph.overflow {
         // Some vertex has degree ≥ 64 (the 6-bit degree field
-        // overflowed). Hopeless to peel; let LGE handle everything.
+        // overflowed). Peeling cannot succeed.
         drop(xor_graph);
         return PeelByIndexOutput {
             double_stack,
@@ -1200,13 +1066,14 @@ fn peel_by_index(num_variables: usize, edges: &[[u32; 3]]) -> PeelByIndexOutput 
 /// shard vertex count from `u32::MAX` to `2^31 - 1`. For CompVFunc
 /// this is a hard constraint whenever num_vertices_per_shard crosses
 /// `1 << 31`; the dispatcher in `make_build_fn` checks
-/// `num_variables < (1 << 31)` before routing to these peelers and
-/// falls back to [`peel_by_index`] (which uses `XorGraph<u32>` with
-/// no such restriction) when the limit is exceeded.
+/// `raw_stride <= PackedEdge::MAX_VERTEX` before routing to these
+/// peelers and falls back to [`peel_by_index`] (which uses
+/// `XorGraph<u32>` with no such restriction) when the limit is
+/// exceeded.
 ///
-/// In practice, the default `FuseLge3Shards` strategy picks enough
+/// In practice, the default `Fuse3Shards` strategy picks enough
 /// shards to keep per-shard vertex counts well under `1 << 31` for
-/// any reasonable input. The limit only bites for `FuseLge3NoShards`
+/// any reasonable input. The limit only bites for `Fuse3NoShards`
 /// builds with very large key sets.
 #[derive(Clone, Copy, Default, Debug)]
 struct PackedEdge {
@@ -1277,7 +1144,7 @@ impl std::ops::BitXorAssign for PackedEdge {
 fn populate_data_graph<V: BinSafe, S, E>(
     shard: &[SigVal<S, V>],
     shard_edge: &E,
-    encode_val: &impl Fn(V) -> (u64, u32),
+    encode_val: &impl Fn(V) -> (u128, u32),
     num_variables: usize,
     w: usize,
 ) -> (XorGraph<PackedEdge>, usize)
@@ -1353,12 +1220,12 @@ unsafe fn reverse_peel_assign(solution: &mut BitVec<&mut [usize]>, pe: PackedEdg
 /// than [`peel_by_data_low_mem`] at the cost of an extra
 /// `n_edges × 16` bytes of peel-time memory.
 ///
-/// No LGE fallback: any unpeeled remainder returns `Err(())`, which
-/// `par_solve` turns into a seed-retry.
+/// Any unpeeled remainder returns `Err(())`, which `par_solve`
+/// turns into a seed-retry.
 fn peel_by_data_high_mem<V: BinSafe, S, E>(
     shard: std::sync::Arc<Vec<SigVal<S, V>>>,
     shard_edge: &E,
-    encode_val: &impl Fn(V) -> (u64, u32),
+    encode_val: &impl Fn(V) -> (u128, u32),
     num_variables: usize,
     w: usize,
     solution: &mut BitVec<&mut [usize]>,
@@ -1455,11 +1322,11 @@ where
 /// `edge_and_side` call per assignment. Preferred when the build is
 /// parallel (high memory pressure) or `low_mem` is explicitly set.
 ///
-/// No LGE fallback: any unpeeled remainder returns `Err(())`.
+/// Any unpeeled remainder returns `Err(())`.
 fn peel_by_data_low_mem<V: BinSafe, S, E>(
     shard: std::sync::Arc<Vec<SigVal<S, V>>>,
     shard_edge: &E,
-    encode_val: &impl Fn(V) -> (u64, u32),
+    encode_val: &impl Fn(V) -> (u128, u32),
     num_variables: usize,
     w: usize,
     solution: &mut BitVec<&mut [usize]>,
