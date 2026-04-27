@@ -466,9 +466,8 @@ impl RetryState {
                     }
                     SolveError::UnsolvableShard => {
                         self.unsolvable_count += 1;
-                        if self.unsolvable_count >= 20 {
-                            pl.error(format_args!("Unsolvable shard after 20 attempts"));
-                            return Err(BuildError::UnsolvableShard.into());
+                        if self.unsolvable_count >= 100 {
+                            panic!("Failed more than 100 attempts (this shouldn't happen)");
                         }
                         pl.warn(format_args!(
                             "Unsolvable shard, trying again with a different seed..."
