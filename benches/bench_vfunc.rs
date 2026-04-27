@@ -59,12 +59,7 @@ fn build_vfunc(n: usize, values: &[usize]) -> VFunc<usize, BitFieldVec<Box<[usiz
 
 fn build_vfunc2(n: usize, values: &[usize]) -> VFunc2<usize, BitFieldVec<Box<[usize]>>> {
     let keys: Vec<usize> = (0..n).collect();
-    VFunc2::try_new(
-        FromSlice::new(&keys),
-        FromSlice::new(values),
-        no_logging![],
-    )
-    .unwrap()
+    VFunc2::try_new(FromSlice::new(&keys), FromSlice::new(values), no_logging![]).unwrap()
 }
 
 // ── Benchmarks ──────────────────────────────────────────────────────
