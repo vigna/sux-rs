@@ -56,33 +56,24 @@ pub trait Coder<W> {
 
     /// Returns the prefix code length in bits for `symbol`.
     ///
-    /// For escaped symbols this is [`escape_length()`].
-    ///
-    /// [`escape_length()`]: Self::escape_length
+    /// For escaped symbols this is [`max_codeword_length`](Self::max_codeword_length).
     fn codeword_length(&self, symbol: W) -> u32;
 
     /// Returns the total encoded length in bits for `symbol`.
     ///
     /// For non-escaped symbols this equals [`codeword_length`]. For escaped
-    /// symbols this is [`escape_length`] + [`escaped_symbol_length`].
+    /// symbols this is [`max_codeword_length`] + [`escaped_symbols_length`].
     ///
-    /// [`escape_length`]: Self::escape_length
-    /// [`escaped_symbol_length`]: Self::escaped_symbol_length
+    /// [`max_codeword_length`]: Self::max_codeword_length
+    /// [`escaped_symbols_length`]: Self::escaped_symbols_length
     /// [`codeword_length`]: Self::codeword_length
     fn encoded_length(&self, symbol: W) -> u32;
 
     /// The maximum prefix code length across all symbols.
     fn max_codeword_length(&self) -> u32;
 
-    /// The escape codeword (length is [`escape_length`]).
-    ///
-    /// [`escape_length`]: Self::escape_length
+    /// The escape codeword (length is [`max_codeword_length`](Self::max_codeword_length)).
     fn escape_codeword(&self) -> u64;
-
-    /// The length in bits of the [escape codeword].
-    ///
-    /// [escape codeword]: Self::escape
-    fn escape_codeword_length(&self) -> u32;
 
     /// The length in bits of escaped symbols, or zero if the code has
     /// no escape.
@@ -110,11 +101,6 @@ pub trait Decoder<W> {
     /// The maximum prefix code length in bits. This is the width of
     /// the read window expected by [`decode`](Self::decode).
     fn max_codeword_length(&self) -> u32;
-
-    /// The length in bits of the [escape codeword].
-    ///
-    /// [escape codeword]: Self::escape
-    fn escape_codeword_length(&self) -> u32;
 
     /// The length in bits of escaped symbols, or zero if the code has
     /// no escape.
@@ -164,9 +150,6 @@ impl<W: PrimitiveInteger> Coder<W> for ZeroCoder {
     fn escape_codeword(&self) -> u64 {
         0
     }
-    fn escape_codeword_length(&self) -> u32 {
-        0
-    }
     fn escaped_symbols_length(&self) -> u32 {
         0
     }
@@ -182,9 +165,6 @@ impl<W: PrimitiveInteger> Decoder<W> for ZeroDecoder {
     fn max_codeword_length(&self) -> u32 {
         0
     }
-    fn escape_codeword_length(&self) -> u32 {
-        0
-    }
     fn escaped_symbols_length(&self) -> u32 {
         0
     }
@@ -196,8 +176,8 @@ impl<W: PrimitiveInteger> Decoder<W> for ZeroDecoder {
 /// optionally truncated according to
 /// [`max_decoding_table_length`](Self::max_decoding_table_length) and
 /// [`entropy_threshold`](Self::entropy_threshold) using the techniques from
-/// [Fast scalable construction of (compressed static | minimal perfect hash)
-/// functions]. Symbols beyond the cutoff are *escaped*: they share a single
+/// “[Fast scalable construction of (compressed static | minimal perfect hash)
+/// functions]”. Symbols beyond the cutoff are *escaped*: they share a single
 /// dedicated escape codeword followed by a literal `escaped_symbol_length`-bit
 /// field. The decoder uses [canonical codes].
 ///
@@ -279,10 +259,9 @@ impl Huffman {
 
 #[derive(Debug, Clone)]
 pub struct HuffmanCoder<W> {
-    /// Codeword for each rank position [0 . . `cutpoint` − 1), plus the
-    /// escape codeword at index `cutpoint`. Bit *l* of an entry is the
-    /// *l*-th bit appended to the data, that is, bit 0 is the MSB of the
-    /// canonical (MSB-first) codeword.
+    /// Codeword for each non-escaped symbol, plus the escape codeword at the
+    /// end. Bit *l* of an entry is the *l*-th bit appended to the data, that
+    /// is, bit 0 is the MSB of the canonical (MSB-first) codeword.
     codeword: Box<[u64]>,
     /// Length of each entry in [`Self::codeword`]. The last entry is
     /// the escape length.
@@ -343,28 +322,32 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
         *self.codeword.last().unwrap_or(&0)
     }
 
-    fn escape_codeword_length(&self) -> u32 {
-        self.escape_length
-    }
-
     fn escaped_symbols_length(&self) -> u32 {
         self.escaped_symbol_length
     }
 
     fn into_decoder(self) -> HuffmanDecoder<W> {
-        // The codeword array (and length array) always contains a
-        // trailing escape entry, even when no symbol is escaped. We
-        // build the decoder from `self.codeword_length` and the
-        // canonical sequence; we then place the escape sentinel at
-        // the end of self.symbol.
+        let has_escape = self.escape_length > 0;
         let size = self.codeword.len();
+
+        if size == 0 {
+            return HuffmanDecoder {
+                last_codeword_plus_one: Box::new([]),
+                how_many_up_to_block: Box::new([]),
+                shift: Box::new([]),
+                symbol: Box::new([]),
+                num_real_symbols: 0,
+                escape_length: 0,
+                escaped_symbol_length: 0,
+                branchless: false,
+            };
+        }
+
         let w = self.max_codeword_length();
         assert!(w <= 62, "Codeword length must not exceed 62");
 
-        // Number of distinct length blocks, plus one extra trailing
-        // block that catches the escape codeword if it shares a length
-        // with real codewords.
-        let mut decoding_table_length = if size < 2 { 0 } else { 1 };
+        // Number of distinct length blocks plus a sentinel block.
+        let mut decoding_table_length: usize = 1;
         if size > 1 {
             for i in (0..size - 1).rev() {
                 debug_assert!(
@@ -376,7 +359,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
                 }
             }
         }
-        decoding_table_length += 1; // For the escape codeword
+        decoding_table_length += 1; // Sentinel
 
         let mut shift: Vec<u8> = vec![0; decoding_table_length];
         let mut how_many_up_to_block: Vec<u32> = vec![0; decoding_table_length];
@@ -393,7 +376,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
         for i in 0..size {
             let l = self.codeword_length[i];
             last_l = l;
-            if l != prev_l || i == size - 1 {
+            if l != prev_l {
                 if i != 0 {
                     last_codeword_plus_one[p as usize] = word << (w - prev_l);
                     how_many_up_to_block[p as usize] = i as u32;
@@ -406,17 +389,24 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
             word += 1;
         }
 
-        // Final escape catch-all block. Even when the escape shares a length
-        // with the last real block, this entry catches the canonical "11…1"
-        // pattern that the previous block leaves unmatched (because the
-        // previous block's last_codeword_plus_one is the escape's own canonical
-        // value).
+        // Close the last block.
+        last_codeword_plus_one[p as usize] = word << (w - prev_l);
+        how_many_up_to_block[p as usize] = size as u32;
+        p += 1;
+
+        // Sentinel block: catches any value beyond the last real block.
+        // When there is an escape, the escape codeword is the last
+        // canonical value and lands here; the decoder returns None
+        // because idx >= num_real_symbols. When there is no escape,
+        // the code is complete, so this block is unreachable.
+        let num_real_symbols = if has_escape {
+            (size as u32).saturating_sub(1)
+        } else {
+            size as u32
+        };
         let last_p = p as usize;
         last_codeword_plus_one[last_p] = u64::MAX >> 1;
         shift[last_p] = 63;
-        // The number of real (non-escape) symbols is size − 1 (the
-        // last entry in the codeword/symbol arrays is the escape).
-        let num_real_symbols = (size as u32).saturating_sub(1);
         how_many_up_to_block[last_p] = num_real_symbols;
 
         // Default heuristic for branchy vs branchless: `> 3` distinct length
@@ -521,11 +511,6 @@ impl<W: PrimitiveInteger> Decoder<W> for HuffmanDecoder<W> {
     }
 
     #[inline(always)]
-    fn escape_codeword_length(&self) -> u32 {
-        self.escape_length
-    }
-
-    #[inline(always)]
     fn escaped_symbols_length(&self) -> u32 {
         self.escaped_symbol_length
     }
@@ -602,10 +587,9 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
 ) -> HuffmanCoder<W> {
     let size = frequencies.len();
     if size == 0 {
-        // No symbols: codeword[0] is the (unused) escape, length 0.
         return HuffmanCoder {
-            codeword: Box::new([0]),
-            codeword_length: Box::new([0]),
+            codeword: Box::new([]),
+            codeword_length: Box::new([]),
             symbol: Box::new([]),
             symbol_to_rank: HashMap::new(),
             escaped_symbol_length: 0,
@@ -737,8 +721,11 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
         }
     }
 
+    let has_escape = cutpoint < size;
+
     // Assign canonical codewords for the kept symbols.
-    let mut codeword: Vec<u64> = vec![0; cutpoint + 1];
+    let codeword_len = if has_escape { cutpoint + 1 } else { cutpoint };
+    let mut codeword: Vec<u64> = vec![0; codeword_len];
     let mut value: u64 = 0;
     let mut current_length = length[0];
     codeword[0] = 0; // Length stays 0 only when cutpoint == 0.
@@ -756,16 +743,15 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
         codeword[i] = value.reverse_bits() >> (64 - current_length);
     }
 
-    // Escape codeword: all-ones in `current_length` bits, length =
-    // current_length. This may collide canonically with the last real
-    // codeword when `cutpoint == size`, but in that case nothing is
-    // ever encoded as escape, so the collision is harmless.
-    if current_length == 0 {
-        codeword[cutpoint] = 0;
-    } else {
-        codeword[cutpoint] = u64::MAX >> (64 - current_length);
+    if has_escape {
+        // Escape codeword: all-ones in `current_length` bits.
+        if current_length == 0 {
+            codeword[cutpoint] = 0;
+        } else {
+            codeword[cutpoint] = u64::MAX >> (64 - current_length);
+        }
+        length[cutpoint] = current_length;
     }
-    length[cutpoint] = current_length;
 
     // Maximum literal width across the escaped symbols.
     let mut max_length_escaped: u32 = 0;
@@ -778,22 +764,23 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
         max_length_escaped = max_length_escaped.max(bits);
     }
 
-    // Symbol → rank for the kept symbols, with one trailing slot for
-    // the escape sentinel that the decoder will write.
+    // Symbol → rank for the kept symbols.
     let mut symbol_to_rank: HashMap<W, usize> = HashMap::with_capacity(cutpoint);
     for (i, &s) in symbol.iter().take(cutpoint).enumerate() {
         symbol_to_rank.insert(s, i);
     }
 
-    let mut symbol_kept: Vec<W> = Vec::with_capacity(cutpoint + 1);
+    let mut symbol_kept: Vec<W> = Vec::with_capacity(codeword_len);
     symbol_kept.extend_from_slice(&symbol[..cutpoint]);
-    symbol_kept.push(W::default()); // Placeholder for the escape slot.
+    if has_escape {
+        symbol_kept.push(W::default());
+    }
 
-    let escape_length = length[cutpoint];
+    let escape_length = if has_escape { length[cutpoint] } else { 0 };
 
     HuffmanCoder {
         codeword: codeword.into_boxed_slice(),
-        codeword_length: length[..cutpoint + 1].to_vec().into_boxed_slice(),
+        codeword_length: length[..codeword_len].to_vec().into_boxed_slice(),
         symbol: symbol_kept.into_boxed_slice(),
         symbol_to_rank,
         escaped_symbol_length: max_length_escaped,

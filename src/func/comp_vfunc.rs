@@ -53,7 +53,7 @@ use std::marker::PhantomData;
 
 // ── CompVFunc struct ────────────────────────────────────────────────
 
-/// A static function whose values are stored in a prefix-free compressed form.
+/// A static function whose values are stored in compressed form.
 ///
 /// See the [module documentation](crate::func::comp_vfunc) for an overview.
 ///
@@ -72,8 +72,8 @@ use std::marker::PhantomData;
 ///   Defaults to `usize`.
 /// * `D` - the data backend; defaults to [`BitVec<Box<[usize]>>`](crate::bits::BitVec).
 /// * `S` - the signature type; defaults to `[u64; 2]`.
-/// * `E` - the [`ShardEdge`] used for *sharding* and local hashing.
-///   Defaults to [`Fuse3Shards`].
+/// * `E` - the [`ShardEdge`] used for sharding and local hashing;
+///   defaults to [`Fuse3Shards`].
 ///
 /// [`try_new`]: Self::try_new
 /// [ε-serde]: https://docs.rs/epserde/latest/epserde/
@@ -86,8 +86,8 @@ pub struct CompVFunc<K: ?Sized, W = usize, D = BitVec<Box<[usize]>>, S = [u64; 2
     pub(crate) shard_edge: E,
     pub(crate) seed: u64,
     pub(crate) num_keys: usize,
-    pub(crate) data: D,
     pub(crate) shard_size: usize,
+    pub(crate) data: D,
     pub(crate) decoder: HuffmanDecoder<W>,
     pub(crate) _marker: PhantomData<(*const K, *const W, S)>,
 }
@@ -119,8 +119,8 @@ impl<
         // Here we compute manually the edge vertices. We cannot use
         // ShardEdge::edge because its edge computation derives the number of
         // vertices from the segment size, whereas here we have to includes a
-        // w-bit padding and a rounding to a usize::BITS multiple, which is
-        // why we cache the value in shard_size.
+        // bit padding and a rounding to a usize::BITS multiple, which is why we
+        // cache the value in shard_size.
         let shard = self.shard_edge.shard(sig);
         let shard_offset = shard * self.shard_size;
         let w = self.decoder.max_codeword_length() as usize;
@@ -132,7 +132,7 @@ impl<
         let v1 = shard_offset + local_edge[1];
         let v2 = shard_offset + local_edge[2];
         // The codeword is stored at the high end of the per-key layout
-        // (offsets [esym_len . . esym_len + w)), so we read at v + esym_len.
+        // (offsets [esym_len..esym_len + w)), so we read at v + esym_len.
         let l = usize::BITS - w as u32;
         // SAFETY: the bit vector is padded.
         let value = unsafe {
@@ -176,7 +176,7 @@ impl<K: ?Sized, W: PrimitiveInteger, D, S, E> CompVFunc<K, W, D, S, E> {
     /// Length of the escape codeword (0 when there are no escaped
     /// symbols).
     pub fn escape_length(&self) -> u32 {
-        Decoder::escape_codeword_length(&self.decoder)
+        Decoder::max_codeword_length(&self.decoder)
     }
 
     /// Width in bits of the literal field used to encode escaped
@@ -472,7 +472,7 @@ where
     // escaped symbols). This is the per-key stride in the multi-edge
     // layout — NOT `max_codeword_length()`, which is only the prefix
     // code depth.
-    let escape_length = coder.escape_codeword_length();
+    let escape_length = coder.max_codeword_length();
     let escaped_symbol_length = coder.escaped_symbols_length();
     let w = escape_length as usize + escaped_symbol_length as usize;
     let escape_codeword = coder.escape_codeword();
@@ -563,26 +563,25 @@ where
         ));
         let entropy = total_edges as f64 / num_keys as f64;
         pl.info(format_args!(
-            "Huffman: max codeword length {}, escape length {}, escaped symbol length {}",
+            "Huffman: max codeword length {}, escaped symbol length {}",
             coder.max_codeword_length(),
-            coder.escape_codeword_length(),
             coder.escaped_symbols_length()
         ));
         pl.info(format_args!(
             "Average codeword length (entropy): {:.4} bits/key (total edges: {}, shards: {}, max shard edges: {})",
             entropy, total_edges, num_shards, max_shard_edges
         ));
-        pl.info(format_args!(
-            "c: {}, Overhead: {:+.4}% Number of threads: {}",
-            c,
-            100.0 * ((num_vertices_per_shard * num_shards) as f64 / (total_edges as f64) - 1.),
-            vb.num_threads
-        ));
-
         let raw_stride = num_vertices_per_shard + w;
         // `par_solve` chunks the data via `BitVec::try_chunks_mut`,
         // which requires `chunk_size` to be a multiple of `usize::BITS`.
         let stride = raw_stride.next_multiple_of(usize::BITS as usize);
+
+        pl.info(format_args!(
+            "c: {}, Overhead: {:+.4}% Number of threads: {}",
+            c,
+            100.0 * ((stride * num_shards) as f64 / (total_edges as f64) - 1.),
+            vb.num_threads
+        ));
         let padding = stride - num_vertices_per_shard;
         let total_bits = num_shards
             .checked_mul(stride)

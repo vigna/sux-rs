@@ -41,7 +41,7 @@ fn round_trip_generic<W: PrimitiveInteger + std::hash::Hash + std::fmt::Display>
         }
         None => {
             let esc = coder.escape_codeword();
-            let esc_len = coder.escape_codeword_length();
+            let esc_len = coder.max_codeword_length();
             let esym_len = coder.escaped_symbols_length();
 
             // Verify escape codeword is recognized
@@ -91,7 +91,7 @@ fn round_trip(coder: &HuffmanCoder<u64>, decoder: &HuffmanDecoder<u64>, symbol: 
         }
         None => {
             let esc = coder.escape_codeword();
-            let esc_len = coder.escape_codeword_length();
+            let esc_len = coder.max_codeword_length();
             let esym_len = coder.escaped_symbols_length();
 
             // Verify escape codeword is recognized
