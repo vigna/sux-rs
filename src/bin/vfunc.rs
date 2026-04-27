@@ -17,8 +17,8 @@ use sux::bits::BitFieldVec;
 use sux::cli::{
     BuilderArgs, HashTypes, ShardingArgs, read_lines_concatenated, str_slice_from_offsets,
 };
+use sux::func::VFunc2;
 use sux::func::signed::SignedFunc;
-use sux::func::vfunc2::VFunc2;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
 use sux::prelude::VBuilder;
