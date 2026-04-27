@@ -123,7 +123,6 @@ impl<
         // cache the value in shard_size.
         let shard = self.shard_edge.shard(sig);
         let shard_offset = shard * self.shard_size;
-        let w = self.decoder.max_codeword_length() as usize;
         let esym_len = self.decoder.escaped_symbols_length() as usize;
         let local_sig = self.shard_edge.local_sig(sig);
         let local_edge = self.shard_edge.local_edge(local_sig);
@@ -133,7 +132,7 @@ impl<
         let v2 = shard_offset + local_edge[2];
         // The codeword is stored at the high end of the per-key layout
         // (offsets [esym_len..esym_len + w)), so we read at v + esym_len.
-        let l = usize::BITS - w as u32;
+        let l = usize::BITS - self.decoder.max_codeword_length();
         // SAFETY: the bit vector is padded.
         let value = unsafe {
             (self.data.get_unaligned_unchecked(v0 + esym_len)

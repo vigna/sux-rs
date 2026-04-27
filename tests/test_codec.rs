@@ -137,8 +137,9 @@ fn test_zero_codec() {
 fn test_huffman_single_symbol() {
     let f = freqs(&[(42, 100)]);
     let coder = Huffman::new().build_coder(&f);
-    // One real symbol → length 1 codeword "0".
     assert_eq!(coder.codeword_length(42), 1);
+    assert_eq!(coder.escaped_symbols_length(), 0, "no escape for single symbol");
+    assert!(coder.encode(42).is_some());
     let decoder = coder.clone().into_decoder();
     round_trip(&coder, &decoder, 42);
 }
@@ -151,6 +152,9 @@ fn test_huffman_two_symbols() {
     let f = freqs(&[(10, 7), (20, 3)]);
     let coder = Huffman::new().build_coder(&f);
     assert_eq!(coder.max_codeword_length(), 1);
+    assert_eq!(coder.escaped_symbols_length(), 0, "no escape for two symbols");
+    assert!(coder.encode(10).is_some());
+    assert!(coder.encode(20).is_some());
     let decoder = coder.clone().into_decoder();
     round_trip(&coder, &decoder, 10);
     round_trip(&coder, &decoder, 20);
@@ -161,6 +165,10 @@ fn test_huffman_three_symbols() {
     // Skewed frequencies: A is most frequent.
     let f = freqs(&[(0, 5), (1, 2), (2, 1)]);
     let coder = Huffman::new().build_coder(&f);
+    assert_eq!(coder.escaped_symbols_length(), 0, "no escape for three symbols");
+    for &s in &[0u64, 1, 2] {
+        assert!(coder.encode(s).is_some());
+    }
     let decoder = coder.clone().into_decoder();
     for &s in &[0u64, 1, 2] {
         round_trip(&coder, &decoder, s);
@@ -196,6 +204,7 @@ fn test_huffman_u128_large_values() {
     }
     let f: HashMap<u128, usize> = pairs.iter().copied().collect();
     let coder = <Huffman as Codec<u128>>::build_coder(&Huffman::new(), &f);
+    assert_eq!(coder.escaped_symbols_length(), 0, "no escape for u128 complete code");
     let decoder = coder.clone().into_decoder();
     for (s, _) in &pairs {
         // Build the same `value` the read path would build for the
@@ -222,6 +231,7 @@ fn test_huffman_u128_large_values_unlimited() {
     }
     let f: HashMap<u128, usize> = pairs.iter().copied().collect();
     let coder = <Huffman as Codec<u128>>::build_coder(&Huffman::unlimited(), &f);
+    assert_eq!(coder.escaped_symbols_length(), 0, "no escape for u128 unlimited");
     let decoder = coder.clone().into_decoder();
     for (s, _) in &pairs {
         let w = coder.max_codeword_length();

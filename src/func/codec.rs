@@ -787,3 +787,19 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
         escape_length,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_no_escape_codeword_count() {
+        let f: HashMap<u64, usize> = [(10, 5), (20, 3), (30, 1)].into_iter().collect();
+        let coder: HuffmanCoder<u64> = Huffman::new().build_coder(&f);
+        assert_eq!(coder.codeword.len(), 3);
+        assert_eq!(coder.codeword_length.len(), 3);
+        assert_eq!(coder.symbol.len(), 3);
+        assert_eq!(coder.escape_length, 0);
+        assert_eq!(coder.escaped_symbol_length, 0);
+    }
+}
