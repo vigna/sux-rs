@@ -472,7 +472,8 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
             let mut word = (!bits.as_ref()[word_idx] >> bit_idx) << bit_idx;
 
             'outer: loop {
-                let ones_in_word = word.count_ones() as usize;
+                let ones_in_word =
+                    (word.count_ones() as usize).min(num_ones - past_ones);
 
                 // If the quantum is in this word, write it in the subinventory.
                 // Note that this can happen multiple times in the same word if
