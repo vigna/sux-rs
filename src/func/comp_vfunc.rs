@@ -58,7 +58,7 @@ use std::marker::PhantomData;
 /// See the [module documentation](crate::func::comp_vfunc) for an overview.
 ///
 /// Instances of this structure are immutable; they are built using [`try_new`]
-/// or one of its variants, and can be serialized using [ε-serde].
+/// or one of its variants, and can be serialized using [ε-serde] or [`serde`].
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
@@ -76,6 +76,8 @@ use std::marker::PhantomData;
 ///   Defaults to [`Fuse3Shards`].
 ///
 /// [`try_new`]: Self::try_new
+/// [ε-serde]: https://docs.rs/epserde/latest/epserde/
+/// [`serde`]: https://crates.io/crates/serde
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

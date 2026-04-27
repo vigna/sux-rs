@@ -35,9 +35,8 @@ use std::borrow::Borrow;
 /// sets. Details on other possible [`ShardEdge`] implementations can be found
 /// in the [`shard_edge`] module documentation.
 ///
-/// Instances of this structure are immutable; they are built using
-/// [`try_new`] or one of its variants, and can be serialized
-/// using [ε-serde].
+/// Instances of this structure are immutable; they are built using [`try_new`]
+/// or one of its variants, and can be serialized using [ε-serde] or [`serde`].
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
@@ -76,6 +75,7 @@ use std::borrow::Borrow;
 /// [unaligned reads]: BitFieldVec::get_unaligned
 /// [`FuseLge3NoShards`]: crate::func::shard_edge::FuseLge3NoShards
 /// [`FuseLge3FullSigs`]: crate::func::shard_edge::FuseLge3FullSigs
+/// [`serde`]: https://crates.io/crates/serde
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

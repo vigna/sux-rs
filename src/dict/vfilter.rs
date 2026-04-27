@@ -28,8 +28,8 @@ use value_traits::slices::SliceByValue;
 /// For values of *b* that correspond to the size of an unsigned type, you can
 /// use a boxed slice as a backend.
 ///
-/// Instances are immutable; they are built using [`try_new`] or one of its
-/// variants, and can be serialized with [ε-serde].
+/// Instances of this structure are immutable; they are built using [`try_new`]
+/// or one of its variants, and can be serialized with [ε-serde] or [`serde`].
 ///
 /// This structure implements the [`Index`] trait for convenient
 /// `filter[key]` syntax (returning `&bool`).
@@ -51,6 +51,7 @@ use value_traits::slices::SliceByValue;
 ///
 /// [`try_new`]: VFilter::try_new
 /// [ε-serde]: https://crates.io/crates/epserde
+/// [`serde`]: https://crates.io/crates/serde
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(
     feature = "epserde",

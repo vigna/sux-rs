@@ -41,13 +41,17 @@
 //! `BitVec::new(n)` or `AtomicBitVec::new(n)` leave the backend type
 //! unconstrained.
 //!
-//! The fix is to annotate the binding with the bare type alias, which
-//! *does* apply defaults:
+//! There are two possible fixes: either to annotate the binding with the alias,
+//! which does apply defaults, or to write the type between angular brackets
+//! in the constructor call, which also applies defaults:
 //!
 //! ```rust
 //! # use sux::prelude::*;
 //! let mut b: BitVec = BitVec::new(10);     // OK: B = Vec<usize>
+//! let mut b = <BitVec>::new(10);           // Identical
+//!
 //! let a: AtomicBitVec = AtomicBitVec::new(10); // OK: B = Box<[Atomic<usize>]>
+//! let a = <AtomicBitVec>::new(10);             // Identical
 //! ```
 //!
 //! The [`bit_vec!`] macro and [`FromIterator`] / [`Extend`] do not need

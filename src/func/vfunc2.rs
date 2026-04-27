@@ -37,9 +37,8 @@ use value_traits::slices::SliceByValue;
 /// additional access to the long function; sometimes, the reduction in space
 /// can even lead to faster queries due to better cache locality.
 ///
-/// Instances of this structure are immutable; they are built using
-/// [`try_new`] or one of its variants, and can be serialized using
-/// [ε-serde].
+/// Instances of this structure are immutable; they are built using [`try_new`]
+/// or one of its variants, and can be serialized using [ε-serde] or [`serde`].
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
@@ -70,6 +69,7 @@ use value_traits::slices::SliceByValue;
 /// [`try_new`]: VFunc2::try_new
 /// [ε-serde]: https://crates.io/crates/epserde
 /// [Theory and practice of monotone minimal perfect hashing]: https://doi.org/10.1145/1963190.2025378
+/// [`serde`]: https://crates.io/crates/serde
 #[derive(Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(

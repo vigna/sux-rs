@@ -50,6 +50,9 @@ use xxhash_rust::xxh3;
 ///
 /// See the [module documentation] for the algorithmic description.
 ///
+/// Instances of this structure are immutable; they are built using [`try_new`]
+/// or one of its variants, and can be serialized using [ε-serde] or [`serde`].
+///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
 ///
@@ -74,6 +77,8 @@ use xxhash_rust::xxh3;
 /// [module documentation]: self
 /// [signature type]: Sig
 /// [`try_new`]: Lcp2MmphfInt::try_new
+/// [ε-serde]: https://crates.io/crates/epserde
+/// [`serde`]: https://crates.io/crates/serde
 #[derive(Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1852,6 +1857,9 @@ mod build {
 /// See [`Lcp2MmphfStr`] and [`Lcp2MmphfSliceU8`] for common instantiations,
 /// and [`Lcp2MmphfInt`] for integer keys.
 ///
+/// Instances of this structure are immutable; they are built using [`try_new`]
+/// or one of its variants, and can be serialized using [ε-serde] or [`serde`].
+///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
 ///
@@ -1877,6 +1885,8 @@ mod build {
 /// [module documentation]: self
 /// [signature type]: Sig
 /// [`try_new`]: Lcp2Mmphf::try_new
+/// [ε-serde]: https://crates.io/crates/epserde
+/// [`serde`]: https://crates.io/crates/serde
 #[derive(Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

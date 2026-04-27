@@ -26,7 +26,6 @@
 #![allow(clippy::collapsible_else_if)]
 
 use clap::{Parser, ValueEnum};
-use dsi_progress_logger::no_logging;
 use dsi_progress_logger::progress_logger;
 use rand::distr::Distribution;
 use rand::rngs::SmallRng;

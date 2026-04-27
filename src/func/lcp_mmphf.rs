@@ -1171,6 +1171,9 @@ pub(crate) use build::{lcp_bits, lcp_bits_nul, log2_bucket_size};
 ///
 /// See the [module documentation] for the algorithmic description.
 ///
+/// Instances of this structure are immutable; they are built using [`try_new`]
+/// or one of its variants, and can be serialized using [ε-serde] or [`serde`].
+///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
 ///
@@ -1193,6 +1196,8 @@ pub(crate) use build::{lcp_bits, lcp_bits_nul, log2_bucket_size};
 /// [module documentation]: self
 /// [signature type]: Sig
 /// [`try_new`]: LcpMmphfInt::try_new
+/// [ε-serde]: https://crates.io/crates/epserde
+/// [`serde`]: https://crates.io/crates/serde
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -1343,6 +1348,9 @@ impl ToSig<[u64; 1]> for BitPrefix {
 /// See [`LcpMmphfStr`] and [`LcpMmphfSliceU8`] for common instantiations,
 /// and [`LcpMmphfInt`] for integer keys.
 ///
+/// Instances of this structure are immutable; they are built using [`try_new`]
+/// or one of its variants, and can be serialized using [ε-serde] or [`serde`].
+///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
 ///
@@ -1366,6 +1374,8 @@ impl ToSig<[u64; 1]> for BitPrefix {
 /// [module documentation]: self
 /// [signature type]: Sig
 /// [`try_new`]: LcpMmphf::try_new
+/// [ε-serde]: https://crates.io/crates/epserde
+/// [`serde`]: https://crates.io/crates/serde
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

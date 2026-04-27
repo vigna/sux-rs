@@ -226,13 +226,13 @@ pub type EfSeqDict<V = usize> = EliasFano<
 ///
 /// let ef = efb.build();
 /// // Add a selection structure for ones (implements IndexedSeq)
-/// let ef = unsafe { ef.map_high_bits(SelectAdaptConst::new) };
+/// let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
 ///
 /// assert_eq!(ef.get(0), 0);
 /// assert_eq!(ef.get(1), 2);
 ///
 /// // Add a further selection structure for zeros (implements IndexedDict, Succ, Pred)
-/// let ef = unsafe { ef.map_high_bits(SelectZeroAdaptConst::new) };
+/// let ef = unsafe { ef.map_high_bits(SelectZeroAdaptConst::<_, _>::new) };
 ///
 /// assert_eq!(ef.succ(6), Some((2, 8)));
 /// assert_eq!(ef.succ(11), None);
@@ -247,7 +247,7 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// // Convenience constructor that iterates over a slice
 /// let mut ef: EliasFano = vec![0, 2, 8, 10].into();
 /// // Add a selection structure for ones (implements IndexedSeq)
-/// let ef = unsafe { ef.map_high_bits(SelectAdaptConst::new) };
+/// let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
 ///
 /// assert_eq!(ef.get(0), 0);
 /// assert_eq!(ef.get(1), 2);
@@ -257,7 +257,7 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// efb.extend(vec![0, 2, 8, 10]);
 /// let ef = efb.build();
 /// // Add a selection structure for ones (implements IndexedSeq)
-/// let ef = unsafe { ef.map_high_bits(SelectAdaptConst::new) };
+/// let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
 ///
 /// assert_eq!(ef.get(0), 0);
 /// assert_eq!(ef.get(1), 2);

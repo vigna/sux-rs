@@ -43,11 +43,38 @@
 //! All constructors follow the pattern `try_new(keys, …, pl)` for default
 //! settings, and `try_new_with_builder(keys, …, builder, pl)` to configure
 //! the [`VBuilder`] (offline mode, thread count, sharding overhead, seed).
+//!
+//! # Type annotations
+//!
+//! Functions have a formidable number of parameters, many of which have
+//! defaults. However, Rust does not apply struct default type parameters in
+//! expression position, so constructor calls like `VFunc::try_new` will
+//! not work as they cannot infer the default arguments.
+//!
+//! The fix is to write the type between angular brackets in the constructor
+//! call, which applies defaults:
+//!
+//! ```rust
+//! # #[cfg(feature = "rayon")]
+//! # fn main() -> anyhow::Result<()> {
+//! # use sux::func::VFunc;
+//! # use dsi_progress_logger::no_logging;
+//! # use sux::utils::FromCloneableIntoIterator;
+//! let func = <VFunc<usize, Box<[u8]>>>::try_new(
+//!     FromCloneableIntoIterator::new(0..10_usize),
+//!     FromCloneableIntoIterator::new(0..10_u8),
+//!     no_logging![],
+//! )?;
+//! # Ok(())
+//! # }
+//! # #[cfg(not(feature = "rayon"))]
+//! # fn main() {}
+//! ```
 
 mod vfunc;
 pub use vfunc::*;
 
-pub mod vfunc2;
+mod vfunc2;
 pub use vfunc2::*;
 
 #[cfg(feature = "rayon")]
