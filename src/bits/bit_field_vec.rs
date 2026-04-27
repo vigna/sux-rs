@@ -39,11 +39,11 @@
 //! write generic code that works both on bit-field vectors and on slices of
 //! words when you need to consider the bit width of each element.
 //!
-//! Note that the [`try_chunks_mut`] method is part of the [`SliceByValueMut`] trait, and thus returns an iterator over
-//! elements implementing [`SliceByValueMut`]; the elements, however, implement
-//! also [`BitFieldSliceMut`], and you can use this property by adding the bound
-//! `for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item:
-//! BitFieldSliceMut>>`.
+//! Note that the [`try_chunks_mut`] method is part of the [`SliceByValueMut`]
+//! trait, and thus returns an iterator over elements implementing
+//! [`SliceByValueMut`]; the elements, however, implement also
+//! [`BitFieldSliceMut`], and you can use this property by adding the bound
+//! `for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>`.
 //!
 //! Nothing is assumed about the content of the backend outside the
 //! bits of the vector. Moreover, the content of the backend outside of the
@@ -56,6 +56,15 @@
 //!
 //! [predecessor]: crate::traits::indexed_dict::Pred
 //! [successor]: crate::traits::indexed_dict::Succ
+//!
+//! # Conversions
+//!
+//! A wide range of conversion is available between the different flavors of
+//! bit-field vectors, using [`From`]/[`Into`] and [`TryFrom`]/[`TryInto`] as
+//! needed. For example, you can convert from a non-atomic to an atomic bit-field
+//! vector if the alignment requirements are satisfied, and you can convert from
+//! a growable bit-field vector to a fixed-size one by converting the backend to a
+//! boxed slice.
 //!
 //! # Low-level support
 //!
@@ -1637,6 +1646,58 @@ impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>>
 
 // Conversions
 
+impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> From<&'a BitFieldVec<B>>
+    for BitFieldVec<&'a [B::Word]>
+{
+    fn from(value: &'a BitFieldVec<B>) -> Self {
+        BitFieldVec {
+            bits: value.bits.as_ref(),
+            bit_width: value.bit_width,
+            mask: value.mask,
+            len: value.len,
+        }
+    }
+}
+
+impl<'a, B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>>
+    From<&'a AtomicBitFieldVec<B>> for AtomicBitFieldVec<&'a [B::Word]>
+{
+    fn from(value: &'a AtomicBitFieldVec<B>) -> Self {
+        AtomicBitFieldVec {
+            bits: value.bits.as_ref(),
+            bit_width: value.bit_width,
+            mask: value.mask,
+            len: value.len,
+        }
+    }
+}
+
+impl<'a, B: Backend<Word: Word> + AsMut<[B::Word]>> From<&'a mut BitFieldVec<B>>
+    for BitFieldVec<&'a mut [B::Word]>
+{
+    fn from(value: &'a mut BitFieldVec<B>) -> Self {
+        BitFieldVec {
+            bits: value.bits.as_mut(),
+            bit_width: value.bit_width,
+            mask: value.mask,
+            len: value.len,
+        }
+    }
+}
+
+impl<'a, B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsMut<[B::Word]>>
+    From<&'a mut AtomicBitFieldVec<B>> for AtomicBitFieldVec<&'a mut [B::Word]>
+{
+    fn from(value: &'a mut AtomicBitFieldVec<B>) -> Self {
+        AtomicBitFieldVec {
+            bits: value.bits.as_mut(),
+            bit_width: value.bit_width,
+            mask: value.mask,
+            len: value.len,
+        }
+    }
+}
+
 impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>>
     From<AtomicBitFieldVec<Vec<W::Atomic>>> for BitFieldVec<Vec<W>>
 {
@@ -1659,20 +1720,6 @@ impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>>
         BitFieldVec {
             bits: transmute_boxed_slice_from_atomic(value.bits),
 
-            len: value.len,
-            bit_width: value.bit_width,
-            mask: value.mask,
-        }
-    }
-}
-
-impl<'a, W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>>
-    From<AtomicBitFieldVec<&'a [W::Atomic]>> for BitFieldVec<&'a [W]>
-{
-    #[inline]
-    fn from(value: AtomicBitFieldVec<&'a [W::Atomic]>) -> Self {
-        BitFieldVec {
-            bits: unsafe { core::mem::transmute::<&'a [W::Atomic], &'a [W]>(value.bits) },
             len: value.len,
             bit_width: value.bit_width,
             mask: value.mask,
@@ -1720,25 +1767,6 @@ impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>> From<BitFieldVe
             bit_width: value.bit_width,
             mask: value.mask,
         }
-    }
-}
-
-impl<'a, W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>> TryFrom<BitFieldVec<&'a [W]>>
-    for AtomicBitFieldVec<&'a [W::Atomic]>
-{
-    type Error = CannotCastToAtomicError<W>;
-
-    #[inline]
-    fn try_from(value: BitFieldVec<&'a [W]>) -> Result<Self, Self::Error> {
-        if core::mem::align_of::<W::Atomic>() != core::mem::align_of::<W>() {
-            return Err(CannotCastToAtomicError::default());
-        }
-        Ok(AtomicBitFieldVec {
-            bits: unsafe { core::mem::transmute::<&'a [W], &'a [W::Atomic]>(value.bits) },
-            len: value.len,
-            bit_width: value.bit_width,
-            mask: value.mask,
-        })
     }
 }
 

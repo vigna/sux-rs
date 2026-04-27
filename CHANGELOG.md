@@ -20,6 +20,11 @@ F# Change Log
 - Iterator from successors and predecessors in indexed dictionaries have
   been extracted into separate traits.
 
+### Fixed
+
+- Unsound reference-based `From` implementations between `BitVec`, 
+  `AtomicBitVec`, etc. have been removed.
+
 ## [0.14.0] - 2026-04-11
 
 ### New

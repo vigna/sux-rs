@@ -11,6 +11,7 @@ use core::sync::atomic::Ordering;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
+use std::sync::atomic::AtomicUsize;
 use sux::prelude::*;
 
 use sux::traits::BitVecValueOps;
@@ -494,8 +495,7 @@ fn test_from() {
     }
 
     // Boxed slice to atomic boxed slice
-    let bits = vec![0_usize; 10].into_boxed_slice();
-    let mut b = unsafe { BitVec::<Box<[usize]>>::from_raw_parts(bits, 10) };
+    let mut b: BitVec<Box<[usize]>> = BitVec::new(10).into();
     for i in 0..10 {
         b.set(i, i % 2 == 0);
     }
@@ -506,15 +506,14 @@ fn test_from() {
     }
 
     // Reference to atomic reference
-    let bits = vec![0_usize; 10].into_boxed_slice();
-    let mut b = unsafe { BitVec::<Box<[usize]>>::from_raw_parts(bits, 10) };
+    let mut b: BitVec<Box<[usize]>> = BitVec::new(10).into();
     for i in 0..10 {
         b.set(i, i % 2 == 0);
     }
 
     // Mutable reference to mutable reference
-    let mut bits = vec![0_usize; 10].into_boxed_slice();
-    let mut b = unsafe { BitVec::<&mut [usize]>::from_raw_parts(bits.as_mut(), 10) };
+    let mut bits: BitVec<Box<[usize]>> = BitVec::new(10).into();
+    let mut b: BitVec<&mut [usize]> = (&mut bits).into();
     for i in 0..10 {
         b.set(i, i % 2 == 0);
     }
@@ -534,6 +533,41 @@ fn test_from() {
     let b: BitVec<Vec<usize>> = b.into();
     for i in 0..10 {
         assert_eq!(b.get(i), i % 2 == 0);
+    }
+
+    // Commuting refs
+    let mut b: BitVec<Box<[usize]>> = b.into();
+    {
+        let b: BitVec<&[usize]> = (&b).into();
+        for i in 0..10 {
+            assert_eq!(b.get(i), i % 2 == 0);
+        }
+    }
+
+    {
+        let b: BitVec<&mut [usize]> = (&mut b).into();
+        for i in 0..10 {
+            assert_eq!(b.get(i), i % 2 == 0);
+        }
+    }
+
+    // Commuting refs
+    let mut b = <AtomicBitVec>::new(10);
+    for i in 0..10 {
+        b.set(i, i % 2 == 0, Ordering::Relaxed);
+    }
+    {
+        let b: AtomicBitVec<&[AtomicUsize]> = (&b).into();
+        for i in 0..10 {
+            assert_eq!(b.get(i, Ordering::Relaxed), i % 2 == 0);
+        }
+    }
+
+    {
+        let b: AtomicBitVec<&mut [AtomicUsize]> = (&mut b).into();
+        for i in 0..10 {
+            assert_eq!(b.get(i, Ordering::Relaxed), i % 2 == 0);
+        }
     }
 }
 

@@ -5,7 +5,6 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use anyhow::Ok;
 use anyhow::Result;
 use atomic_primitive::PrimitiveAtomicUnsigned;
 use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic};
@@ -345,7 +344,7 @@ fn test_unaligned_unchecked_59() {
 #[should_panic]
 #[test]
 fn test_unaligned_unchecked_61() {
-    let c = BitFieldVec::<Vec<usize>>::new(59, 1);
+    let c = BitFieldVec::<Vec<usize>>::new(61, 1);
     assert_eq!(unsafe { c.get_unaligned_unchecked(0) }, 0);
 }
 
@@ -353,7 +352,7 @@ fn test_unaligned_unchecked_61() {
 #[should_panic]
 #[test]
 fn test_unaligned_unchecked_62() {
-    let c = BitFieldVec::<Vec<usize>>::new(59, 1);
+    let c = BitFieldVec::<Vec<usize>>::new(62, 1);
     assert_eq!(unsafe { c.get_unaligned_unchecked(0) }, 0);
 }
 
@@ -361,7 +360,7 @@ fn test_unaligned_unchecked_62() {
 #[should_panic]
 #[test]
 fn test_unaligned_unchecked_63() {
-    let c = BitFieldVec::<Vec<usize>>::new(59, 1);
+    let c = BitFieldVec::<Vec<usize>>::new(63, 1);
     assert_eq!(unsafe { c.get_unaligned_unchecked(0) }, 0);
 }
 
@@ -384,21 +383,21 @@ fn test_unaligned_59() {
 #[should_panic]
 #[test]
 fn test_unaligned_61() {
-    let c = BitFieldVec::<Vec<usize>>::new(59, 1);
+    let c = BitFieldVec::<Vec<usize>>::new(61, 1);
     assert_eq!(c.get_unaligned(0), 0);
 }
 
 #[should_panic]
 #[test]
 fn test_unaligned_62() {
-    let c = BitFieldVec::<Vec<usize>>::new(59, 1);
+    let c = BitFieldVec::<Vec<usize>>::new(62, 1);
     assert_eq!(c.get_unaligned(0), 0);
 }
 
 #[should_panic]
 #[test]
 fn test_unaligned_63() {
-    let c = BitFieldVec::<Vec<usize>>::new(59, 1);
+    let c = BitFieldVec::<Vec<usize>>::new(63, 1);
     assert_eq!(c.get_unaligned(0), 0);
 }
 
@@ -521,8 +520,7 @@ fn test_from() {
     }
 
     // Boxed slice to atomic boxed slice
-    let bits = vec![0; 10].into_boxed_slice();
-    let mut b = unsafe { BitFieldVec::<Box<[usize]>>::from_raw_parts(bits, 50, 10) };
+    let mut b: BitFieldVec<Box<[usize]>> = BitFieldVec::<Vec<usize>>::new(50, 10).into();
     for i in 0..10 {
         b.set_value(i, i);
     }
@@ -532,28 +530,13 @@ fn test_from() {
         assert_eq!(b.index_value(i), i);
     }
 
-    // Reference to atomic reference
-    let bits = vec![0; 10].into_boxed_slice();
-    let mut b = unsafe { BitFieldVec::<Box<[usize]>>::from_raw_parts(bits, 50, 10) };
-    for i in 0..10 {
-        b.set_value(i, i);
-    }
-    let (bits, w, l) = b.into_raw_parts();
-    let b = unsafe { BitFieldVec::<&[usize]>::from_raw_parts(bits.as_ref(), w, l) };
-    if let Result::<AtomicBitFieldVec<&[AtomicUsize]>, _>::Ok(b) = b.try_into() {
-        let b: BitFieldVec<&[usize]> = b.into();
-        for i in 0..10 {
-            assert_eq!(b.index_value(i), i);
-        }
-    }
-
     // Mutable reference to mutable reference
-    let mut bits = vec![0; 10].into_boxed_slice();
-    let mut b = unsafe { BitFieldVec::<&mut [usize]>::from_raw_parts(bits.as_mut(), 50, 10) };
+    let mut b: BitFieldVec<Box<[usize]>> = BitFieldVec::<Vec<usize>>::new(50, 10).into();
     for i in 0..10 {
         b.set_value(i, i);
     }
-    if let Result::<AtomicBitFieldVec<&mut [AtomicUsize]>, _>::Ok(b) = b.try_into() {
+    let b_mut: BitFieldVec<&mut [usize]> = (&mut b).into();
+    if let Result::<AtomicBitFieldVec<&mut [AtomicUsize]>, _>::Ok(b) = b_mut.try_into() {
         let b: BitFieldVec<&mut [usize]> = b.into();
         for i in 0..10 {
             assert_eq!(b.index_value(i), i);
@@ -569,6 +552,41 @@ fn test_from() {
     let b: BitFieldVec<Vec<usize>> = b.into();
     for i in 0..10 {
         assert_eq!(b.index_value(i), i);
+    }
+
+    // Commuting refs
+    let mut b: BitFieldVec<Box<[usize]>> = b.into();
+    {
+        let b: BitFieldVec<&[usize]> = (&b).into();
+        for i in 0..10 {
+            assert_eq!(b.index_value(i), i);
+        }
+    }
+
+    {
+        let b: BitFieldVec<&mut [usize]> = (&mut b).into();
+        for i in 0..10 {
+            assert_eq!(b.index_value(i), i);
+        }
+    }
+
+    // Commuting refs
+    let mut b = <AtomicBitFieldVec>::new(50, 10);
+    for i in 0..10 {
+        b.set_atomic(i, i, Ordering::Relaxed);
+    }
+    {
+        let b: AtomicBitFieldVec<&[AtomicUsize]> = (&b).into();
+        for i in 0..10 {
+            assert_eq!(b.get_atomic(i, Ordering::Relaxed), i);
+        }
+    }
+
+    {
+        let b: AtomicBitFieldVec<&mut [AtomicUsize]> = (&mut b).into();
+        for i in 0..10 {
+            assert_eq!(b.get_atomic(i, Ordering::Relaxed), i);
+        }
     }
 }
 
