@@ -312,6 +312,9 @@ mod build {
             let bucket_size = 1usize << log2_bs;
             let bucket_mask = bucket_size - 1;
             let num_buckets = n.div_ceil(bucket_size);
+            let lcp2bucket_builder = VBuilder::default()
+                .set_from(&builder)
+                .expected_num_keys(num_buckets);
 
             pl.info(format_args!(
                 "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
@@ -377,8 +380,7 @@ mod build {
                     pl,
                 )?;
 
-            // -- Build lcp2bucket VFunc --
-
+            // Sequential: num_buckets is small and we avoid materializing the key set
             pl.info(format_args!(
                 "Building LCP prefix → bucket map ({num_buckets} buckets)..."
             ));
@@ -388,8 +390,7 @@ mod build {
                         IntBitPrefix::new(bucket_first_keys[b] ^ K::MIN, lcp_bit_lengths[b])
                     })),
                     FromCloneableIntoIterator::new(0..num_buckets),
-                    num_buckets,
-                    VBuilder::default(),
+                    lcp2bucket_builder,
                     pl,
                 )?;
 
@@ -515,6 +516,9 @@ mod build {
             let bucket_size = 1usize << log2_bs;
             let bucket_mask = bucket_size - 1;
             let num_buckets = n.div_ceil(bucket_size);
+            let lcp2bucket_builder = VBuilder::default()
+                .set_from(&builder)
+                .expected_num_keys(num_buckets);
 
             pl.info(format_args!(
                 "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
@@ -585,8 +589,7 @@ mod build {
                 (),
             )?;
 
-            // -- Build lcp2bucket VFunc (sequential, small) --
-
+            // Sequential: num_buckets is small and we avoid materializing the key set
             pl.info(format_args!(
                 "Building LCP prefix → bucket map ({num_buckets} buckets)..."
             ));
@@ -596,8 +599,7 @@ mod build {
                         IntBitPrefix::new(bucket_first_keys[b] ^ K::MIN, lcp_bit_lengths[b])
                     })),
                     FromCloneableIntoIterator::new(0..num_buckets),
-                    num_buckets,
-                    VBuilder::default(),
+                    lcp2bucket_builder,
                     pl,
                 )?;
 
@@ -812,6 +814,9 @@ mod build {
             let bucket_size = 1usize << log2_bs;
             let bucket_mask = bucket_size - 1;
             let num_buckets = n.div_ceil(bucket_size);
+            let lcp2bucket_builder = VBuilder::default()
+                .set_from(&builder)
+                .expected_num_keys(num_buckets);
 
             pl.info(format_args!(
                 "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
@@ -898,6 +903,7 @@ mod build {
                 })
                 .collect();
 
+            // Sequential: num_buckets is small and we avoid materializing the key set
             let lcp2bucket =
                 <VFunc<BitPrefix, BitFieldVec<Box<[usize]>>, S1, E1>>::try_new_with_builder(
                     FromCloneableIntoIterator::new(
@@ -905,8 +911,7 @@ mod build {
                             .map(|b| BitPrefix::new(&extended_first_keys[b], lcp_bit_lengths[b])),
                     ),
                     FromCloneableIntoIterator::new(0..num_buckets),
-                    num_buckets,
-                    VBuilder::default(),
+                    lcp2bucket_builder,
                     pl,
                 )?;
 
@@ -1041,6 +1046,9 @@ mod build {
             let bucket_size = 1usize << log2_bs;
             let bucket_mask = bucket_size - 1;
             let num_buckets = n.div_ceil(bucket_size);
+            let lcp2bucket_builder = VBuilder::default()
+                .set_from(&builder)
+                .expected_num_keys(num_buckets);
 
             pl.info(format_args!(
                 "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
@@ -1113,7 +1121,6 @@ mod build {
             )?;
 
             // -- Build lcp2bucket VFunc (sequential, small) --
-
             pl.info(format_args!(
                 "Building LCP prefix → bucket map ({num_buckets} buckets)..."
             ));
@@ -1127,6 +1134,7 @@ mod build {
                 })
                 .collect();
 
+            // Sequential: num_buckets is small and we avoid materializing the key set
             let lcp2bucket =
                 <VFunc<BitPrefix, BitFieldVec<Box<[usize]>>, S1, E1>>::try_new_with_builder(
                     FromCloneableIntoIterator::new(
@@ -1134,8 +1142,7 @@ mod build {
                             .map(|b| BitPrefix::new(&extended_first_keys[b], lcp_bit_lengths[b])),
                     ),
                     FromCloneableIntoIterator::new(0..num_buckets),
-                    num_buckets,
-                    VBuilder::default(),
+                    lcp2bucket_builder,
                     pl,
                 )?;
 

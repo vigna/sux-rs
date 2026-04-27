@@ -51,7 +51,6 @@ fn build_vfunc(n: usize, values: &[usize]) -> VFunc<usize, BitFieldVec<Box<[usiz
     <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
         FromSlice::new(&keys),
         FromSlice::new(values),
-        n,
         VBuilder::default().expected_num_keys(n),
         no_logging![],
     )
@@ -63,7 +62,6 @@ fn build_vfunc2(n: usize, values: &[usize]) -> VFunc2<usize, BitFieldVec<Box<[us
     VFunc2::try_new(
         FromSlice::new(&keys),
         FromSlice::new(values),
-        n,
         no_logging![],
     )
     .unwrap()

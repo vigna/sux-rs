@@ -165,7 +165,6 @@ where
         if args.sequential {
             let filter = <VFilter<VFunc<str, Box<[W]>, S, E>>>::try_new_with_builder(
                 DekoBufLineLender::from_path(filename)?.take(n),
-                args.n.unwrap_or(0),
                 builder,
                 &mut pl,
             )?;
@@ -199,7 +198,6 @@ where
         if args.sequential {
             let filter = <VFilter<VFunc<usize, Box<[W]>, S, E>>>::try_new_with_builder(
                 FromCloneableIntoIterator::from(0_usize..n),
-                n,
                 builder,
                 &mut pl,
             )?;
@@ -251,7 +249,6 @@ where
         if args.sequential {
             let filter = <VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
                 DekoBufLineLender::from_path(filename)?.take(n),
-                args.n.unwrap_or(0),
                 args.bits,
                 builder,
                 &mut pl,
@@ -296,7 +293,6 @@ where
             let filter =
                 <VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
                     FromCloneableIntoIterator::from(0_usize..n),
-                    n,
                     args.bits,
                     builder,
                     &mut pl,

@@ -44,10 +44,10 @@ use std::borrow::Borrow;
 ///
 /// # Generics
 ///
-/// * `K` - The type of the keys.
-/// * `W` - The word used to store the data, which is also the output type. It
+/// * `K` - the type of the keys.
+/// * `W` - the word used to store the data, which is also the output type. It
 ///   can be any unsigned type.
-/// * `D` - The backend storing the function data. It can be a
+/// * `D` - the backend storing the function data. It can be a
 ///   [`BitFieldVec<Box<[W]>>`](crate::bits::BitFieldVec) or a `Box<[W]>`. In the first case, the data
 ///   is stored using exactly the number of bits needed, but access is slightly
 ///   slower, while in the second case the data is stored in a boxed slice of
@@ -55,11 +55,11 @@ use std::borrow::Borrow;
 ///   access will be faster. Note that for most bit sizes in the first case on
 ///   some architectures you can use [`TryIntoUnaligned`] to convert the
 ///   function into one using [unaligned reads] for faster queries.
-/// * `S` - The signature type. The default is `[u64; 2]`. You can switch to
+/// * `S` - the signature type. The default is `[u64; 2]`. You can switch to
 ///   `[u64; 1]` (and possibly [`FuseLge3NoShards`]) for slightly faster
 ///   construction and queries, but the construction will not scale beyond 3.8
 ///   billion keys.
-/// * `E` - The sharding and edge logic type. The default is [`FuseLge3Shards`].
+/// * `E` - the sharding and edge logic type. The default is [`FuseLge3Shards`].
 ///   For small sets of keys you might try [`FuseLge3NoShards`], possibly
 ///   coupled with `[u64; 1]` signatures. For functions with more than a few
 ///   dozen billion keys, you might try [`FuseLge3FullSigs`].
@@ -213,19 +213,17 @@ mod build {
         /// Builds a [`VFunc`] with a `Box<[W]>` backend from keys and values
         /// using default [`VBuilder`] settings.
         ///
-        /// * `keys` and `values` must be provided as
-        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
-        ///   same order). The [`lenders`] module provides easy ways to
-        ///   build such lenders.
-        /// * `n` is the expected number of keys; a significantly wrong
-        ///   value may degrade performance or cause extra retries.
-        ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`] with
         /// `VBuilder::default()`.
         ///
         /// If keys and values are available as slices, [`try_par_new`]
         /// parallelizes the hash computation for faster construction.
+        ///
+        /// * `keys` and `values` -
+        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
+        ///   same order). The [`lenders`] module provides easy ways to
+        ///   build such lenders.
         ///
         /// # Examples
         ///
@@ -238,7 +236,6 @@ mod build {
         /// let func = <VFunc<usize, Box<[u8]>>>::try_new(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     FromCloneableIntoIterator::new(0..100_u8),
-        ///     100,
         ///     no_logging![],
         /// )?;
         ///
@@ -262,7 +259,6 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
-            n: usize,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self>
         where
@@ -271,17 +267,11 @@ mod build {
             for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
             for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
         {
-            Self::try_new_with_builder(keys, values, n, VBuilder::default(), pl)
+            Self::try_new_with_builder(keys, values, VBuilder::default(), pl)
         }
 
         /// Builds a [`VFunc`] with a `Box<[W]>` backend from keys and values
         /// using the given [`VBuilder`] configuration.
-        ///
-        /// * `keys` and `values` must be provided as
-        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
-        ///   same order). The [`lenders`] module provides easy ways to
-        ///   build such lenders.
-        /// * `n` is the expected number of keys.
         ///
         /// The builder controls construction parameters such as [offline
         /// mode], [thread count],
@@ -289,6 +279,11 @@ mod build {
         ///
         /// See also [`try_par_new_with_builder`]
         /// for parallel hash computation from slices.
+        ///
+        /// * `keys` and `values` -
+        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
+        ///   same order). The [`lenders`] module provides easy ways to
+        ///   build such lenders.
         ///
         /// # Examples
         ///
@@ -301,7 +296,6 @@ mod build {
         /// let func = <VFunc<usize, Box<[u8]>>>::try_new_with_builder(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     FromCloneableIntoIterator::new(0..100_u8),
-        ///     100,
         ///     VBuilder::default().offline(true),
         ///     no_logging![],
         /// )?;
@@ -329,7 +323,6 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
-            n: usize,
             builder: VBuilder<Box<[W]>, S, E>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self>
@@ -340,7 +333,6 @@ mod build {
             for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
         {
             Ok(builder
-                .expected_num_keys(n)
                 .try_build_func(
                     keys,
                     values,
@@ -496,19 +488,17 @@ mod build {
         /// Builds a [`VFunc`] with a [`BitFieldVec`] backend from keys and
         /// values using default [`VBuilder`] settings.
         ///
-        /// * `keys` and `values` must be provided as
-        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
-        ///   same order). The [`lenders`] module provides easy ways to
-        ///   build such lenders.
-        /// * `n` is the expected number of keys; a significantly wrong
-        ///   value may degrade performance or cause extra retries.
-        ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`] with
         /// `VBuilder::default()`.
         ///
         /// If keys and values are available as slices, [`try_par_new`]
         /// parallelizes the hash computation for faster construction.
+        ///
+        /// * `keys` and `values` -
+        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
+        ///   same order). The [`lenders`] module provides easy ways to
+        ///   build such lenders.
         ///
         /// # Examples
         ///
@@ -522,7 +512,6 @@ mod build {
         /// let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     FromCloneableIntoIterator::new(0..100),
-        ///     100,
         ///     no_logging![],
         /// )?;
         ///
@@ -546,20 +535,13 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
-            n: usize,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
-            Self::try_new_with_builder(keys, values, n, VBuilder::default(), pl)
+            Self::try_new_with_builder(keys, values, VBuilder::default(), pl)
         }
 
         /// Builds a [`VFunc`] with a [`BitFieldVec`] backend from keys and
         /// values using the given [`VBuilder`] configuration.
-        ///
-        /// * `keys` and `values` must be provided as
-        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
-        ///   same order). The [`lenders`] module provides easy ways to
-        ///   build such lenders.
-        /// * `n` is the expected number of keys.
         ///
         /// The builder controls construction parameters such as [offline
         /// mode], [thread count],
@@ -567,6 +549,11 @@ mod build {
         ///
         /// See also [`try_par_new_with_builder`]
         /// for parallel hash computation from slices.
+        ///
+        /// * `keys` and `values` -
+        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
+        ///   same order). The [`lenders`] module provides easy ways to
+        ///   build such lenders.
         ///
         /// # Examples
         ///
@@ -580,7 +567,6 @@ mod build {
         /// let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     FromCloneableIntoIterator::new(0..100),
-        ///     100,
         ///     VBuilder::default().offline(true),
         ///     no_logging![],
         /// )?;
@@ -608,12 +594,10 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
-            n: usize,
             builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
             builder
-                .expected_num_keys(n)
                 .try_build_func(
                     keys,
                     values,

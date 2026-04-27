@@ -46,7 +46,6 @@ where
         let func = <VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
             FromCloneableIntoIterator::from(0..n),
             FromCloneableIntoIterator::from(0_usize..),
-            n,
             VBuilder::default().offline(offline).low_mem(low_mem),
             &mut pl,
         )?;
@@ -114,7 +113,6 @@ where
         dbg!(offline, n);
         let filter = <VFilter<VFunc<usize, Box<[u8]>, S, E>>>::try_new_with_builder(
             FromCloneableIntoIterator::from(0..n),
-            n,
             VBuilder::default().offline(offline).low_mem(low_mem),
             &mut pl,
         )?;
@@ -187,7 +185,6 @@ fn test_dup_key() -> Result<()> {
         <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
             FromCloneableIntoIterator::from(std::iter::repeat_n(0, 10)),
             FromCloneableIntoIterator::from(0..),
-            10,
             VBuilder::default().check_dups(true),
             &mut ProgressLogger::default(),
         )

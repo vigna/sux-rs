@@ -115,7 +115,6 @@ macro_rules! filename_save_sign_seq(
         let func =
             <SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_new_with_builder(
                 DekoBufLineLender::from_path($filename)?.take($n),
-                $n,
                 $builder,
                 &mut $pl,
             )?;
@@ -134,7 +133,6 @@ macro_rules! n_save_sign_seq(
         let func =
             <SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_new_with_builder(
                 FromCloneableIntoIterator::new(0_usize..$n),
-                $n,
                 $builder,
                 &mut $pl,
             )?;
@@ -235,7 +233,6 @@ where
                     let func = <VFunc<str, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                         DekoBufLineLender::from_path(filename)?.take(n),
                         FromCloneableIntoIterator::from(0_usize..),
-                        n,
                         builder,
                         &mut pl,
                     )?;
@@ -339,7 +336,6 @@ where
                         <VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                             FromCloneableIntoIterator::from(0_usize..n),
                             FromCloneableIntoIterator::from(0_usize..),
-                            n,
                             builder,
                             &mut pl,
                         )?;
@@ -428,7 +424,6 @@ fn main_two_step(args: Args) -> Result<()> {
             let func: VFunc2<str, BitFieldVec<Box<[usize]>>> = VFunc2::try_new_with_builder(
                 DekoBufLineLender::from_path(filename)?.take(n),
                 FromCloneableIntoIterator::from(0_usize..),
-                n,
                 builder,
                 &mut pl,
             )?;
@@ -464,7 +459,6 @@ fn main_two_step(args: Args) -> Result<()> {
             let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> = VFunc2::try_new_with_builder(
                 FromSlice::new(&keys),
                 FromSlice::new(&vals),
-                n,
                 builder,
                 &mut pl,
             )?;

@@ -66,13 +66,13 @@ use std::marker::PhantomData;
 /// # Generics
 ///
 /// * `K` - the key type.
-/// * `W` - the output value type — any [`PrimitiveInteger`]
+/// * `W` - the output value type; any [`PrimitiveInteger`]
 ///   (`u8` . . `u128`, `i8` . . `i128`, `usize`, `isize`). Must be
 ///   convertible to and from `u64` through [`PrimitiveNumberAs`].
 ///   Defaults to `usize`.
 /// * `D` - the data backend; defaults to [`BitVec<Box<[usize]>>`](crate::bits::BitVec).
-/// * `S`: the signature type; defaults to `[u64; 2]`.
-/// * `E`: the [`ShardEdge`] used for *sharding* and local hashing.
+/// * `S` - the signature type; defaults to `[u64; 2]`.
+/// * `E` - the [`ShardEdge`] used for *sharding* and local hashing.
 ///   Defaults to [`Fuse3Shards`].
 ///
 /// [`try_new`]: Self::try_new
@@ -277,9 +277,6 @@ where
     /// memory at once: the values lender is rewound at least once during
     /// construction.
     ///
-    /// `n` is the expected number of keys; a significantly wrong value may
-    /// degrade performance or cause extra retries.
-    ///
     /// This is a convenience wrapper around [`try_new_with_builder`] with
     /// `VBuilder::default()`.
     ///
@@ -296,10 +293,9 @@ where
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
-        n: usize,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        Self::try_new_with_builder(keys, values, n, Huffman::new(), VBuilder::default(), pl)
+        Self::try_new_with_builder(keys, values, Huffman::new(), VBuilder::default(), pl)
     }
 
     /// Builds a [`CompVFunc`] from lenders of keys and values using
@@ -320,12 +316,11 @@ where
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
-        n: usize,
         huffman: Huffman,
         builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        build_inner_seq::<K, B, W, _, _, _, S, E>(huffman, builder, keys, values, n, pl)
+        build_inner_seq::<K, B, W, _, _, _, S, E>(huffman, builder, keys, values, pl)
     }
 }
 
@@ -780,7 +775,6 @@ fn build_inner_seq<
     builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
     keys: L,
     mut values: V,
-    n: usize,
     pl: &mut P,
 ) -> Result<CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>>
 where
@@ -794,6 +788,7 @@ where
     while let Some(&v) = values.next()? {
         *frequencies.entry(v).or_insert(0) += 1;
     }
+    let n: usize = frequencies.values().sum();
     let coder = huffman.build_coder(&frequencies);
     let w = coder.max_codeword_length();
     let max = usize::BITS - 7;
@@ -811,7 +806,7 @@ where
         return Ok(empty_comp_vfunc::<K, W, S, E>(coder, builder.eps));
     }
 
-    let mut builder = builder.expected_num_keys(n).shard_size_hint(total_edges);
+    let mut builder = builder.shard_size_hint(total_edges);
     let mut build_fn = make_build_fn::<W, S, E, P>(&coder);
     let ((data, seed_used, shard_size), _keys) =
         builder.try_populate_and_build(keys, values, &mut build_fn, pl, ())?;

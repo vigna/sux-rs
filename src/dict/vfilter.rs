@@ -41,8 +41,8 @@ use value_traits::slices::SliceByValue;
 ///
 /// # Generics
 ///
-/// * `W`: The unsigned integer type used to store hashes.
-/// * `F`: The underlying [`VFunc`] type (determines key type, signature
+/// * `W` - the unsigned integer type used to store hashes.
+/// * `F` - the underlying [`VFunc`] type (determines key type, signature
 ///   type, sharding, and backend).
 ///
 /// # Examples
@@ -130,7 +130,6 @@ where
     /// # use sux::utils::FromCloneableIntoIterator;
     /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_new(
     ///     FromCloneableIntoIterator::new(0..100),
-    ///     100,
     ///     no_logging![],
     /// )?;
     ///
@@ -255,23 +254,22 @@ mod build {
         /// use the [`BitFieldVec`] variant with an explicit `filter_bits`
         /// parameter.
         ///
-        /// * `keys` must be provided as a [`FallibleRewindableLender`].
-        ///   The [`lenders`] module provides easy
-        ///   ways to build such lenders.
-        /// * `n` is the expected number of keys; a significantly wrong
-        ///   value may degrade performance or cause extra retries.
-        ///
-        /// This is a convenience wrapper around
-        /// [`try_new_with_builder`] with `VBuilder::default()`.
+        /// This is a convenience wrapper around [`try_new_with_builder`] with
+        /// `VBuilder::default()`.
         ///
         /// If keys and values are available as slices, [`try_par_new`]
         /// parallelizes the hash computation for faster construction.
+        ///
+        /// * `keys` - a [`FallibleRewindableLender`].
+        ///   The [`lenders`] module provides easy
+        ///   ways to build such lenders.        
         ///
         /// [`lenders`]: crate::utils::lenders
         /// [`try_new_with_builder`]: Self::try_new_with_builder
         /// [`try_par_new`]: Self::try_par_new
         ///
         /// # Examples
+        ///
         /// ```rust
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
@@ -281,7 +279,6 @@ mod build {
         /// # use sux::utils::FromCloneableIntoIterator;
         /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_new(
         ///     FromCloneableIntoIterator::new(0..100),
-        ///     100,
         ///     no_logging![],
         /// )?;
         ///
@@ -298,7 +295,6 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-            n: usize,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self>
         where
@@ -307,7 +303,7 @@ mod build {
             for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
             for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
         {
-            Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
+            Self::try_new_with_builder(keys, VBuilder::default(), pl)
         }
 
         /// Builds a [`VFilter`] with a `Box<[W]>` backend from keys using
@@ -316,16 +312,15 @@ mod build {
         /// The number of hash bits per key equals `W::BITS`, giving a
         /// false-positive rate of 2<sup>−`W::BITS`</sup>.
         ///
-        /// * `keys` must be provided as a [`FallibleRewindableLender`].
-        ///   The [`lenders`] module provides easy
-        ///   ways to build such lenders.
-        /// * `n` is the expected number of keys.
-        ///
         /// The builder controls construction parameters such as [offline
         /// mode], [thread count], [sharding overhead], and [PRNG seed].
         ///
         /// See also [`try_par_new_with_builder`] for parallel hash
         /// computation from slices.
+        ///
+        /// * `keys` - a [`FallibleRewindableLender`].
+        ///   The [`lenders`] module provides easy
+        ///   ways to build such lenders.
         ///
         /// [`lenders`]: crate::utils::lenders
         /// [offline mode]: VBuilder::offline
@@ -345,7 +340,6 @@ mod build {
         /// # use sux::utils::FromCloneableIntoIterator;
         /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_new_with_builder(
         ///     FromCloneableIntoIterator::new(0..100),
-        ///     100,
         ///     VBuilder::default().offline(true),
         ///     no_logging![],
         /// )?;
@@ -363,7 +357,6 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-            n: usize,
             builder: VBuilder<Box<[W]>, S, E>,
             pl: &mut P,
         ) -> Result<Self>
@@ -374,7 +367,7 @@ mod build {
             for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
         {
             let filter_mask = W::MAX;
-            let func = builder.expected_num_keys(n).try_build_filter(
+            let func = builder.try_build_filter(
                 keys,
                 W::BITS as usize,
                 |_, len| vec![W::ZERO; len].into(),
@@ -543,19 +536,17 @@ mod build {
         /// Builds a [`VFilter`] with a [`BitFieldVec`] backend from keys
         /// using default [`VBuilder`] settings.
         ///
-        /// * `keys` must be provided as a [`FallibleRewindableLender`].
-        ///   The [`lenders`] module provides easy
-        ///   ways to build such lenders.
-        /// * `n` is the expected number of keys; a significantly wrong
-        ///   value may degrade performance or cause extra retries.
-        /// * `filter_bits` is the number of hash bits per key; the
-        ///   false-positive rate is 2<sup>−`filter_bits`</sup>.
-        ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys and values are available as slices, [`try_par_new`]
         /// parallelizes the hash computation for faster construction.
+        ///
+        /// * `keys` - a [`FallibleRewindableLender`].
+        ///   The [`lenders`] module provides easy
+        ///   ways to build such lenders.
+        /// * `filter_bits` - the number of hash bits per key; the
+        ///   false-positive rate is 2<sup>−`filter_bits`</sup>.
         ///
         /// [`lenders`]: crate::utils::lenders
         /// [`try_new_with_builder`]: Self::try_new_with_builder
@@ -573,7 +564,6 @@ mod build {
         /// # use sux::utils::FromCloneableIntoIterator;
         /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_new(
         ///     FromCloneableIntoIterator::new(0..100),
-        ///     100,
         ///     5,
         ///     no_logging![],
         /// )?;
@@ -591,7 +581,6 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-            n: usize,
             filter_bits: usize,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self>
@@ -600,24 +589,23 @@ mod build {
             for<'a> <<BitFieldVec<Box<[W]>> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
                 Send,
         {
-            Self::try_new_with_builder(keys, n, filter_bits, VBuilder::default(), pl)
+            Self::try_new_with_builder(keys, filter_bits, VBuilder::default(), pl)
         }
 
         /// Builds a [`VFilter`] with a [`BitFieldVec`] backend from keys
         /// using the given [`VBuilder`] configuration.
-        ///
-        /// * `keys` must be provided as a [`FallibleRewindableLender`].
-        ///   The [`lenders`] module provides easy
-        ///   ways to build such lenders.
-        /// * `n` is the expected number of keys.
-        /// * `filter_bits` is the number of hash bits per key; the
-        ///   false-positive rate is 2<sup>−`filter_bits`</sup>.
         ///
         /// The builder controls construction parameters such as [offline
         /// mode], [thread count], [sharding overhead], and [PRNG seed].
         ///
         /// See also [`try_par_new_with_builder`] for parallel hash
         /// computation from slices.
+        ///
+        /// * `keys` - a [`FallibleRewindableLender`].
+        ///   The [`lenders`] module provides easy
+        ///   ways to build such lenders.
+        /// * `filter_bits` - the number of hash bits per key; the
+        ///   false-positive rate is 2<sup>−`filter_bits`</sup>.
         ///
         /// [`lenders`]: crate::utils::lenders
         /// [offline mode]: VBuilder::offline
@@ -638,7 +626,6 @@ mod build {
         /// # use sux::utils::FromCloneableIntoIterator;
         /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_new_with_builder(
         ///     FromCloneableIntoIterator::new(0..100),
-        ///     100,
         ///     5,
         ///     VBuilder::default().offline(true),
         ///     no_logging![],
@@ -657,7 +644,6 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-            n: usize,
             filter_bits: usize,
             builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
             pl: &mut P,
@@ -670,7 +656,7 @@ mod build {
             assert!(filter_bits > 0);
             assert!(filter_bits <= W::BITS as usize);
             let filter_mask = W::MAX >> (W::BITS - filter_bits as u32);
-            let func = builder.expected_num_keys(n).try_build_filter(
+            let func = builder.try_build_filter(
                 keys,
                 filter_bits,
                 BitFieldVec::new_padded,
@@ -687,7 +673,7 @@ mod build {
         /// key slices, parallelizing hash computation and store population
         /// with rayon, using default [`VBuilder`] settings.
         ///
-        /// * `filter_bits` is the number of hash bits per key; the
+        /// * `filter_bits` - the number of hash bits per key; the
         ///   false-positive rate is 2<sup>-`filter_bits`</sup>.
         ///
         /// This is a convenience wrapper around
@@ -738,7 +724,7 @@ mod build {
         /// key slices, parallelizing hash computation and store population
         /// with rayon, using the given [`VBuilder`] configuration.
         ///
-        /// * `filter_bits` is the number of hash bits per key; the
+        /// * `filter_bits` - the number of hash bits per key; the
         ///   false-positive rate is 2<sup>-`filter_bits`</sup>.
         ///
         /// The builder controls construction parameters such as
@@ -872,7 +858,6 @@ mod tests {
         for n in [0_usize, 10, 1000, 100_000, 1_000_000] {
             let filter = <VFilter<VFunc<usize, Box<[u8]>, S, E>>>::try_new_with_builder(
                 FromCloneableIntoIterator::from(0..n),
-                n,
                 VBuilder::default().log2_buckets(4).offline(false),
                 no_logging![],
             )?;

@@ -616,17 +616,15 @@ mod build {
         /// and stores `H::BITS`-bit hashes for verification, giving a
         /// false-positive rate of 2<sup>-`H::BITS`</sup>.
         ///
-        /// * `keys` must be provided as a [`FallibleRewindableLender`].
-        ///   The [`lenders`] module provides easy ways to build
-        ///   such lenders.
-        /// * `n` is the expected number of keys; a significantly wrong
-        ///   value may degrade performance or cause extra retries.
-        ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are available as a slice, [`try_par_new`] parallelizes
         /// the hash computation for faster construction.
+        ///
+        /// * `keys` - a [`FallibleRewindableLender`].
+        ///   The [`lenders`] module provides easy ways to build
+        ///   such lenders.
         ///
         /// # Examples
         ///
@@ -640,7 +638,6 @@ mod build {
         /// type SFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, Box<[u16]>>;
         /// let func: SFunc = SFunc::try_new(
         ///     FromCloneableIntoIterator::new(0..100_usize),
-        ///     100,
         ///     no_logging![],
         /// )?;
         ///
@@ -660,10 +657,9 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-            n: usize,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
-            Self::try_new_with_builder(keys, n, VBuilder::default(), pl)
+            Self::try_new_with_builder(keys, VBuilder::default(), pl)
         }
 
         /// Builds a [`SignedFunc`] wrapping a [`VFunc`] from keys using the
@@ -673,16 +669,15 @@ mod build {
         /// and stores `H::BITS`-bit hashes for verification, giving a
         /// false-positive rate of 2<sup>-`H::BITS`</sup>.
         ///
-        /// * `keys` must be provided as a [`FallibleRewindableLender`].
-        ///   The [`lenders`] module provides easy ways to build
-        ///   such lenders.
-        /// * `n` is the expected number of keys.
-        ///
         /// The builder controls construction parameters such as [offline
         /// mode], [thread count], [sharding overhead], and [PRNG seed].
         ///
         /// See also [`try_par_new_with_builder`] for parallel hash
         /// computation from slices.
+        ///
+        /// * `keys` - a [`FallibleRewindableLender`].
+        ///   The [`lenders`] module provides easy ways to build
+        ///   such lenders.
         ///
         /// # Examples
         ///
@@ -696,7 +691,6 @@ mod build {
         /// type SFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, Box<[u16]>>;
         /// let func: SFunc = SFunc::try_new_with_builder(
         ///     FromCloneableIntoIterator::new(0..100_usize),
-        ///     100,
         ///     VBuilder::default().offline(true),
         ///     no_logging![],
         /// )?;
@@ -720,11 +714,10 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-            n: usize,
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
-            let (func, mut store, _) = builder.expected_num_keys(n).try_build_func_and_store(
+            let (func, mut store, _) = builder.try_build_func_and_store(
                 keys,
                 FromCloneableIntoIterator::from(0..),
                 BitFieldVec::new_padded,
@@ -886,19 +879,17 @@ mod build {
         /// and stores `hash_width`-bit hashes for verification, giving a
         /// false-positive rate of 2<sup>−`hash_width`</sup>.
         ///
-        /// * `keys` must be provided as a [`FallibleRewindableLender`].
-        ///   The [`lenders`] module provides easy ways to build
-        ///   such lenders.
-        /// * `n` is the expected number of keys; a significantly wrong
-        ///   value may degrade performance or cause extra retries.
-        /// * `hash_width` is the number of hash bits per key (at most
-        ///   `H::BITS`).
-        ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are available as a slice, [`try_par_new`] parallelizes
         /// the hash computation for faster construction.
+        ///
+        /// * `keys` - a [`FallibleRewindableLender`].
+        ///   The [`lenders`] module provides easy ways to build
+        ///   such lenders.
+        /// * `hash_width` - the number of hash bits per key (at most
+        ///   `H::BITS`).
         ///
         /// # Examples
         ///
@@ -912,7 +903,6 @@ mod build {
         /// type BSFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, BitFieldVec<Box<[usize]>>>;
         /// let func: BSFunc = BSFunc::try_new(
         ///     FromCloneableIntoIterator::new(0..100_usize),
-        ///     100,
         ///     8,
         ///     no_logging![],
         /// )?;
@@ -933,14 +923,13 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-            n: usize,
             hash_width: usize,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self>
         where
             u64: PrimitiveNumberAs<H>,
         {
-            Self::try_new_with_builder(keys, n, hash_width, VBuilder::default(), pl)
+            Self::try_new_with_builder(keys, hash_width, VBuilder::default(), pl)
         }
 
         /// Builds a [`SignedFunc`] wrapping a [`VFunc`] from keys using
@@ -950,18 +939,17 @@ mod build {
         /// and stores `hash_width`-bit hashes for verification, giving a
         /// false-positive rate of 2<sup>−`hash_width`</sup>.
         ///
-        /// * `keys` must be provided as a [`FallibleRewindableLender`].
-        ///   The [`lenders`] module provides easy ways to build
-        ///   such lenders.
-        /// * `n` is the expected number of keys.
-        /// * `hash_width` is the number of hash bits per key (at most
-        ///   `H::BITS`).
-        ///
         /// The builder controls construction parameters such as [offline
         /// mode], [thread count], [sharding overhead], and [PRNG seed].
         ///
         /// See also [`try_par_new_with_builder`] for parallel hash
         /// computation from slices.
+        ///
+        /// * `keys` - a [`FallibleRewindableLender`].
+        ///   The [`lenders`] module provides easy ways to build
+        ///   such lenders.
+        /// * `hash_width` - the number of hash bits per key (at most
+        ///   `H::BITS`).
         ///
         /// # Examples
         ///
@@ -975,7 +963,6 @@ mod build {
         /// type BSFunc = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, BitFieldVec<Box<[usize]>>>;
         /// let func: BSFunc = BSFunc::try_new_with_builder(
         ///     FromCloneableIntoIterator::new(0..100_usize),
-        ///     100,
         ///     8,
         ///     VBuilder::default().offline(true),
         ///     no_logging![],
@@ -1000,7 +987,6 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
-            n: usize,
             hash_width: usize,
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S, E>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -1011,7 +997,7 @@ mod build {
             assert!(hash_width > 0);
             assert!(hash_width <= H::BITS as usize);
 
-            let (func, mut store, _) = builder.expected_num_keys(n).try_build_func_and_store(
+            let (func, mut store, _) = builder.try_build_func_and_store(
                 keys,
                 FromCloneableIntoIterator::from(0..),
                 BitFieldVec::<Box<[usize]>>::new_padded,

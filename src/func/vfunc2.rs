@@ -46,15 +46,15 @@ use value_traits::slices::SliceByValue;
 ///
 /// # Generics
 ///
-/// * `K`: The type of the keys.
-/// * `W`: The word used to store the data, which is also the output type. It
+/// * `K` - the type of the keys.
+/// * `W` - the word used to store the data, which is also the output type. It
 ///   can be any unsigned type. Defaults to `usize`.
-/// * `D`: The backend storing the function data. Defaults to
+/// * `D` - the backend storing the function data. Defaults to
 ///   `BitFieldVec<Box<[W]>>`.
-/// * `S`: The signature type. The default is `[u64; 2]`.
-/// * `E`: The sharding and edge logic type for the short (frequent-value)
+/// * `S` - the signature type. The default is `[u64; 2]`.
+/// * `E` - the sharding and edge logic type for the short (frequent-value)
 ///   function. The default is [`FuseLge3Shards`].
-/// * `F`: The sharding and edge logic type for the long (escaped-value)
+/// * `F` - the sharding and edge logic type for the long (escaped-value)
 ///   function. The default is `E`.
 ///
 /// # References
@@ -236,9 +236,9 @@ mod build {
     impl<K: Word + PrimitiveNumberAs<usize>, V: Copy + Eq> HybridMap<K, V> {
         /// Creates a new hybrid map.
         ///
-        /// * `max_key` — optional upper bound on keys. When provided,
+        /// * `max_key` - optional upper bound on keys. When provided,
         ///   the array is capped at `max_key + 1`.
-        /// * `default` — value returned for absent keys.
+        /// * `default` - value returned for absent keys.
         pub(crate) fn new(max_key: Option<K>, default: V) -> Self {
             let mut array_len = 1 << 10;
             if let Some(mk) = max_key {
@@ -362,18 +362,16 @@ mod build {
         SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
         SigVal<F::LocalSig, W>: BitXor + BitXorAssign,
     {
-        /// Builds a [`VFunc2`] from keys and values using default
-        /// [`VBuilder`] settings.
+        /// Builds a [`VFunc2`] from keys and values using default [`VBuilder`]
+        /// settings.
         ///
-        /// * `keys` and `values` must be provided as
+        /// This is a convenience wrapper around [`try_new_with_builder`] with
+        /// `VBuilder::default()`.
+        ///
+        /// * `keys` and `values` -
         ///   [`FallibleRewindableLender`]s, aligned (one value per key,
         ///   same order). The [`lenders`] module provides easy ways to
         ///   build such lenders.
-        /// * `n` is the expected number of keys; a significantly wrong
-        ///   value may degrade performance or cause extra retries.
-        ///
-        /// This is a convenience wrapper around
-        /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
         /// [`try_new_with_builder`]: Self::try_new_with_builder
         ///
@@ -389,7 +387,6 @@ mod build {
         /// let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> = VFunc2::try_new(
         ///     FromCloneableIntoIterator::new(0..100_usize),
         ///     FromCloneableIntoIterator::new(0..100_usize),
-        ///     100,
         ///     no_logging![],
         /// )?;
         ///
@@ -410,23 +407,21 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
-            n: usize,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> anyhow::Result<Self> {
-            Self::try_new_with_builder(keys, values, n, VBuilder::default(), pl)
+            Self::try_new_with_builder(keys, values, VBuilder::default(), pl)
         }
 
         /// Builds a [`VFunc2`] from keys and values using the given
         /// [`VBuilder`] configuration.
         ///
-        /// * `keys` and `values` must be provided as
+        /// The builder controls construction parameters such as [offline
+        /// mode], [thread count], [sharding overhead], and [PRNG seed].
+        ///
+        /// * `keys` and `values` -
         ///   [`FallibleRewindableLender`]s, aligned (one value per key,
         ///   same order). The [`lenders`] module provides easy ways to
         ///   build such lenders.
-        /// * `n` is the expected number of keys.
-        ///
-        /// The builder controls construction parameters such as [offline
-        /// mode], [thread count], [sharding overhead], and [PRNG seed].
         ///
         /// [offline mode]: VBuilder::offline
         /// [thread count]: VBuilder::max_num_threads
@@ -445,7 +440,6 @@ mod build {
         /// let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> = VFunc2::try_new_with_builder(
         ///     FromCloneableIntoIterator::new(0..100_usize),
         ///     FromCloneableIntoIterator::new(0..100_usize),
-        ///     100,
         ///     VBuilder::default().offline(true),
         ///     no_logging![],
         /// )?;
@@ -467,11 +461,10 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
-            n: usize,
             builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> anyhow::Result<Self> {
-            let mut builder = builder.expected_num_keys(n);
+            let mut builder = builder;
             builder
                 .try_populate_and_build(
                     keys,
@@ -580,13 +573,13 @@ mod build {
         ///
         /// # Arguments
         ///
-        /// * `seed` — the seed from the store's population step.
-        /// * `shard_edge` — the shard edge from the same population step.
-        /// * `store` — the populated shard store.
-        /// * `get_val` — extracts the value from the store's packed entry
+        /// * `seed` - the seed from the store's population step.
+        /// * `shard_edge` - the shard edge from the same population step.
+        /// * `store` - the populated shard store.
+        /// * `get_val` - extracts the value from the store's packed entry
         ///   (e.g., `|v| v >> log2_bs` for LCP lengths).
-        /// * `builder` — the builder configuration for the internal VFuncs.
-        /// * `pl` — a progress logger.
+        /// * `builder` - the builder configuration for the internal VFuncs.
+        /// * `pl` - a progress logger.
         pub fn try_build_from_store<V: BinSafe + Default + Send + Sync + Copy>(
             seed: u64,
             shard_edge: E,

@@ -44,7 +44,6 @@ fn test_streaming_construction() {
     let func = CompVFunc::<usize>::try_new(
         FromCloneableIntoIterator::from(0..n),
         FromSlice::new(&values),
-        n,
         no_logging![],
     )
     .expect("build");
@@ -327,13 +326,7 @@ fn test_u64_forced_escape() {
         0x0123_4567_89AB_CDEF,
     ];
     let values: Vec<u64> = (0..n)
-        .map(|i| {
-            if i % 12 < 9 {
-                0
-            } else {
-                rare[i % rare.len()]
-            }
-        })
+        .map(|i| if i % 12 < 9 { 0 } else { rare[i % rare.len()] })
         .collect();
     let keys: Vec<u64> = (0..n as u64).collect();
     let func = CompVFunc::<u64, u64>::try_par_new_with_builder(

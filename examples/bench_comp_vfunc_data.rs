@@ -161,7 +161,6 @@ fn main() -> Result<()> {
     let flat = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
         FromSlice::new(&keys),
         FromSlice::new(&values_usize),
-        n,
         Default::default(),
         no_logging![],
     )

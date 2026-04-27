@@ -26,7 +26,6 @@ fn main() -> Result<()> {
 
     let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_new(
         FromCloneableIntoIterator::from(0..n),
-        n,
         &mut pl,
     )?;
 
@@ -46,7 +45,6 @@ fn main() -> Result<()> {
     // ── Compact filter (BitFieldVec, 5 hash bits → 2⁻⁵ FP rate) ───
     let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_new(
         FromCloneableIntoIterator::from(0..n),
-        n,
         5, // filter_bits: fewer bits → less space, more false positives
         &mut pl,
     )?;

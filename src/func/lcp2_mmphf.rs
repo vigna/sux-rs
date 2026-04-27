@@ -361,6 +361,8 @@ mod build {
             let bucket_size = 1usize << log2_bs;
             let bucket_mask = bucket_size - 1;
             let num_buckets = n.div_ceil(bucket_size);
+            let saved_max_num_threads = builder.max_num_threads;
+            let saved_eps = builder.eps;
 
             pl.info(format_args!(
                 "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
@@ -605,6 +607,7 @@ mod build {
                             };
 
                             // -- lcp2bucket --
+                            // Sequential: num_buckets is small and we avoid materializing the key set
                             pl.info(format_args!(
                                 "Building LCP prefix → bucket map ({num_buckets} buckets)..."
                             ));
@@ -621,8 +624,10 @@ mod build {
                                     )
                                 })),
                                 FromCloneableIntoIterator::new(0..num_buckets),
-                                num_buckets,
-                                VBuilder::default(),
+                                VBuilder::default()
+                                    .expected_num_keys(num_buckets)
+                                    .max_num_threads(saved_max_num_threads)
+                                    .eps(saved_eps),
                                 pl,
                             )?;
 
@@ -766,6 +771,8 @@ mod build {
             let bucket_size = 1usize << log2_bs;
             let bucket_mask = bucket_size - 1;
             let num_buckets = n.div_ceil(bucket_size);
+            let saved_max_num_threads = builder.max_num_threads;
+            let saved_eps = builder.eps;
 
             pl.info(format_args!(
                 "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
@@ -953,6 +960,7 @@ mod build {
                     };
 
                     // -- lcp2bucket --
+                    // Sequential: num_buckets is small and we avoid materializing the key set
                     pl.info(format_args!(
                         "Building LCP prefix → bucket map ({num_buckets} buckets)..."
                     ));
@@ -969,8 +977,10 @@ mod build {
                         )
                     })),
                     FromCloneableIntoIterator::new(0..num_buckets),
-                    num_buckets,
-                    VBuilder::default(),
+                    VBuilder::default()
+                        .expected_num_keys(num_buckets)
+                        .max_num_threads(saved_max_num_threads)
+                        .eps(saved_eps),
                     pl,
                 )?;
 
@@ -1161,6 +1171,8 @@ mod build {
             let bucket_size = 1usize << log2_bs;
             let bucket_mask = bucket_size - 1;
             let num_buckets = n.div_ceil(bucket_size);
+            let saved_max_num_threads = builder.max_num_threads;
+            let saved_eps = builder.eps;
 
             pl.info(format_args!(
                 "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
@@ -1418,6 +1430,7 @@ mod build {
                                 })
                                 .collect();
 
+                            // Sequential: num_buckets is small and we avoid materializing the key set
                             let lcp2bucket = <VFunc<
                             BitPrefix,
                             BitFieldVec<Box<[usize]>>,
@@ -1431,8 +1444,10 @@ mod build {
                                 )
                             })),
                             FromCloneableIntoIterator::new(0..num_buckets),
-                            num_buckets,
-                            VBuilder::default(),
+                            VBuilder::default()
+                                .expected_num_keys(num_buckets)
+                                .max_num_threads(saved_max_num_threads)
+                                .eps(saved_eps),
                             pl,
                         )?;
 
@@ -1588,6 +1603,8 @@ mod build {
             let bucket_size = 1usize << log2_bs;
             let bucket_mask = bucket_size - 1;
             let num_buckets = n.div_ceil(bucket_size);
+            let saved_max_num_threads = builder.max_num_threads;
+            let saved_eps = builder.eps;
 
             pl.info(format_args!(
                 "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
@@ -1789,14 +1806,17 @@ mod build {
                         })
                         .collect();
 
+                    // Sequential: num_buckets is small and we avoid materializing the key set
                     let lcp2bucket =
                     <VFunc<BitPrefix, BitFieldVec<Box<[usize]>>, S1, E1>>::try_new_with_builder(
                         FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
                             BitPrefix::new(&extended_first_keys[b], lcp_bit_lengths[b] as usize)
                         })),
                         FromCloneableIntoIterator::new(0..num_buckets),
-                        num_buckets,
-                        VBuilder::default(),
+                        VBuilder::default()
+                            .expected_num_keys(num_buckets)
+                            .max_num_threads(saved_max_num_threads)
+                            .eps(saved_eps),
                         pl,
                     )?;
 

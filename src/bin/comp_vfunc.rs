@@ -163,7 +163,6 @@ where
             let func = <CompVFunc<str, u64, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                 keys,
                 FromSlice::new(&values),
-                n,
                 huffman,
                 vbuilder,
                 &mut pl,
@@ -198,7 +197,6 @@ where
             let func = <CompVFunc<usize, u64, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                 keys,
                 FromSlice::new(&values),
-                n,
                 huffman,
                 vbuilder,
                 &mut pl,
