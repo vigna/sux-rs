@@ -87,6 +87,7 @@ pub struct CompVFunc<K: ?Sized, W = usize, D = BitVec<Box<[usize]>>, S = [u64; 2
     pub(crate) seed: u64,
     pub(crate) num_keys: usize,
     pub(crate) shard_size: usize,
+    pub(crate) codeword_mask: usize,
     pub(crate) data: D,
     pub(crate) decoder: HuffmanDecoder<W>,
     pub(crate) _marker: PhantomData<(*const K, *const W, S)>,
@@ -132,14 +133,12 @@ impl<
         let v2 = shard_offset + local_edge[2];
         // The codeword is stored at the high end of the per-key layout
         // (offsets [esym_len..esym_len + w)), so we read at v + esym_len.
-        let l = usize::BITS - self.decoder.max_codeword_length();
         // SAFETY: the bit vector is padded.
         let value = unsafe {
             (self.data.get_unaligned_unchecked(v0 + esym_len)
                 ^ self.data.get_unaligned_unchecked(v1 + esym_len)
                 ^ self.data.get_unaligned_unchecked(v2 + esym_len))
-                << l
-                >> l
+                & self.codeword_mask
         };
         if let Some(decoded) = self.decoder.decode(value as u64) {
             return decoded;
@@ -221,6 +220,7 @@ impl<K: ?Sized, W: PrimitiveInteger, S, E> TryIntoUnaligned
             seed: self.seed,
             num_keys: self.num_keys,
             shard_size: self.shard_size,
+            codeword_mask: self.codeword_mask,
             data: self.data.try_into_unaligned()?,
             decoder: self.decoder,
             _marker: PhantomData,
@@ -237,6 +237,7 @@ impl<K: ?Sized, W, S, E> From<CompVFunc<K, W, BitVecU<Box<[usize]>>, S, E>>
             seed: u.seed,
             num_keys: u.num_keys,
             shard_size: u.shard_size,
+            codeword_mask: u.codeword_mask,
             data: u.data.into(),
             decoder: u.decoder,
             _marker: PhantomData,
@@ -720,13 +721,21 @@ where
     K: ?Sized,
     W: PrimitiveInteger,
 {
+    let decoder = coder.into_decoder();
+    let w = decoder.max_codeword_length();
+    let codeword_mask = if w == 0 {
+        0
+    } else {
+        usize::MAX >> (usize::BITS - w)
+    };
     CompVFunc {
         shard_edge,
         seed: seed_used,
         num_keys,
         shard_size,
+        codeword_mask,
         data,
-        decoder: coder.into_decoder(),
+        decoder,
         _marker: PhantomData,
     }
 }
@@ -743,13 +752,21 @@ where
 {
     let mut shard_edge = E::default();
     shard_edge.set_up_shards(0, eps);
+    let decoder = coder.into_decoder();
+    let w = decoder.max_codeword_length();
+    let codeword_mask = if w == 0 {
+        0
+    } else {
+        usize::MAX >> (usize::BITS - w)
+    };
     CompVFunc {
         shard_edge,
         seed: 0,
         num_keys: 0,
         shard_size: 0,
+        codeword_mask,
         data: BitVec::<Box<[usize]>>::new_padded(0),
-        decoder: coder.into_decoder(),
+        decoder,
         _marker: PhantomData,
     }
 }
