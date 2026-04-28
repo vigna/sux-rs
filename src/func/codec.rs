@@ -179,7 +179,7 @@ impl<W: PrimitiveInteger> Decoder<W> for ZeroDecoder {
 /// [`entropy_threshold`](Self::entropy_threshold) using the techniques from
 /// “[Fast scalable construction of (compressed static | minimal perfect hash)
 /// functions]”. Symbols beyond the cutoff are *escaped*: they share a single
-/// dedicated escape codeword followed by a literal `escaped_symbol_length`-bit
+/// dedicated escape codeword followed by a literal [`escaped_symbols_len`]-bit
 /// field. The decoder uses [canonical codes].
 ///
 /// # References
@@ -199,6 +199,7 @@ impl<W: PrimitiveInteger> Decoder<W> for ZeroDecoder {
 /// [In-place calculation of minimum-redundancy codes]: https://dl.acm.org/doi/10.5555/645930.672864
 /// [Generating a canonical prefix encoding]: https://doi.org/10.1145/363958.363991
 /// [canonical codes]: https://doi.org/10.1145/363958.363991
+/// [`escaped_symbols_len`]: Decoder::escaped_symbols_len
 #[derive(Debug, Clone, Copy)]
 pub struct Huffman {
     /// Hard cap on the number of distinct codeword lengths kept in
@@ -338,7 +339,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
                 symbol: Box::new([]),
                 num_real_symbols: 0,
                 max_codeword_len: 0,
-                escaped_symbol_length: 0,
+                escaped_symbols_len: 0,
                 branchless: false,
             };
         }
@@ -417,8 +418,10 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
             size as u32
         };
 
-        // Default heuristic for branchy vs branchless: `> 3` distinct length
-        // blocks ⇒ branchless, otherwise branchy.
+        // Default heuristic for branchy vs branchless: `> 3` distinct
+        // codeword lengths ⇒ branchless, otherwise branchy. We subtract
+        // the sentinel block (present only when has_escape) so the
+        // threshold counts real codeword lengths only.
         //
         // The threshold is empirical: with one or two length classes the
         // branchy decoder is the obvious winner (perfect branch prediction);
@@ -426,7 +429,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
         // losing time to mispredictions on any non-trivial frequency skew.
         // Callers that know the codeword distribution shape can override the
         // choice with `HuffmanDecoder::branchless`.
-        let branchless = decoding_table_length > 3;
+        let branchless = decoding_table_length - has_escape as usize > 3;
 
         HuffmanDecoder {
             last_codeword_plus_one: last_codeword_plus_one.into_boxed_slice(),
@@ -435,7 +438,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
             symbol: self.symbol,
             num_real_symbols,
             max_codeword_len: last_l,
-            escaped_symbol_length: self.escaped_symbols_len,
+            escaped_symbols_len: self.escaped_symbols_len,
             branchless,
         }
     }
@@ -500,7 +503,7 @@ pub struct HuffmanDecoder<W> {
     max_codeword_len: u32,
     /// The length in bits of the literal field for escaped symbols, or
     /// zero if the code has no escape.
-    escaped_symbol_length: u32,
+    escaped_symbols_len: u32,
     /// Whether [`Decoder::decode`] uses the branchless strategy.
     branchless: bool,
 }
@@ -541,7 +544,7 @@ impl<W: PrimitiveInteger> Decoder<W> for HuffmanDecoder<W> {
 
     #[inline(always)]
     fn escaped_symbols_len(&self) -> u32 {
-        self.escaped_symbol_length
+        self.escaped_symbols_len
     }
 }
 

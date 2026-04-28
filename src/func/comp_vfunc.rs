@@ -55,7 +55,7 @@ use std::marker::PhantomData;
 /// Giuseppe Ottaviano, and Sebastiano Vigna in “[Fast scalable construction of
 /// (\[compressed\] static | minimal perfect hash)
 /// functions](https://doi.org/10.1016/j.ic.2020.104517)”, Information and
-/// Computation, 273:104517, 2020, but is based on [`Vfunc`] rather than
+/// Computation, 273:104517, 2020, but is based on [`VFunc`] rather than
 /// on the static functions described in the paper.
 ///
 /// # Generics
@@ -358,13 +358,11 @@ where
 ///
 /// Returns an error if the resulting code has a maximum codeword length exceeding
 /// the unaligned-read limit of `W::BITS - 7`.
-///
-/// [`build_inner_seq`]: Self::build_inner_seq
 fn build_coder_from_frequencies<W: Word + Hash>(
     huffman: Huffman,
-    frequencies: HashMap<W, usize>,
+    frequencies: &HashMap<W, usize>,
 ) -> Result<HuffmanCoder<W>> {
-    let coder = huffman.build_coder(&frequencies);
+    let coder = huffman.build_coder(frequencies);
     // The codeword is read via get_unaligned_unchecked, which reads a
     // full W and shifts right by up to 7 bits.
     let w = coder.max_codeword_len();
@@ -378,8 +376,6 @@ fn build_coder_from_frequencies<W: Word + Hash>(
 }
 
 /// Slice fast-path for the frequency map used by [`build_inner_par`].
-///
-/// [`build_inner_par`]: Self::build_inner_par
 fn frequencies_from_slice<W: Word + Hash>(values: &[W]) -> HashMap<W, usize> {
     let mut frequencies: HashMap<W, usize> = HashMap::new();
     for &v in values {
@@ -416,9 +412,9 @@ where
     SigVal<S, W>: RadixKey,
     P: dsi_progress_logger::ProgressLog + Clone + Send + Sync,
 {
-    let escape_length = coder.max_codeword_len();
+    let max_codeword_len = coder.max_codeword_len();
     let escaped_symbol_length = coder.escaped_symbols_len();
-    let w = escape_length as usize + escaped_symbol_length as usize;
+    let w = max_codeword_len + escaped_symbol_length;
     let escape_codeword = coder.escape_codeword();
 
     let encode_val = move |v: W| -> (W, usize, u32) {
@@ -430,7 +426,11 @@ where
                 } else {
                     v.reverse_bits() >> (W::BITS - escaped_symbol_length)
                 };
-                (lit, escape_codeword, escape_length + escaped_symbol_length)
+                (
+                    lit,
+                    escape_codeword,
+                    w,
+                )
             }
         }
     };
@@ -502,7 +502,7 @@ where
             "Average codeword length (entropy): {:.4} bits/key (total edges: {}, shards: {}, max shard edges: {})",
             entropy, total_edges, num_shards, max_shard_edges
         ));
-        let raw_stride = num_vertices_per_shard + w;
+        let raw_stride = num_vertices_per_shard + w as usize;
         // `par_solve` chunks the data via `BitVec::try_chunks_mut`,
         // which requires `chunk_size` to be a multiple of `W::BITS`.
         let stride = raw_stride.next_multiple_of(W::BITS as usize);
@@ -576,9 +576,9 @@ where
                     let (lit, cw, len) = encode_val(sv.val);
                     let local_sig = shard_edge.local_sig(sv.sig);
                     let base = shard_edge.local_edge(local_sig);
-                    let cw_bits = len.min(escape_length) as usize;
+                    let cw_bits = len.min(max_codeword_len) as usize;
                     for l in 0..cw_bits {
-                        let off = w - 1 - l;
+                        let off = (w as usize - 1 - l);
                         edges.push([
                             (base[0] + off) as u32,
                             (base[1] + off) as u32,
@@ -586,7 +586,7 @@ where
                         ]);
                         rhs.push(((cw >> l) & 1) != 0);
                     }
-                    let lit_bits = (len as usize).saturating_sub(escape_length as usize);
+                    let lit_bits = (len as usize).saturating_sub(max_codeword_len as usize);
                     for l in 0..lit_bits {
                         let off = escaped_symbol_length as usize - 1 - l;
                         edges.push([
@@ -607,8 +607,8 @@ where
                     shard_edge,
                     &encode_val,
                     raw_stride,
-                    w,
-                    escape_length as usize,
+                    w as usize,
+                    max_codeword_len as usize,
                     escaped_symbol_length as usize,
                     &mut shard_data,
                 )?;
@@ -618,8 +618,8 @@ where
                     shard_edge,
                     &encode_val,
                     raw_stride,
-                    w,
-                    escape_length as usize,
+                    w as usize,
+                    max_codeword_len as usize,
                     escaped_symbol_length as usize,
                     &mut shard_data,
                 )?;
@@ -746,13 +746,7 @@ where
         *frequencies.entry(v).or_insert(0) += 1;
     }
     let n: usize = frequencies.values().sum();
-    let coder = huffman.build_coder(&frequencies);
-    let w = coder.max_codeword_len();
-    let max = W::BITS - 7;
-    assert!(
-        w <= max,
-        "max codeword length {w} exceeds the unaligned-read limit of {max}"
-    );
+    let coder = build_coder_from_frequencies(huffman, &frequencies)?;
     let total_edges: usize = frequencies
         .iter()
         .map(|(&v, &count)| coder.encoded_len(v) as usize * count)
@@ -793,7 +787,7 @@ where
     SigVal<S, W>: RadixKey,
 {
     let n = keys.len();
-    let coder = build_coder_from_frequencies(huffman, frequencies_from_slice(values))?;
+    let coder = build_coder_from_frequencies(huffman, &frequencies_from_slice(values))?;
 
     if n == 0 {
         return Ok(empty_comp_vfunc::<K, W, S, E>(coder, builder.eps));
