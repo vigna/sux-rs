@@ -432,7 +432,7 @@ mod mwhc {
 
         fn set_up_shards(&mut self, n: usize, eps: f64) {
             self.shard_bits_shift =
-                63 - sharding_high_bits(n, eps).min(dup_edge_high_bits(3, n, 1.23, 0.001));
+                63 - sharding_high_bits(n, eps).min(dup_edge_high_bits(3, n, 1.23, eps));
         }
 
         fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> (f64, bool) {
@@ -838,7 +838,7 @@ mod fuse {
                     (n / Self::HALF_MAX_LIN_SHARD_SIZE).max(1).ilog2()
                 } else {
                     sharding_high_bits(n, eps)
-                        .min(Self::dup_edge_high_bits(3, n, 1.105, 0.001))
+                        .min(Self::dup_edge_high_bits(3, n, 1.105, eps))
                         .min((n / Self::MIN_FUSE_SHARD).max(1).ilog2()) // Shards can't be smaller than MIN_FUSE_SHARD
                 };
         }
@@ -1517,7 +1517,7 @@ mod fuse {
                     0
                 } else {
                     sharding_high_bits(n, eps)
-                        .min(Self::dup_edge_high_bits(n, 1.125, 0.001))
+                        .min(Self::dup_edge_high_bits(n, 1.125, eps))
                         .min((n / Self::MIN_SHARD).max(1).ilog2())
                 };
         }

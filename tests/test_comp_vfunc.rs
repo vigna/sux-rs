@@ -30,6 +30,8 @@ fn test_empty() {
     let func = CompVFunc::<u64>::try_par_new(&keys, &values, no_logging![]).expect("build");
     assert!(func.is_empty());
     assert_eq!(func.len(), 0);
+    // get on an empty function must not panic
+    let _ = func.get(42u64);
 }
 
 #[test]

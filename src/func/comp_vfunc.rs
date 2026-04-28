@@ -43,8 +43,9 @@ use std::marker::PhantomData;
 /// storage of the decoder, which can be significant when the number of
 /// keys is very small.
 ///
-/// Instances of this structure are immutable; they are built using [`try_new`]
-/// or one of its variants, and can be serialized using [ε-serde] or [`serde`].
+/// Instances of this structure are immutable, except for the [`branchless`]
+/// setting of the internal decoder they are built using [`try_new`] or one of
+/// its variants, and can be serialized using [ε-serde] or [`serde`].
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
@@ -65,10 +66,12 @@ use std::marker::PhantomData;
 /// * `D` - the data backend: the output value type is [`D::Word`]; defaults to
 ///   [`BitVec<Box<[usize]>>`](crate::bits::BitVec).
 ///
-/// * `S` - the signature type; defaults to `[u64; 2]`.
+/// * `S` - the signature type; defaults to `[u64; 2]` (see [`VFunc` for
+///   details).
 ///
 /// * `E` - the [`ShardEdge`] used for sharding and local hashing;
-///   defaults to [`Fuse3Shards`].
+///   defaults to [`Fuse3Shards`] (see [`VFunc`] for details; note that
+///   variants using Lazy Gaussian Elimination (LGE) are not supported).
 ///
 /// [`VFunc`]: crate::func::VFunc
 /// [`VBuilder`]: crate::func::VBuilder
@@ -78,6 +81,7 @@ use std::marker::PhantomData;
 /// [ε-serde]: https://docs.rs/epserde/latest/epserde/
 /// [`serde`]: https://crates.io/crates/serde
 /// [`D::Word`]: Backend::Word
+/// [`branchless`]: Self::branchless
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(
@@ -126,9 +130,6 @@ impl<
     /// arbitrary value if no key has that signature.
     #[inline(always)]
     pub fn get_by_sig(&self, sig: S) -> D::Word {
-        if self.num_keys == 0 {
-            return D::Word::ZERO;
-        }
         // Here we compute manually the edge vertices. We cannot use
         // ShardEdge::edge because its edge computation derives the number of
         // vertices from the segment size, whereas here we have to includes a
@@ -176,7 +177,7 @@ impl<K: ?Sized, D: Backend<Word: Word>, S, E> CompVFunc<K, D, S, E> {
         self.num_keys == 0
     }
 
-    /// Provide access to the underlying [`HuffmanDecoder`].
+    /// Provides access to the underlying [`HuffmanDecoder`].
     ///
     /// This is useful for inspecting the code properties (e.g., max codeword
     /// length, escaped symbol length).
@@ -189,7 +190,7 @@ impl<K: ?Sized, D: Backend<Word: Word>, S, E> CompVFunc<K, D, S, E> {
         &self.decoder
     }
 
-    /// Set at runtime a branchy or branchless decoding strategy.
+    /// Sets at runtime a branchy or branchless decoding strategy.
     ///
     /// Delegates to the underlying decoder [`branchless`] method.
     ///
@@ -324,6 +325,9 @@ where
                 values.len()
             );
         }
+        if keys.is_empty() {
+            return Ok(empty_comp_vfunc::<K, W, S, E>());
+        }
         build_inner_par::<K, W, B, _, S, E>(huffman, builder, keys, values, pl)
     }
 }
@@ -426,11 +430,7 @@ where
                 } else {
                     v.reverse_bits() >> (W::BITS - escaped_symbol_length)
                 };
-                (
-                    lit,
-                    escape_codeword,
-                    w,
-                )
+                (lit, escape_codeword, w)
             }
         }
     };
@@ -442,12 +442,9 @@ where
           num_keys: usize,
           pl: &mut P,
           _state: &mut ()| {
-        // ── a) Compute per-shard sums of codeword lengths and
-        //      key counts. The shard-edge has to be resized against
-        //      the actual edge count and key count, since the
-        //      multi-edge expansion is what determines the band
-        //      density (edges) while c is set from the key count
-        //      (the correlation-aware variant from corr_peel_sweep).
+        // Compute per-shard sums of codeword lengths and key counts. The
+        // shard-edge has to be resized against the actual edge count and key
+        // count.
         let mut total_edges: usize = 0;
         let mut max_shard_edges: usize = 0;
         let mut max_shard_keys: usize = 0;
@@ -462,9 +459,8 @@ where
             max_shard_keys = max_shard_keys.max(keys_in_shard);
         }
 
-        // ── b) Call the correlated-graph setup on the shard edge.
-        // `c` is keyed at `max_shard_keys`, `log2_seg_size` at
-        // `max_shard_edges`.
+        // Call the correlated-graph setup on the shard edge.`c is keyed at
+        // max_shard_keys, log2_seg_size at max_shard_edges.
         let (c, lge) =
             vb.shard_edge
                 .set_up_corr_graphs(total_edges, max_shard_keys, max_shard_edges);
@@ -473,7 +469,7 @@ where
         vb.c = c;
         vb.lge = false;
 
-        // ── c) Compute the per-shard stride and allocate. ──
+        // Compute the per-shard stride and allocate
         let num_vertices_per_shard = vb.shard_edge.num_vertices();
         let num_shards = vb.shard_edge.num_shards();
         // `par_solve` derives `num_threads.ilog2()` for its internal
@@ -578,7 +574,7 @@ where
                     let base = shard_edge.local_edge(local_sig);
                     let cw_bits = len.min(max_codeword_len) as usize;
                     for l in 0..cw_bits {
-                        let off = (w as usize - 1 - l);
+                        let off = w as usize - 1 - l;
                         edges.push([
                             (base[0] + off) as u32,
                             (base[1] + off) as u32,
@@ -685,17 +681,18 @@ where
 }
 
 /// Empty-function short-circuit shared by both entry points.
-fn empty_comp_vfunc<K, W, S, E>(
-    coder: HuffmanCoder<W>,
-    eps: f64,
-) -> CompVFunc<K, BitVec<Box<[W]>>, S, E>
+fn empty_comp_vfunc<K, W, S, E>() -> CompVFunc<K, BitVec<Box<[W]>>, S, E>
 where
     K: ?Sized,
-    W: Word,
+    W: Word + Hash,
     E: ShardEdge<S, 3>,
 {
-    let mut shard_edge = E::default();
-    shard_edge.set_up_shards(0, eps);
+    // Build a single-symbol Huffman coder so the decoder has a valid
+    // block and never falls through.  The data is all zeros, so every
+    // XOR read yields 0 and decode(0) returns Some(W::ZERO).
+    let mut freqs = HashMap::new();
+    freqs.insert(W::ZERO, 1);
+    let coder = Huffman::new().build_coder(&freqs);
     let decoder = coder.into_decoder();
     let w = decoder.max_codeword_len();
     let codeword_mask = if w == 0 {
@@ -703,13 +700,17 @@ where
     } else {
         W::MAX >> (W::BITS - w)
     };
+    let mut shard_edge = E::default();
+    shard_edge.set_up_shards(0, 1.0);
+    shard_edge.set_up_graphs(0, 1);
+    let shard_size = shard_edge.num_vertices();
     CompVFunc {
         shard_edge,
         seed: 0,
         num_keys: 0,
-        shard_size: 0,
+        shard_size,
         codeword_mask,
-        data: BitVec::<Box<[W]>>::new_padded(0),
+        data: BitVec::<Box<[W]>>::new_padded(shard_size),
         decoder,
         _marker: PhantomData,
     }
@@ -754,7 +755,7 @@ where
     values = values.rewind()?;
 
     if n == 0 {
-        return Ok(empty_comp_vfunc::<K, W, S, E>(coder, builder.eps));
+        return Ok(empty_comp_vfunc::<K, W, S, E>());
     }
 
     let mut builder = builder.shard_size_hint(total_edges);
@@ -788,11 +789,6 @@ where
 {
     let n = keys.len();
     let coder = build_coder_from_frequencies(huffman, &frequencies_from_slice(values))?;
-
-    if n == 0 {
-        return Ok(empty_comp_vfunc::<K, W, S, E>(coder, builder.eps));
-    }
-
     let total_edges: usize = values.iter().map(|v| coder.encoded_len(*v) as usize).sum();
     let mut builder = builder.expected_num_keys(n).shard_size_hint(total_edges);
     let mut build_fn = make_build_fn::<W, S, E, P>(&coder);

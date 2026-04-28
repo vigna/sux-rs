@@ -526,10 +526,6 @@ impl<W> HuffmanDecoder<W> {
 impl<W: PrimitiveInteger> Decoder<W> for HuffmanDecoder<W> {
     #[inline(always)]
     fn decode(&self, value: usize) -> Option<W> {
-        // Read a single field that is constant for the life of the
-        // decoder. The branch is trivially predictable (one direction
-        // for every query of a given function) and the per-call cost
-        // is below the noise floor.
         if self.branchless {
             self.decode_branchless(value)
         } else {
