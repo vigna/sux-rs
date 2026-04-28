@@ -596,7 +596,7 @@ where
                 if this.failed.load(std::sync::atomic::Ordering::Relaxed) {
                     return Err(());
                 }
-                solve_system(raw_stride, &edges, rhs, &mut shard_data).map_err(|_| ())?;
+                peel_by_index(raw_stride, &edges, rhs, &mut shard_data).map_err(|_| ())?;
             } else if use_low_mem {
                 peel_by_data_low_mem(
                     shard,
@@ -742,11 +742,15 @@ fn build_inner_seq<
 where
     SigVal<S, W>: RadixKey,
 {
-    let mut frequencies: HashMap<W, usize> = HashMap::new();
+    let mut frequencies = <HashMap<W, usize>>::new();
     while let Some(&v) = values.next()? {
         *frequencies.entry(v).or_insert(0) += 1;
     }
     let n: usize = frequencies.values().sum();
+    if n == 0 {
+        return Ok(empty_comp_vfunc());
+    }
+
     let coder = build_coder_from_frequencies(huffman, &frequencies)?;
     let total_edges: usize = frequencies
         .iter()
@@ -754,17 +758,13 @@ where
         .sum();
     values = values.rewind()?;
 
-    if n == 0 {
-        return Ok(empty_comp_vfunc::<K, W, S, E>());
-    }
-
     let mut builder = builder.shard_size_hint(total_edges);
-    let mut build_fn = make_build_fn::<W, S, E, P>(&coder);
+    let mut build_fn = make_build_fn(&coder);
     let ((data, seed_used, shard_size), _keys) =
         builder.try_populate_and_build(keys, values, &mut build_fn, pl, ())?;
     drop(build_fn);
     let shard_edge = builder.shard_edge;
-    Ok(finish_build::<K, W, S, E>(
+    Ok(finish_build(
         shard_edge, coder, data, seed_used, n, shard_size,
     ))
 }
@@ -791,12 +791,12 @@ where
     let coder = build_coder_from_frequencies(huffman, &frequencies_from_slice(values))?;
     let total_edges: usize = values.iter().map(|v| coder.encoded_len(*v) as usize).sum();
     let mut builder = builder.expected_num_keys(n).shard_size_hint(total_edges);
-    let mut build_fn = make_build_fn::<W, S, E, P>(&coder);
+    let mut build_fn = make_build_fn(&coder);
     let (data, seed_used, shard_size) =
         builder.try_par_populate_and_build(keys, &|i: usize| values[i], &mut build_fn, pl, ())?;
     drop(build_fn);
     let shard_edge = builder.shard_edge;
-    Ok(finish_build::<K, W, S, E>(
+    Ok(finish_build(
         shard_edge, coder, data, seed_used, n, shard_size,
     ))
 }
@@ -807,36 +807,18 @@ where
 /// the reverse-peel assignment. The `XorGraph` itself is dropped
 /// when peeling returns — callers only need the peeled edge indices
 /// and their pivot sides.
-struct PeelByIndexOutput {
-    /// Upper half holds peeled edge indices in peel order (oldest at
-    /// the bottom, newest at the top). Lower half is empty once
-    /// peeling terminates.
-    double_stack: DoubleStack<u32>,
-    /// Pivot side (0, 1, or 2) for each peeled edge, in the same
-    /// order as `double_stack.iter_upper()`.
-    sides_stack: Vec<u8>,
-}
-
-impl PeelByIndexOutput {
-    #[inline]
-    fn n_peeled(&self) -> usize {
-        self.double_stack.upper_len()
-    }
-}
-
-/// Peels a 3-uniform **F**₂ system and performs reverse-peel
-/// assignment.
+/// Peels a 3-uniform fuse graph and performs reverse-peel assignment.
 ///
 /// If peeling does not succeed completely, returns an error so the
 /// caller can retry the shard with a fresh seed.
-fn solve_system<W: Word>(
+fn peel_by_index<W: Word>(
     num_variables: usize,
     edges: &[[u32; 3]],
     rhs: BitVec,
     solution: &mut BitVec<&mut [W]>,
 ) -> Result<()> {
-    let out = peel_by_index(num_variables, edges);
-    let n_peeled = out.n_peeled();
+    let (double_stack, sides_stack) = _peel_by_index(num_variables, edges);
+    let n_peeled = double_stack.upper_len();
     let n_total = edges.len();
 
     if n_peeled < n_total {
@@ -854,11 +836,7 @@ fn solve_system<W: Word>(
     // other two vertices of its edge were pivots of edges peeled
     // *later* (already set earlier in this loop). `sides_stack` is a
     // regular Vec pushed in peel order, so we reverse it explicitly.
-    for (&edge_idx, &side) in out
-        .double_stack
-        .iter_upper()
-        .zip(out.sides_stack.iter().rev())
-    {
+    for (&edge_idx, &side) in double_stack.iter_upper().zip(sides_stack.iter().rev()) {
         let [a, b, c] = edges[edge_idx as usize];
         let r = rhs[edge_idx as usize];
         let (pivot, val) = unsafe {
@@ -902,21 +880,13 @@ fn solve_system<W: Word>(
     Ok(())
 }
 
-/// Peels a 3-uniform **F**₂ hypergraph by edge index, mirroring
-/// [`VBuilder::peel_by_index`](crate::func::vbuilder). The payload
-/// stored in the [`XorGraph`] is the edge index itself (`u32`), and
-/// the original `edges` slice is kept alive by the caller so the
-/// reverse-peel assignment can reach back into it.
+/// Peels a 3-uniform hypergraph by edge index, mirroring
+/// [`VBuilder::peel_by_index`](crate::func::vbuilder), but does not assign
+/// values.
 ///
-/// The caller checks [`PeelByIndexOutput::n_peeled`] against
-/// `edges.len()` to decide whether peeling succeeded.
-///
-/// Degenerate edges (two or three repeated vertices) are handled
-/// naturally by [`XorGraph::add`]: each slot independently bumps the
-/// packed `(degree, side)` byte and XORs the edge index into
-/// `edges[v]`, matching **F**₂ semantics (`x + x = 0`). The reverse-peel
-/// pass XORs `solution[b]` twice for `[a, b, b]`, which cancels.
-fn peel_by_index(num_variables: usize, edges: &[[u32; 3]]) -> PeelByIndexOutput {
+/// The caller checks `double_stack.upper_len()` against `edges.len()` to decide
+/// whether peeling succeeded.
+fn _peel_by_index(num_variables: usize, edges: &[[u32; 3]]) -> (DoubleStack<u32>, Vec<u8>) {
     let n_edges = edges.len();
 
     // Payload per vertex is the edge index (0-based). We never read
@@ -933,15 +903,7 @@ fn peel_by_index(num_variables: usize, edges: &[[u32; 3]]) -> PeelByIndexOutput 
     let mut double_stack: DoubleStack<u32> = DoubleStack::new(num_variables);
     let mut sides_stack: Vec<u8> = Vec::with_capacity(n_edges);
 
-    if xor_graph.overflow {
-        // Some vertex has degree ≥ 64 (the 6-bit degree field
-        // overflowed). Peeling cannot succeed.
-        drop(xor_graph);
-        return PeelByIndexOutput {
-            double_stack,
-            sides_stack,
-        };
-    }
+    assert!(!xor_graph.overflow, "Degree overflow",);
 
     // Seed the visit frontier with every degree-1 vertex.
     for (v, degree) in xor_graph.degrees().enumerate() {
@@ -951,13 +913,13 @@ fn peel_by_index(num_variables: usize, edges: &[[u32; 3]]) -> PeelByIndexOutput 
     }
 
     while let Some(v) = double_stack.pop_lower() {
-        let vu = v as usize;
-        if xor_graph.degree(vu) == 0 {
+        let v = v as usize;
+        if xor_graph.degree(v) == 0 {
             continue;
         }
-        debug_assert_eq!(xor_graph.degree(vu), 1);
-        let (edge_idx, side) = xor_graph.edge_and_side(vu);
-        xor_graph.zero(vu);
+        debug_assert_eq!(xor_graph.degree(v), 1);
+        let (edge_idx, side) = xor_graph.edge_and_side(v);
+        xor_graph.zero(v);
         double_stack.push_upper(edge_idx);
         sides_stack.push(side as u8);
 
@@ -977,10 +939,7 @@ fn peel_by_index(num_variables: usize, edges: &[[u32; 3]]) -> PeelByIndexOutput 
     }
 
     drop(xor_graph);
-    PeelByIndexOutput {
-        double_stack,
-        sides_stack,
-    }
+    (double_stack, sides_stack)
 }
 
 // ── Streamed (data-payload) peelers ────────────────────────────────
