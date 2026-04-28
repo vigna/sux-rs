@@ -34,7 +34,7 @@ trait GetU {
     fn get_u(&self, key: usize) -> u64;
 }
 
-impl GetU for CompVFunc<usize, usize, BitVecU<Box<[usize]>>> {
+impl GetU for CompVFunc<usize, BitVecU<Box<[usize]>>> {
     #[inline(always)]
     fn get_u(&self, key: usize) -> u64 {
         self.get(key) as u64

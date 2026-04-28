@@ -31,7 +31,7 @@ fn try_build(n: usize, seed: u64) -> bool {
     let values: Vec<usize> = (0..n).map(|_| rng.random_range(0..2)).collect();
 
     let builder = VBuilder::<Box<[usize]>, [u64; 2], Fuse3NoShards>::default();
-    let mut pl = dsi_progress_logger::no_logging![];
+    let pl = dsi_progress_logger::no_logging![];
 
     VFunc::<u64, Box<[usize]>, _, _>::try_par_new_with_builder(
         &keys,

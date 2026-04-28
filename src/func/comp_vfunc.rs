@@ -6,12 +6,11 @@
 
 //! A compressed static function.
 //!
-//! [`CompVFunc`] maps `n` keys to values of any [`PrimitiveInteger`] type
-//! `W` (both signed and unsigned: `i8` . . `i128`, `u8` . . `u128`,
-//! `isize`, `usize`), representing each value with a [prefix-free
-//! codeword][crate::func::codec::Codec] (by default a length-limited
-//! [Huffman code][crate::func::codec::Huffman]) and storing the
-//! codewords by peeling a fuse graph, as in the case of [`VFunc`].
+//! [`CompVFunc`] maps `n` keys to values of type `D::Word`, representing each
+//! value with a [prefix-free codeword][crate::func::codec::Codec] (by
+//! default a length-limited [Huffman code][crate::func::codec::Huffman])
+//! and storing the codewords by peeling a fuse graph, as in the case of
+//! [`VFunc`].
 //!
 //! When the value distribution is skewed, this uses much less space
 //! than [`VFunc`]: roughly the empirical entropy of the value list plus
@@ -23,7 +22,6 @@
 //! length of the longest keyword) at the per-shard base positions, XOR them,
 //! and [decode].
 //!
-//! [`PrimitiveInteger`]: num_primitive::PrimitiveInteger
 //! [`VFunc`]: crate::func::VFunc
 //! [`VBuilder`]: crate::func::VBuilder
 //! [`ShardEdge`]: crate::func::shard_edge::ShardEdge
@@ -36,7 +34,9 @@ use crate::func::codec::{Codec, Coder, Decoder, Huffman, HuffmanCoder, HuffmanDe
 use crate::func::peeling::{DoubleStack, FastStack, XorGraph, remove_edge};
 use crate::func::shard_edge::{Fuse3Shards, ShardEdge};
 use crate::traits::bit_vec_ops::{BitVecOps, BitVecOpsMut};
-use crate::traits::{BitLength, BitVecValueOps, TryIntoUnaligned, UnalignedConversionError};
+use crate::traits::{
+    Backend, BitLength, BitVecValueOps, TryIntoUnaligned, UnalignedConversionError, Word,
+};
 use crate::utils::sig_store::ShardStore;
 use crate::utils::{BinSafe, FallibleRewindableLender, Sig, SigVal, ToSig};
 use anyhow::{Result, anyhow, bail};
@@ -44,7 +44,7 @@ use core::error::Error;
 use dsi_progress_logger::ProgressLog;
 use lender::FallibleLending;
 use mem_dbg::{MemDbg, MemSize};
-use num_primitive::{PrimitiveInteger, PrimitiveNumber, PrimitiveNumberAs};
+use num_primitive::PrimitiveNumber;
 use rdst::RadixKey;
 use std::borrow::Borrow;
 use std::collections::HashMap;
@@ -66,11 +66,8 @@ use std::marker::PhantomData;
 /// # Generics
 ///
 /// * `K` - the key type.
-/// * `W` - the output value type; any [`PrimitiveInteger`]
-///   (`u8` . . `u128`, `i8` . . `i128`, `usize`, `isize`). Must be
-///   convertible to and from `u64` through [`PrimitiveNumberAs`].
-///   Defaults to `usize`.
 /// * `D` - the data backend; defaults to [`BitVec<Box<[usize]>>`](crate::bits::BitVec).
+///   The output value type is [`D::Word`](crate::traits::Backend::Word).
 /// * `S` - the signature type; defaults to `[u64; 2]`.
 /// * `E` - the [`ShardEdge`] used for sharding and local hashing;
 ///   defaults to [`Fuse3Shards`].
@@ -80,42 +77,54 @@ use std::marker::PhantomData;
 /// [`serde`]: https://crates.io/crates/serde
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(
+    feature = "epserde",
+    epserde(bound(
+        deser = "D::Word: for<'a> epserde::deser::DeserInner<DeserType<'a> = D::Word>, \
+                 for<'a> <D as epserde::deser::DeserInner>::DeserType<'a>: Backend<Word = D::Word>"
+    ))
+)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct CompVFunc<K: ?Sized, W = usize, D = BitVec<Box<[usize]>>, S = [u64; 2], E = Fuse3Shards>
-{
+#[cfg_attr(
+    feature = "serde",
+    serde(bound(
+        serialize = "D: serde::Serialize, D::Word: serde::Serialize, E: serde::Serialize",
+        deserialize = "D: serde::Deserialize<'de>, D::Word: serde::Deserialize<'de>, E: serde::Deserialize<'de>"
+    ))
+)]
+pub struct CompVFunc<K: ?Sized, D: Backend = BitVec<Box<[usize]>>, S = [u64; 2], E = Fuse3Shards> {
     pub(crate) shard_edge: E,
     pub(crate) seed: u64,
     pub(crate) num_keys: usize,
     pub(crate) shard_size: usize,
-    pub(crate) codeword_mask: usize,
+    pub(crate) codeword_mask: D::Word,
     pub(crate) data: D,
-    pub(crate) decoder: HuffmanDecoder<W>,
-    pub(crate) _marker: PhantomData<(*const K, *const W, S)>,
+    pub(crate) decoder: HuffmanDecoder<D::Word>,
+    pub(crate) _marker: PhantomData<(*const K, S)>,
 }
 
 // ── Query path ──────────────────────────────────────────────────────
 
 impl<
     K: ?Sized + ToSig<S>,
-    W: PrimitiveInteger,
-    D: AsRef<[usize]> + BitLength + BitVecValueOps<usize>,
+    D: Backend<Word: Word + BinSafe> + AsRef<[D::Word]> + BitLength + BitVecValueOps<D::Word>,
     S: Sig,
     E: ShardEdge<S, 3>,
-> CompVFunc<K, W, D, S, E>
+> CompVFunc<K, D, S, E>
 {
     /// Returns the value associated with `key`, or an arbitrary value
     /// if `key` is not in the original key set.
     #[inline(always)]
-    pub fn get(&self, key: impl Borrow<K>) -> W {
+    pub fn get(&self, key: impl Borrow<K>) -> D::Word {
         self.get_by_sig(K::to_sig(key.borrow(), self.seed))
     }
 
     /// Returns the value associated with the given signature, or an
     /// arbitrary value if no key has that signature.
     #[inline(always)]
-    pub fn get_by_sig(&self, sig: S) -> W {
+    pub fn get_by_sig(&self, sig: S) -> D::Word {
         if self.num_keys == 0 {
-            return W::default();
+            return D::Word::ZERO;
         }
         // Here we compute manually the edge vertices. We cannot use
         // ShardEdge::edge because its edge computation derives the number of
@@ -140,22 +149,20 @@ impl<
                 ^ self.data.get_unaligned_unchecked(v2 + esym_len))
                 & self.codeword_mask
         };
-        if let Some(decoded) = self.decoder.decode(value as u64) {
+        if let Some(decoded) = self.decoder.decode(value.as_to::<usize>()) {
             return decoded;
         }
         // The literal sits at the low end [0 . . esym_len).
         // SAFETY: the bit vector is padded.
         unsafe {
-            W::as_from(
-                self.data.get_value_unchecked(v0, esym_len)
-                    ^ self.data.get_value_unchecked(v1, esym_len)
-                    ^ self.data.get_value_unchecked(v2, esym_len),
-            )
+            self.data.get_value_unchecked(v0, esym_len)
+                ^ self.data.get_value_unchecked(v1, esym_len)
+                ^ self.data.get_value_unchecked(v2, esym_len)
         }
     }
 }
 
-impl<K: ?Sized, W: PrimitiveInteger, D, S, E> CompVFunc<K, W, D, S, E> {
+impl<K: ?Sized, D: Backend<Word: Word>, S, E> CompVFunc<K, D, S, E> {
     /// Number of keys in the function.
     pub const fn len(&self) -> usize {
         self.num_keys
@@ -201,18 +208,17 @@ impl<K: ?Sized, W: PrimitiveInteger, D, S, E> CompVFunc<K, W, D, S, E> {
 
 // ── Aligned ↔ Unaligned conversions ────────────────────────────────
 
-impl<K: ?Sized, W: PrimitiveInteger, S, E> TryIntoUnaligned
-    for CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
-{
-    type Unaligned = CompVFunc<K, W, BitVecU<Box<[usize]>>, S, E>;
+impl<K: ?Sized, W: Word, S, E> TryIntoUnaligned for CompVFunc<K, BitVec<Box<[W]>>, S, E> {
+    type Unaligned = CompVFunc<K, BitVecU<Box<[W]>>, S, E>;
 
     fn try_into_unaligned(self) -> Result<Self::Unaligned, UnalignedConversionError> {
         let esym = Decoder::escaped_symbols_length(&self.decoder) as usize;
-        if esym > 0 && !test_unaligned_any_pos!(usize, esym) {
+        if esym > 0 && !test_unaligned_any_pos!(W, esym) {
             return Err(UnalignedConversionError(format!(
                 "escaped-symbol bit width {esym} does not satisfy the constraints \
-                 for arbitrary-position unaligned reads on usize (must be <= {})",
-                usize::BITS as usize - 7
+                 for arbitrary-position unaligned reads on {} (must be <= {})",
+                core::any::type_name::<W>(),
+                W::BITS as usize - 7
             )));
         }
         Ok(CompVFunc {
@@ -228,10 +234,10 @@ impl<K: ?Sized, W: PrimitiveInteger, S, E> TryIntoUnaligned
     }
 }
 
-impl<K: ?Sized, W, S, E> From<CompVFunc<K, W, BitVecU<Box<[usize]>>, S, E>>
-    for CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
+impl<K: ?Sized, W: Word, S, E> From<CompVFunc<K, BitVecU<Box<[W]>>, S, E>>
+    for CompVFunc<K, BitVec<Box<[W]>>, S, E>
 {
-    fn from(u: CompVFunc<K, W, BitVecU<Box<[usize]>>, S, E>) -> Self {
+    fn from(u: CompVFunc<K, BitVecU<Box<[W]>>, S, E>) -> Self {
         CompVFunc {
             shard_edge: u.shard_edge,
             seed: u.seed,
@@ -261,14 +267,13 @@ impl<K: ?Sized, W, S, E> From<CompVFunc<K, W, BitVecU<Box<[usize]>>, S, E>>
 // multi-edge layout then adds `(w − 1 − l)` per codeword bit to each
 // base position.
 
-impl<K, W, S, E> CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
+impl<K, W, S, E> CompVFunc<K, BitVec<Box<[W]>>, S, E>
 where
     K: ?Sized + ToSig<S> + std::fmt::Debug,
-    W: PrimitiveInteger + BinSafe + Send + Sync + Hash,
+    W: Word + BinSafe + Hash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
     SigVal<S, W>: RadixKey,
-    u64: PrimitiveNumberAs<W>,
 {
     /// Builds a [`CompVFunc`] from keys and values using default [`VBuilder`]
     /// and [`Huffman`] codec settings.
@@ -307,8 +312,7 @@ where
     /// The `builder` argument controls every VBuilder-side
     /// construction knob (offline mode, thread count, sharding ε,
     /// PRNG seed, etc.); the `huffman` argument controls the codec
-    /// used for the values. The data backend is pinned internally to
-    /// [`BitVec<Box<[usize]>>`] — the same type used at query time.
+    /// used for the values.
     pub fn try_new_with_builder<B: ?Sized + Borrow<K>>(
         keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
@@ -319,21 +323,20 @@ where
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         huffman: Huffman,
-        builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitVec<Box<[W]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        build_inner_seq::<K, B, W, _, _, _, S, E>(huffman, builder, keys, values, pl)
+        build_inner_seq::<K, W, B, _, _, _, S, E>(huffman, builder, keys, values, pl)
     }
 }
 
-impl<K, W, S, E> CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
+impl<K, W, S, E> CompVFunc<K, BitVec<Box<[W]>>, S, E>
 where
     K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
-    W: PrimitiveInteger + BinSafe + Send + Sync + Hash,
+    W: Word + BinSafe + Hash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
     SigVal<S, W>: RadixKey,
-    u64: PrimitiveNumberAs<W>,
 {
     /// Builds a [`CompVFunc`] from parallel slices of keys and values
     /// using default [`VBuilder`] and [`Huffman`] settings.
@@ -365,7 +368,7 @@ where
         keys: &[B],
         values: &[W],
         huffman: Huffman,
-        builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
+        builder: VBuilder<BitVec<Box<[W]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         if keys.len() != values.len() {
@@ -375,7 +378,7 @@ where
                 values.len()
             );
         }
-        build_inner_par::<K, B, W, _, S, E>(huffman, builder, keys, values, pl)
+        build_inner_par::<K, W, B, _, S, E>(huffman, builder, keys, values, pl)
     }
 }
 
@@ -408,15 +411,15 @@ where
 /// path populates the map by iterating a value slice; the sequential
 /// path populates it by iterating a value lender (see
 /// `build_inner_seq`).
-fn build_coder_from_frequencies<W: PrimitiveInteger + std::hash::Hash>(
+fn build_coder_from_frequencies<W: Word + Hash>(
     huffman: Huffman,
     frequencies: HashMap<W, usize>,
 ) -> HuffmanCoder<W> {
     let coder = huffman.build_coder(&frequencies);
     // The codeword is read via get_unaligned_unchecked, which reads a
-    // full usize and shifts right by up to 7 bits.
+    // full W and shifts right by up to 7 bits.
     let w = coder.max_codeword_length();
-    let max = usize::BITS - 7;
+    let max = W::BITS - 7;
     assert!(
         w <= max,
         "max codeword length {w} exceeds the unaligned-read limit of {max}"
@@ -425,9 +428,7 @@ fn build_coder_from_frequencies<W: PrimitiveInteger + std::hash::Hash>(
 }
 
 /// Slice fast-path for the frequency map used by `build_inner_par`.
-fn frequencies_from_slice<W: PrimitiveInteger + std::hash::Hash>(
-    values: &[W],
-) -> HashMap<W, usize> {
+fn frequencies_from_slice<W: Word + Hash>(values: &[W]) -> HashMap<W, usize> {
     let mut frequencies: HashMap<W, usize> = HashMap::new();
     for &v in values {
         *frequencies.entry(v).or_insert(0) += 1;
@@ -447,64 +448,42 @@ fn frequencies_from_slice<W: PrimitiveInteger + std::hash::Hash>(
 fn make_build_fn<'c, W, S, E, P>(
     coder: &'c HuffmanCoder<W>,
 ) -> impl FnMut(
-    &mut VBuilder<BitVec<Box<[usize]>>, S, E>,
+    &mut VBuilder<BitVec<Box<[W]>>, S, E>,
     u64,
     Box<dyn ShardStore<S, W> + Send + Sync>,
     W,
     usize,
     &mut P,
     &mut (),
-) -> Result<(BitVec<Box<[usize]>>, u64, usize)>
+) -> Result<(BitVec<Box<[W]>>, u64, usize)>
 + 'c
 where
-    W: PrimitiveInteger + BinSafe + Send + Sync + Hash,
+    W: Word + BinSafe + Hash,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
     SigVal<S, W>: RadixKey,
     P: dsi_progress_logger::ProgressLog + Clone + Send + Sync,
-    u64: PrimitiveNumberAs<W>,
 {
-    // All scalars derived from `coder` — pulled here once so the inner
-    // closure body doesn't need to carry them through the layered
-    // closures by hand.
-    //
-    // `w` is the total encoded width (prefix code + literal for
-    // escaped symbols). This is the per-key stride in the multi-edge
-    // layout — NOT `max_codeword_length()`, which is only the prefix
-    // code depth.
     let escape_length = coder.max_codeword_length();
     let escaped_symbol_length = coder.escaped_symbols_length();
     let w = escape_length as usize + escaped_symbol_length as usize;
     let escape_codeword = coder.escape_codeword();
 
-    // Encode a single `(bits, len)` pair for a value. The bits are
-    // packed into a `u128` so that escape codeword + literal (up to
-    // 64 bits) fit without overflow.
-    //
-    // The `escaped_symbol_length == 0` guard handles a degenerate
-    // corner: the only escaped symbol is the value `0`, whose bit
-    // length is 0. Without the guard, `W::BITS - escaped_symbol_length`
-    // would be `W::BITS` and the shift on the `else` branch would be
-    // undefined. When we hit this case, the literal field is zero
-    // bits wide and the escape codeword alone identifies the symbol.
-    let encode_val = move |v: W| -> (u128, u32) {
-        let len = coder.encoded_length(v);
-        let bits: u128 = match coder.encode(v) {
-            Some(cw) => cw as u128,
+    let encode_val = move |v: W| -> (W, usize, u32) {
+        match coder.encode(v) {
+            Some(cw) => (W::ZERO, cw, coder.codeword_length(v)),
             None => {
-                let lit: u64 = if escaped_symbol_length == 0 {
-                    0
+                let lit = if escaped_symbol_length == 0 {
+                    W::ZERO
                 } else {
-                    let reversed = v.reverse_bits() >> (W::BITS - escaped_symbol_length);
-                    u64::as_from(reversed)
+                    v.reverse_bits() >> (W::BITS - escaped_symbol_length)
                 };
-                escape_codeword as u128 | ((lit as u128) << escape_length)
+                (lit, escape_codeword, escape_length + escaped_symbol_length)
             }
-        };
-        (bits, len)
+        }
     };
 
-    move |vb: &mut VBuilder<BitVec<Box<[usize]>>, S, E>,
+    move |vb: &mut VBuilder<BitVec<Box<[W]>>, S, E>,
           attempt_seed: u64,
           mut store: Box<dyn ShardStore<S, W> + Send + Sync>,
           _max_val: W,
@@ -573,8 +552,8 @@ where
         ));
         let raw_stride = num_vertices_per_shard + w;
         // `par_solve` chunks the data via `BitVec::try_chunks_mut`,
-        // which requires `chunk_size` to be a multiple of `usize::BITS`.
-        let stride = raw_stride.next_multiple_of(usize::BITS as usize);
+        // which requires `chunk_size` to be a multiple of `W::BITS`.
+        let stride = raw_stride.next_multiple_of(W::BITS as usize);
 
         pl.info(format_args!(
             "c: {}, Overhead: {:+.4}% Number of threads: {}",
@@ -587,9 +566,7 @@ where
             .checked_mul(stride)
             .ok_or_else(|| anyhow!("data size overflow"))?;
 
-        // `new_padded` is defined on `BitVec<Vec<W>>` but returns a
-        // `BitVec<Box<[W]>>`, matching the query-side storage type.
-        let mut data = BitVec::<Box<[usize]>>::new_padded(total_bits);
+        let mut data = BitVec::<Box<[W]>>::new_padded(total_bits);
 
         // ── d) Call `par_solve` with the multi-edge closure. ──
         //
@@ -619,10 +596,10 @@ where
         let force_index_peeler = !packed_edge_safe;
         let use_low_mem = vb.low_mem == Some(true)
             || (vb.low_mem.is_none() && vb.num_threads > 3 && num_shards > 2);
-        let solve_shard = |this: &VBuilder<BitVec<Box<[usize]>>, S, E>,
+        let solve_shard = |this: &VBuilder<BitVec<Box<[W]>>, S, E>,
                            _shard_index: usize,
                            shard: std::sync::Arc<Vec<SigVal<S, W>>>,
-                           mut shard_data: BitVec<&mut [usize]>,
+                           mut shard_data: BitVec<&mut [W]>,
                            _pl: &mut _|
          -> Result<(), ()> {
             if this.failed.load(std::sync::atomic::Ordering::Relaxed) {
@@ -644,17 +621,28 @@ where
                 let mut edges: Vec<[u32; 3]> = Vec::with_capacity(max_shard_edges);
                 let mut rhs: BitVec = BitVec::with_capacity(max_shard_edges);
                 for sv in shard.iter() {
-                    let (bits, len) = encode_val(sv.val);
+                    let (lit, cw, len) = encode_val(sv.val);
                     let local_sig = shard_edge.local_sig(sv.sig);
                     let base = shard_edge.local_edge(local_sig);
-                    for l in 0..len as usize {
+                    let cw_bits = len.min(escape_length) as usize;
+                    for l in 0..cw_bits {
                         let off = w - 1 - l;
                         edges.push([
                             (base[0] + off) as u32,
                             (base[1] + off) as u32,
                             (base[2] + off) as u32,
                         ]);
-                        rhs.push(((bits >> l) & 1) == 1);
+                        rhs.push(((cw >> l) & 1) != 0);
+                    }
+                    let lit_bits = (len as usize).saturating_sub(escape_length as usize);
+                    for l in 0..lit_bits {
+                        let off = escaped_symbol_length as usize - 1 - l;
+                        edges.push([
+                            (base[0] + off) as u32,
+                            (base[1] + off) as u32,
+                            (base[2] + off) as u32,
+                        ]);
+                        rhs.push(((lit >> l as u32) & W::ONE) != W::ZERO);
                     }
                 }
                 if this.failed.load(std::sync::atomic::Ordering::Relaxed) {
@@ -668,6 +656,8 @@ where
                     &encode_val,
                     raw_stride,
                     w,
+                    escape_length as usize,
+                    escaped_symbol_length as usize,
                     &mut shard_data,
                 )?;
             } else {
@@ -677,6 +667,8 @@ where
                     &encode_val,
                     raw_stride,
                     w,
+                    escape_length as usize,
+                    escaped_symbol_length as usize,
                     &mut shard_data,
                 )?;
             }
@@ -712,21 +704,21 @@ where
 fn finish_build<K, W, S, E>(
     shard_edge: E,
     coder: HuffmanCoder<W>,
-    data: BitVec<Box<[usize]>>,
+    data: BitVec<Box<[W]>>,
     seed_used: u64,
     num_keys: usize,
     shard_size: usize,
-) -> CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
+) -> CompVFunc<K, BitVec<Box<[W]>>, S, E>
 where
     K: ?Sized,
-    W: PrimitiveInteger,
+    W: Word,
 {
     let decoder = coder.into_decoder();
     let w = decoder.max_codeword_length();
     let codeword_mask = if w == 0 {
-        0
+        W::ZERO
     } else {
-        usize::MAX >> (usize::BITS - w)
+        W::MAX >> (W::BITS - w)
     };
     CompVFunc {
         shard_edge,
@@ -744,10 +736,10 @@ where
 fn empty_comp_vfunc<K, W, S, E>(
     coder: HuffmanCoder<W>,
     eps: f64,
-) -> CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>
+) -> CompVFunc<K, BitVec<Box<[W]>>, S, E>
 where
     K: ?Sized,
-    W: PrimitiveInteger,
+    W: Word,
     E: ShardEdge<S, 3>,
 {
     let mut shard_edge = E::default();
@@ -755,9 +747,9 @@ where
     let decoder = coder.into_decoder();
     let w = decoder.max_codeword_length();
     let codeword_mask = if w == 0 {
-        0
+        W::ZERO
     } else {
-        usize::MAX >> (usize::BITS - w)
+        W::MAX >> (W::BITS - w)
     };
     CompVFunc {
         shard_edge,
@@ -765,7 +757,7 @@ where
         num_keys: 0,
         shard_size: 0,
         codeword_mask,
-        data: BitVec::<Box<[usize]>>::new_padded(0),
+        data: BitVec::<Box<[W]>>::new_padded(0),
         decoder,
         _marker: PhantomData,
     }
@@ -774,8 +766,8 @@ where
 /// Lender-based sequential path.
 fn build_inner_seq<
     K: ?Sized + ToSig<S> + std::fmt::Debug,
+    W: Word + BinSafe + Hash,
     B: ?Sized + Borrow<K>,
-    W: PrimitiveInteger + BinSafe + Send + Sync + Hash,
     V: FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
@@ -789,18 +781,14 @@ fn build_inner_seq<
     E: ShardEdge<S, 3>,
 >(
     huffman: Huffman,
-    builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
+    builder: VBuilder<BitVec<Box<[W]>>, S, E>,
     keys: L,
     mut values: V,
     pl: &mut P,
-) -> Result<CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>>
+) -> Result<CompVFunc<K, BitVec<Box<[W]>>, S, E>>
 where
     SigVal<S, W>: RadixKey,
-    u64: PrimitiveNumberAs<W>,
 {
-    // First pass: stream the values lender for the frequency
-    // histogram, then rewind so `try_populate_and_build` can consume
-    // the same lender to populate the sig-store.
     let mut frequencies: HashMap<W, usize> = HashMap::new();
     while let Some(&v) = values.next()? {
         *frequencies.entry(v).or_insert(0) += 1;
@@ -808,7 +796,7 @@ where
     let n: usize = frequencies.values().sum();
     let coder = huffman.build_coder(&frequencies);
     let w = coder.max_codeword_length();
-    let max = usize::BITS - 7;
+    let max = W::BITS - 7;
     assert!(
         w <= max,
         "max codeword length {w} exceeds the unaligned-read limit of {max}"
@@ -837,21 +825,20 @@ where
 /// Slice-based parallel path.
 fn build_inner_par<
     K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
+    W: Word + BinSafe + Hash,
     B: Borrow<K> + Sync,
-    W: PrimitiveInteger + BinSafe + Send + Sync + Hash,
     P: ProgressLog + Clone + Send + Sync,
     S: Sig + Send + Sync,
     E: ShardEdge<S, 3>,
 >(
     huffman: Huffman,
-    builder: VBuilder<BitVec<Box<[usize]>>, S, E>,
+    builder: VBuilder<BitVec<Box<[W]>>, S, E>,
     keys: &[B],
     values: &[W],
     pl: &mut P,
-) -> Result<CompVFunc<K, W, BitVec<Box<[usize]>>, S, E>>
+) -> Result<CompVFunc<K, BitVec<Box<[W]>>, S, E>>
 where
     SigVal<S, W>: RadixKey,
-    u64: PrimitiveNumberAs<W>,
 {
     let n = keys.len();
     let coder = build_coder_from_frequencies(huffman, frequencies_from_slice(values));
@@ -903,11 +890,11 @@ impl PeelByIndexOutput {
 ///
 /// If peeling does not succeed completely, returns an error so the
 /// caller can retry the shard with a fresh seed.
-fn solve_system(
+fn solve_system<W: Word>(
     num_variables: usize,
     edges: &[[u32; 3]],
     rhs: BitVec,
-    solution: &mut BitVec<&mut [usize]>,
+    solution: &mut BitVec<&mut [W]>,
 ) -> Result<()> {
     let out = peel_by_index(num_variables, edges);
     let n_peeled = out.n_peeled();
@@ -1145,20 +1132,22 @@ impl std::ops::BitXorAssign for PackedEdge {
 }
 
 /// Populates an [`XorGraph<PackedEdge>`] by streaming over the shard
-/// once, calling `encode_val` to produce the `(bits, len)` for each
-/// `SigVal`, and deriving the `len` hyperedges (with shifted vertex
-/// triples) inline — no intermediate `edges: Vec<[u32; 3]>` or
-/// `rhs: BitVec` materialization.
+/// once, calling `encode_val` to produce the codeword and optional
+/// escaped literal for each `SigVal`, and deriving the hyperedges
+/// (with shifted vertex triples) inline — no intermediate
+/// `edges: Vec<[u32; 3]>` or `rhs: BitVec` materialization.
 ///
 /// Returns the populated graph and the total number of edges inserted
 /// (which is the sum of codeword lengths across the shard and is also
 /// the upper bound for the reverse-peel stack).
-fn populate_data_graph<V: BinSafe, S, E>(
-    shard: &[SigVal<S, V>],
+fn populate_data_graph<W: BinSafe + Word, S, E>(
+    shard: &[SigVal<S, W>],
     shard_edge: &E,
-    encode_val: &impl Fn(V) -> (u128, u32),
+    encode_val: &impl Fn(W) -> (W, usize, u32),
     num_variables: usize,
     w: usize,
+    escape_length: usize,
+    escaped_symbol_length: usize,
 ) -> (XorGraph<PackedEdge>, usize)
 where
     S: Sig,
@@ -1166,21 +1155,33 @@ where
 {
     let mut xor_graph: XorGraph<PackedEdge> = XorGraph::new(num_variables);
     let mut n_edges: usize = 0;
-    for sv in shard.iter() {
-        let (bits, len) = encode_val(sv.val);
-        let local_sig = shard_edge.local_sig(sv.sig);
-        let base = shard_edge.local_edge(local_sig);
-        for l in 0..len as usize {
-            let off = w - 1 - l;
-            let v0 = (base[0] + off) as u32;
-            let v1 = (base[1] + off) as u32;
-            let v2 = (base[2] + off) as u32;
-            let rhs_bit = ((bits >> l) & 1) != 0;
-            let pe = PackedEdge::new(v0, v1, v2, rhs_bit);
+
+    macro_rules! add_edge {
+        ($base:expr, $off:expr, $rhs_bit:expr) => {
+            let v0 = ($base[0] + $off) as u32;
+            let v1 = ($base[1] + $off) as u32;
+            let v2 = ($base[2] + $off) as u32;
+            let pe = PackedEdge::new(v0, v1, v2, $rhs_bit);
             xor_graph.add(v0 as usize, pe, 0);
             xor_graph.add(v1 as usize, pe, 1);
             xor_graph.add(v2 as usize, pe, 2);
             n_edges += 1;
+        };
+    }
+
+    for sv in shard.iter() {
+        let (lit, cw, len) = encode_val(sv.val);
+        let local_sig = shard_edge.local_sig(sv.sig);
+        let base = shard_edge.local_edge(local_sig);
+        let cw_bits = (len as usize).min(escape_length);
+        for l in 0..cw_bits {
+            let off = w - 1 - l;
+            add_edge!(base, off, ((cw >> l) & 1) != 0);
+        }
+        let lit_bits = (len as usize).saturating_sub(escape_length);
+        for l in 0..lit_bits {
+            let off = escaped_symbol_length - 1 - l;
+            add_edge!(base, off, ((lit >> l as u32) & W::ONE) != W::ZERO);
         }
     }
     (xor_graph, n_edges)
@@ -1199,7 +1200,11 @@ where
 /// derived from `base[i] + off` with `base[i] + off < num_variables`,
 /// and `solution.len() >= num_variables` by caller contract.
 #[inline(always)]
-unsafe fn reverse_peel_assign(solution: &mut BitVec<&mut [usize]>, pe: PackedEdge, side: usize) {
+unsafe fn reverse_peel_assign<W: Word>(
+    solution: &mut BitVec<&mut [W]>,
+    pe: PackedEdge,
+    side: usize,
+) {
     let ([a, b, c], r) = pe.unpack();
     let (pivot, val) = unsafe {
         match side {
@@ -1234,20 +1239,29 @@ unsafe fn reverse_peel_assign(solution: &mut BitVec<&mut [usize]>, pe: PackedEdg
 ///
 /// Any unpeeled remainder returns `Err(())`, which `par_solve`
 /// turns into a seed-retry.
-fn peel_by_data_high_mem<V: BinSafe, S, E>(
-    shard: std::sync::Arc<Vec<SigVal<S, V>>>,
+fn peel_by_data_high_mem<W: Word + BinSafe, S, E>(
+    shard: std::sync::Arc<Vec<SigVal<S, W>>>,
     shard_edge: &E,
-    encode_val: &impl Fn(V) -> (u128, u32),
+    encode_val: &impl Fn(W) -> (W, usize, u32),
     num_variables: usize,
     w: usize,
-    solution: &mut BitVec<&mut [usize]>,
+    escape_length: usize,
+    escaped_symbol_length: usize,
+    solution: &mut BitVec<&mut [W]>,
 ) -> Result<(), ()>
 where
     S: Sig,
     E: ShardEdge<S, 3>,
 {
-    let (mut xor_graph, n_edges) =
-        populate_data_graph(&shard, shard_edge, encode_val, num_variables, w);
+    let (mut xor_graph, n_edges) = populate_data_graph(
+        &shard,
+        shard_edge,
+        encode_val,
+        num_variables,
+        w,
+        escape_length,
+        escaped_symbol_length,
+    );
 
     // Nothing else needs the shard — drop it to free ~shard_len ×
     // size_of::<SigVal>() bytes before the peel walk starts.
@@ -1335,20 +1349,29 @@ where
 /// parallel (high memory pressure) or `low_mem` is explicitly set.
 ///
 /// Any unpeeled remainder returns `Err(())`.
-fn peel_by_data_low_mem<V: BinSafe, S, E>(
-    shard: std::sync::Arc<Vec<SigVal<S, V>>>,
+fn peel_by_data_low_mem<W: Word + BinSafe, S, E>(
+    shard: std::sync::Arc<Vec<SigVal<S, W>>>,
     shard_edge: &E,
-    encode_val: &impl Fn(V) -> (u128, u32),
+    encode_val: &impl Fn(W) -> (W, usize, u32),
     num_variables: usize,
     w: usize,
-    solution: &mut BitVec<&mut [usize]>,
+    escape_length: usize,
+    escaped_symbol_length: usize,
+    solution: &mut BitVec<&mut [W]>,
 ) -> Result<(), ()>
 where
     S: Sig,
     E: ShardEdge<S, 3>,
 {
-    let (mut xor_graph, n_edges) =
-        populate_data_graph(&shard, shard_edge, encode_val, num_variables, w);
+    let (mut xor_graph, n_edges) = populate_data_graph(
+        &shard,
+        shard_edge,
+        encode_val,
+        num_variables,
+        w,
+        escape_length,
+        escaped_symbol_length,
+    );
 
     drop(shard);
 

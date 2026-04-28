@@ -52,7 +52,7 @@ fn run(n: usize, values: &[usize]) {
         Ok(f) => {
             let mut wrong = 0;
             for i in 0..n.min(1000) {
-                if f.get(keys[i]) != values[i as usize] {
+                if f.get(keys[i]) != values[i] {
                     wrong += 1;
                 }
             }

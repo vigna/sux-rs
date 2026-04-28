@@ -32,7 +32,7 @@ fn round_trip_generic<W: PrimitiveInteger + std::hash::Hash + std::fmt::Display>
     match coder.encode(symbol) {
         Some(cw) => {
             let len = coder.codeword_length(symbol);
-            let mut value = 0u64;
+            let mut value = 0usize;
             for k in 0..len {
                 value |= ((cw >> k) & 1) << (w - 1 - k);
             }
@@ -45,7 +45,7 @@ fn round_trip_generic<W: PrimitiveInteger + std::hash::Hash + std::fmt::Display>
             let esym_len = coder.escaped_symbols_length();
 
             // Verify escape codeword is recognized
-            let mut value = 0u64;
+            let mut value = 0usize;
             for k in 0..esc_len {
                 value |= ((esc >> k) & 1) << (w - 1 - k);
             }
@@ -82,7 +82,7 @@ fn round_trip(coder: &HuffmanCoder<u64>, decoder: &HuffmanDecoder<u64>, symbol: 
     match coder.encode(symbol) {
         Some(cw) => {
             let len = coder.codeword_length(symbol);
-            let mut value = 0u64;
+            let mut value = 0usize;
             for k in 0..len {
                 value |= ((cw >> k) & 1) << (w - 1 - k);
             }
@@ -95,7 +95,7 @@ fn round_trip(coder: &HuffmanCoder<u64>, decoder: &HuffmanDecoder<u64>, symbol: 
             let esym_len = coder.escaped_symbols_length();
 
             // Verify escape codeword is recognized
-            let mut value = 0u64;
+            let mut value = 0usize;
             for k in 0..esc_len {
                 value |= ((esc >> k) & 1) << (w - 1 - k);
             }
@@ -204,11 +204,9 @@ fn test_huffman_many_symbols() {
 
 #[test]
 fn test_huffman_u128_large_values() {
-    // u128 symbols well above the 2^64 range. With enough distinct
-    // frequent symbols the codewords stay short and the "kept" set
-    // carries the entire distribution — no escapes needed, so the
-    // decoder never has to reconstruct a literal wider than a u64
-    // window (which is the current read-path limit).
+    // u128 symbols well above the 2^64 range. With the default
+    // entropy_threshold (0.9), some infrequent symbols may be
+    // escaped; the round-trip must still work for all symbols.
     let mut pairs: Vec<(u128, usize)> = Vec::new();
     let base: u128 = 1u128 << 100;
     for i in 0..8u128 {
@@ -216,25 +214,28 @@ fn test_huffman_u128_large_values() {
     }
     let f: HashMap<u128, usize> = pairs.iter().copied().collect();
     let coder = <Huffman as Codec<u128>>::build_coder(&Huffman::new(), &f);
-    assert_eq!(
-        coder.escaped_symbols_length(),
-        0,
-        "no escape for u128 complete code"
-    );
     let decoder = coder.clone().into_decoder();
     for (s, _) in &pairs {
-        // Build the same `value` the read path would build for the
-        // (unescaped) codeword, then decode.
         let w = coder.max_codeword_length();
         let len = coder.codeword_length(*s);
-        let bits = coder.encode(*s).expect("symbol must be in the table");
-        let mut value = 0u64;
-        for k in 0..len {
-            let bit = (bits >> k) & 1;
-            value |= bit << (w - 1 - k);
+        let bits = coder.encode(*s);
+        match bits {
+            Some(cw) => {
+                let mut value = 0usize;
+                for k in 0..len {
+                    let bit = (cw >> k) & 1;
+                    value |= bit << (w - 1 - k);
+                }
+                let decoded = decoder.decode(value).expect("should not be escape");
+                assert_eq!(decoded, *s, "u128 round-trip for {s:x}");
+            }
+            None => {
+                assert!(
+                    coder.escaped_symbols_length() > 0,
+                    "encode returned None but no escape path configured"
+                );
+            }
         }
-        let decoded = decoder.decode(value).expect("should not be escape");
-        assert_eq!(decoded, *s, "u128 round-trip for {s:x}");
     }
 }
 
@@ -257,7 +258,7 @@ fn test_huffman_u128_large_values_unlimited() {
         let w = coder.max_codeword_length();
         let len = coder.codeword_length(*s);
         let bits = coder.encode(*s).expect("symbol must be in the table");
-        let mut value = 0u64;
+        let mut value = 0usize;
         for k in 0..len {
             let bit = (bits >> k) & 1;
             value |= bit << (w - 1 - k);

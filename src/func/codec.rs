@@ -46,13 +46,13 @@ pub trait Coder<W> {
     /// escaped.
     ///
     /// The returned codeword is `codeword_length(symbol)` bits wide and
-    /// is laid out so that bit *l* of the returned `u64` is the *l*-th
+    /// is laid out so that bit *l* of the returned `usize` is the *l*-th
     /// bit appended to the data array. With the layout used by
     /// [`CompVFunc`], that means bit 0 is the most significant bit of
     /// the canonical (MSB-first) codeword.
     ///
     /// [`CompVFunc`]: crate::func::CompVFunc
-    fn encode(&self, symbol: W) -> Option<u64>;
+    fn encode(&self, symbol: W) -> Option<usize>;
 
     /// Returns the prefix code length in bits for `symbol`.
     ///
@@ -73,7 +73,7 @@ pub trait Coder<W> {
     fn max_codeword_length(&self) -> u32;
 
     /// The escape codeword (length is [`max_codeword_length`](Self::max_codeword_length)).
-    fn escape_codeword(&self) -> u64;
+    fn escape_codeword(&self) -> usize;
 
     /// The length in bits of escaped symbols, or zero if the code has
     /// no escape.
@@ -96,7 +96,7 @@ pub trait Decoder<W> {
     /// Returns `Some(symbol)` for a normal codeword, or `None` if
     /// the codeword is the escape codeword (the caller must then
     /// read the literal value separately).
-    fn decode(&self, value: u64) -> Option<W>;
+    fn decode(&self, value: usize) -> Option<W>;
 
     /// The maximum prefix code length in bits. This is the width of
     /// the read window expected by [`decode`](Self::decode).
@@ -135,7 +135,7 @@ impl<W: PrimitiveInteger + Hash> Codec<W> for ZeroCodec {
 
 impl<W: PrimitiveInteger> Coder<W> for ZeroCoder {
     type Decoder = ZeroDecoder;
-    fn encode(&self, _symbol: W) -> Option<u64> {
+    fn encode(&self, _symbol: W) -> Option<usize> {
         Some(0)
     }
     fn codeword_length(&self, _symbol: W) -> u32 {
@@ -147,7 +147,7 @@ impl<W: PrimitiveInteger> Coder<W> for ZeroCoder {
     fn max_codeword_length(&self) -> u32 {
         0
     }
-    fn escape_codeword(&self) -> u64 {
+    fn escape_codeword(&self) -> usize {
         0
     }
     fn escaped_symbols_length(&self) -> u32 {
@@ -159,7 +159,7 @@ impl<W: PrimitiveInteger> Coder<W> for ZeroCoder {
 }
 
 impl<W: PrimitiveInteger> Decoder<W> for ZeroDecoder {
-    fn decode(&self, _value: u64) -> Option<W> {
+    fn decode(&self, _value: usize) -> Option<W> {
         Some(W::default())
     }
     fn max_codeword_length(&self) -> u32 {
@@ -262,7 +262,7 @@ pub struct HuffmanCoder<W> {
     /// Codeword for each non-escaped symbol, plus the escape codeword at the
     /// end. Bit *l* of an entry is the *l*-th bit appended to the data, that
     /// is, bit 0 is the MSB of the canonical (MSB-first) codeword.
-    codeword: Box<[u64]>,
+    codeword: Box<[usize]>,
     /// Length of each entry in [`Self::codeword`]. The last entry is
     /// the escape length.
     codeword_length: Box<[u32]>,
@@ -292,7 +292,7 @@ impl<W: PrimitiveInteger + Hash> Codec<W> for Huffman {
 impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
     type Decoder = HuffmanDecoder<W>;
 
-    fn encode(&self, symbol: W) -> Option<u64> {
+    fn encode(&self, symbol: W) -> Option<usize> {
         self.symbol_to_rank.get(&symbol).map(|&r| self.codeword[r])
     }
 
@@ -318,7 +318,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
         }
     }
 
-    fn escape_codeword(&self) -> u64 {
+    fn escape_codeword(&self) -> usize {
         *self.codeword.last().unwrap_or(&0)
     }
 
@@ -344,7 +344,11 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
         }
 
         let w = self.max_codeword_length();
-        assert!(w <= 62, "Codeword length must not exceed 62");
+        assert!(
+            w <= usize::BITS - 2,
+            "Codeword length must not exceed {}",
+            usize::BITS - 2
+        );
 
         // Number of distinct length blocks plus a sentinel block.
         let mut decoding_table_length: usize = 1;
@@ -363,7 +367,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
 
         let mut shift: Vec<u8> = vec![0; decoding_table_length];
         let mut how_many_up_to_block: Vec<u32> = vec![0; decoding_table_length];
-        let mut last_codeword_plus_one: Vec<u64> = vec![0; decoding_table_length];
+        let mut last_codeword_plus_one: Vec<usize> = vec![0; decoding_table_length];
 
         // p is the current block index; word tracks the canonical codeword
         // counter (MSB-first as an integer); prev_l is the length of the
@@ -371,7 +375,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
         let mut p: i32 = -1;
         let mut prev_l: u32 = 0;
         let mut last_l: u32 = 0;
-        let mut word: u64 = 0;
+        let mut word: usize = 0;
 
         for i in 0..size {
             let l = self.codeword_length[i];
@@ -405,8 +409,8 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
             size as u32
         };
         let last_p = p as usize;
-        last_codeword_plus_one[last_p] = u64::MAX >> 1;
-        shift[last_p] = 63;
+        last_codeword_plus_one[last_p] = usize::MAX >> 1;
+        shift[last_p] = (usize::BITS - 1) as u8;
         how_many_up_to_block[last_p] = num_real_symbols;
 
         // Default heuristic for branchy vs branchless: `> 3` distinct length
@@ -463,7 +467,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HuffmanDecoder<W> {
-    last_codeword_plus_one: Box<[u64]>,
+    last_codeword_plus_one: Box<[usize]>,
     how_many_up_to_block: Box<[u32]>,
     shift: Box<[u8]>,
     symbol: Box<[W]>,
@@ -493,7 +497,7 @@ impl<W> HuffmanDecoder<W> {
 
 impl<W: PrimitiveInteger> Decoder<W> for HuffmanDecoder<W> {
     #[inline(always)]
-    fn decode(&self, value: u64) -> Option<W> {
+    fn decode(&self, value: usize) -> Option<W> {
         // Read a single field that is constant for the life of the
         // decoder. The branch is trivially predictable (one direction
         // for every query of a given function) and the per-call cost
@@ -522,7 +526,7 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
     /// Wins for very skewed codeword distributions (the first one or
     /// two blocks catch almost every query).
     #[inline(always)]
-    fn decode_branchy(&self, value: u64) -> Option<W> {
+    fn decode_branchy(&self, value: usize) -> Option<W> {
         let nrs = self.num_real_symbols as usize;
         for curr in 0..self.last_codeword_plus_one.len() {
             // SAFETY: `curr` is bounded by the loop range.
@@ -531,9 +535,8 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
                 if value < lcp1 {
                     let s = *self.shift.get_unchecked(curr) as u32;
                     let off = (value >> s).wrapping_sub(lcp1 >> s);
-                    let idx = off
-                        .wrapping_add(*self.how_many_up_to_block.get_unchecked(curr) as u64)
-                        as usize;
+                    let idx =
+                        off.wrapping_add(*self.how_many_up_to_block.get_unchecked(curr) as usize);
                     return if idx < nrs {
                         Some(*self.symbol.get_unchecked(idx))
                     } else {
@@ -542,9 +545,9 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
                 }
             }
         }
-        // The final block has `last_codeword_plus_one = u64::MAX >> 1`
-        // and `w <= 62`, so `value` is always strictly less than the
-        // final upper bound.
+        // The final block has `last_codeword_plus_one = usize::MAX >> 1`
+        // and `w <= usize::BITS - 2`, so `value` is always strictly less
+        // than the final upper bound.
         unreachable!("decoder fell through all blocks")
     }
 
@@ -553,7 +556,7 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
     /// branches inside the loop, at the cost of always touching every
     /// block.
     #[inline(always)]
-    fn decode_branchless(&self, value: u64) -> Option<W> {
+    fn decode_branchless(&self, value: usize) -> Option<W> {
         let nrs = self.num_real_symbols as usize;
         let n = self.last_codeword_plus_one.len();
         let mut idx: usize = 0;
@@ -567,8 +570,7 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
             let lcp1 = *self.last_codeword_plus_one.get_unchecked(idx);
             let s = *self.shift.get_unchecked(idx) as u32;
             let off = (value >> s).wrapping_sub(lcp1 >> s);
-            let sym_idx =
-                off.wrapping_add(*self.how_many_up_to_block.get_unchecked(idx) as u64) as usize;
+            let sym_idx = off.wrapping_add(*self.how_many_up_to_block.get_unchecked(idx) as usize);
             if sym_idx < nrs {
                 Some(*self.symbol.get_unchecked(sym_idx))
             } else {
@@ -701,32 +703,12 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
         cutpoint += 1;
     }
 
-    // If the escaped literal would need more than 64 bits, extend
-    // the cutpoint to keep all symbols — the construction path
-    // packs the literal into a u64 intermediate.
-    if cutpoint < size {
-        let max_escaped_bits = symbol[cutpoint..]
-            .iter()
-            .map(|&s| {
-                if s == W::default() {
-                    0
-                } else {
-                    W::BITS - s.leading_zeros()
-                }
-            })
-            .max()
-            .unwrap_or(0);
-        if max_escaped_bits > 64 {
-            cutpoint = size;
-        }
-    }
-
     let has_escape = cutpoint < size;
 
     // Assign canonical codewords for the kept symbols.
     let codeword_len = if has_escape { cutpoint + 1 } else { cutpoint };
-    let mut codeword: Vec<u64> = vec![0; codeword_len];
-    let mut value: u64 = 0;
+    let mut codeword: Vec<usize> = vec![0; codeword_len];
+    let mut value: usize = 0;
     let mut current_length = length[0];
     codeword[0] = 0; // Length stays 0 only when cutpoint == 0.
 
@@ -740,7 +722,7 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
         }
         // Store the codeword in append-order: bit 0 is the MSB of the
         // canonical codeword.
-        codeword[i] = value.reverse_bits() >> (64 - current_length);
+        codeword[i] = value.reverse_bits() >> (usize::BITS - current_length);
     }
 
     if has_escape {
@@ -748,7 +730,7 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
         if current_length == 0 {
             codeword[cutpoint] = 0;
         } else {
-            codeword[cutpoint] = u64::MAX >> (64 - current_length);
+            codeword[cutpoint] = usize::MAX >> (usize::BITS - current_length);
         }
         length[cutpoint] = current_length;
     }

@@ -127,21 +127,21 @@ fn zipf_cdf(s: f64, n: usize) -> Vec<f64> {
     cdf
 }
 
-fn sample_zipf(cdf: &[f64], rng: &mut SmallRng) -> u64 {
+fn sample_zipf(cdf: &[f64], rng: &mut SmallRng) -> usize {
     let u: f64 = (rng.random::<u64>() >> 11) as f64 / ((1u64 << 53) as f64);
-    (cdf.partition_point(|&p| p < u) + 1) as u64
+    cdf.partition_point(|&p| p < u) + 1
 }
 
-fn gen_values(args: &Args, n: usize, seed: u64) -> Vec<u64> {
+fn gen_values(args: &Args, n: usize, seed: u64) -> Vec<usize> {
     let mut rng = SmallRng::seed_from_u64(seed);
     match args.distribution {
-        DistKind::Constant => vec![args.constant_value; n],
+        DistKind::Constant => vec![args.constant_value as usize; n],
         DistKind::Uniform => (0..n)
-            .map(|_| rng.random::<u64>() % args.uniform_max)
+            .map(|_| (rng.random::<u64>() % args.uniform_max) as usize)
             .collect(),
         DistKind::Geom => {
             let g = Geometric::new(0.5).unwrap();
-            (0..n).map(|_| g.sample(&mut rng) + 1).collect()
+            (0..n).map(|_| g.sample(&mut rng) as usize + 1).collect()
         }
         DistKind::Zipf => {
             let cdf = zipf_cdf(args.zipf_s, args.zipf_n);
@@ -157,16 +157,14 @@ fn gen_values(args: &Args, n: usize, seed: u64) -> Vec<u64> {
 /// concrete `CompVFunc` build with the right type parameters.
 macro_rules! build_and_verify {
     ($keys:expr, $values:expr, $sig:ty, $shard_edge:ty, $queries:expr, $rng:expr) => {{
-        let func: Result<
-            CompVFunc<u64, u64, sux::bits::BitVec<Box<[usize]>>, $sig, $shard_edge>,
-            _,
-        > = <CompVFunc<u64, u64, _, $sig, $shard_edge>>::try_par_new_with_builder(
-            $keys,
-            $values,
-            sux::func::codec::Huffman::new(),
-            VBuilder::default(),
-            &mut progress_logger![],
-        );
+        let func: Result<CompVFunc<u64, sux::bits::BitVec<Box<[usize]>>, $sig, $shard_edge>, _> =
+            <CompVFunc<u64, _, $sig, $shard_edge>>::try_par_new_with_builder(
+                $keys,
+                $values,
+                sux::func::codec::Huffman::new(),
+                VBuilder::default(),
+                &mut progress_logger![],
+            );
         match func {
             Ok(f) => {
                 // Verify random sample queries.
@@ -221,7 +219,7 @@ fn run_trial(
     let elapsed_secs = t0.elapsed().as_secs_f64();
 
     // Distinct value count for diagnostic.
-    let mut distinct = HashMap::<u64, ()>::new();
+    let mut distinct = HashMap::<usize, ()>::new();
     for &v in &values {
         distinct.insert(v, ());
     }

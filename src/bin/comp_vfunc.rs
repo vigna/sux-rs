@@ -80,7 +80,7 @@ struct Args {
     sharding: ShardingArgs,
 }
 
-fn read_values(path: &str) -> Result<Vec<u64>> {
+fn read_values(path: &str) -> Result<Vec<usize>> {
     let file = File::open(path).with_context(|| format!("open values file {path}"))?;
     let reader = BufReader::new(file);
     let mut values = Vec::new();
@@ -90,7 +90,7 @@ fn read_values(path: &str) -> Result<Vec<u64>> {
         if trimmed.is_empty() {
             continue;
         }
-        let v: u64 = trimmed.parse().with_context(|| {
+        let v: usize = trimmed.parse().with_context(|| {
             format!(
                 "values file {path}, line {}: cannot parse `{trimmed}`",
                 lineno + 1
@@ -136,10 +136,9 @@ fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Resu
 where
     str: ToSig<S>,
     usize: ToSig<S>,
-    SigVal<S, u64>: RadixKey,
-    CompVFunc<str, u64, BitVec<Box<[usize]>>, S, E>:
-        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
-    CompVFunc<usize, u64, BitVec<Box<[usize]>>, S, E>:
+    SigVal<S, usize>: RadixKey,
+    CompVFunc<str, BitVec<Box<[usize]>>, S, E>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    CompVFunc<usize, BitVec<Box<[usize]>>, S, E>:
         Serialize + TryIntoUnaligned<Unaligned: Serialize>,
 {
     let vbuilder: VBuilder<BitVec<Box<[usize]>>, S, E> =
@@ -160,7 +159,7 @@ where
             // Sequential: stream keys through the lender, no
             // materialisation.
             let keys = DekoBufLineLender::from_path(filename)?.take(n);
-            let func = <CompVFunc<str, u64, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
+            let func = <CompVFunc<str, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                 keys,
                 FromSlice::new(&values),
                 huffman,
@@ -180,7 +179,7 @@ where
             if keys.len() != n {
                 bail!("key count mismatch: read {} keys, expected {n}", keys.len());
             }
-            let func = <CompVFunc<str, u64, BitVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
+            let func = <CompVFunc<str, BitVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
                 &keys, &values, huffman, vbuilder, &mut pl,
             )?;
             maybe_store!(func, args.func, args.unaligned);
@@ -194,7 +193,7 @@ where
             // Sequential: wrap `0..n` as a lender so we avoid
             // materialising `n * 8` bytes of keys.
             let keys = FromCloneableIntoIterator::from(0_usize..n);
-            let func = <CompVFunc<usize, u64, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
+            let func = <CompVFunc<usize, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                 keys,
                 FromSlice::new(&values),
                 huffman,
@@ -207,10 +206,9 @@ where
             // `n * 8` bytes of memory but lets the sig-hashing
             // phase run on all cores.
             let keys: Vec<usize> = (0..n).collect();
-            let func =
-                <CompVFunc<usize, u64, BitVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
-                    &keys, &values, huffman, vbuilder, &mut pl,
-                )?;
+            let func = <CompVFunc<usize, BitVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
+                &keys, &values, huffman, vbuilder, &mut pl,
+            )?;
             maybe_store!(func, args.func, args.unaligned);
         }
     }

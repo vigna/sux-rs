@@ -88,10 +88,10 @@ fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Resu
 where
     str: ToSig<S>,
     usize: ToSig<S>,
-    CompVFunc<usize, u64, BitVec<Box<[usize]>>, S, E>: Deserialize,
-    CompVFunc<str, u64, BitVec<Box<[usize]>>, S, E>: Deserialize,
-    CompVFunc<usize, u64, BitVecU<Box<[usize]>>, S, E>: Deserialize,
-    CompVFunc<str, u64, BitVecU<Box<[usize]>>, S, E>: Deserialize,
+    CompVFunc<usize, BitVec<Box<[usize]>>, S, E>: Deserialize,
+    CompVFunc<str, BitVec<Box<[usize]>>, S, E>: Deserialize,
+    CompVFunc<usize, BitVecU<Box<[usize]>>, S, E>: Deserialize,
+    CompVFunc<str, BitVecU<Box<[usize]>>, S, E>: Deserialize,
 {
     if let Some(filename) = args.filename {
         let keys: Vec<_> = if args.zstd {
@@ -107,18 +107,16 @@ where
         };
 
         if args.unaligned {
-            let func = unsafe {
-                CompVFunc::<str, u64, BitVecU<Box<[usize]>>, S, E>::load_full(&args.func)
-            }?;
+            let func =
+                unsafe { CompVFunc::<str, BitVecU<Box<[usize]>>, S, E>::load_full(&args.func) }?;
             bench(args.n, args.repeats, || {
                 for key in &keys {
                     std::hint::black_box(func.get(key.as_str()));
                 }
             });
         } else {
-            let func = unsafe {
-                CompVFunc::<str, u64, BitVec<Box<[usize]>>, S, E>::load_full(&args.func)
-            }?;
+            let func =
+                unsafe { CompVFunc::<str, BitVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
             bench(args.n, args.repeats, || {
                 for key in &keys {
                     std::hint::black_box(func.get(key.as_str()));
@@ -127,9 +125,8 @@ where
         }
     } else {
         if args.unaligned {
-            let func = unsafe {
-                CompVFunc::<usize, u64, BitVecU<Box<[usize]>>, S, E>::load_full(&args.func)
-            }?;
+            let func =
+                unsafe { CompVFunc::<usize, BitVecU<Box<[usize]>>, S, E>::load_full(&args.func) }?;
             bench(args.n, args.repeats, || {
                 let mut key: usize = 0;
                 for _ in 0..args.n {
@@ -138,9 +135,8 @@ where
                 }
             });
         } else {
-            let func = unsafe {
-                CompVFunc::<usize, u64, BitVec<Box<[usize]>>, S, E>::load_full(&args.func)
-            }?;
+            let func =
+                unsafe { CompVFunc::<usize, BitVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
             bench(args.n, args.repeats, || {
                 let mut key: usize = 0;
                 for _ in 0..args.n {
