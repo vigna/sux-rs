@@ -13,7 +13,7 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::time::Instant;
 use sux::bits::BitVec;
-use sux::func::codec::Huffman;
+use sux::func::codec::{Decoder, Huffman};
 use sux::func::shard_edge::Fuse3Shards;
 use sux::func::{CompVFunc, VBuilder};
 
@@ -72,10 +72,9 @@ fn bench(n: usize, keys: &[u64], values: &[usize], low_mem: Option<bool>, trials
         times.push(dt);
         if times.len() == 1 {
             eprintln!(
-                "  w={} escape_len={} esym_len={}",
-                func.global_max_codeword_length(),
-                func.escape_length(),
-                func.escaped_symbol_length()
+                "  max_codeword_len = {} esym_len  ={}",
+                func.decoder().max_codeword_len(),
+                func.decoder().escaped_symbols_len()
             );
         }
     }

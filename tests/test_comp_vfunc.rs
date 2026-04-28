@@ -8,7 +8,7 @@
 
 use dsi_progress_logger::no_logging;
 use sux::bits::BitVec;
-use sux::func::codec::Huffman;
+use sux::func::codec::{Decoder, Huffman};
 use sux::func::{CompVFunc, VBuilder};
 use sux::traits::TryIntoUnaligned;
 use sux::utils::FromCloneableIntoIterator;
@@ -165,7 +165,7 @@ fn test_forced_escape() {
     )
     .expect("build");
     assert!(
-        func.escaped_symbol_length() > 0,
+        func.decoder().escaped_symbols_len() > 0,
         "test must actually exercise the escape path"
     );
     for (i, &v) in values.iter().enumerate() {
@@ -197,7 +197,7 @@ fn test_large_values_forced_escape() {
     )
     .expect("build");
     assert!(
-        func.escaped_symbol_length() > 0,
+        func.decoder().escaped_symbols_len() > 0,
         "test must exercise the escape path"
     );
     for (i, &v) in values.iter().enumerate() {
@@ -240,7 +240,7 @@ fn test_u16_full_range_forced_escape() {
     )
     .expect("build");
     assert!(
-        func.escaped_symbol_length() > 0,
+        func.decoder().escaped_symbols_len() > 0,
         "test must exercise the escape path"
     );
     for (i, &v) in values.iter().enumerate() {
@@ -290,7 +290,7 @@ fn test_u32_full_range_forced_escape() {
     )
     .expect("build");
     assert!(
-        func.escaped_symbol_length() > 0,
+        func.decoder().escaped_symbols_len() > 0,
         "test must exercise the escape path"
     );
     for (i, &v) in values.iter().enumerate() {
@@ -353,7 +353,7 @@ fn test_u64_full_range_forced_escape() {
     )
     .expect("build");
     assert!(
-        func.escaped_symbol_length() > 0,
+        func.decoder().escaped_symbols_len() > 0,
         "test must exercise the escape path"
     );
     for (i, &v) in values.iter().enumerate() {
@@ -403,7 +403,7 @@ fn test_u128_full_range_forced_escape() {
     )
     .expect("build");
     assert!(
-        func.escaped_symbol_length() > 0,
+        func.decoder().escaped_symbols_len() > 0,
         "test must exercise the escape path"
     );
     for (i, &v) in values.iter().enumerate() {
@@ -441,7 +441,7 @@ fn test_usize_msb_values() {
     )
     .expect("build");
     assert!(
-        func.escaped_symbol_length() > 0,
+        func.decoder().escaped_symbols_len() > 0,
         "test must exercise the escape path"
     );
     for (i, &v) in values.iter().enumerate() {

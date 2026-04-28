@@ -30,6 +30,7 @@ use rand_distr::{Distribution, Geometric, Zipf};
 use std::hint::black_box;
 use std::time::Instant;
 use sux::func::CompVFunc;
+use sux::func::codec::Decoder;
 use sux::traits::TryIntoUnaligned;
 
 /// Number of pregenerated queries (must be a power of 2 for masking).
@@ -107,10 +108,9 @@ fn bench_query(c: &mut Criterion) {
             let bpk = bytes as f64 * 8.0 / n as f64;
             let ns_per_key = build_secs * 1e9 / n as f64;
             eprintln!(
-                "CompVFunc {dist_name} n={label}: built in {build_secs:.2}s ({ns_per_key:.0} ns/key), {bytes} B, {bpk:.2} bits/key (max_val={max_val}, w={}, esc_len={}, esym_len={})",
-                func.global_max_codeword_length(),
-                func.escape_length(),
-                func.escaped_symbol_length(),
+                "CompVFunc {dist_name} n={label}: built in {build_secs:.2}s ({ns_per_key:.0} ns/key), {bytes} B, {bpk:.2} bits/key (max_val = {max_val}, max_codeword_len = {}, esym_len = {})",
+                func.decoder().max_codeword_len(),
+                func.decoder().escaped_symbols_len(),
             );
 
             // Convert to the unaligned variant for the query path.

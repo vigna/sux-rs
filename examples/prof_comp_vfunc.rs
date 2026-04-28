@@ -10,11 +10,12 @@
 //!   sample <pid> 30 -f /tmp/profile.txt
 
 use dsi_progress_logger::no_logging;
+use rand::SeedableRng;
 use rand::distr::Distribution;
 use rand::rngs::SmallRng;
-use rand::{RngExt, SeedableRng};
 use rand_distr::Geometric;
 use sux::func::CompVFunc;
+use sux::func::codec::Decoder;
 
 fn main() {
     let n = 10_000_000usize;
@@ -28,10 +29,9 @@ fn main() {
     eprintln!("Building CompVFunc...");
     let func = CompVFunc::<u64>::try_par_new(&keys, &values, no_logging![]).expect("build");
     eprintln!(
-        "Built. w={}, escape_len={}, esym_len={}",
-        func.global_max_codeword_length(),
-        func.escape_length(),
-        func.escaped_symbol_length()
+        "Built. max_codeword_len = {}, esym_len  ={}",
+        func.decoder().max_codeword_len(),
+        func.decoder().escaped_symbols_len()
     );
 
     // Prevent the optimizer from dropping the build.

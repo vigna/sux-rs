@@ -27,11 +27,11 @@ fn round_trip_generic<W: PrimitiveInteger + std::hash::Hash + std::fmt::Display>
 ) where
     u64: PrimitiveNumberAs<W>,
 {
-    let w = coder.max_codeword_length();
+    let w = coder.max_codeword_len();
 
     match coder.encode(symbol) {
         Some(cw) => {
-            let len = coder.codeword_length(symbol);
+            let len = coder.codeword_len(symbol);
             let mut value = 0usize;
             for k in 0..len {
                 value |= ((cw >> k) & 1) << (w - 1 - k);
@@ -41,8 +41,8 @@ fn round_trip_generic<W: PrimitiveInteger + std::hash::Hash + std::fmt::Display>
         }
         None => {
             let esc = coder.escape_codeword();
-            let esc_len = coder.max_codeword_length();
-            let esym_len = coder.escaped_symbols_length();
+            let esc_len = coder.max_codeword_len();
+            let esym_len = coder.escaped_symbols_len();
 
             // Verify escape codeword is recognized
             let mut value = 0usize;
@@ -77,11 +77,11 @@ fn round_trip_generic<W: PrimitiveInteger + std::hash::Hash + std::fmt::Display>
 }
 
 fn round_trip(coder: &HuffmanCoder<u64>, decoder: &HuffmanDecoder<u64>, symbol: u64) {
-    let w = coder.max_codeword_length();
+    let w = coder.max_codeword_len();
 
     match coder.encode(symbol) {
         Some(cw) => {
-            let len = coder.codeword_length(symbol);
+            let len = coder.codeword_len(symbol);
             let mut value = 0usize;
             for k in 0..len {
                 value |= ((cw >> k) & 1) << (w - 1 - k);
@@ -91,8 +91,8 @@ fn round_trip(coder: &HuffmanCoder<u64>, decoder: &HuffmanDecoder<u64>, symbol: 
         }
         None => {
             let esc = coder.escape_codeword();
-            let esc_len = coder.max_codeword_length();
-            let esym_len = coder.escaped_symbols_length();
+            let esc_len = coder.max_codeword_len();
+            let esym_len = coder.escaped_symbols_len();
 
             // Verify escape codeword is recognized
             let mut value = 0usize;
@@ -137,9 +137,9 @@ fn test_zero_codec() {
 fn test_huffman_single_symbol() {
     let f = freqs(&[(42, 100)]);
     let coder = Huffman::new().build_coder(&f);
-    assert_eq!(coder.codeword_length(42), 1);
+    assert_eq!(coder.codeword_len(42), 1);
     assert_eq!(
-        coder.escaped_symbols_length(),
+        coder.escaped_symbols_len(),
         0,
         "no escape for single symbol"
     );
@@ -155,12 +155,8 @@ fn test_huffman_two_symbols() {
     // `0..=usize::MAX`, crashing with index out of bounds.
     let f = freqs(&[(10, 7), (20, 3)]);
     let coder = Huffman::new().build_coder(&f);
-    assert_eq!(coder.max_codeword_length(), 1);
-    assert_eq!(
-        coder.escaped_symbols_length(),
-        0,
-        "no escape for two symbols"
-    );
+    assert_eq!(coder.max_codeword_len(), 1);
+    assert_eq!(coder.escaped_symbols_len(), 0, "no escape for two symbols");
     assert!(coder.encode(10).is_some());
     assert!(coder.encode(20).is_some());
     let decoder = coder.clone().into_decoder();
@@ -174,7 +170,7 @@ fn test_huffman_three_symbols() {
     let f = freqs(&[(0, 5), (1, 2), (2, 1)]);
     let coder = Huffman::new().build_coder(&f);
     assert_eq!(
-        coder.escaped_symbols_length(),
+        coder.escaped_symbols_len(),
         0,
         "no escape for three symbols"
     );
@@ -216,8 +212,8 @@ fn test_huffman_u128_large_values() {
     let coder = <Huffman as Codec<u128>>::build_coder(&Huffman::new(), &f);
     let decoder = coder.clone().into_decoder();
     for (s, _) in &pairs {
-        let w = coder.max_codeword_length();
-        let len = coder.codeword_length(*s);
+        let w = coder.max_codeword_len();
+        let len = coder.codeword_len(*s);
         let bits = coder.encode(*s);
         match bits {
             Some(cw) => {
@@ -231,7 +227,7 @@ fn test_huffman_u128_large_values() {
             }
             None => {
                 assert!(
-                    coder.escaped_symbols_length() > 0,
+                    coder.escaped_symbols_len() > 0,
                     "encode returned None but no escape path configured"
                 );
             }
@@ -249,14 +245,14 @@ fn test_huffman_u128_large_values_unlimited() {
     let f: HashMap<u128, usize> = pairs.iter().copied().collect();
     let coder = <Huffman as Codec<u128>>::build_coder(&Huffman::unlimited(), &f);
     assert_eq!(
-        coder.escaped_symbols_length(),
+        coder.escaped_symbols_len(),
         0,
         "no escape for u128 unlimited"
     );
     let decoder = coder.clone().into_decoder();
     for (s, _) in &pairs {
-        let w = coder.max_codeword_length();
-        let len = coder.codeword_length(*s);
+        let w = coder.max_codeword_len();
+        let len = coder.codeword_len(*s);
         let bits = coder.encode(*s).expect("symbol must be in the table");
         let mut value = 0usize;
         for k in 0..len {
@@ -278,7 +274,7 @@ fn test_huffman_length_limited() {
     }
     let f = freqs(&pairs);
     let coder = Huffman::length_limited(4, 0.95).build_coder(&f);
-    assert!(coder.escaped_symbols_length() > 0, "should have escapes");
+    assert!(coder.escaped_symbols_len() > 0, "should have escapes");
     let decoder = coder.clone().into_decoder();
     for (s, _) in pairs {
         round_trip(&coder, &decoder, s);
@@ -307,7 +303,7 @@ fn test_huffman_i8_with_escapes() {
     }
     let f = freqs_i8(&pairs);
     let coder = <Huffman as Codec<i8>>::build_coder(&Huffman::length_limited(3, 0.6), &f);
-    assert!(coder.escaped_symbols_length() > 0, "should have escapes");
+    assert!(coder.escaped_symbols_len() > 0, "should have escapes");
     let decoder = coder.clone().into_decoder();
     for (s, _) in pairs {
         round_trip_generic(&coder, &decoder, s);

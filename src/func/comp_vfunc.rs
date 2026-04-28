@@ -4,30 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! A compressed static function.
-//!
-//! [`CompVFunc`] maps `n` keys to values of type `D::Word`, representing each
-//! value with a [prefix-free codeword][crate::func::codec::Codec] (by
-//! default a length-limited [Huffman code][crate::func::codec::Huffman])
-//! and storing the codewords by peeling a fuse graph, as in the case of
-//! [`VFunc`].
-//!
-//! When the value distribution is skewed, this uses much less space
-//! than [`VFunc`]: roughly the empirical entropy of the value list plus
-//! ≈10% overhead.
-//!
-//! Within each shard, every key contributes `L` (= codeword length) linear
-//! equations, all sharing the same three base vertex positions and shifted by
-//! `l = 0 . . L − 1`. At query time we read three *w*-bit windows (with *w* the
-//! length of the longest keyword) at the per-shard base positions, XOR them,
-//! and [decode].
-//!
-//! [`VFunc`]: crate::func::VFunc
-//! [`VBuilder`]: crate::func::VBuilder
-//! [`ShardEdge`]: crate::func::shard_edge::ShardEdge
-//! [`ToSig`]: crate::utils::ToSig
-//! [decode]: crate::func::codec::Decoder::decode
-
 use crate::bits::{BitVec, BitVecU, test_unaligned_any_pos};
 use crate::func::VBuilder;
 use crate::func::codec::{Codec, Coder, Decoder, Huffman, HuffmanCoder, HuffmanDecoder};
@@ -55,7 +31,17 @@ use std::marker::PhantomData;
 
 /// A static function whose values are stored in compressed form.
 ///
-/// See the [module documentation](crate::func::comp_vfunc) for an overview.
+/// [`CompVFunc`] maps `n` keys to values of type `D::Word`, representing each
+/// value with a [prefix-free codeword][crate::func::codec::Codec] (by
+/// default a length-limited [Huffman code][crate::func::codec::Huffman])
+/// and storing the codewords by peeling a fuse graph, as in the case of
+/// [`VFunc`].
+///
+/// When the value distribution is skewed, this uses much less space than
+/// [`VFunc`]: roughly the empirical entropy of the value list plus ≈11%
+/// overhead. This estimate, however, does not take into consideration the
+/// storage of the decoder, which can be significant when the number of
+/// keys is very small.
 ///
 /// Instances of this structure are immutable; they are built using [`try_new`]
 /// or one of its variants, and can be serialized using [ε-serde] or [`serde`].
@@ -63,18 +49,35 @@ use std::marker::PhantomData;
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
 ///
+/// # Implementation notes
+///
+/// This structure follows roughly the design described by Marco Genuzio,
+/// Giuseppe Ottaviano, and Sebastiano Vigna in “[Fast scalable construction of
+/// (\[compressed\] static | minimal perfect hash)
+/// functions](https://doi.org/10.1016/j.ic.2020.104517)”, Information and
+/// Computation, 273:104517, 2020, but is based on [`Vfunc`] rather than
+/// on the static functions described in the paper.
+///
 /// # Generics
 ///
 /// * `K` - the key type.
-/// * `D` - the data backend; defaults to [`BitVec<Box<[usize]>>`](crate::bits::BitVec).
-///   The output value type is [`D::Word`](crate::traits::Backend::Word).
+///
+/// * `D` - the data backend: the output value type is [`D::Word`]; defaults to
+///   [`BitVec<Box<[usize]>>`](crate::bits::BitVec).
+///
 /// * `S` - the signature type; defaults to `[u64; 2]`.
+///
 /// * `E` - the [`ShardEdge`] used for sharding and local hashing;
 ///   defaults to [`Fuse3Shards`].
 ///
+/// [`VFunc`]: crate::func::VFunc
+/// [`VBuilder`]: crate::func::VBuilder
+/// [`ShardEdge`]: crate::func::shard_edge::ShardEdge
+/// [`ToSig`]: crate::utils::ToSig
 /// [`try_new`]: Self::try_new
 /// [ε-serde]: https://docs.rs/epserde/latest/epserde/
 /// [`serde`]: https://crates.io/crates/serde
+/// [`D::Word`]: Backend::Word
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(
@@ -133,7 +136,7 @@ impl<
         // cache the value in shard_size.
         let shard = self.shard_edge.shard(sig);
         let shard_offset = shard * self.shard_size;
-        let esym_len = self.decoder.escaped_symbols_length() as usize;
+        let esym_len = self.decoder.escaped_symbols_len() as usize;
         let local_sig = self.shard_edge.local_sig(sig);
         let local_edge = self.shard_edge.local_edge(local_sig);
 
@@ -152,7 +155,7 @@ impl<
         if let Some(decoded) = self.decoder.decode(value.as_to::<usize>()) {
             return decoded;
         }
-        // The literal sits at the low end [0 . . esym_len).
+        // The literal sits at the low end [0..esym_len).
         // SAFETY: the bit vector is padded.
         unsafe {
             self.data.get_value_unchecked(v0, esym_len)
@@ -173,81 +176,26 @@ impl<K: ?Sized, D: Backend<Word: Word>, S, E> CompVFunc<K, D, S, E> {
         self.num_keys == 0
     }
 
-    /// The maximum codeword length used by the underlying code (`w`).
-    pub fn global_max_codeword_length(&self) -> u32 {
-        self.decoder.max_codeword_length()
+    /// Provide access to the underlying [`HuffmanDecoder`].
+    ///
+    /// This is useful for inspecting the code properties (e.g., max codeword
+    /// length, escaped symbol length).
+    ///
+    /// If you need to set at runtime a branchy or branchless decoding strategy,
+    /// please use [`branchless`]
+    ///
+    /// [`branchless`]: Self::branchless
+    pub fn decoder(&self) -> &HuffmanDecoder<D::Word> {
+        &self.decoder
     }
 
-    /// Length of the escape codeword (0 when there are no escaped
-    /// symbols).
-    pub fn escape_length(&self) -> u32 {
-        Decoder::max_codeword_length(&self.decoder)
-    }
-
-    /// Width in bits of the literal field used to encode escaped
-    /// symbols (0 when there are no escaped symbols).
-    pub fn escaped_symbol_length(&self) -> u32 {
-        Decoder::escaped_symbols_length(&self.decoder)
-    }
-
-    /// Returns `true` if the underlying [`HuffmanDecoder`] is using
-    /// the branchless decode strategy.
-    pub const fn is_decoder_branchless(&self) -> bool {
-        self.decoder.is_branchless()
-    }
-
-    /// Forces the underlying [`HuffmanDecoder`] to use the branchy
-    /// (early-exit) or branchless (always-touch-all-blocks) decode
-    /// strategy. The default is chosen at construction time based on
-    /// the number of length blocks; this method overrides it.
-    pub fn decoder_branchless(&mut self, branchless: bool) -> &mut Self {
+    /// Set at runtime a branchy or branchless decoding strategy.
+    ///
+    /// Delegates to the underlying decoder [`branchless`] method.
+    ///
+    /// [`branchless`]: HuffmanDecoder::branchless
+    pub fn branchless(&mut self, branchless: bool) {
         self.decoder.branchless(branchless);
-        self
-    }
-}
-
-// ── Aligned ↔ Unaligned conversions ────────────────────────────────
-
-impl<K: ?Sized, W: Word, S, E> TryIntoUnaligned for CompVFunc<K, BitVec<Box<[W]>>, S, E> {
-    type Unaligned = CompVFunc<K, BitVecU<Box<[W]>>, S, E>;
-
-    fn try_into_unaligned(self) -> Result<Self::Unaligned, UnalignedConversionError> {
-        let esym = Decoder::escaped_symbols_length(&self.decoder) as usize;
-        if esym > 0 && !test_unaligned_any_pos!(W, esym) {
-            return Err(UnalignedConversionError(format!(
-                "escaped-symbol bit width {esym} does not satisfy the constraints \
-                 for arbitrary-position unaligned reads on {} (must be <= {})",
-                core::any::type_name::<W>(),
-                W::BITS as usize - 7
-            )));
-        }
-        Ok(CompVFunc {
-            shard_edge: self.shard_edge,
-            seed: self.seed,
-            num_keys: self.num_keys,
-            shard_size: self.shard_size,
-            codeword_mask: self.codeword_mask,
-            data: self.data.try_into_unaligned()?,
-            decoder: self.decoder,
-            _marker: PhantomData,
-        })
-    }
-}
-
-impl<K: ?Sized, W: Word, S, E> From<CompVFunc<K, BitVecU<Box<[W]>>, S, E>>
-    for CompVFunc<K, BitVec<Box<[W]>>, S, E>
-{
-    fn from(u: CompVFunc<K, BitVecU<Box<[W]>>, S, E>) -> Self {
-        CompVFunc {
-            shard_edge: u.shard_edge,
-            seed: u.seed,
-            num_keys: u.num_keys,
-            shard_size: u.shard_size,
-            codeword_mask: u.codeword_mask,
-            data: u.data.into(),
-            decoder: u.decoder,
-            _marker: PhantomData,
-        }
     }
 }
 
@@ -255,17 +203,15 @@ impl<K: ?Sized, W: Word, S, E> From<CompVFunc<K, BitVecU<Box<[W]>>, S, E>>
 //
 // CompVFunc shares its parallel infrastructure with
 // [`VBuilder`](crate::func::VBuilder): callers pass a
-// `VBuilder<BitVec<Box<[usize]>>, S, E>` configured with the
-// usual VBuilder knobs (offline, check-dups, low-mem, threads, eps,
-// seed). The only CompVFunc-specific configuration is the
-// [`Huffman`] codec used for values; the default is unlimited-length
-// Huffman.
+// VBuilder<BitVec<Box<[W]>>, S, E> configured with the usual VBuilder knobs
+// (offline, check-dups, low-mem, threads, eps, seed). The only
+// CompVFunc-specific configuration is the Huffman codec used for values; the
+// default is unlimited-length Huffman.
 //
 // Both build- and query-side edge generation go through
-// `ShardEdge::local_edge(shard_edge.local_sig(sig))`, which provides
-// fuse-graph structured base positions in `[0, num_vertices)`. The
-// multi-edge layout then adds `(w − 1 − l)` per codeword bit to each
-// base position.
+// ShardEdge::local_edge(shard_edge.local_sig(sig)), which provides fuse-graph
+// structured base positions in [0..num_vertices). The multi-edge layout then
+// adds (w − 1 − l) per codeword bit to each base position.
 
 impl<K, W, S, E> CompVFunc<K, BitVec<Box<[W]>>, S, E>
 where
@@ -400,34 +346,40 @@ where
 // output re-wrapping — is shared via `build_coder_from_frequencies`
 // and `make_build_fn` below.
 //
-// Storage during construction is `BitVec<Box<[usize]>>`, which
+// Storage during construction is `BitVec<Box<[W]>>`, which
 // implements `SliceByValueMut<Value = bool>` with a word-aligned
 // `try_chunks_mut` — exactly what VBuilder's `par_solve` requires.
-// The same `BitVec` is handed to `finish_build` unchanged, so the
-// query path gets its `get_value_unaligned` / `BitVecU` read
-// interface with zero re-wrapping.
+// The same `BitVec` is handed to `finish_build` unchanged.
 
 /// Builds a [`HuffmanCoder`] from a frequency map. The parallel
 /// path populates the map by iterating a value slice; the sequential
 /// path populates it by iterating a value lender (see
-/// `build_inner_seq`).
+/// [`build_inner_seq`]).
+///
+/// Returns an error if the resulting code has a maximum codeword length exceeding
+/// the unaligned-read limit of `W::BITS - 7`.
+///
+/// [`build_inner_seq`]: Self::build_inner_seq
 fn build_coder_from_frequencies<W: Word + Hash>(
     huffman: Huffman,
     frequencies: HashMap<W, usize>,
-) -> HuffmanCoder<W> {
+) -> Result<HuffmanCoder<W>> {
     let coder = huffman.build_coder(&frequencies);
     // The codeword is read via get_unaligned_unchecked, which reads a
     // full W and shifts right by up to 7 bits.
-    let w = coder.max_codeword_length();
+    let w = coder.max_codeword_len();
     let max = W::BITS - 7;
-    assert!(
-        w <= max,
-        "max codeword length {w} exceeds the unaligned-read limit of {max}"
-    );
-    coder
+    if w > max {
+        return Err(anyhow!(
+            "max codeword length {w} exceeds the unaligned-read limit of {max}: try again after limiting the Huffman codec"
+        ));
+    }
+    Ok(coder)
 }
 
-/// Slice fast-path for the frequency map used by `build_inner_par`.
+/// Slice fast-path for the frequency map used by [`build_inner_par`].
+///
+/// [`build_inner_par`]: Self::build_inner_par
 fn frequencies_from_slice<W: Word + Hash>(values: &[W]) -> HashMap<W, usize> {
     let mut frequencies: HashMap<W, usize> = HashMap::new();
     for &v in values {
@@ -464,14 +416,14 @@ where
     SigVal<S, W>: RadixKey,
     P: dsi_progress_logger::ProgressLog + Clone + Send + Sync,
 {
-    let escape_length = coder.max_codeword_length();
-    let escaped_symbol_length = coder.escaped_symbols_length();
+    let escape_length = coder.max_codeword_len();
+    let escaped_symbol_length = coder.escaped_symbols_len();
     let w = escape_length as usize + escaped_symbol_length as usize;
     let escape_codeword = coder.escape_codeword();
 
     let encode_val = move |v: W| -> (W, usize, u32) {
         match coder.encode(v) {
-            Some(cw) => (W::ZERO, cw, coder.codeword_length(v)),
+            Some(cw) => (W::ZERO, cw, coder.codeword_len(v)),
             None => {
                 let lit = if escaped_symbol_length == 0 {
                     W::ZERO
@@ -503,7 +455,7 @@ where
             let mut edges_in_shard: usize = 0;
             let keys_in_shard = shard.len();
             for sv in shard.iter() {
-                edges_in_shard += coder.encoded_length(sv.val) as usize;
+                edges_in_shard += coder.encoded_len(sv.val) as usize;
             }
             total_edges += edges_in_shard;
             max_shard_edges = max_shard_edges.max(edges_in_shard);
@@ -543,8 +495,8 @@ where
         let entropy = total_edges as f64 / num_keys as f64;
         pl.info(format_args!(
             "Huffman: max codeword length {}, escaped symbol length {}",
-            coder.max_codeword_length(),
-            coder.escaped_symbols_length()
+            coder.max_codeword_len(),
+            coder.escaped_symbols_len()
         ));
         pl.info(format_args!(
             "Average codeword length (entropy): {:.4} bits/key (total edges: {}, shards: {}, max shard edges: {})",
@@ -714,7 +666,7 @@ where
     W: Word,
 {
     let decoder = coder.into_decoder();
-    let w = decoder.max_codeword_length();
+    let w = decoder.max_codeword_len();
     let codeword_mask = if w == 0 {
         W::ZERO
     } else {
@@ -745,7 +697,7 @@ where
     let mut shard_edge = E::default();
     shard_edge.set_up_shards(0, eps);
     let decoder = coder.into_decoder();
-    let w = decoder.max_codeword_length();
+    let w = decoder.max_codeword_len();
     let codeword_mask = if w == 0 {
         W::ZERO
     } else {
@@ -795,7 +747,7 @@ where
     }
     let n: usize = frequencies.values().sum();
     let coder = huffman.build_coder(&frequencies);
-    let w = coder.max_codeword_length();
+    let w = coder.max_codeword_len();
     let max = W::BITS - 7;
     assert!(
         w <= max,
@@ -803,7 +755,7 @@ where
     );
     let total_edges: usize = frequencies
         .iter()
-        .map(|(&v, &count)| coder.encoded_length(v) as usize * count)
+        .map(|(&v, &count)| coder.encoded_len(v) as usize * count)
         .sum();
     values = values.rewind()?;
 
@@ -841,16 +793,13 @@ where
     SigVal<S, W>: RadixKey,
 {
     let n = keys.len();
-    let coder = build_coder_from_frequencies(huffman, frequencies_from_slice(values));
+    let coder = build_coder_from_frequencies(huffman, frequencies_from_slice(values))?;
 
     if n == 0 {
         return Ok(empty_comp_vfunc::<K, W, S, E>(coder, builder.eps));
     }
 
-    let total_edges: usize = values
-        .iter()
-        .map(|v| coder.encoded_length(*v) as usize)
-        .sum();
+    let total_edges: usize = values.iter().map(|v| coder.encoded_len(*v) as usize).sum();
     let mut builder = builder.expected_num_keys(n).shard_size_hint(total_edges);
     let mut build_fn = make_build_fn::<W, S, E, P>(&coder);
     let (data, seed_used, shard_size) =
@@ -1439,4 +1388,49 @@ where
     }
 
     Ok(())
+}
+
+// ── Aligned ↔ Unaligned conversions ────────────────────────────────
+
+impl<K: ?Sized, W: Word, S, E> TryIntoUnaligned for CompVFunc<K, BitVec<Box<[W]>>, S, E> {
+    type Unaligned = CompVFunc<K, BitVecU<Box<[W]>>, S, E>;
+
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, UnalignedConversionError> {
+        let esym = Decoder::escaped_symbols_len(&self.decoder) as usize;
+        if esym > 0 && !test_unaligned_any_pos!(W, esym) {
+            return Err(UnalignedConversionError(format!(
+                "escaped-symbol bit width {esym} does not satisfy the constraints \
+                 for arbitrary-position unaligned reads on {} (must be <= {})",
+                core::any::type_name::<W>(),
+                W::BITS as usize - 7
+            )));
+        }
+        Ok(CompVFunc {
+            shard_edge: self.shard_edge,
+            seed: self.seed,
+            num_keys: self.num_keys,
+            shard_size: self.shard_size,
+            codeword_mask: self.codeword_mask,
+            data: self.data.try_into_unaligned()?,
+            decoder: self.decoder,
+            _marker: PhantomData,
+        })
+    }
+}
+
+impl<K: ?Sized, W: Word, S, E> From<CompVFunc<K, BitVecU<Box<[W]>>, S, E>>
+    for CompVFunc<K, BitVec<Box<[W]>>, S, E>
+{
+    fn from(u: CompVFunc<K, BitVecU<Box<[W]>>, S, E>) -> Self {
+        CompVFunc {
+            shard_edge: u.shard_edge,
+            seed: u.seed,
+            num_keys: u.num_keys,
+            shard_size: u.shard_size,
+            codeword_mask: u.codeword_mask,
+            data: u.data.into(),
+            decoder: u.decoder,
+            _marker: PhantomData,
+        }
+    }
 }

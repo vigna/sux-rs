@@ -12,7 +12,7 @@ use mem_dbg::{MemSize, SizeFlags};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::time::Instant;
-use sux::func::codec::Huffman;
+use sux::func::codec::{Decoder, Huffman};
 use sux::func::shard_edge::Fuse3Shards;
 use sux::func::{CompVFunc, VBuilder};
 
@@ -85,7 +85,7 @@ fn run(n: usize, values: &[usize]) {
                 bits_per_key,
                 entropy,
                 overhead,
-                f.global_max_codeword_length(),
+                f.decoder().max_codeword_len(),
             );
         }
         Err(e) => eprintln!("n={n} FAILED: {e}"),

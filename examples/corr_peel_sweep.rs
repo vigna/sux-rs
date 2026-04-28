@@ -36,11 +36,11 @@
 //!
 //! # Distributions
 //!
-//! * `uniform`:     each key produces exactly `w` edges (worst case).
-//! * `geom`:        each key produces `k + 1` edges with `k` drawn
-//!                  from `Geometric(0.5)`. Mean ≈ 2, entropy ≈ 3.
+//! * `uniform`: each key produces exactly `w` edges (worst case).
+//! * `geom`: each key produces `k + 1` edges with `k` drawn
+//!   from `Geometric(0.5)`. Mean ≈ 2, entropy ≈ 3.
 //! * `shifted-geom`: each key produces `k + w` edges with `k` drawn
-//!                   from `Geometric(0.5)`. Tunable lower bound.
+//!   from `Geometric(0.5)`. Tunable lower bound.
 //!
 //! # Usage
 //!
@@ -222,7 +222,7 @@ fn fuselge3_c(n: usize) -> f64 {
     if n <= 100 {
         1.23
     } else if n <= MAX_LIN_SIZE {
-        1.125
+        todo!()
     } else if n <= MIN_FUSE_SHARD / 2 {
         1.125
     } else if n <= MIN_FUSE_SHARD {
@@ -347,8 +347,9 @@ fn build_zipf(s: f64, n: usize) -> ZipfData {
     }
     let coder = <Huffman as Codec<u64>>::build_coder(&Huffman::new(), &freqs);
     let mut lengths = vec![0u32; n + 1];
+    #[allow(clippy::needless_range_loop)]
     for rank in 1..=n {
-        let len = coder.encoded_length(rank as u64);
+        let len = coder.encoded_len(rank as u64);
         // Codeword length 0 happens only for the degenerate single-
         // symbol case; clamp to 1 so peels see at least one edge.
         lengths[rank] = len.max(1);
@@ -786,7 +787,7 @@ fn main() {
         let mean_len: f64 =
             z.lengths.iter().skip(1).copied().sum::<u32>() as f64 / args.zipf_n as f64;
         eprintln!(
-            "  zipf: s={} n={} mean_codeword_length={:.3} max_codeword_length={}",
+            "  zipf: s={} n={} mean_codeword_length={:.3} max_codeword_len={}",
             args.zipf_s, args.zipf_n, mean_len, max_len
         );
         Some(z)

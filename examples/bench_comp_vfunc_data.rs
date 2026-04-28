@@ -26,6 +26,7 @@ use std::fs;
 use std::hint::black_box;
 use std::time::Instant;
 use sux::bits::{BitFieldVec, BitVecU};
+use sux::func::codec::Decoder;
 use sux::func::{CompVFunc, VFunc};
 use sux::traits::TryIntoUnaligned;
 use sux::utils::FromSlice;
@@ -123,7 +124,7 @@ fn main() -> Result<()> {
         let mut total_bits: u64 = 0;
         let mut by_len: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
         for (&v, &f) in &freqs {
-            let l = coder.encoded_length(v);
+            let l = coder.encoded_len(v);
             total_bits += f as u64 * l as u64;
             *by_len.entry(l).or_insert(0) += 1;
         }
@@ -145,10 +146,9 @@ fn main() -> Result<()> {
     let bytes = func.mem_size(SizeFlags::default());
     let bpk = bytes as f64 * 8.0 / n as f64;
     eprintln!(
-        "Built in {comp_build_secs:.2}s. Size: {bytes} B = {bpk:.2} bits/key (w = {}, esc_len = {}, esym_len = {})",
-        func.global_max_codeword_length(),
-        func.escape_length(),
-        func.escaped_symbol_length(),
+        "Built in {comp_build_secs:.2}s. Size: {bytes} B = {bpk:.2} bits/key (max_codeword_len = {}, esym_len = {})",
+        func.decoder().max_codeword_len(),
+        func.decoder().escaped_symbols_len()
     );
 
     // ── Comparison build: flat VFunc on the same keys/values ──
@@ -194,7 +194,7 @@ fn main() -> Result<()> {
         .expect("CompVFunc TryIntoUnaligned failed");
     eprintln!(
         "default decoder strategy: {}",
-        if func_u.is_decoder_branchless() {
+        if func_u.decoder().is_branchless() {
             "branchless"
         } else {
             "branchy"
@@ -242,12 +242,12 @@ fn main() -> Result<()> {
         );
     }
 
-    func_u.decoder_branchless(false);
+    func_u.branchless(false);
     eprintln!("=== branchy decoder (forced) ===");
     bench_stream("seq  branchy   ", &seq_queries, &func_u, repeats);
     bench_stream("rnd  branchy   ", &rnd_queries, &func_u, repeats);
 
-    func_u.decoder_branchless(true);
+    func_u.branchless(true);
     eprintln!("=== branchless decoder (forced) ===");
     bench_stream("seq  branchless", &seq_queries, &func_u, repeats);
     bench_stream("rnd  branchless", &rnd_queries, &func_u, repeats);

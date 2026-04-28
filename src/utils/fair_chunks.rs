@@ -22,8 +22,6 @@ use crate::traits::{IndexedSeq, SuccUnchecked};
 /// (i.e., the sequence 0, `w₀`, `w₀ + w₁`, `w₀ + w₁ + w₂`, …), stored in a
 /// structure that supports [(unchecked) successor queries].
 ///
-/// [(unchecked) successor queries]: crate::traits::Succ
-///
 /// # Example
 ///
 /// ```rust
@@ -87,6 +85,8 @@ use crate::traits::{IndexedSeq, SuccUnchecked};
 ///     ],
 /// );
 /// ```
+///
+/// [(unchecked) successor queries]: crate::traits::Succ
 
 #[derive(Debug, Clone, Copy)]
 pub struct FairChunks<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64>> {
@@ -156,6 +156,7 @@ impl<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64> + IndexedSeq> FairC
     /// [`iter`]: crate::traits::IndexedSeq
     /// [`SuccUnchecked`]: crate::traits::SuccUnchecked
     /// [`new_with`]: Self::new_with
+    /// [`EliasFano`]: crate::dict::EliasFano
     #[must_use]
     pub fn new(target_weight: u64, cwf: I) -> Self {
         let len = cwf.len();

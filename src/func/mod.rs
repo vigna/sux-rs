@@ -99,7 +99,7 @@ pub mod shard_edge;
 pub mod codec;
 
 #[cfg(feature = "rayon")]
-pub mod comp_vfunc;
+mod comp_vfunc;
 #[cfg(feature = "rayon")]
 pub use comp_vfunc::CompVFunc;
 
