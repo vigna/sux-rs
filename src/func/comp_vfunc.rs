@@ -472,17 +472,8 @@ where
         // Compute the per-shard stride and allocate
         let num_vertices_per_shard = vb.shard_edge.num_vertices();
         let num_shards = vb.shard_edge.num_shards();
-        // `par_solve` derives `num_threads.ilog2()` for its internal
-        // buffer size; ensure it's initialized to a positive value.
-        // VFunc sets this inside `try_build_from_shard_iter`, which
-        // we're side-stepping, so we must set it ourselves.
         vb.num_threads = num_shards.min(vb.max_num_threads).max(1);
 
-        // ── Progress-log info mirroring VBuilder's
-        // `try_build_from_shard_iter` (vbuilder.rs:1202–1218) plus
-        // CompVFunc-specific entropy metrics: average codeword
-        // length (≈ H(values) in bits, the information-theoretic
-        // optimum) and the actual bits/key ratio.
         pl.info(format_args!(
             "{} with {} signatures",
             vb.shard_edge,
@@ -498,6 +489,7 @@ where
             "Average codeword length (entropy): {:.4} bits/key (total edges: {}, shards: {}, max shard edges: {})",
             entropy, total_edges, num_shards, max_shard_edges
         ));
+        // Padding for multi-edge expansion
         let raw_stride = num_vertices_per_shard + w as usize;
         // `par_solve` chunks the data via `BitVec::try_chunks_mut`,
         // which requires `chunk_size` to be a multiple of `W::BITS`.
@@ -516,32 +508,26 @@ where
 
         let mut data = BitVec::<Box<[W]>>::new_padded(total_bits);
 
-        // ── d) Call `par_solve` with the multi-edge closure. ──
-        //
         // Two peeler families:
         //
-        // * **Index peeler** (`solve_system` via `peel_by_index`):
-        //   materialises the full `edges: Vec<[u32; 3]>` and
-        //   `rhs: BitVec` upfront, then peels by edge index. Used
-        //   when per-shard vertex count exceeds
-        //   `PackedEdge::MAX_VERTEX` (the streamed peelers steal the
-        //   top bit of `v2` for the rhs flag and cannot represent
-        //   vertex indices ≥ 2³¹). This only triggers for very large
-        //   single-shard builds (typically `Fuse3NoShards` with
-        //   >800M keys).
+        // peel_by_edge_high_mem/peel_by_data_low_mem: edges are written
+        // into a XorGraph<PackedEdge> which keeps in a [u32; 3] both
+        // the edge and the associated bit, limiting the vertex count
+        // to `PackedEdge::MAX_VERTEX`; however, the representation is
+        // compact and peeling is fast.
         //
-        // * **Data peelers** (`peel_by_data_high_mem` /
-        //   `peel_by_data_low_mem`): stream edges directly into an
-        //   `XorGraph<PackedEdge>`. The low-mem heuristic mirrors
-        //   VBuilder: pick low-mem when explicitly requested, or by
-        //   default when `num_threads > 3 && num_shards > 2` (i.e.
-        //   the parallel build is memory-pressured).
+        // peel_by_index materialises edges as a Vec<[u32; 3]> and BitVec
+        // upfront, then peels by edge index. Used when per-shard vertex count
+        // exceeds `PackedEdge::MAX_VERTEX`.
         //
-        // None of the peelers use a Gaussian elimination fallback:
-        // on any unpeeled remainder the shard is retried with a new
+        // Note that the tradeoffs here are very different than in VBuilder,
+        // because we have a very large number of edges whose associated
+        // value is a single bit.
+        //
+        // None of the peelers use a Gaussian elimination fallback as in
+        // VBuilder: on any unpeeled remainder the shard is retried with a new
         // seed.
-        let packed_edge_safe = raw_stride <= PackedEdge::MAX_VERTEX as usize;
-        let force_index_peeler = !packed_edge_safe;
+        let force_index_peeler = raw_stride >= PackedEdge::MAX_VERTICES as usize;
         let use_low_mem = vb.low_mem == Some(true)
             || (vb.low_mem.is_none() && vb.num_threads > 3 && num_shards > 2);
         let solve_shard = |this: &VBuilder<BitVec<Box<[W]>>, S, E>,
@@ -555,16 +541,10 @@ where
             }
             let shard_edge = &this.shard_edge;
 
-            // Each peeler writes its solution directly into
-            // `shard_data` (the per-shard slice of the global
-            // `data` array, supplied to us by `par_solve`). No
-            // intermediate `BitVec` allocation, no copy. The slice
-            // is zero-initialised (the global `data` is
-            // `BitVec::new_padded`-built, all zero), and the
-            // peelers only call `set_unchecked` on pivots — bits
-            // we never touch stay zero.
+            // Each peeler writes its solution directly into `shard_data` (the
+            // per-shard slice of the global `data` array, supplied to us by
+            // `par_solve`).
             if force_index_peeler {
-                // Materialise edges/rhs upfront: needed because
                 // PackedEdge cannot represent vertex indices ≥ 2³¹.
                 let mut edges: Vec<[u32; 3]> = Vec::with_capacity(max_shard_edges);
                 let mut rhs: BitVec = BitVec::with_capacity(max_shard_edges);
@@ -598,7 +578,7 @@ where
                 }
                 peel_by_index(raw_stride, &edges, rhs, &mut shard_data).map_err(|_| ())?;
             } else if use_low_mem {
-                peel_by_data_low_mem(
+                peel_by_edge_low_mem(
                     shard,
                     shard_edge,
                     &encode_val,
@@ -609,7 +589,7 @@ where
                     &mut shard_data,
                 )?;
             } else {
-                peel_by_data_high_mem(
+                peel_by_edge_high_mem(
                     shard,
                     shard_edge,
                     &encode_val,
@@ -623,10 +603,6 @@ where
             Ok(())
         };
 
-        // Propagate the SolveError *unwrapped* so that
-        // VBuilder's retry loop can downcast it and re-roll the
-        // seed on UnsolvableShard / MaxShardTooBig / duplicate-sig
-        // outcomes.
         vb.par_solve(
             store.drain(),
             &mut data,
@@ -647,8 +623,8 @@ where
     }
 }
 
-/// Finalizes a successful build by packing the construction-side
-/// [`BitVec`] into a [`CompVFunc`].
+/// Finalizes a successful build by packing the construction-side [`BitVec`]
+/// into a [`CompVFunc`].
 fn finish_build<K, W, S, E>(
     shard_edge: E,
     coder: HuffmanCoder<W>,
@@ -803,14 +779,13 @@ where
 
 // ── Index-based peeler + solver ────────────────────────────────────
 
-/// Output of [`peel_by_index`]: the peel-order data needed to drive
-/// the reverse-peel assignment. The `XorGraph` itself is dropped
-/// when peeling returns — callers only need the peeled edge indices
-/// and their pivot sides.
-/// Peels a 3-uniform fuse graph and performs reverse-peel assignment.
+/// Peels a 3-uniform hypergraph by edge index and assign values, mirroring
+/// [`VBuilder::peel_by_index`](crate::func::vbuilder).
 ///
-/// If peeling does not succeed completely, returns an error so the
-/// caller can retry the shard with a fresh seed.
+/// This builder is used when the per-shard vertex count exceeds
+/// `PackedEdge::MAX_VERTEX` and we cannot use the other two peelers. It
+/// materializes the edge list in a `Vec<[u32; 3]>` and the right-hand side in a
+/// `BitVec`, then peels by edge index.
 fn peel_by_index<W: Word>(
     num_variables: usize,
     edges: &[[u32; 3]],
@@ -829,13 +804,6 @@ fn peel_by_index<W: Word>(
         );
     }
 
-    // Reverse-peel assignment. `DoubleStack::iter_upper()` yields
-    // items in newest-first order (the upper half grows downward),
-    // which is exactly the order we need: assign the latest-peeled
-    // pivot first, so that by the time a pivot's value is set, the
-    // other two vertices of its edge were pivots of edges peeled
-    // *later* (already set earlier in this loop). `sides_stack` is a
-    // regular Vec pushed in peel order, so we reverse it explicitly.
     for (&edge_idx, &side) in double_stack.iter_upper().zip(sides_stack.iter().rev()) {
         let [a, b, c] = edges[edge_idx as usize];
         let r = rhs[edge_idx as usize];
@@ -903,7 +871,7 @@ fn _peel_by_index(num_variables: usize, edges: &[[u32; 3]]) -> (DoubleStack<u32>
     let mut double_stack: DoubleStack<u32> = DoubleStack::new(num_variables);
     let mut sides_stack: Vec<u8> = Vec::with_capacity(n_edges);
 
-    assert!(!xor_graph.overflow, "Degree overflow",);
+    assert!(!xor_graph.overflow, "Degree overflow");
 
     // Seed the visit frontier with every degree-1 vertex.
     for (v, degree) in xor_graph.degrees().enumerate() {
@@ -923,10 +891,7 @@ fn _peel_by_index(num_variables: usize, edges: &[[u32; 3]]) -> (DoubleStack<u32>
         double_stack.push_upper(edge_idx);
         sides_stack.push(side as u8);
 
-        let e_u32 = edges[edge_idx as usize];
-        // `remove_edge!` indexes `$e[..]` directly with usize, so we
-        // convert the vertex triple here.
-        let e: [usize; 3] = [e_u32[0] as usize, e_u32[1] as usize, e_u32[2] as usize];
+        let e = edges[edge_idx as usize];
         remove_edge!(
             xor_graph,
             e,
@@ -934,7 +899,7 @@ fn _peel_by_index(num_variables: usize, edges: &[[u32; 3]]) -> (DoubleStack<u32>
             edge_idx,
             double_stack,
             push_lower,
-            |x: usize| x as u32
+            |x: u32| x
         );
     }
 
@@ -942,76 +907,44 @@ fn _peel_by_index(num_variables: usize, edges: &[[u32; 3]]) -> (DoubleStack<u32>
     (double_stack, sides_stack)
 }
 
-// ── Streamed (data-payload) peelers ────────────────────────────────
-
-/// A 3-uniform hyperedge payload that lives inside
-/// [`XorGraph<PackedEdge>`]. Stores the three vertex indices and the
-/// right-hand-side bit inline, so the peeler can recover everything
-/// it needs from `xor_graph.edges[v]` at degree-1 vertices — no
-/// secondary lookup into a caller-owned `Vec<[u32; 3]>` or `BitVec`
-/// of rhs values.
+/// A triple of `u32` values packing an edge and the associated bit.
 ///
-/// The layout is 12 bytes: three `u32` fields, with the `rhs` bit
-/// packed into the **high bit of `v2`**. This buys us 25% better
-/// cache density compared to a 16-byte layout (5.33 entries per
-/// 64-byte cache line instead of 4), at the cost of a vertex-index
-/// limit of `2^31 - 1` ≈ 2.1 billion per shard.
-///
-/// # Vertex limit
-///
-/// By stealing the top bit of `v2` for `rhs`, we halve the max per-
-/// shard vertex count from `u32::MAX` to `2^31 - 1`. For CompVFunc
-/// this is a hard constraint whenever num_vertices_per_shard crosses
-/// `1 << 31`; the dispatcher in `make_build_fn` checks
-/// `raw_stride <= PackedEdge::MAX_VERTEX` before routing to these
-/// peelers and falls back to [`peel_by_index`] (which uses
-/// `XorGraph<u32>` with no such restriction) when the limit is
-/// exceeded.
-///
-/// In practice, the default `Fuse3Shards` strategy picks enough
-/// shards to keep per-shard vertex counts well under `1 << 31` for
-/// any reasonable input. The limit only bites for `Fuse3NoShards`
-/// builds with very large key sets.
+/// The associated bit is stored in the high bit of `v2`. This gives us a very
+/// compact memory layout, at the cost of being limited to a maximum of
+/// [`PackedEdge::MAX_VERTICES`] = 2³¹ vertices.
 #[derive(Clone, Copy, Default, Debug)]
 struct PackedEdge {
+    /// First vertex.
     v0: u32,
+    /// Second vertex.
     v1: u32,
-    /// Low 31 bits: actual v2 vertex index.
-    /// Top bit: rhs bit for this edge.
-    v2_rhs: u32,
+    /// Top bit: associated bit; low 31 bits: third vertex.
+    v2_bit: u32,
 }
 
-// Pin the layout at compile time: the whole point of this design
-// is the 12-byte footprint, which gives us 5.33 entries per 64-byte
-// cache line instead of the 4 we'd get at 16 bytes. If a future
-// refactor accidentally bloats the struct (e.g. by adding a field
-// or an alignment attribute), this assertion catches it at build
-// time.
-const _: () = assert!(std::mem::size_of::<PackedEdge>() == 12);
-
 impl PackedEdge {
-    /// Max vertex index that can be stored in `PackedEdge` (since
-    /// the top bit of `v2` is stolen for the rhs flag).
-    const MAX_VERTEX: u32 = (1 << 31) - 1;
+    /// Maximum number of representable vertices, due to packing of the
+    /// associated bit into the high bit of the third vertex.
+    const MAX_VERTICES: u32 = (1 << 31);
 
     #[inline(always)]
     fn new(v0: u32, v1: u32, v2: u32, rhs: bool) -> Self {
         debug_assert!(
-            v0 <= Self::MAX_VERTEX && v1 <= Self::MAX_VERTEX && v2 <= Self::MAX_VERTEX,
-            "PackedEdge vertex index exceeds 2^31 - 1"
+            v0 < Self::MAX_VERTICES && v1 < Self::MAX_VERTICES && v2 < Self::MAX_VERTICES,
+            "PackedEdge vertex index exceeds 2³¹ – 1"
         );
         Self {
             v0,
             v1,
-            v2_rhs: v2 | ((rhs as u32) << 31),
+            v2_bit: v2 | ((rhs as u32) << 31),
         }
     }
 
     /// Returns the three vertex indices and the rhs bit.
     #[inline(always)]
     fn unpack(self) -> ([u32; 3], bool) {
-        let v2 = self.v2_rhs & Self::MAX_VERTEX;
-        let rhs = (self.v2_rhs >> 31) != 0;
+        let v2 = self.v2_bit & (u32::MAX >> 1);
+        let rhs = (self.v2_bit >> 31) != 0;
         ([self.v0, self.v1, v2], rhs)
     }
 }
@@ -1021,23 +954,20 @@ impl std::ops::BitXorAssign for PackedEdge {
     fn bitxor_assign(&mut self, other: Self) {
         self.v0 ^= other.v0;
         self.v1 ^= other.v1;
-        // XORing `v2_rhs` XORs both the low-31-bit v2 and the high-
-        // bit rhs in parallel — the two halves live in the same u32
-        // and the XOR distributes correctly because v2's encoding
-        // never touches bit 31 and rhs's encoding is always bit 31.
-        self.v2_rhs ^= other.v2_rhs;
+        self.v2_bit ^= other.v2_bit;
     }
 }
 
-/// Populates an [`XorGraph<PackedEdge>`] by streaming over the shard
-/// once, calling `encode_val` to produce the codeword and optional
-/// escaped literal for each `SigVal`, and deriving the hyperedges
-/// (with shifted vertex triples) inline — no intermediate
-/// `edges: Vec<[u32; 3]>` or `rhs: BitVec` materialization.
+/// Populates an [`XorGraph<PackedEdge>`] by iterating over the shard, calling
+/// `encode_val` to produce the codeword and optional escaped literal for each
+/// [`SigVal`], and deriving the hyperedges.
 ///
 /// Returns the populated graph and the total number of edges inserted
 /// (which is the sum of codeword lengths across the shard and is also
-/// the upper bound for the reverse-peel stack).
+/// the upper bound for the reverse-peel stack)
+///
+/// [`XorGraph<PackedEdge>`]: super::peeling::XorGraph
+/// [`SigVal`]: crate::func::SigVal
 fn populate_data_graph<W: BinSafe + Word, S, E>(
     shard: &[SigVal<S, W>],
     shard_edge: &E,
@@ -1082,21 +1012,12 @@ where
             add_edge!(base, off, ((lit >> l as u32) & W::ONE) != W::ZERO);
         }
     }
+
+    assert!(!xor_graph.overflow, "Degree overflow",);
     (xor_graph, n_edges)
 }
 
-/// Assigns a pivot's bit value in `solution` from the packed edge
-/// and its side. `side` is a `usize` because that's what
-/// `XorGraph::edge_and_side` returns; the match arms cover 0, 1, 2
-/// with an `unreachable_unchecked` guard for anything else (side is
-/// a 2-bit field by construction).
-///
-/// # Safety
-///
-/// All three vertex indices must be in-range for `solution`. This
-/// holds by construction: the edge was built from vertex indices
-/// derived from `base[i] + off` with `base[i] + off < num_variables`,
-/// and `solution.len() >= num_variables` by caller contract.
+/// Reverse-peel assignment for a single [`PackedEdge`].
 #[inline(always)]
 unsafe fn reverse_peel_assign<W: Word>(
     solution: &mut BitVec<&mut [W]>,
@@ -1128,16 +1049,13 @@ unsafe fn reverse_peel_assign<W: Word>(
     }
 }
 
-/// Streamed peeler for CompVFunc — high-memory variant. Mirrors
-/// [`VBuilder::peel_by_sig_vals_high_mem`]: after the graph is
-/// populated, peeled-edge metadata lands in a
-/// [`FastStack<PackedEdge>`] for cheap reverse-peel access. Faster
-/// than [`peel_by_data_low_mem`] at the cost of an extra
-/// `n_edges × 16` bytes of peel-time memory.
+/// Peels a 3-uniform hypergraph by edge (high-memory variant).
 ///
-/// Any unpeeled remainder returns `Err(())`, which `par_solve`
-/// turns into a seed-retry.
-fn peel_by_data_high_mem<W: Word + BinSafe, S, E>(
+/// Mirrors [`VBuilder::peel_by_sig_vals_high_mem`]: after the graph is
+/// populated, peeled-edge metadata lands in a [`FastStack<PackedEdge>`] for
+/// cheap reverse-peel access. Faster than [`peel_by_edge_low_mem`] at the cost
+/// of an extra `n_edges × 16` bytes of peel-time memory.
+fn peel_by_edge_high_mem<W: Word + BinSafe, S, E>(
     shard: std::sync::Arc<Vec<SigVal<S, W>>>,
     shard_edge: &E,
     encode_val: &impl Fn(W) -> (W, usize, u32),
@@ -1161,20 +1079,12 @@ where
         escaped_symbol_length,
     );
 
-    // Nothing else needs the shard — drop it to free ~shard_len ×
-    // size_of::<SigVal>() bytes before the peel walk starts.
     drop(shard);
-
-    if xor_graph.overflow {
-        return Err(());
-    }
 
     let mut peeled_edges_stack: FastStack<PackedEdge> = FastStack::new(n_edges);
     let mut sides_stack: FastStack<u8> = FastStack::new(n_edges);
-    // VBuilder's heuristic: the visit stack never needs more than
-    // ~num_vertices / 3 slots in steady state. Matching
-    // `peel_by_sig_vals_high_mem` at vbuilder.rs:1788 exactly.
-    let mut visit_stack: Vec<u32> = Vec::with_capacity(num_variables / 3 + 1);
+    // VBuilder's heuristic sizing
+    let mut visit_stack: Vec<u32> = Vec::with_capacity(num_variables / 3);
 
     // Seed the visit frontier with every degree-1 vertex.
     for (v, degree) in xor_graph.degrees().enumerate() {
@@ -1194,11 +1104,11 @@ where
         peeled_edges_stack.push(pe);
         sides_stack.push(side as u8);
 
-        let ([v0, v1, v2], _rhs) = pe.unpack();
-        let e: [usize; 3] = [v0 as usize, v1 as usize, v2 as usize];
-        remove_edge!(xor_graph, e, side, pe, visit_stack, push, |x: usize| x
-            as u32);
+        let (e, _rhs) = pe.unpack();
+        remove_edge!(xor_graph, e, side, pe, visit_stack, push, |x: u32| x);
     }
+
+    drop(xor_graph);
 
     if peeled_edges_stack.len() != n_edges {
         log::info!(
@@ -1210,13 +1120,6 @@ where
         return Err(());
     }
 
-    drop(xor_graph);
-
-    // Reverse-peel assignment writes pivots directly into `solution`
-    // (the per-shard slice of the global `data` array, supplied by
-    // the caller). Iterate newest-first over both stacks (they were
-    // pushed in peel order, oldest first). No intermediate BitVec
-    // allocation, no copy.
     for (&pe, &side) in peeled_edges_stack
         .iter()
         .rev()
@@ -1233,21 +1136,17 @@ where
     Ok(())
 }
 
-/// Streamed peeler for CompVFunc — low-memory variant. Mirrors
-/// [`VBuilder::peel_by_sig_vals_low_mem`]: a single
-/// [`DoubleStack<u32>`] holds the visit queue in its lower half and
-/// peeled pivot vertices in its upper half. At reverse-peel time we
-/// read back the packed edge via [`XorGraph::edge_and_side`], which
-/// works because [`XorGraph::zero`] only masks the degree bits —
-/// `xor_graph.edges[v]` is preserved.
+/// Peels a 3-uniform hypergraph by edge (high-memory variant).
 ///
-/// Uses roughly half the memory of [`peel_by_data_high_mem`] (no
-/// separate `FastStack<PackedEdge>`) at the cost of one extra
-/// `edge_and_side` call per assignment. Preferred when the build is
-/// parallel (high memory pressure) or `low_mem` is explicitly set.
+/// Mirrors [`VBuilder::peel_by_sig_vals_low_mem`]: after the graph is
+/// populated, a single [`DoubleStack<u32>`] holds the visit queue in its lower
+/// half and peeled pivot vertices in its upper half.
 ///
-/// Any unpeeled remainder returns `Err(())`.
-fn peel_by_data_low_mem<W: Word + BinSafe, S, E>(
+/// Uses roughly half the memory of [`peel_by_edge_high_mem`], but has
+/// worse locality on reverse-peel assignment.
+///
+/// [`peel_by_edge_high_mem`]: peel_by_edge_high_mem
+fn peel_by_edge_low_mem<W: Word + BinSafe, S, E>(
     shard: std::sync::Arc<Vec<SigVal<S, W>>>,
     shard_edge: &E,
     encode_val: &impl Fn(W) -> (W, usize, u32),
@@ -1294,22 +1193,10 @@ where
         debug_assert_eq!(xor_graph.degree(vu), 1);
         let (pe, side) = xor_graph.edge_and_side(vu);
         xor_graph.zero(vu);
-        // Store the pivot vertex itself; at assign time we'll read
-        // back `(pe, side)` via `edge_and_side` since `zero` only
-        // masked the degree bits.
         double_stack.push_upper(v);
 
-        let ([v0, v1, v2], _rhs) = pe.unpack();
-        let e: [usize; 3] = [v0 as usize, v1 as usize, v2 as usize];
-        remove_edge!(
-            xor_graph,
-            e,
-            side,
-            pe,
-            double_stack,
-            push_lower,
-            |x: usize| x as u32
-        );
+        let (e, _rhs) = pe.unpack();
+        remove_edge!(xor_graph, e, side, pe, double_stack, push_lower, |x: u32| x);
     }
 
     if double_stack.upper_len() != n_edges {
@@ -1322,10 +1209,6 @@ where
         return Err(());
     }
 
-    // Reverse-peel assignment writes pivots directly into `solution`
-    // (the per-shard slice supplied by the caller). `iter_upper()`
-    // yields pivots in newest-first order, exactly reverse peel
-    // order. No intermediate BitVec, no copy.
     for &pivot_v in double_stack.iter_upper() {
         let (pe, side) = xor_graph.edge_and_side(pivot_v as usize);
         // SAFETY: all vertex indices in `pe` are bounded by

@@ -1907,6 +1907,7 @@ impl<
         }
 
         pl.done();
+        drop(xor_graph);
 
         if shard_len != sig_vals_stack.len() {
             pl.info(format_args!(

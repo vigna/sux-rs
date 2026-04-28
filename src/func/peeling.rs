@@ -4,26 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Shared primitives for 3-uniform **F**₂ hypergraph peeling.
+//! Shared primitives for 3-uniform hypergraph peeling.
 //!
-//! This module holds [`XorGraph`], [`DoubleStack`], [`FastStack`] and
-//! the [`remove_edge!`] macro — the data structures used by
-//! [`VBuilder`](crate::func::VBuilder)'s three peelers and by
-//! [`CompVFunc`](crate::func::CompVFunc)'s solver. Their definitions
-//! are shared here so they can be used in both places; the peeler
-//! *loops* themselves live next to the code that owns the shard data
-//! they operate on (in `vbuilder.rs` for VFunc, in `comp_vfunc.rs`
-//! for CompVFunc), rather than being generalised over closures —
-//! the peeler hot path is benchmarked and we keep it inlined and
-//! monomorphised at each call site.
+//! This module holds the data structures used by [`VBuilder`] and [`CompVFunc`]
+//! to peel graphs.
 
 use std::ops::BitXorAssign;
 use std::slice::Iter;
 
 // ── XorGraph ────────────────────────────────────────────────────────
 
-/// A graph represented compactly for cache-oblivious peeling à la
-/// ["Cache-Oblivious Peeling of Random Hypergraphs"][cop].
+/// A graph represented compactly.
 ///
 /// Each (*k*-hyper)edge is a set of *k* vertices (by construction fuse graphs
 /// do not have degenerate edges), but we represent it internally as a vector.
@@ -33,14 +24,14 @@ use std::slice::Iter;
 /// and the sides of the vertex in such edges. While technically not necessary
 /// to perform peeling, the knowledge of the sides speeds up the peeling visit
 /// by reducing the number of tests that are necessary to update the degrees
-/// once the edge is peeled (see the `peel_by_*` methods in VBuilder). For
-/// the same reason it also speeds up assignment.
+/// once the edge is peeled (see the `peel_by_*` methods). For the same reason
+/// it also speeds up assignment.
 ///
 /// Depending on the peeling method (by signature or by index), the graph will
 /// store edge indices or signature/value pairs (the generic parameter `X`).
 ///
 /// Edge information is packed together using Djamal's XOR trick (see
-/// ["Cache-Oblivious Peeling of Random Hypergraphs"][cop]): since during the
+/// [“Cache-Oblivious Peeling of Random Hypergraphs”]): since during the
 /// peeling visit we need to know the content of the list only when a single
 /// edge index is present, we can XOR together all the edge information.
 ///
@@ -55,7 +46,7 @@ use std::slice::Iter;
 ///
 /// [zero the degree]: Self::zero
 ///
-/// [cop]: https://doi.org/10.1109/DCC.2014.48
+/// ["Cache-Oblivious Peeling of Random Hypergraphs"]: https://doi.org/10.1109/DCC.2014.48
 pub(crate) struct XorGraph<X: Copy + Default + BitXorAssign> {
     edges: Box<[X]>,
     degrees_sides: Box<[u8]>,
@@ -115,9 +106,12 @@ impl<X: BitXorAssign + Default + Copy> XorGraph<X> {
 // ── FastStack ───────────────────────────────────────────────────────
 
 /// A preallocated stack implementation that avoids the expensive (even if
-/// rarely taken) branch of the `Vec` implementation in which memory is
+/// rarely taken) branch of the [`Vec`] implementation in which memory is
 /// reallocated. Note that using [`Vec::with_capacity`] is not enough, because
 /// for the CPU the branch is still there.
+///
+/// [`Vec`]: std::vec::Vec
+/// [`Vec::with_capacity`]: std::vec::Vec::with_capacity
 pub(crate) struct FastStack<X: Copy + Default> {
     stack: Vec<X>,
     top: usize,
@@ -223,34 +217,34 @@ macro_rules! remove_edge {
     ($xor_graph: ident, $e: ident, $side: ident, $edge: ident, $stack: ident, $push:ident, $conv: expr) => {
         match $side {
             0 => {
-                if $xor_graph.degree($e[1]) == 2 {
+                if $xor_graph.degree($e[1] as usize) == 2 {
                     $stack.$push($conv($e[1]));
                 }
-                $xor_graph.remove($e[1], $edge, 1);
-                if $xor_graph.degree($e[2]) == 2 {
+                $xor_graph.remove($e[1] as usize, $edge, 1);
+                if $xor_graph.degree($e[2] as usize) == 2 {
                     $stack.$push($conv($e[2]));
                 }
-                $xor_graph.remove($e[2], $edge, 2);
+                $xor_graph.remove($e[2] as usize, $edge, 2);
             }
             1 => {
-                if $xor_graph.degree($e[0]) == 2 {
+                if $xor_graph.degree($e[0] as usize) == 2 {
                     $stack.$push($conv($e[0]));
                 }
-                $xor_graph.remove($e[0], $edge, 0);
-                if $xor_graph.degree($e[2]) == 2 {
+                $xor_graph.remove($e[0] as usize, $edge, 0);
+                if $xor_graph.degree($e[2] as usize) == 2 {
                     $stack.$push($conv($e[2]));
                 }
-                $xor_graph.remove($e[2], $edge, 2);
+                $xor_graph.remove($e[2] as usize, $edge, 2);
             }
             2 => {
-                if $xor_graph.degree($e[0]) == 2 {
+                if $xor_graph.degree($e[0] as usize) == 2 {
                     $stack.$push($conv($e[0]));
                 }
-                $xor_graph.remove($e[0], $edge, 0);
-                if $xor_graph.degree($e[1]) == 2 {
+                $xor_graph.remove($e[0] as usize, $edge, 0);
+                if $xor_graph.degree($e[1] as usize) == 2 {
                     $stack.$push($conv($e[1]));
                 }
-                $xor_graph.remove($e[1], $edge, 1);
+                $xor_graph.remove($e[1] as usize, $edge, 1);
             }
             // SAFETY: side is always 0, 1, or 2 (encoded as a 2-bit
             // field in the degrees_sides array).
