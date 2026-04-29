@@ -317,17 +317,14 @@ macro_rules! to_sig_prim {
         impl ToSig<[u64; 2]> for $ty {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
                 let bytes = key.borrow().to_ne_bytes();
-                let mut hasher = xxh3::Xxh3::with_seed(seed);
-                hasher.update(bytes.as_slice());
-                <[u64; 2]>::from_hasher(&hasher)
+                let h = xxh3::xxh3_128_with_seed(&bytes, seed);
+                [(h >> 64) as u64, h as u64]
             }
         }
         impl ToSig<[u64;1]> for $ty {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
                 let bytes = key.borrow().to_ne_bytes();
-                let mut hasher = xxh3::Xxh3::with_seed(seed);
-                hasher.update(bytes.as_slice());
-                <[u64; 1]>::from_hasher(&hasher)
+                [xxh3::xxh3_64_with_seed(&bytes, seed)]
             }
         }
     )*};
@@ -341,20 +338,17 @@ macro_rules! to_sig_slice {
     ($($ty:ty),*) => {$(
         impl ToSig<[u64; 2]> for &[$ty] {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
-                // Alignment to u8 never fails or leave trailing/leading bytes
-                let bytes = unsafe {key.borrow().align_to::<u8>().1 };
-                let mut hasher = xxh3::Xxh3::with_seed(seed);
-                hasher.update(bytes);
-                <[u64; 2]>::from_hasher(&hasher)
+                // Alignment to u8 never fails or leaves trailing/leading bytes
+                let bytes = unsafe { key.borrow().align_to::<u8>().1 };
+                let h = xxh3::xxh3_128_with_seed(bytes, seed);
+                [(h >> 64) as u64, h as u64]
             }
         }
         impl ToSig<[u64;1]> for &[$ty] {
             fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
-                // Alignment to u8 never fails or leave trailing/leading bytes
-                let bytes = unsafe {key.borrow().align_to::<u8>().1 };
-                let mut hasher = xxh3::Xxh3::with_seed(seed);
-                hasher.update(bytes);
-                <[u64; 1]>::from_hasher(&hasher)
+                // Alignment to u8 never fails or leaves trailing/leading bytes
+                let bytes = unsafe { key.borrow().align_to::<u8>().1 };
+                [xxh3::xxh3_64_with_seed(bytes, seed)]
             }
         }
 
