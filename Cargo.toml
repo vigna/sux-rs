@@ -198,5 +198,10 @@ name = "bench_comp_vfunc"
 harness = false
 
 [[bench]]
+name = "bench_vfilter"
+harness = false
+required-features = ["rayon"]
+
+[[bench]]
 name = "bench_part_elias_fano"
 harness = false
