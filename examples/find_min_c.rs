@@ -136,13 +136,13 @@ impl PeelBufs {
 
 fn required_success_rate(n: usize) -> f64 {
     if n <= 1000 {
-        0.50
+        0.25
     } else if n <= 10000 {
-        0.75
+        0.50
     } else if n <= 100000 {
-        0.875
+        0.75
     } else {
-        1.0
+        0.9
     }
 }
 
