@@ -8,7 +8,7 @@
 
 use dsi_progress_logger::no_logging;
 use sux::bits::BitVec;
-use sux::func::codec::{Decoder, Huffman};
+use sux::func::codec::{Decoder, HuffmanConf};
 use sux::func::{CompVFunc, VBuilder};
 use sux::traits::TryIntoUnaligned;
 use sux::utils::FromCloneableIntoIterator;
@@ -138,7 +138,7 @@ fn test_with_escapes() {
     let func = CompVFunc::<u64>::try_par_new_with_builder(
         &keys,
         &values,
-        Huffman::length_limited(8, 0.95),
+        HuffmanConf::length_limited(8, 0.95),
         VBuilder::default(),
         no_logging![],
     )
@@ -161,7 +161,7 @@ fn test_forced_escape() {
     let func = CompVFunc::<u64>::try_par_new_with_builder(
         &keys,
         &values,
-        Huffman::length_limited(1, 1.0),
+        HuffmanConf::length_limited(1, 1.0),
         VBuilder::default(),
         no_logging![],
     )
@@ -193,7 +193,7 @@ fn test_large_values_forced_escape() {
     let func = CompVFunc::<u64>::try_par_new_with_builder(
         &keys,
         &values,
-        Huffman::length_limited(1, 1.0),
+        HuffmanConf::length_limited(1, 1.0),
         VBuilder::default(),
         no_logging![],
     )
@@ -236,7 +236,7 @@ fn test_u16_full_range_forced_escape() {
     let func = CompVFunc::<u64, BitVec<Box<[u16]>>>::try_par_new_with_builder(
         &keys,
         &values,
-        Huffman::length_limited(1, 1.0),
+        HuffmanConf::length_limited(1, 1.0),
         VBuilder::default(),
         no_logging![],
     )
@@ -286,7 +286,7 @@ fn test_u32_full_range_forced_escape() {
     let func = CompVFunc::<u64, BitVec<Box<[u32]>>>::try_par_new_with_builder(
         &keys,
         &values,
-        Huffman::length_limited(1, 1.0),
+        HuffmanConf::length_limited(1, 1.0),
         VBuilder::default(),
         no_logging![],
     )
@@ -349,7 +349,7 @@ fn test_u64_full_range_forced_escape() {
     let func = CompVFunc::<u64, BitVec<Box<[u64]>>>::try_par_new_with_builder(
         &keys,
         &values,
-        Huffman::length_limited(1, 1.0),
+        HuffmanConf::length_limited(1, 1.0),
         VBuilder::default(),
         no_logging![],
     )
@@ -399,7 +399,7 @@ fn test_u128_full_range_forced_escape() {
     let func = CompVFunc::<u64, BitVec<Box<[u128]>>>::try_par_new_with_builder(
         &keys,
         &values,
-        Huffman::length_limited(1, 1.0),
+        HuffmanConf::length_limited(1, 1.0),
         VBuilder::default(),
         no_logging![],
     )
@@ -437,7 +437,7 @@ fn test_usize_msb_values() {
     let func = CompVFunc::<u64>::try_par_new_with_builder(
         &keys,
         &values,
-        Huffman::length_limited(1, 1.0),
+        HuffmanConf::length_limited(1, 1.0),
         VBuilder::default(),
         no_logging![],
     )

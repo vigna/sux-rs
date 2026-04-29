@@ -6,7 +6,7 @@
 
 use crate::bits::{BitVec, BitVecU, test_unaligned_any_pos};
 use crate::func::VBuilder;
-use crate::func::codec::{Codec, Coder, Decoder, Huffman, HuffmanCoder, HuffmanDecoder};
+use crate::func::codec::{Codec, Coder, Decoder, HuffmanCoder, HuffmanConf, HuffmanDecoder};
 use crate::func::peeling::{DoubleStack, FastStack, XorGraph, remove_edge};
 use crate::func::shard_edge::{Fuse3Shards, ShardEdge};
 use crate::traits::bit_vec_ops::{BitVecOps, BitVecOpsMut};
@@ -19,7 +19,7 @@ use anyhow::{Result, anyhow, bail};
 use core::error::Error;
 use dsi_progress_logger::ProgressLog;
 use lender::FallibleLending;
-use mem_dbg::{MemDbg, MemSize};
+use mem_dbg::{FlatType, MemDbg, MemSize, SizeFlags};
 use num_primitive::PrimitiveNumber;
 use rdst::RadixKey;
 use std::borrow::Borrow;
@@ -32,9 +32,8 @@ use std::marker::PhantomData;
 /// A static function whose values are stored in compressed form.
 ///
 /// [`CompVFunc`] maps `n` keys to values of type `D::Word`, representing each
-/// value with a [prefix-free codeword][crate::func::codec::Codec] (by
-/// default a length-limited [Huffman code][crate::func::codec::Huffman])
-/// and storing the codewords by peeling a fuse graph, as in the case of
+/// value with a [prefix-free codeword] (by default a length-limited [Huffman
+/// code]) and storing the codewords by peeling a fuse graph, as in the case of
 /// [`VFunc`].
 ///
 /// When the value distribution is skewed, this uses much less space than
@@ -73,6 +72,31 @@ use std::marker::PhantomData;
 ///   defaults to [`Fuse3Shards`] (see [`VFunc`] for details; note that
 ///   variants using Lazy Gaussian Elimination (LGE) are not supported).
 ///
+/// # Examples
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use sux::func::CompVFunc;
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::utils::FromCloneableIntoIterator;
+/// # use mem_dbg::{MemSize, SizeFlags};
+/// // Maps keys to their trailing zeros, which are distributed geometrically
+/// let func = <CompVFunc<usize>>::try_new(
+///     FromCloneableIntoIterator::new(0..100_usize),
+///     FromCloneableIntoIterator::new((1..101_usize).map(|x| x.trailing_zeros() as usize)),
+///     no_logging![],
+/// )?;
+///
+/// for i in 0..100 {
+///     assert_eq!(func.get(i), (i + 1).trailing_zeros() as usize);
+/// }
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
+///
 /// [`VFunc`]: crate::func::VFunc
 /// [`VBuilder`]: crate::func::VBuilder
 /// [`ShardEdge`]: crate::func::shard_edge::ShardEdge
@@ -82,6 +106,8 @@ use std::marker::PhantomData;
 /// [`serde`]: https://crates.io/crates/serde
 /// [`D::Word`]: Backend::Word
 /// [`branchless`]: Self::branchless
+/// [prefix-free codeword]: create::func::codec::Codec
+/// [Huffman code]: crate::func::codec::HuffmanConf
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(
@@ -217,13 +243,15 @@ impl<K: ?Sized, D: Backend<Word: Word>, S, E> CompVFunc<K, D, S, E> {
 impl<K, W, S, E> CompVFunc<K, BitVec<Box<[W]>>, S, E>
 where
     K: ?Sized + ToSig<S> + std::fmt::Debug,
-    W: Word + BinSafe + Hash,
+    W: Word + BinSafe + Hash + MemSize + FlatType,
     S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
+    E: ShardEdge<S, 3> + MemSize + FlatType,
     SigVal<S, W>: RadixKey,
+    BitVec<Box<[W]>>: MemSize + FlatType,
+    HuffmanDecoder<W>: MemSize + FlatType,
 {
-    /// Builds a [`CompVFunc`] from keys and values using default [`VBuilder`]
-    /// and [`Huffman`] codec settings.
+    /// Builds a [`CompVFunc`] from keys and values using a default
+    /// [`HuffmanConf`] and [`VBuilder`]
     ///
     /// Keys and values are consumed one at a time through their respective
     /// lenders; this path is the right choice for input coming from disk or
@@ -249,16 +277,16 @@ where
         > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        Self::try_new_with_builder(keys, values, Huffman::new(), VBuilder::default(), pl)
+        Self::try_new_with_builder(keys, values, HuffmanConf::new(), VBuilder::default(), pl)
     }
 
     /// Builds a [`CompVFunc`] from lenders of keys and values using
-    /// the given [`Huffman`] codec and [`VBuilder`] configuration.
+    /// the given [`HuffmanConf`] and [`VBuilder`].
     ///
     /// See [`try_new`](Self::try_new) for the streaming semantics.
     /// The `builder` argument controls every VBuilder-side
     /// construction knob (offline mode, thread count, sharding ε,
-    /// PRNG seed, etc.); the `huffman` argument controls the codec
+    /// PRNG seed, etc.); the [`HuffmanConf`] argument controls the codec
     /// used for the values.
     pub fn try_new_with_builder<B: ?Sized + Borrow<K>>(
         keys: impl FallibleRewindableLender<
@@ -269,7 +297,7 @@ where
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
-        huffman: Huffman,
+        huffman: HuffmanConf,
         builder: VBuilder<BitVec<Box<[W]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
@@ -280,10 +308,12 @@ where
 impl<K, W, S, E> CompVFunc<K, BitVec<Box<[W]>>, S, E>
 where
     K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
-    W: Word + BinSafe + Hash,
+    W: Word + BinSafe + Hash + MemSize + FlatType,
     S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
+    E: ShardEdge<S, 3> + MemSize + FlatType,
     SigVal<S, W>: RadixKey,
+    BitVec<Box<[W]>>: MemSize + FlatType,
+    HuffmanDecoder<W>: MemSize + FlatType,
 {
     /// Builds a [`CompVFunc`] from parallel slices of keys and values
     /// using default [`VBuilder`] and [`Huffman`] settings.
@@ -301,11 +331,11 @@ where
         values: &[W],
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        Self::try_par_new_with_builder(keys, values, Huffman::new(), VBuilder::default(), pl)
+        Self::try_par_new_with_builder(keys, values, HuffmanConf::new(), VBuilder::default(), pl)
     }
 
     /// Builds a [`CompVFunc`] from parallel slices of keys and values
-    /// using the given [`Huffman`] codec and [`VBuilder`] configuration.
+    /// using the given [`HuffmanConf`] and [`VBuilder`].
     ///
     /// If keys are produced sequentially (e.g., from a file), use
     /// [`try_new_with_builder`] instead.
@@ -314,7 +344,7 @@ where
     pub fn try_par_new_with_builder<B: Borrow<K> + Sync>(
         keys: &[B],
         values: &[W],
-        huffman: Huffman,
+        huffman: HuffmanConf,
         builder: VBuilder<BitVec<Box<[W]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
@@ -363,7 +393,7 @@ where
 /// Returns an error if the resulting code has a maximum codeword length exceeding
 /// the unaligned-read limit of `W::BITS - 7`.
 fn build_coder_from_frequencies<W: Word + Hash>(
-    huffman: Huffman,
+    huffman: HuffmanConf,
     frequencies: &HashMap<W, usize>,
 ) -> Result<HuffmanCoder<W>> {
     let coder = huffman.build_coder(frequencies);
@@ -475,19 +505,19 @@ where
         vb.num_threads = num_shards.min(vb.max_num_threads).max(1);
 
         pl.info(format_args!(
-            "{} with {} signatures",
-            vb.shard_edge,
-            core::any::type_name::<S>()
-        ));
-        let entropy = total_edges as f64 / num_keys as f64;
-        pl.info(format_args!(
-            "Huffman: max codeword length {}, escaped symbol length {}",
+            "Huffman: entropy: {:.3}; max codeword length {}; escaped symbol length {}",
+            coder.entropy(),
             coder.max_codeword_len(),
             coder.escaped_symbols_len()
         ));
         pl.info(format_args!(
-            "Average codeword length (entropy): {:.4} bits/key (total edges: {}, shards: {}, max shard edges: {})",
-            entropy, total_edges, num_shards, max_shard_edges
+            "Number of keys: {num_keys}; number of edges: {total_edges}; average codeword length: {:.3}",
+            total_edges as f64 / num_keys as f64
+        ));
+        pl.info(format_args!(
+            "{}; signatures: {}",
+            vb.shard_edge,
+            core::any::type_name::<S>()
         ));
         // Padding for multi-edge expansion
         let raw_stride = num_vertices_per_shard + w as usize;
@@ -496,7 +526,7 @@ where
         let stride = raw_stride.next_multiple_of(W::BITS as usize);
 
         pl.info(format_args!(
-            "c: {}, Overhead: {:+.4}% Number of threads: {}",
+            "c: {}; overhead (vertices/edges): {:+.3}%; number of threads: {}",
             c,
             100.0 * ((stride * num_shards) as f64 / (total_edges as f64) - 1.),
             vb.num_threads
@@ -531,21 +561,23 @@ where
         let use_low_mem = vb.low_mem == Some(true)
             || (vb.low_mem.is_none() && vb.num_threads > 3 && num_shards > 2);
         let solve_shard = |this: &VBuilder<BitVec<Box<[W]>>, S, E>,
-                           _shard_index: usize,
+                           shard_index: usize,
                            shard: std::sync::Arc<Vec<SigVal<S, W>>>,
                            mut shard_data: BitVec<&mut [W]>,
-                           _pl: &mut _|
+                           pl: &mut P|
          -> Result<(), ()> {
             if this.failed.load(std::sync::atomic::Ordering::Relaxed) {
                 return Err(());
             }
             let shard_edge = &this.shard_edge;
 
-            // Each peeler writes its solution directly into `shard_data` (the
-            // per-shard slice of the global `data` array, supplied to us by
-            // `par_solve`).
             if force_index_peeler {
-                // PackedEdge cannot represent vertex indices ≥ 2³¹.
+                pl.item_name("edge");
+                pl.start(format!(
+                    "Generating graph for shard {}/{} (index peeler)...",
+                    shard_index + 1,
+                    num_shards
+                ));
                 let mut edges: Vec<[u32; 3]> = Vec::with_capacity(max_shard_edges);
                 let mut rhs: BitVec = BitVec::with_capacity(max_shard_edges);
                 for sv in shard.iter() {
@@ -573,10 +605,20 @@ where
                         rhs.push(((lit >> l as u32) & W::ONE) != W::ZERO);
                     }
                 }
+                pl.done_with_count(edges.len());
                 if this.failed.load(std::sync::atomic::Ordering::Relaxed) {
                     return Err(());
                 }
-                peel_by_index(raw_stride, &edges, rhs, &mut shard_data).map_err(|_| ())?;
+                peel_by_index(
+                    raw_stride,
+                    &edges,
+                    rhs,
+                    &mut shard_data,
+                    pl,
+                    shard_index,
+                    num_shards,
+                )
+                .map_err(|_| ())?;
             } else if use_low_mem {
                 peel_by_edge_low_mem(
                     shard,
@@ -587,6 +629,9 @@ where
                     max_codeword_len as usize,
                     escaped_symbol_length as usize,
                     &mut shard_data,
+                    pl,
+                    shard_index,
+                    num_shards,
                 )?;
             } else {
                 peel_by_edge_high_mem(
@@ -598,11 +643,15 @@ where
                     max_codeword_len as usize,
                     escaped_symbol_length as usize,
                     &mut shard_data,
+                    pl,
+                    shard_index,
+                    num_shards,
                 )?;
             }
             Ok(())
         };
 
+        pl.log_level(log::Level::Debug);
         vb.par_solve(
             store.drain(),
             &mut data,
@@ -612,12 +661,7 @@ where
             pl,
         )
         .map_err(anyhow::Error::from)?;
-
-        pl.info(format_args!(
-            "Bits/keys: {} ({:+.4}%)",
-            data.len() as f64 / num_keys as f64,
-            100.0 * (data.len() as f64 / total_edges as f64 - 1.),
-        ));
+        pl.log_level(log::Level::Info);
 
         Ok((data, attempt_seed, stride))
     }
@@ -625,18 +669,20 @@ where
 
 /// Finalizes a successful build by packing the construction-side [`BitVec`]
 /// into a [`CompVFunc`].
-fn finish_build<K, W, S, E>(
+fn finish_build<K: ?Sized, W: Word + MemSize + FlatType, S, E: MemSize + FlatType>(
     shard_edge: E,
     coder: HuffmanCoder<W>,
     data: BitVec<Box<[W]>>,
     seed_used: u64,
     num_keys: usize,
     shard_size: usize,
+    pl: &mut impl ProgressLog,
 ) -> CompVFunc<K, BitVec<Box<[W]>>, S, E>
 where
-    K: ?Sized,
-    W: Word,
+    HuffmanDecoder<W>: MemSize + FlatType,
+    BitVec<Box<[W]>>: MemSize + FlatType,
 {
+    let entropy = coder.entropy();
     let decoder = coder.into_decoder();
     let w = decoder.max_codeword_len();
     let codeword_mask = if w == 0 {
@@ -644,7 +690,13 @@ where
     } else {
         W::MAX >> (W::BITS - w)
     };
-    CompVFunc {
+
+    pl.info(format_args!(
+        "Decoder: {} bits",
+        decoder.mem_size(SizeFlags::empty())
+    ));
+
+    let comp_vfunc = CompVFunc {
         shard_edge,
         seed: seed_used,
         num_keys,
@@ -653,7 +705,17 @@ where
         data,
         decoder,
         _marker: PhantomData,
-    }
+    };
+
+    let size = comp_vfunc.mem_size(SizeFlags::default()) as f64 * 8.0;
+
+    pl.info(format_args!(
+        "Bits/key: {:.3} ({:+.3}% with respect to entropy)",
+        size / num_keys as f64,
+        100.0 * (size / (num_keys as f64 * entropy) - 1.),
+    ));
+
+    comp_vfunc
 }
 
 /// Empty-function short-circuit shared by both entry points.
@@ -668,7 +730,7 @@ where
     // XOR read yields 0 and decode(0) returns Some(W::ZERO).
     let mut freqs = HashMap::new();
     freqs.insert(W::ZERO, 1);
-    let coder = Huffman::new().build_coder(&freqs);
+    let coder = HuffmanConf::new().build_coder(&freqs);
     let decoder = coder.into_decoder();
     let w = decoder.max_codeword_len();
     let codeword_mask = if w == 0 {
@@ -695,7 +757,7 @@ where
 /// Lender-based sequential path.
 fn build_inner_seq<
     K: ?Sized + ToSig<S> + std::fmt::Debug,
-    W: Word + BinSafe + Hash,
+    W: Word + BinSafe + Hash + MemSize + FlatType,
     B: ?Sized + Borrow<K>,
     V: FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
@@ -707,9 +769,9 @@ fn build_inner_seq<
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
     P: ProgressLog + Clone + Send + Sync,
     S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
+    E: ShardEdge<S, 3> + MemSize + FlatType,
 >(
-    huffman: Huffman,
+    huffman: HuffmanConf,
     builder: VBuilder<BitVec<Box<[W]>>, S, E>,
     keys: L,
     mut values: V,
@@ -717,6 +779,8 @@ fn build_inner_seq<
 ) -> Result<CompVFunc<K, BitVec<Box<[W]>>, S, E>>
 where
     SigVal<S, W>: RadixKey,
+    BitVec<Box<[W]>>: MemSize + FlatType,
+    HuffmanDecoder<W>: MemSize + FlatType,
 {
     let mut frequencies = <HashMap<W, usize>>::new();
     while let Some(&v) = values.next()? {
@@ -741,20 +805,20 @@ where
     drop(build_fn);
     let shard_edge = builder.shard_edge;
     Ok(finish_build(
-        shard_edge, coder, data, seed_used, n, shard_size,
+        shard_edge, coder, data, seed_used, n, shard_size, pl,
     ))
 }
 
 /// Slice-based parallel path.
 fn build_inner_par<
     K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
-    W: Word + BinSafe + Hash,
+    W: Word + BinSafe + Hash + MemSize + FlatType,
     B: Borrow<K> + Sync,
     P: ProgressLog + Clone + Send + Sync,
     S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
+    E: ShardEdge<S, 3> + MemSize + FlatType,
 >(
-    huffman: Huffman,
+    huffman: HuffmanConf,
     builder: VBuilder<BitVec<Box<[W]>>, S, E>,
     keys: &[B],
     values: &[W],
@@ -762,6 +826,8 @@ fn build_inner_par<
 ) -> Result<CompVFunc<K, BitVec<Box<[W]>>, S, E>>
 where
     SigVal<S, W>: RadixKey,
+    BitVec<Box<[W]>>: MemSize + FlatType,
+    HuffmanDecoder<W>: MemSize + FlatType,
 {
     let n = keys.len();
     let coder = build_coder_from_frequencies(huffman, &frequencies_from_slice(values))?;
@@ -773,7 +839,7 @@ where
     drop(build_fn);
     let shard_edge = builder.shard_edge;
     Ok(finish_build(
-        shard_edge, coder, data, seed_used, n, shard_size,
+        shard_edge, coder, data, seed_used, n, shard_size, pl,
     ))
 }
 
@@ -791,19 +857,42 @@ fn peel_by_index<W: Word>(
     edges: &[[u32; 3]],
     rhs: BitVec,
     solution: &mut BitVec<&mut [W]>,
+    pl: &mut impl ProgressLog,
+    shard_index: usize,
+    num_shards: usize,
 ) -> Result<()> {
+    pl.start(format!(
+        "Peeling graph for shard {}/{}...",
+        shard_index + 1,
+        num_shards
+    ));
     let (double_stack, sides_stack) = _peel_by_index(num_variables, edges);
     let n_peeled = double_stack.upper_len();
     let n_total = edges.len();
 
     if n_peeled < n_total {
+        pl.debug(format_args!(
+            "Peeling failed for shard {}/{} (peeled {} out of {} edges, {:.2}% unpeeled)",
+            shard_index + 1,
+            num_shards,
+            n_peeled,
+            n_total,
+            100.0 * (n_total - n_peeled) as f64 / n_total as f64,
+        ));
+        pl.done();
         bail!(
             "peeling failed ({} unpeeled out of {})",
             n_total - n_peeled,
             n_total
         );
     }
+    pl.done();
 
+    pl.start(format!(
+        "Assigning values for shard {}/{}...",
+        shard_index + 1,
+        num_shards
+    ));
     for (&edge_idx, &side) in double_stack.iter_upper().zip(sides_stack.iter().rev()) {
         let [a, b, c] = edges[edge_idx as usize];
         let r = rhs[edge_idx as usize];
@@ -830,6 +919,8 @@ fn peel_by_index<W: Word>(
             solution.set_unchecked(pivot as usize, val);
         }
     }
+
+    pl.done_with_count(n_total);
 
     #[cfg(debug_assertions)]
     for (i, &[a, b, c]) in edges.iter().enumerate() {
@@ -1064,11 +1155,19 @@ fn peel_by_edge_high_mem<W: Word + BinSafe, S, E>(
     escape_length: usize,
     escaped_symbol_length: usize,
     solution: &mut BitVec<&mut [W]>,
+    pl: &mut impl ProgressLog,
+    shard_index: usize,
+    num_shards: usize,
 ) -> Result<(), ()>
 where
     S: Sig,
     E: ShardEdge<S, 3>,
 {
+    pl.start(format!(
+        "Generating graph for shard {}/{} (high-mem)...",
+        shard_index + 1,
+        num_shards
+    ));
     let (mut xor_graph, n_edges) = populate_data_graph(
         &shard,
         shard_edge,
@@ -1078,15 +1177,19 @@ where
         escape_length,
         escaped_symbol_length,
     );
+    pl.done_with_count(n_edges);
 
     drop(shard);
 
+    pl.start(format!(
+        "Peeling graph for shard {}/{} (high-mem)...",
+        shard_index + 1,
+        num_shards
+    ));
     let mut peeled_edges_stack: FastStack<PackedEdge> = FastStack::new(n_edges);
     let mut sides_stack: FastStack<u8> = FastStack::new(n_edges);
-    // VBuilder's heuristic sizing
     let mut visit_stack: Vec<u32> = Vec::with_capacity(num_variables / 3);
 
-    // Seed the visit frontier with every degree-1 vertex.
     for (v, degree) in xor_graph.degrees().enumerate() {
         if degree == 1 {
             visit_stack.push(v as u32);
@@ -1111,32 +1214,39 @@ where
     drop(xor_graph);
 
     if peeled_edges_stack.len() != n_edges {
-        log::info!(
-            "Peeling failed (peeled {} out of {} edges, {:.2}% unpeeled)",
+        pl.debug(format_args!(
+            "Peeling failed for shard {}/{} (peeled {} out of {} edges, {:.2}% unpeeled)",
+            shard_index + 1,
+            num_shards,
             peeled_edges_stack.len(),
             n_edges,
             100.0 * (n_edges - peeled_edges_stack.len()) as f64 / n_edges as f64,
-        );
+        ));
+        pl.done();
         return Err(());
     }
+    pl.done();
 
+    pl.start(format!(
+        "Assigning values for shard {}/{} (high-mem)...",
+        shard_index + 1,
+        num_shards
+    ));
     for (&pe, &side) in peeled_edges_stack
         .iter()
         .rev()
         .zip(sides_stack.iter().rev())
     {
-        // SAFETY: all vertex indices in `pe` are bounded by
-        // `num_variables`, and `solution.len() >= num_variables` by
-        // caller contract.
         unsafe {
             reverse_peel_assign(solution, pe, side as usize);
         }
     }
+    pl.done_with_count(n_edges);
 
     Ok(())
 }
 
-/// Peels a 3-uniform hypergraph by edge (high-memory variant).
+/// Peels a 3-uniform hypergraph by edge (low-memory variant).
 ///
 /// Mirrors [`VBuilder::peel_by_sig_vals_low_mem`]: after the graph is
 /// populated, a single [`DoubleStack<u32>`] holds the visit queue in its lower
@@ -1155,11 +1265,19 @@ fn peel_by_edge_low_mem<W: Word + BinSafe, S, E>(
     escape_length: usize,
     escaped_symbol_length: usize,
     solution: &mut BitVec<&mut [W]>,
+    pl: &mut impl ProgressLog,
+    shard_index: usize,
+    num_shards: usize,
 ) -> Result<(), ()>
 where
     S: Sig,
     E: ShardEdge<S, 3>,
 {
+    pl.start(format!(
+        "Generating graph for shard {}/{} (low-mem)...",
+        shard_index + 1,
+        num_shards
+    ));
     let (mut xor_graph, n_edges) = populate_data_graph(
         &shard,
         shard_edge,
@@ -1169,6 +1287,7 @@ where
         escape_length,
         escaped_symbol_length,
     );
+    pl.done_with_count(n_edges);
 
     drop(shard);
 
@@ -1176,9 +1295,13 @@ where
         return Err(());
     }
 
+    pl.start(format!(
+        "Peeling graph for shard {}/{} (low-mem)...",
+        shard_index + 1,
+        num_shards
+    ));
     let mut double_stack: DoubleStack<u32> = DoubleStack::new(num_variables.max(1));
 
-    // Seed the visit frontier with every degree-1 vertex.
     for (v, degree) in xor_graph.degrees().enumerate() {
         if degree == 1 {
             double_stack.push_lower(v as u32);
@@ -1200,24 +1323,31 @@ where
     }
 
     if double_stack.upper_len() != n_edges {
-        log::info!(
-            "Peeling failed (peeled {} out of {} edges, {:.2}% unpeeled)",
+        pl.debug(format_args!(
+            "Peeling failed for shard {}/{} (peeled {} out of {} edges, {:.2}% unpeeled)",
+            shard_index + 1,
+            num_shards,
             double_stack.upper_len(),
             n_edges,
             100.0 * (n_edges - double_stack.upper_len()) as f64 / n_edges as f64,
-        );
+        ));
+        pl.done();
         return Err(());
     }
+    pl.done();
 
+    pl.start(format!(
+        "Assigning values for shard {}/{} (low-mem)...",
+        shard_index + 1,
+        num_shards
+    ));
     for &pivot_v in double_stack.iter_upper() {
         let (pe, side) = xor_graph.edge_and_side(pivot_v as usize);
-        // SAFETY: all vertex indices in `pe` are bounded by
-        // `num_variables`, and `solution.len() >= num_variables`
-        // by caller contract.
         unsafe {
             reverse_peel_assign(solution, pe, side);
         }
     }
+    pl.done_with_count(n_edges);
 
     Ok(())
 }

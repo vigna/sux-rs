@@ -12,6 +12,7 @@ use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
+use mem_dbg::{FlatType, MemSize};
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
 use sux::cli::{
@@ -48,7 +49,7 @@ struct Args {
     unaligned: bool,
     /// A name for the ε-serde serialized function.​
     func: Option<String>,
-    /// Use the two-step variant (less space for skewed distributions, slightly slower queries).​
+    /// Use the two-step variant (less space for skewed distributions, slightly slower queries). In this case, values are the number of trailing zeros of the keys.​
     #[arg(long, conflicts_with = "hash_type")]
     two_step: bool,
     /// Sign the function using hashes of this type.​
@@ -184,7 +185,9 @@ macro_rules! n_save_sign_par(
     }}
 );
 
-fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Result<()>
+fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3> + MemSize + FlatType>(
+    args: Args,
+) -> Result<()>
 where
     str: ToSig<S>,
     usize: ToSig<S>,
@@ -455,7 +458,7 @@ fn main_two_step(args: Args) -> Result<()> {
         let n = args.n.unwrap();
         if args.sequential {
             let keys: Vec<usize> = (0..n).collect();
-            let vals: Vec<usize> = (0..n).collect();
+            let vals: Vec<usize> = (0..n).map(|k| (k + 1).trailing_zeros() as usize).collect();
             let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> = VFunc2::try_new_with_builder(
                 FromSlice::new(&keys),
                 FromSlice::new(&vals),
@@ -471,7 +474,7 @@ fn main_two_step(args: Args) -> Result<()> {
             }
         } else {
             let keys: Vec<usize> = (0..n).collect();
-            let values: Vec<usize> = (0..n).collect();
+            let values: Vec<usize> = (0..n).map(|k| (k + 1).trailing_zeros() as usize).collect();
             let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> =
                 VFunc2::try_par_new_with_builder(&keys, &values, builder, &mut pl)?;
             if let Some(filename) = args.func {

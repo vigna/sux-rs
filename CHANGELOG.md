@@ -20,10 +20,23 @@ F# Change Log
 - Iterator from successors and predecessors in indexed dictionaries have
   been extracted into separate traits.
 
+- All structures support `MemSize`.
+
 ### Fixed
 
-- Unsound reference-based `From` implementations between `BitVec`, 
+- Unsound reference-based `From` implementations between `BitVec`,
   `AtomicBitVec`, etc. have been removed.
+
+### Improved
+
+- Structured logging for structures with substructures.
+
+- Signing is parallel, and possibly from the store, when possible.
+
+### Changed
+
+- Field naming and logging have been reorganized. Serialized structures
+  will be incompatible.
 
 ## [0.14.0] - 2026-04-11
 

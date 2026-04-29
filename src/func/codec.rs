@@ -70,15 +70,19 @@ pub trait Coder<W> {
     /// [`codeword_len`]: Self::codeword_len
     fn encoded_len(&self, symbol: W) -> u32;
 
-    /// The maximum prefix code length across all symbols.
+    /// Returns the maximum prefix code length across all symbols.
     fn max_codeword_len(&self) -> u32;
 
-    /// The escape codeword (length is [`max_codeword_len`](Self::max_codeword_len)).
+    /// Returns the escape codeword (length is
+    /// [`max_codeword_len`](Self::max_codeword_len)).
     fn escape_codeword(&self) -> usize;
 
-    /// The length in bits of escaped symbols, or zero if the code has
+    /// Returns the length in bits of escaped symbols, or zero if the code has
     /// no escape.
     fn escaped_symbols_len(&self) -> u32;
+
+    /// Returns the empirical entropy of the symbol distribution, in bits.
+    fn entropy(&self) -> f64;
 
     /// Builds the matching decoder.
     fn into_decoder(self) -> Self::Decoder;
@@ -154,6 +158,9 @@ impl<W: PrimitiveInteger> Coder<W> for ZeroCoder {
     fn escaped_symbols_len(&self) -> u32 {
         0
     }
+    fn entropy(&self) -> f64 {
+        0.0
+    }
     fn into_decoder(self) -> ZeroDecoder {
         ZeroDecoder
     }
@@ -201,7 +208,7 @@ impl<W: PrimitiveInteger> Decoder<W> for ZeroDecoder {
 /// [canonical codes]: https://doi.org/10.1145/363958.363991
 /// [`escaped_symbols_len`]: Decoder::escaped_symbols_len
 #[derive(Debug, Clone, Copy)]
-pub struct Huffman {
+pub struct HuffmanConf {
     /// Hard cap on the number of distinct codeword lengths kept in
     /// the decoding table. Symbols whose codeword length exceeds
     /// this limit are encoded via the escape codeword followed by
@@ -214,7 +221,7 @@ pub struct Huffman {
     pub entropy_threshold: f64,
 }
 
-impl Default for Huffman {
+impl Default for HuffmanConf {
     fn default() -> Self {
         Self {
             max_decoding_table_len: 20,
@@ -223,9 +230,9 @@ impl Default for Huffman {
     }
 }
 
-impl Huffman {
-    /// New Huffman codec with sensible defaults (table length 20,
-    /// entropy threshold 0.9).
+impl HuffmanConf {
+    /// Returns a new Huffman configuration with sensible defaults (table length
+    /// 20, entropy threshold 0.9).
     pub const fn new() -> Self {
         Self {
             max_decoding_table_len: 20,
@@ -233,7 +240,7 @@ impl Huffman {
         }
     }
 
-    /// Unlimited Huffman codec: no cap on codeword lengths, no
+    /// Returns an unlimited Huffman codec: no cap on codeword lengths, no
     /// entropy cut. All symbols get a codeword; no escape mechanism
     /// is used. This can produce very long codewords for skewed
     /// distributions.
@@ -244,13 +251,16 @@ impl Huffman {
         }
     }
 
-    /// Huffman codec with custom limits.
+    /// Returns a Huffman codec with custom limits.
     ///
-    /// `max_decoding_table_len` caps the number of distinct
-    /// codeword lengths in the canonical decoding table;
-    /// `entropy_threshold` is the cumulative-entropy fraction
-    /// beyond which infrequent symbols are diverted to the escape
-    /// codeword.
+    /// # Arguments
+    ///
+    /// * `max_decoding_table_len` - caps the number of distinct
+    ///   codeword lengths in the canonical decoding table.
+    ///
+    /// * `entropy_threshold` - the cumulative-entropy fraction
+    ///   beyond which infrequent symbols are diverted to the escape
+    ///   codeword.
     pub const fn length_limited(max_decoding_table_len: usize, entropy_threshold: f64) -> Self {
         Self {
             max_decoding_table_len,
@@ -278,9 +288,12 @@ pub struct HuffmanCoder<W> {
     escaped_symbols_len: u32,
     /// The length in bits of the escape codeword.
     escape_codeword_len: u32,
+    /// Empirical entropy of the symbol distribution, in bits. Used for
+    /// testing and debugging.
+    entropy: f64,
 }
 
-impl<W: PrimitiveInteger + Hash> Codec<W> for Huffman {
+impl<W: PrimitiveInteger + Hash> Codec<W> for HuffmanConf {
     type Coder = HuffmanCoder<W>;
     fn build_coder(&self, frequencies: &HashMap<W, usize>) -> HuffmanCoder<W> {
         build_huffman_coder(
@@ -327,6 +340,10 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
         self.escaped_symbols_len
     }
 
+    fn entropy(&self) -> f64 {
+        self.entropy
+    }
+
     fn into_decoder(self) -> HuffmanDecoder<W> {
         let has_escape = self.escape_codeword_len > 0;
         let size = self.codeword.len();
@@ -337,7 +354,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
                 how_many_up_to_block: Box::new([]),
                 shift: Box::new([]),
                 symbol: Box::new([]),
-                num_real_symbols: 0,
+                num_coded_symbols: 0,
                 max_codeword_len: 0,
                 escaped_symbols_len: 0,
                 branchless: false,
@@ -436,7 +453,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
             how_many_up_to_block: how_many_up_to_block.into_boxed_slice(),
             shift: shift.into_boxed_slice(),
             symbol: self.symbol,
-            num_real_symbols,
+            num_coded_symbols: num_real_symbols,
             max_codeword_len: last_l,
             escaped_symbols_len: self.escaped_symbols_len,
             branchless,
@@ -497,7 +514,7 @@ pub struct HuffmanDecoder<W> {
     symbol: Box<[W]>,
     /// Number of non-escape symbols. An index `≥ num_real_symbols`
     /// from the canonical decoder means the escape codeword was hit.
-    num_real_symbols: u32,
+    num_coded_symbols: u32,
     /// The maximum codeword length in bits. This is the width of the read
     /// window expected by [`Decoder::decode`].
     max_codeword_len: u32,
@@ -551,7 +568,7 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
     /// two blocks catch almost every query).
     #[inline(always)]
     fn decode_branchy(&self, value: usize) -> Option<W> {
-        let nrs = self.num_real_symbols as usize;
+        let nrs = self.num_coded_symbols as usize;
         for curr in 0..self.last_codeword_plus_one.len() {
             // SAFETY: `curr` is bounded by the loop range.
             unsafe {
@@ -581,7 +598,7 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
     /// block.
     #[inline(always)]
     fn decode_branchless(&self, value: usize) -> Option<W> {
-        let nrs = self.num_real_symbols as usize;
+        let nrs = self.num_coded_symbols as usize;
         let n = self.last_codeword_plus_one.len();
         let mut idx: usize = 0;
         for curr in 0..n {
@@ -607,6 +624,30 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
     }
 }
 
+fn entropy<W: PrimitiveInteger>(frequencies: &HashMap<W, usize>) -> f64 {
+    let total: u64 = frequencies.values().map(|&x| x as u64).sum();
+
+    // Entropy of an empty set or a single category is 0
+    if total <= 1 {
+        return 0.0;
+    }
+
+    let total_f = total as f64;
+
+    // Calculate the sum of (count * log2(count))
+    let sum_clogc: f64 = frequencies
+        .values()
+        .filter(|&&c| c > 0)
+        .map(|c| {
+            let c_f = *c as f64;
+            c_f * c_f.log2()
+        })
+        .sum();
+
+    // H = log2(N) - (1/N * sum)
+    total_f.log2() - (sum_clogc / total_f)
+}
+
 // ── Huffman code construction ──────────────────────────────────────
 
 fn build_huffman_coder<W: PrimitiveInteger + Hash>(
@@ -623,6 +664,7 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
             symbol_to_rank: HashMap::new(),
             escaped_symbols_len: 0,
             escape_codeword_len: 0,
+            entropy: 0.0,
         };
     }
 
@@ -794,6 +836,7 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
         symbol_to_rank,
         escaped_symbols_len: max_length_escaped,
         escape_codeword_len,
+        entropy: entropy(frequencies),
     }
 }
 
@@ -804,7 +847,7 @@ mod tests {
     #[test]
     fn test_no_escape_codeword_count() {
         let f: HashMap<u64, usize> = [(10, 5), (20, 3), (30, 1)].into_iter().collect();
-        let coder: HuffmanCoder<u64> = Huffman::new().build_coder(&f);
+        let coder: HuffmanCoder<u64> = HuffmanConf::new().build_coder(&f);
         assert_eq!(coder.codeword.len(), 3);
         assert_eq!(coder.codeword_len.len(), 3);
         assert_eq!(coder.symbol.len(), 3);

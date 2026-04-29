@@ -12,6 +12,7 @@ use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
+use mem_dbg::{FlatType, MemSize};
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
 use sux::cli::{BuilderArgs, ShardingArgs, read_lines_concatenated, str_slice_from_offsets};
@@ -124,7 +125,11 @@ fn main() -> Result<()> {
     }
 }
 
-fn main_with_types_boxed_slice<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
+fn main_with_types_boxed_slice<
+    W: Word + BinSafe + MemSize + FlatType,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3> + MemSize + FlatType,
+>(
     args: Args,
 ) -> Result<()>
 where
@@ -144,6 +149,7 @@ where
     VFunc<str, Box<[W]>, S, E>: Serialize,
     VFilter<VFunc<usize, Box<[W]>, S, E>>: Serialize,
     VFilter<VFunc<str, Box<[W]>, S, E>>: Serialize,
+    Box<[W]>: MemSize + FlatType,
 {
     if args.unaligned {
         bail!("--unaligned is not supported for backend Box<[W]>; use a custom bit width");
@@ -218,7 +224,11 @@ where
     Ok(())
 }
 
-fn main_with_types_bit_field_vec<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
+fn main_with_types_bit_field_vec<
+    W: Word + BinSafe + MemSize + FlatType,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3> + MemSize + FlatType,
+>(
     args: Args,
 ) -> Result<()>
 where
@@ -232,6 +242,7 @@ where
         Serialize + TryIntoUnaligned<Unaligned: Serialize>,
     VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>:
         Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    BitFieldVec<Box<[W]>>: MemSize + FlatType,
 {
     #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();

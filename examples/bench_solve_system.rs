@@ -13,7 +13,7 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::time::Instant;
 use sux::bits::BitVec;
-use sux::func::codec::{Decoder, Huffman};
+use sux::func::codec::{Decoder, HuffmanConf};
 use sux::func::shard_edge::Fuse3Shards;
 use sux::func::{CompVFunc, VBuilder};
 
@@ -52,7 +52,7 @@ fn bench(n: usize, keys: &[u64], values: &[usize], low_mem: Option<bool>, trials
     let _ = CompVFunc::<u64>::try_par_new_with_builder(
         keys,
         values,
-        Huffman::new(),
+        HuffmanConf::new(),
         make_builder(low_mem),
         no_logging![],
     );
@@ -63,7 +63,7 @@ fn bench(n: usize, keys: &[u64], values: &[usize], low_mem: Option<bool>, trials
         let func = CompVFunc::<u64>::try_par_new_with_builder(
             keys,
             values,
-            Huffman::new(),
+            HuffmanConf::new(),
             make_builder(low_mem),
             no_logging![],
         )

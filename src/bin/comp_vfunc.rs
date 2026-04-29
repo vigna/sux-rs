@@ -10,12 +10,13 @@ use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
+use mem_dbg::{FlatType, MemSize};
 use rdst::RadixKey;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use sux::bits::BitVec;
 use sux::cli::{BuilderArgs, ShardingArgs, read_lines_concatenated, str_slice_from_offsets};
-use sux::func::codec::Huffman;
+use sux::func::codec::HuffmanConf;
 use sux::func::shard_edge::{Fuse3NoShards, Fuse3Shards, ShardEdge};
 use sux::func::{CompVFunc, VBuilder};
 use sux::init_env_logger;
@@ -132,7 +133,9 @@ fn main() -> Result<()> {
     }
 }
 
-fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(args: Args) -> Result<()>
+fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3> + MemSize + FlatType>(
+    args: Args,
+) -> Result<()>
 where
     str: ToSig<S>,
     usize: ToSig<S>,
@@ -143,7 +146,8 @@ where
 {
     let vbuilder: VBuilder<BitVec<Box<[usize]>>, S, E> =
         args.builder.configure(VBuilder::default());
-    let huffman = Huffman::length_limited(args.huffman_max_length, args.huffman_entropy_threshold);
+    let huffman =
+        HuffmanConf::length_limited(args.huffman_max_length, args.huffman_entropy_threshold);
 
     let values = read_values(&args.values)?;
     let n_values = values.len();

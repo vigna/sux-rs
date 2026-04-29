@@ -337,7 +337,7 @@ fn build_zipf(s: f64, n: usize) -> ZipfData {
 
     // Build a Huffman code over the Zipf frequencies and look up
     // the codeword length for each rank.
-    use sux::func::codec::{Codec, Coder, Huffman};
+    use sux::func::codec::{Codec, Coder, HuffmanConf};
     let scale: f64 = 1_000_000.0;
     let mut freqs: HashMap<u64, usize> = HashMap::new();
     for rank in 1..=n {
@@ -345,7 +345,7 @@ fn build_zipf(s: f64, n: usize) -> ZipfData {
         let count = ((p * scale).round() as usize).max(1);
         freqs.insert(rank as u64, count);
     }
-    let coder = <Huffman as Codec<u64>>::build_coder(&Huffman::new(), &freqs);
+    let coder = <HuffmanConf as Codec<u64>>::build_coder(&HuffmanConf::new(), &freqs);
     let mut lengths = vec![0u32; n + 1];
     #[allow(clippy::needless_range_loop)]
     for rank in 1..=n {

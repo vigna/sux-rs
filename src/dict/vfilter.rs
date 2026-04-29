@@ -232,6 +232,7 @@ mod build {
     use core::error::Error;
     use dsi_progress_logger::ProgressLog;
     use lender::*;
+    use mem_dbg::{FlatType, MemSize};
     use rdst::RadixKey;
     use std::ops::{BitXor, BitXorAssign};
     use value_traits::slices::SliceByValueMut;
@@ -240,9 +241,10 @@ mod build {
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         W: Word + BinSafe,
         S: Sig + Send + Sync,
-        E: ShardEdge<S, 3>,
+        E: ShardEdge<S, 3> + MemSize + FlatType,
     > VFilter<VFunc<K, Box<[W]>, S, E>>
     where
+        Box<[W]>: MemSize + FlatType,
         SigVal<S, EmptyVal>: RadixKey,
         SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
     {
@@ -500,7 +502,7 @@ mod build {
                     .into();
 
                     pl.info(format_args!(
-                        "Number of keys: {} Bit width: {}",
+                        "Number of keys: {}; bit width: {}",
                         builder.num_keys, builder.bit_width,
                     ));
 
@@ -528,9 +530,10 @@ mod build {
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         W: Word + BinSafe,
         S: Sig + Send + Sync,
-        E: ShardEdge<S, 3>,
+        E: ShardEdge<S, 3> + MemSize + FlatType,
     > VFilter<VFunc<K, BitFieldVec<Box<[W]>>, S, E>>
     where
+        BitFieldVec<Box<[W]>>: MemSize + FlatType,
         SigVal<S, EmptyVal>: RadixKey,
         SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
     {
@@ -795,7 +798,7 @@ mod build {
                     );
 
                     pl.info(format_args!(
-                        "Number of keys: {} Bit width: {}",
+                        "Number of keys: {}; bit width: {}",
                         builder.num_keys, builder.bit_width,
                     ));
 
@@ -828,6 +831,7 @@ mod tests {
     use std::ops::{BitXor, BitXorAssign};
 
     use dsi_progress_logger::no_logging;
+    use mem_dbg::{FlatType, MemSize};
     use num_primitive::PrimitiveNumberAs;
     use rdst::RadixKey;
 
@@ -848,8 +852,10 @@ mod tests {
         Ok(())
     }
 
-    fn _test_filter_func<S: Sig + Send + Sync, E: ShardEdge<S, 3, LocalSig = [u64; 1]>>()
-    -> anyhow::Result<()>
+    fn _test_filter_func<
+        S: Sig + Send + Sync,
+        E: ShardEdge<S, 3, LocalSig = [u64; 1]> + MemSize + FlatType,
+    >() -> anyhow::Result<()>
     where
         usize: ToSig<S>,
         u128: PrimitiveNumberAs<usize>,

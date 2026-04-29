@@ -62,7 +62,7 @@ use xxhash_rust::xxh3;
 /// [`LcpMmphfInt`].
 ///
 /// Stores the original integer value and a bit length. The [`ToSig`]
-/// implementation hashes only the top `bit_length` bits (by masking out
+/// implementation hashes only the top `bit_len` bits (by masking out
 /// the bottom bits) followed by the bit length, directly on the stack
 /// with no allocation.
 #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
@@ -73,21 +73,21 @@ pub struct IntBitPrefix<K> {
     /// The original integer value.
     value: K,
     /// Number of significant leading bits.
-    bit_length: usize,
+    bit_len: usize,
 }
 
 impl<K: PrimitiveInteger> IntBitPrefix<K> {
     /// Creates a new integer bit prefix.
     #[inline]
-    pub fn new(value: K, bit_length: usize) -> Self {
-        debug_assert!(bit_length <= K::BITS as usize);
-        Self { value, bit_length }
+    pub fn new(value: K, bit_len: usize) -> Self {
+        debug_assert!(bit_len <= K::BITS as usize);
+        Self { value, bit_len }
     }
 
-    /// Returns the value with the bottom `K::BITS - bit_length` bits
-    /// masked out. When `bit_length == 0` (shift by `K::BITS` would
+    /// Returns the value with the bottom `K::BITS - bit_len` bits
+    /// masked out. When `bit_len == 0` (shift by `K::BITS` would
     /// overflow), returns `K::MIN`; this is harmless because the hash
-    /// includes `bit_length` for disambiguation.
+    /// includes `bit_len` for disambiguation.
     ///
     /// Uses `K::MIN | K::MAX` as the all-ones value so that the mask
     /// is correct for both signed types (where `K::MAX` lacks the MSB)
@@ -98,14 +98,14 @@ impl<K: PrimitiveInteger> IntBitPrefix<K> {
     #[inline]
     fn masked_value(&self) -> K {
         let all_ones = K::MIN | K::MAX;
-        match all_ones.checked_shl(K::BITS - self.bit_length as u32) {
+        match all_ones.checked_shl(K::BITS - self.bit_len as u32) {
             Some(m) => self.value & m,
-            None => K::MIN, // bit_length == 0
+            None => K::MIN, // bit_len == 0
         }
     }
 }
 
-/// Packs significant bits and bit_length into a contiguous stack buffer
+/// Packs significant bits and bit_len into a contiguous stack buffer
 /// for one-shot xxh3 hashing. Returns the number of bytes written.
 /// Buffer must be at least `size_of::<K>() + size_of::<usize>()` bytes.
 #[inline]
@@ -115,7 +115,7 @@ pub(crate) fn pack_int_bit_prefix<K: PrimitiveInteger>(
 ) -> usize {
     let val: K::Bytes = bp.masked_value().to_ne_bytes();
     let val = val.borrow() as &[u8];
-    let len = bp.bit_length.to_ne_bytes();
+    let len = bp.bit_len.to_ne_bytes();
     let n = val.len() + len.len();
     buf[..val.len()].copy_from_slice(val);
     buf[val.len()..n].copy_from_slice(&len);
@@ -162,12 +162,23 @@ mod build {
         theoretical.next_power_of_two().ilog2() as usize
     }
 
+    fn log_bits_per_key(pl: &mut impl ProgressLog, structure: &impl MemSize, n: usize) {
+        let total_bits = structure.mem_size(SizeFlags::default()) * 8;
+        let log2n = (n as f64).log2();
+        pl.info(format_args!(
+            "Bits/key: {:.3} ({:+.3}% with respect to log₂n ≈ {:.3})",
+            total_bits as f64 / n as f64,
+            100.0 * (total_bits as f64 / n as f64 / log2n - 1.0),
+            log2n
+        ));
+    }
+
     impl<
         K: PrimitiveInteger + ToSig<S0> + std::fmt::Debug + Send + Sync + Copy + Ord,
         S0: Sig + Send + Sync,
-        E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+        E0: ShardEdge<S0, 3> + MemSize + FlatType,
         S1: Sig + Send + Sync,
-        E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+        E1: ShardEdge<S1, 3> + MemSize + FlatType,
     > LcpMmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, S1, E1>
     where
         IntBitPrefix<K>: ToSig<S1>,
@@ -301,8 +312,8 @@ mod build {
                     Self {
                         n: 0,
                         log2_bucket_size: 0,
-                        offset_lcp_length: VFunc::empty(),
-                        lcp2bucket: VFunc::empty(),
+                        lcp_len_offset: VFunc::empty(),
+                        lcp_to_bucket: VFunc::empty(),
                     },
                     keys,
                 ));
@@ -312,17 +323,17 @@ mod build {
             let bucket_size = 1usize << log2_bs;
             let bucket_mask = bucket_size - 1;
             let num_buckets = n.div_ceil(bucket_size);
-            let lcp2bucket_builder = VBuilder::default()
+            let lcp_to_bucket_builder = VBuilder::default()
                 .set_from(&builder)
                 .expected_num_keys(num_buckets);
 
             pl.info(format_args!(
-                "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
+                "LCP bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
             ));
 
             // -- First pass: compute bit-level LCPs --
 
-            let mut lcp_bit_lengths: Vec<usize> = Vec::with_capacity(num_buckets);
+            let mut lcp_bit_lens: Vec<usize> = Vec::with_capacity(num_buckets);
             let mut bucket_first_keys: Vec<K> = Vec::with_capacity(num_buckets);
 
             let mut prev_key: Option<K> = None;
@@ -346,7 +357,7 @@ mod build {
                 if offset == 0 {
                     // First key of a new bucket.
                     if i > 0 {
-                        lcp_bit_lengths.push(curr_lcp_bits);
+                        lcp_bit_lens.push(curr_lcp_bits);
                     }
                     bucket_first_keys.push(key);
                     // Initialize to full bit width (integers have fixed
@@ -362,49 +373,47 @@ mod build {
             }
 
             assert_eq!(i, n, "Expected {n} keys but got {i}");
-            lcp_bit_lengths.push(curr_lcp_bits);
-            assert_eq!(lcp_bit_lengths.len(), num_buckets);
+            lcp_bit_lens.push(curr_lcp_bits);
+            assert_eq!(lcp_bit_lens.len(), num_buckets);
 
-            // -- Build offset_lcp_length VFunc --
+            // -- Build lcp_len_offset VFunc --
 
-            pl.info(format_args!("Building key → (LCP length, offset) map..."));
+            pl.push_log_target(" ▸ lcp_len_offset");
+            pl.info(format_args!("Building key → lcp_len | offset function..."));
             let keys = keys.rewind()?;
 
-            let (offset_lcp_length, keys) =
+            let (lcp_len_offset, keys) =
                 builder.expected_num_keys(n).try_build_func::<K, K, _, _>(
                     keys,
                     FromCloneableIntoIterator::new((0..n).map(|idx| {
-                        (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
+                        (lcp_bit_lens[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
                     })),
                     BitFieldVec::<Box<[usize]>>::new_padded,
                     pl,
                 )?;
+            pl.pop_log_target();
 
             // Sequential: num_buckets is small and we avoid materializing the key set
-            pl.info(format_args!(
-                "Building LCP prefix → bucket map ({num_buckets} buckets)..."
-            ));
-            let lcp2bucket =
+            pl.push_log_target(" ▸ lcp_to_bucket");
+            pl.info(format_args!("Building LCP → bucket function..."));
+            let lcp_to_bucket =
                 <VFunc<IntBitPrefix<K>, BitFieldVec<Box<[usize]>>, S1, E1>>::try_new_with_builder(
                     FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
-                        IntBitPrefix::new(bucket_first_keys[b] ^ K::MIN, lcp_bit_lengths[b])
+                        IntBitPrefix::new(bucket_first_keys[b] ^ K::MIN, lcp_bit_lens[b])
                     })),
                     FromCloneableIntoIterator::new(0..num_buckets),
-                    lcp2bucket_builder,
+                    lcp_to_bucket_builder,
                     pl,
                 )?;
+            pl.pop_log_target();
 
             let result = Self {
                 n,
                 log2_bucket_size: log2_bs,
-                offset_lcp_length,
-                lcp2bucket,
+                lcp_len_offset,
+                lcp_to_bucket,
             };
-            let total_bits = result.mem_size(SizeFlags::default()) * 8;
-            pl.info(format_args!(
-                "Actual bit cost per key: {:.2} ({total_bits} bits for {n} keys)",
-                total_bits as f64 / n as f64
-            ));
+            log_bits_per_key(pl, &result, n);
 
             Ok((result, keys))
         }
@@ -507,8 +516,8 @@ mod build {
                 return Ok(Self {
                     n: 0,
                     log2_bucket_size: 0,
-                    offset_lcp_length: VFunc::empty(),
-                    lcp2bucket: VFunc::empty(),
+                    lcp_len_offset: VFunc::empty(),
+                    lcp_to_bucket: VFunc::empty(),
                 });
             }
 
@@ -516,17 +525,17 @@ mod build {
             let bucket_size = 1usize << log2_bs;
             let bucket_mask = bucket_size - 1;
             let num_buckets = n.div_ceil(bucket_size);
-            let lcp2bucket_builder = VBuilder::default()
+            let lcp_to_bucket_builder = VBuilder::default()
                 .set_from(&builder)
                 .expected_num_keys(num_buckets);
 
             pl.info(format_args!(
-                "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
+                "LCP bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
             ));
 
             // -- Sequential pass: compute bit-level LCPs --
 
-            let mut lcp_bit_lengths: Vec<usize> = Vec::with_capacity(num_buckets);
+            let mut lcp_bit_lens: Vec<usize> = Vec::with_capacity(num_buckets);
             let mut bucket_first_keys: Vec<K> = Vec::with_capacity(num_buckets);
 
             let mut prev_key: Option<K> = None;
@@ -547,7 +556,7 @@ mod build {
                 if offset == 0 {
                     // First key of a new bucket.
                     if i > 0 {
-                        lcp_bit_lengths.push(curr_lcp_bits);
+                        lcp_bit_lens.push(curr_lcp_bits);
                     }
                     bucket_first_keys.push(key);
                     curr_lcp_bits = K::BITS as usize;
@@ -558,17 +567,16 @@ mod build {
                 prev_key = Some(key);
             }
 
-            lcp_bit_lengths.push(curr_lcp_bits);
-            assert_eq!(lcp_bit_lengths.len(), num_buckets);
+            lcp_bit_lens.push(curr_lcp_bits);
+            assert_eq!(lcp_bit_lens.len(), num_buckets);
 
-            // -- Build offset_lcp_length VFunc (parallel) --
+            // -- Build lcp_len_offset VFunc (parallel) --
 
-            pl.info(format_args!(
-                "Building key → (LCP length, offset) map (parallel)..."
-            ));
-            let offset_lcp_length = builder.expected_num_keys(n).try_par_populate_and_build(
+            pl.push_log_target(" ▸ lcp_len_offset");
+            pl.info(format_args!("Building key → lcp_len | offset function..."));
+            let lcp_len_offset = builder.expected_num_keys(n).try_par_populate_and_build(
                 keys,
-                &|i| (lcp_bit_lengths[i >> log2_bs] << log2_bs) | (i & bucket_mask),
+                &|i| (lcp_bit_lens[i >> log2_bs] << log2_bs) | (i & bucket_mask),
                 &mut |builder, seed, mut store, max_value, _num_keys, pl, _state: &mut ()| {
                     builder.bit_width = max_value.bit_len() as usize;
                     let data = BitFieldVec::<Box<[usize]>>::new_padded(
@@ -588,32 +596,29 @@ mod build {
                 pl,
                 (),
             )?;
+            pl.pop_log_target();
 
             // Sequential: num_buckets is small and we avoid materializing the key set
-            pl.info(format_args!(
-                "Building LCP prefix → bucket map ({num_buckets} buckets)..."
-            ));
-            let lcp2bucket =
+            pl.push_log_target(" ▸ lcp_to_bucket");
+            pl.info(format_args!("Building LCP → bucket function..."));
+            let lcp_to_bucket =
                 <VFunc<IntBitPrefix<K>, BitFieldVec<Box<[usize]>>, S1, E1>>::try_new_with_builder(
                     FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
-                        IntBitPrefix::new(bucket_first_keys[b] ^ K::MIN, lcp_bit_lengths[b])
+                        IntBitPrefix::new(bucket_first_keys[b] ^ K::MIN, lcp_bit_lens[b])
                     })),
                     FromCloneableIntoIterator::new(0..num_buckets),
-                    lcp2bucket_builder,
+                    lcp_to_bucket_builder,
                     pl,
                 )?;
+            pl.pop_log_target();
 
             let result = Self {
                 n,
                 log2_bucket_size: log2_bs,
-                offset_lcp_length,
-                lcp2bucket,
+                lcp_len_offset,
+                lcp_to_bucket,
             };
-            let total_bits = result.mem_size(SizeFlags::default()) * 8;
-            pl.info(format_args!(
-                "Actual bit cost per key: {:.2} ({total_bits} bits for {n} keys)",
-                total_bits as f64 / n as f64
-            ));
+            log_bits_per_key(pl, &result, n);
 
             Ok(result)
         }
@@ -663,9 +668,9 @@ mod build {
     impl<
         K: ?Sized + AsRef<[u8]> + ToSig<S0> + std::fmt::Debug,
         S0: Sig + Send + Sync,
-        E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+        E0: ShardEdge<S0, 3> + MemSize + FlatType,
         S1: Sig + Send + Sync,
-        E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+        E1: ShardEdge<S1, 3> + MemSize + FlatType,
     > LcpMmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, S1, E1>
     where
         BitPrefix: ToSig<S1>,
@@ -803,8 +808,8 @@ mod build {
                     Self {
                         n: 0,
                         log2_bucket_size: 0,
-                        offset_lcp_length: VFunc::empty(),
-                        lcp2bucket: VFunc::empty(),
+                        lcp_len_offset: VFunc::empty(),
+                        lcp_to_bucket: VFunc::empty(),
                     },
                     keys,
                 ));
@@ -814,12 +819,12 @@ mod build {
             let bucket_size = 1usize << log2_bs;
             let bucket_mask = bucket_size - 1;
             let num_buckets = n.div_ceil(bucket_size);
-            let lcp2bucket_builder = VBuilder::default()
+            let lcp_to_bucket_builder = VBuilder::default()
                 .set_from(&builder)
                 .expected_num_keys(num_buckets);
 
             pl.info(format_args!(
-                "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
+                "LCP bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
             ));
 
             // -- First pass: compute bit-level LCPs --
@@ -828,7 +833,7 @@ mod build {
             // shared by all consecutive pairs WITHIN the bucket. The initial
             // value is the bit-length of the first key (+ virtual NUL).
 
-            let mut lcp_bit_lengths: Vec<usize> = Vec::with_capacity(num_buckets);
+            let mut lcp_bit_lens: Vec<usize> = Vec::with_capacity(num_buckets);
             let mut bucket_first_keys: Vec<Vec<u8>> = Vec::with_capacity(num_buckets);
 
             let mut prev_key: Vec<u8> = Vec::new();
@@ -850,7 +855,7 @@ mod build {
                 if offset == 0 {
                     // First key of a new bucket.
                     if i > 0 {
-                        lcp_bit_lengths.push(curr_lcp_bits);
+                        lcp_bit_lens.push(curr_lcp_bits);
                     }
                     bucket_first_keys.push(key_bytes.to_vec());
                     // Initialize to full key bit-length (including virtual NUL).
@@ -866,33 +871,34 @@ mod build {
             }
 
             assert_eq!(i, n, "Expected {n} keys but got {i}");
-            lcp_bit_lengths.push(curr_lcp_bits);
-            assert_eq!(lcp_bit_lengths.len(), num_buckets);
+            lcp_bit_lens.push(curr_lcp_bits);
+            assert_eq!(lcp_bit_lens.len(), num_buckets);
 
-            // -- Build offset_lcp_length VFunc --
+            // -- Build lcp_len_offset VFunc --
 
-            pl.info(format_args!("Building key → (LCP length, offset) map..."));
+            pl.push_log_target(" ▸ lcp_len_offset");
+            pl.info(format_args!("Building key → lcp_len | offset function..."));
             let keys = keys.rewind()?;
 
-            let (offset_lcp_length, keys) =
+            let (lcp_len_offset, keys) =
                 builder.expected_num_keys(n).try_build_func::<K, B, _, _>(
                     keys,
                     FromCloneableIntoIterator::new((0..n).map(|idx| {
-                        (lcp_bit_lengths[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
+                        (lcp_bit_lens[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
                     })),
                     BitFieldVec::<Box<[usize]>>::new_padded,
                     pl,
                 )?;
+            pl.pop_log_target();
 
-            // -- Build lcp2bucket VFunc --
+            // -- Build lcp_to_bucket VFunc --
             //
             // Each bucket's LCP key is a BitPrefix: the first
-            // lcp_bit_lengths[b] bits of the first key extended with a
+            // lcp_bit_lens[b] bits of the first key extended with a
             // virtual NUL.
 
-            pl.info(format_args!(
-                "Building LCP prefix → bucket map ({num_buckets} buckets)..."
-            ));
+            pl.push_log_target(" ▸ lcp_to_bucket");
+            pl.info(format_args!("Building LCP → bucket function..."));
             let extended_first_keys: Vec<Vec<u8>> = bucket_first_keys
                 .iter()
                 .map(|k| {
@@ -904,28 +910,25 @@ mod build {
                 .collect();
 
             // Sequential: num_buckets is small and we avoid materializing the key set
-            let lcp2bucket =
+            let lcp_to_bucket =
                 <VFunc<BitPrefix, BitFieldVec<Box<[usize]>>, S1, E1>>::try_new_with_builder(
                     FromCloneableIntoIterator::new(
                         (0..num_buckets)
-                            .map(|b| BitPrefix::new(&extended_first_keys[b], lcp_bit_lengths[b])),
+                            .map(|b| BitPrefix::new(&extended_first_keys[b], lcp_bit_lens[b])),
                     ),
                     FromCloneableIntoIterator::new(0..num_buckets),
-                    lcp2bucket_builder,
+                    lcp_to_bucket_builder,
                     pl,
                 )?;
+            pl.pop_log_target();
 
             let result = Self {
                 n,
                 log2_bucket_size: log2_bs,
-                offset_lcp_length,
-                lcp2bucket,
+                lcp_len_offset,
+                lcp_to_bucket,
             };
-            let total_bits = result.mem_size(SizeFlags::default()) * 8;
-            pl.info(format_args!(
-                "Actual bit cost per key: {:.2} ({total_bits} bits for {n} keys)",
-                total_bits as f64 / n as f64
-            ));
+            log_bits_per_key(pl, &result, n);
 
             Ok((result, keys))
         }
@@ -1037,8 +1040,8 @@ mod build {
                 return Ok(Self {
                     n: 0,
                     log2_bucket_size: 0,
-                    offset_lcp_length: VFunc::empty(),
-                    lcp2bucket: VFunc::empty(),
+                    lcp_len_offset: VFunc::empty(),
+                    lcp_to_bucket: VFunc::empty(),
                 });
             }
 
@@ -1046,17 +1049,17 @@ mod build {
             let bucket_size = 1usize << log2_bs;
             let bucket_mask = bucket_size - 1;
             let num_buckets = n.div_ceil(bucket_size);
-            let lcp2bucket_builder = VBuilder::default()
+            let lcp_to_bucket_builder = VBuilder::default()
                 .set_from(&builder)
                 .expected_num_keys(num_buckets);
 
             pl.info(format_args!(
-                "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
+                "LCP bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
             ));
 
             // -- Sequential pass: compute bit-level LCPs --
 
-            let mut lcp_bit_lengths: Vec<usize> = Vec::with_capacity(num_buckets);
+            let mut lcp_bit_lens: Vec<usize> = Vec::with_capacity(num_buckets);
             let mut bucket_first_keys: Vec<Vec<u8>> = Vec::with_capacity(num_buckets);
 
             let mut prev_key: Vec<u8> = Vec::new();
@@ -1077,7 +1080,7 @@ mod build {
                 if offset == 0 {
                     // First key of a new bucket.
                     if i > 0 {
-                        lcp_bit_lengths.push(curr_lcp_bits);
+                        lcp_bit_lens.push(curr_lcp_bits);
                     }
                     bucket_first_keys.push(key_bytes.to_vec());
                     curr_lcp_bits = (key_bytes.len() + 1) * 8;
@@ -1089,17 +1092,16 @@ mod build {
                 prev_key.extend_from_slice(key_bytes);
             }
 
-            lcp_bit_lengths.push(curr_lcp_bits);
-            assert_eq!(lcp_bit_lengths.len(), num_buckets);
+            lcp_bit_lens.push(curr_lcp_bits);
+            assert_eq!(lcp_bit_lens.len(), num_buckets);
 
-            // -- Build offset_lcp_length VFunc (parallel) --
+            // -- Build lcp_len_offset VFunc (parallel) --
 
-            pl.info(format_args!(
-                "Building key → (LCP length, offset) map (parallel)..."
-            ));
-            let offset_lcp_length = builder.expected_num_keys(n).try_par_populate_and_build(
+            pl.push_log_target(" ▸ lcp_len_offset");
+            pl.info(format_args!("Building key → lcp_len | offset function..."));
+            let lcp_len_offset = builder.expected_num_keys(n).try_par_populate_and_build(
                 keys,
-                &|i| (lcp_bit_lengths[i >> log2_bs] << log2_bs) | (i & bucket_mask),
+                &|i| (lcp_bit_lens[i >> log2_bs] << log2_bs) | (i & bucket_mask),
                 &mut |builder, seed, mut store, max_value, _num_keys, pl, _state: &mut ()| {
                     builder.bit_width = max_value.bit_len() as usize;
                     let data = BitFieldVec::<Box<[usize]>>::new_padded(
@@ -1119,11 +1121,11 @@ mod build {
                 pl,
                 (),
             )?;
+            pl.pop_log_target();
 
-            // -- Build lcp2bucket VFunc (sequential, small) --
-            pl.info(format_args!(
-                "Building LCP prefix → bucket map ({num_buckets} buckets)..."
-            ));
+            // -- Build lcp_to_bucket VFunc (sequential, small) --
+            pl.push_log_target(" ▸ lcp_to_bucket");
+            pl.info(format_args!("Building LCP → bucket function..."));
             let extended_first_keys: Vec<Vec<u8>> = bucket_first_keys
                 .iter()
                 .map(|k| {
@@ -1135,28 +1137,25 @@ mod build {
                 .collect();
 
             // Sequential: num_buckets is small and we avoid materializing the key set
-            let lcp2bucket =
+            let lcp_to_bucket =
                 <VFunc<BitPrefix, BitFieldVec<Box<[usize]>>, S1, E1>>::try_new_with_builder(
                     FromCloneableIntoIterator::new(
                         (0..num_buckets)
-                            .map(|b| BitPrefix::new(&extended_first_keys[b], lcp_bit_lengths[b])),
+                            .map(|b| BitPrefix::new(&extended_first_keys[b], lcp_bit_lens[b])),
                     ),
                     FromCloneableIntoIterator::new(0..num_buckets),
-                    lcp2bucket_builder,
+                    lcp_to_bucket_builder,
                     pl,
                 )?;
+            pl.pop_log_target();
 
             let result = Self {
                 n,
                 log2_bucket_size: log2_bs,
-                offset_lcp_length,
-                lcp2bucket,
+                lcp_len_offset,
+                lcp_to_bucket,
             };
-            let total_bits = result.mem_size(SizeFlags::default()) * 8;
-            pl.info(format_args!(
-                "Actual bit cost per key: {:.2} ({total_bits} bits for {n} keys)",
-                total_bits as f64 / n as f64
-            ));
+            log_bits_per_key(pl, &result, n);
 
             Ok(result)
         }
@@ -1183,10 +1182,10 @@ pub(crate) use build::{lcp_bits, lcp_bits_nul, log2_bucket_size};
 /// - `D`: the backing store for [`VFunc`] data (e.g.,
 ///   [`BitFieldVec`]).
 /// - `S0`: the [signature type] for the key map
-///   (`offset_lcp_length`).
+///   (`lcp_len_offset`).
 /// - `E0`: the [`ShardEdge`] for the key map.
 /// - `S1`: the  [signature type] for the prefix-to-bucket map
-///   (`lcp2bucket`).
+///   (`lcp_to_bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
 ///
 /// # Examples
@@ -1213,10 +1212,22 @@ pub struct LcpMmphfInt<
     pub(crate) n: usize,
     /// Log2 of bucket size.
     pub(crate) log2_bucket_size: usize,
-    /// Maps each key to `(lcp_bit_length << log2_bucket_size) | offset`.
-    pub(crate) offset_lcp_length: VFunc<K, D, S0, E0>,
+    /// Maps each key to `(lcp_bit_len << log2_bucket_size) | offset`.
+    pub(crate) lcp_len_offset: VFunc<K, D, S0, E0>,
     /// Maps each LCP bit-prefix to its bucket index.
-    pub(crate) lcp2bucket: VFunc<IntBitPrefix<K>, D, S1, E1>,
+    pub(crate) lcp_to_bucket: VFunc<IntBitPrefix<K>, D, S1, E1>,
+}
+
+impl<K, D, S0, E0, S1, E1> LcpMmphfInt<K, D, S0, E0, S1, E1> {
+    /// Returns the number of keys.
+    pub const fn len(&self) -> usize {
+        self.n
+    }
+
+    /// Returns `true` if the function contains no keys.
+    pub const fn is_empty(&self) -> bool {
+        self.n == 0
+    }
 }
 
 impl<
@@ -1237,35 +1248,15 @@ where
     /// (same contract as [`VFunc::get`]).
     #[inline]
     pub fn get(&self, key: K) -> usize {
-        let packed = self.offset_lcp_length.get(key);
-        let lcp_bit_length = packed >> self.log2_bucket_size;
+        let packed = self.lcp_len_offset.get(key);
+        let lcp_bit_len = packed >> self.log2_bucket_size;
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
         // XOR with K::MIN maps signed numeric order to bit-lexicographic
         // order by flipping the sign bit; for unsigned types K::MIN is 0,
         // so this is a no-op.
-        let prefix = IntBitPrefix::new(key ^ K::MIN, lcp_bit_length);
-        let bucket = self.lcp2bucket.get(prefix);
+        let prefix = IntBitPrefix::new(key ^ K::MIN, lcp_bit_len);
+        let bucket = self.lcp_to_bucket.get(prefix);
         (bucket << self.log2_bucket_size) + offset
-    }
-}
-
-impl<
-    K: PrimitiveInteger,
-    D: SliceByValue<Value = usize>,
-    S0: Sig,
-    E0: ShardEdge<S0, 3>,
-    S1: Sig,
-    E1: ShardEdge<S1, 3>,
-> LcpMmphfInt<K, D, S0, E0, S1, E1>
-{
-    /// Returns the number of keys.
-    pub const fn len(&self) -> usize {
-        self.n
-    }
-
-    /// Returns `true` if the function contains no keys.
-    pub const fn is_empty(&self) -> bool {
-        self.n == 0
     }
 }
 
@@ -1276,10 +1267,10 @@ impl<
 /// [`LcpMmphf`].
 ///
 /// Holds an owned copy of the relevant bytes and a bit length. The
-/// [`ToSig`] implementation hashes only the first `bit_length` bits,
+/// [`ToSig`] implementation hashes only the first `bit_len` bits,
 /// masking out unused bits in the last partial byte.
 ///
-/// This type is used only at construction time (to build the `lcp2bucket`
+/// This type is used only at construction time (to build the `lcp_to_bucket`
 /// VFunc). At query time, signatures are computed directly from the key
 /// bytes, avoiding any allocation.
 #[derive(Debug, Clone, MemSize, MemDbg)]
@@ -1287,20 +1278,20 @@ impl<
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BitPrefix {
     bytes: Vec<u8>,
-    bit_length: usize,
+    bit_len: usize,
 }
 
 impl BitPrefix {
     /// Creates a new bit prefix from a byte slice and a bit length.
     ///
-    /// `bytes` must contain at least `ceil(bit_length / 8)` bytes.
+    /// `bytes` must contain at least `ceil(bit_len / 8)` bytes.
     #[inline]
-    pub fn new(bytes: &[u8], bit_length: usize) -> Self {
-        debug_assert!(bytes.len() * 8 >= bit_length);
-        let needed = bit_length.div_ceil(8);
+    pub fn new(bytes: &[u8], bit_len: usize) -> Self {
+        debug_assert!(bytes.len() * 8 >= bit_len);
+        let needed = bit_len.div_ceil(8);
         Self {
             bytes: bytes[..needed].to_vec(),
-            bit_length,
+            bit_len,
         }
     }
 }
@@ -1312,24 +1303,24 @@ impl BitPrefix {
 ///
 /// [`Xxh3`]: xxh3::Xxh3
 #[inline]
-pub(crate) fn hash_bit_prefix_raw(hasher: &mut xxh3::Xxh3, bytes: &[u8], bit_length: usize) {
-    let full_bytes = bit_length / 8;
-    let extra_bits = bit_length % 8;
+pub(crate) fn hash_bit_prefix_raw(hasher: &mut xxh3::Xxh3, bytes: &[u8], bit_len: usize) {
+    let full_bytes = bit_len / 8;
+    let extra_bits = bit_len % 8;
     hasher.update(&bytes[..full_bytes]);
     if extra_bits > 0 {
         let mask = !((1u8 << (8 - extra_bits)) - 1);
         hasher.update(&[bytes[full_bytes] & mask]);
     }
-    hasher.update(&bit_length.to_ne_bytes());
+    hasher.update(&bit_len.to_ne_bytes());
 }
 
 /// Computes a signature from raw bytes and a bit length,
 /// matching the [`BitPrefix`] [`ToSig`] implementation but
 /// without allocating a `BitPrefix`.
 #[inline]
-pub(crate) fn bit_prefix_sig<S: Sig>(bytes: &[u8], bit_length: usize, seed: u64) -> S {
+pub(crate) fn bit_prefix_sig<S: Sig>(bytes: &[u8], bit_len: usize, seed: u64) -> S {
     let mut hasher = xxh3::Xxh3::with_seed(seed);
-    hash_bit_prefix_raw(&mut hasher, bytes, bit_length);
+    hash_bit_prefix_raw(&mut hasher, bytes, bit_len);
     S::from_hasher(&hasher)
 }
 
@@ -1337,7 +1328,7 @@ impl ToSig<[u64; 1]> for BitPrefix {
     #[inline]
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
         let bp = key.borrow();
-        bit_prefix_sig(&bp.bytes, bp.bit_length, seed)
+        bit_prefix_sig(&bp.bytes, bp.bit_len, seed)
     }
 }
 
@@ -1360,10 +1351,10 @@ impl ToSig<[u64; 1]> for BitPrefix {
 /// - `D`: the backing store for [`VFunc`] data (e.g.,
 ///   [`BitFieldVec`]).
 /// - `S0`: the [signature type] for the key map
-///   (`offset_lcp_length`).
+///   (`lcp_len_offset`).
 /// - `E0`: the [`ShardEdge`] for the key map.
 /// - `S1`: the  [signature type] for the prefix-to-bucket map
-///   (`lcp2bucket`).
+///   (`lcp_to_bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
 ///
 /// # Examples
@@ -1391,10 +1382,10 @@ pub struct LcpMmphf<
     pub(crate) n: usize,
     /// Log2 of bucket size.
     pub(crate) log2_bucket_size: usize,
-    /// Maps each key to `(lcp_bit_length << log2_bucket_size) | offset`.
-    pub(crate) offset_lcp_length: VFunc<K, D, S0, E0>,
+    /// Maps each key to `(lcp_bit_len << log2_bucket_size) | offset`.
+    pub(crate) lcp_len_offset: VFunc<K, D, S0, E0>,
     /// Maps each LCP bit-prefix to its bucket index.
-    pub(crate) lcp2bucket: VFunc<BitPrefix, D, S1, E1>,
+    pub(crate) lcp_to_bucket: VFunc<BitPrefix, D, S1, E1>,
 }
 
 /// A [`LcpMmphf`] for `str` keys.
@@ -1480,6 +1471,18 @@ pub type LcpMmphfSliceU8<
     E1 = Fuse3NoShards,
 > = LcpMmphf<[u8], D, S0, E0, S1, E1>;
 
+impl<K: ?Sized, D, S0, E0, S1, E1> LcpMmphf<K, D, S0, E0, S1, E1> {
+    /// Returns the number of keys.
+    pub const fn len(&self) -> usize {
+        self.n
+    }
+
+    /// Returns `true` if the function contains no keys.
+    pub const fn is_empty(&self) -> bool {
+        self.n == 0
+    }
+}
+
 impl<
     K: ?Sized + AsRef<[u8]> + ToSig<S0>,
     D: SliceByValue<Value = usize>,
@@ -1498,15 +1501,15 @@ where
     /// (same contract as [`VFunc::get`]).
     #[inline]
     pub fn get(&self, key: &K) -> usize {
-        let packed = self.offset_lcp_length.get(key);
-        let lcp_bit_length = packed >> self.log2_bucket_size;
+        let packed = self.lcp_len_offset.get(key);
+        let lcp_bit_len = packed >> self.log2_bucket_size;
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
-        // Compute the lcp2bucket signature directly from the key bytes
+        // Compute the lcp_to_bucket signature directly from the key bytes
         // without allocating a BitPrefix.
         let key_bytes: &[u8] = key.as_ref();
-        let seed = self.lcp2bucket.seed;
-        let sig: S1 = if lcp_bit_length <= key_bytes.len() * 8 {
-            bit_prefix_sig(key_bytes, lcp_bit_length, seed)
+        let seed = self.lcp_to_bucket.seed;
+        let sig: S1 = if lcp_bit_len <= key_bytes.len() * 8 {
+            bit_prefix_sig(key_bytes, lcp_bit_len, seed)
         } else {
             // Rare: LCP extends into the virtual NUL (at most 8 extra bits).
             // Since the NUL byte is 0x00, masking is a no-op, so we can
@@ -1514,25 +1517,11 @@ where
             let mut hasher = xxh3::Xxh3::with_seed(seed);
             hasher.update(key_bytes);
             hasher.update(&[0u8]);
-            hasher.update(&lcp_bit_length.to_ne_bytes());
+            hasher.update(&lcp_bit_len.to_ne_bytes());
             S1::from_hasher(&hasher)
         };
-        let bucket = self.lcp2bucket.get_by_sig(sig);
+        let bucket = self.lcp_to_bucket.get_by_sig(sig);
         (bucket << self.log2_bucket_size) + offset
-    }
-}
-
-impl<K: ?Sized, D: SliceByValue, S0: Sig, E0: ShardEdge<S0, 3>, S1: Sig, E1: ShardEdge<S1, 3>>
-    LcpMmphf<K, D, S0, E0, S1, E1>
-{
-    /// Returns the number of keys.
-    pub const fn len(&self) -> usize {
-        self.n
-    }
-
-    /// Returns `true` if the function contains no keys.
-    pub const fn is_empty(&self) -> bool {
-        self.n == 0
     }
 }
 
@@ -1548,8 +1537,8 @@ impl<K, S0: Sig, E0: ShardEdge<S0, 3>, S1: Sig, E1: ShardEdge<S1, 3>>
         LcpMmphfInt {
             n: f.n,
             log2_bucket_size: f.log2_bucket_size,
-            offset_lcp_length: f.offset_lcp_length.into(),
-            lcp2bucket: f.lcp2bucket.into(),
+            lcp_len_offset: f.lcp_len_offset.into(),
+            lcp_to_bucket: f.lcp_to_bucket.into(),
         }
     }
 }
@@ -1564,8 +1553,8 @@ impl<K, S0: Sig, E0: ShardEdge<S0, 3>, S1: Sig, E1: ShardEdge<S1, 3>> TryIntoUna
         Ok(LcpMmphfInt {
             n: self.n,
             log2_bucket_size: self.log2_bucket_size,
-            offset_lcp_length: self.offset_lcp_length.try_into_unaligned()?,
-            lcp2bucket: self.lcp2bucket.try_into_unaligned()?,
+            lcp_len_offset: self.lcp_len_offset.try_into_unaligned()?,
+            lcp_to_bucket: self.lcp_to_bucket.try_into_unaligned()?,
         })
     }
 }
@@ -1580,8 +1569,8 @@ impl<K: ?Sized, S0: Sig, E0: ShardEdge<S0, 3>, S1: Sig, E1: ShardEdge<S1, 3>>
         LcpMmphf {
             n: f.n,
             log2_bucket_size: f.log2_bucket_size,
-            offset_lcp_length: f.offset_lcp_length.into(),
-            lcp2bucket: f.lcp2bucket.into(),
+            lcp_len_offset: f.lcp_len_offset.into(),
+            lcp_to_bucket: f.lcp_to_bucket.into(),
         }
     }
 }
@@ -1596,8 +1585,8 @@ impl<K: ?Sized, S0: Sig, E0: ShardEdge<S0, 3>, S1: Sig, E1: ShardEdge<S1, 3>> Tr
         Ok(LcpMmphf {
             n: self.n,
             log2_bucket_size: self.log2_bucket_size,
-            offset_lcp_length: self.offset_lcp_length.try_into_unaligned()?,
-            lcp2bucket: self.lcp2bucket.try_into_unaligned()?,
+            lcp_len_offset: self.lcp_len_offset.try_into_unaligned()?,
+            lcp_to_bucket: self.lcp_to_bucket.try_into_unaligned()?,
         })
     }
 }

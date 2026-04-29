@@ -12,7 +12,7 @@ use mem_dbg::{MemSize, SizeFlags};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::time::Instant;
-use sux::func::codec::{Decoder, Huffman};
+use sux::func::codec::{Decoder, HuffmanConf};
 use sux::func::shard_edge::Fuse3Shards;
 use sux::func::{CompVFunc, VBuilder};
 
@@ -42,7 +42,7 @@ fn run(n: usize, values: &[usize]) {
     let func = CompVFunc::<u64>::try_par_new_with_builder(
         &keys,
         &values[..n],
-        Huffman::new(),
+        HuffmanConf::new(),
         VBuilder::<_, _, Fuse3Shards>::default(),
         &mut pl,
     );

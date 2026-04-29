@@ -6,7 +6,9 @@
 
 use num_primitive::{PrimitiveInteger, PrimitiveNumber, PrimitiveNumberAs};
 use std::collections::HashMap;
-use sux::func::codec::{Codec, Coder, Decoder, Huffman, HuffmanCoder, HuffmanDecoder, ZeroCodec};
+use sux::func::codec::{
+    Codec, Coder, Decoder, HuffmanCoder, HuffmanConf, HuffmanDecoder, ZeroCodec,
+};
 
 fn freqs(pairs: &[(u64, usize)]) -> HashMap<u64, usize> {
     pairs.iter().copied().collect()
@@ -136,7 +138,7 @@ fn test_zero_codec() {
 #[test]
 fn test_huffman_single_symbol() {
     let f = freqs(&[(42, 100)]);
-    let coder = Huffman::new().build_coder(&f);
+    let coder = HuffmanConf::new().build_coder(&f);
     assert_eq!(coder.codeword_len(42), 1);
     assert_eq!(
         coder.escaped_symbols_len(),
@@ -154,7 +156,7 @@ fn test_huffman_two_symbols() {
     // second pass range `0..=size-3` would underflow to
     // `0..=usize::MAX`, crashing with index out of bounds.
     let f = freqs(&[(10, 7), (20, 3)]);
-    let coder = Huffman::new().build_coder(&f);
+    let coder = HuffmanConf::new().build_coder(&f);
     assert_eq!(coder.max_codeword_len(), 1);
     assert_eq!(coder.escaped_symbols_len(), 0, "no escape for two symbols");
     assert!(coder.encode(10).is_some());
@@ -168,7 +170,7 @@ fn test_huffman_two_symbols() {
 fn test_huffman_three_symbols() {
     // Skewed frequencies: A is most frequent.
     let f = freqs(&[(0, 5), (1, 2), (2, 1)]);
-    let coder = Huffman::new().build_coder(&f);
+    let coder = HuffmanConf::new().build_coder(&f);
     assert_eq!(
         coder.escaped_symbols_len(),
         0,
@@ -191,7 +193,7 @@ fn test_huffman_many_symbols() {
         pairs.push((i, 1usize << (16 - i.min(15))));
     }
     let f = freqs(&pairs);
-    let coder = Huffman::new().build_coder(&f);
+    let coder = HuffmanConf::new().build_coder(&f);
     let decoder = coder.clone().into_decoder();
     for (s, _) in pairs {
         round_trip(&coder, &decoder, s);
@@ -209,7 +211,7 @@ fn test_huffman_u128_large_values() {
         pairs.push((base + i, 1usize << (16 - i)));
     }
     let f: HashMap<u128, usize> = pairs.iter().copied().collect();
-    let coder = <Huffman as Codec<u128>>::build_coder(&Huffman::new(), &f);
+    let coder = <HuffmanConf as Codec<u128>>::build_coder(&HuffmanConf::new(), &f);
     let decoder = coder.clone().into_decoder();
     for (s, _) in &pairs {
         let w = coder.max_codeword_len();
@@ -243,7 +245,7 @@ fn test_huffman_u128_large_values_unlimited() {
         pairs.push((base + i, 1usize << (16 - i)));
     }
     let f: HashMap<u128, usize> = pairs.iter().copied().collect();
-    let coder = <Huffman as Codec<u128>>::build_coder(&Huffman::unlimited(), &f);
+    let coder = <HuffmanConf as Codec<u128>>::build_coder(&HuffmanConf::unlimited(), &f);
     assert_eq!(
         coder.escaped_symbols_len(),
         0,
@@ -273,7 +275,7 @@ fn test_huffman_length_limited() {
         pairs.push((100 + i, 1usize << (20 - i)));
     }
     let f = freqs(&pairs);
-    let coder = Huffman::length_limited(4, 0.95).build_coder(&f);
+    let coder = HuffmanConf::length_limited(4, 0.95).build_coder(&f);
     assert!(coder.escaped_symbols_len() > 0, "should have escapes");
     let decoder = coder.clone().into_decoder();
     for (s, _) in pairs {
@@ -286,7 +288,7 @@ fn test_huffman_i8_with_negatives() {
     // Signed i8 values including negatives: -5 (0xFB), -1 (0xFF),
     // 0, 42, 127 (i8::MAX — no longer reserved).
     let f = freqs_i8(&[(-5, 100), (-1, 50), (0, 30), (42, 20), (127, 10)]);
-    let coder = <Huffman as Codec<i8>>::build_coder(&Huffman::new(), &f);
+    let coder = <HuffmanConf as Codec<i8>>::build_coder(&HuffmanConf::new(), &f);
     let decoder = coder.clone().into_decoder();
     for &s in &[-5i8, -1, 0, 42, 127] {
         round_trip_generic(&coder, &decoder, s);
@@ -302,7 +304,7 @@ fn test_huffman_i8_with_escapes() {
         pairs.push((i, 1usize << (7 - (i.unsigned_abs().min(6)) as u32)));
     }
     let f = freqs_i8(&pairs);
-    let coder = <Huffman as Codec<i8>>::build_coder(&Huffman::length_limited(3, 0.6), &f);
+    let coder = <HuffmanConf as Codec<i8>>::build_coder(&HuffmanConf::length_limited(3, 0.6), &f);
     assert!(coder.escaped_symbols_len() > 0, "should have escapes");
     let decoder = coder.clone().into_decoder();
     for (s, _) in pairs {
@@ -321,7 +323,7 @@ fn test_huffman_i32_with_negatives() {
         (i32::MAX, 20),
         (i32::MIN, 10),
     ]);
-    let coder = <Huffman as Codec<i32>>::build_coder(&Huffman::new(), &f);
+    let coder = <HuffmanConf as Codec<i32>>::build_coder(&HuffmanConf::new(), &f);
     let decoder = coder.clone().into_decoder();
     for &s in &[-1_000_000i32, -1, 0, 1, i32::MAX, i32::MIN] {
         round_trip_generic(&coder, &decoder, s);

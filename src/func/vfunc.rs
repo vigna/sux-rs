@@ -91,6 +91,18 @@ impl<K: ?Sized, D: SliceByValue, S, E> Backend for VFunc<K, D, S, E> {
     type Word = D::Value;
 }
 
+impl<K: ?Sized, D, S, E> VFunc<K, D, S, E> {
+    /// Returns the number of keys in the function.
+    pub const fn len(&self) -> usize {
+        self.num_keys
+    }
+
+    /// Returns whether the function has no keys.
+    pub const fn is_empty(&self) -> bool {
+        self.num_keys == 0
+    }
+}
+
 impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc<K, BitFieldVec<Box<[W]>>, S, E> {
     /// Creates a VFunc with zero keys.
     ///
@@ -137,16 +149,6 @@ impl<K: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: Sh
     pub fn get(&self, key: impl Borrow<K>) -> D::Value {
         self.get_by_sig(K::to_sig(key.borrow(), self.seed))
     }
-
-    /// Returns the number of keys in the function.
-    pub const fn len(&self) -> usize {
-        self.num_keys
-    }
-
-    /// Returns whether the function has no keys.
-    pub const fn is_empty(&self) -> bool {
-        self.num_keys == 0
-    }
 }
 
 // ── Aligned ↔ Unaligned conversions ─────────────────────────────────
@@ -190,8 +192,8 @@ impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>>
 #[cfg(feature = "rayon")]
 mod build {
     use super::*;
-    use crate::func::VBuilder;
     use crate::traits::bit_field_slice::BitFieldSliceMut;
+    use crate::{func::VBuilder, traits::BitFieldSlice};
     use anyhow::Result;
     use core::error::Error;
     use dsi_progress_logger::ProgressLog;
@@ -200,13 +202,29 @@ mod build {
     use std::ops::{BitXor, BitXorAssign};
     use value_traits::slices::SliceByValueMut;
 
+    fn log_size<K: ?Sized, D: BitFieldSlice, S, E>(
+        result: &VFunc<K, D, S, E>,
+        pl: &mut impl ProgressLog,
+    ) where
+        VFunc<K, D, S, E>: MemSize,
+    {
+        let num_keys = result.len() as f64;
+        let bit_size = result.mem_size(SizeFlags::default()) as f64 * 8.0;
+        pl.info(format_args!(
+            "Bits/key: {:.3} ({:+.3}% with respect to bit width)",
+            bit_size / num_keys,
+            100.0 * (bit_size / (result.data.bit_width() as f64 * num_keys) - 1.),
+        ));
+    }
+
     impl<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         W: Word + BinSafe,
         S: Sig + Send + Sync,
-        E: ShardEdge<S, 3>,
+        E: ShardEdge<S, 3> + MemSize + FlatType,
     > VFunc<K, Box<[W]>, S, E>
     where
+        Box<[W]>: MemSize + FlatType,
         SigVal<S, W>: RadixKey,
         SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
     {
@@ -340,6 +358,7 @@ mod build {
                     pl,
                 )?
                 .0)
+            .inspect(|vfunc| log_size(vfunc, pl))
         }
 
         /// Builds a [`VFunc`] with a `Box<[W]>` backend from in-memory key
@@ -479,9 +498,10 @@ mod build {
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         W: Word + BinSafe,
         S: Sig + Send + Sync,
-        E: ShardEdge<S, 3>,
+        E: ShardEdge<S, 3> + MemSize + FlatType,
     > VFunc<K, BitFieldVec<Box<[W]>>, S, E>
     where
+        BitFieldVec<Box<[W]>>: MemSize + FlatType,
         SigVal<S, W>: RadixKey,
         SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
     {

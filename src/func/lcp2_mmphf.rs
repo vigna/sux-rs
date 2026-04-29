@@ -61,13 +61,13 @@ use xxhash_rust::xxh3;
 /// - `K`: the integer key type.
 /// - `D`: the backing store for [`VFunc`] data (e.g.,
 ///   [`BitFieldVec`]).
-/// - `S0`: the [signature type] for the key maps (`fused` and
-///   `lcp_long`).
-/// - `E0`: the [`ShardEdge`] for the key maps (`fused`).
-/// - `F0`: the [`ShardEdge`] for the long map (`lcp_long`). Defaults to
+/// - `S0`: the [signature type] for the key maps (`lcp_freq_len_offset`
+///   and `lcp_infreq_len`).
+/// - `E0`: the [`ShardEdge`] for the key maps (`lcp_freq_len_offset`).
+/// - `F0`: the [`ShardEdge`] for `lcp_infreq_len`. Defaults to
 ///   `E0`.
 /// - `S1`: the  [signature type] for the prefix-to-bucket map
-///   (`lcp2bucket`).
+///   (`lcp_to_bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
 ///
 /// # Examples
@@ -102,16 +102,27 @@ pub struct Lcp2MmphfInt<
     pub(crate) n: usize,
     /// The base-2 logarithm of the bucket size.
     pub(crate) log2_bucket_size: usize,
-    /// Fused function: maps key → (remapped_lcp << log2_bs) | offset.
-    pub(crate) fused: VFunc<K, D, S0, E0>,
+    /// Maps key → lcp_freq_len | offset.
+    pub(crate) lcp_freq_len_offset: VFunc<K, D, S0, E0>,
     /// Maps escaped keys to their full LCP bit length.
-    pub(crate) lcp_long: VFunc<K, D, S0, F0>,
-    /// Maps remapped LCP indices back to actual LCP bit lengths.
+    pub(crate) lcp_infreq_len: VFunc<K, D, S0, F0>,
+    /// Maps frequent LCP indices back to actual LCP bit lengths.
     pub(crate) remap: Box<[usize]>,
-    /// Escape sentinel for the remapped LCP part (2^r − 1).
+    /// Escape sentinel for the frequent LCP part (2^r − 1).
     pub(crate) escape: usize,
     /// Maps each LCP bit-prefix to its bucket index.
-    pub(crate) lcp2bucket: VFunc<IntBitPrefix<K>, D, S1, E1>,
+    pub(crate) lcp_to_bucket: VFunc<IntBitPrefix<K>, D, S1, E1>,
+}
+
+impl<K, D, S0, E0, F0, S1, E1> Lcp2MmphfInt<K, D, S0, E0, F0, S1, E1> {
+    /// Returns the number of keys.
+    pub const fn len(&self) -> usize {
+        self.n
+    }
+    /// Returns `true` if the function contains no keys.
+    pub const fn is_empty(&self) -> bool {
+        self.n == 0
+    }
 }
 
 impl<K: PrimitiveInteger, D: SliceByValue, S0, E0, F0, S1, E1> std::fmt::Debug
@@ -125,11 +136,11 @@ where
         f.debug_struct("Lcp2MmphfInt")
             .field("n", &self.n)
             .field("log2_bucket_size", &self.log2_bucket_size)
-            .field("fused", &self.fused)
-            .field("lcp_long", &self.lcp_long)
+            .field("lcp_freq_len_offset", &self.lcp_freq_len_offset)
+            .field("lcp_infreq_len", &self.lcp_infreq_len)
             .field("remap", &self.remap)
             .field("escape", &self.escape)
-            .field("lcp2bucket", &self.lcp2bucket)
+            .field("lcp_to_bucket", &self.lcp_to_bucket)
             .finish()
     }
 }
@@ -153,38 +164,18 @@ where
     /// (same contract as [`VFunc::get`]).
     #[inline]
     pub fn get(&self, key: K) -> usize {
-        let sig = K::to_sig(key, self.fused.seed);
-        let packed = self.fused.get_by_sig(sig);
+        let sig = K::to_sig(key, self.lcp_freq_len_offset.seed);
+        let packed = self.lcp_freq_len_offset.get_by_sig(sig);
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
-        let remapped_lcp = packed >> self.log2_bucket_size;
-        let lcp_bit_length = if remapped_lcp != self.escape {
-            self.remap[remapped_lcp]
+        let frequent_lcp = packed >> self.log2_bucket_size;
+        let lcp_bit_len = if frequent_lcp != self.escape {
+            self.remap[frequent_lcp]
         } else {
-            self.lcp_long.get_by_sig(sig)
+            self.lcp_infreq_len.get_by_sig(sig)
         };
-        let prefix = IntBitPrefix::new(key ^ K::MIN, lcp_bit_length);
-        let bucket = self.lcp2bucket.get(prefix);
+        let prefix = IntBitPrefix::new(key ^ K::MIN, lcp_bit_len);
+        let bucket = self.lcp_to_bucket.get(prefix);
         (bucket << self.log2_bucket_size) + offset
-    }
-}
-
-impl<
-    K: PrimitiveInteger,
-    D: SliceByValue,
-    S0: Sig,
-    E0: ShardEdge<S0, 3>,
-    F0: ShardEdge<S0, 3>,
-    S1: Sig,
-    E1: ShardEdge<S1, 3>,
-> Lcp2MmphfInt<K, D, S0, E0, F0, S1, E1>
-{
-    /// Returns the number of keys.
-    pub const fn len(&self) -> usize {
-        self.n
-    }
-    /// Returns `true` if the function contains no keys.
-    pub const fn is_empty(&self) -> bool {
-        self.n == 0
     }
 }
 
@@ -201,6 +192,17 @@ mod build {
     use std::borrow::Borrow;
     use std::ops::{BitXor, BitXorAssign};
     use sync_cell_slice::SyncSlice;
+
+    fn log_bits_per_key(pl: &mut impl ProgressLog, structure: &impl MemSize, n: usize) {
+        let total_bits = structure.mem_size(SizeFlags::default()) * 8;
+        let log2n = (n as f64).log2();
+        pl.info(format_args!(
+            "Bits/key: {:.3} ({:+.3}% with respect to log₂n ≈ {:.3})",
+            total_bits as f64 / n as f64,
+            100.0 * (total_bits as f64 / n as f64 / log2n - 1.0),
+            log2n
+        ));
+    }
 
     #[cfg(target_pointer_width = "64")]
     type LcpLen = u32;
@@ -352,11 +354,11 @@ mod build {
                     Self {
                         n: 0,
                         log2_bucket_size: 0,
-                        fused: VFunc::empty(),
-                        lcp_long: VFunc::empty(),
+                        lcp_freq_len_offset: VFunc::empty(),
+                        lcp_infreq_len: VFunc::empty(),
                         remap: Box::new([]),
                         escape: 0,
-                        lcp2bucket: VFunc::empty(),
+                        lcp_to_bucket: VFunc::empty(),
                     },
                     keys,
                 ));
@@ -370,13 +372,13 @@ mod build {
             let saved_eps = builder.eps;
 
             pl.info(format_args!(
-                "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
+                "LCP bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
             ));
 
             // State threaded through populate and build closures.
             struct State<K> {
                 bucket_first_keys: Vec<K>,
-                lcp_bit_lengths: Vec<LcpLen>,
+                lcp_bit_lens: Vec<LcpLen>,
                 lcp_counts: HybridMap<usize, usize>,
                 max_lcp: usize,
             }
@@ -384,7 +386,7 @@ mod build {
             let mut builder = builder.expected_num_keys(n);
             let mut state = State::<K> {
                 bucket_first_keys: Vec::with_capacity(num_buckets),
-                lcp_bit_lengths: Vec::with_capacity(num_buckets),
+                lcp_bit_lens: Vec::with_capacity(num_buckets),
                 lcp_counts: HybridMap::new(None, 0),
                 max_lcp: 0,
             };
@@ -403,7 +405,7 @@ mod build {
                     let mut idx: usize = 0;
 
                     state.bucket_first_keys.clear();
-                    state.lcp_bit_lengths.clear();
+                    state.lcp_bit_lens.clear();
                     state.lcp_counts = HybridMap::new(None, 0);
                     state.max_lcp = 0;
 
@@ -430,7 +432,7 @@ mod build {
                                 // Start of a new bucket — flush the previous one.
                                 if offset == 0 && idx > 0 {
                                     let lcp = curr_lcp_bits;
-                                    state.lcp_bit_lengths.push(lcp as LcpLen);
+                                    state.lcp_bit_lens.push(lcp as LcpLen);
                                     state.max_lcp = state.max_lcp.max(lcp);
                                     let bsize = buf.len();
                                     state.lcp_counts.add(lcp, bsize);
@@ -461,7 +463,7 @@ mod build {
                             // Flush the last (possibly partial) bucket.
                             if !buf.is_empty() {
                                 let lcp = curr_lcp_bits;
-                                state.lcp_bit_lengths.push(lcp as LcpLen);
+                                state.lcp_bit_lens.push(lcp as LcpLen);
                                 state.max_lcp = state.max_lcp.max(lcp);
                                 let bsize = buf.len();
                                 state.lcp_counts.add(lcp, bsize);
@@ -474,7 +476,7 @@ mod build {
                             }
 
                             assert_eq!(idx, n, "Expected {n} keys but got {idx}");
-                            assert_eq!(state.lcp_bit_lengths.len(), num_buckets);
+                            assert_eq!(state.lcp_bit_lens.len(), num_buckets);
 
                             Ok(max_value)
                         };
@@ -485,7 +487,7 @@ mod build {
                         &mut |builder,
                               seed,
                               mut store,
-                              _max_value,
+                              max_value,
                               _num_keys,
                               pl: &mut P,
                               state: &mut State<K>| {
@@ -508,10 +510,10 @@ mod build {
                             );
 
                             let escape_usize = (1usize << best_r).wrapping_sub(1);
-                            let num_remapped = escape_usize.min(m);
+                            let num_frequent = escape_usize.min(m);
 
                             let remap: Box<[usize]> =
-                                sorted_vals[..num_remapped].to_vec().into_boxed_slice();
+                                sorted_vals[..num_frequent].to_vec().into_boxed_slice();
                             let mut inv_map: HybridMap<usize, usize> =
                                 HybridMap::new(Some(state.max_lcp), escape_usize);
                             for (i, &val) in remap.iter().enumerate() {
@@ -519,20 +521,19 @@ mod build {
                             }
 
                             let n_escaped = n_keys
-                                - sorted_vals[..num_remapped]
+                                - sorted_vals[..num_frequent]
                                     .iter()
                                     .map(|&v| counts.get(v))
                                     .sum::<usize>();
 
+                            let w = max_value.bit_len();
                             pl.info(format_args!(
-                                "Fused offset+LCP: r={best_r}, log2_bs={log2_bs}, \
-                             escape={escape_usize}, {num_remapped} remapped, \
-                             {m} distinct LCP values, {n_escaped} escaped keys ({:.1}%)",
-                                100.0 * n_escaped as f64 / n_keys as f64
+                                "r: {best_r}; distinct values: {m}; frequent values: {num_frequent} ({:.3}%); max_value: {max_value} ({w} bits)",
+                                100.0 * n_escaped as f64 / n_keys as f64,
                             ));
 
-                            // -- Build fused VFunc: (remapped_lcp << log2_bs) | offset --
-                            let fused_max = (escape_usize << log2_bs) | bucket_mask;
+                            // -- Build lcp_freq_len_offset --
+                            let lcp_freq_len_offset_max = (escape_usize << log2_bs) | bucket_mask;
 
                             let max_shb = store.max_shard_high_bits();
                             let max_num_shards = 1usize << max_shb;
@@ -540,15 +541,14 @@ mod build {
                             let mut escaped_counts = vec![0usize; max_num_shards];
                             let sync_counts = escaped_counts.as_sync_slice();
 
+                            pl.push_log_target(" ▸ lcp_freq_len_offset");
                             pl.info(format_args!(
-                                "Building fused offset+LCP map ({} bits)...",
-                                best_r + log2_bs
+                                "Building key → lcp_freq_len | offset function..."
                             ));
-
-                            let fused = builder.try_build_func_with_store_and_inspect::<K, u64>(
+                            let lcp_freq_len_offset = builder.try_build_func_with_store_and_inspect::<K, u64>(
                                 seed,
                                 shard_edge,
-                                fused_max,
+                                lcp_freq_len_offset_max,
                                 store,
                                 &|_, sig_val| {
                                     let lcp = (sig_val.val >> log2_bs) as usize;
@@ -570,9 +570,10 @@ mod build {
                                 },
                                 pl,
                             )?;
+                            pl.pop_log_target();
 
-                            // -- Build LCP long VFunc (escaped keys only) --
-                            let lcp_long = if n_escaped > 0 {
+                            // -- Build lcp_infreq_len (escaped keys only) --
+                            let lcp_infreq_len = if n_escaped > 0 {
                                 let mut long_shard_edge = F0::default();
                                 long_shard_edge.set_up_shards(n_escaped, builder.eps);
                                 let long_shb = long_shard_edge.shard_high_bits();
@@ -581,12 +582,6 @@ mod build {
                                 let per = max_num_shards / long_num_shards;
                                 let filtered_shard_sizes: Vec<usize> =
                                     escaped_counts.chunks(per).map(|c| c.iter().sum()).collect();
-
-                                pl.info(format_args!(
-                                    "Building LCP long map ({n_escaped} escaped \
-                                 keys, {:.1}%)...",
-                                    100.0 * n_escaped as f64 / n_keys as f64
-                                ));
 
                                 let mut filtered_store = FilteredShardStore::new(
                                     store,
@@ -597,7 +592,11 @@ mod build {
                                     filtered_shard_sizes,
                                 );
 
-                                VBuilder::<BitFieldVec<Box<[usize]>>, S0, F0>::default()
+                                pl.push_log_target(" ▸ lcp_infreq_len");
+                                pl.info(format_args!(
+                                    "Building escaped key → lcp_infreq_len function..."
+                                ));
+                                let r = VBuilder::<BitFieldVec<Box<[usize]>>, S0, F0>::default()
                                     .set_from(builder)
                                     .try_build_func_with_store::<K, u64>(
                                         seed,
@@ -606,17 +605,17 @@ mod build {
                                         &mut filtered_store,
                                         &|_e, sig_val| (sig_val.val >> log2_bs) as usize,
                                         pl,
-                                    )?
+                                    )?;
+                                pl.pop_log_target();
+                                r
                             } else {
                                 VFunc::empty()
                             };
 
-                            // -- lcp2bucket --
-                            // Sequential: num_buckets is small and we avoid materializing the key set
-                            pl.info(format_args!(
-                                "Building LCP prefix → bucket map ({num_buckets} buckets)..."
-                            ));
-                            let lcp2bucket = <VFunc<
+                            // -- lcp_to_bucket --
+                            pl.push_log_target(" ▸ lcp_to_bucket");
+                            pl.info(format_args!("Building LCP → bucket function..."));
+                            let lcp_to_bucket = <VFunc<
                                 IntBitPrefix<K>,
                                 BitFieldVec<Box<[usize]>>,
                                 S1,
@@ -625,7 +624,7 @@ mod build {
                                 FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
                                     IntBitPrefix::new(
                                         state.bucket_first_keys[b] ^ K::MIN,
-                                        state.lcp_bit_lengths[b] as usize,
+                                        state.lcp_bit_lens[b] as usize,
                                     )
                                 })),
                                 FromCloneableIntoIterator::new(0..num_buckets),
@@ -635,21 +634,18 @@ mod build {
                                     .eps(saved_eps),
                                 pl,
                             )?;
+                            pl.pop_log_target();
 
                             let result = Self {
                                 n,
                                 log2_bucket_size: log2_bs,
-                                fused,
-                                lcp_long,
+                                lcp_freq_len_offset,
+                                lcp_infreq_len: lcp_infreq_len,
                                 remap,
                                 escape: escape_usize,
-                                lcp2bucket,
+                                lcp_to_bucket,
                             };
-                            let total = result.mem_size(SizeFlags::default()) * 8;
-                            pl.info(format_args!(
-                                "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
-                                total as f64 / n as f64
-                            ));
+                            log_bits_per_key(pl, &result, n);
                             Ok(result)
                         },
                         pl,
@@ -764,11 +760,11 @@ mod build {
                 return Ok(Self {
                     n: 0,
                     log2_bucket_size: 0,
-                    fused: VFunc::empty(),
-                    lcp_long: VFunc::empty(),
+                    lcp_freq_len_offset: VFunc::empty(),
+                    lcp_infreq_len: VFunc::empty(),
                     remap: Box::new([]),
                     escape: 0,
-                    lcp2bucket: VFunc::empty(),
+                    lcp_to_bucket: VFunc::empty(),
                 });
             }
 
@@ -780,12 +776,12 @@ mod build {
             let saved_eps = builder.eps;
 
             pl.info(format_args!(
-                "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
+                "LCP bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
             ));
 
             // -- Sequential pass: compute bit-level LCPs and frequencies --
 
-            let mut lcp_bit_lengths: Vec<LcpLen> = Vec::with_capacity(num_buckets);
+            let mut lcp_bit_lens: Vec<LcpLen> = Vec::with_capacity(num_buckets);
             let mut bucket_first_keys: Vec<K> = Vec::with_capacity(num_buckets);
             let mut lcp_counts: HybridMap<usize, usize> = HybridMap::new(None, 0);
             let mut max_lcp: usize = 0;
@@ -809,7 +805,7 @@ mod build {
                     // First key of a new bucket.
                     if i > 0 {
                         let lcp = curr_lcp_bits;
-                        lcp_bit_lengths.push(lcp as LcpLen);
+                        lcp_bit_lens.push(lcp as LcpLen);
                         max_lcp = max_lcp.max(lcp);
                         let bsize = bucket_size; // previous bucket was full
                         lcp_counts.add(lcp, bsize);
@@ -826,12 +822,12 @@ mod build {
             // Flush the last (possibly partial) bucket.
             {
                 let lcp = curr_lcp_bits;
-                lcp_bit_lengths.push(lcp as LcpLen);
+                lcp_bit_lens.push(lcp as LcpLen);
                 max_lcp = max_lcp.max(lcp);
                 let bsize = n - (num_buckets - 1) * bucket_size;
                 lcp_counts.add(lcp, bsize);
             }
-            assert_eq!(lcp_bit_lengths.len(), num_buckets);
+            assert_eq!(lcp_bit_lens.len(), num_buckets);
 
             // -- Compute optimal r and remap/inv_map from LCP frequencies --
 
@@ -847,51 +843,43 @@ mod build {
             );
 
             let escape_usize = (1usize << best_r).wrapping_sub(1);
-            let num_remapped = escape_usize.min(m);
+            let num_frequent = escape_usize.min(m);
 
-            let remap: Box<[usize]> = sorted_vals[..num_remapped].to_vec().into_boxed_slice();
+            let remap: Box<[usize]> = sorted_vals[..num_frequent].to_vec().into_boxed_slice();
             let mut inv_map: HybridMap<usize, usize> = HybridMap::new(Some(max_lcp), escape_usize);
             for (i, &val) in remap.iter().enumerate() {
                 inv_map.insert(val, i);
             }
 
-            let n_escaped = n - sorted_vals[..num_remapped]
+            let n_escaped = n - sorted_vals[..num_frequent]
                 .iter()
                 .map(|&v| lcp_counts.get(v))
                 .sum::<usize>();
 
-            pl.info(format_args!(
-                "Fused offset+LCP: r={best_r}, log2_bs={log2_bs}, \
-             escape={escape_usize}, {num_remapped} remapped, \
-             {m} distinct LCP values, {n_escaped} escaped keys ({:.1}%)",
-                100.0 * n_escaped as f64 / n as f64
-            ));
-
-            // -- Parallel build: fused + lcp_long + lcp2bucket --
-
-            pl.info(format_args!(
-                "Building fused offset+LCP map (parallel, {} bits)...",
-                best_r + log2_bs
-            ));
-
-            let fused_result = builder.expected_num_keys(n).try_par_populate_and_build(
+            builder.expected_num_keys(n).try_par_populate_and_build(
                 keys,
                 &|i| {
-                    ((lcp_bit_lengths[i >> log2_bs] as u64) << log2_bs)
+                    ((lcp_bit_lens[i >> log2_bs] as u64) << log2_bs)
                         | (i as u64 & bucket_mask as u64)
                 },
                 &mut |builder,
                       seed,
                       mut store,
-                      _max_value,
+                      max_value,
                       _num_keys,
                       pl: &mut P,
                       _state: &mut ()| {
                     let shard_edge = builder.shard_edge;
                     let store = &mut *store;
 
-                    // -- Build fused VFunc: (remapped_lcp << log2_bs) | offset --
-                    let fused_max = (escape_usize << log2_bs) | bucket_mask;
+                    let w = max_value.bit_len();
+                    pl.info(format_args!(
+                        "r: {best_r}; distinct values: {m}; frequent values: {num_frequent} ({:.3}%); max_value: {max_value} ({w} bits)",
+                        100.0 * n_escaped as f64 / n as f64
+                    ));
+
+                    // -- Build lcp_freq_len_offset --
+                    let lcp_freq_len_offset_max = (escape_usize << log2_bs) | bucket_mask;
 
                     let max_shb = store.max_shard_high_bits();
                     let max_num_shards = 1usize << max_shb;
@@ -899,10 +887,14 @@ mod build {
                     let mut escaped_counts = vec![0usize; max_num_shards];
                     let sync_counts = escaped_counts.as_sync_slice();
 
-                    let fused = builder.try_build_func_with_store_and_inspect::<K, u64>(
+                    pl.push_log_target(" ▸ lcp_freq_len_offset");
+                    pl.info(format_args!(
+                        "Building key → lcp_freq_len | offset function..."
+                    ));
+                    let lcp_freq_len_offset = builder.try_build_func_with_store_and_inspect::<K, u64>(
                         seed,
                         shard_edge,
-                        fused_max,
+                        lcp_freq_len_offset_max,
                         store,
                         &|_, sig_val| {
                             let lcp = (sig_val.val >> log2_bs) as usize;
@@ -923,9 +915,10 @@ mod build {
                         },
                         pl,
                     )?;
+                    pl.pop_log_target();
 
-                    // -- Build LCP long VFunc (escaped keys only) --
-                    let lcp_long = if n_escaped > 0 {
+                    // -- Build lcp_infreq_len (escaped keys only) --
+                    let lcp_infreq_len = if n_escaped > 0 {
                         let mut long_shard_edge = F0::default();
                         long_shard_edge.set_up_shards(n_escaped, builder.eps);
                         let long_shb = long_shard_edge.shard_high_bits();
@@ -934,12 +927,6 @@ mod build {
                         let per = max_num_shards / long_num_shards;
                         let filtered_shard_sizes: Vec<usize> =
                             escaped_counts.chunks(per).map(|c| c.iter().sum()).collect();
-
-                        pl.info(format_args!(
-                            "Building LCP long map ({n_escaped} escaped \
-                             keys, {:.1}%)...",
-                            100.0 * n_escaped as f64 / n as f64
-                        ));
 
                         let mut filtered_store = FilteredShardStore::new(
                             store,
@@ -950,7 +937,9 @@ mod build {
                             filtered_shard_sizes,
                         );
 
-                        VBuilder::<BitFieldVec<Box<[usize]>>, S0, F0>::default()
+                        pl.push_log_target(" ▸ lcp_infreq_len");
+                        pl.info(format_args!("Building escaped key → lcp_infreq_len function..."));
+                        let r = VBuilder::<BitFieldVec<Box<[usize]>>, S0, F0>::default()
                             .set_from(builder)
                             .try_build_func_with_store::<K, u64>(
                                 seed,
@@ -959,17 +948,17 @@ mod build {
                                 &mut filtered_store,
                                 &|_e, sig_val| (sig_val.val >> log2_bs) as usize,
                                 pl,
-                            )?
+                            )?;
+                        pl.pop_log_target();
+                        r
                     } else {
                         VFunc::empty()
                     };
 
-                    // -- lcp2bucket --
-                    // Sequential: num_buckets is small and we avoid materializing the key set
-                    pl.info(format_args!(
-                        "Building LCP prefix → bucket map ({num_buckets} buckets)..."
-                    ));
-                    let lcp2bucket = <VFunc<
+                    // -- lcp_to_bucket --
+                    pl.push_log_target(" ▸ lcp_to_bucket");
+                    pl.info(format_args!("Building LCP → bucket function..."));
+                    let lcp_to_bucket = <VFunc<
                     IntBitPrefix<K>,
                     BitFieldVec<Box<[usize]>>,
                     S1,
@@ -978,7 +967,7 @@ mod build {
                     FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
                         IntBitPrefix::new(
                             bucket_first_keys[b] ^ K::MIN,
-                            lcp_bit_lengths[b] as usize,
+                            lcp_bit_lens[b] as usize,
                         )
                     })),
                     FromCloneableIntoIterator::new(0..num_buckets),
@@ -988,28 +977,23 @@ mod build {
                         .eps(saved_eps),
                     pl,
                 )?;
+                    pl.pop_log_target();
 
                     let result = Self {
                         n,
                         log2_bucket_size: log2_bs,
-                        fused,
-                        lcp_long,
+                        lcp_freq_len_offset,
+                        lcp_infreq_len,
                         remap: remap.clone(),
                         escape: escape_usize,
-                        lcp2bucket,
+                        lcp_to_bucket,
                     };
-                    let total = result.mem_size(SizeFlags::default()) * 8;
-                    pl.info(format_args!(
-                        "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
-                        total as f64 / n as f64
-                    ));
+                    log_bits_per_key(pl, &result, n);
                     Ok(result)
                 },
                 pl,
                 (),
-            )?;
-
-            Ok(fused_result)
+            )
         }
     }
 
@@ -1162,11 +1146,11 @@ mod build {
                     Self {
                         n: 0,
                         log2_bucket_size: 0,
-                        fused: VFunc::empty(),
-                        lcp_long: VFunc::empty(),
+                        lcp_freq_len_offset: VFunc::empty(),
+                        lcp_infreq_len: VFunc::empty(),
                         remap: Box::new([]),
                         escape: 0,
-                        lcp2bucket: VFunc::empty(),
+                        lcp_to_bucket: VFunc::empty(),
                     },
                     keys,
                 ));
@@ -1180,13 +1164,13 @@ mod build {
             let saved_eps = builder.eps;
 
             pl.info(format_args!(
-                "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
+                "LCP bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
             ));
 
             // State threaded through populate and build closures.
             struct State {
                 bucket_first_keys: Vec<Vec<u8>>,
-                lcp_bit_lengths: Vec<LcpLen>,
+                lcp_bit_lens: Vec<LcpLen>,
                 lcp_counts: HybridMap<usize, usize>,
                 max_lcp: usize,
             }
@@ -1194,7 +1178,7 @@ mod build {
             let mut builder = builder.expected_num_keys(n);
             let mut state = State {
                 bucket_first_keys: Vec::with_capacity(num_buckets),
-                lcp_bit_lengths: Vec::with_capacity(num_buckets),
+                lcp_bit_lens: Vec::with_capacity(num_buckets),
                 lcp_counts: HybridMap::new(None, 0),
                 max_lcp: 0,
             };
@@ -1213,7 +1197,7 @@ mod build {
                     let mut idx: usize = 0;
 
                     state.bucket_first_keys.clear();
-                    state.lcp_bit_lengths.clear();
+                    state.lcp_bit_lens.clear();
                     state.lcp_counts = HybridMap::new(None, 0);
                     state.max_lcp = 0;
 
@@ -1238,7 +1222,7 @@ mod build {
                                 // Start of a new bucket — flush the previous one.
                                 if offset == 0 && idx > 0 {
                                     let lcp = curr_lcp_bits;
-                                    state.lcp_bit_lengths.push(lcp as LcpLen);
+                                    state.lcp_bit_lens.push(lcp as LcpLen);
                                     state.max_lcp = state.max_lcp.max(lcp);
                                     let bsize = buf.len();
                                     state.lcp_counts.add(lcp, bsize);
@@ -1270,7 +1254,7 @@ mod build {
                             // Flush the last (possibly partial) bucket.
                             if !buf.is_empty() {
                                 let lcp = curr_lcp_bits;
-                                state.lcp_bit_lengths.push(lcp as LcpLen);
+                                state.lcp_bit_lens.push(lcp as LcpLen);
                                 state.max_lcp = state.max_lcp.max(lcp);
                                 let bsize = buf.len();
                                 state.lcp_counts.add(lcp, bsize);
@@ -1283,7 +1267,7 @@ mod build {
                             }
 
                             assert_eq!(idx, n, "Expected {n} keys but got {idx}");
-                            assert_eq!(state.lcp_bit_lengths.len(), num_buckets);
+                            assert_eq!(state.lcp_bit_lens.len(), num_buckets);
 
                             Ok(max_value)
                         };
@@ -1294,7 +1278,7 @@ mod build {
                         &mut |builder,
                               seed,
                               mut store,
-                              _max_value,
+                              max_value,
                               _num_keys,
                               pl: &mut P,
                               state: &mut State| {
@@ -1317,10 +1301,10 @@ mod build {
                             );
 
                             let escape_usize = (1usize << best_r).wrapping_sub(1);
-                            let num_remapped = escape_usize.min(m);
+                            let num_frequent = escape_usize.min(m);
 
                             let remap: Box<[usize]> =
-                                sorted_vals[..num_remapped].to_vec().into_boxed_slice();
+                                sorted_vals[..num_frequent].to_vec().into_boxed_slice();
                             let mut inv_map: HybridMap<usize, usize> =
                                 HybridMap::new(Some(state.max_lcp), escape_usize);
                             for (i, &val) in remap.iter().enumerate() {
@@ -1328,20 +1312,19 @@ mod build {
                             }
 
                             let n_escaped = n_keys
-                                - sorted_vals[..num_remapped]
+                                - sorted_vals[..num_frequent]
                                     .iter()
                                     .map(|&v| counts.get(v))
                                     .sum::<usize>();
 
+                            let w = max_value.bit_len();
                             pl.info(format_args!(
-                                "Fused offset+LCP: r={best_r}, log2_bs={log2_bs}, \
-                             escape={escape_usize}, {num_remapped} remapped, \
-                             {m} distinct LCP values, {n_escaped} escaped keys ({:.1}%)",
+                                "r: {best_r}; distinct values: {m}; frequent values: {num_frequent} ({:.3}%); max_value: {max_value} ({w} bits)",
                                 100.0 * n_escaped as f64 / n_keys as f64
                             ));
 
-                            // -- Build fused VFunc: (remapped_lcp << log2_bs) | offset --
-                            let fused_max = (escape_usize << log2_bs) | bucket_mask;
+                            // -- Build lcp_freq_len_offset --
+                            let lcp_freq_len_max = (escape_usize << log2_bs) | bucket_mask;
 
                             let max_shb = store.max_shard_high_bits();
                             let max_num_shards = 1usize << max_shb;
@@ -1349,15 +1332,14 @@ mod build {
                             let mut escaped_counts = vec![0usize; max_num_shards];
                             let sync_counts = escaped_counts.as_sync_slice();
 
+                            pl.push_log_target(" ▸ lcp_freq_len_offset");
                             pl.info(format_args!(
-                                "Building fused offset+LCP map ({} bits)...",
-                                best_r + log2_bs
+                                "Building key → lcp_freq_len | offset function..."
                             ));
-
-                            let fused = builder.try_build_func_with_store_and_inspect::<K, u64>(
+                            let lcp_freq_len_offset = builder.try_build_func_with_store_and_inspect::<K, u64>(
                                 seed,
                                 shard_edge,
-                                fused_max,
+                                lcp_freq_len_max,
                                 store,
                                 &|_, sig_val| {
                                     let lcp = (sig_val.val >> log2_bs) as usize;
@@ -1379,9 +1361,10 @@ mod build {
                                 },
                                 pl,
                             )?;
+                            pl.pop_log_target();
 
-                            // -- Build LCP long VFunc (escaped keys only) --
-                            let lcp_long = if n_escaped > 0 {
+                            // -- Build lcp_infreq_len (escaped keys only) --
+                            let lcp_infreq_len = if n_escaped > 0 {
                                 let mut long_shard_edge = F0::default();
                                 long_shard_edge.set_up_shards(n_escaped, builder.eps);
                                 let long_shb = long_shard_edge.shard_high_bits();
@@ -1390,12 +1373,6 @@ mod build {
                                 let per = max_num_shards / long_num_shards;
                                 let filtered_shard_sizes: Vec<usize> =
                                     escaped_counts.chunks(per).map(|c| c.iter().sum()).collect();
-
-                                pl.info(format_args!(
-                                    "Building LCP long map ({n_escaped} escaped \
-                                 keys, {:.1}%)...",
-                                    100.0 * n_escaped as f64 / n_keys as f64
-                                ));
 
                                 let mut filtered_store = FilteredShardStore::new(
                                     store,
@@ -1406,7 +1383,11 @@ mod build {
                                     filtered_shard_sizes,
                                 );
 
-                                VBuilder::<BitFieldVec<Box<[usize]>>, S0, F0>::default()
+                                pl.push_log_target(" ▸ lcp_infreq_len");
+                                pl.info(format_args!(
+                                    "Building escaped key → lcp_infreq_len function..."
+                                ));
+                                let r = VBuilder::<BitFieldVec<Box<[usize]>>, S0, F0>::default()
                                     .set_from(builder)
                                     .try_build_func_with_store::<K, u64>(
                                         seed,
@@ -1415,15 +1396,16 @@ mod build {
                                         &mut filtered_store,
                                         &|_e, sig_val| (sig_val.val >> log2_bs) as usize,
                                         pl,
-                                    )?
+                                    )?;
+                                pl.pop_log_target();
+                                r
                             } else {
                                 VFunc::empty()
                             };
 
-                            // -- lcp2bucket --
-                            pl.info(format_args!(
-                                "Building LCP prefix → bucket map ({num_buckets} buckets)..."
-                            ));
+                            // -- lcp_to_bucket --
+                            pl.push_log_target(" ▸ lcp_to_bucket");
+                            pl.info(format_args!("Building LCP → bucket function..."));
                             let extended_first_keys: Vec<Vec<u8>> = state
                                 .bucket_first_keys
                                 .iter()
@@ -1436,40 +1418,37 @@ mod build {
                                 .collect();
 
                             // Sequential: num_buckets is small and we avoid materializing the key set
-                            let lcp2bucket = <VFunc<
-                            BitPrefix,
-                            BitFieldVec<Box<[usize]>>,
-                            S1,
-                            E1,
-                        >>::try_new_with_builder(
-                            FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
-                                BitPrefix::new(
-                                    &extended_first_keys[b],
-                                    state.lcp_bit_lengths[b] as usize,
-                                )
-                            })),
-                            FromCloneableIntoIterator::new(0..num_buckets),
-                            VBuilder::default()
-                                .expected_num_keys(num_buckets)
-                                .max_num_threads(saved_max_num_threads)
-                                .eps(saved_eps),
-                            pl,
-                        )?;
+                            let lcp_to_bucket = <VFunc<
+                                BitPrefix,
+                                BitFieldVec<Box<[usize]>>,
+                                S1,
+                                E1,
+                            >>::try_new_with_builder(
+                                FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
+                                    BitPrefix::new(
+                                        &extended_first_keys[b],
+                                        state.lcp_bit_lens[b] as usize,
+                                    )
+                                })),
+                                FromCloneableIntoIterator::new(0..num_buckets),
+                                VBuilder::default()
+                                    .expected_num_keys(num_buckets)
+                                    .max_num_threads(saved_max_num_threads)
+                                    .eps(saved_eps),
+                                pl,
+                            )?;
+                            pl.pop_log_target();
 
                             let result = Self {
                                 n,
                                 log2_bucket_size: log2_bs,
-                                fused,
-                                lcp_long,
+                                lcp_freq_len_offset,
+                                lcp_infreq_len: lcp_infreq_len,
                                 remap,
                                 escape: escape_usize,
-                                lcp2bucket,
+                                lcp_to_bucket,
                             };
-                            let total = result.mem_size(SizeFlags::default()) * 8;
-                            pl.info(format_args!(
-                                "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
-                                total as f64 / n as f64
-                            ));
+                            log_bits_per_key(pl, &result, n);
                             Ok(result)
                         },
                         pl,
@@ -1596,11 +1575,11 @@ mod build {
                 return Ok(Self {
                     n: 0,
                     log2_bucket_size: 0,
-                    fused: VFunc::empty(),
-                    lcp_long: VFunc::empty(),
+                    lcp_freq_len_offset: VFunc::empty(),
+                    lcp_infreq_len: VFunc::empty(),
                     remap: Box::new([]),
                     escape: 0,
-                    lcp2bucket: VFunc::empty(),
+                    lcp_to_bucket: VFunc::empty(),
                 });
             }
 
@@ -1612,12 +1591,12 @@ mod build {
             let saved_eps = builder.eps;
 
             pl.info(format_args!(
-                "Bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
+                "LCP bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
             ));
 
             // -- Sequential pass: compute bit-level LCPs and frequencies --
 
-            let mut lcp_bit_lengths: Vec<LcpLen> = Vec::with_capacity(num_buckets);
+            let mut lcp_bit_lens: Vec<LcpLen> = Vec::with_capacity(num_buckets);
             let mut bucket_first_keys: Vec<Vec<u8>> = Vec::with_capacity(num_buckets);
             let mut lcp_counts: HybridMap<usize, usize> = HybridMap::new(None, 0);
             let mut max_lcp: usize = 0;
@@ -1641,7 +1620,7 @@ mod build {
                     // First key of a new bucket.
                     if i > 0 {
                         let lcp = curr_lcp_bits;
-                        lcp_bit_lengths.push(lcp as LcpLen);
+                        lcp_bit_lens.push(lcp as LcpLen);
                         max_lcp = max_lcp.max(lcp);
                         let bsize = bucket_size; // previous bucket was full
                         lcp_counts.add(lcp, bsize);
@@ -1659,12 +1638,12 @@ mod build {
             // Flush the last (possibly partial) bucket.
             {
                 let lcp = curr_lcp_bits;
-                lcp_bit_lengths.push(lcp as LcpLen);
+                lcp_bit_lens.push(lcp as LcpLen);
                 max_lcp = max_lcp.max(lcp);
                 let bsize = n - (num_buckets - 1) * bucket_size;
                 lcp_counts.add(lcp, bsize);
             }
-            assert_eq!(lcp_bit_lengths.len(), num_buckets);
+            assert_eq!(lcp_bit_lens.len(), num_buckets);
 
             // -- Compute optimal r and remap/inv_map from LCP frequencies --
 
@@ -1680,51 +1659,43 @@ mod build {
             );
 
             let escape_usize = (1usize << best_r).wrapping_sub(1);
-            let num_remapped = escape_usize.min(m);
+            let num_frequent = escape_usize.min(m);
 
-            let remap: Box<[usize]> = sorted_vals[..num_remapped].to_vec().into_boxed_slice();
+            let remap: Box<[usize]> = sorted_vals[..num_frequent].to_vec().into_boxed_slice();
             let mut inv_map: HybridMap<usize, usize> = HybridMap::new(Some(max_lcp), escape_usize);
             for (i, &val) in remap.iter().enumerate() {
                 inv_map.insert(val, i);
             }
 
-            let n_escaped = n - sorted_vals[..num_remapped]
+            let n_escaped = n - sorted_vals[..num_frequent]
                 .iter()
                 .map(|&v| lcp_counts.get(v))
                 .sum::<usize>();
 
-            pl.info(format_args!(
-                "Fused offset+LCP: r={best_r}, log2_bs={log2_bs}, \
-             escape={escape_usize}, {num_remapped} remapped, \
-             {m} distinct LCP values, {n_escaped} escaped keys ({:.1}%)",
-                100.0 * n_escaped as f64 / n as f64
-            ));
-
-            // -- Parallel build: fused + lcp_long + lcp2bucket --
-
-            pl.info(format_args!(
-                "Building fused offset+LCP map (parallel, {} bits)...",
-                best_r + log2_bs
-            ));
-
-            let fused_result = builder.expected_num_keys(n).try_par_populate_and_build(
+            builder.expected_num_keys(n).try_par_populate_and_build(
                 keys,
                 &|i| {
-                    ((lcp_bit_lengths[i >> log2_bs] as u64) << log2_bs)
+                    ((lcp_bit_lens[i >> log2_bs] as u64) << log2_bs)
                         | (i as u64 & bucket_mask as u64)
                 },
                 &mut |builder,
                       seed,
                       mut store,
-                      _max_value,
+                      max_value,
                       _num_keys,
                       pl: &mut P,
                       _state: &mut ()| {
                     let shard_edge = builder.shard_edge;
                     let store = &mut *store;
 
-                    // -- Build fused VFunc: (remapped_lcp << log2_bs) | offset --
-                    let fused_max = (escape_usize << log2_bs) | bucket_mask;
+                    let w = max_value.bit_len();
+                    pl.info(format_args!(
+                        "r: {best_r}; distinct values: {m}; frequent values: {num_frequent} ({:.3}%); max_value: {max_value} ({w} bits)",
+                        100.0 * n_escaped as f64 / n as f64
+                    ));
+
+                    // -- Build lcp_freq_len_offset --
+                    let lcp_freq_len_offset_max = (escape_usize << log2_bs) | bucket_mask;
 
                     let max_shb = store.max_shard_high_bits();
                     let max_num_shards = 1usize << max_shb;
@@ -1732,10 +1703,14 @@ mod build {
                     let mut escaped_counts = vec![0usize; max_num_shards];
                     let sync_counts = escaped_counts.as_sync_slice();
 
-                    let fused = builder.try_build_func_with_store_and_inspect::<K, u64>(
+                    pl.push_log_target(" ▸ lcp_freq_len_offset");
+                    pl.info(format_args!(
+                        "Building key → lcp_freq_len | offset function..."
+                    ));
+                    let lcp_freq_len_offset = builder.try_build_func_with_store_and_inspect::<K, u64>(
                         seed,
                         shard_edge,
-                        fused_max,
+                        lcp_freq_len_offset_max,
                         store,
                         &|_, sig_val| {
                             let lcp = (sig_val.val >> log2_bs) as usize;
@@ -1756,9 +1731,10 @@ mod build {
                         },
                         pl,
                     )?;
+                    pl.pop_log_target();
 
-                    // -- Build LCP long VFunc (escaped keys only) --
-                    let lcp_long = if n_escaped > 0 {
+                    // -- Build lcp_infreq_len (escaped keys only) --
+                    let lcp_infreq_len = if n_escaped > 0 {
                         let mut long_shard_edge = F0::default();
                         long_shard_edge.set_up_shards(n_escaped, builder.eps);
                         let long_shb = long_shard_edge.shard_high_bits();
@@ -1767,12 +1743,6 @@ mod build {
                         let per = max_num_shards / long_num_shards;
                         let filtered_shard_sizes: Vec<usize> =
                             escaped_counts.chunks(per).map(|c| c.iter().sum()).collect();
-
-                        pl.info(format_args!(
-                            "Building LCP long map ({n_escaped} escaped \
-                             keys, {:.1}%)...",
-                            100.0 * n_escaped as f64 / n as f64
-                        ));
 
                         let mut filtered_store = FilteredShardStore::new(
                             store,
@@ -1783,7 +1753,9 @@ mod build {
                             filtered_shard_sizes,
                         );
 
-                        VBuilder::<BitFieldVec<Box<[usize]>>, S0, F0>::default()
+                        pl.push_log_target(" ▸ lcp_infreq_len");
+                        pl.info(format_args!("Building escaped key → lcp_infreq_len function..."));
+                        let r = VBuilder::<BitFieldVec<Box<[usize]>>, S0, F0>::default()
                             .set_from(builder)
                             .try_build_func_with_store::<K, u64>(
                                 seed,
@@ -1792,15 +1764,16 @@ mod build {
                                 &mut filtered_store,
                                 &|_e, sig_val| (sig_val.val >> log2_bs) as usize,
                                 pl,
-                            )?
+                            )?;
+                        pl.pop_log_target();
+                        r
                     } else {
                         VFunc::empty()
                     };
 
-                    // -- lcp2bucket --
-                    pl.info(format_args!(
-                        "Building LCP prefix → bucket map ({num_buckets} buckets)..."
-                    ));
+                    // -- lcp_to_bucket --
+                    pl.push_log_target(" ▸ lcp_to_bucket");
+                    pl.info(format_args!("Building LCP → bucket function..."));
                     let extended_first_keys: Vec<Vec<u8>> = bucket_first_keys
                         .iter()
                         .map(|k| {
@@ -1812,10 +1785,10 @@ mod build {
                         .collect();
 
                     // Sequential: num_buckets is small and we avoid materializing the key set
-                    let lcp2bucket =
+                    let lcp_to_bucket =
                     <VFunc<BitPrefix, BitFieldVec<Box<[usize]>>, S1, E1>>::try_new_with_builder(
                         FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
-                            BitPrefix::new(&extended_first_keys[b], lcp_bit_lengths[b] as usize)
+                            BitPrefix::new(&extended_first_keys[b], lcp_bit_lens[b] as usize)
                         })),
                         FromCloneableIntoIterator::new(0..num_buckets),
                         VBuilder::default()
@@ -1824,28 +1797,23 @@ mod build {
                             .eps(saved_eps),
                         pl,
                     )?;
+                    pl.pop_log_target();
 
                     let result = Self {
                         n,
                         log2_bucket_size: log2_bs,
-                        fused,
-                        lcp_long,
+                        lcp_freq_len_offset,
+                        lcp_infreq_len: lcp_infreq_len,
                         remap: remap.clone(),
                         escape: escape_usize,
-                        lcp2bucket,
+                        lcp_to_bucket,
                     };
-                    let total = result.mem_size(SizeFlags::default()) * 8;
-                    pl.info(format_args!(
-                        "Actual bit cost per key: {:.2} ({total} bits for {n} keys)",
-                        total as f64 / n as f64
-                    ));
+                    log_bits_per_key(pl, &result, n);
                     Ok(result)
                 },
                 pl,
                 (),
-            )?;
-
-            Ok(fused_result)
+            )
         }
     }
 } // mod build
@@ -1868,13 +1836,13 @@ mod build {
 /// - `K`: the integer key type.
 /// - `D`: the backing store for [`VFunc`] data (e.g.,
 ///   [`BitFieldVec`]).
-/// - `S0`: the [signature type] for the key maps (`fused` and
-///   `lcp_long`).
-/// - `E0`: the [`ShardEdge`] for the key maps (`fused`).
-/// - `F0`: the [`ShardEdge`] for the long map (`lcp_long`). Defaults to
+/// - `S0`: the [signature type] for the key maps (`lcp_freq_len_offset`
+///   and `lcp_infreq_len`).
+/// - `E0`: the [`ShardEdge`] for the key maps (`lcp_freq_len_offset`).
+/// - `F0`: the [`ShardEdge`] for `lcp_infreq_len`. Defaults to
 ///   `E0`.
 /// - `S1`: the  [signature type] for the prefix-to-bucket map
-///   (`lcp2bucket`).
+///   (`lcp_to_bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
 ///
 /// # Examples
@@ -1908,11 +1876,11 @@ pub struct Lcp2Mmphf<
 > {
     pub(crate) n: usize,
     pub(crate) log2_bucket_size: usize,
-    pub(crate) fused: VFunc<K, D, S0, E0>,
-    pub(crate) lcp_long: VFunc<K, D, S0, F0>,
+    pub(crate) lcp_freq_len_offset: VFunc<K, D, S0, E0>,
+    pub(crate) lcp_infreq_len: VFunc<K, D, S0, F0>,
     pub(crate) remap: Box<[usize]>,
     pub(crate) escape: usize,
-    pub(crate) lcp2bucket: VFunc<BitPrefix, D, S1, E1>,
+    pub(crate) lcp_to_bucket: VFunc<BitPrefix, D, S1, E1>,
 }
 
 impl<K: ?Sized, D: SliceByValue, S0, E0, F0, S1, E1> std::fmt::Debug
@@ -1926,11 +1894,11 @@ where
         f.debug_struct("Lcp2Mmphf")
             .field("n", &self.n)
             .field("log2_bucket_size", &self.log2_bucket_size)
-            .field("fused", &self.fused)
-            .field("lcp_long", &self.lcp_long)
+            .field("lcp_freq_len_offset", &self.lcp_freq_len_offset)
+            .field("lcp_infreq_len", &self.lcp_infreq_len)
             .field("remap", &self.remap)
             .field("escape", &self.escape)
-            .field("lcp2bucket", &self.lcp2bucket)
+            .field("lcp_to_bucket", &self.lcp_to_bucket)
             .finish()
     }
 }
@@ -2038,29 +2006,29 @@ where
     /// (same contract as [`VFunc::get`]).
     #[inline]
     pub fn get(&self, key: &K) -> usize {
-        let sig = K::to_sig(key, self.fused.seed);
-        let packed = self.fused.get_by_sig(sig);
+        let sig = K::to_sig(key, self.lcp_freq_len_offset.seed);
+        let packed = self.lcp_freq_len_offset.get_by_sig(sig);
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
-        let remapped_lcp = packed >> self.log2_bucket_size;
-        let lcp_bit_length = if remapped_lcp != self.escape {
-            self.remap[remapped_lcp]
+        let freq_lcp = packed >> self.log2_bucket_size;
+        let lcp_bit_len = if freq_lcp != self.escape {
+            self.remap[freq_lcp]
         } else {
-            self.lcp_long.get_by_sig(sig)
+            self.lcp_infreq_len.get_by_sig(sig)
         };
 
         let key_bytes: &[u8] = key.as_ref();
-        let lcp2b_seed = self.lcp2bucket.seed;
-        let lcp2b_sig: S1 = if lcp_bit_length <= key_bytes.len() * 8 {
-            bit_prefix_sig(key_bytes, lcp_bit_length, lcp2b_seed)
+        let lcp2b_seed = self.lcp_to_bucket.seed;
+        let lcp2b_sig: S1 = if lcp_bit_len <= key_bytes.len() * 8 {
+            bit_prefix_sig(key_bytes, lcp_bit_len, lcp2b_seed)
         } else {
             // Rare: LCP extends into the virtual NUL (at most 8 extra bits).
             let mut hasher = xxh3::Xxh3::with_seed(lcp2b_seed);
             hasher.update(key_bytes);
             hasher.update(&[0u8]);
-            hasher.update(&lcp_bit_length.to_ne_bytes());
+            hasher.update(&lcp_bit_len.to_ne_bytes());
             S1::from_hasher(&hasher)
         };
-        let bucket = self.lcp2bucket.get_by_sig(lcp2b_sig);
+        let bucket = self.lcp_to_bucket.get_by_sig(lcp2b_sig);
         (bucket << self.log2_bucket_size) + offset
     }
 }
@@ -2100,11 +2068,11 @@ impl<K, S0: Sig, E0: ShardEdge<S0, 3>, F0: ShardEdge<S0, 3>, S1: Sig, E1: ShardE
         Lcp2MmphfInt {
             n: f.n,
             log2_bucket_size: f.log2_bucket_size,
-            fused: f.fused.into(),
-            lcp_long: f.lcp_long.into(),
+            lcp_freq_len_offset: f.lcp_freq_len_offset.into(),
+            lcp_infreq_len: f.lcp_infreq_len.into(),
             remap: f.remap,
             escape: f.escape,
-            lcp2bucket: f.lcp2bucket.into(),
+            lcp_to_bucket: f.lcp_to_bucket.into(),
         }
     }
 }
@@ -2119,11 +2087,11 @@ impl<K, S0: Sig, E0: ShardEdge<S0, 3>, F0: ShardEdge<S0, 3>, S1: Sig, E1: ShardE
         Ok(Lcp2MmphfInt {
             n: self.n,
             log2_bucket_size: self.log2_bucket_size,
-            fused: self.fused.try_into_unaligned()?,
-            lcp_long: self.lcp_long.try_into_unaligned()?,
+            lcp_freq_len_offset: self.lcp_freq_len_offset.try_into_unaligned()?,
+            lcp_infreq_len: self.lcp_infreq_len.try_into_unaligned()?,
             remap: self.remap,
             escape: self.escape,
-            lcp2bucket: self.lcp2bucket.try_into_unaligned()?,
+            lcp_to_bucket: self.lcp_to_bucket.try_into_unaligned()?,
         })
     }
 }
@@ -2138,11 +2106,11 @@ impl<K: ?Sized, S0: Sig, E0: ShardEdge<S0, 3>, F0: ShardEdge<S0, 3>, S1: Sig, E1
         Lcp2Mmphf {
             n: f.n,
             log2_bucket_size: f.log2_bucket_size,
-            fused: f.fused.into(),
-            lcp_long: f.lcp_long.into(),
+            lcp_freq_len_offset: f.lcp_freq_len_offset.into(),
+            lcp_infreq_len: f.lcp_infreq_len.into(),
             remap: f.remap,
             escape: f.escape,
-            lcp2bucket: f.lcp2bucket.into(),
+            lcp_to_bucket: f.lcp_to_bucket.into(),
         }
     }
 }
@@ -2157,11 +2125,11 @@ impl<K: ?Sized, S0: Sig, E0: ShardEdge<S0, 3>, F0: ShardEdge<S0, 3>, S1: Sig, E1
         Ok(Lcp2Mmphf {
             n: self.n,
             log2_bucket_size: self.log2_bucket_size,
-            fused: self.fused.try_into_unaligned()?,
-            lcp_long: self.lcp_long.try_into_unaligned()?,
+            lcp_freq_len_offset: self.lcp_freq_len_offset.try_into_unaligned()?,
+            lcp_infreq_len: self.lcp_infreq_len.try_into_unaligned()?,
             remap: self.remap,
             escape: self.escape,
-            lcp2bucket: self.lcp2bucket.try_into_unaligned()?,
+            lcp_to_bucket: self.lcp_to_bucket.try_into_unaligned()?,
         })
     }
 }

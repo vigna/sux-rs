@@ -8,6 +8,7 @@
 #![cfg(feature = "rayon")]
 use anyhow::Result;
 use dsi_progress_logger::*;
+use mem_dbg::{FlatType, MemSize};
 use rdst::RadixKey;
 use std::ops::{BitXor, BitXorAssign};
 use sux::traits::TryIntoUnaligned;
@@ -24,7 +25,7 @@ use sux::{
     utils::{EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig},
 };
 
-fn _test_vfunc<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
+fn _test_vfunc<S: Sig + Send + Sync, E: ShardEdge<S, 3> + MemSize + FlatType>(
     sizes: &[usize],
     offline: bool,
     low_mem: bool,
@@ -92,7 +93,7 @@ fn test_vfunc_peeling_by_sig_vals() -> Result<()> {
     Ok(())
 }
 
-fn _test_vfilter<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
+fn _test_vfilter<S: Sig + Send + Sync, E: ShardEdge<S, 3> + MemSize + FlatType>(
     sizes: &[usize],
     offline: bool,
     low_mem: bool,

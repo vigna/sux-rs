@@ -115,12 +115,12 @@ fn main() -> Result<()> {
     // ── Diagnostic: what does our Huffman codec produce? ──
     {
         use std::collections::HashMap;
-        use sux::func::codec::{Codec, Coder, Huffman};
+        use sux::func::codec::{Codec, Coder, HuffmanConf};
         let mut freqs: HashMap<u64, usize> = HashMap::new();
         for &v in &values {
             *freqs.entry(v).or_insert(0) += 1;
         }
-        let coder = <Huffman as Codec<u64>>::build_coder(&Huffman::new(), &freqs);
+        let coder = <HuffmanConf as Codec<u64>>::build_coder(&HuffmanConf::new(), &freqs);
         let mut total_bits: u64 = 0;
         let mut by_len: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
         for (&v, &f) in &freqs {

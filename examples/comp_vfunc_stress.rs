@@ -161,7 +161,7 @@ macro_rules! build_and_verify {
             <CompVFunc<u64, _, $sig, $shard_edge>>::try_par_new_with_builder(
                 $keys,
                 $values,
-                sux::func::codec::Huffman::new(),
+                sux::func::codec::HuffmanConf::new(),
                 VBuilder::default(),
                 &mut progress_logger![],
             );

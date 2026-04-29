@@ -126,11 +126,11 @@ impl<
 
     #[inline(always)]
     fn seed(&self) -> u64 {
-        self.offset_lcp_length.seed
+        self.lcp_len_offset.seed
     }
     #[inline(always)]
     fn shard_edge(&self) -> &E0 {
-        &self.offset_lcp_length.shard_edge
+        &self.lcp_len_offset.shard_edge
     }
     #[inline(always)]
     fn len(&self) -> usize {
@@ -152,11 +152,11 @@ impl<
 
     #[inline(always)]
     fn seed(&self) -> u64 {
-        self.offset_lcp_length.seed
+        self.lcp_len_offset.seed
     }
     #[inline(always)]
     fn shard_edge(&self) -> &E0 {
-        &self.offset_lcp_length.shard_edge
+        &self.lcp_len_offset.shard_edge
     }
     #[inline(always)]
     fn len(&self) -> usize {
@@ -179,11 +179,11 @@ impl<
 
     #[inline(always)]
     fn seed(&self) -> u64 {
-        self.fused.seed
+        self.lcp_freq_len_offset.seed
     }
     #[inline(always)]
     fn shard_edge(&self) -> &E0 {
-        &self.fused.shard_edge
+        &self.lcp_freq_len_offset.shard_edge
     }
     #[inline(always)]
     fn len(&self) -> usize {
@@ -206,11 +206,11 @@ impl<
 
     #[inline(always)]
     fn seed(&self) -> u64 {
-        self.fused.seed
+        self.lcp_freq_len_offset.seed
     }
     #[inline(always)]
     fn shard_edge(&self) -> &E0 {
-        &self.fused.shard_edge
+        &self.lcp_freq_len_offset.shard_edge
     }
     #[inline(always)]
     fn len(&self) -> usize {
@@ -475,6 +475,7 @@ mod build {
         n: usize,
         mut keys: L,
         to_sig: impl Fn(&<L as FallibleLending<'_>>::Lend, u64) -> S,
+        pl: &mut impl ProgressLog,
     ) -> Result<Box<[W]>>
     where
         W: Word,
@@ -484,11 +485,17 @@ mod build {
         L: FallibleLender<Error: std::error::Error + Send + Sync + 'static>,
         for<'lend> L: FallibleLending<'lend>,
     {
+        pl.item_name("key");
+        pl.expected_updates(Some(n));
+        pl.log_level(log::Level::Info);
+        pl.start("Signing keys...");
         let mut hashes = vec![W::MIN; n];
         for hash in hashes.iter_mut() {
             let key = keys.next()?.expect("Not enough keys for hashes");
             *hash = shard_edge.remixed_hash(to_sig(&key, seed)).as_to::<W>();
+            pl.light_update();
         }
+        pl.done();
         Ok(hashes.into_boxed_slice())
     }
 
@@ -513,6 +520,7 @@ mod build {
         hash_width: usize,
         mut keys: L,
         to_sig: impl Fn(&<L as FallibleLending<'_>>::Lend, u64) -> S,
+        pl: &mut impl ProgressLog,
     ) -> Result<BitFieldVec<Box<[H]>>>
     where
         H: Word,
@@ -522,12 +530,18 @@ mod build {
         L: FallibleLender<Error: std::error::Error + Send + Sync + 'static>,
         for<'lend> L: FallibleLending<'lend>,
     {
+        pl.item_name("key");
+        pl.expected_updates(Some(n));
+        pl.log_level(log::Level::Info);
+        pl.start("Signing keys...");
         let mut hashes = BitFieldVec::<Box<[H]>>::new_padded(hash_width, n);
         for i in 0..n {
             let key = keys.next()?.expect("Not enough keys for hashes");
             let h = hashes.truncate_hash(shard_edge.remixed_hash(to_sig(&key, seed)));
             hashes.set_value(i, h);
+            pl.light_update();
         }
+        pl.done();
         Ok(hashes)
     }
 
@@ -546,21 +560,36 @@ mod build {
         seed: u64,
         n: usize,
         keys: &[B],
+        pl: &mut (impl ProgressLog + Send),
     ) -> Box<[W]>
     where
-        B: Borrow<K>,
+        B: Borrow<K> + Sync,
         K: ?Sized + ToSig<S>,
-        W: Word,
+        W: Word + Send + Sync,
         S: Sig,
-        E: ShardEdge<S, 3>,
+        E: ShardEdge<S, 3> + Sync,
         u64: PrimitiveNumberAs<W>,
     {
+        use rayon::prelude::*;
+        use sync_cell_slice::SyncSlice;
+        pl.item_name("key");
+        pl.expected_updates(Some(n));
+        pl.log_level(log::Level::Info);
+        pl.start("Signing keys...");
         let mut hashes = vec![W::MIN; n];
-        for (hash, key) in hashes.iter_mut().zip(keys.iter()) {
-            *hash = shard_edge
-                .remixed_hash(K::to_sig(key.borrow(), seed))
-                .as_to::<W>();
-        }
+        let sync_hashes = hashes.as_sync_slice();
+        keys[..n]
+            .par_iter()
+            .enumerate()
+            .for_each(|(i, key)| unsafe {
+                sync_hashes[i].set(
+                    shard_edge
+                        .remixed_hash(K::to_sig(key.borrow(), seed))
+                        .as_to::<W>(),
+                );
+            });
+        pl.update_with_count(n);
+        pl.done();
         hashes.into_boxed_slice()
     }
 
@@ -583,6 +612,7 @@ mod build {
         n: usize,
         hash_width: usize,
         keys: &[B],
+        pl: &mut impl ProgressLog,
     ) -> BitFieldVec<Box<[H]>>
     where
         B: Borrow<K>,
@@ -592,11 +622,17 @@ mod build {
         E: ShardEdge<S, 3>,
         u64: PrimitiveNumberAs<H>,
     {
+        pl.item_name("key");
+        pl.expected_updates(Some(n));
+        pl.log_level(log::Level::Info);
+        pl.start("Signing keys...");
         let mut hashes = BitFieldVec::<Box<[H]>>::new_padded(hash_width, n);
         for (i, key) in keys.iter().enumerate().take(n) {
             let h = hashes.truncate_hash(shard_edge.remixed_hash(K::to_sig(key.borrow(), seed)));
             hashes.set_value(i, h);
+            pl.light_update();
         }
+        pl.done();
         hashes
     }
 
@@ -607,7 +643,7 @@ mod build {
     impl<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         S: Sig + Send + Sync,
-        E: ShardEdge<S, 3>,
+        E: ShardEdge<S, 3> + MemSize + FlatType,
         H: crate::traits::Word,
     > SignedFunc<VFunc<K, BitFieldVec<Box<[usize]>>, S, E>, Box<[H]>>
     where
@@ -731,24 +767,31 @@ mod build {
 
             let num_keys = func.len();
 
-            // Create the hash vector
+            pl.push_log_target(" ▸ hashes");
             let mut hashes = vec![H::ZERO; num_keys].into_boxed_slice();
-
-            // Enumerate the store and extract hashes using the same method as filters
-            pl.item_name("hash");
-            pl.expected_updates(num_keys);
-            pl.start("Storing hashes...");
-
-            for shard in store.iter() {
-                for sig_val in shard.iter() {
-                    let pos = sig_val.val;
-                    let hash = H::as_from(func.shard_edge().remixed_hash(sig_val.sig));
-                    hashes.set_value(pos, hash);
-                    pl.light_update();
-                }
+            {
+                use rayon::prelude::*;
+                use sync_cell_slice::SyncSlice;
+                let shards: Vec<_> = store.iter().collect();
+                let mut shard_pl = pl.clone();
+                shard_pl.item_name("shard");
+                shard_pl.expected_updates(Some(shards.len()));
+                shard_pl.log_level(log::Level::Info);
+                shard_pl.start("Signing shards...");
+                let sync_hashes = hashes.as_sync_slice();
+                let shard_edge = func.shard_edge();
+                shards.into_par_iter().for_each(|shard| {
+                    for sig_val in shard.iter() {
+                        unsafe {
+                            let hash = H::as_from(shard_edge.remixed_hash(sig_val.sig));
+                            sync_hashes[sig_val.val].set(hash);
+                        }
+                    }
+                });
+                shard_pl.update_with_count(num_keys);
+                shard_pl.done();
             }
-
-            pl.done();
+            pl.pop_log_target();
 
             Ok(SignedFunc { func, hashes })
         }
@@ -858,7 +901,10 @@ mod build {
             let func = <VFunc<K, BitFieldVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
                 keys, &values, builder, pl,
             )?;
-            let hashes = fill_hashes_from_slice(func.shard_edge(), func.seed(), func.len(), keys);
+            pl.push_log_target(" ▸ hashes");
+            let hashes =
+                fill_hashes_from_slice(func.shard_edge(), func.seed(), func.len(), keys, pl);
+            pl.pop_log_target();
             Ok(SignedFunc { func, hashes })
         }
     }
@@ -870,7 +916,7 @@ mod build {
     impl<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         S: Sig + Send + Sync,
-        E: ShardEdge<S, 3>,
+        E: ShardEdge<S, 3> + MemSize + FlatType,
         H: crate::traits::Word,
     > SignedFunc<VFunc<K, BitFieldVec<Box<[usize]>>, S, E>, BitFieldVec<Box<[H]>>>
     where
@@ -1011,25 +1057,24 @@ mod build {
 
             let num_keys = func.len();
 
-            // Create the hash vector
+            pl.push_log_target(" ▸ hashes");
+            let num_shards = 1usize << func.shard_edge().shard_high_bits();
+            pl.item_name("shard");
+            pl.expected_updates(Some(num_shards));
+            pl.log_level(log::Level::Info);
+            pl.start("Signing shards...");
             let mut hashes: BitFieldVec<Box<[H]>> =
                 BitFieldVec::<Box<[H]>>::new_padded(hash_width, num_keys);
-
-            // Enumerate the store and extract hashes
-            pl.item_name("hash");
-            pl.expected_updates(num_keys);
-            pl.start("Storing hashes...");
-
             for shard in store.iter() {
                 for sig_val in shard.iter() {
                     let pos = sig_val.val;
                     let hash = hashes.truncate_hash(func.shard_edge().remixed_hash(sig_val.sig));
                     hashes.set_value(pos, hash);
-                    pl.light_update();
                 }
+                pl.update();
             }
-
             pl.done();
+            pl.pop_log_target();
 
             Ok(SignedFunc { func, hashes })
         }
@@ -1144,13 +1189,16 @@ mod build {
             let func = <VFunc<K, BitFieldVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
                 keys, &values, builder, pl,
             )?;
+            pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes_from_slice(
                 func.shard_edge(),
                 func.seed(),
                 func.len(),
                 hash_width,
                 keys,
+                pl,
             );
+            pl.pop_log_target();
             Ok(SignedFunc { func, hashes })
         }
     }
@@ -1163,9 +1211,9 @@ mod build {
         K: PrimitiveInteger + ToSig<S0> + std::fmt::Debug + Send + Sync + Copy + Ord,
         W: Word,
         S0: Sig + Send + Sync,
-        E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+        E0: ShardEdge<S0, 3> + MemSize + FlatType,
         S1: Sig + Send + Sync,
-        E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+        E1: ShardEdge<S1, 3> + MemSize + FlatType,
     > SignedFunc<LcpMmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, S1, E1>, Box<[W]>>
     where
         IntBitPrefix<K>: ToSig<S1>,
@@ -1224,7 +1272,7 @@ mod build {
         }
 
         /// Like [`try_new`], but uses the given [`VBuilder`] to configure
-        /// the internal `offset_lcp_length` VFunc.
+        /// the internal `lcp_len_offset` VFunc.
         ///
         /// See also [`try_par_new_with_builder`] for parallel hash
         /// computation from slices.
@@ -1242,9 +1290,16 @@ mod build {
         ) -> Result<Self> {
             let (func, keys) = LcpMmphfInt::try_new_inner(keys, n, builder, pl)?;
             let mut keys = keys.rewind()?;
-            let hashes = fill_hashes(func.shard_edge(), func.seed(), n, &mut keys, |key, seed| {
-                K::to_sig(*key, seed)
-            })?;
+            pl.push_log_target(" ▸ hashes");
+            let hashes = fill_hashes(
+                func.shard_edge(),
+                func.seed(),
+                n,
+                &mut keys,
+                |key, seed| K::to_sig(*key, seed),
+                pl,
+            )?;
+            pl.pop_log_target();
             Ok(Self { func, hashes })
         }
 
@@ -1290,7 +1345,7 @@ mod build {
         }
 
         /// Like [`try_par_new`], but uses the given [`VBuilder`] to
-        /// configure the internal `offset_lcp_length` VFunc.
+        /// configure the internal `lcp_len_offset` VFunc.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new_with_builder`] instead.
@@ -1326,12 +1381,15 @@ mod build {
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
             let func = LcpMmphfInt::try_par_new_inner(keys, builder, pl)?;
+            pl.push_log_target(" ▸ hashes");
             let hashes = fill_hashes_from_slice::<K, K, W, S0, E0>(
                 func.shard_edge(),
                 func.seed(),
                 keys.len(),
                 keys,
+                pl,
             );
+            pl.pop_log_target();
             Ok(Self { func, hashes })
         }
     }
@@ -1344,9 +1402,9 @@ mod build {
         K: ?Sized + AsRef<[u8]> + ToSig<S0> + std::fmt::Debug,
         W: Word,
         S0: Sig + Send + Sync,
-        E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+        E0: ShardEdge<S0, 3> + MemSize + FlatType,
         S1: Sig + Send + Sync,
-        E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+        E1: ShardEdge<S1, 3> + MemSize + FlatType,
     > SignedFunc<LcpMmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, S1, E1>, Box<[W]>>
     where
         BitPrefix: ToSig<S1>,
@@ -1406,7 +1464,7 @@ mod build {
         }
 
         /// Like [`try_new`], but uses the given [`VBuilder`] to configure
-        /// the internal `offset_lcp_length` VFunc.
+        /// the internal `lcp_len_offset` VFunc.
         ///
         /// See also [`try_par_new_with_builder`] for parallel hash
         /// computation from slices.
@@ -1424,9 +1482,16 @@ mod build {
         ) -> Result<Self> {
             let (func, keys) = LcpMmphf::try_new_inner(keys, n, builder, pl)?;
             let mut keys = keys.rewind()?;
-            let hashes = fill_hashes(func.shard_edge(), func.seed(), n, &mut keys, |key, seed| {
-                K::to_sig(<B as Borrow<K>>::borrow(key), seed)
-            })?;
+            pl.push_log_target(" ▸ hashes");
+            let hashes = fill_hashes(
+                func.shard_edge(),
+                func.seed(),
+                n,
+                &mut keys,
+                |key, seed| K::to_sig(<B as Borrow<K>>::borrow(key), seed),
+                pl,
+            )?;
+            pl.pop_log_target();
             Ok(Self { func, hashes })
         }
 
@@ -1476,7 +1541,7 @@ mod build {
         }
 
         /// Like [`try_par_new`], but uses the given [`VBuilder`] to
-        /// configure the internal `offset_lcp_length` VFunc.
+        /// configure the internal `lcp_len_offset` VFunc.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new_with_builder`] instead.
@@ -1515,12 +1580,15 @@ mod build {
             K: Sync,
         {
             let func = LcpMmphf::try_par_new_inner(keys, builder, pl)?;
+            pl.push_log_target(" ▸ hashes");
             let hashes = fill_hashes_from_slice::<B, K, W, S0, E0>(
                 func.shard_edge(),
                 func.seed(),
                 keys.len(),
                 keys,
+                pl,
             );
+            pl.pop_log_target();
             Ok(Self { func, hashes })
         }
     }
@@ -1533,10 +1601,10 @@ mod build {
         K: PrimitiveInteger + ToSig<S0> + std::fmt::Debug + Send + Sync + Copy + Ord,
         W: Word,
         S0: Sig + Send + Sync,
-        E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
-        F0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+        E0: ShardEdge<S0, 3> + MemSize + FlatType,
+        F0: ShardEdge<S0, 3> + MemSize + FlatType,
         S1: Sig + Send + Sync,
-        E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+        E1: ShardEdge<S1, 3> + MemSize + FlatType,
     > SignedFunc<Lcp2MmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>, Box<[W]>>
     where
         IntBitPrefix<K>: ToSig<S1>,
@@ -1615,9 +1683,16 @@ mod build {
         ) -> Result<Self> {
             let (func, keys) = Lcp2MmphfInt::try_new_inner(keys, n, builder, pl)?;
             let mut keys = keys.rewind()?;
-            let hashes = fill_hashes(func.shard_edge(), func.seed(), n, &mut keys, |key, seed| {
-                K::to_sig(*key, seed)
-            })?;
+            pl.push_log_target(" ▸ hashes");
+            let hashes = fill_hashes(
+                func.shard_edge(),
+                func.seed(),
+                n,
+                &mut keys,
+                |key, seed| K::to_sig(*key, seed),
+                pl,
+            )?;
+            pl.pop_log_target();
             Ok(Self { func, hashes })
         }
 
@@ -1700,12 +1775,15 @@ mod build {
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
             let func = Lcp2MmphfInt::try_par_new_inner(keys, builder, pl)?;
+            pl.push_log_target(" ▸ hashes");
             let hashes = fill_hashes_from_slice::<K, K, W, S0, E0>(
                 func.shard_edge(),
                 func.seed(),
                 keys.len(),
                 keys,
+                pl,
             );
+            pl.pop_log_target();
             Ok(Self { func, hashes })
         }
     }
@@ -1718,10 +1796,10 @@ mod build {
         K: ?Sized + AsRef<[u8]> + ToSig<S0> + std::fmt::Debug,
         W: Word,
         S0: Sig + Send + Sync,
-        E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
-        F0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+        E0: ShardEdge<S0, 3> + MemSize + FlatType,
+        F0: ShardEdge<S0, 3> + MemSize + FlatType,
         S1: Sig + Send + Sync,
-        E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+        E1: ShardEdge<S1, 3> + MemSize + FlatType,
     > SignedFunc<Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>, Box<[W]>>
     where
         BitPrefix: ToSig<S1>,
@@ -1800,9 +1878,16 @@ mod build {
         ) -> Result<Self> {
             let (func, keys) = Lcp2Mmphf::try_new_inner(keys, n, builder, pl)?;
             let mut keys = keys.rewind()?;
-            let hashes = fill_hashes(func.shard_edge(), func.seed(), n, &mut keys, |key, seed| {
-                K::to_sig(<B as Borrow<K>>::borrow(key), seed)
-            })?;
+            pl.push_log_target(" ▸ hashes");
+            let hashes = fill_hashes(
+                func.shard_edge(),
+                func.seed(),
+                n,
+                &mut keys,
+                |key, seed| K::to_sig(<B as Borrow<K>>::borrow(key), seed),
+                pl,
+            )?;
+            pl.pop_log_target();
             Ok(Self { func, hashes })
         }
 
@@ -1891,12 +1976,15 @@ mod build {
             K: Sync,
         {
             let func = Lcp2Mmphf::try_par_new_inner(keys, builder, pl)?;
+            pl.push_log_target(" ▸ hashes");
             let hashes = fill_hashes_from_slice::<B, K, W, S0, E0>(
                 func.shard_edge(),
                 func.seed(),
                 keys.len(),
                 keys,
+                pl,
             );
+            pl.pop_log_target();
             Ok(Self { func, hashes })
         }
     }
@@ -1909,9 +1997,9 @@ mod build {
         K: PrimitiveInteger + ToSig<S0> + std::fmt::Debug + Send + Sync + Copy + Ord,
         H: Word,
         S0: Sig + Send + Sync,
-        E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+        E0: ShardEdge<S0, 3> + MemSize + FlatType,
         S1: Sig + Send + Sync,
-        E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+        E1: ShardEdge<S1, 3> + MemSize + FlatType,
     > SignedFunc<LcpMmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, S1, E1>, BitFieldVec<Box<[H]>>>
     where
         IntBitPrefix<K>: ToSig<S1>,
@@ -1976,7 +2064,7 @@ mod build {
         }
 
         /// Like [`try_new`], but uses the given [`VBuilder`] to configure
-        /// the internal `offset_lcp_length` VFunc.
+        /// the internal `lcp_len_offset` VFunc.
         ///
         /// See also [`try_par_new_with_builder`] for parallel hash
         /// computation from slices.
@@ -1996,6 +2084,7 @@ mod build {
             assert!(hash_width > 0 && hash_width <= H::BITS as usize);
             let (func, keys) = LcpMmphfInt::try_new_inner(keys, n, builder, pl)?;
             let mut keys = keys.rewind()?;
+            pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes(
                 func.shard_edge(),
                 func.seed(),
@@ -2003,7 +2092,9 @@ mod build {
                 hash_width,
                 &mut keys,
                 |key, seed| K::to_sig(*key, seed),
+                pl,
             )?;
+            pl.pop_log_target();
             Ok(Self { func, hashes })
         }
 
@@ -2055,7 +2146,7 @@ mod build {
         }
 
         /// Like [`try_par_new`], but uses the given [`VBuilder`] to
-        /// configure the internal `offset_lcp_length` VFunc.
+        /// configure the internal `lcp_len_offset` VFunc.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new_with_builder`] instead.
@@ -2093,13 +2184,16 @@ mod build {
         ) -> Result<Self> {
             assert!(hash_width > 0 && hash_width <= H::BITS as usize);
             let func = LcpMmphfInt::try_par_new_inner(keys, builder, pl)?;
+            pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes_from_slice::<K, K, H, S0, E0>(
                 func.shard_edge(),
                 func.seed(),
                 keys.len(),
                 hash_width,
                 keys,
+                pl,
             );
+            pl.pop_log_target();
             Ok(Self { func, hashes })
         }
     }
@@ -2112,9 +2206,9 @@ mod build {
         K: ?Sized + AsRef<[u8]> + ToSig<S0> + std::fmt::Debug,
         H: Word,
         S0: Sig + Send + Sync,
-        E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+        E0: ShardEdge<S0, 3> + MemSize + FlatType,
         S1: Sig + Send + Sync,
-        E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+        E1: ShardEdge<S1, 3> + MemSize + FlatType,
     > SignedFunc<LcpMmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, S1, E1>, BitFieldVec<Box<[H]>>>
     where
         BitPrefix: ToSig<S1>,
@@ -2180,7 +2274,7 @@ mod build {
         }
 
         /// Like [`try_new`], but uses the given [`VBuilder`] to configure
-        /// the internal `offset_lcp_length` VFunc.
+        /// the internal `lcp_len_offset` VFunc.
         ///
         /// See also [`try_par_new_with_builder`] for parallel hash
         /// computation from slices.
@@ -2200,6 +2294,7 @@ mod build {
             assert!(hash_width > 0 && hash_width <= H::BITS as usize);
             let (func, keys) = LcpMmphf::try_new_inner(keys, n, builder, pl)?;
             let mut keys = keys.rewind()?;
+            pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes(
                 func.shard_edge(),
                 func.seed(),
@@ -2207,7 +2302,9 @@ mod build {
                 hash_width,
                 &mut keys,
                 |key, seed| K::to_sig(<B as Borrow<K>>::borrow(key), seed),
+                pl,
             )?;
+            pl.pop_log_target();
             Ok(Self { func, hashes })
         }
 
@@ -2263,7 +2360,7 @@ mod build {
         }
 
         /// Like [`try_par_new`], but uses the given [`VBuilder`] to
-        /// configure the internal `offset_lcp_length` VFunc.
+        /// configure the internal `lcp_len_offset` VFunc.
         ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new_with_builder`] instead.
@@ -2305,13 +2402,16 @@ mod build {
         {
             assert!(hash_width > 0 && hash_width <= H::BITS as usize);
             let func = LcpMmphf::try_par_new_inner(keys, builder, pl)?;
+            pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes_from_slice::<B, K, H, S0, E0>(
                 func.shard_edge(),
                 func.seed(),
                 keys.len(),
                 hash_width,
                 keys,
+                pl,
             );
+            pl.pop_log_target();
             Ok(Self { func, hashes })
         }
     }
@@ -2324,10 +2424,10 @@ mod build {
         K: PrimitiveInteger + ToSig<S0> + std::fmt::Debug + Send + Sync + Copy + Ord,
         H: Word,
         S0: Sig + Send + Sync,
-        E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
-        F0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+        E0: ShardEdge<S0, 3> + MemSize + FlatType,
+        F0: ShardEdge<S0, 3> + MemSize + FlatType,
         S1: Sig + Send + Sync,
-        E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+        E1: ShardEdge<S1, 3> + MemSize + FlatType,
     >
         SignedFunc<
             Lcp2MmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>,
@@ -2415,6 +2515,7 @@ mod build {
             assert!(hash_width > 0 && hash_width <= H::BITS as usize);
             let (func, keys) = Lcp2MmphfInt::try_new_inner(keys, n, builder, pl)?;
             let mut keys = keys.rewind()?;
+            pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes(
                 func.shard_edge(),
                 func.seed(),
@@ -2422,7 +2523,9 @@ mod build {
                 hash_width,
                 &mut keys,
                 |key, seed| K::to_sig(*key, seed),
+                pl,
             )?;
+            pl.pop_log_target();
             Ok(Self { func, hashes })
         }
 
@@ -2508,13 +2611,16 @@ mod build {
         ) -> Result<Self> {
             assert!(hash_width > 0 && hash_width <= H::BITS as usize);
             let func = Lcp2MmphfInt::try_par_new_inner(keys, builder, pl)?;
+            pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes_from_slice::<K, K, H, S0, E0>(
                 func.shard_edge(),
                 func.seed(),
                 keys.len(),
                 hash_width,
                 keys,
+                pl,
             );
+            pl.pop_log_target();
             Ok(Self { func, hashes })
         }
     }
@@ -2527,10 +2633,10 @@ mod build {
         K: ?Sized + AsRef<[u8]> + ToSig<S0> + std::fmt::Debug,
         H: Word,
         S0: Sig + Send + Sync,
-        E0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
-        F0: ShardEdge<S0, 3> + MemSize + mem_dbg::FlatType,
+        E0: ShardEdge<S0, 3> + MemSize + FlatType,
+        F0: ShardEdge<S0, 3> + MemSize + FlatType,
         S1: Sig + Send + Sync,
-        E1: ShardEdge<S1, 3> + MemSize + mem_dbg::FlatType,
+        E1: ShardEdge<S1, 3> + MemSize + FlatType,
     > SignedFunc<Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>, BitFieldVec<Box<[H]>>>
     where
         BitPrefix: ToSig<S1>,
@@ -2614,6 +2720,7 @@ mod build {
             assert!(hash_width > 0 && hash_width <= H::BITS as usize);
             let (func, keys) = Lcp2Mmphf::try_new_inner(keys, n, builder, pl)?;
             let mut keys = keys.rewind()?;
+            pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes(
                 func.shard_edge(),
                 func.seed(),
@@ -2621,7 +2728,9 @@ mod build {
                 hash_width,
                 &mut keys,
                 |key, seed| K::to_sig(<B as Borrow<K>>::borrow(key), seed),
+                pl,
             )?;
+            pl.pop_log_target();
             Ok(Self { func, hashes })
         }
 
@@ -2713,13 +2822,16 @@ mod build {
         {
             assert!(hash_width > 0 && hash_width <= H::BITS as usize);
             let func = Lcp2Mmphf::try_par_new_inner(keys, builder, pl)?;
+            pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes_from_slice::<B, K, H, S0, E0>(
                 func.shard_edge(),
                 func.seed(),
                 keys.len(),
                 hash_width,
                 keys,
+                pl,
             );
+            pl.pop_log_target();
             Ok(Self { func, hashes })
         }
     }

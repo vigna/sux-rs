@@ -388,7 +388,7 @@ mod mwhc {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
-                "MWHC (shards) Number of shards: 2^{} Number of vertices per shard: {}",
+                "MWHC3 (shards); number of shards: 2^{}; number of vertices per shard: {}",
                 self.shard_high_bits(),
                 self.seg_size * 3
             )
@@ -525,7 +525,7 @@ mod mwhc {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
-                "MWHC (no shards) Number of vertices per shard: {}",
+                "MWHC3 (no shards); number of vertices: {}",
                 self.seg_size * 3
             )
         }
@@ -677,8 +677,9 @@ mod fuse {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
-                "Fuse (shards) Number of shards: 2^{} Segment size: 2^{} Number of segments: {}",
+                "Fuse3 (shards, LGE); number of shards: 2^{}; number of vertices per shard: {}; segment size: 2^{}; number of segments: {}",
                 self.shard_high_bits(),
+                (self.l as usize + 2) << self.log2_seg_size,
                 self.log2_seg_size,
                 self.l + 2
             )
@@ -942,7 +943,8 @@ mod fuse {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
-                "Fuse (no shards) Segment size: 2^{} Number of segments: {}",
+                "Fuse3 (no shards); number of vertices: {}; segment size: 2^{}; number of segments: {}",
+                (self.l as usize + 2) << self.log2_seg_size,
                 self.log2_seg_size,
                 self.l + 2
             )
@@ -1161,7 +1163,8 @@ mod fuse {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
-                "Fuse3 (no shards, no LGE) Segment size: 2^{} Number of segments: {}",
+                "Fuse3 (no shards, no LGE); number of vertices: {}; segment size: 2^{}; number of segments: {}",
+                (self.l as usize + 2) << self.log2_seg_size,
                 self.log2_seg_size,
                 self.l + 2
             )
@@ -1442,8 +1445,9 @@ mod fuse {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
-                "Fuse3 (shards, no LGE) Number of shards: 2^{} Segment size: 2^{} Number of segments: {}",
+                "Fuse3 (shards, no LGE); number of shards: 2^{}; number of vertices per shard: {}; segment size: 2^{}; number of segments: {}",
                 self.shard_high_bits(),
+                (self.l as usize + 2) << self.log2_seg_size,
                 self.log2_seg_size,
                 self.l + 2
             )

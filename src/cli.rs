@@ -76,8 +76,9 @@ pub struct BuilderArgs {
     /// Use this number of threads.​
     #[arg(short, long)]
     pub threads: Option<usize>,
-    /// Use disk-based buckets to reduce memory usage at construction time.​
-    #[arg(short, long)]
+    /// Use disk-based buckets to reduce memory usage at construction time.
+    /// Requires --sequential (-s).​
+    #[arg(short, long, requires = "sequential")]
     pub offline: bool,
     /// Sort shards and check for duplicate signatures.​
     #[arg(short, long)]
