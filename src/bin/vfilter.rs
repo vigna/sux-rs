@@ -61,43 +61,23 @@ struct Args {
     builder: BuilderArgs,
     #[clap(flatten)]
     sharding: ShardingArgs,
-    /// Use slower edge logic reducing the probability of duplicate arcs for big
-    /// shards.​
-    #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
-    full_sigs: bool,
-    /// Use 3-hypergraphs.​
-    #[cfg(feature = "mwhc")]
-    #[arg(long, conflicts_with_all = ["sig64", "full_sigs"])]
-    mwhc: bool,
 }
 
-macro_rules! fuse {
-    ($args: expr, $main: ident, $ty: ty) => {
-        if $args.sharding.no_shards {
-            if $args.sharding.sig64 {
-                $main::<$ty, [u64; 1], FuseLge3NoShards>($args)
-            } else {
-                $main::<$ty, [u64; 2], FuseLge3NoShards>($args)
-            }
-        } else {
-            if $args.full_sigs {
-                $main::<$ty, [u64; 2], FuseLge3FullSigs>($args)
-            } else {
-                $main::<$ty, [u64; 2], FuseLge3Shards>($args)
-            }
+macro_rules! dispatch_edge {
+    ($args: expr, $main: ident, $ty: ty) => {{
+        use sux::cli::EdgeType;
+        match $args.sharding.edge {
+            EdgeType::Fuse3NoShards64 => $main::<$ty, [u64; 1], Fuse3NoShards>($args),
+            EdgeType::Fuse3NoShards128 => $main::<$ty, [u64; 2], Fuse3NoShards>($args),
+            EdgeType::Fuse3 => $main::<$ty, [u64; 2], Fuse3Shards>($args),
+            EdgeType::FuseLge3 => $main::<$ty, [u64; 2], FuseLge3Shards>($args),
+            EdgeType::FuseLge3FullSigs => $main::<$ty, [u64; 2], FuseLge3FullSigs>($args),
+            #[cfg(feature = "mwhc")]
+            EdgeType::Mwhc3 => $main::<$ty, [u64; 2], Mwhc3Shards>($args),
+            #[cfg(feature = "mwhc")]
+            EdgeType::Mwhc3NoShards => $main::<$ty, [u64; 2], Mwhc3NoShards>($args),
         }
-    };
-}
-
-#[cfg(feature = "mwhc")]
-macro_rules! mwhc {
-    ($args: expr, $main: ident, $ty: ty) => {
-        if $args.sharding.no_shards {
-            $main::<$ty, [u64; 2], Mwhc3NoShards>($args)
-        } else {
-            $main::<$ty, [u64; 2], Mwhc3Shards>($args)
-        }
-    };
+    }};
 }
 
 fn main() -> Result<()> {
@@ -105,23 +85,12 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    #[cfg(feature = "mwhc")]
-    if args.mwhc {
-        return match args.bits {
-            8 => mwhc!(args, main_with_types_boxed_slice, u8),
-            16 => mwhc!(args, main_with_types_boxed_slice, u16),
-            32 => mwhc!(args, main_with_types_boxed_slice, u32),
-            64 => mwhc!(args, main_with_types_boxed_slice, u64),
-            _ => mwhc!(args, main_with_types_bit_field_vec, u64),
-        };
-    }
-
     match args.bits {
-        8 => fuse!(args, main_with_types_boxed_slice, u8),
-        16 => fuse!(args, main_with_types_boxed_slice, u16),
-        32 => fuse!(args, main_with_types_boxed_slice, u32),
-        64 => fuse!(args, main_with_types_boxed_slice, u64),
-        _ => fuse!(args, main_with_types_bit_field_vec, u64),
+        8 => dispatch_edge!(args, main_with_types_boxed_slice, u8),
+        16 => dispatch_edge!(args, main_with_types_boxed_slice, u16),
+        32 => dispatch_edge!(args, main_with_types_boxed_slice, u32),
+        64 => dispatch_edge!(args, main_with_types_boxed_slice, u64),
+        _ => dispatch_edge!(args, main_with_types_bit_field_vec, u64),
     }
 }
 

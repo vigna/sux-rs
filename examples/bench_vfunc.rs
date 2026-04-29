@@ -55,52 +55,32 @@ struct Args {
     /// The input file is compressed with zstd.​
     #[arg(short, long)]
     zstd: bool,
-    /// Use 64-bit signatures.​
-    #[arg(long)]
-    sig64: bool,
-    /// Do not use sharding.​
-    #[arg(long)]
-    no_shards: bool,
+    /// Shard-edge type.​
+    #[arg(long, value_enum, default_value_t)]
+    edge: sux::cli::EdgeType,
     /// Use unaligned reads.​
     #[arg(long)]
     unaligned: bool,
-    /// Use slower edge logic reducing the probability of duplicate arcs for big
-    /// shards.​
-    #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
-    full_sigs: bool,
-    /// Use 3-hypergraphs.​
-    #[cfg(feature = "mwhc")]
-    #[arg(long, conflicts_with_all = ["sig64", "full_sigs"])]
-    mwhc: bool,
 }
 
 fn main() -> Result<()> {
+    use sux::cli::EdgeType;
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
         .try_init()?;
 
     let args = Args::parse();
 
-    #[cfg(feature = "mwhc")]
-    if args.mwhc {
-        return if args.no_shards {
-            main_with_types::<[u64; 2], Mwhc3NoShards>(args)
-        } else {
-            main_with_types::<[u64; 2], Mwhc3Shards>(args)
-        };
-    }
-    if args.no_shards {
-        if args.sig64 {
-            main_with_types::<[u64; 1], FuseLge3NoShards>(args)
-        } else {
-            main_with_types::<[u64; 2], FuseLge3NoShards>(args)
-        }
-    } else {
-        if args.full_sigs {
-            main_with_types::<[u64; 2], FuseLge3FullSigs>(args)
-        } else {
-            main_with_types::<[u64; 2], FuseLge3Shards>(args)
-        }
+    match args.edge {
+        EdgeType::Fuse3NoShards64 => main_with_types::<[u64; 1], Fuse3NoShards>(args),
+        EdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
+        EdgeType::Fuse3 => main_with_types::<[u64; 2], Fuse3Shards>(args),
+        EdgeType::FuseLge3 => main_with_types::<[u64; 2], FuseLge3Shards>(args),
+        EdgeType::FuseLge3FullSigs => main_with_types::<[u64; 2], FuseLge3FullSigs>(args),
+        #[cfg(feature = "mwhc")]
+        EdgeType::Mwhc3 => main_with_types::<[u64; 2], Mwhc3Shards>(args),
+        #[cfg(feature = "mwhc")]
+        EdgeType::Mwhc3NoShards => main_with_types::<[u64; 2], Mwhc3NoShards>(args),
     }
 }
 

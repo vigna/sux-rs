@@ -135,18 +135,17 @@ macro_rules! maybe_store {
 }
 
 fn main() -> Result<()> {
+    use sux::cli::EdgeType;
     init_env_logger()?;
 
     let args = Args::parse();
-
-    if args.sharding.no_shards {
-        if args.sharding.sig64 {
-            main_with_types::<[u64; 1], Fuse3NoShards>(args)
-        } else {
-            main_with_types::<[u64; 2], Fuse3NoShards>(args)
+    match args.sharding.edge {
+        EdgeType::Fuse3NoShards64 => main_with_types::<[u64; 1], Fuse3NoShards>(args),
+        EdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
+        EdgeType::Fuse3 => main_with_types::<[u64; 2], Fuse3Shards>(args),
+        _ => {
+            bail!("comp_vfunc only supports --edge fuse, fuse-no-shards-64, and fuse-no-shards-128")
         }
-    } else {
-        main_with_types::<[u64; 2], Fuse3Shards>(args)
     }
 }
 

@@ -129,6 +129,29 @@ impl BuilderArgs {
     }
 }
 
+/// Shard-edge type used during construction.
+#[derive(clap::ValueEnum, Copy, Clone, Debug, Default)]
+pub enum EdgeType {
+    /// Fuse 3-hypergraphs with lazy Gaussian elimination and ε-cost sharding.​
+    #[default]
+    FuseLge3,
+    /// Fuse 3-hypergraphs with ε-cost sharding, no lazy Gaussian elimination.​
+    Fuse3,
+    /// Fuse 3-hypergraphs without sharding or lazy Gaussian elimination and 64-bit signatures.​
+    Fuse3NoShards64,
+    /// Fuse 3-hypergraphs without sharding or lazy Gaussian elimination and 128-bit signatures.​
+    Fuse3NoShards128,
+    /// MWHC 3-hypergraphs with ε-cost sharding.​
+    #[cfg(feature = "mwhc")]
+    Mwhc3,
+    /// MWHC 3-hypergraphs without ε-cost sharding.​
+    #[cfg(feature = "mwhc")]
+    Mwhc3NoShards,
+    /// Fuse 3-hypergraphs with lazy Gaussian elimination, ε-cost sharding, and full
+    /// signatures.​
+    FuseLge3FullSigs,
+}
+
 /// Shared CLI flags that select the *type* of shard-edge used during
 /// construction.
 ///
@@ -139,10 +162,7 @@ impl BuilderArgs {
 /// binaries that pin their shard-edge type (`lcp_mmphf`) don't.
 #[derive(clap::Args, Debug)]
 pub struct ShardingArgs {
-    /// Use 64-bit signatures.​
-    #[arg(long, requires = "no_shards")]
-    pub sig64: bool,
-    /// Do not use sharding.​
-    #[arg(long)]
-    pub no_shards: bool,
+    /// Shard-edge type.​
+    #[arg(long, value_enum, default_value_t)]
+    pub edge: EdgeType,
 }

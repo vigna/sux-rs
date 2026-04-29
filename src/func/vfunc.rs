@@ -44,8 +44,10 @@ use std::borrow::Borrow;
 /// # Generics
 ///
 /// * `K` - the type of the keys.
+///
 /// * `W` - the word used to store the data, which is also the output type. It
 ///   can be any unsigned type.
+///
 /// * `D` - the backend storing the function data. It can be a
 ///   [`BitFieldVec<Box<[W]>>`](crate::bits::BitFieldVec) or a `Box<[W]>`. In the first case, the data
 ///   is stored using exactly the number of bits needed, but access is slightly
@@ -54,12 +56,13 @@ use std::borrow::Borrow;
 ///   access will be faster. Note that for most bit sizes in the first case on
 ///   some architectures you can use [`TryIntoUnaligned`] to convert the
 ///   function into one using [unaligned reads] for faster queries.
+///
 /// * `S` - the signature type. The default is `[u64; 2]`. You can switch to
-///   `[u64; 1]` (and possibly [`FuseLge3NoShards`]) for slightly faster
-///   construction and queries, but the construction will not scale beyond 3.8
-///   billion keys.
+///   `[u64; 1]` for slightly faster construction and queries, but the
+///   construction will not scale beyond 3.8 billion keys.
+///
 /// * `E` - the sharding and edge logic type. The default is [`FuseLge3Shards`].
-///   For small sets of keys you might try [`FuseLge3NoShards`], possibly
+///   For small sets of keys you might try [`Fuse3NoShards`], possibly
 ///   coupled with `[u64; 1]` signatures. For functions with more than a few
 ///   dozen billion keys, you might try [`FuseLge3FullSigs`].
 ///
@@ -73,9 +76,9 @@ use std::borrow::Borrow;
 /// [`try_new`]: VFunc::try_new
 /// [ε-serde]: https://crates.io/crates/epserde
 /// [unaligned reads]: BitFieldVec::get_unaligned
-/// [`FuseLge3NoShards`]: crate::func::shard_edge::FuseLge3NoShards
 /// [`FuseLge3FullSigs`]: crate::func::shard_edge::FuseLge3FullSigs
 /// [`serde`]: https://crates.io/crates/serde
+/// [`Fuse3NoShards`]: crate::func::shard_edge::Fuse3NoShards
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

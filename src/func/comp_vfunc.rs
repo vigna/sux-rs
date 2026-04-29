@@ -106,7 +106,7 @@ use std::marker::PhantomData;
 /// [`serde`]: https://crates.io/crates/serde
 /// [`D::Word`]: Backend::Word
 /// [`branchless`]: Self::branchless
-/// [prefix-free codeword]: create::func::codec::Codec
+/// [prefix-free codeword]: crate::func::codec::Codec
 /// [Huffman code]: crate::func::codec::HuffmanConf
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
@@ -315,8 +315,8 @@ where
     BitVec<Box<[W]>>: MemSize + FlatType,
     HuffmanDecoder<W>: MemSize + FlatType,
 {
-    /// Builds a [`CompVFunc`] from parallel slices of keys and values
-    /// using default [`VBuilder`] and [`Huffman`] settings.
+    /// Builds a [`CompVFunc`] from parallel slices of keys and values using
+    /// default [`VBuilder`] and [`HuffmanConf`].
     ///
     /// If keys are produced sequentially (e.g., from a file), use
     /// [`try_new`] instead.

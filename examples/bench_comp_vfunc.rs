@@ -5,7 +5,7 @@
  */
 
 #![allow(clippy::collapsible_else_if)]
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::Parser;
 use epserde::prelude::*;
 use fallible_iterator::FallibleIterator;
@@ -57,32 +57,29 @@ struct Args {
     /// The input file is compressed with zstd.​
     #[arg(short, long)]
     zstd: bool,
-    /// Use 64-bit signatures.​
-    #[arg(long)]
-    sig64: bool,
-    /// Do not use sharding.​
-    #[arg(long)]
-    no_shards: bool,
+    /// Shard-edge type.​
+    #[arg(long, value_enum, default_value_t)]
+    edge: sux::cli::EdgeType,
     /// Use unaligned reads.​
     #[arg(long)]
     unaligned: bool,
 }
 
 fn main() -> Result<()> {
+    use sux::cli::EdgeType;
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
         .try_init()?;
 
     let args = Args::parse();
 
-    if args.no_shards {
-        if args.sig64 {
-            main_with_types::<[u64; 1], Fuse3NoShards>(args)
-        } else {
-            main_with_types::<[u64; 2], Fuse3NoShards>(args)
-        }
-    } else {
-        main_with_types::<[u64; 2], Fuse3Shards>(args)
+    match args.edge {
+        EdgeType::Fuse3NoShards64 => main_with_types::<[u64; 1], Fuse3NoShards>(args),
+        EdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
+        EdgeType::Fuse3 => main_with_types::<[u64; 2], Fuse3Shards>(args),
+        _ => bail!(
+            "bench_comp_vfunc only supports --edge fuse, fuse-no-shards-64, and fuse-no-shards-128"
+        ),
     }
 }
 

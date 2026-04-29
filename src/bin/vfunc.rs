@@ -66,17 +66,10 @@ struct Args {
     builder: BuilderArgs,
     #[clap(flatten)]
     sharding: ShardingArgs,
-    /// Use slower edge logic reducing the probability of duplicate arcs for big
-    /// shards.​
-    #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
-    full_sigs: bool,
-    /// Use 3-hypergraphs.​
-    #[cfg(feature = "mwhc")]
-    #[arg(long, conflicts_with_all = ["sig64", "full_sigs"])]
-    mwhc: bool,
 }
 
 fn main() -> Result<()> {
+    use sux::cli::EdgeType;
     init_env_logger()?;
 
     let args = Args::parse();
@@ -85,27 +78,16 @@ fn main() -> Result<()> {
         return main_two_step(args);
     }
 
-    #[cfg(feature = "mwhc")]
-    if args.mwhc {
-        return if args.sharding.no_shards {
-            main_with_types::<[u64; 2], Mwhc3NoShards>(args)
-        } else {
-            main_with_types::<[u64; 2], Mwhc3Shards>(args)
-        };
-    }
-
-    if args.sharding.no_shards {
-        if args.sharding.sig64 {
-            main_with_types::<[u64; 1], FuseLge3NoShards>(args)
-        } else {
-            main_with_types::<[u64; 2], FuseLge3NoShards>(args)
-        }
-    } else {
-        if args.full_sigs {
-            main_with_types::<[u64; 2], FuseLge3FullSigs>(args)
-        } else {
-            main_with_types::<[u64; 2], FuseLge3Shards>(args)
-        }
+    match args.sharding.edge {
+        EdgeType::Fuse3NoShards64 => main_with_types::<[u64; 1], Fuse3NoShards>(args),
+        EdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
+        EdgeType::Fuse3 => main_with_types::<[u64; 2], Fuse3Shards>(args),
+        EdgeType::FuseLge3 => main_with_types::<[u64; 2], FuseLge3Shards>(args),
+        EdgeType::FuseLge3FullSigs => main_with_types::<[u64; 2], FuseLge3FullSigs>(args),
+        #[cfg(feature = "mwhc")]
+        EdgeType::Mwhc3 => main_with_types::<[u64; 2], Mwhc3Shards>(args),
+        #[cfg(feature = "mwhc")]
+        EdgeType::Mwhc3NoShards => main_with_types::<[u64; 2], Mwhc3NoShards>(args),
     }
 }
 

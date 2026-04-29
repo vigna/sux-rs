@@ -828,7 +828,7 @@ mod tests {
     use crate::{
         func::{
             VBuilder, VFunc,
-            shard_edge::{FuseLge3NoShards, FuseLge3Shards},
+            shard_edge::{Fuse3NoShards, FuseLge3Shards},
         },
         utils::{EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig},
     };
@@ -837,7 +837,7 @@ mod tests {
 
     #[test]
     fn test_filter_func() -> anyhow::Result<()> {
-        _test_filter_func::<[u64; 1], FuseLge3NoShards>()?;
+        _test_filter_func::<[u64; 1], Fuse3NoShards>()?;
         _test_filter_func::<[u64; 2], FuseLge3Shards>()?;
         Ok(())
     }
