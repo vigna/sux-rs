@@ -501,11 +501,6 @@ mod build {
                     ]
                     .into();
 
-                    pl.info(format_args!(
-                        "Number of keys: {}; bit width: {}",
-                        builder.num_keys, builder.bit_width,
-                    ));
-
                     let func = builder.try_build_from_shard_iter(
                         seed,
                         data,
@@ -796,11 +791,6 @@ mod build {
                         builder.bit_width,
                         builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
                     );
-
-                    pl.info(format_args!(
-                        "Number of keys: {}; bit width: {}",
-                        builder.num_keys, builder.bit_width,
-                    ));
 
                     let func = builder.try_build_from_shard_iter(
                         seed,

@@ -1131,7 +1131,7 @@ impl<
 
         if shard_edge.shard_high_bits() != 0 {
             pl.info(format_args!(
-                "Max shard / average shard: {:.2}%",
+                "Max shard / average shard: {:.3}%",
                 (100.0 * max_shard as f64) / (num_keys as f64 / shard_edge.num_shards() as f64)
             ));
         }
@@ -1241,7 +1241,7 @@ impl<
         ));
 
         pl.info(format_args!(
-            "c: {}; overhead: {:+.4}%; number of threads: {}",
+            "c: {}; overhead: {:+.3}%; number of threads: {}",
             self.c,
             100. * ((shard_edge.num_vertices() * shard_edge.num_shards()) as f64
                 / (self.num_keys as f64)

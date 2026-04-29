@@ -362,9 +362,7 @@ fn build_two_step(
                     macro_rules! build_seq {
                         ($h:ty) => {{
                             let mmphf: SignedFunc<Lcp2MmphfInt<u64>, Box<[$h]>> =
-                                <SignedFunc<Lcp2MmphfInt<u64>, Box<[$h]>>>::try_new(
-                                    lender, n, pl,
-                                )?;
+                                <SignedFunc<Lcp2MmphfInt<u64>, Box<[$h]>>>::try_new(lender, n, pl)?;
                             maybe_store!(mmphf, args.func, args.unaligned);
                         }};
                     }
