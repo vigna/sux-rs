@@ -206,7 +206,7 @@ impl<K: ?Sized, D: Backend<Word: Word>, S, E> CompVFunc<K, D, S, E> {
     /// Provides access to the underlying [`HuffmanDecoder`].
     ///
     /// This is useful for inspecting the code properties (e.g., max codeword
-    /// length, escaped symbol length).
+    /// length, length of escaped symbols, etc.).
     ///
     /// If you need to set at runtime a branchy or branchless decoding strategy,
     /// please use [`branchless`]
@@ -505,13 +505,13 @@ where
         vb.num_threads = num_shards.min(vb.max_num_threads).max(1);
 
         pl.info(format_args!(
-            "Huffman: entropy: {:.3}; max codeword length {}; escaped symbol length {}",
+            "Huffman: entropy: {:.3}; max codeword length {}; length of escaped symbols: {}",
             coder.entropy(),
             coder.max_codeword_len(),
             coder.escaped_symbols_len()
         ));
         pl.info(format_args!(
-            "Number of keys: {num_keys}; number of edges: {total_edges}; average codeword length: {:.3}",
+            "Keys: {num_keys}; max shard keys: {max_shard_keys}; edges: {total_edges}; max shard edges: {max_shard_edges}; average codeword length: {:.3}",
             total_edges as f64 / num_keys as f64
         ));
         pl.info(format_args!(
@@ -651,7 +651,7 @@ where
             Ok(())
         };
 
-        pl.log_level(log::Level::Debug);
+        pl.log_level(log::Level::Trace);
         vb.par_solve(
             store.drain(),
             &mut data,

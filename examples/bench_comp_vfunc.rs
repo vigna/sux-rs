@@ -52,6 +52,8 @@ struct Args {
     /// The number of repetitions.​
     #[arg(short, long, default_value = "5")]
     repeats: usize,
+    #[arg(short, long)]
+    branchless: Option<bool>,
     /// The input file is compressed with zstd.​
     #[arg(short, long)]
     zstd: bool,
@@ -107,16 +109,22 @@ where
         };
 
         if args.unaligned {
-            let func =
+            let mut func =
                 unsafe { CompVFunc::<str, BitVecU<Box<[usize]>>, S, E>::load_full(&args.func) }?;
+            if let Some(branchless) = args.branchless {
+                func.branchless(branchless)
+            }
             bench(args.n, args.repeats, || {
                 for key in &keys {
                     std::hint::black_box(func.get(key.as_str()));
                 }
             });
         } else {
-            let func =
+            let mut func =
                 unsafe { CompVFunc::<str, BitVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
+            if let Some(branchless) = args.branchless {
+                func.branchless(branchless)
+            }
             bench(args.n, args.repeats, || {
                 for key in &keys {
                     std::hint::black_box(func.get(key.as_str()));
@@ -125,8 +133,11 @@ where
         }
     } else {
         if args.unaligned {
-            let func =
+            let mut func =
                 unsafe { CompVFunc::<usize, BitVecU<Box<[usize]>>, S, E>::load_full(&args.func) }?;
+            if let Some(branchless) = args.branchless {
+                func.branchless(branchless)
+            }
             bench(args.n, args.repeats, || {
                 let mut key: usize = 0;
                 for _ in 0..args.n {
@@ -135,8 +146,11 @@ where
                 }
             });
         } else {
-            let func =
+            let mut func =
                 unsafe { CompVFunc::<usize, BitVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
+            if let Some(branchless) = args.branchless {
+                func.branchless(branchless)
+            }
             bench(args.n, args.repeats, || {
                 let mut key: usize = 0;
                 for _ in 0..args.n {

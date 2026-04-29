@@ -5,12 +5,14 @@
  */
 
 #![allow(clippy::collapsible_else_if)]
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
 use mem_dbg::{FlatType, MemSize};
+use rand::rngs::SmallRng;
+use rand::{RngExt, SeedableRng};
 use rdst::RadixKey;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -37,6 +39,11 @@ use sux::utils::{DekoBufLineLender, FromCloneableIntoIterator, Sig, SigVal, ToSi
         .multiple(true)
         .args(["filename", "n"]),
 ))]
+#[clap(group(
+    ArgGroup::new("value_source")
+        .required(true)
+        .args(["values", "geometric", "zipf", "uniform"]),
+))]
 struct Args {
     /// The number of keys; if no filename is provided, use the 64-bit keys
     /// [0 . . n).​
@@ -48,10 +55,20 @@ struct Args {
     #[arg(short, long)]
     filename: Option<String>,
     /// A file containing the values, one ASCII decimal integer per
-    /// line. Compulsory. The number of values must match the number
-    /// of keys.​
+    /// line. The number of values must match the number of keys.​
     #[arg(short, long)]
-    values: String,
+    values: Option<String>,
+    /// Generate values with a geometric distribution (trailing zeros
+    /// of a random u64).​
+    #[arg(long)]
+    geometric: bool,
+    /// Generate values with a Zipf distribution (exponent 1) over
+    /// [0 . . K).​
+    #[arg(long)]
+    zipf: Option<usize>,
+    /// Generate values uniformly distributed in [0 . . K).​
+    #[arg(long)]
+    uniform: Option<usize>,
     /// Save the structure in unaligned form (faster, if available).​
     #[arg(long)]
     unaligned: bool,
@@ -64,11 +81,11 @@ struct Args {
     /// default is the parallel, in-memory path.​
     #[arg(short, long)]
     sequential: bool,
-    /// Cap on the number of distinct codeword lengths in the Huffman
-    /// decoding table. Rare symbols beyond the cap are diverted to the
-    /// escape codeword and stored as literals.​
+    /// Cap on the number of distinct codeword lengths in the Huffman decoding
+    /// table, which is the main factor in decoding speed. Rare symbols beyond
+    /// the cap are diverted to the escape codeword and stored as literals.​
     #[arg(long, default_value_t = 20)]
-    huffman_max_length: usize,
+    huffman_max_table_len: usize,
     /// Cumulative-entropy fraction beyond which infrequent symbols are
     /// diverted to the escape codeword. Truncates the Huffman table
     /// once the kept symbols cover this fraction of the total bit
@@ -133,6 +150,49 @@ fn main() -> Result<()> {
     }
 }
 
+fn zipf_cdf(s: f64, n: usize) -> Vec<f64> {
+    let h: f64 = (1..=n).map(|i| 1.0 / (i as f64).powf(s)).sum();
+    let mut cdf = vec![0.0; n];
+    let mut acc = 0.0;
+    for i in 1..=n {
+        acc += 1.0 / (i as f64).powf(s) / h;
+        cdf[i - 1] = acc;
+    }
+    cdf
+}
+
+fn sample_zipf(cdf: &[f64], rng: &mut SmallRng) -> usize {
+    let u: f64 = (rng.random::<u64>() >> 11) as f64 / ((1u64 << 53) as f64);
+    cdf.partition_point(|&p| p < u)
+}
+
+fn generate_synthetic_values(args: &Args, n: usize) -> Result<Vec<usize>> {
+    let mut rng = SmallRng::seed_from_u64(0);
+    if args.geometric {
+        Ok((0..n)
+            .map(|_| rng.random::<u64>().trailing_zeros() as usize)
+            .collect())
+    } else if let Some(k) = args.zipf {
+        let cdf = zipf_cdf(1.0, k);
+        Ok((0..n).map(|_| sample_zipf(&cdf, &mut rng)).collect())
+    } else if let Some(k) = args.uniform {
+        Ok((0..n)
+            .map(|_| (rng.random::<u64>() % k as u64) as usize)
+            .collect())
+    } else {
+        bail!("one of --values, --geometric, --zipf, or --uniform is required");
+    }
+}
+
+fn count_keys(filename: &str) -> Result<usize> {
+    let mut lender = DekoBufLineLender::from_path(filename)?;
+    let mut count = 0;
+    while lender.next()?.is_some() {
+        count += 1;
+    }
+    Ok(count)
+}
+
 fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3> + MemSize + FlatType>(
     args: Args,
 ) -> Result<()>
@@ -147,10 +207,7 @@ where
     let vbuilder: VBuilder<BitVec<Box<[usize]>>, S, E> =
         args.builder.configure(VBuilder::default());
     let huffman =
-        HuffmanConf::length_limited(args.huffman_max_length, args.huffman_entropy_threshold);
-
-    let values = read_values(&args.values)?;
-    let n_values = values.len();
+        HuffmanConf::length_limited(args.huffman_max_table_len, args.huffman_entropy_threshold);
 
     #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
@@ -158,10 +215,17 @@ where
     let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
 
     if let Some(filename) = &args.filename {
-        let n = n_values;
+        let values: Vec<usize> = if let Some(ref path) = args.values {
+            read_values(path)?
+        } else {
+            let n = match args.n {
+                Some(n) => n,
+                None => count_keys(filename)?,
+            };
+            generate_synthetic_values(&args, n)?
+        };
+        let n = values.len();
         if args.sequential {
-            // Sequential: stream keys through the lender, no
-            // materialisation.
             let keys = DekoBufLineLender::from_path(filename)?.take(n);
             let func = <CompVFunc<str, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                 keys,
@@ -172,12 +236,6 @@ where
             )?;
             maybe_store!(func, args.func, args.unaligned);
         } else {
-            // Parallel: read all keys into a single concatenated
-            // buffer, then build a `Vec<&str>` of slices into it.
-            // This gives cache-friendly access during sig hashing
-            // (one big allocation, fixed-size &str references) vs
-            // `Vec<String>` which would do `n` independent heap
-            // allocations.
             let (buffer, offsets) = read_lines_concatenated(filename, n)?;
             let keys = str_slice_from_offsets(&buffer, &offsets);
             if keys.len() != n {
@@ -190,12 +248,14 @@ where
         }
     } else {
         let n = args.n.unwrap();
-        if n != n_values {
-            bail!("n={n} but the values file has {n_values} entries");
-        }
+        let values: Vec<usize> = if let Some(ref path) = args.values {
+            let v = read_values(path)?;
+            ensure!(v.len() == n, "n={n} but values file has {} values", v.len());
+            v
+        } else {
+            generate_synthetic_values(&args, n)?
+        };
         if args.sequential {
-            // Sequential: wrap `0..n` as a lender so we avoid
-            // materialising `n * 8` bytes of keys.
             let keys = FromCloneableIntoIterator::from(0_usize..n);
             let func = <CompVFunc<usize, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                 keys,
@@ -206,9 +266,6 @@ where
             )?;
             maybe_store!(func, args.func, args.unaligned);
         } else {
-            // Parallel: materialise keys as `Vec<usize>`. Costs
-            // `n * 8` bytes of memory but lets the sig-hashing
-            // phase run on all cores.
             let keys: Vec<usize> = (0..n).collect();
             let func = <CompVFunc<usize, BitVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
                 &keys, &values, huffman, vbuilder, &mut pl,

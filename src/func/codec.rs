@@ -25,6 +25,19 @@ use num_primitive::PrimitiveInteger;
 use std::collections::HashMap;
 use std::hash::Hash;
 
+/// Per-block decoding parameters, co-located for cache efficiency.
+#[derive(Debug, Clone, Copy, MemSize, MemDbg)]
+#[mem_size(flat)]
+#[repr(C)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(zero_copy))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct BlockInfo {
+    /// Cumulative number of symbols up to and including this length block.
+    pub how_many_up_to_block: u32,
+    /// Right-shift amount, equal to `max_codeword_len − block_length`.
+    pub shift: u32,
+}
+
 /// A factory for a [`Coder<W>`], given a frequency map.
 ///
 /// Implementations represent a *family* of codes (e.g. Huffman); the
@@ -351,8 +364,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
         if size == 0 {
             return HuffmanDecoder {
                 last_codeword_plus_one: Box::new([]),
-                how_many_up_to_block: Box::new([]),
-                shift: Box::new([]),
+                block_info: Box::new([]),
                 symbol: Box::new([]),
                 num_coded_symbols: 0,
                 max_codeword_len: 0,
@@ -386,8 +398,13 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
             decoding_table_length += 1;
         }
 
-        let mut shift: Vec<u8> = vec![0; decoding_table_length];
-        let mut how_many_up_to_block: Vec<u32> = vec![0; decoding_table_length];
+        let mut block_info: Vec<BlockInfo> = vec![
+            BlockInfo {
+                how_many_up_to_block: 0,
+                shift: 0,
+            };
+            decoding_table_length
+        ];
         let mut last_codeword_plus_one: Vec<usize> = vec![0; decoding_table_length];
 
         // p is the current block index; word tracks the canonical codeword
@@ -404,10 +421,10 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
             if l != prev_l {
                 if i != 0 {
                     last_codeword_plus_one[p as usize] = word << (w - prev_l);
-                    how_many_up_to_block[p as usize] = i as u32;
+                    block_info[p as usize].how_many_up_to_block = i as u32;
                 }
                 p += 1;
-                shift[p as usize] = (w - l) as u8;
+                block_info[p as usize].shift = w - l;
                 word <<= l - prev_l;
                 prev_l = l;
             }
@@ -416,7 +433,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
 
         // Close the last block.
         last_codeword_plus_one[p as usize] = word << (w - prev_l);
-        how_many_up_to_block[p as usize] = size as u32;
+        block_info[p as usize].how_many_up_to_block = size as u32;
         p += 1;
 
         let num_real_symbols = if has_escape {
@@ -428,8 +445,8 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
             // never falls through.
             let last_p = p as usize;
             last_codeword_plus_one[last_p] = usize::MAX >> 1;
-            shift[last_p] = (usize::BITS - 1) as u8;
-            how_many_up_to_block[last_p] = (size as u32).saturating_sub(1);
+            block_info[last_p].shift = usize::BITS - 1;
+            block_info[last_p].how_many_up_to_block = (size as u32).saturating_sub(1);
             (size as u32).saturating_sub(1)
         } else {
             size as u32
@@ -450,8 +467,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
 
         HuffmanDecoder {
             last_codeword_plus_one: last_codeword_plus_one.into_boxed_slice(),
-            how_many_up_to_block: how_many_up_to_block.into_boxed_slice(),
-            shift: shift.into_boxed_slice(),
+            block_info: block_info.into_boxed_slice(),
             symbol: self.symbol,
             num_coded_symbols: num_real_symbols,
             max_codeword_len: last_l,
@@ -498,15 +514,9 @@ pub struct HuffmanDecoder<W> {
     /// sentinel entry (`usize::MAX >> 1`) catches gap values between
     /// the last sequential canonical codeword and the all-ones escape.
     last_codeword_plus_one: Box<[usize]>,
-    /// Cumulative number of symbols up to and including each length
-    /// block. After computing the within-block offset, the decoder adds
-    /// this value to obtain the global index into [`Self::symbol`].
-    how_many_up_to_block: Box<[u32]>,
-    /// Right-shift amount for each length block, equal to
-    /// `max_codeword_len − block_length`. Applied to both `value`
-    /// and the block's upper bound before computing the within-block
-    /// offset.
-    shift: Box<[u8]>,
+    /// Per-block shift and cumulative symbol count, co-located for
+    /// cache efficiency.
+    block_info: Box<[BlockInfo]>,
     /// Symbols in canonical order: sorted by codeword length (shortest
     /// first), then by decreasing frequency within each length group.
     /// If the code has an escape, the last entry is a placeholder
@@ -574,10 +584,9 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
             unsafe {
                 let lcp1 = *self.last_codeword_plus_one.get_unchecked(curr);
                 if value < lcp1 {
-                    let s = *self.shift.get_unchecked(curr) as u32;
-                    let off = (value >> s).wrapping_sub(lcp1 >> s);
-                    let idx =
-                        off.wrapping_add(*self.how_many_up_to_block.get_unchecked(curr) as usize);
+                    let bi = self.block_info.get_unchecked(curr);
+                    let off = (value >> bi.shift).wrapping_sub(lcp1 >> bi.shift);
+                    let idx = off.wrapping_add(bi.how_many_up_to_block as usize);
                     return if idx < nrs {
                         Some(*self.symbol.get_unchecked(idx))
                     } else {
@@ -586,9 +595,6 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
                 }
             }
         }
-        // Without escape the code is complete, so the last block
-        // covers all w-bit values. With escape, the sentinel
-        // (lcp1 = usize::MAX >> 1, w <= BITS - 2) catches gap values.
         unreachable!("decoder fell through all blocks")
     }
 
@@ -606,15 +612,12 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
             let lcp1 = unsafe { *self.last_codeword_plus_one.get_unchecked(curr) };
             idx += (lcp1 <= value) as usize;
         }
-        // Without escape the code is complete (last block's lcp1 =
-        // 1 << w covers all values). With escape the sentinel
-        // guarantees idx < n.
         debug_assert!(idx < n);
         unsafe {
             let lcp1 = *self.last_codeword_plus_one.get_unchecked(idx);
-            let s = *self.shift.get_unchecked(idx) as u32;
-            let off = (value >> s).wrapping_sub(lcp1 >> s);
-            let sym_idx = off.wrapping_add(*self.how_many_up_to_block.get_unchecked(idx) as usize);
+            let bi = self.block_info.get_unchecked(idx);
+            let off = (value >> bi.shift).wrapping_sub(lcp1 >> bi.shift);
+            let sym_idx = off.wrapping_add(bi.how_many_up_to_block as usize);
             if sym_idx < nrs {
                 Some(*self.symbol.get_unchecked(sym_idx))
             } else {

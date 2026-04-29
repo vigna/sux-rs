@@ -1241,7 +1241,7 @@ impl<
         ));
 
         pl.info(format_args!(
-            "c: {}; overhead: {:+.3}%; number of threads: {}",
+            "c: {}; overhead: {:+.3}%; threads: {}",
             self.c,
             100. * ((shard_edge.num_vertices() * shard_edge.num_shards()) as f64
                 / (self.num_keys as f64)
