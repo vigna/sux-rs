@@ -201,10 +201,7 @@ where
     SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>:
         Serialize + TryIntoUnaligned<Unaligned: Serialize>,
 {
-    #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
-    #[cfg(feature = "no_logging")]
-    let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
     pl.log_interval(args.log.log_interval);
 
     if let Some(filename) = &args.filename {
@@ -388,10 +385,7 @@ where
 }
 
 fn main_two_step(args: Args) -> Result<()> {
-    #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
-    #[cfg(feature = "no_logging")]
-    let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
     pl.log_interval(args.log.log_interval);
 
     let builder = args.builder.to_builder();

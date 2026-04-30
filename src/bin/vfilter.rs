@@ -126,10 +126,7 @@ where
         bail!("--unaligned is not supported for backend Box<[W]>; use a custom bit width");
     }
 
-    #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
-    #[cfg(feature = "no_logging")]
-    let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
     pl.log_interval(args.log.log_interval);
 
     if let Some(filename) = &args.filename {
@@ -216,10 +213,7 @@ where
         Serialize + TryIntoUnaligned<Unaligned: Serialize>,
     BitFieldVec<Box<[W]>>: MemSize + FlatType,
 {
-    #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
-    #[cfg(feature = "no_logging")]
-    let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
     pl.log_interval(args.log.log_interval);
 
     if let Some(filename) = &args.filename {

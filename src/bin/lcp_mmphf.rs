@@ -65,10 +65,7 @@ fn main() -> Result<()> {
     init_env_logger()?;
     let args = Args::parse();
 
-    #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
-    #[cfg(feature = "no_logging")]
-    let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
     pl.log_interval(args.log.log_interval);
 
     let n = if let Some(ref filename) = args.filename {

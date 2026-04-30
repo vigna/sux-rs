@@ -73,8 +73,6 @@ slow_tests = [] # Run slow tests (use --release)
 aarch64_prefetch = [] # Enable aarch64 prefetch (requires nightly)
 iter_advance_by = [] # Enable iter_advance_by (requires nightly)
 mwhc = [] # Compile MWHC data structures (mainly for benchmarking)
-no_logging = [
-] # Disable logging for binaries that build functions and filters (for benchmarking)
 rayon = ["dep:rayon", "dep:thread-priority"]
 deko = ["dep:deko"]
 serde = ["dep:serde", "dep:serde_arrays"]

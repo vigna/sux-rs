@@ -211,10 +211,7 @@ where
     let huffman =
         HuffmanConf::length_limited(args.huffman_max_table_len, args.huffman_entropy_threshold);
 
-    #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
-    #[cfg(feature = "no_logging")]
-    let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
     pl.log_interval(args.log.log_interval);
 
     if let Some(filename) = &args.filename {
