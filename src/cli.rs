@@ -129,7 +129,7 @@ impl BuilderArgs {
     }
 }
 
-/// Shard-edge type used during construction.
+/// Shard/edge type used during construction.
 #[derive(clap::ValueEnum, Copy, Clone, Debug, Default)]
 pub enum EdgeType {
     /// Fuse 3-hypergraphs with lazy Gaussian elimination and ε-cost sharding.​
@@ -152,17 +152,18 @@ pub enum EdgeType {
     FuseLge3FullSigs,
 }
 
-/// Shared CLI flags that select the *type* of shard-edge used during
+/// Shared CLI flags that select the *type* of shard/edge used during
 /// construction.
 ///
-/// These flags live here (rather than in [`BuilderArgs`]) because they
-/// don't configure a [`VBuilder`] instance — they select its type
-/// parameters. Binaries that dispatch on shard-edge type (`vfunc`,
-/// `vfilter`, `comp_vfunc`) flatten this struct next to [`BuilderArgs`];
-/// binaries that pin their shard-edge type (`lcp_mmphf`) don't.
+/// These flags live here (rather than in [`BuilderArgs`]) because they don't
+/// configure a [`VBuilder`] instance: they select its type parameters.
+///
+/// Binaries that dispatch on shard/edge type (`vfunc`, `vfilter`, `comp_vfunc`)
+/// flatten this struct next to [`BuilderArgs`]; binaries that pin their
+/// shard/edge type (`lcp_mmphf`) don't.
 #[derive(clap::Args, Debug)]
 pub struct ShardingArgs {
-    /// Shard-edge type.​
+    /// Shard/edge type.​
     #[arg(long, value_enum, default_value_t)]
     pub edge: EdgeType,
 }

@@ -473,7 +473,7 @@ where
           pl: &mut P,
           _state: &mut ()| {
         // Compute per-shard sums of codeword lengths and key counts. The
-        // shard-edge has to be resized against the actual edge count and key
+        // ShardEdge has to be resized against the actual edge count and key
         // count.
         let mut total_edges: usize = 0;
         let mut max_shard_edges: usize = 0;

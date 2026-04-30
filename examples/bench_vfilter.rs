@@ -60,7 +60,7 @@ struct Args {
     /// The input file is compressed with zstd.​
     #[arg(short, long)]
     zstd: bool,
-    /// Shard-edge type.​
+    /// Shard/edge type.​
     #[arg(long, value_enum, default_value_t)]
     edge: sux::cli::EdgeType,
     /// Use unaligned reads.​
