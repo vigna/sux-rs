@@ -17,7 +17,7 @@ use rdst::RadixKey;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use sux::bits::BitVec;
-use sux::cli::{BuilderArgs, ShardingArgs, read_lines_concatenated, str_slice_from_offsets};
+use sux::cli::{BuilderArgs, read_lines_concatenated, str_slice_from_offsets};
 use sux::func::codec::HuffmanConf;
 use sux::func::shard_edge::{Fuse3NoShards, Fuse3Shards, ShardEdge};
 use sux::func::{CompVFunc, VBuilder};
@@ -94,8 +94,11 @@ struct Args {
     huffman_entropy_threshold: f64,
     #[clap(flatten)]
     builder: BuilderArgs,
+    /// Shard/edge type (CompVFunc does not support LGE variants).​
+    #[arg(long, short = 'E', value_enum, default_value_t = sux::cli::ShardEdgeType::Fuse3Shards)]
+    shard_edge: sux::cli::ShardEdgeType,
     #[clap(flatten)]
-    sharding: ShardingArgs,
+    log: sux::cli::LogIntervalArg,
 }
 
 fn read_values(path: &str) -> Result<Vec<usize>> {
@@ -135,14 +138,14 @@ macro_rules! maybe_store {
 }
 
 fn main() -> Result<()> {
-    use sux::cli::EdgeType;
+    use sux::cli::ShardEdgeType;
     init_env_logger()?;
 
     let args = Args::parse();
-    match args.sharding.edge {
-        EdgeType::Fuse3NoShards64 => main_with_types::<[u64; 1], Fuse3NoShards>(args),
-        EdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
-        EdgeType::Fuse3 => main_with_types::<[u64; 2], Fuse3Shards>(args),
+    match args.shard_edge {
+        ShardEdgeType::Fuse3NoShards64 => main_with_types::<[u64; 1], Fuse3NoShards>(args),
+        ShardEdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
+        ShardEdgeType::Fuse3Shards => main_with_types::<[u64; 2], Fuse3Shards>(args),
         _ => {
             bail!("comp_vfunc only supports --edge fuse, fuse-no-shards-64, and fuse-no-shards-128")
         }
@@ -212,6 +215,7 @@ where
     let mut pl = ProgressLogger::default();
     #[cfg(feature = "no_logging")]
     let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
+    pl.log_interval(args.log.log_interval);
 
     if let Some(filename) = &args.filename {
         let values: Vec<usize> = if let Some(ref path) = args.values {

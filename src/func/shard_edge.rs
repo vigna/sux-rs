@@ -550,7 +550,7 @@ mod fuse {
                 )
             };
 
-            let num_vertices = (c * n as f64).ceil() as u128;
+            let num_vertices = (c * max_shard as f64).ceil() as u128;
             assert!(
                 num_vertices <= Self::Vertex::MAX as u128 + 1,
                 "FuseLge3Shards does not support more than {} vertices, but you are requesting {num_vertices}",
@@ -628,7 +628,8 @@ mod fuse {
     ///
     /// We provide also an implementation for 128-bit signatures without these
     /// limitations, but we strongly suggest to use sharding as very large
-    /// graphs are very slow to peel due sparse memory access.
+    /// graphs are very slow to peel due sparse memory access and lack of
+    /// parallel processing.
     ///
     /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
     /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
@@ -1038,14 +1039,14 @@ mod fuse {
                 };
         }
 
-        fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
+        fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> (f64, bool) {
             let c = Fuse3NoShards::c(max_shard);
             self.log2_seg_size = Self::log2_seg_size(max_shard);
 
-            let num_vertices = (c * n as f64).ceil() as u128;
+            let num_vertices = (c * max_shard as f64).ceil() as u128;
             assert!(
                 num_vertices <= Self::Vertex::MAX as u128 + 1,
-                "Fuse3NoShards does not support more than {} vertices, but you are requesting {num_vertices}",
+                "Fuse3Shards does not support more than {} vertices, but you are requesting {num_vertices}",
                 Self::Vertex::MAX as u128 + 1
             );
 
@@ -1062,17 +1063,17 @@ mod fuse {
 
         fn set_up_corr_graphs(
             &mut self,
-            num_keys: usize,
+            _num_keys: usize,
             max_shard_keys: usize,
             max_shard_edges: usize,
         ) -> (f64, bool) {
             let c = Fuse3NoShards::c(max_shard_keys);
             self.log2_seg_size = FuseLge3Shards::log2_seg_size(max_shard_edges);
 
-            let num_vertices = (c * num_keys as f64).ceil() as u128;
+            let num_vertices = (c * max_shard_edges as f64).ceil() as u128;
             assert!(
                 num_vertices <= Self::Vertex::MAX as u128 + 1,
-                "Fuse3NoShards does not support more than {} vertices, but you are requesting {num_vertices}",
+                "Fuse3Shards does not support more than {} vertices, but you are requesting {num_vertices}",
                 Self::Vertex::MAX as u128 + 1
             );
 

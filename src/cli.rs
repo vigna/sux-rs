@@ -7,6 +7,7 @@
 //! Shared CLI types for the `vfunc` and `lcp_mmphf` binaries.
 
 use std::fmt::Display;
+use std::time::Duration;
 
 use crate::bits::BitFieldVec;
 use crate::func::VBuilder;
@@ -131,12 +132,12 @@ impl BuilderArgs {
 
 /// Shard/edge type used during construction.
 #[derive(clap::ValueEnum, Copy, Clone, Debug, Default)]
-pub enum EdgeType {
+pub enum ShardEdgeType {
     /// Fuse 3-hypergraphs with lazy Gaussian elimination and ε-cost sharding.​
     #[default]
-    FuseLge3,
+    FuseLge3Shards,
     /// Fuse 3-hypergraphs with ε-cost sharding, no lazy Gaussian elimination.​
-    Fuse3,
+    Fuse3Shards,
     /// Fuse 3-hypergraphs without sharding or lazy Gaussian elimination and 64-bit signatures.​
     Fuse3NoShards64,
     /// Fuse 3-hypergraphs without sharding or lazy Gaussian elimination and 128-bit signatures.​
@@ -164,6 +165,43 @@ pub enum EdgeType {
 #[derive(clap::Args, Debug)]
 pub struct ShardingArgs {
     /// Shard/edge type.​
-    #[arg(long, value_enum, default_value_t)]
-    pub edge: EdgeType,
+    #[arg(long, short = 'E', value_enum, default_value_t)]
+    pub shard_edge: ShardEdgeType,
+}
+
+fn parse_duration(value: &str) -> anyhow::Result<Duration> {
+    anyhow::ensure!(!value.is_empty(), "empty duration string");
+    let mut duration = Duration::from_secs(0);
+    let mut acc = String::new();
+    for c in value.chars() {
+        if c.is_ascii_digit() {
+            acc.push(c);
+        } else if c.is_whitespace() {
+            continue;
+        } else {
+            let dur: u64 = acc.parse()?;
+            match c {
+                's' => duration += Duration::from_secs(dur),
+                'm' => duration += Duration::from_secs(dur * 60),
+                'h' => duration += Duration::from_secs(dur * 3600),
+                'd' => duration += Duration::from_secs(dur * 86400),
+                _ => anyhow::bail!("invalid duration suffix: {c}"),
+            }
+            acc.clear();
+        }
+    }
+    if !acc.is_empty() {
+        duration += Duration::from_millis(acc.parse()?);
+    }
+    Ok(duration)
+}
+
+/// Shared CLI argument for the progress-logger log interval.
+#[derive(clap::Args, Debug, Clone)]
+pub struct LogIntervalArg {
+    /// How often to log progress. Supported suffixes: "s" (seconds),
+    /// "m" (minutes), "h" (hours), "d" (days). A bare number is
+    /// interpreted as milliseconds. Examples: "10s", "1m30s", "500".​
+    #[arg(long, value_parser = parse_duration, default_value = "10s")]
+    pub log_interval: Duration,
 }

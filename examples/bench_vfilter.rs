@@ -62,7 +62,7 @@ struct Args {
     zstd: bool,
     /// Shard/edge type.​
     #[arg(long, value_enum, default_value_t)]
-    edge: sux::cli::EdgeType,
+    edge: sux::cli::ShardEdgeType,
     /// Use unaligned reads.​
     #[arg(long)]
     unaligned: bool,
@@ -70,17 +70,17 @@ struct Args {
 
 macro_rules! dispatch_edge {
     ($args: expr, $main: ident, $ty: ty) => {{
-        use sux::cli::EdgeType;
+        use sux::cli::ShardEdgeType;
         match $args.edge {
-            EdgeType::Fuse3NoShards64 => $main::<$ty, [u64; 1], Fuse3NoShards>($args),
-            EdgeType::Fuse3NoShards128 => $main::<$ty, [u64; 2], Fuse3NoShards>($args),
-            EdgeType::Fuse3 => $main::<$ty, [u64; 2], Fuse3Shards>($args),
-            EdgeType::FuseLge3 => $main::<$ty, [u64; 2], FuseLge3Shards>($args),
-            EdgeType::FuseLge3FullSigs => $main::<$ty, [u64; 2], FuseLge3FullSigs>($args),
+            ShardEdgeType::Fuse3NoShards64 => $main::<$ty, [u64; 1], Fuse3NoShards>($args),
+            ShardEdgeType::Fuse3NoShards128 => $main::<$ty, [u64; 2], Fuse3NoShards>($args),
+            ShardEdgeType::Fuse3Shards => $main::<$ty, [u64; 2], Fuse3Shards>($args),
+            ShardEdgeType::FuseLge3Shards => $main::<$ty, [u64; 2], FuseLge3Shards>($args),
+            ShardEdgeType::FuseLge3FullSigs => $main::<$ty, [u64; 2], FuseLge3FullSigs>($args),
             #[cfg(feature = "mwhc")]
-            EdgeType::Mwhc3 => $main::<$ty, [u64; 2], Mwhc3Shards>($args),
+            ShardEdgeType::Mwhc3 => $main::<$ty, [u64; 2], Mwhc3Shards>($args),
             #[cfg(feature = "mwhc")]
-            EdgeType::Mwhc3NoShards => $main::<$ty, [u64; 2], Mwhc3NoShards>($args),
+            ShardEdgeType::Mwhc3NoShards => $main::<$ty, [u64; 2], Mwhc3NoShards>($args),
         }
     }};
 }

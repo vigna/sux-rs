@@ -17,10 +17,7 @@ use sux::{
     dict::VFilter,
     func::{
         VBuilder, VFunc,
-        shard_edge::{
-            Fuse3NoShards, Fuse3Shards, FuseLge3FullSigs, FuseLge3Shards,
-            ShardEdge,
-        },
+        shard_edge::{Fuse3NoShards, Fuse3Shards, FuseLge3FullSigs, FuseLge3Shards, ShardEdge},
     },
     utils::{EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig},
 };

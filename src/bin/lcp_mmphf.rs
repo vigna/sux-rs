@@ -57,6 +57,8 @@ struct Args {
     sequential: bool,
     #[clap(flatten)]
     builder: BuilderArgs,
+    #[clap(flatten)]
+    log: sux::cli::LogIntervalArg,
 }
 
 fn main() -> Result<()> {
@@ -67,6 +69,7 @@ fn main() -> Result<()> {
     let mut pl = ProgressLogger::default();
     #[cfg(feature = "no_logging")]
     let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
+    pl.log_interval(args.log.log_interval);
 
     let n = if let Some(ref filename) = args.filename {
         if let Some(n) = args.n {

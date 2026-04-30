@@ -57,14 +57,14 @@ struct Args {
     zstd: bool,
     /// Shard/edge type.​
     #[arg(long, value_enum, default_value_t)]
-    edge: sux::cli::EdgeType,
+    edge: sux::cli::ShardEdgeType,
     /// Use unaligned reads.​
     #[arg(long)]
     unaligned: bool,
 }
 
 fn main() -> Result<()> {
-    use sux::cli::EdgeType;
+    use sux::cli::ShardEdgeType;
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
         .try_init()?;
@@ -72,15 +72,15 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     match args.edge {
-        EdgeType::Fuse3NoShards64 => main_with_types::<[u64; 1], Fuse3NoShards>(args),
-        EdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
-        EdgeType::Fuse3 => main_with_types::<[u64; 2], Fuse3Shards>(args),
-        EdgeType::FuseLge3 => main_with_types::<[u64; 2], FuseLge3Shards>(args),
-        EdgeType::FuseLge3FullSigs => main_with_types::<[u64; 2], FuseLge3FullSigs>(args),
+        ShardEdgeType::Fuse3NoShards64 => main_with_types::<[u64; 1], Fuse3NoShards>(args),
+        ShardEdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
+        ShardEdgeType::Fuse3Shards => main_with_types::<[u64; 2], Fuse3Shards>(args),
+        ShardEdgeType::FuseLge3Shards => main_with_types::<[u64; 2], FuseLge3Shards>(args),
+        ShardEdgeType::FuseLge3FullSigs => main_with_types::<[u64; 2], FuseLge3FullSigs>(args),
         #[cfg(feature = "mwhc")]
-        EdgeType::Mwhc3 => main_with_types::<[u64; 2], Mwhc3Shards>(args),
+        ShardEdgeType::Mwhc3 => main_with_types::<[u64; 2], Mwhc3Shards>(args),
         #[cfg(feature = "mwhc")]
-        EdgeType::Mwhc3NoShards => main_with_types::<[u64; 2], Mwhc3NoShards>(args),
+        ShardEdgeType::Mwhc3NoShards => main_with_types::<[u64; 2], Mwhc3NoShards>(args),
     }
 }
 

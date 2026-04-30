@@ -58,15 +58,15 @@ struct Args {
     #[arg(short, long)]
     zstd: bool,
     /// Shard/edge type.​
-    #[arg(long, value_enum, default_value_t)]
-    edge: sux::cli::EdgeType,
+    #[arg(long, value_enum, default_value_t = sux::cli::ShardEdgeType::Fuse3Shards)]
+    edge: sux::cli::ShardEdgeType,
     /// Use unaligned reads.​
     #[arg(long)]
     unaligned: bool,
 }
 
 fn main() -> Result<()> {
-    use sux::cli::EdgeType;
+    use sux::cli::ShardEdgeType;
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
         .try_init()?;
@@ -74,9 +74,9 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     match args.edge {
-        EdgeType::Fuse3NoShards64 => main_with_types::<[u64; 1], Fuse3NoShards>(args),
-        EdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
-        EdgeType::Fuse3 => main_with_types::<[u64; 2], Fuse3Shards>(args),
+        ShardEdgeType::Fuse3NoShards64 => main_with_types::<[u64; 1], Fuse3NoShards>(args),
+        ShardEdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
+        ShardEdgeType::Fuse3Shards => main_with_types::<[u64; 2], Fuse3Shards>(args),
         _ => bail!(
             "bench_comp_vfunc only supports --edge fuse, fuse-no-shards-64, and fuse-no-shards-128"
         ),

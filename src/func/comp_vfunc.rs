@@ -511,7 +511,8 @@ where
             coder.escaped_symbols_len()
         ));
         pl.info(format_args!(
-            "Keys: {num_keys}; max shard keys: {max_shard_keys}; edges: {total_edges}; max shard edges: {max_shard_edges}; average codeword length: {:.3}",
+            "Keys: {num_keys}; max shard keys: {max_shard_keys}; edges: {total_edges}; max shard edges: {max_shard_edges} ({:+.3}%); average codeword length: {:.3}",
+            100.0 * (max_shard_edges as f64 / (total_edges / vb.shard_edge.num_shards()) as f64 - 1.0),
             total_edges as f64 / num_keys as f64
         ));
         pl.info(format_args!(

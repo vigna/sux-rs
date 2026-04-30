@@ -944,8 +944,9 @@ impl<
                 let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
                 let max_shard = shard_store.shard_sizes().max().unwrap_or(0);
 
-                if self.shard_size_hint.is_none()
-                    && max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64
+                // Check for pathological (5x) deviation from the target ε-cost
+                if max_shard as f64
+                    > (1.0 + 5.0 * self.eps) * num_keys as f64 / shard_edge.num_shards() as f64
                 {
                     Err(SolveError::MaxShardTooBig.into())
                 } else {

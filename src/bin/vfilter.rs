@@ -61,21 +61,23 @@ struct Args {
     builder: BuilderArgs,
     #[clap(flatten)]
     sharding: ShardingArgs,
+    #[clap(flatten)]
+    log: sux::cli::LogIntervalArg,
 }
 
 macro_rules! dispatch_edge {
     ($args: expr, $main: ident, $ty: ty) => {{
-        use sux::cli::EdgeType;
-        match $args.sharding.edge {
-            EdgeType::Fuse3NoShards64 => $main::<$ty, [u64; 1], Fuse3NoShards>($args),
-            EdgeType::Fuse3NoShards128 => $main::<$ty, [u64; 2], Fuse3NoShards>($args),
-            EdgeType::Fuse3 => $main::<$ty, [u64; 2], Fuse3Shards>($args),
-            EdgeType::FuseLge3 => $main::<$ty, [u64; 2], FuseLge3Shards>($args),
-            EdgeType::FuseLge3FullSigs => $main::<$ty, [u64; 2], FuseLge3FullSigs>($args),
+        use sux::cli::ShardEdgeType;
+        match $args.sharding.shard_edge {
+            ShardEdgeType::Fuse3NoShards64 => $main::<$ty, [u64; 1], Fuse3NoShards>($args),
+            ShardEdgeType::Fuse3NoShards128 => $main::<$ty, [u64; 2], Fuse3NoShards>($args),
+            ShardEdgeType::Fuse3Shards => $main::<$ty, [u64; 2], Fuse3Shards>($args),
+            ShardEdgeType::FuseLge3Shards => $main::<$ty, [u64; 2], FuseLge3Shards>($args),
+            ShardEdgeType::FuseLge3FullSigs => $main::<$ty, [u64; 2], FuseLge3FullSigs>($args),
             #[cfg(feature = "mwhc")]
-            EdgeType::Mwhc3 => $main::<$ty, [u64; 2], Mwhc3Shards>($args),
+            ShardEdgeType::Mwhc3 => $main::<$ty, [u64; 2], Mwhc3Shards>($args),
             #[cfg(feature = "mwhc")]
-            EdgeType::Mwhc3NoShards => $main::<$ty, [u64; 2], Mwhc3NoShards>($args),
+            ShardEdgeType::Mwhc3NoShards => $main::<$ty, [u64; 2], Mwhc3NoShards>($args),
         }
     }};
 }
@@ -128,6 +130,7 @@ where
     let mut pl = ProgressLogger::default();
     #[cfg(feature = "no_logging")]
     let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
+    pl.log_interval(args.log.log_interval);
 
     if let Some(filename) = &args.filename {
         let n = args.n.unwrap_or(usize::MAX);
@@ -217,6 +220,7 @@ where
     let mut pl = ProgressLogger::default();
     #[cfg(feature = "no_logging")]
     let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
+    pl.log_interval(args.log.log_interval);
 
     if let Some(filename) = &args.filename {
         let n = args.n.unwrap_or(usize::MAX);
