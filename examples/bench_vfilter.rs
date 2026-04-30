@@ -136,20 +136,24 @@ where
         let filter = unsafe { VFilter::<VFunc<str, Box<[W]>, S, E>>::load_full(&args.func) }?;
 
         bench(args.n, args.repeats, || {
+            let mut u = 0usize;
             for key in &keys {
-                std::hint::black_box(filter.contains(key.as_str()));
+                u ^= filter.contains(key.as_str()) as usize;
             }
+            std::hint::black_box(u);
         });
     } else {
         // No filename
         let filter = unsafe { VFilter::<VFunc<usize, Box<[W]>, S, E>>::load_full(&args.func) }?;
 
         bench(args.n, args.repeats, || {
+            let mut u = 0usize;
             let mut key: usize = 0;
             for _ in 0..args.n {
                 key = key.wrapping_add(INCR);
-                std::hint::black_box(filter.contains(key));
+                u ^= filter.contains(key) as usize;
             }
+            std::hint::black_box(u);
         });
     }
     Ok(())
@@ -189,18 +193,22 @@ where
                 VFilter::<VFunc<str, BitFieldVecU<Box<[W]>>, S, E>>::load_full(&args.func)
             }?;
             bench(args.n, args.repeats, || {
+                let mut u = 0usize;
                 for key in &keys {
-                    std::hint::black_box(filter.contains(key.as_str()));
+                    u ^= filter.contains(key.as_str()) as usize;
                 }
+                std::hint::black_box(u);
             });
         } else {
             let filter = unsafe {
                 VFilter::<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func)
             }?;
             bench(args.n, args.repeats, || {
+                let mut u = 0usize;
                 for key in &keys {
-                    std::hint::black_box(filter.contains(key.as_str()));
+                    u ^= filter.contains(key.as_str()) as usize;
                 }
+                std::hint::black_box(u);
             });
         }
     } else {
@@ -209,22 +217,26 @@ where
                 VFilter::<VFunc<usize, BitFieldVecU<Box<[W]>>, S, E>>::load_full(&args.func)
             }?;
             bench(args.n, args.repeats, || {
+                let mut u = 0usize;
                 let mut key: usize = 0;
                 for _ in 0..args.n {
                     key = key.wrapping_add(INCR);
-                    std::hint::black_box(filter.contains(key));
+                    u ^= filter.contains(key) as usize;
                 }
+                std::hint::black_box(u);
             });
         } else {
             let filter = unsafe {
                 VFilter::<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func)
             }?;
             bench(args.n, args.repeats, || {
+                let mut u = 0usize;
                 let mut key: usize = 0;
                 for _ in 0..args.n {
                     key = key.wrapping_add(INCR);
-                    std::hint::black_box(filter.contains(key));
+                    u ^= filter.contains(key) as usize;
                 }
+                std::hint::black_box(u);
             });
         }
     }

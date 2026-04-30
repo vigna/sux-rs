@@ -110,17 +110,21 @@ where
             let func =
                 unsafe { VFunc::<str, BitFieldVecU<Box<[usize]>>, S, E>::load_full(&args.func) }?;
             bench(args.n, args.repeats, || {
+                let mut u = 0usize;
                 for key in &keys {
-                    std::hint::black_box(func.get(key.as_str()));
+                    u ^= func.get(key.as_str());
                 }
+                std::hint::black_box(u);
             });
         } else {
             let func =
                 unsafe { VFunc::<str, BitFieldVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
             bench(args.n, args.repeats, || {
+                let mut u = 0usize;
                 for key in &keys {
-                    std::hint::black_box(func.get(key.as_str()));
+                    u ^= func.get(key.as_str());
                 }
+                std::hint::black_box(u);
             });
         }
     } else {
@@ -128,21 +132,25 @@ where
             let func =
                 unsafe { VFunc::<usize, BitFieldVecU<Box<[usize]>>, S, E>::load_full(&args.func) }?;
             bench(args.n, args.repeats, || {
+                let mut u = 0usize;
                 let mut key: usize = 0;
                 for _ in 0..args.n {
                     key = key.wrapping_add(INCR);
-                    std::hint::black_box(func.get(key));
+                    u ^= func.get(key);
                 }
+                std::hint::black_box(u);
             });
         } else {
             let func =
                 unsafe { VFunc::<usize, BitFieldVec<Box<[usize]>>, S, E>::load_full(&args.func) }?;
             bench(args.n, args.repeats, || {
+                let mut u = 0usize;
                 let mut key: usize = 0;
                 for _ in 0..args.n {
                     key = key.wrapping_add(INCR);
-                    std::hint::black_box(func.get(key));
+                    u ^= func.get(key);
                 }
+                std::hint::black_box(u);
             });
         }
     }
