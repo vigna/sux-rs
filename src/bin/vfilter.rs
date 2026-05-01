@@ -43,7 +43,7 @@ struct Args {
     #[arg(short, long)]
     filename: Option<String>,
     /// Save the structure in unaligned form (faster, if available).​
-    #[arg(long)]
+    #[arg(long, short)]
     unaligned: bool,
     /// An optional name for the ε-serde serialized filter.​
     filter: Option<String>,

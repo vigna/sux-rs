@@ -45,12 +45,12 @@ struct Args {
     #[arg(short, long)]
     filename: Option<String>,
     /// Save the structure in unaligned form (faster, if available).​
-    #[arg(long)]
+    #[arg(long, short)]
     unaligned: bool,
     /// A name for the ε-serde serialized function.​
     func: Option<String>,
     /// Use the two-step variant (less space for skewed distributions, slightly slower queries). In this case, values are the number of trailing zeros of the keys.​
-    #[arg(long, conflicts_with = "hash_type")]
+    #[arg(long, short = '2', conflicts_with = "hash_type")]
     two_step: bool,
     /// Sign the function using hashes of this type.​
     #[arg(long)]

@@ -24,7 +24,7 @@ struct Cli {
     #[arg(long, short, num_args = 1.., value_delimiter = ',', default_value = "10,20,30")]
     log2_sizes: Vec<usize>,
     /// Use unaligned reads.​
-    #[arg(long)]
+    #[arg(long, short)]
     unaligned: bool,
     /// Passed by cargo bench; ignored.​
     #[arg(long, hide = true, action = clap::ArgAction::Count)]

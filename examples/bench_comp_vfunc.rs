@@ -61,7 +61,7 @@ struct Args {
     #[arg(long, value_enum, default_value_t = sux::cli::ShardEdgeType::Fuse3Shards)]
     edge: sux::cli::ShardEdgeType,
     /// Use unaligned reads.​
-    #[arg(long)]
+    #[arg(long, short)]
     unaligned: bool,
 }
 

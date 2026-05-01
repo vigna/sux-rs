@@ -70,7 +70,7 @@ struct Args {
     #[arg(long)]
     uniform: Option<usize>,
     /// Save the structure in unaligned form (faster, if available).​
-    #[arg(long)]
+    #[arg(long, short)]
     unaligned: bool,
     /// A name for the ε-serde serialized function.​
     func: Option<String>,
