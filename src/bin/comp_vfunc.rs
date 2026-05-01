@@ -74,11 +74,7 @@ struct Args {
     unaligned: bool,
     /// A name for the ε-serde serialized function.​
     func: Option<String>,
-    /// Use the single-threaded *sequential* construction path that
-    /// streams keys through a lender instead of materialising them
-    /// in memory. Slower for large builds (sig-store population is
-    /// the bottleneck) but useful when keys don't fit in RAM. The
-    /// default is the parallel, in-memory path.​
+    /// Hashes keys sequentially without loading them in RAM.​
     #[arg(short, long)]
     sequential: bool,
     /// Cap on the number of distinct codeword lengths in the Huffman decoding

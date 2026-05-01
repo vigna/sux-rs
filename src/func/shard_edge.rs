@@ -748,7 +748,7 @@ mod fuse {
             max_vertices: u128,
         ) -> (f64, bool) {
             let c = Self::c(max_shard_keys);
-            self.log2_seg_size = Self::log2_seg_size(max_shard_edges); // TODO; this fase FuseLge3Shards::log2_seg_size(max_shard_edges);
+            self.log2_seg_size = Self::log2_seg_size(max_shard_edges);
 
             let num_vertices = (c * max_shard_edges as f64).ceil() as u128;
             assert!(
