@@ -435,8 +435,8 @@ impl RetryState {
             Err(error) => match error.downcast::<SolveError>() {
                 Ok(vfunc_error) => match vfunc_error {
                     SolveError::DuplicateSignature => {
-                        if self.dup_count >= 3 {
-                            pl.error(format_args!("Duplicate keys (duplicate 128-bit signatures with four different seeds)"));
+                        if self.dup_count >= 2 {
+                            pl.error(format_args!("Duplicate keys (duplicate 128-bit signatures with three different seeds)"));
                             return Err(BuildError::DuplicateKey.into());
                         }
                         pl.warn(format_args!(
