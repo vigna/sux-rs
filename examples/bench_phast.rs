@@ -56,7 +56,7 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let mut pl = concurrent_progress_logger![];
+    let mut pl = concurrent_progress_logger![item_name = "key"];
 
     let keys = (0..args.n as u64).collect::<Vec<_>>();
 
