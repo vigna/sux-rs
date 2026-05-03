@@ -676,6 +676,7 @@ impl<
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
         let mut rs = self.retry_state(pl);
+        let total_start = Instant::now();
 
         loop {
             let seed = rs.next_seed();
@@ -729,6 +730,13 @@ impl<
             };
 
             if let Some(r) = rs.handle_solve_result(result, pl)? {
+                let num_keys = self.num_keys;
+                pl.info(format_args!(
+                    "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                    total_start.elapsed().as_secs_f64(),
+                    num_keys,
+                    total_start.elapsed().as_nanos() as f64 / num_keys as f64
+                ));
                 return Ok(r);
             }
 
