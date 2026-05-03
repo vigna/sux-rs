@@ -1,5 +1,4 @@
 /*
- *
  * SPDX-FileCopyrightText: 2023 Sebastiano Vigna
  *
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
@@ -81,10 +80,13 @@ fn main() -> Result<()> {
 
     bench(args.samples, args.repeats, || {
         let mut key: u64 = 0;
+        let mut acc: usize = 0;
         for _ in 0..args.samples {
             key = key.wrapping_add(0x9e3779b97f4a7c15);
-            std::hint::black_box(output.get_value(func.get(&key) as usize));
+            acc ^= unsafe { output.get_value_unchecked(func.get(&key) as usize) };
         }
+
+        std::hint::black_box(acc);
     });
 
     Ok(())
