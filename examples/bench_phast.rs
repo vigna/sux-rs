@@ -85,7 +85,6 @@ fn main() -> Result<()> {
             key = key.wrapping_add(0x9e3779b97f4a7c15);
             acc ^= unsafe { output.get_value_unchecked(func.get(&key) as usize) };
         }
-
         std::hint::black_box(acc);
     });
 
