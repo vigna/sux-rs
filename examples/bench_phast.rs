@@ -83,7 +83,7 @@ fn main() -> Result<()> {
         let mut acc: usize = 0;
         for _ in 0..args.samples {
             key = key.wrapping_add(0x9e3779b97f4a7c15);
-            acc ^= unsafe { output.get_value_unchecked(func.get(&key) as usize) };
+            acc ^= unsafe { output.get_unaligned_unchecked(func.get(&key) as usize) };
         }
         std::hint::black_box(acc);
     });
