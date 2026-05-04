@@ -22,6 +22,9 @@ F# Change Log
 
 - All structures support `MemSize`.
 
+- New `ParallelWithLen` extension trait setting both `with_min_len` and
+  `with_max_len` in Rayon.
+
 ### Fixed
 
 - Unsound reference-based `From` implementations between `BitVec`,

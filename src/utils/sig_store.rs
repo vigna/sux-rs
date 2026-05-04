@@ -666,6 +666,7 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
     where
         V: Default + Ord + Send,
     {
+        use crate::ParallelWithLen;
         use rayon::prelude::*;
         use std::sync::Mutex;
 
@@ -690,7 +691,7 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
 
         let max_val = (0..n)
             .into_par_iter()
-            .with_min_len((n / max_num_threads).max(1_000_000))
+            .with_len((n / max_num_threads.min(num_buckets)).max(1_000_000))
             .fold(
                 || {
                     let bufs: Box<[ArrayVec<SigVal<S, V>, CAP>]> =

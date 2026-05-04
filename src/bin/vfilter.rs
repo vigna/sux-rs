@@ -36,7 +36,7 @@ use value_traits::slices::SliceByValueMut;
 ))]
 struct Args {
     /// The number of keys; if no filename is provided, use the 64-bit keys
-    /// [0 . . n).​
+    /// [0 . . n) and sequential hashing.​
     #[arg(short, long)]
     n: Option<usize>,
     /// A file containing UTF-8 keys, one per line (at most N keys will be read); it can be compressed with any format supported by the deko crate.​
@@ -50,7 +50,7 @@ struct Args {
     /// The number of bits of the hashes used by the filter.​
     #[arg(short, long, default_value_t = 8)]
     bits: usize,
-    /// Hashes keys sequentially without loading them in RAM.​
+    /// Hashes file keys sequentially without loading them in RAM (ignored with -n).​
     #[arg(short, long)]
     sequential: bool,
     #[clap(flatten)]
@@ -166,23 +166,13 @@ where
             .builder
             .configure(VBuilder::<Box<[W]>, S, E>::default())
             .expected_num_keys(n);
-        if args.sequential {
-            let filter = <VFilter<VFunc<usize, Box<[W]>, S, E>>>::try_new_with_builder(
-                FromCloneableIntoIterator::from(0_usize..n),
-                builder,
-                &mut pl,
-            )?;
-            if let Some(filename) = args.filter {
-                unsafe { filter.store(filename) }?;
-            }
-        } else {
-            let keys: Vec<usize> = (0..n).collect();
-            let filter = <VFilter<VFunc<usize, Box<[W]>, S, E>>>::try_par_new_with_builder(
-                &keys, builder, &mut pl,
-            )?;
-            if let Some(filename) = args.filter {
-                unsafe { filter.store(filename) }?;
-            }
+        let filter = <VFilter<VFunc<usize, Box<[W]>, S, E>>>::try_new_with_builder(
+            FromCloneableIntoIterator::from(0_usize..n),
+            builder,
+            &mut pl,
+        )?;
+        if let Some(filename) = args.filter {
+            unsafe { filter.store(filename) }?;
         }
     }
 
@@ -263,33 +253,18 @@ where
             .builder
             .configure(VBuilder::<BitFieldVec<Box<[W]>>, S, E>::default())
             .expected_num_keys(n);
-        if args.sequential {
-            let filter =
-                <VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
-                    FromCloneableIntoIterator::from(0_usize..n),
-                    args.bits,
-                    builder,
-                    &mut pl,
-                )?;
-            if let Some(filename) = args.filter {
-                if args.unaligned {
-                    unsafe { filter.try_into_unaligned().unwrap().store(filename)? };
-                } else {
-                    unsafe { filter.store(filename)? };
-                }
-            }
-        } else {
-            let keys: Vec<usize> = (0..n).collect();
-            let filter =
-                <VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>>::try_par_new_with_builder(
-                    &keys, args.bits, builder, &mut pl,
-                )?;
-            if let Some(filename) = args.filter {
-                if args.unaligned {
-                    unsafe { filter.try_into_unaligned().unwrap().store(filename)? };
-                } else {
-                    unsafe { filter.store(filename)? };
-                }
+        let filter =
+            <VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
+                FromCloneableIntoIterator::from(0_usize..n),
+                args.bits,
+                builder,
+                &mut pl,
+            )?;
+        if let Some(filename) = args.filter {
+            if args.unaligned {
+                unsafe { filter.try_into_unaligned().unwrap().store(filename)? };
+            } else {
+                unsafe { filter.store(filename)? };
             }
         }
     }

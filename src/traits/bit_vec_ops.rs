@@ -41,6 +41,8 @@
 //! [`AtomicBitVec`]: crate::bits::AtomicBitVec
 //! [`Index`]: std::ops::Index
 
+#[cfg(feature = "rayon")]
+use crate::ParallelWithLen;
 use crate::{bits::test_unaligned_pos, traits::Word};
 use ambassador::delegatable_trait;
 use atomic_primitive::PrimitiveAtomicUnsigned;
@@ -251,7 +253,7 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
         let mut num_ones;
         num_ones = bits[..full_words]
             .par_iter()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .map(|x| x.count_ones() as usize)
             .sum();
         if residual != 0 {
@@ -319,7 +321,7 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
         let word_value: W = if value { !W::ZERO } else { W::ZERO };
         bits[..full_words]
             .par_iter_mut()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .for_each(|x| *x = word_value);
         if residual != 0 {
             let mask = (W::ONE << residual) - W::ONE;
@@ -360,7 +362,7 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
         let bits = self.as_mut();
         bits[..full_words]
             .par_iter_mut()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .for_each(|x| *x = !*x);
         if residual != 0 {
             let mask = (W::ONE << residual) - W::ONE;
@@ -707,7 +709,7 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
         core::sync::atomic::fence(Ordering::SeqCst);
         bits[..full_words]
             .par_iter()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .for_each(|x| x.store(word_value, ordering));
         if residual != 0 {
             let mask = (A::Value::ONE << residual) - A::Value::ONE;
@@ -760,7 +762,7 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
         core::sync::atomic::fence(Ordering::SeqCst);
         bits[..full_words]
             .par_iter()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .for_each(|x| _ = x.fetch_xor(!A::Value::ZERO, ordering));
         if residual != 0 {
             let mask = (A::Value::ONE << residual) - A::Value::ONE;
@@ -784,7 +786,7 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
         core::sync::atomic::fence(Ordering::SeqCst);
         num_ones = bits[..full_words]
             .par_iter()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)
             .sum();
         if residual != 0 {

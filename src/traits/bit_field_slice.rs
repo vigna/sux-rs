@@ -46,6 +46,8 @@
 //! [`PrimitiveInteger::BITS`]: num_primitive::PrimitiveInteger::BITS
 //! [`AtomicPrimitive`]: atomic_primitive::AtomicPrimitive
 #![allow(clippy::result_unit_err)]
+#[cfg(feature = "rayon")]
+use crate::ParallelWithLen;
 use crate::{debug_assert_bounds, panic_if_out_of_bounds, panic_if_value, traits::Word};
 use ambassador::delegatable_trait;
 use atomic_primitive::PrimitiveAtomicUnsigned;
@@ -53,9 +55,7 @@ use core::sync::atomic::Ordering;
 use impl_tools::autoimpl;
 use num_primitive::PrimitiveInteger;
 #[cfg(feature = "rayon")]
-use rayon::iter::{
-    IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
-};
+use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
 /// Common method for [`BitFieldSlice`], [`BitFieldSliceMut`], and
@@ -285,7 +285,7 @@ impl<W: Word> BitFieldSliceMut for [W] {
     fn par_reset(&mut self) {
         self.as_mut()
             .par_iter_mut()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .for_each(|w| *w = W::ZERO);
     }
 
@@ -303,7 +303,7 @@ impl<W: Word> BitFieldSliceMut for Vec<W> {
     #[cfg(feature = "rayon")]
     fn par_reset(&mut self) {
         self.par_iter_mut()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .for_each(|w| *w = W::ZERO);
     }
 
@@ -321,7 +321,7 @@ impl<W: Word, const N: usize> BitFieldSliceMut for [W; N] {
     #[cfg(feature = "rayon")]
     fn par_reset(&mut self) {
         self.par_iter_mut()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .for_each(|w| *w = W::ZERO);
     }
 
@@ -361,7 +361,7 @@ impl<A: PrimitiveAtomicUnsigned<Value: Word>> AtomicBitFieldSlice<A> for [A] {
     #[cfg(feature = "rayon")]
     fn par_reset_atomic(&mut self, order: Ordering) {
         self.par_iter()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .for_each(|w| w.store(A::Value::ZERO, order));
     }
 }
@@ -395,7 +395,7 @@ impl<A: PrimitiveAtomicUnsigned<Value: Word>> AtomicBitFieldSlice<A> for Vec<A> 
     #[cfg(feature = "rayon")]
     fn par_reset_atomic(&mut self, order: Ordering) {
         self.par_iter()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .for_each(|w| w.store(A::Value::ZERO, order));
     }
 }
@@ -429,7 +429,7 @@ impl<A: PrimitiveAtomicUnsigned<Value: Word>, const N: usize> AtomicBitFieldSlic
     #[cfg(feature = "rayon")]
     fn par_reset_atomic(&mut self, order: Ordering) {
         self.par_iter()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .for_each(|w| w.store(A::Value::ZERO, order));
     }
 }

@@ -892,13 +892,15 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> BitFieldSlice
     #[cfg(feature = "rayon")]
     fn par_reset(&mut self) {
         use rayon::prelude::*;
+
+        use crate::ParallelWithLen;
         let bits_per_word = B::Word::BITS as usize;
         let full_words = self.len / bits_per_word;
         let residual = self.len % bits_per_word;
         let data = self.bits.as_mut();
         data[..full_words]
             .par_iter_mut()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .for_each(|x| *x = B::Word::ZERO);
         if residual != 0 {
             data[full_words] &= B::Word::MAX << residual;
