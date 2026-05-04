@@ -8,7 +8,6 @@
 
 use anyhow::Result;
 use clap::Parser;
-use dsi_progress_logger::*;
 use ph::{
     BuildDefaultSeededHasher,
     fmph::Bits8,
@@ -50,17 +49,11 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .try_init()?;
-
     let args = Args::parse();
-
-    let mut pl = concurrent_progress_logger![item_name = "key"];
 
     let keys = (0..args.n as u64).collect::<Vec<_>>();
 
-    pl.start("Building PHast+...");
+    let start = std::time::Instant::now();
 
     let func: phast::Function2<Bits8, SeedOnly, DefaultCompressedArray> =
         phast::Function2::with_slice_p_threads_hash_sc(
@@ -76,7 +69,13 @@ fn main() -> Result<()> {
         output.set_value(func.get(i.to_ne_bytes().as_slice()) as usize, i);
     }
 
-    pl.done_with_count(args.n);
+    let elapsed = start.elapsed();
+    let secs = elapsed.as_secs_f64();
+    let ns_per_key = elapsed.as_nanos() as f64 / args.n as f64;
+    eprintln!(
+        "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+        secs, args.n, ns_per_key
+    );
 
     bench(args.samples, args.repeats, || {
         let mut key: u64 = 0;
