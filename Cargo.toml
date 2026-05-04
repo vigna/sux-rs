@@ -116,6 +116,10 @@ name = "vfunc"
 required-features = ["cli", "epserde", "deko", "rayon"]
 
 [[bin]]
+name = "vfunc2"
+required-features = ["cli", "epserde", "deko", "rayon"]
+
+[[bin]]
 name = "comp_vfunc"
 required-features = ["cli", "epserde", "deko", "rayon"]
 

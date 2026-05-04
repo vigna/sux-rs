@@ -18,15 +18,12 @@ use sux::bits::BitFieldVec;
 use sux::cli::{
     BuilderArgs, HashTypes, ShardingArgs, read_lines_concatenated, str_slice_from_offsets,
 };
-use sux::func::VFunc2;
 use sux::func::signed::SignedFunc;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
 use sux::prelude::VBuilder;
 use sux::traits::TryIntoUnaligned;
-use sux::utils::{
-    DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, FromSlice, Sig, SigVal, ToSig,
-};
+use sux::utils::{DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig};
 
 #[derive(Parser, Debug)]
 #[command(about = "Creates a (possibly signed) VFunc mapping each input to its rank and serializes it with ε-serde.", long_about = None, next_line_help = true, max_term_width = 100)]
@@ -49,9 +46,6 @@ struct Args {
     unaligned: bool,
     /// A name for the ε-serde serialized function.​
     func: Option<String>,
-    /// Use the two-step variant (less space for skewed distributions, slightly slower queries). In this case, values are the number of trailing zeros of the keys.​
-    #[arg(long, short = '2', conflicts_with = "hash_type")]
-    two_step: bool,
     /// Sign the function using hashes of this type.​
     #[arg(long)]
     hash_type: Option<HashTypes>,
@@ -71,10 +65,6 @@ fn main() -> Result<()> {
     init_env_logger()?;
 
     let args = Args::parse();
-
-    if args.two_step {
-        return main_two_step(args);
-    }
 
     match args.sharding.shard_edge {
         ShardEdgeType::Fuse3NoShards64 => main_with_types::<[u64; 1], Fuse3NoShards>(args),
@@ -295,13 +285,12 @@ where
             .expected_num_keys(n);
         match args.hash_type {
             None => {
-                let func =
-                    <VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
-                        FromCloneableIntoIterator::from(0_usize..n),
-                        FromCloneableIntoIterator::from(0_usize..),
-                        builder,
-                        &mut pl,
-                    )?;
+                let func = <VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
+                    FromCloneableIntoIterator::from(0_usize..n),
+                    FromCloneableIntoIterator::from(0_usize..),
+                    builder,
+                    &mut pl,
+                )?;
                 if let Some(filename) = args.func {
                     if args.unaligned {
                         unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
@@ -328,88 +317,3 @@ where
     Ok(())
 }
 
-fn main_two_step(args: Args) -> Result<()> {
-    let mut pl = ProgressLogger::default();
-    pl.log_interval(args.log.log_interval);
-
-    let builder = args.builder.to_builder();
-
-    if let Some(filename) = &args.filename {
-        let n = if let Some(n) = args.n {
-            n
-        } else {
-            pl.info(format_args!("Counting keys..."));
-            let mut lender = DekoBufLineLender::from_path(filename)?;
-            let mut count = 0usize;
-            while FallibleLender::next(&mut lender)?.is_some() {
-                count += 1;
-            }
-            pl.info(format_args!("Found {count} keys"));
-            count
-        };
-        if args.sequential {
-            let func: VFunc2<str, BitFieldVec<Box<[usize]>>> = VFunc2::try_new_with_builder(
-                DekoBufLineLender::from_path(filename)?.take(n),
-                FromCloneableIntoIterator::from(0_usize..),
-                builder,
-                &mut pl,
-            )?;
-            if let Some(filename) = args.func {
-                if args.unaligned {
-                    unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
-                } else {
-                    unsafe { func.store(filename) }?;
-                }
-            }
-        } else {
-            let (buffer, offsets) = read_lines_concatenated(filename, n)?;
-            let keys = str_slice_from_offsets(&buffer, &offsets);
-            if keys.len() != n {
-                bail!("key count mismatch: read {} keys, expected {n}", keys.len());
-            }
-            let values: Vec<usize> = (0..n).collect();
-            let func: VFunc2<str, BitFieldVec<Box<[usize]>>> =
-                VFunc2::try_par_new_with_builder(&keys, &values, builder, &mut pl)?;
-            if let Some(filename) = args.func {
-                if args.unaligned {
-                    unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
-                } else {
-                    unsafe { func.store(filename) }?;
-                }
-            }
-        }
-    } else {
-        let n = args.n.unwrap();
-        if args.sequential {
-            let keys: Vec<usize> = (0..n).collect();
-            let vals: Vec<usize> = (0..n).map(|k| (k + 1).trailing_zeros() as usize).collect();
-            let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> = VFunc2::try_new_with_builder(
-                FromSlice::new(&keys),
-                FromSlice::new(&vals),
-                builder,
-                &mut pl,
-            )?;
-            if let Some(filename) = args.func {
-                if args.unaligned {
-                    unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
-                } else {
-                    unsafe { func.store(filename) }?;
-                }
-            }
-        } else {
-            let keys: Vec<usize> = (0..n).collect();
-            let values: Vec<usize> = (0..n).map(|k| (k + 1).trailing_zeros() as usize).collect();
-            let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> =
-                VFunc2::try_par_new_with_builder(&keys, &values, builder, &mut pl)?;
-            if let Some(filename) = args.func {
-                if args.unaligned {
-                    unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
-                } else {
-                    unsafe { func.store(filename) }?;
-                }
-            }
-        }
-    }
-
-    Ok(())
-}

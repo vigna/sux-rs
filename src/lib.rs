@@ -11,7 +11,7 @@
     feature(stdarch_aarch64_prefetch)
 )]
 #![cfg_attr(feature = "iter_advance_by", feature(iter_advance_by))]
-#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![deny(unconditional_recursion)]
 #![allow(clippy::duplicated_attributes)]
 #![allow(clippy::len_without_is_empty)]
@@ -66,7 +66,7 @@ pub(crate) trait Index<Idx> {
 
 /// Parallel iterators performing very fast operations, such as [zeroing a bit
 /// vector], should pass this argument to
-/// [`IndexedParallelIterator::with_min_len`] or even
+/// [`IndexedParallelIterator::with_min_len`] or preferably
 /// [`ParallelWithLen::with_len`].
 ///
 /// [zeroing a bit vector]: crate::traits::BitVecOpsMut::reset

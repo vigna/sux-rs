@@ -253,13 +253,12 @@ where
             .builder
             .configure(VBuilder::<BitFieldVec<Box<[W]>>, S, E>::default())
             .expected_num_keys(n);
-        let filter =
-            <VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
-                FromCloneableIntoIterator::from(0_usize..n),
-                args.bits,
-                builder,
-                &mut pl,
-            )?;
+        let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
+            FromCloneableIntoIterator::from(0_usize..n),
+            args.bits,
+            builder,
+            &mut pl,
+        )?;
         if let Some(filename) = args.filter {
             if args.unaligned {
                 unsafe { filter.try_into_unaligned().unwrap().store(filename)? };

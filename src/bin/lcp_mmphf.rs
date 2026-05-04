@@ -287,7 +287,7 @@ fn build_two_step(
                         ($h:ty) => {{
                             let lender = DekoBufLineLender::from_path(filename)?;
                             let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =
-                                <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_new(lender, n, pl)?;
+                                <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_new_with_builder(lender, n, builder, pl)?;
                             maybe_store!(mmphf, args.func, args.unaligned);
                         }};
                     }
@@ -303,7 +303,7 @@ fn build_two_step(
                     macro_rules! build_par {
                         ($h:ty) => {{
                             let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =
-                                <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_par_new(&keys, pl)?;
+                                <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_par_new_with_builder(&keys, builder, pl)?;
                             maybe_store!(mmphf, args.func, args.unaligned);
                         }};
                     }
@@ -329,7 +329,7 @@ fn build_two_step(
                 macro_rules! build_seq {
                     ($h:ty) => {{
                         let mmphf: SignedFunc<Lcp2MmphfInt<u64>, Box<[$h]>> =
-                            <SignedFunc<Lcp2MmphfInt<u64>, Box<[$h]>>>::try_new(lender, n, pl)?;
+                            <SignedFunc<Lcp2MmphfInt<u64>, Box<[$h]>>>::try_new_with_builder(lender, n, builder, pl)?;
                         maybe_store!(mmphf, args.func, args.unaligned);
                     }};
                 }

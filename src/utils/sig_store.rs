@@ -644,13 +644,6 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
     /// `0..n` across rayon's thread pool and depositing the resulting
     /// [`SigVal`] directly into its bucket.
     ///
-    /// Each bucket is protected by a [`Mutex`]; at 256
-    /// buckets the contention is negligible. Returns the maximum value
-    /// seen (for bit-width computation).
-    /// Populates the store in parallel by calling `f(i)` for each index
-    /// `0..n` across rayon's thread pool and depositing the resulting
-    /// [`SigVal`] directly into its bucket.
-    ///
     /// Each bucket is protected by a [`Mutex`].
     /// Thread-local buffers (one per bucket) batch insertions to reduce
     /// lock acquisitions. Returns the maximum value seen (for bit-width
