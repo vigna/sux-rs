@@ -141,18 +141,22 @@ required-features = ["cli"]
 
 [[example]]
 name = "bench_vfunc"
-required-features = ["epserde", "clap"]
+required-features = ["cli", "epserde", "deko"]
 
 [[example]]
 name = "bench_comp_vfunc_data"
 
 [[example]]
 name = "bench_vfilter"
-required-features = ["epserde", "clap"]
+required-features = ["cli", "epserde", "deko"]
 
 [[example]]
 name = "bench_comp_vfunc"
-required-features = ["epserde", "clap"]
+required-features = ["cli", "epserde", "deko"]
+
+[[example]]
+name = "bench_lcp_mmphf"
+required-features = ["epserde", "deko"]
 
 [[example]]
 name = "bench_phast"

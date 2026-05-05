@@ -17,7 +17,7 @@ use sux::func::lcp2_mmphf::*;
 use sux::func::signed::*;
 use sux::init_env_logger;
 use sux::traits::TryIntoUnaligned;
-use sux::utils::{DekoBufLineLender, FromCloneableIntoIterator};
+use sux::utils::{DekoBufLineLender, FromSlice};
 
 #[derive(Parser, Debug)]
 #[command(about = "Creates a (possibly signed) LCP-based monotone minimal perfect hash function \
@@ -90,52 +90,22 @@ fn main() -> Result<()> {
     }
 }
 
-#[derive(Clone)]
-struct RandomSortedKeys {
-    n: usize,
-    k: u64,
-    seed: u64,
-}
-
-impl RandomSortedKeys {
-    fn new(n: usize) -> Self {
-        Self {
-            n,
-            k: ((1.9 * u64::MAX as f64) / n as f64) as u64,
-            seed: rand::rng().random(),
+/// Generate k sorted distinct random u64 keys.
+///
+/// Draws k + 2*(k²/(2*2^64)) values (the extra accounts for expected
+/// collisions), sorts, deduplicates, and takes k.
+fn gen_sorted_keys(k: usize, seed: u64) -> Vec<u64> {
+    let extra = (((k as u128) * (k as u128)) >> 65) as usize;
+    let draw = k + 2 * extra;
+    let mut rng = SmallRng::seed_from_u64(seed);
+    loop {
+        let mut keys: Vec<u64> = (0..draw).map(|_| rng.random()).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        if keys.len() >= k {
+            keys.truncate(k);
+            return keys;
         }
-    }
-}
-
-impl IntoIterator for RandomSortedKeys {
-    type Item = u64;
-    type IntoIter = RandomSortedKeysIter;
-    fn into_iter(self) -> Self::IntoIter {
-        RandomSortedKeysIter {
-            remaining: self.n,
-            k: self.k,
-            acc: 0,
-            rng: SmallRng::seed_from_u64(self.seed),
-        }
-    }
-}
-
-struct RandomSortedKeysIter {
-    remaining: usize,
-    k: u64,
-    acc: u64,
-    rng: SmallRng,
-}
-
-impl Iterator for RandomSortedKeysIter {
-    type Item = u64;
-    fn next(&mut self) -> Option<u64> {
-        if self.remaining == 0 {
-            return None;
-        }
-        self.remaining -= 1;
-        self.acc += self.rng.random_range(1..self.k);
-        Some(self.acc)
     }
 }
 
@@ -221,8 +191,8 @@ fn build_single(
             }
         }
     } else {
-        let random_keys = RandomSortedKeys::new(n);
-        let lender = FromCloneableIntoIterator::new(random_keys);
+        let keys = gen_sorted_keys(n, 0);
+        let lender = FromSlice::new(&keys);
         match args.hash_type {
             None => {
                 let mmphf: LcpMmphfInt<u64> =
@@ -287,7 +257,9 @@ fn build_two_step(
                         ($h:ty) => {{
                             let lender = DekoBufLineLender::from_path(filename)?;
                             let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =
-                                <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_new_with_builder(lender, n, builder, pl)?;
+                                <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_new_with_builder(
+                                    lender, n, builder, pl,
+                                )?;
                             maybe_store!(mmphf, args.func, args.unaligned);
                         }};
                     }
@@ -303,7 +275,9 @@ fn build_two_step(
                     macro_rules! build_par {
                         ($h:ty) => {{
                             let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =
-                                <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_par_new_with_builder(&keys, builder, pl)?;
+                                <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_par_new_with_builder(
+                                    &keys, builder, pl,
+                                )?;
                             maybe_store!(mmphf, args.func, args.unaligned);
                         }};
                     }
@@ -317,8 +291,8 @@ fn build_two_step(
             }
         }
     } else {
-        let random_keys = RandomSortedKeys::new(n);
-        let lender = FromCloneableIntoIterator::new(random_keys);
+        let keys = gen_sorted_keys(n, 0);
+        let lender = FromSlice::new(&keys);
         match args.hash_type {
             None => {
                 let mmphf: Lcp2MmphfInt<u64> =
@@ -329,7 +303,9 @@ fn build_two_step(
                 macro_rules! build_seq {
                     ($h:ty) => {{
                         let mmphf: SignedFunc<Lcp2MmphfInt<u64>, Box<[$h]>> =
-                            <SignedFunc<Lcp2MmphfInt<u64>, Box<[$h]>>>::try_new_with_builder(lender, n, builder, pl)?;
+                            <SignedFunc<Lcp2MmphfInt<u64>, Box<[$h]>>>::try_new_with_builder(
+                                lender, n, builder, pl,
+                            )?;
                         maybe_store!(mmphf, args.func, args.unaligned);
                     }};
                 }

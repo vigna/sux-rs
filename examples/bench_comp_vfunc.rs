@@ -13,7 +13,7 @@ use lender::*;
 use sux::{
     bits::{BitVec, BitVecU},
     func::{shard_edge::*, *},
-    utils::{LineLender, Sig, ToSig, ZstdLineLender},
+    utils::{DekoBufLineLender, Sig, ToSig},
 };
 
 #[cfg(target_pointer_width = "64")]
@@ -54,9 +54,6 @@ struct Args {
     repeats: usize,
     #[arg(short, long)]
     branchless: Option<bool>,
-    /// The input file is compressed with zstd.​
-    #[arg(short, long)]
-    zstd: bool,
     /// Shard/edge type.​
     #[arg(long, value_enum, default_value_t = sux::cli::ShardEdgeType::Fuse3Shards)]
     edge: sux::cli::ShardEdgeType,
@@ -93,17 +90,10 @@ where
     CompVFunc<str, BitVecU<Box<[usize]>>, S, E>: Deserialize,
 {
     if let Some(filename) = args.filename {
-        let keys: Vec<_> = if args.zstd {
-            ZstdLineLender::from_path(filename)?
-                .map_into_iter(|x| Ok(x.to_owned()))
-                .take(args.n)
-                .collect()?
-        } else {
-            LineLender::from_path(filename)?
-                .map_into_iter(|x| Ok(x.to_owned()))
-                .take(args.n)
-                .collect()?
-        };
+        let keys: Vec<_> = DekoBufLineLender::from_path(filename)?
+            .map_into_iter(|x| Ok(x.to_owned()))
+            .take(args.n)
+            .collect()?;
 
         if args.unaligned {
             let mut func =

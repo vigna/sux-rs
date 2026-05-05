@@ -13,7 +13,7 @@ use lender::*;
 use sux::{
     bits::{BitFieldVec, BitFieldVecU},
     func::{shard_edge::*, *},
-    utils::{LineLender, Sig, ToSig, ZstdLineLender},
+    utils::{DekoBufLineLender, Sig, ToSig},
 };
 
 #[cfg(target_pointer_width = "64")]
@@ -52,9 +52,6 @@ struct Args {
     /// The number of repetitions.​
     #[arg(short, long, default_value = "5")]
     repeats: usize,
-    /// The input file is compressed with zstd.​
-    #[arg(short, long)]
-    zstd: bool,
     /// Shard/edge type.​
     #[arg(long, value_enum, default_value_t)]
     edge: sux::cli::ShardEdgeType,
@@ -94,17 +91,10 @@ where
     VFunc<str, BitFieldVecU<Box<[usize]>>, S, E>: Deserialize,
 {
     if let Some(filename) = args.filename {
-        let keys: Vec<_> = if args.zstd {
-            ZstdLineLender::from_path(filename)?
-                .map_into_iter(|x| Ok(x.to_owned()))
-                .take(args.n)
-                .collect()?
-        } else {
-            LineLender::from_path(filename)?
-                .map_into_iter(|x| Ok(x.to_owned()))
-                .take(args.n)
-                .collect()?
-        };
+        let keys: Vec<_> = DekoBufLineLender::from_path(filename)?
+            .map_into_iter(|x| Ok(x.to_owned()))
+            .take(args.n)
+            .collect()?;
 
         if args.unaligned {
             let func =

@@ -15,7 +15,7 @@ use sux::{
     dict::VFilter,
     func::{shard_edge::*, *},
     traits::{BitFieldSlice, Word},
-    utils::{BinSafe, LineLender, Sig, ToSig, ZstdLineLender},
+    utils::{BinSafe, DekoBufLineLender, Sig, ToSig},
 };
 
 #[cfg(target_pointer_width = "64")]
@@ -57,9 +57,6 @@ struct Args {
     /// The number of repetitions.​
     #[arg(short, long, default_value = "5")]
     repeats: usize,
-    /// The input file is compressed with zstd.​
-    #[arg(short, long)]
-    zstd: bool,
     /// Shard/edge type.​
     #[arg(long, value_enum, default_value_t)]
     edge: sux::cli::ShardEdgeType,
@@ -121,17 +118,10 @@ where
     }
 
     if let Some(filename) = args.filename {
-        let keys: Vec<_> = if args.zstd {
-            ZstdLineLender::from_path(filename)?
-                .map_into_iter(|x| Ok(x.to_owned()))
-                .take(args.n)
-                .collect()?
-        } else {
-            LineLender::from_path(filename)?
-                .map_into_iter(|x| Ok(x.to_owned()))
-                .take(args.n)
-                .collect()?
-        };
+        let keys: Vec<_> = DekoBufLineLender::from_path(filename)?
+            .map_into_iter(|x| Ok(x.to_owned()))
+            .take(args.n)
+            .collect()?;
 
         let filter = unsafe { VFilter::<VFunc<str, Box<[W]>, S, E>>::load_full(&args.func) }?;
 
@@ -176,17 +166,10 @@ where
     VFilter<VFunc<str, BitFieldVecU<Box<[W]>>, S, E>>: Deserialize,
 {
     if let Some(filename) = args.filename {
-        let keys: Vec<_> = if args.zstd {
-            ZstdLineLender::from_path(filename)?
-                .map_into_iter(|x| Ok(x.to_owned()))
-                .take(args.n)
-                .collect()?
-        } else {
-            LineLender::from_path(filename)?
-                .map_into_iter(|x| Ok(x.to_owned()))
-                .take(args.n)
-                .collect()?
-        };
+        let keys: Vec<_> = DekoBufLineLender::from_path(filename)?
+            .map_into_iter(|x| Ok(x.to_owned()))
+            .take(args.n)
+            .collect()?;
 
         if args.unaligned {
             let filter = unsafe {
