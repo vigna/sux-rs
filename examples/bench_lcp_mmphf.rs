@@ -72,7 +72,7 @@ struct Args {
     n: usize,
     /// A name for the ε-serde serialized function.​
     func: String,
-    /// A file containing sorted UTF-8 keys, one per line. If not specified, random sorted u64 keys are used.​
+    /// A file containing sorted UTF-8 keys, one per line; it can be compressed with any format supported by the deko crate. If not specified, random sorted u64 keys are used.​
     #[arg(short = 'f', long)]
     filename: Option<String>,
     /// The number of repetitions.​

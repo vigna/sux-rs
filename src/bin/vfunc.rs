@@ -35,7 +35,7 @@ use sux::utils::{DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, Sig, Si
 ))]
 struct Args {
     /// The number of keys; if no filename is provided, use the 64-bit keys
-    /// [0 . . n) and sequential hashing.​
+    /// [0 . . n).​
     #[arg(short, long)]
     n: Option<usize>,
     /// A file containing UTF-8 keys, one per line (at most N keys will be read); it can be compressed with any format supported by the deko crate.​
@@ -49,7 +49,7 @@ struct Args {
     /// Sign the function using hashes of this type.​
     #[arg(long)]
     hash_type: Option<HashTypes>,
-    /// Hashes file keys sequentially without loading them in RAM (ignored with -n).​
+    /// Hashes keys sequentially without loading them in RAM.​
     #[arg(short, long)]
     sequential: bool,
     #[clap(flatten)]
@@ -104,6 +104,24 @@ macro_rules! n_save_sign_seq(
         let func =
             <SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_new_with_builder(
                 FromCloneableIntoIterator::new(0_usize..$n),
+                $builder,
+                &mut $pl,
+            )?;
+        if let Some(filename) = $func {
+            if $unaligned {
+                unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+            } else {
+                unsafe { func.store(filename) }?;
+            }
+        }
+    }}
+);
+
+macro_rules! n_save_sign_par(
+    ($h: ty, $builder:expr, $keys:expr, $func: expr, $unaligned: expr, $pl: expr) => {{
+        let func =
+            <SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_par_new_with_builder(
+                $keys,
                 $builder,
                 &mut $pl,
             )?;
@@ -283,33 +301,66 @@ where
             .builder
             .configure(VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default())
             .expected_num_keys(n);
-        match args.hash_type {
-            None => {
-                let func = <VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
-                    FromCloneableIntoIterator::from(0_usize..n),
-                    FromCloneableIntoIterator::from(0_usize..),
-                    builder,
-                    &mut pl,
-                )?;
-                if let Some(filename) = args.func {
-                    if args.unaligned {
-                        unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
-                    } else {
-                        unsafe { func.store(filename) }?;
+        if args.sequential {
+            match args.hash_type {
+                None => {
+                    let func =
+                        <VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
+                            FromCloneableIntoIterator::from(0_usize..n),
+                            FromCloneableIntoIterator::from(0_usize..),
+                            builder,
+                            &mut pl,
+                        )?;
+                    if let Some(filename) = args.func {
+                        if args.unaligned {
+                            unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                        } else {
+                            unsafe { func.store(filename) }?;
+                        }
                     }
                 }
+                Some(HashTypes::U8) => {
+                    n_save_sign_seq!(u8, builder, n, args.func, args.unaligned, pl)
+                }
+                Some(HashTypes::U16) => {
+                    n_save_sign_seq!(u16, builder, n, args.func, args.unaligned, pl)
+                }
+                Some(HashTypes::U32) => {
+                    n_save_sign_seq!(u32, builder, n, args.func, args.unaligned, pl)
+                }
+                Some(HashTypes::U64) => {
+                    n_save_sign_seq!(u64, builder, n, args.func, args.unaligned, pl)
+                }
             }
-            Some(HashTypes::U8) => {
-                n_save_sign_seq!(u8, builder, n, args.func, args.unaligned, pl)
-            }
-            Some(HashTypes::U16) => {
-                n_save_sign_seq!(u16, builder, n, args.func, args.unaligned, pl)
-            }
-            Some(HashTypes::U32) => {
-                n_save_sign_seq!(u32, builder, n, args.func, args.unaligned, pl)
-            }
-            Some(HashTypes::U64) => {
-                n_save_sign_seq!(u64, builder, n, args.func, args.unaligned, pl)
+        } else {
+            let keys: Vec<usize> = (0..n).collect();
+            let values: Vec<usize> = (0..n).collect();
+            match args.hash_type {
+                None => {
+                    let func =
+                        <VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
+                            &keys, &values, builder, &mut pl,
+                        )?;
+                    if let Some(filename) = args.func {
+                        if args.unaligned {
+                            unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                        } else {
+                            unsafe { func.store(filename) }?;
+                        }
+                    }
+                }
+                Some(HashTypes::U8) => {
+                    n_save_sign_par!(u8, builder, &keys, args.func, args.unaligned, pl)
+                }
+                Some(HashTypes::U16) => {
+                    n_save_sign_par!(u16, builder, &keys, args.func, args.unaligned, pl)
+                }
+                Some(HashTypes::U32) => {
+                    n_save_sign_par!(u32, builder, &keys, args.func, args.unaligned, pl)
+                }
+                Some(HashTypes::U64) => {
+                    n_save_sign_par!(u64, builder, &keys, args.func, args.unaligned, pl)
+                }
             }
         }
     }

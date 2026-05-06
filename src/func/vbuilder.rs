@@ -925,10 +925,11 @@ impl<
 
                 let start = Instant::now();
 
-                let maybe_max_value = sig_store.par_populate(n, self.max_num_threads, |i| SigVal {
-                    sig: K::to_sig(keys[i].borrow(), seed),
-                    val: val_fn(i),
-                });
+                let maybe_max_value =
+                    sig_store.par_populate(n, self.max_num_threads, |i| SigVal {
+                        sig: K::to_sig(keys[i].borrow(), seed),
+                        val: val_fn(i),
+                    })?;
 
                 pl.done();
 

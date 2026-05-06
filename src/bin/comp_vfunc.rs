@@ -46,7 +46,7 @@ use sux::utils::{DekoBufLineLender, FromCloneableIntoIterator, Sig, SigVal, ToSi
 ))]
 struct Args {
     /// The number of keys; if no filename is provided, use the 64-bit keys
-    /// [0 . . n) and sequential hashing.​
+    /// [0 . . n).​
     #[arg(short, long)]
     n: Option<usize>,
     /// A file containing UTF-8 keys, one per line (at most N keys will
@@ -74,7 +74,7 @@ struct Args {
     unaligned: bool,
     /// A name for the ε-serde serialized function.​
     func: Option<String>,
-    /// Hashes file keys sequentially without loading them in RAM (ignored with -n).​
+    /// Hashes keys sequentially without loading them in RAM.​
     #[arg(short, long)]
     sequential: bool,
     /// Cap on the number of distinct codeword lengths in the Huffman decoding
@@ -251,15 +251,23 @@ where
         } else {
             generate_synthetic_values(&args, n)?
         };
-        let keys = FromCloneableIntoIterator::from(0_usize..n);
-        let func = <CompVFunc<usize, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
-            keys,
-            FromSlice::new(&values),
-            huffman,
-            vbuilder,
-            &mut pl,
-        )?;
-        maybe_store!(func, args.func, args.unaligned);
+        if args.sequential {
+            let keys = FromCloneableIntoIterator::from(0_usize..n);
+            let func = <CompVFunc<usize, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
+                keys,
+                FromSlice::new(&values),
+                huffman,
+                vbuilder,
+                &mut pl,
+            )?;
+            maybe_store!(func, args.func, args.unaligned);
+        } else {
+            let keys: Vec<usize> = (0..n).collect();
+            let func = <CompVFunc<usize, BitVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
+                &keys, &values, huffman, vbuilder, &mut pl,
+            )?;
+            maybe_store!(func, args.func, args.unaligned);
+        }
     }
 
     Ok(())

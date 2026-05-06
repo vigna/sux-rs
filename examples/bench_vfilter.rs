@@ -52,7 +52,7 @@ struct Args {
     #[arg(short, long, default_value_t = 8)]
     bits: u32,
     #[arg(short = 'f', long)]
-    /// A file containing UTF-8 keys, one per line. If not specified, the 64-bit keys [0..n) are used.​
+    /// A file containing UTF-8 keys, one per line; it can be compressed with any format supported by the deko crate. If not specified, the 64-bit keys [0..n) are used.​
     filename: Option<String>,
     /// The number of repetitions.​
     #[arg(short, long, default_value = "5")]

@@ -408,6 +408,13 @@ pub trait SigStore<S: Sig + BinSafe, V: BinSafe> {
 
     /// The temporary directory used by the store, if any.
     fn temp_dir(&self) -> Option<&tempfile::TempDir>;
+
+    /// Reserves capacity in each bucket based on the given per-bucket counts.
+    ///
+    /// For in-memory stores, this pre-allocates the bucket vectors so that
+    /// subsequent pushes avoid reallocations. For on-disk stores, this is a
+    /// no-op.
+    fn reserve_buckets(&mut self, _counts: impl AsRef<[usize]>) {}
 }
 
 /// An implementation of [`SigStore`] that accumulates signature/value pairs in
@@ -634,6 +641,12 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
     fn temp_dir(&self) -> Option<&tempfile::TempDir> {
         None
     }
+
+    fn reserve_buckets(&mut self, counts: impl AsRef<[usize]>) {
+        for (bucket, &count) in self.buckets.iter_mut().zip(counts.as_ref()) {
+            bucket.reserve(count);
+        }
+    }
 }
 
 #[cfg(feature = "rayon")]
@@ -641,123 +654,71 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
     SigStoreImpl<S, V, Vec<SigVal<S, V>>>
 {
     /// Populates the store in parallel by calling `f(i)` for each index
-    /// `0..n` across rayon's thread pool and depositing the resulting
-    /// [`SigVal`] directly into its bucket.
+    /// `0..n` across rayon's thread pool.
     ///
-    /// Each bucket is protected by a [`Mutex`].
-    /// Thread-local buffers (one per bucket) batch insertions to reduce
-    /// lock acquisitions. Returns the maximum value seen (for bit-width
-    /// computation).
+    /// Each thread hashes its chunk of keys into a thread-local buffer
+    /// with zero shared state. A sequential merge phase then distributes
+    /// the buffered items into buckets, freeing each thread's buffer
+    /// after processing.
     ///
-    /// [`Mutex`]: std::sync::Mutex
+    /// Returns the maximum value seen (for bit-width computation).
     pub fn par_populate(
         &mut self,
         n: usize,
         max_num_threads: usize,
         f: impl Fn(usize) -> SigVal<S, V> + Send + Sync,
-    ) -> V
+    ) -> anyhow::Result<V>
     where
         V: Default + Ord + Send,
     {
-        use crate::ParallelWithLen;
         use rayon::prelude::*;
-        use std::sync::Mutex;
 
         let num_buckets = 1usize << self.buckets_high_bits;
-        let num_shards = 1usize << self.max_shard_high_bits;
         let bhb = self.buckets_high_bits;
         let bmask = self.buckets_mask;
-        let shb = self.max_shard_high_bits;
-        let smask = self.max_shard_mask;
 
-        // Wrap each bucket Vec in a Mutex.
-        let mutexed_buckets: Vec<Mutex<Vec<SigVal<S, V>>>> =
-            self.buckets.drain(..).map(Mutex::new).collect();
+        let num_threads = max_num_threads.min(n.max(1));
+        let chunk_size = n.div_ceil(num_threads);
 
-        // Each rayon task uses thread-local per-bucket mini-buffers
-        // (ArrayVec, stack-allocated) to batch mutex acquisitions, and
-        // thread-local counters for bucket/shard sizes (merged at the
-        // end, avoiding all atomic operations in the hot loop).
-        const CAP: usize = 48;
-
-        use arrayvec::ArrayVec;
-
-        let max_val = (0..n)
+        // Phase 1: parallel hashing into thread-local flat buffers with
+        // per-bucket histograms.
+        let thread_results: Vec<(Vec<SigVal<S, V>>, Box<[usize]>)> = (0..num_threads)
             .into_par_iter()
-            .with_len((n / max_num_threads.min(num_buckets)).max(1_000_000))
-            .fold(
-                || {
-                    let bufs: Box<[ArrayVec<SigVal<S, V>, CAP>]> =
-                        (0..num_buckets).map(|_| ArrayVec::new()).collect();
-                    let bc: Box<[usize]> = vec![0usize; num_buckets].into();
-                    let sc: Box<[usize]> = vec![0usize; num_shards].into();
-                    (V::default(), bufs, bc, sc)
-                },
-                |(mut local_max, mut local_bufs, mut bc, mut sc): (
-                    V,
-                    Box<[ArrayVec<SigVal<S, V>, CAP>]>,
-                    Box<[usize]>,
-                    Box<[usize]>,
-                ),
-                 i| {
+            .map(|t| {
+                let start = t * chunk_size;
+                let end = ((t + 1) * chunk_size).min(n);
+                let mut buf = Vec::with_capacity(end - start);
+                let mut bc: Box<[usize]> = vec![0usize; num_buckets].into();
+                for i in start..end {
                     let sv = f(i);
-                    local_max = Ord::max(local_max, sv.val);
-                    let bucket = sv.sig.high_bits(bhb, bmask) as usize;
-                    let shard = sv.sig.high_bits(shb, smask) as usize;
-                    bc[bucket] += 1;
-                    sc[shard] += 1;
-                    local_bufs[bucket].push(sv);
-                    if local_bufs[bucket].is_full() {
-                        mutexed_buckets[bucket]
-                            .lock()
-                            .unwrap()
-                            .extend(local_bufs[bucket].drain(..));
-                    }
-                    (local_max, local_bufs, bc, sc)
-                },
-            )
-            .map(|(local_max, local_bufs, bc, sc)| {
-                for (bucket, buf) in local_bufs.into_vec().into_iter().enumerate() {
-                    if !buf.is_empty() {
-                        mutexed_buckets[bucket].lock().unwrap().extend(buf);
-                    }
+                    bc[sv.sig.high_bits(bhb, bmask) as usize] += 1;
+                    buf.push(sv);
                 }
-                (local_max, bc, sc)
+                (buf, bc)
             })
-            .reduce(
-                || {
-                    let bc: Box<[usize]> = vec![0usize; num_buckets].into();
-                    let sc: Box<[usize]> = vec![0usize; num_shards].into();
-                    (V::default(), bc, sc)
-                },
-                |(max_a, mut bc_a, mut sc_a), (max_b, bc_b, sc_b)| {
-                    let m = Ord::max(max_a, max_b);
-                    for (a, b) in bc_a.iter_mut().zip(bc_b.iter()) {
-                        *a += b;
-                    }
-                    for (a, b) in sc_a.iter_mut().zip(sc_b.iter()) {
-                        *a += b;
-                    }
-                    (m, bc_a, sc_a)
-                },
-            );
+            .collect();
 
-        let (max_val, local_bc, local_sc) = max_val;
-
-        // Move Vecs back out of Mutexes.
-        self.buckets
-            .extend(mutexed_buckets.into_iter().map(|m| m.into_inner().unwrap()));
-
-        // Merge local counters into the store's counts.
-        for (i, c) in local_bc.iter().enumerate() {
-            self.bucket_sizes[i] += c;
+        // Phase 2: sum bucket histograms and reserve capacity.
+        let mut total_bc = vec![0usize; num_buckets];
+        for (_, bc) in &thread_results {
+            for (t, &c) in total_bc.iter_mut().zip(bc.iter()) {
+                *t += c;
+            }
         }
-        for (i, c) in local_sc.iter().enumerate() {
-            self.shard_sizes[i] += c;
+        self.reserve_buckets(&total_bc);
+
+        // Phase 3: merge each thread buffer into the store sequentially,
+        // freeing each buffer after processing.
+        let mut max_val = V::default();
+        for (buf, _) in thread_results {
+            for sv in buf {
+                max_val = Ord::max(max_val, sv.val);
+                // Cannot fail for online stores.
+                self.try_push(sv)?;
+            }
         }
 
-        self.len += n;
-        max_val
+        Ok(max_val)
     }
 }
 
