@@ -460,21 +460,6 @@ mod fuse {
             (0.85 * (n.max(1) as f64).ln()).floor().max(1.) as u32
         }
 
-        /// Returns the log₂ of segment size that makes the graphs peelable with
-        /// high probability, keeping segments as large as possible to reduce
-        /// the probability of duplicate edges.
-        ///
-        /// This function returns [`Fuse3NoShards::log2_seg_size`] for graphs
-        /// with at most 20 million vertices, and
-        /// [`Fuse3Shards::log2_large_seg_size`] for larger graphs.
-        pub fn log2_seg_size(n: usize) -> u32 {
-            if n <= 2 * Self::MIN_FUSE_SHARD {
-                Fuse3NoShards::log2_seg_size(n) // TODO why not larger as un Fuse3Shards?
-            } else {
-                Fuse3Shards::log2_large_seg_size(n)
-            }
-        }
-
         /// Returns the maximum number of high bits for sharding the given
         /// number of keys so that the probability of a duplicate edge in a fuse
         /// graph with segments defined by [`Fuse3Shards::log2_large_seg_size`]
@@ -545,7 +530,7 @@ mod fuse {
             } else {
                 (
                     Fuse3NoShards::c(max_shard),
-                    Self::log2_seg_size(max_shard),
+                    Fuse3Shards::log2_seg_size(max_shard),
                     false,
                 )
             };
@@ -961,7 +946,6 @@ mod fuse {
         /// Minimum shard size. Shards are never smaller than this to keep
         /// the expansion factor near its asymptotic optimum.
         const MIN_SHARD: usize = 10_000_000;
-
         /// Threshold above which the ε-cost sharding segment size formula
         /// is used instead of the standard fuse formula.
         ///
@@ -969,7 +953,7 @@ mod fuse {
         /// smaller segments which measurably reduce construction time and query
         /// time. However, at large sizes the segments are too small to keep the
         /// probability of duplicate edges low.
-        const LARGE_SHARD_THRESHOLD: usize = 100_000_000;
+        const LARGE_SEGMENT_THRESHOLD: usize = 20_000_000;
 
         pub const A: f64 = 0.41;
         pub const B: f64 = -3.0;
@@ -990,16 +974,15 @@ mod fuse {
             (Self::A * n.ln() * n.ln().max(1.).ln() + Self::B).floor() as u32
         }
 
-        /// Returns the log₂ of segment size for fuse 3-hypergraphs.
+        /// Returns the log₂ of segment size that makes the graphs peelable with
+        /// high probability, keeping segments as large as possible to reduce
+        /// the probability of duplicate edges.
         ///
-        /// Uses the standard fuse formula for shards up to
-        /// [`Self::LARGE_SHARD_THRESHOLD`], and the ε-cost sharding formula
-        /// from "[ε-Cost Sharding: Scaling Hypergraph-Based Static Functions
-        /// and Filters to Trillions of Keys]" for larger shards.
-        ///
-        /// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
-        fn log2_seg_size(n: usize) -> u32 {
-            if n <= Self::LARGE_SHARD_THRESHOLD {
+        /// This function returns [`Fuse3NoShards::log2_seg_size`] for less than
+        /// 20 millions, and [`Fuse3Shards::log2_large_seg_size`] for
+        /// larger value.
+        pub fn log2_seg_size(n: usize) -> u32 {
+            if n <= Self::LARGE_SEGMENT_THRESHOLD {
                 Fuse3NoShards::log2_seg_size(n)
             } else {
                 Self::log2_large_seg_size(n) // TODO: check threshold in the two cases
@@ -1068,7 +1051,7 @@ mod fuse {
             max_shard_edges: usize,
         ) -> (f64, bool) {
             let c = Fuse3NoShards::c(max_shard_keys);
-            self.log2_seg_size = FuseLge3Shards::log2_seg_size(max_shard_edges);
+            self.log2_seg_size = Fuse3Shards::log2_seg_size(max_shard_edges);
 
             let num_vertices = (c * max_shard_edges as f64).ceil() as u128;
             assert!(
