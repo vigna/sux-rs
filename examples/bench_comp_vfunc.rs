@@ -52,6 +52,7 @@ struct Args {
     /// The number of repetitions.​
     #[arg(short, long, default_value = "5")]
     repeats: usize,
+    /// Forces at runtime the branchless (true) or branchy (false) decoder.​
     #[arg(short, long)]
     branchless: Option<bool>,
     /// Shard/edge type.​

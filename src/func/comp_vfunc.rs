@@ -65,7 +65,7 @@ use std::marker::PhantomData;
 /// * `D` - the data backend: the output value type is [`D::Word`]; defaults to
 ///   [`BitVec<Box<[usize]>>`](crate::bits::BitVec).
 ///
-/// * `S` - the signature type; defaults to `[u64; 2]` (see [`VFunc` for
+/// * `S` - the signature type; defaults to `[u64; 2]` (see [`VFunc`] for
 ///   details).
 ///
 /// * `E` - the [`ShardEdge`] used for sharding and local hashing;

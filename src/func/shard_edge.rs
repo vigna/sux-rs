@@ -182,9 +182,9 @@ pub trait ShardEdge<S, const K: usize>: Default + Display + Clone + Copy + Send 
     /// [`set_up_shards`]: ShardEdge::set_up_shards
     fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool);
 
-    /// Sets up the edge logic for a *correlated multi-edge* build, where `each
+    /// Sets up the edge logic for a *correlated multi-edge* build, where each
     /// key contributes several correlated edges, as in
-    /// [`CompVFunc`](crate::func::CompVFunc)).
+    /// [`CompVFunc`](crate::func::CompVFunc).
     ///
     /// # Arguments
     ///

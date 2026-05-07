@@ -422,9 +422,6 @@ pub trait SigStore<S: Sig + BinSafe, V: BinSafe> {
     /// The first argument contains one [`Vec`] per bucket with the
     /// items to merge. The second contains shard counts indexed by
     /// the store's `max_shard_high_bits`.
-    ///
-    /// For in-memory stores, each bucket is extended with a bulk
-    /// vector copy. For on-disk stores, items are written in a loop.
     fn merge_from(
         &mut self,
         buckets: Box<[Vec<SigVal<S, V>>]>,
@@ -700,12 +697,11 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
 impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
     SigStoreImpl<S, V, Vec<SigVal<S, V>>>
 {
-    /// Populates the store in parallel by calling `f(i)` for each index
-    /// `0..n` across rayon's thread pool.
+    /// Populates the store in parallel by calling a provided closure for each
+    /// index [0 . . `n`) across rayon's thread pool.
     ///
-    /// Each thread populates its own mini store with zero shared state.
-    /// The mini stores are then merged into this store via
-    /// [`merge_from`], which does a bulk vector copy per bucket.
+    /// Each thread populates a local store. The local stores are then merged
+    /// into this store via [`merge_from`], which does a bulk copy per bucket.
     ///
     /// Returns the maximum value seen (for bit-width computation).
     ///
@@ -721,7 +717,7 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
     {
         use rayon::prelude::*;
 
-        let num_threads = max_num_threads.min(n.max(1));
+        let num_threads = max_num_threads.max(1).min(n.max(1));
         let chunk_size = n.div_ceil(num_threads);
         let num_buckets = 1usize << self.buckets_high_bits;
         let num_shards = 1usize << self.max_shard_high_bits;

@@ -55,7 +55,7 @@ fn gen_query_indices(n: usize) -> Vec<usize> {
 // ── Integer query ───────────────────────────────────────────────────
 
 fn bench_int_query(c: &mut Criterion) {
-    let mut group = c.benchmark_group("lcp_mphf_int_query");
+    let mut group = c.benchmark_group("lcp_mmphf_int_query");
 
     for &(n, label) in SIZES {
         let keys = gen_sorted_u64(n);
@@ -128,7 +128,7 @@ fn bench_int_query(c: &mut Criterion) {
 // ── String query ────────────────────────────────────────────────────
 
 fn bench_str_query(c: &mut Criterion) {
-    let mut group = c.benchmark_group("lcp_mphf_str_query");
+    let mut group = c.benchmark_group("lcp_mmphf_str_query");
 
     for &(n, label) in SIZES {
         let keys = gen_sorted_strings(n);
@@ -221,7 +221,7 @@ fn bench_str_query(c: &mut Criterion) {
 // ── Construction ────────────────────────────────────────────────────
 
 fn bench_int_construction(c: &mut Criterion) {
-    let mut group = c.benchmark_group("lcp_mphf_int_construction");
+    let mut group = c.benchmark_group("lcp_mmphf_int_construction");
     group.sample_size(10);
 
     for &(n, label) in SIZES {
@@ -248,7 +248,7 @@ fn bench_int_construction(c: &mut Criterion) {
 }
 
 fn bench_str_construction(c: &mut Criterion) {
-    let mut group = c.benchmark_group("lcp_mphf_str_construction");
+    let mut group = c.benchmark_group("lcp_mmphf_str_construction");
     group.sample_size(10);
 
     for &(n, label) in SIZES {

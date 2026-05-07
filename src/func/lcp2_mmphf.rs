@@ -94,7 +94,7 @@ pub struct Lcp2MmphfInt<
     D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
     E0 = FuseLge3Shards,
-    F0 = E0,
+    F0 = Fuse3Shards,
     S1 = [u64; 1],
     E1 = Fuse3NoShards,
 > {
@@ -510,26 +510,26 @@ mod build {
                             );
 
                             let escape_usize = (1usize << best_r).wrapping_sub(1);
-                            let num_frequent = escape_usize.min(m);
+                            let num_freq = escape_usize.min(m);
 
                             let remap: Box<[usize]> =
-                                sorted_vals[..num_frequent].to_vec().into_boxed_slice();
+                                sorted_vals[..num_freq].to_vec().into_boxed_slice();
                             let mut inv_map: HybridMap<usize, usize> =
                                 HybridMap::new(Some(state.max_lcp), escape_usize);
                             for (i, &val) in remap.iter().enumerate() {
                                 inv_map.insert(val, i);
                             }
 
-                            let n_escaped = n_keys
-                                - sorted_vals[..num_frequent]
+                            let num_infreq = n_keys
+                                - sorted_vals[..num_freq]
                                     .iter()
                                     .map(|&v| counts.get(v))
                                     .sum::<usize>();
 
                             let w = max_value.bit_len();
                             pl.info(format_args!(
-                                "r: {best_r}; distinct values: {m}; frequent values: {num_frequent} ({:.3}%); max_value: {max_value} ({w} bits)",
-                                100.0 * n_escaped as f64 / n_keys as f64,
+                                "r: {best_r}; distinct values: {m}; frequent values: {num_freq} ({:.3}%); max_value: {max_value} ({w} bits)",
+                                100.0 * num_freq as f64 / n_keys as f64,
                             ));
 
                             // -- Build lcp_freq_len_offset --
@@ -573,9 +573,9 @@ mod build {
                             pl.pop_log_target();
 
                             // -- Build lcp_infreq_len (escaped keys only) --
-                            let lcp_infreq_len = if n_escaped > 0 {
+                            let lcp_infreq_len = if num_infreq > 0 {
                                 let mut long_shard_edge = F0::default();
-                                long_shard_edge.set_up_shards(n_escaped, builder.eps);
+                                long_shard_edge.set_up_shards(num_infreq, builder.eps);
                                 let long_shb = long_shard_edge.shard_high_bits();
 
                                 let long_num_shards = 1usize << long_shb;
@@ -843,15 +843,15 @@ mod build {
             );
 
             let escape_usize = (1usize << best_r).wrapping_sub(1);
-            let num_frequent = escape_usize.min(m);
+            let num_freq = escape_usize.min(m);
 
-            let remap: Box<[usize]> = sorted_vals[..num_frequent].to_vec().into_boxed_slice();
+            let remap: Box<[usize]> = sorted_vals[..num_freq].to_vec().into_boxed_slice();
             let mut inv_map: HybridMap<usize, usize> = HybridMap::new(Some(max_lcp), escape_usize);
             for (i, &val) in remap.iter().enumerate() {
                 inv_map.insert(val, i);
             }
 
-            let n_escaped = n - sorted_vals[..num_frequent]
+            let num_infreq = n - sorted_vals[..num_freq]
                 .iter()
                 .map(|&v| lcp_counts.get(v))
                 .sum::<usize>();
@@ -874,8 +874,8 @@ mod build {
 
                     let w = max_value.bit_len();
                     pl.info(format_args!(
-                        "r: {best_r}; distinct values: {m}; frequent values: {num_frequent} ({:.3}%); max_value: {max_value} ({w} bits)",
-                        100.0 * n_escaped as f64 / n as f64
+                        "r: {best_r}; distinct values: {m}; frequent values: {num_freq} ({:.3}%); max_value: {max_value} ({w} bits)",
+                        100.0 * num_freq as f64 / n as f64
                     ));
 
                     // -- Build lcp_freq_len_offset --
@@ -918,9 +918,9 @@ mod build {
                     pl.pop_log_target();
 
                     // -- Build lcp_infreq_len (escaped keys only) --
-                    let lcp_infreq_len = if n_escaped > 0 {
+                    let lcp_infreq_len = if num_infreq > 0 {
                         let mut long_shard_edge = F0::default();
-                        long_shard_edge.set_up_shards(n_escaped, builder.eps);
+                        long_shard_edge.set_up_shards(num_infreq, builder.eps);
                         let long_shb = long_shard_edge.shard_high_bits();
 
                         let long_num_shards = 1usize << long_shb;
@@ -1301,26 +1301,26 @@ mod build {
                             );
 
                             let escape_usize = (1usize << best_r).wrapping_sub(1);
-                            let num_frequent = escape_usize.min(m);
+                            let num_freq = escape_usize.min(m);
 
                             let remap: Box<[usize]> =
-                                sorted_vals[..num_frequent].to_vec().into_boxed_slice();
+                                sorted_vals[..num_freq].to_vec().into_boxed_slice();
                             let mut inv_map: HybridMap<usize, usize> =
                                 HybridMap::new(Some(state.max_lcp), escape_usize);
                             for (i, &val) in remap.iter().enumerate() {
                                 inv_map.insert(val, i);
                             }
 
-                            let n_escaped = n_keys
-                                - sorted_vals[..num_frequent]
+                            let num_infreq = n_keys
+                                - sorted_vals[..num_freq]
                                     .iter()
                                     .map(|&v| counts.get(v))
                                     .sum::<usize>();
 
                             let w = max_value.bit_len();
                             pl.info(format_args!(
-                                "r: {best_r}; distinct values: {m}; frequent values: {num_frequent} ({:.3}%); max_value: {max_value} ({w} bits)",
-                                100.0 * n_escaped as f64 / n_keys as f64
+                                "r: {best_r}; distinct values: {m}; frequent values: {num_freq} ({:.3}%); max_value: {max_value} ({w} bits)",
+                                100.0 * num_freq as f64 / n_keys as f64
                             ));
 
                             // -- Build lcp_freq_len_offset --
@@ -1364,9 +1364,9 @@ mod build {
                             pl.pop_log_target();
 
                             // -- Build lcp_infreq_len (escaped keys only) --
-                            let lcp_infreq_len = if n_escaped > 0 {
+                            let lcp_infreq_len = if num_infreq > 0 {
                                 let mut long_shard_edge = F0::default();
-                                long_shard_edge.set_up_shards(n_escaped, builder.eps);
+                                long_shard_edge.set_up_shards(num_infreq, builder.eps);
                                 let long_shb = long_shard_edge.shard_high_bits();
 
                                 let long_num_shards = 1usize << long_shb;
@@ -1659,15 +1659,15 @@ mod build {
             );
 
             let escape_usize = (1usize << best_r).wrapping_sub(1);
-            let num_frequent = escape_usize.min(m);
+            let num_freq = escape_usize.min(m);
 
-            let remap: Box<[usize]> = sorted_vals[..num_frequent].to_vec().into_boxed_slice();
+            let remap: Box<[usize]> = sorted_vals[..num_freq].to_vec().into_boxed_slice();
             let mut inv_map: HybridMap<usize, usize> = HybridMap::new(Some(max_lcp), escape_usize);
             for (i, &val) in remap.iter().enumerate() {
                 inv_map.insert(val, i);
             }
 
-            let n_escaped = n - sorted_vals[..num_frequent]
+            let num_infreq = n - sorted_vals[..num_freq]
                 .iter()
                 .map(|&v| lcp_counts.get(v))
                 .sum::<usize>();
@@ -1690,8 +1690,8 @@ mod build {
 
                     let w = max_value.bit_len();
                     pl.info(format_args!(
-                        "r: {best_r}; distinct values: {m}; frequent values: {num_frequent} ({:.3}%); max_value: {max_value} ({w} bits)",
-                        100.0 * n_escaped as f64 / n as f64
+                        "r: {best_r}; distinct values: {m}; frequent values: {num_freq} ({:.3}%); max_value: {max_value} ({w} bits)",
+                        100.0 * num_freq as f64 / n as f64
                     ));
 
                     // -- Build lcp_freq_len_offset --
@@ -1734,9 +1734,9 @@ mod build {
                     pl.pop_log_target();
 
                     // -- Build lcp_infreq_len (escaped keys only) --
-                    let lcp_infreq_len = if n_escaped > 0 {
+                    let lcp_infreq_len = if num_infreq > 0 {
                         let mut long_shard_edge = F0::default();
-                        long_shard_edge.set_up_shards(n_escaped, builder.eps);
+                        long_shard_edge.set_up_shards(num_infreq, builder.eps);
                         let long_shb = long_shard_edge.shard_high_bits();
 
                         let long_num_shards = 1usize << long_shb;
@@ -1982,7 +1982,7 @@ pub type Lcp2MmphfSliceU8<
     D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
     E0 = FuseLge3Shards,
-    F0 = E0,
+    F0 = Fuse3Shards,
     S1 = [u64; 1],
     E1 = Fuse3NoShards,
 > = Lcp2Mmphf<[u8], D, S0, E0, F0, S1, E1>;

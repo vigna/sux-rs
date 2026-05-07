@@ -34,11 +34,6 @@ use sux::func::codec::Decoder;
 use sux::traits::TryIntoUnaligned;
 
 /// Number of pregenerated queries (must be a power of 2 for masking).
-///
-/// Sized to fit comfortably in L2 cache (1 << 17 × 8 B = 1 MiB) so the
-/// query-stream load itself doesn't dominate the per-call timing. The
-/// previous setting of `1 << 24` (128 MiB of queries) blew past L3 and
-/// added ~15 ns of stream-fetch latency to every query.
 const NUM_QUERIES: usize = 1 << 17;
 const QUERY_MASK: usize = NUM_QUERIES - 1;
 

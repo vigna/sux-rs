@@ -45,7 +45,7 @@ struct Args {
     /// Save the structure in unaligned form (faster, if available).​
     #[arg(long, short)]
     unaligned: bool,
-    /// An optional name for the ε-serde serialized filter.​
+    /// A name for the ε-serde serialized filter.​
     filter: Option<String>,
     /// The number of bits of the hashes used by the filter.​
     #[arg(short, long, default_value_t = 8)]

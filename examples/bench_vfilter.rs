@@ -44,10 +44,10 @@ fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks VFilter with strings or 64-bit integers.", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
-    /// The maximum number of strings to use from the file, or the number of 64-bit keys.​
+    /// The maximum number of strings to read from the file, or the number of 64-bit keys.​
     n: usize,
     /// A name for the ε-serde serialized filter.​
-    func: String,
+    filter: String,
     /// The number of bits of the hashes used by the filter.​
     #[arg(short, long, default_value_t = 8)]
     bits: u32,
@@ -123,7 +123,7 @@ where
             .take(args.n)
             .collect()?;
 
-        let filter = unsafe { VFilter::<VFunc<str, Box<[W]>, S, E>>::load_full(&args.func) }?;
+        let filter = unsafe { VFilter::<VFunc<str, Box<[W]>, S, E>>::load_full(&args.filter) }?;
 
         bench(args.n, args.repeats, || {
             let mut u = 0usize;
@@ -134,7 +134,7 @@ where
         });
     } else {
         // No filename
-        let filter = unsafe { VFilter::<VFunc<usize, Box<[W]>, S, E>>::load_full(&args.func) }?;
+        let filter = unsafe { VFilter::<VFunc<usize, Box<[W]>, S, E>>::load_full(&args.filter) }?;
 
         bench(args.n, args.repeats, || {
             let mut u = 0usize;
@@ -173,7 +173,7 @@ where
 
         if args.unaligned {
             let filter = unsafe {
-                VFilter::<VFunc<str, BitFieldVecU<Box<[W]>>, S, E>>::load_full(&args.func)
+                VFilter::<VFunc<str, BitFieldVecU<Box<[W]>>, S, E>>::load_full(&args.filter)
             }?;
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
@@ -184,7 +184,7 @@ where
             });
         } else {
             let filter = unsafe {
-                VFilter::<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func)
+                VFilter::<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.filter)
             }?;
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
@@ -197,7 +197,7 @@ where
     } else {
         if args.unaligned {
             let filter = unsafe {
-                VFilter::<VFunc<usize, BitFieldVecU<Box<[W]>>, S, E>>::load_full(&args.func)
+                VFilter::<VFunc<usize, BitFieldVecU<Box<[W]>>, S, E>>::load_full(&args.filter)
             }?;
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
@@ -210,7 +210,7 @@ where
             });
         } else {
             let filter = unsafe {
-                VFilter::<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func)
+                VFilter::<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.filter)
             }?;
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;

@@ -143,15 +143,12 @@ name = "bench_vfunc"
 required-features = ["cli", "epserde", "deko"]
 
 [[example]]
-name = "bench_comp_vfunc_data"
-
-[[example]]
 name = "bench_vfilter"
 required-features = ["cli", "epserde", "deko"]
 
 [[example]]
 name = "bench_comp_vfunc"
-required-features = ["cli", "epserde", "deko"]
+required-features = ["cli", "epserde", "deko", "rayon"]
 
 [[example]]
 name = "bench_lcp_mmphf"

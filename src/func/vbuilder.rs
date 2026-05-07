@@ -775,7 +775,7 @@ impl<
     ///
     /// On each retry the lenders are rewound. Retries continue for
     /// [`SolveError::UnsolvableShard`] and
-    /// [`SolveError::MaxShardTooBig`]; after 4 duplicate-signature
+    /// [`SolveError::MaxShardTooBig`]; after 3 duplicate-signature
     /// retries [`BuildError::DuplicateKey`] is returned, and after 3
     /// duplicate-local-signature retries
     /// [`BuildError::DuplicateLocalSignatures`] is returned. Any other
@@ -863,17 +863,13 @@ impl<
         }
     }
 
-    /// Like [`try_populate_and_build`], but takes key and value
-    /// **slices** and parallelizes the hash computation and store
-    /// population using rayon.
+    /// Like [`try_populate_and_build`], but takes key and value slices and
+    /// parallelizes the hash computation and store population .
+    ///
+    /// This method calls [`SigStore::par_populate`] to compute signatures and
+    /// populate the store in parallel on rayon worker threads.
     ///
     /// [`try_populate_and_build`]: Self::try_populate_and_build
-    ///
-    /// Each key is hashed on a rayon worker thread and deposited directly
-    /// into its SigStore bucket (protected by a per-bucket mutex). This is
-    /// typically faster than the lender-based path for large in-memory key
-    /// sets, because the expensive per-key hashing runs on all available
-    /// cores.
     pub(crate) fn try_par_populate_and_build<
         K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
         B: Borrow<K> + Sync,
