@@ -733,7 +733,7 @@ mod fuse {
             max_vertices: u128,
         ) -> (f64, bool) {
             let c = Self::c(max_shard_keys);
-            self.log2_seg_size = Self::log2_seg_size(max_shard_edges); // TODO: max_shard_keys?
+            self.log2_seg_size = Self::log2_seg_size(max_shard_edges);
 
             let num_vertices = (c * max_shard_edges as f64).ceil() as u128;
             assert!(
@@ -985,7 +985,7 @@ mod fuse {
             if n <= Self::LARGE_SEGMENT_THRESHOLD {
                 Fuse3NoShards::log2_seg_size(n)
             } else {
-                Self::log2_large_seg_size(n) // TODO: check threshold in the two cases
+                Self::log2_large_seg_size(n)
             }
         }
 
