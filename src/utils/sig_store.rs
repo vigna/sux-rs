@@ -415,6 +415,21 @@ pub trait SigStore<S: Sig + BinSafe, V: BinSafe> {
     /// subsequent pushes avoid reallocations. For on-disk stores, this is a
     /// no-op.
     fn reserve_buckets(&mut self, _counts: impl AsRef<[usize]>) {}
+
+    /// Merges per-bucket data and shard counts into this store,
+    /// updating bucket sizes, shard sizes, and key count.
+    ///
+    /// The first argument contains one [`Vec`] per bucket with the
+    /// items to merge. The second contains shard counts indexed by
+    /// the store's `max_shard_high_bits`.
+    ///
+    /// For in-memory stores, each bucket is extended with a bulk
+    /// vector copy. For on-disk stores, items are written in a loop.
+    fn merge_from(
+        &mut self,
+        buckets: Box<[Vec<SigVal<S, V>>]>,
+        shard_sizes: Box<[usize]>,
+    ) -> Result<(), Self::Error>;
 }
 
 /// An implementation of [`SigStore`] that accumulates signature/value pairs in
@@ -583,6 +598,22 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
     fn temp_dir(&self) -> Option<&tempfile::TempDir> {
         self.temp_dir.as_ref()
     }
+
+    fn merge_from(
+        &mut self,
+        buckets: Box<[Vec<SigVal<S, V>>]>,
+        shard_sizes: Box<[usize]>,
+    ) -> Result<(), Self::Error> {
+        for (b, mini_bucket) in buckets.into_vec().into_iter().enumerate() {
+            self.len += mini_bucket.len();
+            self.bucket_sizes[b] += mini_bucket.len();
+            write_binary(&mut self.buckets[b], &mini_bucket)?;
+        }
+        for (s, &c) in shard_sizes.iter().enumerate() {
+            self.shard_sizes[s] += c;
+        }
+        Ok(())
+    }
 }
 
 impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
@@ -647,6 +678,22 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
             bucket.reserve(count);
         }
     }
+
+    fn merge_from(
+        &mut self,
+        buckets: Box<[Vec<SigVal<S, V>>]>,
+        shard_sizes: Box<[usize]>,
+    ) -> Result<(), Self::Error> {
+        for (b, mini_bucket) in buckets.into_vec().into_iter().enumerate() {
+            self.len += mini_bucket.len();
+            self.bucket_sizes[b] += mini_bucket.len();
+            self.buckets[b].extend(mini_bucket);
+        }
+        for (s, &c) in shard_sizes.iter().enumerate() {
+            self.shard_sizes[s] += c;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(feature = "rayon")]
@@ -656,12 +703,13 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
     /// Populates the store in parallel by calling `f(i)` for each index
     /// `0..n` across rayon's thread pool.
     ///
-    /// Each thread hashes its chunk of keys into a thread-local buffer
-    /// with zero shared state. A sequential merge phase then distributes
-    /// the buffered items into buckets, freeing each thread's buffer
-    /// after processing.
+    /// Each thread populates its own mini store with zero shared state.
+    /// The mini stores are then merged into this store via
+    /// [`merge_from`], which does a bulk vector copy per bucket.
     ///
     /// Returns the maximum value seen (for bit-width computation).
+    ///
+    /// [`merge_from`]: SigStore::merge_from
     pub fn par_populate(
         &mut self,
         n: usize,
@@ -673,49 +721,47 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
     {
         use rayon::prelude::*;
 
-        let num_buckets = 1usize << self.buckets_high_bits;
-        let bhb = self.buckets_high_bits;
-        let bmask = self.buckets_mask;
-
         let num_threads = max_num_threads.min(n.max(1));
         let chunk_size = n.div_ceil(num_threads);
+        let num_buckets = 1usize << self.buckets_high_bits;
+        let num_shards = 1usize << self.max_shard_high_bits;
+        let bhb = self.buckets_high_bits;
+        let bmask = self.buckets_mask;
+        let mshb = self.max_shard_high_bits;
+        let msmask = self.max_shard_mask;
 
-        // Phase 1: parallel hashing into thread-local flat buffers with
-        // per-bucket histograms.
-        let thread_results: Vec<(Vec<SigVal<S, V>>, Box<[usize]>)> = (0..num_threads)
+        let mini_stores: Vec<_> = (0..num_threads)
             .into_par_iter()
             .map(|t| {
                 let start = t * chunk_size;
                 let end = ((t + 1) * chunk_size).min(n);
-                let mut buf = Vec::with_capacity(end - start);
-                let mut bc: Box<[usize]> = vec![0usize; num_buckets].into();
+                let per_bucket = ((end - start).div_ceil(num_buckets) as f64 * 1.10) as usize;
+                let mut buckets: Box<[Vec<SigVal<S, V>>]> = (0..num_buckets)
+                    .map(|_| Vec::with_capacity(per_bucket))
+                    .collect();
+                let mut shard_sizes: Box<[usize]> = vec![0usize; num_shards].into_boxed_slice();
+                let mut max_v = V::default();
                 for i in start..end {
                     let sv = f(i);
-                    bc[sv.sig.high_bits(bhb, bmask) as usize] += 1;
-                    buf.push(sv);
+                    max_v = Ord::max(max_v, sv.val);
+                    let bucket = sv.sig.high_bits(bhb, bmask) as usize;
+                    let shard = sv.sig.high_bits(mshb, msmask) as usize;
+                    shard_sizes[shard] += 1;
+                    buckets[bucket].push(sv);
                 }
-                (buf, bc)
+                (buckets, shard_sizes, max_v)
             })
             .collect();
 
-        // Phase 2: sum bucket histograms and reserve capacity.
-        let mut total_bc = vec![0usize; num_buckets];
-        for (_, bc) in &thread_results {
-            for (t, &c) in total_bc.iter_mut().zip(bc.iter()) {
-                *t += c;
-            }
-        }
-        self.reserve_buckets(&total_bc);
+        let bucket_totals: Vec<usize> = (0..num_buckets)
+            .map(|b| mini_stores.iter().map(|(bs, _, _)| bs[b].len()).sum())
+            .collect();
+        self.reserve_buckets(&bucket_totals);
 
-        // Phase 3: merge each thread buffer into the store sequentially,
-        // freeing each buffer after processing.
         let mut max_val = V::default();
-        for (buf, _) in thread_results {
-            for sv in buf {
-                max_val = Ord::max(max_val, sv.val);
-                // Cannot fail for online stores.
-                self.try_push(sv)?;
-            }
+        for (buckets, shard_sizes, local_max) in mini_stores {
+            max_val = Ord::max(max_val, local_max);
+            self.merge_from(buckets, shard_sizes).unwrap();
         }
 
         Ok(max_val)
