@@ -915,8 +915,9 @@ impl<
                 pl.expected_updates(n);
                 pl.item_name("key");
                 pl.start(format!(
-                    "Computing and storing {}-bit signatures in parallel in RAM using seed 0x{seed:016x}...",
+                    "Computing and storing {}-bit signatures in parallel ({} threads) in RAM using seed 0x{seed:016x}...",
                     std::mem::size_of::<S>() * 8,
+                    self.max_num_threads,
                 ));
 
                 let start = Instant::now();
@@ -1247,12 +1248,11 @@ impl<
         ));
 
         pl.info(format_args!(
-            "c: {}; overhead: {:+.3}%; threads: {}",
+            "c: {}; overhead: {:+.3}%",
             self.c,
             100. * ((shard_edge.num_vertices() * shard_edge.num_shards()) as f64
                 / (self.num_keys as f64)
                 - 1.),
-            self.num_threads
         ));
 
         // main_pl (shard counter) stays at info; per-shard detail at trace
@@ -1416,7 +1416,7 @@ impl<
             .item_name("shard")
             .expected_updates(self.shard_edge.num_shards())
             .display_memory(true)
-            .start("Solving shards...");
+            .start(format!("Solving shards ({} threads)...", self.num_threads));
 
         self.failed.store(false, Ordering::Relaxed);
         let num_shards = self.shard_edge.num_shards();

@@ -527,10 +527,9 @@ where
         let stride = raw_stride.next_multiple_of(W::BITS as usize);
 
         pl.info(format_args!(
-            "c: {}; overhead (vertices/edges): {:+.3}%; number of threads: {}",
+            "c: {}; overhead (vertices/edges): {:+.3}%",
             c,
             100.0 * ((stride * num_shards) as f64 / (total_edges as f64) - 1.),
-            vb.num_threads
         ));
         let padding = stride - num_vertices_per_shard;
         let total_bits = num_shards
