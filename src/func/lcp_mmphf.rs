@@ -307,6 +307,7 @@ mod build {
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<(Self, L)> {
+            let total_start = std::time::Instant::now();
             if n == 0 {
                 return Ok((
                     Self {
@@ -414,6 +415,12 @@ mod build {
                 lcp_to_bucket,
             };
             log_bits_per_key(pl, &result, n);
+            pl.info(format_args!(
+                "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                total_start.elapsed().as_secs_f64(),
+                n,
+                total_start.elapsed().as_nanos() as f64 / n as f64
+            ));
 
             Ok((result, keys))
         }
@@ -511,6 +518,7 @@ mod build {
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
+            let total_start = std::time::Instant::now();
             let n = keys.len();
             if n == 0 {
                 return Ok(Self {
@@ -619,6 +627,12 @@ mod build {
                 lcp_to_bucket,
             };
             log_bits_per_key(pl, &result, n);
+            pl.info(format_args!(
+                "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                total_start.elapsed().as_secs_f64(),
+                n,
+                total_start.elapsed().as_nanos() as f64 / n as f64
+            ));
 
             Ok(result)
         }
@@ -803,6 +817,7 @@ mod build {
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<(Self, L)> {
+            let total_start = std::time::Instant::now();
             if n == 0 {
                 return Ok((
                     Self {
@@ -929,6 +944,12 @@ mod build {
                 lcp_to_bucket,
             };
             log_bits_per_key(pl, &result, n);
+            pl.info(format_args!(
+                "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                total_start.elapsed().as_secs_f64(),
+                n,
+                total_start.elapsed().as_nanos() as f64 / n as f64
+            ));
 
             Ok((result, keys))
         }
@@ -1035,6 +1056,7 @@ mod build {
         where
             K: Sync,
         {
+            let total_start = std::time::Instant::now();
             let n = keys.len();
             if n == 0 {
                 return Ok(Self {
@@ -1156,6 +1178,12 @@ mod build {
                 lcp_to_bucket,
             };
             log_bits_per_key(pl, &result, n);
+            pl.info(format_args!(
+                "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                total_start.elapsed().as_secs_f64(),
+                n,
+                total_start.elapsed().as_nanos() as f64 / n as f64
+            ));
 
             Ok(result)
         }

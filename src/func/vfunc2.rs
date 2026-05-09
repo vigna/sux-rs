@@ -475,7 +475,9 @@ mod build {
             builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> anyhow::Result<Self> {
+            let total_start = std::time::Instant::now();
             let mut builder = builder;
+            let num_keys = builder.num_keys;
             builder
                 .try_populate_and_build(
                     keys,
@@ -495,7 +497,15 @@ mod build {
                     pl,
                     (),
                 )
-                .map(|(r, _keys)| r)
+                .map(|(r, _keys)| {
+                    pl.info(format_args!(
+                        "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                        total_start.elapsed().as_secs_f64(),
+                        num_keys,
+                        total_start.elapsed().as_nanos() as f64 / num_keys as f64
+                    ));
+                    r
+                })
         }
 
         /// Builds a [`VFunc2`] from in-memory key and value slices,
@@ -542,6 +552,7 @@ mod build {
         where
             K: Sync,
         {
+            let total_start = std::time::Instant::now();
             let n = keys.len();
             builder.expected_num_keys(n).try_par_populate_and_build(
                 keys,
@@ -561,6 +572,14 @@ mod build {
                 pl,
                 (),
             )
+            .inspect(|_| {
+                pl.info(format_args!(
+                    "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                    total_start.elapsed().as_secs_f64(),
+                    n,
+                    total_start.elapsed().as_nanos() as f64 / n as f64
+                ));
+            })
         }
 
         /// Builds a [`VFunc2`] from an existing [`ShardStore`].
@@ -645,6 +664,7 @@ mod build {
             SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
             SigVal<F::LocalSig, V>: BitXor + BitXorAssign,
         {
+
             // -- Sort distinct values by descending frequency --
 
             let sorted_vals: Vec<W> = counts.keys_by_desc_value();

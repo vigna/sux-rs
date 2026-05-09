@@ -349,6 +349,7 @@ mod build {
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
             pl: &mut P,
         ) -> Result<(Self, L)> {
+            let total_start = std::time::Instant::now();
             if n == 0 {
                 return Ok((
                     Self {
@@ -654,6 +655,12 @@ mod build {
                 };
 
                 if let Some(r) = rs.handle_solve_result(result, pl)? {
+                    pl.info(format_args!(
+                        "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                        total_start.elapsed().as_secs_f64(),
+                        n,
+                        total_start.elapsed().as_nanos() as f64 / n as f64
+                    ));
                     return Ok((r, keys));
                 }
 
@@ -755,6 +762,7 @@ mod build {
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
             pl: &mut P,
         ) -> Result<Self> {
+            let total_start = std::time::Instant::now();
             let n = keys.len();
             if n == 0 {
                 return Ok(Self {
@@ -994,6 +1002,14 @@ mod build {
                 pl,
                 (),
             )
+            .inspect(|_| {
+                pl.info(format_args!(
+                    "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                    total_start.elapsed().as_secs_f64(),
+                    n,
+                    total_start.elapsed().as_nanos() as f64 / n as f64
+                ));
+            })
         }
     }
 
@@ -1141,6 +1157,7 @@ mod build {
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
             pl: &mut P,
         ) -> Result<(Self, L)> {
+            let total_start = std::time::Instant::now();
             if n == 0 {
                 return Ok((
                     Self {
@@ -1457,6 +1474,12 @@ mod build {
                 };
 
                 if let Some(r) = rs.handle_solve_result(result, pl)? {
+                    pl.info(format_args!(
+                        "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                        total_start.elapsed().as_secs_f64(),
+                        n,
+                        total_start.elapsed().as_nanos() as f64 / n as f64
+                    ));
                     return Ok((r, keys));
                 }
 
@@ -1570,6 +1593,7 @@ mod build {
         where
             K: Sync,
         {
+            let total_start = std::time::Instant::now();
             let n = keys.len();
             if n == 0 {
                 return Ok(Self {
@@ -1814,6 +1838,14 @@ mod build {
                 pl,
                 (),
             )
+            .inspect(|_| {
+                pl.info(format_args!(
+                    "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                    total_start.elapsed().as_secs_f64(),
+                    n,
+                    total_start.elapsed().as_nanos() as f64 / n as f64
+                ));
+            })
         }
     }
 } // mod build
