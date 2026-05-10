@@ -731,7 +731,8 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
             .map(|t| {
                 let start = t * chunk_size;
                 let end = ((t + 1) * chunk_size).min(n);
-                let per_bucket = ((end - start).div_ceil(num_buckets) as f64 * 1.10) as usize;
+                let per_bucket =
+                    (end.saturating_sub(start).div_ceil(num_buckets) as f64 * 1.10) as usize;
                 let mut buckets: Box<[Vec<SigVal<S, V>>]> = (0..num_buckets)
                     .map(|_| Vec::with_capacity(per_bucket))
                     .collect();
