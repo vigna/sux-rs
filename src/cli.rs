@@ -84,14 +84,14 @@ pub fn reservoir_sample(filename: &str, n: usize, seed: u64) -> anyhow::Result<V
 ///
 /// If `queries` has fewer than `n` elements, the queries are repeated
 /// in a round-robin fashion so that exactly `n` entries are produced.
-pub fn pack_strings(queries: &[String], n: usize) -> (Vec<u8>, Vec<u32>) {
+pub fn pack_strings(queries: &[String], n: usize) -> (Vec<u8>, Vec<usize>) {
     assert!(!queries.is_empty(), "no queries to pack");
     let mut packed = Vec::new();
     let mut offsets = Vec::with_capacity(n + 1);
-    offsets.push(0u32);
+    offsets.push(0usize);
     for i in 0..n {
         packed.extend_from_slice(queries[i % queries.len()].as_bytes());
-        offsets.push(packed.len() as u32);
+        offsets.push(packed.len());
     }
     (packed, offsets)
 }

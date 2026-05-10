@@ -109,8 +109,8 @@ fn main_single(args: Args) -> Result<()> {
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
                 for i in 0..args.n {
-                    let s = packed_offsets[i] as usize;
-                    let e = packed_offsets[i + 1] as usize;
+                    let s = packed_offsets[i];
+                    let e = packed_offsets[i + 1];
                     let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
                     u ^= func.get(q);
                 }
@@ -125,8 +125,8 @@ fn main_single(args: Args) -> Result<()> {
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
                 for i in 0..args.n {
-                    let s = packed_offsets[i] as usize;
-                    let e = packed_offsets[i + 1] as usize;
+                    let s = packed_offsets[i];
+                    let e = packed_offsets[i + 1];
                     let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
                     u ^= func.get(q);
                 }
@@ -174,8 +174,8 @@ fn main_two_step(args: Args) -> Result<()> {
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
                 for i in 0..args.n {
-                    let s = packed_offsets[i] as usize;
-                    let e = packed_offsets[i + 1] as usize;
+                    let s = packed_offsets[i];
+                    let e = packed_offsets[i + 1];
                     let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
                     u ^= func.get(q);
                 }
@@ -190,8 +190,8 @@ fn main_two_step(args: Args) -> Result<()> {
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
                 for i in 0..args.n {
-                    let s = packed_offsets[i] as usize;
-                    let e = packed_offsets[i + 1] as usize;
+                    let s = packed_offsets[i];
+                    let e = packed_offsets[i + 1];
                     let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
                     u ^= func.get(q);
                 }

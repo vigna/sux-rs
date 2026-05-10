@@ -66,7 +66,7 @@ fn main() -> Result<()> {
 
     let mut output = bit_field_vec![(args.n - 1).ilog2() as usize + 1 => 0; args.n];
     for i in 0..args.n {
-        output.set_value(func.get(i.to_ne_bytes().as_slice()) as usize, i);
+        output.set_value(func.get(&(i as u64)) as usize, i);
     }
 
     let elapsed = start.elapsed();
