@@ -71,7 +71,7 @@ pub(crate) trait Index<Idx> {
 ///
 /// [zeroing a bit vector]: crate::traits::BitVecOpsMut::reset
 /// [`IndexedParallelIterator::with_min_len`]: rayon::iter::IndexedParallelIterator::with_min_len
-/// [`ParallelWithLen::with_len`]: crate::utils::ParallelWithLen::with_len
+/// [`ParallelWithLen::with_len`]: crate::ParallelWithLen::with_len
 pub const RAYON_MIN_LEN: usize = 100_000;
 
 /// Extension trait to fix Rayon's chunk size for parallel iterators.

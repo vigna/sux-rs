@@ -17,7 +17,7 @@ use rdst::RadixKey;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use sux::bits::BitVec;
-use sux::cli::{BuilderArgs, read_lines_concatenated, str_slice_from_offsets};
+use sux::cli::{BuilderArgs, read_concat_lines, str_slice_from_offsets};
 use sux::func::codec::HuffmanConf;
 use sux::func::shard_edge::{Fuse3NoShards, Fuse3Shards, ShardEdge};
 use sux::func::{CompVFunc, VBuilder};
@@ -232,7 +232,7 @@ where
             )?;
             maybe_store!(func, args.func, args.unaligned);
         } else {
-            let (buffer, offsets) = read_lines_concatenated(filename, n)?;
+            let (buffer, offsets) = read_concat_lines(filename, n)?;
             let keys = str_slice_from_offsets(&buffer, &offsets);
             if keys.len() != n {
                 bail!("key count mismatch: read {} keys, expected {n}", keys.len());

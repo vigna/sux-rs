@@ -15,7 +15,7 @@ use lender::FallibleLender;
 use mem_dbg::{FlatType, MemSize};
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
-use sux::cli::{BuilderArgs, ShardingArgs, read_lines_concatenated, str_slice_from_offsets};
+use sux::cli::{BuilderArgs, ShardingArgs, read_concat_lines, str_slice_from_offsets};
 use sux::dict::VFilter;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
@@ -143,7 +143,7 @@ where
                 unsafe { filter.store(filename) }?;
             }
         } else {
-            let (buffer, offsets) = read_lines_concatenated(filename, n)?;
+            let (buffer, offsets) = read_concat_lines(filename, n)?;
             let keys = str_slice_from_offsets(&buffer, &offsets);
             if let Some(n_hint) = args.n {
                 if keys.len() != n_hint {
@@ -235,7 +235,7 @@ where
                 }
             }
         } else {
-            let (buffer, offsets) = read_lines_concatenated(filename, n)?;
+            let (buffer, offsets) = read_concat_lines(filename, n)?;
             let keys = str_slice_from_offsets(&buffer, &offsets);
             if let Some(n_hint) = args.n {
                 if keys.len() != n_hint {

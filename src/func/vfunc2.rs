@@ -554,32 +554,34 @@ mod build {
         {
             let total_start = std::time::Instant::now();
             let n = keys.len();
-            builder.expected_num_keys(n).try_par_populate_and_build(
-                keys,
-                &|i| values[i],
-                &mut |builder, seed, mut store, _max_value, _num_keys, pl, _state: &mut ()| {
-                    Self::try_build_from_store::<W>(
-                        seed,
-                        builder.shard_edge,
-                        &mut *store,
-                        &|v| v,
-                        VBuilder::default()
-                            .max_num_threads(builder.max_num_threads)
-                            .eps(builder.eps),
-                        pl,
-                    )
-                },
-                pl,
-                (),
-            )
-            .inspect(|_| {
-                pl.info(format_args!(
-                    "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                    total_start.elapsed().as_secs_f64(),
-                    n,
-                    total_start.elapsed().as_nanos() as f64 / n as f64
-                ));
-            })
+            builder
+                .expected_num_keys(n)
+                .try_par_populate_and_build(
+                    keys,
+                    &|i| values[i],
+                    &mut |builder, seed, mut store, _max_value, _num_keys, pl, _state: &mut ()| {
+                        Self::try_build_from_store::<W>(
+                            seed,
+                            builder.shard_edge,
+                            &mut *store,
+                            &|v| v,
+                            VBuilder::default()
+                                .max_num_threads(builder.max_num_threads)
+                                .eps(builder.eps),
+                            pl,
+                        )
+                    },
+                    pl,
+                    (),
+                )
+                .inspect(|_| {
+                    pl.info(format_args!(
+                        "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                        total_start.elapsed().as_secs_f64(),
+                        n,
+                        total_start.elapsed().as_nanos() as f64 / n as f64
+                    ));
+                })
         }
 
         /// Builds a [`VFunc2`] from an existing [`ShardStore`].
@@ -664,7 +666,6 @@ mod build {
             SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
             SigVal<F::LocalSig, V>: BitXor + BitXorAssign,
         {
-
             // -- Sort distinct values by descending frequency --
 
             let sorted_vals: Vec<W> = counts.keys_by_desc_value();

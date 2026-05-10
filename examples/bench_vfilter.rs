@@ -8,14 +8,13 @@
 use anyhow::Result;
 use clap::Parser;
 use epserde::prelude::*;
-use fallible_iterator::FallibleIterator;
-use lender::*;
 use sux::{
     bits::{BitFieldVec, BitFieldVecU},
+    cli::{pack_strings, reservoir_sample},
     dict::VFilter,
     func::{shard_edge::*, *},
     traits::{BitFieldSlice, Word},
-    utils::{BinSafe, DekoBufLineLender, Sig, ToSig},
+    utils::{BinSafe, Sig, ToSig},
 };
 
 #[cfg(target_pointer_width = "64")]
@@ -44,7 +43,7 @@ fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks VFilter with strings or 64-bit integers.", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
-    /// The maximum number of strings to read from the file, or the number of 64-bit keys.​
+    /// The number of queries to perform.​
     n: usize,
     /// A name for the ε-serde serialized filter.​
     filter: String,
@@ -117,18 +116,21 @@ where
         panic!("Unaligned reads are not supported for backend Box<[W]>");
     }
 
-    if let Some(filename) = args.filename {
-        let keys: Vec<_> = DekoBufLineLender::from_path(filename)?
-            .map_into_iter(|x| Ok(x.to_owned()))
-            .take(args.n)
-            .collect()?;
+    if let Some(ref filename) = args.filename {
+        let (packed, packed_offsets) = {
+            let queries = reservoir_sample(filename, args.n, 42)?;
+            pack_strings(&queries, args.n)
+        };
 
         let filter = unsafe { VFilter::<VFunc<str, Box<[W]>, S, E>>::load_full(&args.filter) }?;
 
         bench(args.n, args.repeats, || {
             let mut u = 0usize;
-            for key in &keys {
-                u ^= filter.contains(key.as_str()) as usize;
+            for i in 0..args.n {
+                let s = packed_offsets[i] as usize;
+                let e = packed_offsets[i + 1] as usize;
+                let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
+                u ^= filter.contains(q) as usize;
             }
             std::hint::black_box(u);
         });
@@ -165,11 +167,11 @@ where
     VFilter<VFunc<usize, BitFieldVecU<Box<[W]>>, S, E>>: Deserialize,
     VFilter<VFunc<str, BitFieldVecU<Box<[W]>>, S, E>>: Deserialize,
 {
-    if let Some(filename) = args.filename {
-        let keys: Vec<_> = DekoBufLineLender::from_path(filename)?
-            .map_into_iter(|x| Ok(x.to_owned()))
-            .take(args.n)
-            .collect()?;
+    if let Some(ref filename) = args.filename {
+        let (packed, packed_offsets) = {
+            let queries = reservoir_sample(filename, args.n, 42)?;
+            pack_strings(&queries, args.n)
+        };
 
         if args.unaligned {
             let filter = unsafe {
@@ -177,8 +179,11 @@ where
             }?;
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
-                for key in &keys {
-                    u ^= filter.contains(key.as_str()) as usize;
+                for i in 0..args.n {
+                    let s = packed_offsets[i] as usize;
+                    let e = packed_offsets[i + 1] as usize;
+                    let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
+                    u ^= filter.contains(q) as usize;
                 }
                 std::hint::black_box(u);
             });
@@ -188,8 +193,11 @@ where
             }?;
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
-                for key in &keys {
-                    u ^= filter.contains(key.as_str()) as usize;
+                for i in 0..args.n {
+                    let s = packed_offsets[i] as usize;
+                    let e = packed_offsets[i + 1] as usize;
+                    let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
+                    u ^= filter.contains(q) as usize;
                 }
                 std::hint::black_box(u);
             });

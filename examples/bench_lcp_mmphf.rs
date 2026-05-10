@@ -8,14 +8,12 @@
 use anyhow::Result;
 use clap::Parser;
 use epserde::prelude::*;
-use fallible_iterator::FallibleIterator;
-use lender::*;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::{
     bits::BitFieldVecU,
+    cli::{pack_strings, reservoir_sample},
     func::{lcp_mmphf::*, lcp2_mmphf::*},
-    utils::DekoBufLineLender,
 };
 
 fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
@@ -104,35 +102,33 @@ fn main_single(args: Args) -> Result<()> {
     if let Some(ref filename) = args.filename {
         if args.unaligned {
             let func = unsafe { <LcpMmphfStr<BitFieldVecU<Box<[usize]>>>>::load_full(&args.func) }?;
-            let keys: Vec<String> = DekoBufLineLender::from_path(filename)?
-                .map_into_iter(|x| Ok(x.to_owned()))
-                .take(func.len())
-                .collect()?;
-            let mut rng = SmallRng::seed_from_u64(42);
-            let queries: Vec<&str> = (0..args.n)
-                .map(|_| keys[(rng.random::<u64>() % keys.len() as u64) as usize].as_str())
-                .collect();
+            let (packed, packed_offsets) = {
+                let queries = reservoir_sample(filename, args.n, 42)?;
+                pack_strings(&queries, args.n)
+            };
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
-                for &key in &queries {
-                    u ^= func.get(key);
+                for i in 0..args.n {
+                    let s = packed_offsets[i] as usize;
+                    let e = packed_offsets[i + 1] as usize;
+                    let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
+                    u ^= func.get(q);
                 }
                 std::hint::black_box(u);
             });
         } else {
             let func = unsafe { <LcpMmphfStr>::load_full(&args.func) }?;
-            let keys: Vec<String> = DekoBufLineLender::from_path(filename)?
-                .map_into_iter(|x| Ok(x.to_owned()))
-                .take(func.len())
-                .collect()?;
-            let mut rng = SmallRng::seed_from_u64(42);
-            let queries: Vec<&str> = (0..args.n)
-                .map(|_| keys[(rng.random::<u64>() % keys.len() as u64) as usize].as_str())
-                .collect();
+            let (packed, packed_offsets) = {
+                let queries = reservoir_sample(filename, args.n, 42)?;
+                pack_strings(&queries, args.n)
+            };
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
-                for &key in &queries {
-                    u ^= func.get(key);
+                for i in 0..args.n {
+                    let s = packed_offsets[i] as usize;
+                    let e = packed_offsets[i + 1] as usize;
+                    let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
+                    u ^= func.get(q);
                 }
                 std::hint::black_box(u);
             });
@@ -171,35 +167,33 @@ fn main_two_step(args: Args) -> Result<()> {
         if args.unaligned {
             let func =
                 unsafe { <Lcp2MmphfStr<BitFieldVecU<Box<[usize]>>>>::load_full(&args.func) }?;
-            let keys: Vec<String> = DekoBufLineLender::from_path(filename)?
-                .map_into_iter(|x| Ok(x.to_owned()))
-                .take(func.len())
-                .collect()?;
-            let mut rng = SmallRng::seed_from_u64(42);
-            let queries: Vec<&str> = (0..args.n)
-                .map(|_| keys[(rng.random::<u64>() % keys.len() as u64) as usize].as_str())
-                .collect();
+            let (packed, packed_offsets) = {
+                let queries = reservoir_sample(filename, args.n, 42)?;
+                pack_strings(&queries, args.n)
+            };
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
-                for &key in &queries {
-                    u ^= func.get(key);
+                for i in 0..args.n {
+                    let s = packed_offsets[i] as usize;
+                    let e = packed_offsets[i + 1] as usize;
+                    let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
+                    u ^= func.get(q);
                 }
                 std::hint::black_box(u);
             });
         } else {
             let func = unsafe { <Lcp2MmphfStr>::load_full(&args.func) }?;
-            let keys: Vec<String> = DekoBufLineLender::from_path(filename)?
-                .map_into_iter(|x| Ok(x.to_owned()))
-                .take(func.len())
-                .collect()?;
-            let mut rng = SmallRng::seed_from_u64(42);
-            let queries: Vec<&str> = (0..args.n)
-                .map(|_| keys[(rng.random::<u64>() % keys.len() as u64) as usize].as_str())
-                .collect();
+            let (packed, packed_offsets) = {
+                let queries = reservoir_sample(filename, args.n, 42)?;
+                pack_strings(&queries, args.n)
+            };
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
-                for &key in &queries {
-                    u ^= func.get(key);
+                for i in 0..args.n {
+                    let s = packed_offsets[i] as usize;
+                    let e = packed_offsets[i + 1] as usize;
+                    let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
+                    u ^= func.get(q);
                 }
                 std::hint::black_box(u);
             });

@@ -11,7 +11,7 @@ use epserde::ser::Serialize;
 use lender::FallibleLender;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
-use sux::cli::{BuilderArgs, HashTypes, read_lines_concatenated, str_slice_from_offsets};
+use sux::cli::{BuilderArgs, HashTypes, read_concat_lines, str_slice_from_offsets};
 use sux::func::lcp_mmphf::*;
 use sux::func::lcp2_mmphf::*;
 use sux::func::signed::*;
@@ -136,7 +136,7 @@ fn build_single(
                         LcpMmphfStr::try_new_with_builder(lender, n, builder, pl)?;
                     maybe_store!(mmphf, args.func, args.unaligned);
                 } else {
-                    let (buffer, offsets) = read_lines_concatenated(filename, n)?;
+                    let (buffer, offsets) = read_concat_lines(filename, n)?;
                     let keys = str_slice_from_offsets(&buffer, &offsets);
                     if let Some(n_hint) = args.n {
                         if keys.len() != n_hint {
@@ -170,7 +170,7 @@ fn build_single(
                         HashTypes::U64 => build_seq!(u64),
                     }
                 } else {
-                    let (buffer, offsets) = read_lines_concatenated(filename, n)?;
+                    let (buffer, offsets) = read_concat_lines(filename, n)?;
                     let keys = str_slice_from_offsets(&buffer, &offsets);
                     macro_rules! build_par {
                         ($h:ty) => {{
@@ -263,7 +263,7 @@ fn build_two_step(
                         Lcp2MmphfStr::try_new_with_builder(lender, n, builder, pl)?;
                     maybe_store!(mmphf, args.func, args.unaligned);
                 } else {
-                    let (buffer, offsets) = read_lines_concatenated(filename, n)?;
+                    let (buffer, offsets) = read_concat_lines(filename, n)?;
                     let keys = str_slice_from_offsets(&buffer, &offsets);
                     if let Some(n_hint) = args.n {
                         if keys.len() != n_hint {
@@ -297,7 +297,7 @@ fn build_two_step(
                         HashTypes::U64 => build_seq!(u64),
                     }
                 } else {
-                    let (buffer, offsets) = read_lines_concatenated(filename, n)?;
+                    let (buffer, offsets) = read_concat_lines(filename, n)?;
                     let keys = str_slice_from_offsets(&buffer, &offsets);
                     macro_rules! build_par {
                         ($h:ty) => {{

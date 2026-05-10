@@ -15,9 +15,7 @@ use lender::FallibleLender;
 use mem_dbg::{FlatType, MemSize};
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
-use sux::cli::{
-    BuilderArgs, HashTypes, ShardingArgs, read_lines_concatenated, str_slice_from_offsets,
-};
+use sux::cli::{BuilderArgs, HashTypes, ShardingArgs, read_concat_lines, str_slice_from_offsets};
 use sux::func::signed::SignedFunc;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
@@ -256,7 +254,7 @@ where
             // Parallel: read all keys into a single concatenated
             // buffer, then build a `Vec<&str>` of slices into it for
             // cache-friendly access during sig hashing.
-            let (buffer, offsets) = read_lines_concatenated(filename, n)?;
+            let (buffer, offsets) = read_concat_lines(filename, n)?;
             let keys = str_slice_from_offsets(&buffer, &offsets);
             if let Some(n_hint) = args.n {
                 if keys.len() != n_hint {

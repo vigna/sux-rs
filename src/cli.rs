@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-//! Shared CLI types for the `vfunc` and `lcp_mmphf` binaries.
+//! Shared CLI utilities for binaries and example benchmarks.
 
 use std::fmt::Display;
 use std::time::Duration;
@@ -13,19 +13,13 @@ use crate::bits::BitFieldVec;
 use crate::func::VBuilder;
 use crate::func::shard_edge::ShardEdge;
 
-/// Reads up to `n` lines from `filename` (optionally compressed) into a
-/// single concatenated [`String`] buffer, returning the buffer together
-/// with an `offsets` vector such that line `i` is
-/// `&buffer[offsets[i] .. offsets[i+1]]`.
+/// Reads up to `n` lines from `filename` using a [`DekoBufLineLender`] into a
+/// single concatenated [`String`] buffer, returning the buffer together with an
+/// `offsets` vector such that line `i` is `&buffer[offsets[i]..offsets[i+1]]`.
 ///
-/// Used by the parallel in-memory construction path of the CLI
-/// utilities: callers build a `Vec<&str>` of slices into the buffer via
-/// [`str_slice_from_offsets`], giving cache-friendly access during
-/// signature hashing — one big allocation plus fixed-size `&str`
-/// references, instead of `n` independent heap allocations as with a
-/// `Vec<String>`.
+/// [`DekoBufLineLender`]: crate::utils::DekoBufLineLender
 #[cfg(feature = "deko")]
-pub fn read_lines_concatenated(filename: &str, n: usize) -> anyhow::Result<(String, Vec<usize>)> {
+pub fn read_concat_lines(filename: &str, n: usize) -> anyhow::Result<(String, Vec<usize>)> {
     use lender::FallibleLender;
 
     let mut buffer = String::new();
@@ -45,10 +39,61 @@ pub fn read_lines_concatenated(filename: &str, n: usize) -> anyhow::Result<(Stri
 }
 
 /// Builds a `Vec<&str>` of slices into `buffer` using the offsets
-/// produced by [`read_lines_concatenated`].
-#[inline]
+/// produced by [`read_concat_lines`].
 pub fn str_slice_from_offsets<'a>(buffer: &'a str, offsets: &[usize]) -> Vec<&'a str> {
     offsets.windows(2).map(|w| &buffer[w[0]..w[1]]).collect()
+}
+
+/// Reservoir-samples up to `n` lines from `filename` using a
+/// [`DekoBufLineLender`]. Each line in the file has equal probability of
+/// appearing in the result. The result is shuffled so that the strings are not
+/// in file order.
+///
+/// [`DekoBufLineLender`]: crate::utils::DekoBufLineLender
+#[cfg(feature = "deko")]
+pub fn reservoir_sample(filename: &str, n: usize, seed: u64) -> anyhow::Result<Vec<String>> {
+    use lender::FallibleLender;
+    use rand::rngs::SmallRng;
+    use rand::seq::SliceRandom;
+    use rand::{RngExt, SeedableRng};
+
+    let mut rng = SmallRng::seed_from_u64(seed);
+    let mut reservoir: Vec<String> = Vec::with_capacity(n);
+    let mut lender = crate::utils::DekoBufLineLender::from_path(filename)?;
+    let mut i = 0usize;
+    while let Some(line) = lender.next()? {
+        if i < n {
+            reservoir.push(line.to_owned());
+        } else {
+            let j = rng.random_range(0..=i);
+            if j < n {
+                reservoir[j] = line.to_owned();
+            }
+        }
+        i += 1;
+    }
+    reservoir.shuffle(&mut rng);
+    Ok(reservoir)
+}
+
+/// Packs `n` strings into a contiguous byte buffer by cycling through
+/// `queries`.
+///
+/// Returns the buffer and offsets such that query `i` is `&packed[offsets[i] as
+/// usize .. offsets[i+1] as usize]`.
+///
+/// If `queries` has fewer than `n` elements, the queries are repeated
+/// in a round-robin fashion so that exactly `n` entries are produced.
+pub fn pack_strings(queries: &[String], n: usize) -> (Vec<u8>, Vec<u32>) {
+    assert!(!queries.is_empty(), "no queries to pack");
+    let mut packed = Vec::new();
+    let mut offsets = Vec::with_capacity(n + 1);
+    offsets.push(0u32);
+    for i in 0..n {
+        packed.extend_from_slice(queries[i % queries.len()].as_bytes());
+        offsets.push(packed.len() as u32);
+    }
+    (packed, offsets)
 }
 
 /// Hash types for signed functions.​
