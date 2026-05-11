@@ -6,3 +6,4 @@ runner = "wasmtime"
 
 [alias]
 cli = "build --features=cli,rayon,deko,epserde --release --bin"
+ex = "build --features=cli,rayon,deko,epserde --release --example"
