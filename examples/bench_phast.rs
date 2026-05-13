@@ -8,8 +8,9 @@
 
 use anyhow::Result;
 use clap::Parser;
+use mem_dbg::{MemSize, SizeFlags};
 use ph::{
-    BuildDefaultSeededHasher,
+    BuildDefaultSeededHasher, GetSize,
     fmph::Bits8,
     phast::{self, DefaultCompressedArray, Params, SeedOnly, bits_per_seed_to_100_bucket_size},
 };
@@ -76,6 +77,11 @@ fn main() -> Result<()> {
         "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
         secs, args.n, ns_per_key
     );
+
+    let bytes = func.size_bytes() + output.mem_size(SizeFlags::default());
+    eprintln!("Bits/key: {:.3}", (bytes * 8) as f64 / args.n as f64);
+
+    drop(keys);
 
     bench(args.samples, args.repeats, || {
         let mut key: u64 = 0;

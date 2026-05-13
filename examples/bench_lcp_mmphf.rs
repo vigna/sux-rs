@@ -139,6 +139,7 @@ fn main_single(args: Args) -> Result<()> {
                 unsafe { LcpMmphfInt::<u64, BitFieldVecU<Box<[usize]>>>::load_full(&args.func) }?;
             let keys = gen_sorted_keys(func.len(), 0);
             let queries = sample_queries(&keys, args.n, 42);
+            drop(keys);
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
                 for &key in &queries {
@@ -150,6 +151,7 @@ fn main_single(args: Args) -> Result<()> {
             let func = unsafe { LcpMmphfInt::<u64>::load_full(&args.func) }?;
             let keys = gen_sorted_keys(func.len(), 0);
             let queries = sample_queries(&keys, args.n, 42);
+            drop(keys);
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
                 for &key in &queries {
@@ -204,6 +206,7 @@ fn main_two_step(args: Args) -> Result<()> {
                 unsafe { Lcp2MmphfInt::<u64, BitFieldVecU<Box<[usize]>>>::load_full(&args.func) }?;
             let keys = gen_sorted_keys(func.len(), 0);
             let queries = sample_queries(&keys, args.n, 42);
+            drop(keys);
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
                 for &key in &queries {
@@ -215,6 +218,7 @@ fn main_two_step(args: Args) -> Result<()> {
             let func = unsafe { Lcp2MmphfInt::<u64>::load_full(&args.func) }?;
             let keys = gen_sorted_keys(func.len(), 0);
             let queries = sample_queries(&keys, args.n, 42);
+            drop(keys);
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
                 for &key in &queries {
