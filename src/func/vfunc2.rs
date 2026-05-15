@@ -384,8 +384,6 @@ mod build {
         ///   same order). The [`lenders`] module provides easy ways to
         ///   build such lenders.
         ///
-        /// [`try_new_with_builder`]: Self::try_new_with_builder
-        ///
         /// # Examples
         ///
         /// ```rust
@@ -409,6 +407,8 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_new<B: ?Sized + std::borrow::Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: Error + Send + Sync + 'static,
@@ -434,11 +434,6 @@ mod build {
         ///   same order). The [`lenders`] module provides easy ways to
         ///   build such lenders.
         ///
-        /// [offline mode]: VBuilder::offline
-        /// [thread count]: VBuilder::max_num_threads
-        /// [sharding overhead]: VBuilder::eps
-        /// [PRNG seed]: VBuilder::seed
-        ///
         /// # Examples
         ///
         /// ```rust
@@ -463,6 +458,11 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
         pub fn try_new_with_builder<B: ?Sized + std::borrow::Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: Error + Send + Sync + 'static,
@@ -591,10 +591,6 @@ mod build {
         /// [`try_new`] or [`try_new_with_builder`] for the common case of
         /// building from keys and values directly.
         ///
-        /// [`Lcp2Mmphf`]: crate::func::Lcp2Mmphf
-        /// [`try_new`]: Self::try_new
-        /// [`try_new_with_builder`]: Self::try_new_with_builder
-        ///
         /// # Preconditions
         ///
         /// * `seed` and `shard_edge` must be the values used when the store
@@ -617,6 +613,10 @@ mod build {
         ///
         /// * `builder` - the builder configuration for the internal VFuncs.
         /// * `pl` - a progress logger.
+        ///
+        /// [`Lcp2Mmphf`]: crate::func::Lcp2Mmphf
+        /// [`try_new`]: Self::try_new
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_build_from_store<V: BinSafe + Default + Send + Sync + Copy>(
             seed: u64,
             shard_edge: E,

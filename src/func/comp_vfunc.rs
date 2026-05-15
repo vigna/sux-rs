@@ -37,7 +37,7 @@ use std::marker::PhantomData;
 /// [`VFunc`].
 ///
 /// When the value distribution is skewed, this uses much less space than
-/// [`VFunc`]: roughly the empirical entropy of the value list plus ≈11%
+/// [`VFunc`]—roughly the empirical entropy of the value list plus ≈11%
 /// overhead. This estimate, however, does not take into consideration the
 /// storage of the decoder, which can be significant when the number of
 /// keys is very small.

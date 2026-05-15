@@ -60,11 +60,6 @@ use std::ops::Index;
 /// [`SelectZeroAdaptConst`] is a variant of this structure that provides
 /// the same functionality for zero bits.
 ///
-/// [`SelectAdapt`]: super::SelectAdapt
-/// [`SelectAdapt::with_inv`]: super::SelectAdapt::with_inv
-/// [Elias-Fano representation of monotone sequences]: crate::dict::EliasFano
-/// [`SelectZeroAdaptConst`]: super::SelectZeroAdaptConst
-///
 /// This structure forwards several traits and [`Deref`]'s to its backend.
 ///
 /// # Examples
@@ -156,7 +151,11 @@ use std::ops::Index;
 /// assert_eq!(rank9_sel[7], true);
 /// # }
 /// ```
-
+///
+/// [`SelectAdapt`]: super::SelectAdapt
+/// [`SelectAdapt::with_inv`]: super::SelectAdapt::with_inv
+/// [Elias-Fano representation of monotone sequences]: crate::dict::EliasFano
+/// [`SelectZeroAdaptConst`]: super::SelectZeroAdaptConst
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

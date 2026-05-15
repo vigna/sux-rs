@@ -37,9 +37,6 @@
 //! Most structures implement the [`TryIntoUnaligned`] trait, allowing them
 //! to be converted into (usually faster) structures using unaligned access.
 //!
-//! [`BitFieldVec`]: crate::bits::BitFieldVec
-//! [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
-//!
 //! All constructors follow the pattern `try_new(keys, …, pl)` for default
 //! settings, and `try_new_with_builder(keys, …, builder, pl)` to configure
 //! the [`VBuilder`] (offline mode, thread count, sharding overhead, seed).
@@ -70,6 +67,9 @@
 //! # #[cfg(not(feature = "rayon"))]
 //! # fn main() {}
 //! ```
+//!
+//! [`BitFieldVec`]: crate::bits::BitFieldVec
+//! [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 
 mod vfunc;
 pub use vfunc::*;

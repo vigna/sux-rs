@@ -45,9 +45,6 @@ use std::ops::Index;
 
 /// A version of [`SelectAdapt`] implementing [selection on zeros].
 ///
-/// [`SelectAdapt`]: super::SelectAdapt
-/// [selection on zeros]: crate::traits::SelectZero
-///
 /// # Examples
 /// ```rust
 /// # #[cfg(target_pointer_width = "64")]
@@ -137,7 +134,9 @@ use std::ops::Index;
 /// assert_eq!(rank9_sel[7], false);
 /// # }
 /// ```
-
+///
+/// [`SelectAdapt`]: super::SelectAdapt
+/// [selection on zeros]: crate::traits::SelectZero
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

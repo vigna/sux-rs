@@ -83,12 +83,6 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 ///
 /// This structure forwards several traits and [`Deref`]'s to its backend.
 ///
-/// [`rank_small`]: crate::rank_small
-/// [`Rank9`]: super::Rank9
-/// [`SelectSmall`]: crate::rank_sel::SelectSmall
-/// [`SelectZeroSmall`]: crate::rank_sel::SelectZeroSmall
-/// [improved layout of relative counters by Gog & Petri]: https://doi.org/10.1002/spe.2198
-///
 /// # Implementation details
 ///
 /// The first const generic parameter `WORD_BITS` (32 or 64) specifies the
@@ -140,14 +134,17 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// counters on the fly they store the cumulative counters directly using
 /// implicit zero extension. They are the default suggested by the macro.
 ///
-/// [`poppy`]: https://doi.org/10.1007/978-3-642-38527-8_15
-/// [backend]: Backend
-///
 /// # Examples
 ///
 /// See the [`rank_small`] macro documentation for examples of construction and usage.
 ///
 /// [`rank_small`]: crate::rank_small
+/// [`Rank9`]: super::Rank9
+/// [`SelectSmall`]: crate::rank_sel::SelectSmall
+/// [`SelectZeroSmall`]: crate::rank_sel::SelectZeroSmall
+/// [improved layout of relative counters by Gog & Petri]: https://doi.org/10.1002/spe.2198
+/// [`poppy`]: https://doi.org/10.1007/978-3-642-38527-8_15
+/// [backend]: Backend
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

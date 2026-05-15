@@ -71,14 +71,10 @@ use std::ops::{Deref, Index};
 /// to the large space, unless the bit vector has a pathologically irregular bit
 /// distribution [`SelectAdapt`] is usually a better choice.
 ///
-/// [`SelectAdapt`]: super::SelectAdapt
-///
 /// This structure has been described by Sebastiano Vigna in “[Broadword
 /// Implementation of Rank/Select Queries]”, _Proc. of the 7th International
 /// Workshop on Experimental Algorithms, WEA 2008_, volume 5038 of Lecture
 /// Notes in Computer Science, pages 154–168, Springer, 2008.
-///
-/// [Broadword Implementation of Rank/Select Queries]: https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12
 ///
 /// This structure forwards several traits and [`Deref`]'s to its inner
 /// [`Rank9`].
@@ -128,6 +124,9 @@ use std::ops::{Deref, Index};
 /// assert_eq!(select9[7], true);
 /// # }
 /// ```
+///
+/// [`SelectAdapt`]: super::SelectAdapt
+/// [Broadword Implementation of Rank/Select Queries]: https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

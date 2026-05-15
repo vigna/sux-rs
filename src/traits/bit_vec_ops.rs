@@ -117,13 +117,13 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
     /// Additionally, a padding word must be present at the end of the
     /// underlying storage.
     ///
-    /// [`BitFieldVec::get_unaligned`]: crate::bits::BitFieldVec::get_unaligned
-    ///
     /// # Panics
     ///
     /// Panics if `pos + width` exceeds the bit length, if
     /// `width + (pos % 8)` exceeds `W::BITS`, or if the read would
     /// exceed the allocation.
+    ///
+    /// [`BitFieldVec::get_unaligned`]: crate::bits::BitFieldVec::get_unaligned
     fn get_value_unaligned(&self, pos: usize, width: usize) -> W {
         assert!(
             test_unaligned_pos!(W, pos, width),

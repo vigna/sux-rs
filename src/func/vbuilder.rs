@@ -57,9 +57,6 @@ fn default_max_num_threads() -> usize {
 /// There are several setters: for example, you can [set the maximum number
 /// of threads].
 ///
-/// [offline]: VBuilder::offline
-/// [set the maximum number of threads]: VBuilder::max_num_threads
-///
 /// # Implementation details
 ///
 /// Initially, keys are scanned, turned into signatures, and stored in the
@@ -73,12 +70,14 @@ fn default_max_num_threads() -> usize {
 ///
 /// The generic parameters are explained in the [`VFunc`] /
 /// [`VFilter`] documentation.
-//
+///
 /// Most methods require to pass one or two [`FallibleRewindableLender`]s
 /// (keys and possibly values), as the construction might fail and keys might
 /// be scanned again. The structures in the [`lenders`] module provide easy ways
 /// to build such lenders.
 ///
+/// [offline]: VBuilder::offline
+/// [set the maximum number of threads]: VBuilder::max_num_threads
 /// [`VFilter`]: crate::dict::VFilter
 #[derive(Setters, Debug, Derivative)]
 #[derivative(Default)]
@@ -646,9 +645,9 @@ impl<
     /// deriving it from `max_value`, and derives stored values from
     /// signatures via `get_val`.
     ///
-    /// [`try_build_func_and_store`]: Self::try_build_func_and_store
-    ///
     /// `new_data(bit_width, len)` allocates the backend storage.
+    ///
+    /// [`try_build_func_and_store`]: Self::try_build_func_and_store
     pub(crate) fn try_build_filter<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<K>,
@@ -1057,11 +1056,11 @@ impl<
 
     /// Inner generic implementation of [`try_solve_once`].
     ///
-    /// [`try_solve_once`]: Self::try_solve_once
-    ///
     /// This is generic over `SS` so that the `populate` closure can push
     /// to the concrete store type without dynamic dispatch. The `state`
     /// parameter is forwarded to both `populate` and `build_fn`.
+    ///
+    /// [`try_solve_once`]: Self::try_solve_once
     fn try_solve_once_inner<
         V: BinSafe + Default + Send + Sync + Ord,
         R,
@@ -1186,8 +1185,6 @@ impl<
     ///   `self.num_keys` must be set up by the caller (typically by
     ///   [`try_solve_once`]).
     ///
-    /// [`try_solve_once`]: Self::try_solve_once
-    ///
     /// * `get_val` must be deterministic.
     ///
     /// # Errors
@@ -1200,6 +1197,7 @@ impl<
     /// `self.low_mem`; see the [`low_mem`] field documentation for the
     /// automatic selection heuristic.
     ///
+    /// [`try_solve_once`]: Self::try_solve_once
     /// [`low_mem`]: VBuilder::low_mem
     pub(crate) fn try_build_from_shard_iter<
         K: ?Sized + ToSig<S>,
@@ -1792,12 +1790,11 @@ impl<
     /// [`peel_by_sig_vals_low_mem`], which uses almost half the memory. It
     /// is the peeler of choice for low levels of parallelism.
     ///
-    /// [`peel_by_sig_vals_low_mem`]: VBuilder::peel_by_sig_vals_low_mem
-    ///
     /// This peeler cannot be used in conjunction with [lazy Gaussian
     /// elimination] as after a failed peeling it is not possible to retrieve
     /// information about the signature/value pairs in the shard.
     ///
+    /// [`peel_by_sig_vals_low_mem`]: VBuilder::peel_by_sig_vals_low_mem
     /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     fn peel_by_sig_vals_high_mem<
         V: BinSafe,
@@ -1936,12 +1933,11 @@ impl<
     /// the memory. It is the peeler of choice for significant levels of
     /// parallelism.
     ///
-    /// [`peel_by_sig_vals_high_mem`]: VBuilder::peel_by_sig_vals_high_mem
-    ///
     /// This peeler cannot be used in conjunction with [lazy Gaussian
     /// elimination] as after a failed peeling it is not possible to retrieve
     /// information about the signature/value pairs in the shard.
     ///
+    /// [`peel_by_sig_vals_high_mem`]: VBuilder::peel_by_sig_vals_high_mem
     /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     fn peel_by_sig_vals_low_mem<
         V: BinSafe,
@@ -2066,13 +2062,12 @@ impl<
     /// [partial], lazy Gaussian elimination is used to solve the remaining
     /// edges.
     ///
-    /// [peeled by index]: VBuilder::peel_by_index
-    /// [partial]: PeelResult::Partial
-    ///
     /// This method will scan the double stack, without emptying it, to check
     /// which edges have been peeled. The information will be then passed to
     /// [`VBuilder::assign`] to complete the assignment of values.
     ///
+    /// [peeled by index]: VBuilder::peel_by_index
+    /// [partial]: PeelResult::Partial
     /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     fn lge_shard<
         V: BinSafe,

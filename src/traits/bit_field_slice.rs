@@ -88,12 +88,12 @@ pub trait BitFieldSlice: SliceByValue + BitWidth {
 /// it provides reset methods and the method [`as_mut_slice`] to mutate the
 /// backend of the slice.
 ///
-/// [`as_mut_slice`]: BitFieldSliceMut::as_mut_slice
-///
 /// Note that this trait does **not** require `Value: Word` in its supertrait
 /// bounds; individual implementations or callers that need [`Word`] operations
 /// (e.g., [`mask`]) must add the bound themselves. This
 /// avoids a Rust trait-solver limitation (E0284) with higher-ranked bounds.
+///
+/// [`as_mut_slice`]: BitFieldSliceMut::as_mut_slice
 #[autoimpl(for<T: trait + ?Sized> &mut T, Box<T>)]
 pub trait BitFieldSliceMut: BitFieldSlice + SliceByValueMut {
     /// Sets all values to zero.
@@ -195,9 +195,9 @@ pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBi
     /// - `index` must be in [0..[len]);
     /// - `value` must fit within [`BitWidth::bit_width`] bits.
     ///
-    /// [len]: SliceByValue::len
-    ///
     /// No bound or bit-width check is performed.
+    ///
+    /// [len]: SliceByValue::len
     unsafe fn set_atomic_unchecked(&self, index: usize, value: A::Value, order: Ordering);
 
     /// Sets the element of the slice at the specified index.

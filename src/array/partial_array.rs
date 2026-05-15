@@ -147,9 +147,6 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
 /// A sparse partial array stores the non-empty positions of the array in an
 /// [Elias-Fano] structure.
 ///
-/// [Elias-Fano]: crate::dict::EliasFano
-/// [dense partial array]: new_dense
-///
 /// If your set of values is really dense, consider using a [dense partial array].
 ///
 /// # Examples
@@ -169,6 +166,9 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
 /// ```
 ///
 /// Note that you must specify the number of values in advance.
+///
+/// [Elias-Fano]: crate::dict::EliasFano
+/// [dense partial array]: new_dense
 pub fn new_sparse<T>(
     len: usize,
     num_values: usize,

@@ -11,9 +11,6 @@
 //! the values are monotonically increasing, such a dictionary might provide
 //! additional operations such as [predecessor] and [successor].
 //!
-//! [predecessor]: Pred
-//! [successor]: Succ
-//!
 //! There are several traits organized in a hierarchy:
 //! - [`Types`] defines the type of the values in the dictionary. The type of
 //!   input and output values may be different: for example, in a dictionary of
@@ -59,6 +56,8 @@
 //! starting position). Many implementations also offer equivalent
 //! `iter`/`iter_from` convenience methods.
 //!
+//! [predecessor]: Pred
+//! [successor]: Succ
 //! [`RearCodedList`]: crate::dict::rear_coded_list::RearCodedList
 //! [`EliasFano`]: crate::dict::elias_fano::EliasFano
 //! [`IntoIteratorFrom`]: super::iter::IntoIteratorFrom
@@ -245,11 +244,11 @@ where
     /// successor value itself. The index returned is the position of the
     /// successor in the sequence.
     ///
-    /// [`next()`]: Iterator::next
-    ///
     /// # Safety
     ///
     /// The successor must exist.
+    ///
+    /// [`next()`]: Iterator::next
     unsafe fn iter_from_succ_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
@@ -297,12 +296,12 @@ where
     /// [`prev()`] call returns the element
     /// before the successor.
     ///
-    /// [`next()`]: Iterator::next
-    /// [`prev()`]: crate::traits::BidiIterator::prev
-    ///
     /// # Safety
     ///
     /// The successor must exist.
+    ///
+    /// [`next()`]: Iterator::next
+    /// [`prev()`]: crate::traits::BidiIterator::prev
     unsafe fn iter_bidi_from_succ_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
@@ -349,11 +348,11 @@ where
     /// successor value itself, and subsequent calls return preceding elements
     /// in decreasing order.
     ///
-    /// [`next()`]: Iterator::next
-    ///
     /// # Safety
     ///
     /// The successor must exist.
+    ///
+    /// [`next()`]: Iterator::next
     unsafe fn iter_back_from_succ_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
@@ -641,11 +640,11 @@ where
     /// predecessor value itself, and subsequent calls return following elements
     /// in increasing order.
     ///
-    /// [`next()`]: Iterator::next
-    ///
     /// # Safety
     ///
     /// The predecessor must exist.
+    ///
+    /// [`next()`]: Iterator::next
     unsafe fn iter_from_pred_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
@@ -692,11 +691,11 @@ where
     /// predecessor value itself, and subsequent calls return preceding elements
     /// in decreasing order.
     ///
-    /// [`next()`]: Iterator::next
-    ///
     /// # Safety
     ///
     /// The predecessor must exist.
+    ///
+    /// [`next()`]: Iterator::next
     unsafe fn iter_back_from_pred_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
@@ -744,12 +743,12 @@ where
     /// [`prev()`] call returns the element
     /// after the predecessor.
     ///
-    /// [`next()`]: Iterator::next
-    /// [`prev()`]: crate::traits::BidiIterator::prev
-    ///
     /// # Safety
     ///
     /// The predecessor must exist.
+    ///
+    /// [`next()`]: Iterator::next
+    /// [`prev()`]: crate::traits::BidiIterator::prev
     unsafe fn iter_bidi_from_pred_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,

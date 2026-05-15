@@ -75,10 +75,6 @@
 //! you can also obtain [mutable chunks] from a bit vector, provided they are
 //! aligned enough.
 //!
-//! [chunks]: SliceByValueMut::try_chunks_mut
-//! [`get_value`]: SliceByValue::get_value
-//! [`get_value_unchecked`]: SliceByValue::get_value_unchecked
-//!
 //! # Examples
 //!
 //! ```rust
@@ -125,6 +121,9 @@
 //! [ε-serde]: https://crates.io/crates/epserde
 //! [`push`]: BitVec::push
 //! [`bit_vec!`]: macro@crate::bits::bit_vec
+//! [mutable chunks]: SliceByValueMut::try_chunks_mut
+//! [`get_value`]: SliceByValue::get_value
+//! [`get_value_unchecked`]: SliceByValue::get_value_unchecked
 
 use crate::ambassador_impl_Index;
 use crate::traits::ambassador_impl_Backend;
@@ -174,8 +173,6 @@ pub struct BitVec<B = Vec<usize>> {
 }
 
 /// Convenient, [`vec!`]-like macro to initialize bit vectors.
-///
-/// [`vec!`]: vec!
 ///
 /// By default, the underlying storage is `Vec<usize>`. An explicit word type
 /// `W` can be selected by prepending `W:` to any form, producing a
@@ -243,6 +240,8 @@ pub struct BitVec<B = Vec<usize>> {
 /// assert_eq!(b.len(), 10);
 /// # }
 /// ```
+///
+/// [`vec!`]: vec!
 #[macro_export]
 macro_rules! bit_vec {
     // Arms with explicit word type (colon separator)
@@ -1299,9 +1298,6 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 /// which adds a padding word if one is not already present. You can recover
 /// the original [`BitVec`] using a [`From` implementation]
 ///
-/// [`From` implementation]: #impl-From<BitVecU<Box<%5BW%5D>>-for-BitVec<Box<%5BW%5D>>
-/// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
-///
 /// Note that unaligned reads give correct results only when the bit width
 /// satisfies the unaligned constraints (at most `W::BITS - 6`, or exactly
 /// `W::BITS - 4`, or exactly `W::BITS`). Using other widths will not
@@ -1311,6 +1307,9 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 /// [`AsRef<[Backend::Word]>`](core::convert::AsRef) to make [`BitVecOps`]
 /// methods available, and [`Index`] to make slice-like read-only access
 /// available.
+///
+/// [`From` implementation]: #impl-From<BitVecU<Box<%5BW%5D>>-for-BitVec<Box<%5BW%5D>>
+/// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

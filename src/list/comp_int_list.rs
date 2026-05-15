@@ -17,8 +17,6 @@
 //! cumulative bit positions in an [Elias–Fano sequence], enabling efficient
 //! random access.
 //!
-//! [Elias–Fano sequence]: crate::dict::elias_fano::EfSeq
-//!
 //! The delimiter structure can be [replaced][map_delimiters] with any
 //! structure implementing [`IntoIteratorFrom`] with the returned iterator
 //! implementing `UncheckedIterator<Item = u64>`, as long as it returns the
@@ -45,6 +43,7 @@
 //! assert_eq!(list.index_value(4), 100);
 //! ```
 //!
+//! [Elias–Fano sequence]: crate::dict::elias_fano::EfSeq
 //! [map_delimiters]: CompIntList::map_delimiters
 //! [map_data]: CompIntList::map_data
 

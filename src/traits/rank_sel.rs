@@ -512,9 +512,6 @@ impl<T: SelectZeroHinted + ?Sized> SelectZeroHinted for Box<T> {
 /// provide [`NumBits`] to [`Select`]/[`SelectZero`] implementations; see, for
 /// example, [`SelectAdapt`].
 ///
-/// [this module]: crate::traits::rank_sel
-/// [`SelectAdapt`]: crate::rank_sel::SelectAdapt
-///
 /// # Examples
 ///
 /// ```rust
@@ -524,6 +521,9 @@ impl<T: SelectZeroHinted + ?Sized> SelectZeroHinted for Box<T> {
 /// assert_eq!(bits.num_ones(), 5);
 /// assert_eq!(bits.num_zeros(), 4);
 /// ```
+///
+/// [this module]: crate::traits::rank_sel
+/// [`SelectAdapt`]: crate::rank_sel::SelectAdapt
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

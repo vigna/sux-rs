@@ -13,9 +13,6 @@
 //! infrequent prefix lengths, similarly to a [`VFunc2`], providing
 //! some space savings at the cost of slightly slower queries.
 //!
-//! [`lcp_mmphf`]: super::lcp_mmphf
-//! [`VFunc2`]: crate::func::VFunc2
-//!
 //! [`Lcp2MmphfInt`] works with any primitive integer type, whereas
 //! [`Lcp2Mmphf`] works with any byte-sequence key type (`K: AsRef<[u8]>`). Type
 //! aliases [`Lcp2MmphfStr`] and [`Lcp2MmphfSliceU8`] are provided for
@@ -33,6 +30,8 @@
 //! [Theory and practice of monotone minimal perfect hashing]. *ACM Journal of
 //! Experimental Algorithmics*, 16(3):3.2:1−3.2:26, 2011.
 //!
+//! [`lcp_mmphf`]: super::lcp_mmphf
+//! [`VFunc2`]: crate::func::VFunc2
 //! [Theory and practice of monotone minimal perfect hashing]: https://doi.org/10.1145/1963190.2025378
 
 use crate::bits::BitFieldVec;
@@ -244,9 +243,6 @@ mod build {
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
         ///
-        /// [`try_new_with_builder`]: Self::try_new_with_builder
-        /// [`try_par_new`]: Self::try_par_new
-        ///
         /// # Examples
         ///
         /// ```rust
@@ -268,6 +264,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -292,12 +291,6 @@ mod build {
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
-        ///
-        /// [offline mode]: VBuilder::offline
-        /// [thread count]: VBuilder::max_num_threads
-        /// [sharding overhead]: VBuilder::eps
-        /// [PRNG seed]: VBuilder::seed
-        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         ///
         /// # Examples
         ///
@@ -324,6 +317,12 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -681,9 +680,6 @@ mod build {
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new`] instead.
         ///
-        /// [`try_new`]: Self::try_new
-        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
-        ///
         /// # Examples
         ///
         /// ```rust
@@ -704,6 +700,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new`]: Self::try_new
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_par_new(
             keys: &[K],
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -722,8 +721,6 @@ mod build {
         ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new_with_builder`] instead.
-        ///
-        /// [`try_new_with_builder`]: Self::try_new_with_builder
         ///
         /// # Examples
         ///
@@ -748,6 +745,8 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder(
             keys: &[K],
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
@@ -1051,9 +1050,6 @@ mod build {
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
         ///
-        /// [`try_new_with_builder`]: Self::try_new_with_builder
-        /// [`try_par_new`]: Self::try_par_new
-        ///
         /// # Examples
         ///
         /// ```rust
@@ -1075,6 +1071,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -1099,12 +1098,6 @@ mod build {
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
-        ///
-        /// [offline mode]: VBuilder::offline
-        /// [thread count]: VBuilder::max_num_threads
-        /// [sharding overhead]: VBuilder::eps
-        /// [PRNG seed]: VBuilder::seed
-        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         ///
         /// # Examples
         ///
@@ -1131,6 +1124,12 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder<B: ?Sized + AsRef<[u8]> + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: std::error::Error + Send + Sync + 'static,
@@ -1500,9 +1499,6 @@ mod build {
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new`] instead.
         ///
-        /// [`try_new`]: Self::try_new
-        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
-        ///
         /// # Examples
         ///
         /// ```rust
@@ -1523,6 +1519,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new`]: Self::try_new
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_par_new<B: AsRef<[u8]> + Borrow<K> + Sync>(
             keys: &[B],
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
@@ -1544,8 +1543,6 @@ mod build {
         ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new_with_builder`] instead.
-        ///
-        /// [`try_new_with_builder`]: Self::try_new_with_builder
         ///
         /// # Examples
         ///
@@ -1570,6 +1567,8 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder<B: AsRef<[u8]> + Borrow<K> + Sync>(
             keys: &[B],
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,

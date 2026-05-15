@@ -768,13 +768,13 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
 /// A container for the signatures and values accumulated by a [`SigStore`],
 /// with the ability to [enumerate them grouped in shards].
 ///
-/// [enumerate them grouped in shards]: ShardStore::iter
-///
 /// Also in this case, the purpose of this trait is that of avoiding clumsy
 /// `where` clauses when passing around a signature store. There is only one
 /// implementation, [`ShardStoreImpl`], but it is implemented only for certain
 /// combinations of type parameters. Having this trait greatly simplifies the
 /// type signatures.
+///
+/// [enumerate them grouped in shards]: ShardStore::iter
 pub trait ShardStore<S: Sig, V: BinSafe> {
     /// Returns an iterator over the shard sizes at the current granularity.
     ///

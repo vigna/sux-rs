@@ -37,8 +37,6 @@ use value_traits::slices::SliceByValue;
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it
 /// to be converted into (usually faster) structures using unaligned access.
 ///
-/// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
-///
 /// # Generics
 ///
 /// * `W` - the unsigned integer type used to store hashes.
@@ -50,6 +48,7 @@ use value_traits::slices::SliceByValue;
 /// See [`try_new`].
 ///
 /// [`try_new`]: VFilter::try_new
+/// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 /// [ε-serde]: https://crates.io/crates/epserde
 /// [`serde`]: https://crates.io/crates/serde
 #[derive(Debug, Clone, MemSize, MemDbg)]
@@ -118,8 +117,6 @@ where
     /// [`contains_by_sig`]. Returns `true` on match (false-positive
     /// rate 2⁻*ᵇ*), `false` on mismatch (definitely absent).
     ///
-    /// [`contains_by_sig`]: Self::contains_by_sig
-    ///
     /// # Examples
     ///
     /// ```rust
@@ -144,6 +141,8 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
+    ///
+    /// [`contains_by_sig`]: Self::contains_by_sig
     #[inline]
     pub fn contains(&self, key: impl Borrow<K>) -> bool {
         self.contains_by_sig(K::to_sig(key.borrow(), self.func.seed))
@@ -265,11 +264,7 @@ mod build {
         ///
         /// * `keys` - a [`FallibleRewindableLender`].
         ///   The [`lenders`] module provides easy
-        ///   ways to build such lenders.        
-        ///
-        /// [`lenders`]: crate::utils::lenders
-        /// [`try_new_with_builder`]: Self::try_new_with_builder
-        /// [`try_par_new`]: Self::try_par_new
+        ///   ways to build such lenders.
         ///
         /// # Examples
         ///
@@ -293,6 +288,10 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`lenders`]: crate::utils::lenders
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new<B: ?Sized + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: Error + Send + Sync + 'static,
@@ -325,13 +324,6 @@ mod build {
         ///   The [`lenders`] module provides easy
         ///   ways to build such lenders.
         ///
-        /// [`lenders`]: crate::utils::lenders
-        /// [offline mode]: VBuilder::offline
-        /// [thread count]: VBuilder::max_num_threads
-        /// [sharding overhead]: VBuilder::eps
-        /// [PRNG seed]: VBuilder::seed
-        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
-        ///
         /// # Examples
         ///
         /// ```rust
@@ -355,6 +347,13 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`lenders`]: crate::utils::lenders
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder<B: ?Sized + Borrow<K>, P: ProgressLog + Clone + Send + Sync>(
             keys: impl FallibleRewindableLender<
                 RewindError: Error + Send + Sync + 'static,
@@ -396,9 +395,6 @@ mod build {
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new`] instead.
         ///
-        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
-        /// [`try_new`]: Self::try_new
-        ///
         /// # Examples
         ///
         /// ```rust
@@ -421,6 +417,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`try_new`]: Self::try_new
         pub fn try_par_new<P: ProgressLog + Clone + Send + Sync>(
             keys: &[impl Borrow<K> + Sync],
             pl: &mut P,
@@ -443,11 +442,6 @@ mod build {
         ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new_with_builder`] instead.
-        ///
-        /// [thread count]: VBuilder::max_num_threads
-        /// [sharding overhead]: VBuilder::eps
-        /// [PRNG seed]: VBuilder::seed
-        /// [`try_new_with_builder`]: Self::try_new_with_builder
         ///
         /// # Examples
         ///
@@ -472,6 +466,11 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder<P: ProgressLog + Clone + Send + Sync>(
             keys: &[impl Borrow<K> + Sync],
             builder: VBuilder<Box<[W]>, S, E>,
@@ -547,10 +546,6 @@ mod build {
         /// * `filter_bits` - the number of hash bits per key; the
         ///   false-positive rate is 2<sup>−`filter_bits`</sup>.
         ///
-        /// [`lenders`]: crate::utils::lenders
-        /// [`try_new_with_builder`]: Self::try_new_with_builder
-        /// [`try_par_new`]: Self::try_par_new
-        ///
         /// # Examples
         ///
         /// ```rust
@@ -575,6 +570,10 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`lenders`]: crate::utils::lenders
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
         pub fn try_new<B: ?Sized + Borrow<K>>(
             keys: impl FallibleRewindableLender<
                 RewindError: Error + Send + Sync + 'static,
@@ -606,13 +605,6 @@ mod build {
         /// * `filter_bits` - the number of hash bits per key; the
         ///   false-positive rate is 2<sup>−`filter_bits`</sup>.
         ///
-        /// [`lenders`]: crate::utils::lenders
-        /// [offline mode]: VBuilder::offline
-        /// [thread count]: VBuilder::max_num_threads
-        /// [sharding overhead]: VBuilder::eps
-        /// [PRNG seed]: VBuilder::seed
-        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
-        ///
         /// # Examples
         ///
         /// ```rust
@@ -638,6 +630,13 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`lenders`]: crate::utils::lenders
+        /// [offline mode]: VBuilder::offline
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
         pub fn try_new_with_builder<B: ?Sized + Borrow<K>, P: ProgressLog + Clone + Send + Sync>(
             keys: impl FallibleRewindableLender<
                 RewindError: Error + Send + Sync + 'static,
@@ -681,9 +680,6 @@ mod build {
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new`] instead.
         ///
-        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
-        /// [`try_new`]: Self::try_new
-        ///
         /// # Examples
         ///
         /// ```rust
@@ -708,6 +704,9 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`try_new`]: Self::try_new
         pub fn try_par_new<P: ProgressLog + Clone + Send + Sync>(
             keys: &[impl Borrow<K> + Sync],
             filter_bits: usize,
@@ -731,11 +730,6 @@ mod build {
         ///
         /// If keys are produced sequentially (e.g., from a file), use
         /// [`try_new_with_builder`] instead.
-        ///
-        /// [thread count]: VBuilder::max_num_threads
-        /// [sharding overhead]: VBuilder::eps
-        /// [PRNG seed]: VBuilder::seed
-        /// [`try_new_with_builder`]: Self::try_new_with_builder
         ///
         /// # Examples
         ///
@@ -762,6 +756,11 @@ mod build {
         /// # #[cfg(not(feature = "rayon"))]
         /// # fn main() {}
         /// ```
+        ///
+        /// [thread count]: VBuilder::max_num_threads
+        /// [sharding overhead]: VBuilder::eps
+        /// [PRNG seed]: VBuilder::seed
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_par_new_with_builder<P: ProgressLog + Clone + Send + Sync>(
             keys: &[impl Borrow<K> + Sync],
             filter_bits: usize,

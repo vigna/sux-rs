@@ -54,9 +54,6 @@
 //! used, for example, to provide
 //! [predecessor] and [successor] primitives for [`EliasFano`].
 //!
-//! [predecessor]: crate::traits::indexed_dict::Pred
-//! [successor]: crate::traits::indexed_dict::Succ
-//!
 //! # Conversions
 //!
 //! A wide range of conversion is available between the different flavors of
@@ -115,6 +112,8 @@
 //! [`try_chunks_mut`]: SliceByValueMut::try_chunks_mut
 //! [`addr_of`]: BitFieldVec::addr_of
 //! [`get_unaligned`]: BitFieldVec::get_unaligned
+//! [predecessor]: crate::traits::indexed_dict::Pred
+//! [successor]: crate::traits::indexed_dict::Succ
 
 #[cfg(feature = "rayon")]
 use crate::ParallelWithLen;
@@ -320,11 +319,11 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
     /// [`get_unaligned_unchecked`] if you are sure that the constraints are
     /// respected.
     ///
-    /// [`get_unaligned_unchecked`]: Self::get_unaligned_unchecked
-    ///
     /// # Panics
     ///
     /// This method will panic if the constraints above are not respected.
+    ///
+    /// [`get_unaligned_unchecked`]: Self::get_unaligned_unchecked
     pub fn get_unaligned(&self, index: usize) -> B::Word {
         assert!(
             test_unaligned!(B::Word, self.bit_width),
@@ -1926,13 +1925,13 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateB
 /// [`BitFieldVec::get_unaligned_unchecked`]. You can recover the original
 /// [`BitFieldVec`] using a [`From` implementation].
 ///
-/// [`From` implementation]: #impl-From<BitFieldVecU<Box<%5BW%5D>>-for-BitFieldVec<Box<%5BW%5D>>
-/// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
-///
 /// # Safety
 ///
 /// The backing storage must have sufficient padding at the end so that
 /// unaligned reads do not access memory outside the allocation.
+///
+/// [`From` implementation]: #impl-From<BitFieldVecU<Box<%5BW%5D>>-for-BitFieldVec<Box<%5BW%5D>>
+/// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 #[derive(Debug, Clone, MemSize, MemDbg, value_traits::Subslices)]
 #[value_traits_subslices(bound = "B: AsRef<[B::Word]>")]
 #[value_traits_subslices(bound = "B::Word: Word")]
@@ -2020,9 +2019,9 @@ impl<W: Word> crate::traits::TryIntoUnaligned for BitFieldVec<Box<[W]>> {
     ///
     /// # Errors
     ///
-    /// Returns an error if the bit width does not satisfy the constraints of
-    /// [`BitFieldVec::get_unaligned_unchecked`]: it must be at most
-    /// `W::BITS - 6`, or exactly `W::BITS - 4`, or exactly `W::BITS`.
+    /// Returns an error if the bit width does not satisfy the constraints
+    /// of [`BitFieldVec::get_unaligned_unchecked`]: it must be at most `W::BITS
+    /// - 6`, or exactly `W::BITS - 4`, or exactly `W::BITS`.
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
