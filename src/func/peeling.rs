@@ -8,6 +8,9 @@
 //!
 //! This module holds the data structures used by [`VBuilder`] and [`CompVFunc`]
 //! to peel graphs.
+//!
+//! [`VBuilder`]: crate::func::VBuilder
+//! [`CompVFunc`]: crate::func::CompVFunc
 
 use std::ops::BitXorAssign;
 use std::slice::Iter;

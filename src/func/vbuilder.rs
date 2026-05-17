@@ -98,7 +98,7 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// with the number of keys, which is correct for a construction
     /// where each key produces exactly one hyperedge (VFunc). When
     /// each key produces *multiple* hyperedges — as in
-    /// [`CompVFunc`](crate::func::CompVFunc), where each key's
+    /// [`CompVFunc`], where each key's
     /// Huffman-encoded value contributes one edge per codeword bit
     /// — the graph actually has ≈ entropy × num_keys equations.
     /// Sizing the shards for the smaller key count leaves every
@@ -865,10 +865,11 @@ impl<
     /// Like [`try_populate_and_build`], but takes key and value slices and
     /// parallelizes the hash computation and store population .
     ///
-    /// This method calls [`SigStore::par_populate`] to compute signatures and
+    /// This method calls [`SigStoreImpl::par_populate`] to compute signatures and
     /// populate the store in parallel on rayon worker threads.
     ///
     /// [`try_populate_and_build`]: Self::try_populate_and_build
+    /// [`SigStoreImpl::par_populate`]: crate::utils::sig_store::SigStoreImpl::par_populate
     pub(crate) fn try_par_populate_and_build<
         K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
         B: Borrow<K> + Sync,

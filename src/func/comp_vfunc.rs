@@ -1058,7 +1058,7 @@ impl std::ops::BitXorAssign for PackedEdge {
 /// the upper bound for the reverse-peel stack)
 ///
 /// [`XorGraph<PackedEdge>`]: super::peeling::XorGraph
-/// [`SigVal`]: crate::func::SigVal
+/// [`SigVal`]: crate::utils::sig_store::SigVal
 fn populate_data_graph<W: BinSafe + Word, S, E>(
     shard: &[SigVal<S, W>],
     shard_edge: &E,
