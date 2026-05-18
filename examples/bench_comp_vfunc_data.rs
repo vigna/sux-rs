@@ -59,10 +59,7 @@ fn read_decimals(path: &str) -> Result<Vec<u64>> {
 }
 
 fn main() -> Result<()> {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .try_init()
-        .ok();
+    sux::init_env_logger()?;
 
     let mut args = env::args().skip(1);
     let first = args.next();

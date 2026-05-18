@@ -36,7 +36,7 @@ fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
 }
 
 #[derive(Parser, Debug)]
-#[command(about = "Benchmark Phast+ + array with strings or 64-bit integers", long_about = None)]
+#[command(about = "Benchmarks Phast+ + array with strings or 64-bit integers", long_about = None)]
 struct Args {
     /// The maximum number of strings to read from the file, or the number of 64-bit keys.
     n: usize,
@@ -50,8 +50,9 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    sux::init_env_logger()?;
 
+    let args = Args::parse();
     let keys = (0..args.n as u64).collect::<Vec<_>>();
 
     let start = std::time::Instant::now();

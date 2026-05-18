@@ -54,10 +54,6 @@ impl<T: AtomicPrimitive> Default for CannotCastToAtomicError<T> {
 
 impl<T: AtomicPrimitive> core::fmt::Display for CannotCastToAtomicError<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        assert_ne!(
-            core::mem::align_of::<T>(),
-            core::mem::align_of::<Atomic<T>>()
-        );
         write!(
             f,
             "Cannot cast {} (align_of: {}) to atomic type {} (align_of: {}) because they have incompatible alignments",

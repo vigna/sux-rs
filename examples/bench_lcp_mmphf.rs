@@ -85,9 +85,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .try_init()?;
+    sux::init_env_logger()?;
 
     let args = Args::parse();
 

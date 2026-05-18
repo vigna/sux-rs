@@ -1340,7 +1340,7 @@ mod build {
                             ));
 
                             // -- Build lcp_freq_len_offset --
-                            let lcp_freq_len_max = (escape_usize << log2_bs) | bucket_mask;
+                            let lcp_freq_len_offset_max = (escape_usize << log2_bs) | bucket_mask;
 
                             let max_shb = store.max_shard_high_bits();
                             let max_num_shards = 1usize << max_shb;
@@ -1355,7 +1355,7 @@ mod build {
                             let lcp_freq_len_offset = builder.try_build_func_with_store_and_inspect::<K, u64>(
                                 seed,
                                 shard_edge,
-                                lcp_freq_len_max,
+                                lcp_freq_len_offset_max,
                                 store,
                                 &|_, sig_val| {
                                     let lcp = (sig_val.val >> log2_bs) as usize;

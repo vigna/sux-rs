@@ -55,8 +55,8 @@ struct Args {
     #[arg(short, long)]
     branchless: Option<bool>,
     /// Shard/edge type.​
-    #[arg(long, value_enum, default_value_t = sux::cli::ShardEdgeType::Fuse3Shards)]
-    edge: sux::cli::ShardEdgeType,
+    #[arg(long = "shard-edge", short = 'E', value_enum, default_value_t = sux::cli::ShardEdgeType::Fuse3Shards)]
+    shard_edge: sux::cli::ShardEdgeType,
     /// Use unaligned reads.​
     #[arg(long, short)]
     unaligned: bool,
@@ -64,18 +64,16 @@ struct Args {
 
 fn main() -> Result<()> {
     use sux::cli::ShardEdgeType;
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .try_init()?;
+    sux::init_env_logger()?;
 
     let args = Args::parse();
 
-    match args.edge {
+    match args.shard_edge {
         ShardEdgeType::Fuse3NoShards64 => main_with_types::<[u64; 1], Fuse3NoShards>(args),
         ShardEdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
         ShardEdgeType::Fuse3Shards => main_with_types::<[u64; 2], Fuse3Shards>(args),
         _ => bail!(
-            "bench_comp_vfunc only supports --edge fuse, fuse-no-shards-64, and fuse-no-shards-128"
+            "bench_comp_vfunc only supports --shard-edge fuse3-shards, fuse3-no-shards64, and fuse3-no-shards128"
         ),
     }
 }

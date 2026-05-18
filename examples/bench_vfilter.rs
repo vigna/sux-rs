@@ -49,7 +49,7 @@ struct Args {
     filter: String,
     /// The number of bits of the hashes used by the filter.​
     #[arg(short, long, default_value_t = 8)]
-    bits: u32,
+    bits: usize,
     #[arg(short = 'f', long)]
     /// A file containing UTF-8 keys, one per line; it can be compressed with any format supported by the deko crate. If not specified, the 64-bit keys [0..n) are used.​
     filename: Option<String>,
@@ -57,8 +57,8 @@ struct Args {
     #[arg(short, long, default_value = "5")]
     repeats: usize,
     /// Shard/edge type.​
-    #[arg(long, value_enum, default_value_t)]
-    edge: sux::cli::ShardEdgeType,
+    #[arg(long = "shard-edge", short = 'E', value_enum, default_value_t)]
+    shard_edge: sux::cli::ShardEdgeType,
     /// Use unaligned reads.​
     #[arg(long, short)]
     unaligned: bool,
@@ -67,7 +67,7 @@ struct Args {
 macro_rules! dispatch_edge {
     ($args: expr, $main: ident, $ty: ty) => {{
         use sux::cli::ShardEdgeType;
-        match $args.edge {
+        match $args.shard_edge {
             ShardEdgeType::Fuse3NoShards64 => $main::<$ty, [u64; 1], Fuse3NoShards>($args),
             ShardEdgeType::Fuse3NoShards128 => $main::<$ty, [u64; 2], Fuse3NoShards>($args),
             ShardEdgeType::Fuse3Shards => $main::<$ty, [u64; 2], Fuse3Shards>($args),
@@ -82,9 +82,7 @@ macro_rules! dispatch_edge {
 }
 
 fn main() -> Result<()> {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .try_init()?;
+    sux::init_env_logger()?;
 
     let args = Args::parse();
 

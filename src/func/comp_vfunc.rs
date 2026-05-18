@@ -651,13 +651,14 @@ where
             Ok(())
         };
 
+        let mut main_pl = pl.concurrent();
         pl.log_level(log::Level::Trace);
         vb.par_solve(
             store.drain(),
             &mut data,
             padding,
             solve_shard,
-            &mut pl.concurrent(),
+            &mut main_pl,
             pl,
         )
         .map_err(anyhow::Error::from)?;

@@ -24,14 +24,13 @@
 //! when you [push] signature/value pairs they will be stored in different
 //! buckets (in this case, 256) depending on their high bits.
 //!
-//! An [online] [`SigStore`] keeps the signature/value pairs in memory, while
-//! an [offline] [`SigStore`] writes them to disk. After all key signatures
-//! and values have been accumulated, [`into_shard_store`] will return a
-//! [`ShardStore`]. [`into_shard_store`] takes the the number of high bits to
-//! use for grouping signatures into shards, and the necessary bucket splitting
-//! or merging will be handled automatically, albeit the most efficient
-//! scenario is the one in which the number of buckets is equal to the number
-//! of shards.
+//! An [online] [`SigStore`] keeps the signature/value pairs in memory, while an
+//! [offline] [`SigStore`] writes them to disk. After all key signatures and
+//! values have been accumulated, [`into_shard_store`] will return a
+//! [`ShardStore`]. [`into_shard_store`] takes the number of high bits to use
+//! for grouping signatures into shards, and the necessary bucket splitting or
+//! merging will be handled automatically, albeit the most efficient scenario is
+//! the one in which the number of buckets is equal to the number of shards.
 //!
 //! You can iterate over the shards in a [`ShardStore`] multiple times using
 //! the method [`iter`], or just once using the method [`drain`]. In the

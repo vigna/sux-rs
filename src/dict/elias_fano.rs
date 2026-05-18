@@ -320,7 +320,11 @@ impl<V, H, L> EliasFano<V, H, L> {
 
     /// Estimate the size of an instance.
     pub fn estimate_size(u: u64, n: usize) -> usize {
-        2 * n + (n * (u as f64 / n as f64).log2().ceil() as usize)
+        if n == 0 {
+            0
+        } else {
+            2 * n + (n * (u as f64 / n as f64).log2().ceil() as usize)
+        }
     }
 
     /// Returns the number of elements in the sequence.
@@ -965,7 +969,7 @@ where
 
     #[inline]
     fn succ_strict(&self, value: impl Borrow<V>) -> Option<(usize, V)> {
-        if *value.borrow() >= self.last_val {
+        if self.n == 0 || *value.borrow() >= self.last_val {
             None
         } else {
             Some(unsafe { self.succ_unchecked::<true>(value) })

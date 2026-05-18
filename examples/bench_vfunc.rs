@@ -52,8 +52,8 @@ struct Args {
     #[arg(short, long, default_value = "5")]
     repeats: usize,
     /// Shard/edge type.​
-    #[arg(long, value_enum, default_value_t)]
-    edge: sux::cli::ShardEdgeType,
+    #[arg(long = "shard-edge", short = 'E', value_enum, default_value_t)]
+    shard_edge: sux::cli::ShardEdgeType,
     /// Use unaligned reads.​
     #[arg(long, short)]
     unaligned: bool,
@@ -61,13 +61,11 @@ struct Args {
 
 fn main() -> Result<()> {
     use sux::cli::ShardEdgeType;
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .try_init()?;
+    sux::init_env_logger()?;
 
     let args = Args::parse();
 
-    match args.edge {
+    match args.shard_edge {
         ShardEdgeType::Fuse3NoShards64 => main_with_types::<[u64; 1], Fuse3NoShards>(args),
         ShardEdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
         ShardEdgeType::Fuse3Shards => main_with_types::<[u64; 2], Fuse3Shards>(args),

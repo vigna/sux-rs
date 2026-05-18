@@ -1375,7 +1375,7 @@ impl ToSig<[u64; 1]> for BitPrefix {
 ///
 /// # Type parameters
 ///
-/// - `K`: the integer key type.
+/// - `K`: the key type.
 /// - `D`: the backing store for [`VFunc`] data (e.g.,
 ///   [`BitFieldVec`]).
 /// - `S0`: the [signature type] for the key map
