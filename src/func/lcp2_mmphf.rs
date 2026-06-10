@@ -88,6 +88,7 @@ use xxhash_rust::xxh3;
         deserialize = "VFunc<K, D, S0, E0>: serde::Deserialize<'de>, VFunc<K, D, S0, F0>: serde::Deserialize<'de>, VFunc<IntBitPrefix<K>, D, S1, E1>: serde::Deserialize<'de>"
     ))
 )]
+#[cfg_attr(feature = "epserde", epserde(full_copy(K, S0, S1)))]
 pub struct Lcp2MmphfInt<
     K,
     D = BitFieldVec<Box<[usize]>>,
@@ -1896,6 +1897,7 @@ mod build {
         deserialize = "VFunc<K, D, S0, E0>: serde::Deserialize<'de>, VFunc<K, D, S0, F0>: serde::Deserialize<'de>, VFunc<BitPrefix, D, S1, E1>: serde::Deserialize<'de>"
     ))
 )]
+#[cfg_attr(feature = "epserde", epserde(full_copy(K, S0, S1)))]
 pub struct Lcp2Mmphf<
     K: ?Sized,
     D = BitFieldVec<Box<[usize]>>,

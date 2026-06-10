@@ -75,10 +75,11 @@ use value_traits::slices::SliceByValue;
 /// [`D::Value`]: SliceByValue::Value
 #[derive(Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "epserde", epserde(full_copy(K, S)))]
 #[cfg_attr(
     feature = "epserde",
     epserde(bound(
-        deser = "D::Value: for<'a> epserde::deser::DeserInner<DeserType<'a> = D::Value>"
+        deser = "D::Value: for<'a> epserde::deser::DeserInner<DeserType<'a> = D::Value>, for<'a> <D as epserde::deser::DeserInner>::DeserType<'a>: SliceByValue<Value = D::Value>"
     ))
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

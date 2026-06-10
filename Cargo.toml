@@ -15,6 +15,9 @@ keywords = ["succinct", "rank", "select"]
 documentation = "https://docs.rs/sux"
 rust-version = "1.85"
 
+[package.metadata.docs.rs]
+features = ["epserde", "mmap"]
+
 [dependencies]
 anyhow = "1.0.79"
 atomic-primitive = "0.1.1"

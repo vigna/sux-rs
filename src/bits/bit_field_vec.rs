@@ -1940,7 +1940,8 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateB
 #[cfg_attr(
     feature = "epserde",
     epserde(bound(
-        deser = "B: Backend + epserde::deser::DeserInner, for<'a> <B as epserde::deser::DeserInner>::DeserType<'a>: Backend<Word = B::Word>"
+        ser = "B::Word: epserde::ser::SerInner",
+        deser = "B: Backend + epserde::deser::DeserInner, B::Word: for<'a> epserde::deser::DeserInner<DeserType<'a> = B::Word>, for<'a> <B as epserde::deser::DeserInner>::DeserType<'a>: Backend<Word = B::Word>"
     ))
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

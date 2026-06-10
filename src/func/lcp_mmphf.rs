@@ -1227,6 +1227,7 @@ pub(crate) use build::{lcp_bits, lcp_bits_nul, log2_bucket_size};
 /// [`serde`]: https://crates.io/crates/serde
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "epserde", epserde(full_copy(K, S0, S1)))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LcpMmphfInt<
     K,
@@ -1397,6 +1398,7 @@ impl ToSig<[u64; 1]> for BitPrefix {
 /// [`serde`]: https://crates.io/crates/serde
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "epserde", epserde(full_copy(K, S0, S1)))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LcpMmphf<
     K: ?Sized,

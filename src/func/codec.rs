@@ -505,6 +505,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
 /// to override.
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "epserde", epserde(full_copy(W)))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HuffmanDecoder<W> {
     /// For each length block, one past the last canonical codeword in
