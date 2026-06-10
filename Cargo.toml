@@ -36,7 +36,7 @@ rand = "0.10.0"
 rdst = "0.20.12"
 mem_dbg = "0.4.1"
 rayon = { version = "1.8.1", optional = true }
-env_logger = "0.11.0"
+env_logger = { version = "0.11.0", optional = true }
 ambassador = "0.5.1"
 impl-tools = "0.11.2"
 clap = { version = "4.4.18", features = ["derive", "wrap_help"], optional = true }
@@ -54,13 +54,14 @@ serde_arrays = { version = "0.1.0", optional = true }
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
 arbitrary = { version = "1.3.2", features = ["derive"], optional = true }
 zerocopy = { version = "0.8.27", features = ["derive"] }
-jiff = "0.2.15"
+jiff = { version = "0.2.15", optional = true }
 fallible-iterator = "0.3.0"
 sync-cell-slice = "0.9.12"
 
 [dev-dependencies]
 criterion = { version = "0.7.0", default-features = false, features = ["html_reports", "plotters", "cargo_bench_support"] }
 clap = { version = "4.4.18", features = ["derive", "wrap_help"] }
+env_logger = "0.11.0"
 rand_distr = "0.6"
 ph = "0.11.0"
 
@@ -69,7 +70,7 @@ default = ["rayon", "flate2", "zstd"]
 clap = ["dep:clap"]
 flate2 = ["dep:flate2"]
 zstd = ["dep:zstd"]
-cli = ["clap", "epserde", "dep:deko"] # Build the binary utils (it's here so that cargo bench doesn't build them)
+cli = ["clap", "epserde", "dep:deko", "dep:env_logger", "dep:jiff"] # Build the binary utils (it's here so that cargo bench doesn't build them)
 fuzz = ["dep:arbitrary"]
 slow_tests = [] # Run slow tests (use --release)
 aarch64_prefetch = [] # Enable aarch64 prefetch (requires nightly)

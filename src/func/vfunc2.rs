@@ -385,9 +385,11 @@ mod build {
         ///   same order). The values lender may return more values than
         ///   there are keys (in particular, it may be infinite); the
         ///   extra values are ignored. If it returns fewer values, a
-        ///   [`BuildError::MismatchedKeysAndValues`] error is returned.
+        ///   [`MismatchedKeysAndValues`] error is returned.
         ///   The [`lenders`] module provides easy ways to build such
         ///   lenders.
+        ///
+        /// [`MismatchedKeysAndValues`]: crate::func::BuildError::MismatchedKeysAndValues
         ///
         /// # Examples
         ///
@@ -439,9 +441,11 @@ mod build {
         ///   same order). The values lender may return more values than
         ///   there are keys (in particular, it may be infinite); the
         ///   extra values are ignored. If it returns fewer values, a
-        ///   [`BuildError::MismatchedKeysAndValues`] error is returned.
+        ///   [`MismatchedKeysAndValues`] error is returned.
         ///   The [`lenders`] module provides easy ways to build such
         ///   lenders.
+        ///
+        /// [`MismatchedKeysAndValues`]: crate::func::BuildError::MismatchedKeysAndValues
         ///
         /// # Examples
         ///
