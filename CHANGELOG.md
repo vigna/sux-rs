@@ -69,7 +69,9 @@
 - Field naming and logging have been reorganized. Serialized structures
   will be incompatible.
 
-- `init_env_logger` is now gated by the `cli` feature.
+- `init_env_logger` is now gated by the `cli` feature, and the
+  `env_logger` and `jiff` dependencies are now optional, enabled by that
+  feature.
 
 ## [0.14.0] - 2026-04-11
 
