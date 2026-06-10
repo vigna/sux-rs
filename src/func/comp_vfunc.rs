@@ -774,7 +774,7 @@ fn build_inner_seq<
 >(
     huffman: HuffmanConf,
     builder: VBuilder<BitVec<Box<[W]>>, S, E>,
-    keys: L,
+    mut keys: L,
     mut values: V,
     pl: &mut P,
 ) -> Result<CompVFunc<K, BitVec<Box<[W]>>, S, E>>
@@ -789,6 +789,9 @@ where
     }
     let n: usize = frequencies.values().sum();
     if n == 0 {
+        if keys.next()?.is_some() {
+            bail!("keys and values have different lengths");
+        }
         return Ok(empty_comp_vfunc());
     }
 

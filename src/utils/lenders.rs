@@ -938,6 +938,7 @@ impl<
 /// assert_eq!(lender.next()?, Some(1));
 /// assert_eq!(lender.next()?, None);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub struct FromIntoFallibleLenderFactory<L: IntoFallibleLender, E, F: FnMut() -> Result<L, E>> {
     f: F,
     lender: L::FallibleLender,

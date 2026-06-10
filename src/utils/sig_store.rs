@@ -465,10 +465,11 @@ pub struct SigStoreImpl<S, V, B> {
 ///
 /// The type `S` is the type of the signatures (usually `[u64;1]` or `[u64;
 /// 2]`), while `V` is the type of the values. The store will be written to a
-/// [temporary directory], and the files will be deleted when the store is
-/// dropped.
+/// [temporary directory], and the files will be deleted when the shard store
+/// returned by [`into_shard_store`] is dropped.
 ///
 /// [temporary directory]: https://doc.rust-lang.org/std/env/fn.temp_dir.html
+/// [`into_shard_store`]: SigStore::into_shard_store
 pub fn new_offline<S: BinSafe + Sig, V: BinSafe>(
     buckets_high_bits: u32,
     max_shard_high_bits: u32,
@@ -579,6 +580,7 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
             buckets: files,
             buf_sizes: self.bucket_sizes,
             fine_shard_sizes: self.shard_sizes,
+            _temp_dir: self.temp_dir,
             _marker: PhantomData,
         })
     }
@@ -653,6 +655,7 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
             buckets: files,
             buf_sizes: self.bucket_sizes,
             fine_shard_sizes: self.shard_sizes,
+            _temp_dir: self.temp_dir,
             _marker: PhantomData,
         })
     }
@@ -841,6 +844,10 @@ pub struct ShardStoreImpl<S, V, B> {
     buf_sizes: Vec<usize>,
     /// Per-shard key counts at `max_shard_high_bits` granularity (never changed).
     fine_shard_sizes: Vec<usize>,
+    /// Keeps the backing temporary directory alive while the bucket readers
+    /// are open (offline stores only). It must be declared after `buckets` so
+    /// that the files are closed before the directory is removed.
+    _temp_dir: Option<tempfile::TempDir>,
     _marker: PhantomData<(S, V)>,
 }
 

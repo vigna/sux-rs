@@ -400,16 +400,13 @@ macro_rules! rank_small {
     };
 }
 
+// repr(C) is required to guarantee the layout for the case <3, 13>.
 #[doc(hidden)]
 #[derive(Copy, Debug, Clone, MemSize, MemDbg)]
 #[mem_size(flat)]
-#[cfg_attr(
-    feature = "epserde",
-    derive(epserde::Epserde),
-    repr(C),
-    epserde(zero_copy)
-)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(zero_copy))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(C)]
 pub struct Block32Counters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
     pub(super) absolute: u32,
     #[cfg_attr(feature = "serde", serde(with = "serde_arrays"))]

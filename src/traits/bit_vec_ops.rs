@@ -71,6 +71,11 @@ macro_rules! panic_if_out_of_bounds {
 pub trait BitLength {
     /// Returns a length in bits.
     fn len(&self) -> usize;
+
+    /// Returns true if the length is zero.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl<W: Word, T: ?Sized + AsRef<[W]> + BitLength> BitVecOps<W> for T {}

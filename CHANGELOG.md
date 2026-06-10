@@ -25,6 +25,8 @@
 - New `ParallelWithLen` extension trait setting both `with_min_len` and
   `with_max_len` in Rayon.
 
+- Default `BitLength::is_empty` method.
+
 ### Fixed
 
 - Unsound reference-based `From` implementations between `BitVec`,
@@ -43,6 +45,11 @@
   check is resolved at compile time, so on targets with equal alignments
   the code is unchanged.
 
+- The temporary directory of an offline `SigStore` is now moved into the
+  shard store and removed when the latter is dropped, after the bucket
+  files have been closed; previously it was removed while the files were
+  still open, which fails silently on Windows.
+
 ### Improved
 
 - Structured logging for structures with substructures.
@@ -53,6 +60,8 @@
 
 - Field naming and logging have been reorganized. Serialized structures
   will be incompatible.
+
+- `init_env_logger` is now gated by the `cli` feature.
 
 ## [0.14.0] - 2026-04-11
 
