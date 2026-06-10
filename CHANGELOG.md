@@ -73,6 +73,10 @@
   `env_logger` and `jiff` dependencies are now optional, enabled by that
   feature.
 
+- Thanks to the new ε-serde, `VFilter` does not have `F` anymore
+  as parameter. Moreover, other structures such as `VFunc2` will
+  actually map into memory their bulk data.
+
 ## [0.14.0] - 2026-04-11
 
 ### New

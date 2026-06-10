@@ -15,7 +15,6 @@ use anyhow::Result;
 use dsi_progress_logger::ProgressLogger;
 use sux::bits::BitFieldVec;
 use sux::dict::VFilter;
-use sux::func::VFunc;
 use sux::utils::FromCloneableIntoIterator;
 
 fn main() -> Result<()> {
@@ -24,10 +23,8 @@ fn main() -> Result<()> {
     // ── Full-width filter (Box<[u8]> → 8 hash bits → 2⁻⁸ FP rate) ─
     let mut pl = ProgressLogger::default();
 
-    let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_new(
-        FromCloneableIntoIterator::from(0..n),
-        &mut pl,
-    )?;
+    let filter =
+        <VFilter<usize, Box<[u8]>>>::try_new(FromCloneableIntoIterator::from(0..n), &mut pl)?;
 
     // All keys in the original set are found.
     for i in 0..n {
@@ -43,7 +40,7 @@ fn main() -> Result<()> {
     );
 
     // ── Compact filter (BitFieldVec, 5 hash bits → 2⁻⁵ FP rate) ───
-    let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_new(
+    let filter = <VFilter<usize, BitFieldVec<Box<[usize]>>>>::try_new(
         FromCloneableIntoIterator::from(0..n),
         5, // filter_bits: fewer bits → less space, more false positives
         &mut pl,

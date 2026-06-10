@@ -114,8 +114,8 @@ where
     VFunc<str, BitFieldVec, S, E>: Serialize,
     VFunc<usize, Box<[W]>, S, E>: Serialize,
     VFunc<str, Box<[W]>, S, E>: Serialize,
-    VFilter<VFunc<usize, Box<[W]>, S, E>>: Serialize,
-    VFilter<VFunc<str, Box<[W]>, S, E>>: Serialize,
+    VFilter<usize, Box<[W]>, S, E>: Serialize,
+    VFilter<str, Box<[W]>, S, E>: Serialize,
     Box<[W]>: MemSize + FlatType,
 {
     if args.unaligned {
@@ -134,7 +134,7 @@ where
             builder = builder.expected_num_keys(n_hint);
         }
         if args.sequential {
-            let filter = <VFilter<VFunc<str, Box<[W]>, S, E>>>::try_new_with_builder(
+            let filter = <VFilter<str, Box<[W]>, S, E>>::try_new_with_builder(
                 DekoBufLineLender::from_path(filename)?.take(n),
                 builder,
                 &mut pl,
@@ -153,9 +153,8 @@ where
                     );
                 }
             }
-            let filter = <VFilter<VFunc<str, Box<[W]>, S, E>>>::try_par_new_with_builder(
-                &keys, builder, &mut pl,
-            )?;
+            let filter =
+                <VFilter<str, Box<[W]>, S, E>>::try_par_new_with_builder(&keys, builder, &mut pl)?;
             if let Some(filename) = args.filter {
                 unsafe { filter.store(filename) }?;
             }
@@ -167,7 +166,7 @@ where
             .configure(VBuilder::<Box<[W]>, S, E>::default())
             .expected_num_keys(n);
         if args.sequential {
-            let filter = <VFilter<VFunc<usize, Box<[W]>, S, E>>>::try_new_with_builder(
+            let filter = <VFilter<usize, Box<[W]>, S, E>>::try_new_with_builder(
                 FromCloneableIntoIterator::from(0_usize..n),
                 builder,
                 &mut pl,
@@ -177,7 +176,7 @@ where
             }
         } else {
             let keys: Vec<usize> = (0..n).collect();
-            let filter = <VFilter<VFunc<usize, Box<[W]>, S, E>>>::try_par_new_with_builder(
+            let filter = <VFilter<usize, Box<[W]>, S, E>>::try_par_new_with_builder(
                 &keys, builder, &mut pl,
             )?;
             if let Some(filename) = args.filter {
@@ -203,10 +202,8 @@ where
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     SigVal<E::LocalSig, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>:
-        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
-    VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>:
-        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    VFilter<usize, BitFieldVec<Box<[W]>>, S, E>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    VFilter<str, BitFieldVec<Box<[W]>>, S, E>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
     BitFieldVec<Box<[W]>>: MemSize + FlatType,
 {
     let mut pl = ProgressLogger::default();
@@ -221,7 +218,7 @@ where
             builder = builder.expected_num_keys(n_hint);
         }
         if args.sequential {
-            let filter = <VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
+            let filter = <VFilter<str, BitFieldVec<Box<[W]>>, S, E>>::try_new_with_builder(
                 DekoBufLineLender::from_path(filename)?.take(n),
                 args.bits,
                 builder,
@@ -245,10 +242,9 @@ where
                     );
                 }
             }
-            let filter =
-                <VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>>::try_par_new_with_builder(
-                    &keys, args.bits, builder, &mut pl,
-                )?;
+            let filter = <VFilter<str, BitFieldVec<Box<[W]>>, S, E>>::try_par_new_with_builder(
+                &keys, args.bits, builder, &mut pl,
+            )?;
             if let Some(filename) = args.filter {
                 if args.unaligned {
                     unsafe { filter.try_into_unaligned().unwrap().store(filename)? };
@@ -264,13 +260,12 @@ where
             .configure(VBuilder::<BitFieldVec<Box<[W]>>, S, E>::default())
             .expected_num_keys(n);
         if args.sequential {
-            let filter =
-                <VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
-                    FromCloneableIntoIterator::from(0_usize..n),
-                    args.bits,
-                    builder,
-                    &mut pl,
-                )?;
+            let filter = <VFilter<usize, BitFieldVec<Box<[W]>>, S, E>>::try_new_with_builder(
+                FromCloneableIntoIterator::from(0_usize..n),
+                args.bits,
+                builder,
+                &mut pl,
+            )?;
             if let Some(filename) = args.filter {
                 if args.unaligned {
                     unsafe { filter.try_into_unaligned().unwrap().store(filename)? };
@@ -280,10 +275,9 @@ where
             }
         } else {
             let keys: Vec<usize> = (0..n).collect();
-            let filter =
-                <VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>>::try_par_new_with_builder(
-                    &keys, args.bits, builder, &mut pl,
-                )?;
+            let filter = <VFilter<usize, BitFieldVec<Box<[W]>>, S, E>>::try_par_new_with_builder(
+                &keys, args.bits, builder, &mut pl,
+            )?;
             if let Some(filename) = args.filter {
                 if args.unaligned {
                     unsafe { filter.try_into_unaligned().unwrap().store(filename)? };

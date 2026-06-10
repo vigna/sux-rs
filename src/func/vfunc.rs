@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use crate::traits::Backend;
 use value_traits::slices::SliceByValue;
 
 use super::shard_edge::FuseLge3Shards;
@@ -88,10 +87,6 @@ pub struct VFunc<K: ?Sized, D, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) num_keys: usize,
     pub(crate) data: D,
     pub(crate) _marker: std::marker::PhantomData<(*const K, S)>,
-}
-
-impl<K: ?Sized, D: SliceByValue, S, E> Backend for VFunc<K, D, S, E> {
-    type Word = D::Value;
 }
 
 impl<K: ?Sized, D, S, E> VFunc<K, D, S, E> {

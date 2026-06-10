@@ -8,9 +8,12 @@
 //! Static filters (approximate membership structures with false positives).
 
 use crate::bits::BitFieldVec;
-use crate::func::{VFunc, shard_edge::ShardEdge};
+use crate::func::{
+    VFunc,
+    shard_edge::{FuseLge3Shards, ShardEdge},
+};
 use crate::traits::Unaligned;
-use crate::traits::{Backend, Word};
+use crate::traits::Word;
 use crate::utils::{BinSafe, Sig, ToSig};
 use mem_dbg::*;
 use num_primitive::{PrimitiveInteger, PrimitiveNumber, PrimitiveNumberAs};
@@ -39,9 +42,11 @@ use value_traits::slices::SliceByValue;
 ///
 /// # Generics
 ///
-/// * `W` - the unsigned integer type used to store hashes.
-/// * `F` - the underlying [`VFunc`] type (determines key type, signature
-///   type, sharding, and backend).
+/// * `K` - the type of the keys.
+/// * `D` - the backend storing the hashes; see the [`VFunc`] documentation
+///   for the available choices.
+/// * `S` - the signature type; see the [`VFunc`] documentation.
+/// * `E` - the sharding and edge logic type; see the [`VFunc`] documentation.
 ///
 /// # Examples
 ///
@@ -51,26 +56,47 @@ use value_traits::slices::SliceByValue;
 /// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 /// [ε-serde]: https://crates.io/crates/epserde
 /// [`serde`]: https://crates.io/crates/serde
-#[derive(Debug, Clone, MemSize, MemDbg)]
+#[derive(Clone, MemSize, MemDbg)]
 #[cfg_attr(
     feature = "epserde",
     derive(epserde::Epserde),
+    epserde(phantom(K, S)),
     epserde(bound(
-        deser = "for<'a> <F as epserde::deser::DeserInner>::DeserType<'a>: Backend<Word = F::Word>"
+        deser = "D::Value: for<'a> epserde::deser::DeserInner<DeserType<'a> = D::Value>, for<'a> <D as epserde::deser::DeserInner>::DeserType<'a>: SliceByValue<Value = D::Value>"
     ))
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct VFilter<F: Backend> {
+#[cfg_attr(
+    feature = "serde",
+    serde(bound(
+        serialize = "D: serde::Serialize, D::Value: serde::Serialize, E: serde::Serialize",
+        deserialize = "D: serde::Deserialize<'de>, D::Value: serde::Deserialize<'de>, E: serde::Deserialize<'de>"
+    ))
+)]
+pub struct VFilter<K: ?Sized, D: SliceByValue, S = [u64; 2], E = FuseLge3Shards> {
     /// The underlying static function mapping keys to hashes.
-    pub(crate) func: F,
+    pub(crate) func: VFunc<K, D, S, E>,
     /// Bit mask applied to the derived hash before comparison.
     ///
     /// Equal to `W::MAX >> (W::BITS - hash_bits)`, where `hash_bits`
     /// is the number of hash bits per key.
-    pub(crate) filter_mask: F::Word,
+    pub(crate) filter_mask: D::Value,
 }
 
-impl<F: Backend> VFilter<F> {
+impl<K: ?Sized, D: SliceByValue, S, E> std::fmt::Debug for VFilter<K, D, S, E>
+where
+    D::Value: std::fmt::Debug,
+    VFunc<K, D, S, E>: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VFilter")
+            .field("func", &self.func)
+            .field("filter_mask", &self.filter_mask)
+            .finish()
+    }
+}
+
+impl<K: ?Sized, D: SliceByValue, S, E> VFilter<K, D, S, E> {
     /// Creates a new `VFilter` from a function, a filter mask, and hash
     /// bit count.
     ///
@@ -79,13 +105,13 @@ impl<F: Backend> VFilter<F> {
     ///
     /// [`try_new`]: VFilter::try_new
     /// [`try_new_with_builder`]: VFilter::try_new_with_builder
-    pub fn from_parts(func: F, filter_mask: F::Word) -> Self {
+    pub fn from_parts(func: VFunc<K, D, S, E>, filter_mask: D::Value) -> Self {
         Self { func, filter_mask }
     }
 }
 
 impl<K: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: ShardEdge<S, 3>>
-    VFilter<VFunc<K, D, S, E>>
+    VFilter<K, D, S, E>
 where
     u64: PrimitiveNumberAs<D::Value>,
 {
@@ -123,10 +149,9 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::dict::VFilter;
-    /// # use sux::func::VFunc;
     /// # use dsi_progress_logger::no_logging;
     /// # use sux::utils::FromCloneableIntoIterator;
-    /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_new(
+    /// let filter = <VFilter<usize, Box<[u8]>>>::try_new(
     ///     FromCloneableIntoIterator::new(0..100),
     ///     no_logging![],
     /// )?;
@@ -172,7 +197,7 @@ impl<
     S: Sig,
     E: ShardEdge<S, 3>,
     B: Borrow<K>,
-> Index<B> for VFilter<VFunc<K, D, S, E>>
+> Index<B> for VFilter<K, D, S, E>
 where
     u64: PrimitiveNumberAs<D::Value>,
 {
@@ -195,9 +220,9 @@ where
 // ── Aligned ↔ Unaligned conversions ─────────────────────────────────
 
 impl<K: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>> crate::traits::TryIntoUnaligned
-    for VFilter<VFunc<K, BitFieldVec<Box<[W]>>, S, E>>
+    for VFilter<K, BitFieldVec<Box<[W]>>, S, E>
 {
-    type Unaligned = VFilter<VFunc<K, Unaligned<BitFieldVec<Box<[W]>>>, S, E>>;
+    type Unaligned = VFilter<K, Unaligned<BitFieldVec<Box<[W]>>>, S, E>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -209,10 +234,10 @@ impl<K: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>> crate::traits::Tr
 }
 
 impl<K: ?Sized, W: Word + BinSafe, S: Sig, E: ShardEdge<S, 3>>
-    From<Unaligned<VFilter<VFunc<K, BitFieldVec<Box<[W]>>, S, E>>>>
-    for VFilter<VFunc<K, BitFieldVec<Box<[W]>>, S, E>>
+    From<Unaligned<VFilter<K, BitFieldVec<Box<[W]>>, S, E>>>
+    for VFilter<K, BitFieldVec<Box<[W]>>, S, E>
 {
-    fn from(f: Unaligned<VFilter<VFunc<K, BitFieldVec<Box<[W]>>, S, E>>>) -> Self {
+    fn from(f: Unaligned<VFilter<K, BitFieldVec<Box<[W]>>, S, E>>) -> Self {
         VFilter {
             func: f.func.into(),
             filter_mask: f.filter_mask,
@@ -241,7 +266,7 @@ mod build {
         W: Word + BinSafe,
         S: Sig + Send + Sync,
         E: ShardEdge<S, 3> + MemSize + FlatType,
-    > VFilter<VFunc<K, Box<[W]>, S, E>>
+    > VFilter<K, Box<[W]>, S, E>
     where
         Box<[W]>: MemSize + FlatType,
         SigVal<S, EmptyVal>: RadixKey,
@@ -272,10 +297,9 @@ mod build {
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::dict::VFilter;
-        /// # use sux::func::VFunc;
         /// # use dsi_progress_logger::no_logging;
         /// # use sux::utils::FromCloneableIntoIterator;
-        /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_new(
+        /// let filter = <VFilter<usize, Box<[u8]>>>::try_new(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     no_logging![],
         /// )?;
@@ -330,10 +354,10 @@ mod build {
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::dict::VFilter;
-        /// # use sux::func::{VBuilder, VFunc};
+        /// # use sux::func::VBuilder;
         /// # use dsi_progress_logger::no_logging;
         /// # use sux::utils::FromCloneableIntoIterator;
-        /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_new_with_builder(
+        /// let filter = <VFilter<usize, Box<[u8]>>>::try_new_with_builder(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     VBuilder::default().offline(true),
         ///     no_logging![],
@@ -401,10 +425,9 @@ mod build {
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::dict::VFilter;
-        /// # use sux::func::VFunc;
         /// # use dsi_progress_logger::no_logging;
         /// let keys: Vec<usize> = (0..100).collect();
-        /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_par_new(
+        /// let filter = <VFilter<usize, Box<[u8]>>>::try_par_new(
         ///     &keys,
         ///     no_logging![],
         /// )?;
@@ -449,10 +472,10 @@ mod build {
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::dict::VFilter;
-        /// # use sux::func::{VBuilder, VFunc};
+        /// # use sux::func::VBuilder;
         /// # use dsi_progress_logger::no_logging;
         /// let keys: Vec<usize> = (0..100).collect();
-        /// let filter = <VFilter<VFunc<usize, Box<[u8]>>>>::try_par_new_with_builder(
+        /// let filter = <VFilter<usize, Box<[u8]>>>::try_par_new_with_builder(
         ///     &keys,
         ///     VBuilder::default(),
         ///     no_logging![],
@@ -525,7 +548,7 @@ mod build {
         W: Word + BinSafe,
         S: Sig + Send + Sync,
         E: ShardEdge<S, 3> + MemSize + FlatType,
-    > VFilter<VFunc<K, BitFieldVec<Box<[W]>>, S, E>>
+    > VFilter<K, BitFieldVec<Box<[W]>>, S, E>
     where
         BitFieldVec<Box<[W]>>: MemSize + FlatType,
         SigVal<S, EmptyVal>: RadixKey,
@@ -552,11 +575,10 @@ mod build {
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::dict::VFilter;
-        /// # use sux::func::VFunc;
         /// # use sux::bits::BitFieldVec;
         /// # use dsi_progress_logger::no_logging;
         /// # use sux::utils::FromCloneableIntoIterator;
-        /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_new(
+        /// let filter = <VFilter<usize, BitFieldVec<Box<[usize]>>>>::try_new(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     5,
         ///     no_logging![],
@@ -611,11 +633,11 @@ mod build {
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::dict::VFilter;
-        /// # use sux::func::{VBuilder, VFunc};
+        /// # use sux::func::VBuilder;
         /// # use sux::bits::BitFieldVec;
         /// # use dsi_progress_logger::no_logging;
         /// # use sux::utils::FromCloneableIntoIterator;
-        /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_new_with_builder(
+        /// let filter = <VFilter<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     5,
         ///     VBuilder::default().offline(true),
@@ -686,11 +708,10 @@ mod build {
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::dict::VFilter;
-        /// # use sux::func::VFunc;
         /// # use sux::bits::BitFieldVec;
         /// # use dsi_progress_logger::no_logging;
         /// let keys: Vec<usize> = (0..100).collect();
-        /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_par_new(
+        /// let filter = <VFilter<usize, BitFieldVec<Box<[usize]>>>>::try_par_new(
         ///     &keys,
         ///     5,
         ///     no_logging![],
@@ -737,11 +758,11 @@ mod build {
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::dict::VFilter;
-        /// # use sux::func::{VBuilder, VFunc};
+        /// # use sux::func::VBuilder;
         /// # use sux::bits::BitFieldVec;
         /// # use dsi_progress_logger::no_logging;
         /// let keys: Vec<usize> = (0..100).collect();
-        /// let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_par_new_with_builder(
+        /// let filter = <VFilter<usize, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
         ///     &keys,
         ///     5,
         ///     VBuilder::default(),
@@ -826,7 +847,7 @@ mod tests {
 
     use crate::{
         func::{
-            VBuilder, VFunc,
+            VBuilder,
             shard_edge::{Fuse3NoShards, FuseLge3Shards},
         },
         utils::{EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig},
@@ -852,7 +873,7 @@ mod tests {
         SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     {
         for n in [0_usize, 10, 1000, 100_000, 1_000_000] {
-            let filter = <VFilter<VFunc<usize, Box<[u8]>, S, E>>>::try_new_with_builder(
+            let filter = <VFilter<usize, Box<[u8]>, S, E>>::try_new_with_builder(
                 FromCloneableIntoIterator::from(0..n),
                 VBuilder::default().log2_buckets(4).offline(false),
                 no_logging![],
@@ -867,6 +888,51 @@ mod tests {
                     "Hash mismatch for key {i}"
                 );
             }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "epserde")]
+    fn test_epserde() -> anyhow::Result<()> {
+        use crate::bits::BitFieldVec;
+        use epserde::deser::{Deserialize, Flags};
+        use epserde::prelude::Aligned16;
+        use epserde::ser::Serialize;
+        use epserde::utils::AlignedCursor;
+
+        let n = 1000;
+        let keys = (0..n).collect::<Vec<usize>>();
+
+        // Boxed-slice backend
+        let filter = <VFilter<usize, Box<[u8]>>>::try_par_new(&keys, no_logging![])?;
+        let mut cursor = <AlignedCursor<Aligned16>>::new();
+        unsafe { filter.serialize(&mut cursor)? };
+        let len = cursor.len();
+        cursor.set_position(0);
+        let eps =
+            unsafe { <VFilter<usize, Box<[u8]>>>::read_mmap(&mut cursor, len, Flags::empty())? };
+        for i in 0..2 * n {
+            assert_eq!(filter.contains(i), eps.uncase().contains(i));
+        }
+
+        // BitFieldVec backend
+        let filter =
+            <VFilter<usize, BitFieldVec<Box<[usize]>>>>::try_par_new(&keys, 5, no_logging![])?;
+        let mut cursor = <AlignedCursor<Aligned16>>::new();
+        unsafe { filter.serialize(&mut cursor)? };
+        let len = cursor.len();
+        cursor.set_position(0);
+        let eps = unsafe {
+            <VFilter<usize, BitFieldVec<Box<[usize]>>>>::read_mmap(
+                &mut cursor,
+                len,
+                Flags::empty(),
+            )?
+        };
+        for i in 0..2 * n {
+            assert_eq!(filter.contains(i), eps.uncase().contains(i));
         }
 
         Ok(())

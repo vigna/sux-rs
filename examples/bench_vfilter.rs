@@ -12,7 +12,7 @@ use sux::{
     bits::{BitFieldVec, BitFieldVecU},
     cli::{pack_strings, reservoir_sample},
     dict::VFilter,
-    func::{shard_edge::*, *},
+    func::shard_edge::*,
     traits::{BitFieldSlice, Word},
     utils::{BinSafe, Sig, ToSig},
 };
@@ -107,8 +107,8 @@ where
     usize: ToSig<S>,
     u64: num_primitive::PrimitiveNumberAs<W>,
     Box<[W]>: BitFieldSlice<Value = W>,
-    VFilter<VFunc<usize, Box<[W]>, S, E>>: Deserialize,
-    VFilter<VFunc<str, Box<[W]>, S, E>>: Deserialize,
+    VFilter<usize, Box<[W]>, S, E>: Deserialize,
+    VFilter<str, Box<[W]>, S, E>: Deserialize,
 {
     if args.unaligned {
         panic!("Unaligned reads are not supported for backend Box<[W]>");
@@ -120,7 +120,7 @@ where
             pack_strings(&queries, args.n)
         };
 
-        let filter = unsafe { VFilter::<VFunc<str, Box<[W]>, S, E>>::load_full(&args.filter) }?;
+        let filter = unsafe { VFilter::<str, Box<[W]>, S, E>::load_full(&args.filter) }?;
 
         bench(args.n, args.repeats, || {
             let mut u = 0usize;
@@ -134,7 +134,7 @@ where
         });
     } else {
         // No filename
-        let filter = unsafe { VFilter::<VFunc<usize, Box<[W]>, S, E>>::load_full(&args.filter) }?;
+        let filter = unsafe { VFilter::<usize, Box<[W]>, S, E>::load_full(&args.filter) }?;
 
         bench(args.n, args.repeats, || {
             let mut u = 0usize;
@@ -160,10 +160,10 @@ where
     str: ToSig<S>,
     usize: ToSig<S>,
     u64: num_primitive::PrimitiveNumberAs<W>,
-    VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>: Deserialize,
-    VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>: Deserialize,
-    VFilter<VFunc<usize, BitFieldVecU<Box<[W]>>, S, E>>: Deserialize,
-    VFilter<VFunc<str, BitFieldVecU<Box<[W]>>, S, E>>: Deserialize,
+    VFilter<usize, BitFieldVec<Box<[W]>>, S, E>: Deserialize,
+    VFilter<str, BitFieldVec<Box<[W]>>, S, E>: Deserialize,
+    VFilter<usize, BitFieldVecU<Box<[W]>>, S, E>: Deserialize,
+    VFilter<str, BitFieldVecU<Box<[W]>>, S, E>: Deserialize,
 {
     if let Some(ref filename) = args.filename {
         let (packed, packed_offsets) = {
@@ -172,9 +172,8 @@ where
         };
 
         if args.unaligned {
-            let filter = unsafe {
-                VFilter::<VFunc<str, BitFieldVecU<Box<[W]>>, S, E>>::load_full(&args.filter)
-            }?;
+            let filter =
+                unsafe { VFilter::<str, BitFieldVecU<Box<[W]>>, S, E>::load_full(&args.filter) }?;
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
                 for i in 0..args.n {
@@ -186,9 +185,8 @@ where
                 std::hint::black_box(u);
             });
         } else {
-            let filter = unsafe {
-                VFilter::<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.filter)
-            }?;
+            let filter =
+                unsafe { VFilter::<str, BitFieldVec<Box<[W]>>, S, E>::load_full(&args.filter) }?;
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
                 for i in 0..args.n {
@@ -202,9 +200,8 @@ where
         }
     } else {
         if args.unaligned {
-            let filter = unsafe {
-                VFilter::<VFunc<usize, BitFieldVecU<Box<[W]>>, S, E>>::load_full(&args.filter)
-            }?;
+            let filter =
+                unsafe { VFilter::<usize, BitFieldVecU<Box<[W]>>, S, E>::load_full(&args.filter) }?;
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
                 let mut key: usize = 0;
@@ -215,9 +212,8 @@ where
                 std::hint::black_box(u);
             });
         } else {
-            let filter = unsafe {
-                VFilter::<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.filter)
-            }?;
+            let filter =
+                unsafe { VFilter::<usize, BitFieldVec<Box<[W]>>, S, E>::load_full(&args.filter) }?;
             bench(args.n, args.repeats, || {
                 let mut u = 0usize;
                 let mut key: usize = 0;

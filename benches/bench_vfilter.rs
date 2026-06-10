@@ -14,7 +14,6 @@ use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
 use sux::bits::BitFieldVec;
 use sux::dict::VFilter;
-use sux::func::VFunc;
 use sux::traits::TryIntoUnaligned;
 
 /// Number of pregenerated queries (must be a power of 2 for masking).
@@ -33,22 +32,15 @@ fn gen_query_indices(n: usize) -> Vec<usize> {
         .collect()
 }
 
-fn build_filter_box_u8(n: usize) -> VFilter<VFunc<usize, Box<[u8]>>> {
+fn build_filter_box_u8(n: usize) -> VFilter<usize, Box<[u8]>> {
     let keys: Vec<usize> = (0..n).collect();
-    <VFilter<VFunc<usize, Box<[u8]>>>>::try_par_new(&keys, no_logging![]).unwrap()
+    <VFilter<usize, Box<[u8]>>>::try_par_new(&keys, no_logging![]).unwrap()
 }
 
-fn build_filter_bfv(
-    n: usize,
-    filter_bits: usize,
-) -> VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>> {
+fn build_filter_bfv(n: usize, filter_bits: usize) -> VFilter<usize, BitFieldVec<Box<[usize]>>> {
     let keys: Vec<usize> = (0..n).collect();
-    <VFilter<VFunc<usize, BitFieldVec<Box<[usize]>>>>>::try_par_new(
-        &keys,
-        filter_bits,
-        no_logging![],
-    )
-    .unwrap()
+    <VFilter<usize, BitFieldVec<Box<[usize]>>>>::try_par_new(&keys, filter_bits, no_logging![])
+        .unwrap()
 }
 
 // ── Benchmarks ──────────────────────────────────────────────────────

@@ -109,7 +109,7 @@ where
 
     for &n in sizes {
         dbg!(offline, n);
-        let filter = <VFilter<VFunc<usize, Box<[u8]>, S, E>>>::try_new_with_builder(
+        let filter = <VFilter<usize, Box<[u8]>, S, E>>::try_new_with_builder(
             FromCloneableIntoIterator::from(0..n),
             VBuilder::default().offline(offline).low_mem(low_mem),
             &mut pl,
