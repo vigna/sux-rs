@@ -1,4 +1,4 @@
-F# Change Log
+# Change Log
 
 ## unreleased
 
@@ -29,6 +29,19 @@ F# Change Log
 
 - Unsound reference-based `From` implementations between `BitVec`,
   `AtomicBitVec`, etc. have been removed.
+
+- The safe predecessor methods of `EliasFano` (`pred`, `iter_from_pred`,
+  `iter_back_from_pred`, `iter_bidi_from_pred`, and their strict variants)
+  no longer cause undefined behavior when called with a value greater than
+  the upper bound: they now return the last element, like `pred_strict`
+  already did.
+
+- `transmute_vec_from_atomic` and `transmute_boxed_slice_from_atomic` now
+  fall back to copying when the alignment of the atomic type differs from
+  that of its value type (e.g., `AtomicU64` vs. `u64` on 32-bit x86), as
+  deallocating with a different alignment would be undefined behavior. The
+  check is resolved at compile time, so on targets with equal alignments
+  the code is unchanged.
 
 ### Improved
 

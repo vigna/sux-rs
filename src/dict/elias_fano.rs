@@ -1442,6 +1442,9 @@ where
     fn pred(&self, value: impl Borrow<V>) -> Option<(usize, V)> {
         if self.n == 0 || *value.borrow() < self.first_val {
             None
+        } else if *value.borrow() > self.last_val {
+            // pred_unchecked requires value ≤ u
+            Some((self.n - 1, self.last_val))
         } else {
             Some(unsafe { self.pred_unchecked::<false>(value) })
         }
@@ -1486,6 +1489,10 @@ where
         let value = *value.borrow();
         if self.n == 0 || value < self.first_val {
             None
+        } else if value > self.last_val {
+            // The predecessor is the last element; clamp, as
+            // iter_from_pred_unchecked requires value ≤ u
+            Some(unsafe { self.iter_from_pred_unchecked::<false>(self.last_val) })
         } else {
             Some(unsafe { self.iter_from_pred_unchecked::<false>(value) })
         }
@@ -1498,6 +1505,10 @@ where
     ) -> Option<(usize, <Self as PredIterUnchecked>::Iter<'_>)> {
         if *value.borrow() <= self.first_val {
             None
+        } else if *value.borrow() > self.last_val {
+            // The strict predecessor is the last element; clamp, as
+            // iter_from_pred_unchecked requires value ≤ u
+            Some(unsafe { self.iter_from_pred_unchecked::<false>(self.last_val) })
         } else {
             Some(unsafe { self.iter_from_pred_unchecked::<true>(value) })
         }
@@ -1519,6 +1530,10 @@ where
     ) -> Option<(usize, <Self as PredIterBackUnchecked>::BackIter<'_>)> {
         if self.n == 0 || *value.borrow() < self.first_val {
             None
+        } else if *value.borrow() > self.last_val {
+            // The predecessor is the last element; clamp, as
+            // iter_back_from_pred_unchecked requires value ≤ u
+            Some(unsafe { self.iter_back_from_pred_unchecked::<false>(self.last_val) })
         } else {
             Some(unsafe { self.iter_back_from_pred_unchecked::<false>(value) })
         }
@@ -1531,6 +1546,10 @@ where
     ) -> Option<(usize, <Self as PredIterBackUnchecked>::BackIter<'_>)> {
         if *value.borrow() <= self.first_val {
             None
+        } else if *value.borrow() > self.last_val {
+            // The strict predecessor is the last element; clamp, as
+            // iter_back_from_pred_unchecked requires value ≤ u
+            Some(unsafe { self.iter_back_from_pred_unchecked::<false>(self.last_val) })
         } else {
             Some(unsafe { self.iter_back_from_pred_unchecked::<true>(value) })
         }
@@ -1552,6 +1571,10 @@ where
     ) -> Option<(usize, <Self as PredBidiIterUnchecked>::BidiIter<'_>)> {
         if self.n == 0 || *value.borrow() < self.first_val {
             None
+        } else if *value.borrow() > self.last_val {
+            // The predecessor is the last element; clamp, as
+            // iter_bidi_from_pred_unchecked requires value ≤ u
+            Some(unsafe { self.iter_bidi_from_pred_unchecked::<false>(self.last_val) })
         } else {
             Some(unsafe { self.iter_bidi_from_pred_unchecked::<false>(value) })
         }
@@ -1564,6 +1587,10 @@ where
     ) -> Option<(usize, <Self as PredBidiIterUnchecked>::BidiIter<'_>)> {
         if *value.borrow() <= self.first_val {
             None
+        } else if *value.borrow() > self.last_val {
+            // The strict predecessor is the last element; clamp, as
+            // iter_bidi_from_pred_unchecked requires value ≤ u
+            Some(unsafe { self.iter_bidi_from_pred_unchecked::<false>(self.last_val) })
         } else {
             Some(unsafe { self.iter_bidi_from_pred_unchecked::<true>(value) })
         }

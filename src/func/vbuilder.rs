@@ -1455,7 +1455,7 @@ impl<
                             Err(_) => return,
                             Ok((shard_index, (shard, mut data))) => {
                                 if shard.is_empty() {
-                                    return;
+                                    continue;
                                 }
 
                                 main_pl.debug(format_args!(
