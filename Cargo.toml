@@ -211,7 +211,3 @@ required-features = ["cli"]
 [[bench]]
 name = "bit_field_vec"
 harness = false
-
-[[bench]]
-name = "bench_part_elias_fano"
-harness = false
