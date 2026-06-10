@@ -191,3 +191,43 @@ fn test_dup_key() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_mismatched_keys_and_values() -> Result<()> {
+    use sux::func::BuildError;
+    let mut pl = ProgressLogger::default();
+
+    // Lender-based construction: fewer values than keys is an error
+    let result = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new(
+        FromCloneableIntoIterator::from(0..100_usize),
+        FromCloneableIntoIterator::from(0..50_usize),
+        &mut pl,
+    );
+    assert!(matches!(
+        result.unwrap_err().downcast_ref::<BuildError>(),
+        Some(BuildError::MismatchedKeysAndValues { .. })
+    ));
+
+    // Lender-based construction: extra values are allowed (the values
+    // lender may be infinite)
+    let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new(
+        FromCloneableIntoIterator::from(0..100_usize),
+        FromCloneableIntoIterator::from(0_usize..),
+        &mut pl,
+    )?;
+    assert_eq!(func.get(50), 50);
+
+    // Slice-based construction: lengths must match exactly
+    let keys: Vec<usize> = (0..100).collect();
+    for len in [50_usize, 200] {
+        let values: Vec<usize> = (0..len).collect();
+        let result =
+            <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_par_new(&keys, &values, &mut pl);
+        assert!(matches!(
+            result.unwrap_err().downcast_ref::<BuildError>(),
+            Some(BuildError::MismatchedKeysAndValues { .. })
+        ));
+    }
+
+    Ok(())
+}

@@ -243,8 +243,12 @@ mod build {
         ///
         /// * `keys` and `values` -
         ///   [`FallibleRewindableLender`]s, aligned (one value per key,
-        ///   same order). The [`lenders`] module provides easy ways to
-        ///   build such lenders.
+        ///   same order). The values lender may return more values than
+        ///   there are keys (in particular, it may be infinite); the
+        ///   extra values are ignored. If it returns fewer values, a
+        ///   [`BuildError::MismatchedKeysAndValues`] error is returned.
+        ///   The [`lenders`] module provides easy ways to build such
+        ///   lenders.
         ///
         /// # Examples
         ///
@@ -303,8 +307,12 @@ mod build {
         ///
         /// * `keys` and `values` -
         ///   [`FallibleRewindableLender`]s, aligned (one value per key,
-        ///   same order). The [`lenders`] module provides easy ways to
-        ///   build such lenders.
+        ///   same order). The values lender may return more values than
+        ///   there are keys (in particular, it may be infinite); the
+        ///   extra values are ignored. If it returns fewer values, a
+        ///   [`BuildError::MismatchedKeysAndValues`] error is returned.
+        ///   The [`lenders`] module provides easy ways to build such
+        ///   lenders.
         ///
         /// # Examples
         ///
@@ -471,6 +479,13 @@ mod build {
             for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
         {
             let n = keys.len();
+            if n != values.len() {
+                return Err(crate::func::BuildError::MismatchedKeysAndValues {
+                    num_keys: n,
+                    num_values: values.len(),
+                }
+                .into());
+            }
             builder.expected_num_keys(n).try_par_populate_and_build(
                 keys,
                 &|i| values[i],
@@ -520,8 +535,12 @@ mod build {
         ///
         /// * `keys` and `values` -
         ///   [`FallibleRewindableLender`]s, aligned (one value per key,
-        ///   same order). The [`lenders`] module provides easy ways to
-        ///   build such lenders.
+        ///   same order). The values lender may return more values than
+        ///   there are keys (in particular, it may be infinite); the
+        ///   extra values are ignored. If it returns fewer values, a
+        ///   [`BuildError::MismatchedKeysAndValues`] error is returned.
+        ///   The [`lenders`] module provides easy ways to build such
+        ///   lenders.
         ///
         /// # Examples
         ///
@@ -575,8 +594,12 @@ mod build {
         ///
         /// * `keys` and `values` -
         ///   [`FallibleRewindableLender`]s, aligned (one value per key,
-        ///   same order). The [`lenders`] module provides easy ways to
-        ///   build such lenders.
+        ///   same order). The values lender may return more values than
+        ///   there are keys (in particular, it may be infinite); the
+        ///   extra values are ignored. If it returns fewer values, a
+        ///   [`BuildError::MismatchedKeysAndValues`] error is returned.
+        ///   The [`lenders`] module provides easy ways to build such
+        ///   lenders.
         ///
         /// # Examples
         ///
@@ -733,6 +756,13 @@ mod build {
             K: Sync,
         {
             let n = keys.len();
+            if n != values.len() {
+                return Err(crate::func::BuildError::MismatchedKeysAndValues {
+                    num_keys: n,
+                    num_values: values.len(),
+                }
+                .into());
+            }
             builder.expected_num_keys(n).try_par_populate_and_build(
                 keys,
                 &|i| values[i],

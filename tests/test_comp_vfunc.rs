@@ -454,3 +454,56 @@ fn test_usize_msb_values() {
         "try_into_unaligned must fail for full-range usize escaped values"
     );
 }
+
+#[test]
+fn test_mismatched_keys_and_values() {
+    use sux::func::BuildError;
+
+    // Slice-based construction: lengths must match exactly
+    let keys: Vec<u64> = (0..100).collect();
+    for len in [50_usize, 200] {
+        let values: Vec<usize> = (0..len).map(|i| i % 5).collect();
+        let result = CompVFunc::<u64>::try_par_new(&keys, &values, no_logging![]);
+        assert!(matches!(
+            result.unwrap_err().downcast_ref::<BuildError>(),
+            Some(BuildError::MismatchedKeysAndValues { .. })
+        ));
+    }
+
+    // Lender-based construction: fewer values than keys
+    let values: Vec<usize> = (0..50).map(|i| i % 5).collect();
+    let result = CompVFunc::<usize>::try_new(
+        FromCloneableIntoIterator::from(0..100_usize),
+        FromSlice::new(&values),
+        no_logging![],
+    );
+    assert!(matches!(
+        result.unwrap_err().downcast_ref::<BuildError>(),
+        Some(BuildError::MismatchedKeysAndValues { .. })
+    ));
+
+    // Lender-based construction: more values than keys (values are
+    // counted before construction, so this is detected, too)
+    let values: Vec<usize> = (0..200).map(|i| i % 5).collect();
+    let result = CompVFunc::<usize>::try_new(
+        FromCloneableIntoIterator::from(0..100_usize),
+        FromSlice::new(&values),
+        no_logging![],
+    );
+    assert!(matches!(
+        result.unwrap_err().downcast_ref::<BuildError>(),
+        Some(BuildError::MismatchedKeysAndValues { .. })
+    ));
+
+    // Lender-based construction: keys but no values
+    let values: Vec<usize> = vec![];
+    let result = CompVFunc::<usize>::try_new(
+        FromCloneableIntoIterator::from(0..100_usize),
+        FromSlice::new(&values),
+        no_logging![],
+    );
+    assert!(matches!(
+        result.unwrap_err().downcast_ref::<BuildError>(),
+        Some(BuildError::MismatchedKeysAndValues { .. })
+    ));
+}

@@ -253,9 +253,16 @@ fn mask<W: Word>(bit_width: usize) -> W {
 }
 
 impl<B: Backend<Word: Word>> BitFieldVec<B> {
+    /// Creates a new vector from the given backend, bit width, and length.
+    ///
     /// # Safety
-    /// `len` * `bit_width` must be between 0 (included) and the number of
-    /// bits in `bits` (included).
+    ///
+    /// - `bit_width` can be at most `Backend::Word::BITS`;
+    ///
+    /// - `len` * `bit_width` must be between 0 (included) and the number of
+    ///   bits in `bits` (included);
+    ///
+    /// - there must be at least an allocated word when `bit_width` is zero.
     #[inline(always)]
     #[must_use]
     pub unsafe fn from_raw_parts(bits: B, bit_width: usize, len: usize) -> Self {

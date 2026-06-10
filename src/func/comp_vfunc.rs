@@ -349,11 +349,11 @@ where
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
         if keys.len() != values.len() {
-            bail!(
-                "keys and values must have the same length ({} vs {})",
-                keys.len(),
-                values.len()
-            );
+            return Err(crate::func::BuildError::MismatchedKeysAndValues {
+                num_keys: keys.len(),
+                num_values: values.len(),
+            }
+            .into());
         }
         if keys.is_empty() {
             return Ok(empty_comp_vfunc::<K, W, S, E>());
@@ -790,7 +790,11 @@ where
     let n: usize = frequencies.values().sum();
     if n == 0 {
         if keys.next()?.is_some() {
-            bail!("keys and values have different lengths");
+            return Err(crate::func::BuildError::MismatchedKeysAndValues {
+                num_keys: 1,
+                num_values: 0,
+            }
+            .into());
         }
         return Ok(empty_comp_vfunc());
     }
@@ -806,6 +810,15 @@ where
     let mut build_fn = make_build_fn(&coder);
     let ((data, seed_used, shard_size), _keys) =
         builder.try_populate_and_build(keys, values, &mut build_fn, pl, ())?;
+    // The zip in try_populate_and_build catches the case of more keys than
+    // values; here we catch the case of fewer keys than values
+    if builder.num_keys != n {
+        return Err(crate::func::BuildError::MismatchedKeysAndValues {
+            num_keys: builder.num_keys,
+            num_values: n,
+        }
+        .into());
+    }
     drop(build_fn);
     let shard_edge = builder.shard_edge;
     Ok(finish_build(

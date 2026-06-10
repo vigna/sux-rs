@@ -27,6 +27,14 @@
 
 - Default `BitLength::is_empty` method.
 
+- New `BuildError::MismatchedKeysAndValues` returned by `VFunc`, `VFunc2`,
+  and `CompVFunc` construction when the number of values does not match
+  the number of keys: slice-based constructors check the lengths exactly;
+  lender-based constructors return an error if the values are exhausted
+  before the keys (`CompVFunc`, which counts values beforehand, detects
+  also the symmetric case). Previously, mismatches would cause a panic or
+  be silently ignored.
+
 ### Fixed
 
 - Unsound reference-based `From` implementations between `BitVec`,

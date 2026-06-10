@@ -249,6 +249,12 @@ pub enum BuildError {
     /// All shards remained unsolvable after multiple attempts.
     #[error("Unsolvable shard after multiple attempts")]
     UnsolvableShard,
+    /// The number of values is different from the number of keys.
+    ///
+    /// When construction is lender-based the mismatch is detected lazily,
+    /// so the reported counts might be lower bounds.
+    #[error("Mismatch between number of keys ({num_keys}) and number of values ({num_values})")]
+    MismatchedKeysAndValues { num_keys: usize, num_values: usize },
 }
 
 /// Transient error during the build, leading to trying with a different seed.
@@ -831,9 +837,15 @@ impl<
                                     pl: &mut P,
                                     _state: &mut C| {
                     let mut maybe_max_value = V::default();
+                    let mut num_keys = 0;
                     while let Some(key) = keys.next()? {
                         pl.light_update();
-                        let &maybe_val = values.next()?.expect("Not enough values");
+                        num_keys += 1;
+                        let &maybe_val =
+                            values.next()?.ok_or(BuildError::MismatchedKeysAndValues {
+                                num_keys,
+                                num_values: num_keys - 1,
+                            })?;
                         maybe_max_value = Ord::max(maybe_max_value, maybe_val);
                         push(SigVal {
                             sig: K::to_sig(key.borrow(), seed),
