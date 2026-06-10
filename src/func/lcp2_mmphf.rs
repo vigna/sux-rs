@@ -79,7 +79,11 @@ use xxhash_rust::xxh3;
 /// [ε-serde]: https://crates.io/crates/epserde
 /// [`serde`]: https://crates.io/crates/serde
 #[derive(Clone, MemSize, MemDbg)]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(
+    feature = "epserde",
+    derive(epserde::Epserde),
+    epserde(phantom(K, S0, S1))
+)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
     feature = "serde",
@@ -88,7 +92,6 @@ use xxhash_rust::xxh3;
         deserialize = "VFunc<K, D, S0, E0>: serde::Deserialize<'de>, VFunc<K, D, S0, F0>: serde::Deserialize<'de>, VFunc<IntBitPrefix<K>, D, S1, E1>: serde::Deserialize<'de>"
     ))
 )]
-#[cfg_attr(feature = "epserde", epserde(full_copy(K, S0, S1)))]
 pub struct Lcp2MmphfInt<
     K,
     D = BitFieldVec<Box<[usize]>>,
@@ -1888,7 +1891,11 @@ mod build {
 /// [ε-serde]: https://crates.io/crates/epserde
 /// [`serde`]: https://crates.io/crates/serde
 #[derive(Clone, MemSize, MemDbg)]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(
+    feature = "epserde",
+    derive(epserde::Epserde),
+    epserde(phantom(K, S0, S1))
+)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
     feature = "serde",
@@ -1897,7 +1904,6 @@ mod build {
         deserialize = "VFunc<K, D, S0, E0>: serde::Deserialize<'de>, VFunc<K, D, S0, F0>: serde::Deserialize<'de>, VFunc<BitPrefix, D, S1, E1>: serde::Deserialize<'de>"
     ))
 )]
-#[cfg_attr(feature = "epserde", epserde(full_copy(K, S0, S1)))]
 pub struct Lcp2Mmphf<
     K: ?Sized,
     D = BitFieldVec<Box<[usize]>>,

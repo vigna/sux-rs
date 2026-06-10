@@ -504,8 +504,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
 /// length blocks (`> 3` ⇒ branchless). Use [`Self::branchless`]
 /// to override.
 #[derive(Debug, Clone, MemSize, MemDbg)]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "epserde", epserde(full_copy(W)))]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(full_copy(W)))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct HuffmanDecoder<W> {
     /// For each length block, one past the last canonical codeword in

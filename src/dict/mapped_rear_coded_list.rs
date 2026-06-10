@@ -102,8 +102,7 @@ use value_traits::slices::SliceByValue;
 /// Main structure; please use the type aliases [`MappedRearCodedListStr`] and
 /// [`MappedRearCodedListSliceU8`].
 #[derive(Debug, Clone, MemSize, MemDbg)]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "epserde", epserde(full_copy(I, O)))]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(phantom(I, O)))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MappedRearCodedList<
     I: ?Sized,

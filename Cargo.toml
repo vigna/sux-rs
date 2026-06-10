@@ -16,7 +16,8 @@ documentation = "https://docs.rs/sux"
 rust-version = "1.85"
 
 [package.metadata.docs.rs]
-features = ["epserde", "mmap"]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 anyhow = "1.0.79"
@@ -80,10 +81,6 @@ deko = ["dep:deko"]
 serde = ["dep:serde", "dep:serde_arrays"]
 epserde = ["dep:epserde"]
 mmap = ["epserde/mmap"]
-
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
 
 [profile.release]
 opt-level = 3 # like --release

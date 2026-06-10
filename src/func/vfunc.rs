@@ -80,7 +80,7 @@ use std::borrow::Borrow;
 /// [`serde`]: https://crates.io/crates/serde
 /// [`Fuse3NoShards`]: crate::func::shard_edge::Fuse3NoShards
 #[derive(Debug, Clone, MemSize, MemDbg)]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(phantom(K, S)))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct VFunc<K: ?Sized, D, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) shard_edge: E,
