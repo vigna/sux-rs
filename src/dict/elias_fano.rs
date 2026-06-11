@@ -348,6 +348,12 @@ impl<V, H, L> EliasFano<V, H, L> {
         self.u
     }
 
+    /// Returns the number of explicitly stored lower bits for each value.
+    #[inline]
+    pub fn num_lower_bits(&self) -> usize {
+        self.l
+    }
+
     /// Replaces the high bits.
     ///
     /// # Safety
