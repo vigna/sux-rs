@@ -2273,7 +2273,7 @@ impl<V: Word + PrimitiveNumberAs<usize>> Extend<V> for EliasFanoBuilder<V> {
 /// A concurrent builder for [`EliasFano`].
 ///
 /// After creating an instance, you can use [`EliasFanoConcurrentBuilder::set`]
-/// to set the values concurrently. However, this operation is inherently
+/// to set the values concurrently, in any order. However, this operation is inherently
 /// unsafe as no check is performed on the provided data (e.g., duplicate
 /// indices and lack of monotonicity are not detected).
 ///
@@ -2344,6 +2344,8 @@ where
     }
 
     /// Sets a value concurrently.
+    ///
+    /// This allows setting values in _any_ order.
     ///
     /// # Safety
     /// - All indices must be distinct.
