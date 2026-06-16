@@ -293,7 +293,7 @@ impl<
 
                 let start_bit_idx = inv_left;
                 let end_bit_idx = inv_right;
-                let end_word_idx = end_bit_idx.div_ceil(64);
+                let end_word_idx = end_bit_idx.div_ceil(64).min(num_words);
                 let mut subinventory_idx = 0;
                 'outer: loop {
                     while word != B::Word::ZERO {
