@@ -431,7 +431,23 @@ impl<'a, W: Word> FusedIterator for ChunksMut<'a, W> where
 {
 }
 
-impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {}
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
+    /// Wraps a backend as a bit-field vector of given bit width and length.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if `len * bit_width` is greater than the number
+    /// of bits available in the backend.
+    pub fn wrap(backend: B, bit_width: usize, len: usize) -> BitFieldVec<B> {
+        assert!(len * bit_width <= backend.as_ref().len() * B::Word::BITS as usize);
+        BitFieldVec {
+            bits: backend,
+            bit_width,
+            mask: mask(bit_width),
+            len,
+        }
+    }
+}
 
 impl<W: Word> BitFieldVec<Vec<W>> {
     /// Creates a new zero-initialized vector of given bit width and length.

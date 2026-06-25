@@ -504,6 +504,67 @@ fn test_set_len() {
     assert_eq!(b.len(), 5);
 }
 
+#[test]
+fn test_wrap() {
+    // Round-trip: build a vector, take its backend apart, and wrap it again.
+    let mut b = BitFieldVec::<Vec<usize>>::new(10, 12);
+    for i in 0..12 {
+        b.set_value(i, i);
+    }
+    let (backend, bit_width, len) = b.into_raw_parts();
+    let b = BitFieldVec::wrap(backend, bit_width, len);
+    assert_eq!(b.bit_width(), 10);
+    assert_eq!(b.len(), 12);
+    for i in 0..12 {
+        assert_eq!(b.index_value(i), i);
+    }
+}
+
+#[test]
+fn test_wrap_slack() {
+    // A length using fewer bits than the backend provides is fine.
+    let backend = vec![0usize; 4];
+    let b = BitFieldVec::wrap(backend, 7, 3);
+    assert_eq!(b.bit_width(), 7);
+    assert_eq!(b.len(), 3);
+}
+
+#[test]
+fn test_wrap_exact() {
+    // len * bit_width exactly equal to the backend capacity must not panic.
+    let bits = usize::BITS as usize;
+    let backend = vec![0usize; 2];
+    let b = BitFieldVec::wrap(backend, 1, 2 * bits);
+    assert_eq!(b.len(), 2 * bits);
+}
+
+#[test]
+fn test_wrap_zero_width() {
+    // A zero bit width needs no storage regardless of length.
+    let backend = vec![0usize; 1];
+    let b = BitFieldVec::wrap(backend, 0, 1000);
+    assert_eq!(b.bit_width(), 0);
+    assert_eq!(b.len(), 1000);
+}
+
+#[test]
+#[should_panic]
+fn test_wrap_too_long() {
+    // One bit past the backend capacity must panic.
+    let bits = usize::BITS as usize;
+    let backend = vec![0usize; 2];
+    let _ = BitFieldVec::wrap(backend, 1, 2 * bits + 1);
+}
+
+#[test]
+#[should_panic]
+fn test_wrap_too_wide() {
+    // Capacity overflow caused by the bit width rather than the length.
+    let bits = usize::BITS as usize;
+    let backend = vec![0usize; 1];
+    let _ = BitFieldVec::wrap(backend, bits, 2);
+}
+
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn test_from() {

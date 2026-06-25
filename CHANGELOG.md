@@ -35,6 +35,9 @@
   also the symmetric case). Previously, mismatches would cause a panic or
   be silently ignored.
 
+- New `BitFieldVec::wrap` method to create a bit-field vector with a
+  given backend.
+
 ### Fixed
 
 - Unsound reference-based `From` implementations between `BitVec`,
