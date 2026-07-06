@@ -493,7 +493,8 @@ impl<W: Word> BitVec<Vec<W>> {
         if offset == 0 {
             self.bits.extend_from_slice(&src[..src_words]);
         } else {
-            self.bits.reserve(new_word_count - self.bits.len());
+            self.bits
+                .reserve(new_word_count.saturating_sub(self.bits.len()));
 
             let last_idx = self.bits.len() - 1;
             // Clear bits

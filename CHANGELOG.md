@@ -61,6 +61,13 @@
   files have been closed; previously it was removed while the files were
   still open, which fails silently on Windows.
 
+- Fixed bug in `Select9` affecting very sparse vectors.
+
+- `BitVec::append` and `BitVec::append_value` now clear the last word before
+  storing data in it.
+
+- Fixed subtraction overflow when appending to a vector with excess capacity.
+
 ### Improved
 
 - Structured logging for structures with substructures.
