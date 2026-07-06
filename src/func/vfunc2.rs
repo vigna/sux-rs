@@ -710,7 +710,9 @@ mod build {
 
             // -- Build remap and inv_map --
 
-            let remap: Box<[W]> = sorted_vals[..num_frequent].to_vec().into_boxed_slice();
+            // We must cover possible outputs of the first function in [m..escape_size)
+            let mut remap: Box<[W]> = vec![W::ZERO; escape_usize].into();
+            remap.as_mut().copy_from_slice(&sorted_vals[..num_frequent]);
             let mut inv_map: HybridMap<W, W> = HybridMap::new(Some(max_value), escape);
             for (i, &val) in remap.iter().enumerate() {
                 inv_map.insert(val, W::try_from(i).ok().unwrap());
