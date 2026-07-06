@@ -44,7 +44,7 @@ use std::ops::Index;
 ///
 /// [`SelectSmall`]: crate::rank_sel::SelectSmall
 /// [`SelectZeroSmall`]: crate::rank_sel::SelectZeroSmall
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
     fn upper_counts(&self) -> &[u64];
     fn counts(&self) -> &[Block32Counters<NUM_U32S, COUNTER_WIDTH>];
@@ -82,12 +82,6 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// the default form of the macro is just what you need.
 ///
 /// This structure forwards several traits and [`Deref`]'s to its backend.
-///
-/// [`rank_small`]: crate::rank_small
-/// [`Rank9`]: super::Rank9
-/// [`SelectSmall`]: crate::rank_sel::SelectSmall
-/// [`SelectZeroSmall`]: crate::rank_sel::SelectZeroSmall
-/// [improved layout of relative counters by Gog & Petri]: https://doi.org/10.1002/spe.2198
 ///
 /// # Implementation details
 ///
@@ -140,14 +134,17 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// counters on the fly they store the cumulative counters directly using
 /// implicit zero extension. They are the default suggested by the macro.
 ///
-/// [`poppy`]: https://doi.org/10.1007/978-3-642-38527-8_15
-/// [backend]: Backend
-///
 /// # Examples
 ///
 /// See the [`rank_small`] macro documentation for examples of construction and usage.
 ///
 /// [`rank_small`]: crate::rank_small
+/// [`Rank9`]: super::Rank9
+/// [`SelectSmall`]: crate::rank_sel::SelectSmall
+/// [`SelectZeroSmall`]: crate::rank_sel::SelectZeroSmall
+/// [improved layout of relative counters by Gog & Petri]: https://doi.org/10.1002/spe.2198
+/// [`poppy`]: https://doi.org/10.1007/978-3-642-38527-8_15
+/// [backend]: Backend
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -403,16 +400,13 @@ macro_rules! rank_small {
     };
 }
 
+// repr(C) is required to guarantee the layout for the case <3, 13>.
 #[doc(hidden)]
 #[derive(Copy, Debug, Clone, MemSize, MemDbg)]
 #[mem_size(flat)]
-#[cfg_attr(
-    feature = "epserde",
-    derive(epserde::Epserde),
-    repr(C),
-    epserde(zero_copy)
-)]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(zero_copy))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[repr(C)]
 pub struct Block32Counters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
     pub(super) absolute: u32,
     #[cfg_attr(feature = "serde", serde(with = "serde_arrays"))]

@@ -15,15 +15,11 @@
 //! forwards traits it does not implement to the next structure in the chain,
 //! and also implements [`Deref`] with the next structure as target.
 //!
-//! [`BitVec`]: crate::bits::bit_vec::BitVec
-//!
 //! A few of the structures in this module have been described by Sebastiano
 //! Vigna in “[Broadword Implementation of Rank/Select Queries]”, _Proc. of the
 //! 7th International Workshop on Experimental Algorithms, WEA 2008_, volume
 //! 5038 of Lecture Notes in Computer Science, pages 154–168, Springer,
 //! 2008.
-//!
-//! [Broadword Implementation of Rank/Select Queries]: https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12
 //!
 //! # Examples
 //!
@@ -47,11 +43,6 @@
 //! time in a [`BitVec`]; we need [`AddNumBits`], a thin immutable wrapper
 //! around a bit vector that stores internally the number of ones and thus
 //! implements the [`NumBits`] trait:
-//!
-//! [`select_unchecked`]: crate::traits::SelectUnchecked::select_unchecked
-//! [`select`]: crate::traits::Select::select
-//! [`AddNumBits`]: crate::traits::AddNumBits
-//! [`NumBits`]: crate::traits::NumBits
 //!
 //! ```rust
 //! use sux::bit_vec;
@@ -96,14 +87,19 @@
 //! state; note how we use `into_inner()` to get rid of the [`AddNumBits`]
 //! wrapper.
 //!
-//! [`Rank`]: crate::traits::Rank
-//!
 //! Some structures depend on the internals of others, and thus cannot be
 //! composed freely: for example, a [`Select9`] must necessarily wrap a
 //! [`Rank9`]. In general, in any case, we suggest embedding structures in the
 //! order rank, select, and zero select, from inner to outer, because ranking
 //! structures usually implement [`NumBits`].
 //!
+//! [`BitVec`]: crate::bits::bit_vec::BitVec
+//! [Broadword Implementation of Rank/Select Queries]: https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12
+//! [`select_unchecked`]: crate::traits::SelectUnchecked::select_unchecked
+//! [`select`]: crate::traits::Select::select
+//! [`AddNumBits`]: crate::traits::AddNumBits
+//! [`NumBits`]: crate::traits::NumBits
+//! [`Rank`]: crate::traits::Rank
 //! [`Deref`]: core::ops::Deref
 //! [`Index`]: std::ops::Index
 //! [`map`]: SelectAdapt::map

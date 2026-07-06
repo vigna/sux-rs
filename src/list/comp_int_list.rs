@@ -17,8 +17,6 @@
 //! cumulative bit positions in an [Elias–Fano sequence], enabling efficient
 //! random access.
 //!
-//! [Elias–Fano sequence]: crate::dict::elias_fano::EfSeq
-//!
 //! The delimiter structure can be [replaced][map_delimiters] with any
 //! structure implementing [`IntoIteratorFrom`] with the returned iterator
 //! implementing `UncheckedIterator<Item = u64>`, as long as it returns the
@@ -45,11 +43,12 @@
 //! assert_eq!(list.index_value(4), 100);
 //! ```
 //!
+//! [Elias–Fano sequence]: crate::dict::elias_fano::EfSeq
 //! [map_delimiters]: CompIntList::map_delimiters
 //! [map_data]: CompIntList::map_data
 
 use crate::bits::bit_vec::{BitVec, BitVecU};
-use crate::bits::test_unaligned;
+use crate::bits::test_unaligned_any_pos;
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EfSeq;
 use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
@@ -143,11 +142,18 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
         let mut total_bits = 0u64;
         let mut all_widths_unaligned = true;
         for &v in values {
-            assert!(v >= min, "CompIntList: value must be >= the lower bound");
-            let offset = v - min + V::ONE;
+            let offset = v
+                .checked_sub(min)
+                .unwrap_or_else(|| {
+                    panic!("values must be greater than or equal to the lower bound {}", min)
+                })
+                .checked_add(V::ONE)
+                .unwrap_or_else(|| {
+                    panic!("CompIntList: values must be smaller than the maximum value minus the lower bound ({})", V::MAX - min)
+                });
             let width = (offset.bit_len() - 1) as usize;
             total_bits += width as u64;
-            if !test_unaligned!(V, width) {
+            if !test_unaligned_any_pos!(V, width) {
                 all_widths_unaligned = false;
             }
             n += 1;

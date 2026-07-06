@@ -46,8 +46,8 @@ type DenseIndex = Rank9<BitVec<Box<[u64]>>>;
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct SparseIndex<D, L = BitFieldVec<Box<[u64]>>> {
-    ef: EliasFano<u64, SelectZeroAdaptConst<BitVec<D>, Box<[usize]>, 12, 3>, L>,
+pub struct SparseIndex<D, L = BitFieldVec<Box<[u64]>>, I = Box<[usize]>> {
+    ef: EliasFano<u64, SelectZeroAdaptConst<BitVec<D>, I>, L>,
     /// self.ef should not be queried for values >= self.first_invalid_position
     first_invalid_pos: usize,
 }
@@ -147,9 +147,6 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
 /// A sparse partial array stores the non-empty positions of the array in an
 /// [Elias-Fano] structure.
 ///
-/// [Elias-Fano]: crate::dict::EliasFano
-/// [dense partial array]: new_dense
-///
 /// If your set of values is really dense, consider using a [dense partial array].
 ///
 /// # Examples
@@ -169,6 +166,9 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
 /// ```
 ///
 /// Note that you must specify the number of values in advance.
+///
+/// [Elias-Fano]: crate::dict::EliasFano
+/// [dense partial array]: new_dense
 pub fn new_sparse<T>(
     len: usize,
     num_values: usize,
@@ -335,8 +335,13 @@ impl<T, V: AsRef<[T]>> PartialArray<T, DenseIndex, V> {
     }
 }
 
-impl<T, D: Backend<Word = usize> + AsRef<[usize]>, L: SliceByValue<Value = u64>, V: AsRef<[T]>>
-    PartialArray<T, SparseIndex<D, L>, V>
+impl<
+    T,
+    D: Backend<Word = usize> + AsRef<[usize]>,
+    L: SliceByValue<Value = u64>,
+    I: AsRef<[usize]>,
+    V: AsRef<[T]>,
+> PartialArray<T, SparseIndex<D, L, I>, V>
 where
     for<'b> &'b L: crate::traits::IntoUncheckedIterator<Item = u64>,
 {
@@ -419,8 +424,9 @@ impl<
     T: Clone,
     D: Backend<Word = usize> + AsRef<[usize]>,
     L: SliceByValue<Value = u64>,
+    I: AsRef<[usize]>,
     V: AsRef<[T]>,
-> SliceByValue for PartialArray<T, SparseIndex<D, L>, V>
+> SliceByValue for PartialArray<T, SparseIndex<D, L, I>, V>
 where
     for<'b> &'b L: crate::traits::IntoUncheckedIterator<Item = u64>,
 {

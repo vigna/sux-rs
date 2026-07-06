@@ -14,7 +14,7 @@ use impl_tools::autoimpl;
 ///
 /// [`find_close`]: BalParen::find_close
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait BalParen {
     /// Returns the position of the matching close parenthesis for the open
     /// parenthesis at bit position `pos`, or `None` if `pos` is not an

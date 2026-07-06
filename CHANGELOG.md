@@ -1,5 +1,95 @@
 # Change Log
 
+## unreleased
+
+### New
+
+- New `VFunc2` and `Lcp2Mmphf` structures analogous to `VFunc` and `LcpMmphf`,
+  but performing compression by storing frequent values using less bits.
+
+- New `CompVFunc` compressed static function, using the algorithmic
+  ideas of `VFunc` but representing data using the the zero-th order entropy
+  (i.e., values are represented by a Huffman code).
+
+- New data-access parallel constructors starting from a slice, which are
+  used by default by all CLI utilities; a switch reverts to the classical
+  streaming constructors.
+
+- New `Pred::rank` method, implemented by default using `Pred::pred`, but
+  implemented much more efficiently for `EliasFano`.
+
+- Several new trait implementations for `BitVec`, such as `SliceByValue`.
+
+- Iterator from successors and predecessors in indexed dictionaries have
+  been extracted into separate traits.
+
+- All structures support `MemSize`.
+
+- New `ParallelWithLen` extension trait setting both `with_min_len` and
+  `with_max_len` in Rayon.
+
+- Default `BitLength::is_empty` method.
+
+- New `BuildError::MismatchedKeysAndValues` returned by `VFunc`, `VFunc2`,
+  and `CompVFunc` construction when the number of values does not match
+  the number of keys: slice-based constructors check the lengths exactly;
+  lender-based constructors return an error if the values are exhausted
+  before the keys (`CompVFunc`, which counts values beforehand, detects
+  also the symmetric case). Previously, mismatches would cause a panic or
+  be silently ignored.
+
+- New `BitFieldVec::wrap` method to create a bit-field vector with a
+  given backend.
+
+### Fixed
+
+- Unsound reference-based `From` implementations between `BitVec`,
+  `AtomicBitVec`, etc. have been removed.
+
+- The safe predecessor methods of `EliasFano` (`pred`, `iter_from_pred`,
+  `iter_back_from_pred`, `iter_bidi_from_pred`, and their strict variants)
+  no longer cause undefined behavior when called with a value greater than
+  the upper bound: they now return the last element, like `pred_strict`
+  already did.
+
+- `transmute_vec_from_atomic` and `transmute_boxed_slice_from_atomic` now
+  fall back to copying when the alignment of the atomic type differs from
+  that of its value type (e.g., `AtomicU64` vs. `u64` on 32-bit x86), as
+  deallocating with a different alignment would be undefined behavior. The
+  check is resolved at compile time, so on targets with equal alignments
+  the code is unchanged.
+
+- The temporary directory of an offline `SigStore` is now moved into the
+  shard store and removed when the latter is dropped, after the bucket
+  files have been closed; previously it was removed while the files were
+  still open, which fails silently on Windows.
+
+- Fixed bug in `Select9` affecting very sparse vectors.
+
+- `BitVec::append` and `BitVec::append_value` now clear the last word before
+  storing data in it.
+
+- Fixed subtraction overflow when appending to a vector with excess capacity.
+
+### Improved
+
+- Structured logging for structures with substructures.
+
+- Signing is parallel, and possibly from the store, when possible.
+
+### Changed
+
+- Field naming and logging have been reorganized. Serialized structures
+  will be incompatible.
+
+- `init_env_logger` is now gated by the `cli` feature, and the
+  `env_logger` and `jiff` dependencies are now optional, enabled by that
+  feature.
+
+- Thanks to the new ε-serde, `VFilter` does not have `F` anymore
+  as parameter. Moreover, other structures such as `VFunc2` will
+  actually map into memory their bulk data.
+
 ## [0.14.0] - 2026-04-11
 
 ### New

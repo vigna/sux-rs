@@ -45,9 +45,6 @@ use std::ops::Index;
 
 /// A version of [`SelectAdaptConst`] implementing [selection on zeros].
 ///
-/// [`SelectAdaptConst`]: super::SelectAdaptConst
-/// [selection on zeros]: crate::traits::SelectZero
-///
 /// # Examples
 /// ```rust
 /// # #[cfg(target_pointer_width = "64")]
@@ -137,7 +134,9 @@ use std::ops::Index;
 /// assert_eq!(rank9_sel[7], false);
 /// # }
 /// ```
-
+///
+/// [`SelectAdaptConst`]: super::SelectAdaptConst
+/// [selection on zeros]: crate::traits::SelectZero
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -274,11 +273,6 @@ impl<
         let num_ones = bits.count_zeros();
         let num_bits = max(1, bits.len());
         let inventory_size = num_ones.div_ceil(Self::ONES_PER_INVENTORY);
-
-        // We use a smaller value than max_log2_words_per_subinventory when with a
-        // smaller value we can still index, in the 16-bit case, all bits the
-        // subinventory. This can happen only in extremely sparse vectors, or
-        // if a very small value of LOG2_ZEROS_PER_INVENTORY is set directly.
 
         let words_per_subinventory = 1 << LOG2_WORDS_PER_SUBINVENTORY;
         // A u64 for the inventory, and words_per_inventory for the subinventory
@@ -547,6 +541,7 @@ impl<
 > SelectZeroUnchecked
     for SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 {
+    #[inline]
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
         unsafe {
             let inventory = self.inventory.as_ref();
@@ -576,6 +571,28 @@ impl<
                 );
             }
 
+            self.select_zero_unchecked_cold(rank, inventory_start_pos, inventory_rank, subrank)
+        }
+    }
+}
+
+impl<
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength + SelectZeroHinted,
+    I: AsRef<[usize]>,
+    const LOG2_ZEROS_PER_INVENTORY: usize,
+    const LOG2_WORDS_PER_SUBINVENTORY: usize,
+> SelectZeroAdaptConst<B, I, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
+{
+    #[inline(never)]
+    unsafe fn select_zero_unchecked_cold(
+        &self,
+        rank: usize,
+        inventory_start_pos: usize,
+        inventory_rank: usize,
+        subrank: usize,
+    ) -> usize {
+        unsafe {
+            let inventory = self.inventory.as_ref();
             let words_per_subinventory = 1 << LOG2_WORDS_PER_SUBINVENTORY;
 
             if inventory_rank.is_u32_span() {

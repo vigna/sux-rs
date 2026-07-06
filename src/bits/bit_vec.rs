@@ -11,11 +11,9 @@
 //! [`AtomicBitVec`], a mutable, thread-safe bit vector.
 //!
 //! Operations on these structures are provided by the extension traits
-//! [`BitVecOps`], [`BitVecOpsMut`], and [`AtomicBitVecOps`], which must be
-//! pulled in scope as needed. There are also operations that are specific to
-//! certain implementations, such as [`push`].
-//!
-//! [`BitVecOpsMut`]: crate::traits::BitVecOpsMut
+//! [`BitVecOps`], [`BitVecOpsMut`], [`BitVecValueOps`], and
+//! [`AtomicBitVecOps`], which must be pulled in scope as needed. There are also
+//! operations that are specific to certain implementations, such as [`push`].
 //!
 //! These flavors depend on a backend with a word type `W`, and presently we
 //! provide:
@@ -43,18 +41,39 @@
 //! `BitVec::new(n)` or `AtomicBitVec::new(n)` leave the backend type
 //! unconstrained.
 //!
-//! The fix is to annotate the binding with the bare type alias, which
-//! *does* apply defaults:
+//! There are two possible fixes: either to annotate the binding with the alias,
+//! which does apply defaults, or to write the type between angular brackets
+//! in the constructor call, which also applies defaults:
 //!
 //! ```rust
 //! # use sux::prelude::*;
 //! let mut b: BitVec = BitVec::new(10);     // OK: B = Vec<usize>
+//! let mut b = <BitVec>::new(10);           // Identical
+//!
 //! let a: AtomicBitVec = AtomicBitVec::new(10); // OK: B = Box<[Atomic<usize>]>
+//! let a = <AtomicBitVec>::new(10);             // Identical
 //! ```
 //!
-//! The [`bit_vec!`] macro and
-//! [`FromIterator`] / [`Extend`] do not need
+//! The [`bit_vec!`] macro and [`FromIterator`] / [`Extend`] do not need
 //! annotations because the word type is determined by the output context.
+//!
+//! # Conversions
+//!
+//! A wide range of conversion is available between the different flavors of bit
+//! vectors, using [`From`]/[`Into`] and [`TryFrom`]/[`TryInto`] as needed. For
+//! example, you can convert from a non-atomic to an atomic bit vector if the
+//! alignment requirements are satisfied, and you can convert from a growable
+//! bit vector to a fixed-size one by converting the backend to a boxed slice.
+//!
+//! # Slice-by-value support
+//!
+//! [`BitVec`] implement the [`BitFieldSlice`]/[`BitFieldSliceMut`] traits as a
+//! bit-field slice of width one. Note that the methods [`get_value`] and
+//! [`get_value_unchecked`] of [`SliceByValue`] conflicts with those of
+//! [`BitVecValueOps`], so if you absolutely need to pull in both traits you
+//! have to disambiguate the method calls. Moreover, as part of [`SliceByValueMut`]
+//! you can also obtain [mutable chunks] from a bit vector, provided they are
+//! aligned enough.
 //!
 //! # Examples
 //!
@@ -102,13 +121,16 @@
 //! [ε-serde]: https://crates.io/crates/epserde
 //! [`push`]: BitVec::push
 //! [`bit_vec!`]: macro@crate::bits::bit_vec
+//! [mutable chunks]: SliceByValueMut::try_chunks_mut
+//! [`get_value`]: SliceByValue::get_value
+//! [`get_value_unchecked`]: SliceByValue::get_value_unchecked
 
 use crate::ambassador_impl_Index;
-use crate::bits::{assert_unaligned, debug_assert_unaligned, test_unaligned};
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::ambassador_impl_BitLength;
 use crate::traits::{
-    AtomicBitIter, AtomicBitVecOps, Backend, BitIter, BitVecOps, BitVecValueOps, Word,
+    AtomicBitIter, AtomicBitVecOps, Backend, BitFieldSlice, BitFieldSliceMut, BitIter, BitVecOps,
+    BitVecOpsMut, BitVecValueOps, BitWidth, Word,
 };
 use crate::utils::SelectInWord;
 use crate::{
@@ -125,8 +147,9 @@ use core::borrow::BorrowMut;
 use core::fmt;
 use mem_dbg::*;
 use num_primitive::PrimitiveInteger;
-use std::mem::size_of;
+use std::iter::FusedIterator;
 use std::{ops::Index, sync::atomic::Ordering};
+use value_traits::slices::{SliceByValue, SliceByValueMut};
 
 /// A bit vector.
 ///
@@ -150,8 +173,6 @@ pub struct BitVec<B = Vec<usize>> {
 }
 
 /// Convenient, [`vec!`]-like macro to initialize bit vectors.
-///
-/// [`vec!`]: vec!
 ///
 /// By default, the underlying storage is `Vec<usize>`. An explicit word type
 /// `W` can be selected by prepending `W:` to any form, producing a
@@ -219,6 +240,8 @@ pub struct BitVec<B = Vec<usize>> {
 /// assert_eq!(b.len(), 10);
 /// # }
 /// ```
+///
+/// [`vec!`]: vec!
 #[macro_export]
 macro_rules! bit_vec {
     // Arms with explicit word type (colon separator)
@@ -401,6 +424,8 @@ impl<W: Word> BitVec<Vec<W>> {
         let word_idx = self.len / bits_per_word;
         let bit_idx = self.len % bits_per_word;
 
+        // Clear bits
+        self.bits[word_idx] &= !(W::MAX << bit_idx);
         self.bits[word_idx] |= value << bit_idx;
         if bit_idx + width > bits_per_word {
             self.bits[word_idx + 1] = value.wrapping_shr(bit_idx.wrapping_neg() as u32);
@@ -415,7 +440,7 @@ impl<W: Word> BitVec<Vec<W>> {
             return None;
         }
         let last_pos = self.len - 1;
-        let result = unsafe { BitVecOps::<W>::get_unchecked(self, last_pos) };
+        let result = unsafe { self.get_unchecked(last_pos) };
         self.len = last_pos;
         Some(result)
     }
@@ -468,9 +493,12 @@ impl<W: Word> BitVec<Vec<W>> {
         if offset == 0 {
             self.bits.extend_from_slice(&src[..src_words]);
         } else {
-            self.bits.reserve(new_word_count - self.bits.len());
+            self.bits
+                .reserve(new_word_count.saturating_sub(self.bits.len()));
 
             let last_idx = self.bits.len() - 1;
+            // Clear bits
+            self.bits[last_idx] &= !(W::MAX << offset);
             self.bits[last_idx] |= src[0] << offset;
 
             let shift_right = bpw - offset;
@@ -529,6 +557,14 @@ impl<W: Word> BitVec<Vec<W>> {
         unsafe { BitVec::from_raw_parts(self.bits.into_boxed_slice(), self.len) }
     }
 
+    #[deprecated(note = "Use `BitVec<Box<[W]>>::new_padded` instead")]
+    pub fn new_padded(len: usize) -> BitVec<Box<[W]>> {
+        let n_of_words = len.div_ceil(W::BITS as usize);
+        unsafe { BitVec::from_raw_parts(vec![W::ZERO; n_of_words + 1].into_boxed_slice(), len) }
+    }
+}
+
+impl<W: Word> BitVec<Box<[W]>> {
     /// Creates a new bit vector of length `len` initialized to `false`,
     /// with a padding word at the end for safe unaligned reads.
     ///
@@ -583,7 +619,9 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVecValueOps<B::Word> for BitV
             pos + width,
             self.len
         );
-        unsafe { self.get_value_unchecked(pos, width) }
+        // Disambiguate: `SliceByValue::get_value_unchecked` now also
+        // exists for `BitVec`, but with a different signature.
+        unsafe { <Self as BitVecValueOps<B::Word>>::get_value_unchecked(self, pos, width) }
     }
 
     #[inline]
@@ -608,71 +646,6 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVecValueOps<B::Word> for BitV
                         >> l)
             }
         }
-    }
-}
-
-impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVec<B> {
-    /// Like [`BitVecValueOps::get_value`], but using unaligned reads.
-    ///
-    /// This avoids a branch at the cost of requiring the bit width to satisfy
-    /// the constraints of [`BitFieldVec::get_unaligned`]: `width` must be at
-    /// most `W::BITS - 6`, or exactly `W::BITS - 4`, or exactly `W::BITS`
-    /// (where `W` is the word type of the backend).
-    ///
-    /// [`BitFieldVec::get_unaligned`]: crate::bits::BitFieldVec::get_unaligned
-    ///
-    /// Additionally, a padding word must be present at the end of the
-    /// underlying storage.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `pos + width` exceeds the bit length, if `width` does not
-    /// satisfy the unaligned constraints, or if the read would exceed the
-    /// allocation.
-    pub fn get_value_unaligned(&self, pos: usize, width: usize) -> B::Word {
-        assert_unaligned!(B::Word, width);
-        assert!(
-            pos + width <= self.len,
-            "bit range {}..{} out of bounds for length {}",
-            pos,
-            pos + width,
-            self.len
-        );
-        assert!(
-            pos / 8 + size_of::<B::Word>() <= std::mem::size_of_val(self.bits.as_ref()),
-            "unaligned read at bit position {} would exceed allocation",
-            pos,
-        );
-        unsafe { self.get_value_unaligned_unchecked(pos, width) }
-    }
-
-    /// Like [`BitVecValueOps::get_value_unchecked`], but using unaligned
-    /// reads.
-    ///
-    /// # Safety
-    ///
-    /// - `width` must satisfy the unaligned constraints: at most `W::BITS -
-    ///   6`, or exactly `W::BITS - 4`, or exactly `W::BITS`.
-    /// - `pos + width` must not exceed the bit length.
-    /// - A padding word must be present at the end of the underlying storage so
-    ///   that reading `size_of::<W>()` bytes starting at byte offset `pos / 8`
-    ///   does not exceed the allocation.
-    #[inline]
-    pub unsafe fn get_value_unaligned_unchecked(&self, pos: usize, width: usize) -> B::Word {
-        debug_assert_unaligned!(B::Word, width);
-        if width == 0 {
-            return B::Word::ZERO;
-        }
-        let base_ptr = self.bits.as_ref().as_ptr() as *const u8;
-        debug_assert!(
-            pos / 8 + size_of::<B::Word>() <= std::mem::size_of_val(self.bits.as_ref()),
-            "unaligned read at bit position {} would exceed allocation",
-            pos,
-        );
-        let ptr = unsafe { base_ptr.add(pos / 8) } as *const B::Word;
-        let word = unsafe { core::ptr::read_unaligned(ptr) };
-        let l = B::Word::BITS as usize - width;
-        ((word >> (pos % 8)) << l) >> l
     }
 }
 
@@ -767,6 +740,180 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> fmt::Display for BitVec<B> {
         }
         write!(f, "]")?;
         Ok(())
+    }
+}
+
+/// An iterator over contiguous mutable chunks of a [`BitVec`], yielding
+/// [`BitVec<&mut [W]>`] views.
+///
+/// This struct is created by [`BitVec`]'s [`try_chunks_mut`]
+/// implementation. When the vector length is not evenly divided by the
+/// chunk size, the last chunk will be shorter.
+///
+/// [`try_chunks_mut`]: SliceByValueMut::try_chunks_mut
+pub struct BitVecChunksMut<'a, W: Word> {
+    remaining: usize,
+    chunk_size: usize,
+    iter: std::slice::ChunksMut<'a, W>,
+}
+
+impl<'a, W: Word> Iterator for BitVecChunksMut<'a, W> {
+    type Item = BitVec<&'a mut [W]>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|chunk| {
+            let size = Ord::min(self.chunk_size, self.remaining);
+            // SAFETY: `size` is bounded by the original length; the
+            // backing slice contains `size.div_ceil(W::BITS)` words,
+            // which is exactly what `std::slice::ChunksMut` hands us.
+            let next = unsafe { BitVec::from_raw_parts(chunk, size) };
+            self.remaining -= size;
+            next
+        })
+    }
+}
+
+impl<'a, W: Word> ExactSizeIterator for BitVecChunksMut<'a, W> where
+    std::slice::ChunksMut<'a, W>: ExactSizeIterator
+{
+}
+
+impl<'a, W: Word> FusedIterator for BitVecChunksMut<'a, W> where
+    std::slice::ChunksMut<'a, W>: FusedIterator
+{
+}
+
+/// Error returned when [`BitVec::try_chunks_mut`] cannot align the
+/// requested chunk size to word boundaries.
+///
+/// [`BitVec::try_chunks_mut`]: SliceByValueMut::try_chunks_mut
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BitVecChunksMutError<W: Word> {
+    chunk_size: usize,
+    _marker: core::marker::PhantomData<W>,
+}
+
+impl<W: Word> fmt::Display for BitVecChunksMutError<W> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "try_chunks_mut needs the chunk size ({}) to be a multiple of W::BITS ({}) to return more than one chunk",
+            self.chunk_size,
+            W::BITS as usize
+        )
+    }
+}
+
+impl<W: Word> std::error::Error for BitVecChunksMutError<W> {}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> SliceByValue for BitVec<B> {
+    type Value = B::Word;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    #[inline(always)]
+    unsafe fn get_value_unchecked(&self, index: usize) -> B::Word {
+        // Delegate to the canonical `BitVecOps::get_unchecked`; LLVM
+        // collapses the `if` to the same `(word >> bit) & 1` it would
+        // emit for a direct implementation.
+        if unsafe { self.get_unchecked(index) } {
+            B::Word::ONE
+        } else {
+            B::Word::ZERO
+        }
+    }
+}
+
+impl<B: Backend<Word: Word>> BitWidth for BitVec<B> {
+    #[inline(always)]
+    fn bit_width(&self) -> usize {
+        1
+    }
+}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldSlice for BitVec<B> {
+    #[inline(always)]
+    fn as_slice(&self) -> &[Self::Value] {
+        self.bits.as_ref()
+    }
+}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueMut for BitVec<B> {
+    #[inline(always)]
+    unsafe fn set_value_unchecked(&mut self, index: usize, value: B::Word) {
+        // Delegate to `BitVecOpsMut::set_unchecked`: its `if value`
+        // form dead-code-eliminates to a single RMW when the caller
+        // passes a compile-time constant, and ties my hand-rolled
+        // branchless form on random-runtime values.
+        unsafe { self.set_unchecked(index, value != B::Word::ZERO) }
+    }
+
+    type ChunksMut<'a>
+        = BitVecChunksMut<'a, B::Word>
+    where
+        Self: 'a;
+
+    type ChunksMutError = BitVecChunksMutError<B::Word>;
+
+    /// # Errors
+    ///
+    /// Returns an error if `chunk_size` is not a multiple of
+    /// `W::BITS` and more than one chunk must be returned.
+    fn try_chunks_mut(
+        &mut self,
+        chunk_size: usize,
+    ) -> Result<Self::ChunksMut<'_>, BitVecChunksMutError<B::Word>> {
+        let len = self.len;
+        let bits = B::Word::BITS as usize;
+        if len <= chunk_size || chunk_size % bits == 0 {
+            // `std::slice::ChunksMut::new` panics on chunk_size 0, so
+            // use 1 when the chunk is empty; the iterator will yield
+            // empty views anyway.
+            let words_per_chunk = Ord::max(1, chunk_size.div_ceil(bits));
+            Ok(BitVecChunksMut {
+                remaining: len,
+                chunk_size,
+                iter: self.bits.as_mut()[..len.div_ceil(bits)].chunks_mut(words_per_chunk),
+            })
+        } else {
+            Err(BitVecChunksMutError {
+                chunk_size,
+                _marker: core::marker::PhantomData,
+            })
+        }
+    }
+}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> BitFieldSliceMut for BitVec<B> {
+    fn reset(&mut self) {
+        <Self as BitVecOpsMut<B::Word>>::fill(self, false);
+    }
+
+    #[cfg(feature = "rayon")]
+    fn par_reset(&mut self) {
+        use rayon::prelude::*;
+
+        use crate::ParallelWithLen;
+        let bits_per_word = B::Word::BITS as usize;
+        let full_words = self.len / bits_per_word;
+        let residual = self.len % bits_per_word;
+        let data = self.bits.as_mut();
+        data[..full_words]
+            .par_iter_mut()
+            .with_len(crate::RAYON_MIN_LEN)
+            .for_each(|x| *x = B::Word::ZERO);
+        if residual != 0 {
+            data[full_words] &= B::Word::MAX << residual;
+        }
+    }
+
+    #[inline(always)]
+    fn as_mut_slice(&mut self) -> &mut [Self::Value] {
+        self.bits.as_mut()
     }
 }
 
@@ -895,18 +1042,41 @@ impl<'a, B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word
 
 // Conversions
 
-/// This conversion may fail if the alignment of `W` is not the same as
-/// that of `W::Atomic`.
-impl<'a, W: AtomicPrimitive> TryFrom<BitVec<&'a [W]>> for AtomicBitVec<&'a [W::Atomic]> {
-    type Error = CannotCastToAtomicError<W>;
-    fn try_from(value: BitVec<&'a [W]>) -> Result<Self, Self::Error> {
-        if core::mem::align_of::<W>() != core::mem::align_of::<W::Atomic>() {
-            return Err(CannotCastToAtomicError::default());
-        }
-        Ok(AtomicBitVec {
-            bits: unsafe { core::mem::transmute::<&'a [W], &'a [W::Atomic]>(value.bits) },
+impl<'a, B: Backend + AsRef<[B::Word]>> From<&'a BitVec<B>> for BitVec<&'a [B::Word]> {
+    fn from(value: &'a BitVec<B>) -> Self {
+        BitVec {
+            bits: value.bits.as_ref(),
             len: value.len,
-        })
+        }
+    }
+}
+
+impl<'a, B: Backend + AsRef<[B::Word]>> From<&'a AtomicBitVec<B>> for AtomicBitVec<&'a [B::Word]> {
+    fn from(value: &'a AtomicBitVec<B>) -> Self {
+        AtomicBitVec {
+            bits: value.bits.as_ref(),
+            len: value.len,
+        }
+    }
+}
+
+impl<'a, B: Backend + AsMut<[B::Word]>> From<&'a mut BitVec<B>> for BitVec<&'a mut [B::Word]> {
+    fn from(value: &'a mut BitVec<B>) -> Self {
+        BitVec {
+            bits: value.bits.as_mut(),
+            len: value.len,
+        }
+    }
+}
+
+impl<'a, B: Backend + AsMut<[B::Word]>> From<&'a mut AtomicBitVec<B>>
+    for AtomicBitVec<&'a mut [B::Word]>
+{
+    fn from(value: &'a mut AtomicBitVec<B>) -> Self {
+        AtomicBitVec {
+            bits: value.bits.as_mut(),
+            len: value.len,
+        }
     }
 }
 
@@ -956,15 +1126,6 @@ impl<W: AtomicPrimitive + Copy> From<BitVec<Box<[W]>>> for AtomicBitVec<Box<[W::
     fn from(value: BitVec<Box<[W]>>) -> Self {
         AtomicBitVec {
             bits: transmute_boxed_slice_into_atomic::<W>(value.bits),
-            len: value.len,
-        }
-    }
-}
-
-impl<'a, W: AtomicPrimitive> From<AtomicBitVec<&'a [W::Atomic]>> for BitVec<&'a [W]> {
-    fn from(value: AtomicBitVec<&'a [W::Atomic]>) -> Self {
-        BitVec {
-            bits: unsafe { core::mem::transmute::<&'a [W::Atomic], &'a [W]>(value.bits) },
             len: value.len,
         }
     }
@@ -1142,9 +1303,6 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 /// which adds a padding word if one is not already present. You can recover
 /// the original [`BitVec`] using a [`From` implementation]
 ///
-/// [`From` implementation]: #impl-From<BitVecU<Box<%5BW%5D>>-for-BitVec<Box<%5BW%5D>>
-/// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
-///
 /// Note that unaligned reads give correct results only when the bit width
 /// satisfies the unaligned constraints (at most `W::BITS - 6`, or exactly
 /// `W::BITS - 4`, or exactly `W::BITS`). Using other widths will not
@@ -1154,6 +1312,9 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 /// [`AsRef<[Backend::Word]>`](core::convert::AsRef) to make [`BitVecOps`]
 /// methods available, and [`Index`] to make slice-like read-only access
 /// available.
+///
+/// [`From` implementation]: #impl-From<BitVecU<Box<%5BW%5D>>-for-BitVec<Box<%5BW%5D>>
+/// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

@@ -45,9 +45,6 @@ use std::ops::Index;
 
 /// A version of [`SelectAdapt`] implementing [selection on zeros].
 ///
-/// [`SelectAdapt`]: super::SelectAdapt
-/// [selection on zeros]: crate::traits::SelectZero
-///
 /// # Examples
 /// ```rust
 /// # #[cfg(target_pointer_width = "64")]
@@ -137,7 +134,9 @@ use std::ops::Index;
 /// assert_eq!(rank9_sel[7], false);
 /// # }
 /// ```
-
+///
+/// [`SelectAdapt`]: super::SelectAdapt
+/// [selection on zeros]: crate::traits::SelectZero
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -275,6 +274,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     /// See [`SelectAdapt::with_inv`].
     ///
     /// [`SelectAdapt::with_inv`]: super::SelectAdapt::with_inv
+    #[must_use]
     pub fn with_inv(
         bits: B,
         log2_ones_per_inventory: usize,
@@ -293,6 +293,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     /// See [`SelectAdapt::with_overhead`].
     ///
     /// [`SelectAdapt::with_overhead`]: super::SelectAdapt::with_overhead
+    #[must_use]
     pub fn with_overhead(
         bits: B,
         overhead_percentage: f64,
@@ -470,7 +471,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
             let mut word = (!bits.as_ref()[word_idx] >> bit_idx) << bit_idx;
 
             'outer: loop {
-                let ones_in_word = word.count_ones() as usize;
+                let ones_in_word = (word.count_ones() as usize).min(num_ones - past_ones);
 
                 // If the quantum is in this word, write it in the subinventory.
                 // Note that this can happen multiple times in the same word if
@@ -605,6 +606,7 @@ impl<
     I: AsRef<[usize]>,
 > SelectZeroUnchecked for SelectZeroAdapt<B, I>
 {
+    #[inline]
     unsafe fn select_zero_unchecked(&self, rank: usize) -> usize {
         unsafe {
             let inventory = self.inventory.as_ref();
@@ -634,6 +636,26 @@ impl<
                 );
             }
 
+            self.select_zero_unchecked_cold(rank, inventory_start_pos, inventory_rank, subrank)
+        }
+    }
+}
+
+impl<
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength + SelectZeroHinted,
+    I: AsRef<[usize]>,
+> SelectZeroAdapt<B, I>
+{
+    #[inline(never)]
+    unsafe fn select_zero_unchecked_cold(
+        &self,
+        rank: usize,
+        inventory_start_pos: usize,
+        inventory_rank: usize,
+        subrank: usize,
+    ) -> usize {
+        unsafe {
+            let inventory = self.inventory.as_ref();
             let words_per_subinventory = 1 << self.log2_words_per_subinventory;
 
             if inventory_rank.is_u32_span() {

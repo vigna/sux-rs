@@ -1076,37 +1076,37 @@ fn test_iter_bidi_trait_methods() -> Result<()> {
 
     // Call the trait methods explicitly to exercise the defaults
     // (EF's inherent methods shadow them in normal usage)
-    let succ_result = Succ::iter_bidi_from_succ(&ef, 25);
+    let succ_result = SuccBidiIter::iter_bidi_from_succ(&ef, 25);
     assert!(succ_result.is_some());
     let (idx, mut bidi) = succ_result.unwrap();
     assert_eq!(idx, 2);
     assert_eq!(bidi.next(), Some(30u64));
 
-    let succ_strict_result = Succ::iter_bidi_from_succ_strict(&ef, 30);
+    let succ_strict_result = SuccBidiIter::iter_bidi_from_succ_strict(&ef, 30);
     assert!(succ_strict_result.is_some());
     let (idx, mut bidi) = succ_strict_result.unwrap();
     assert_eq!(idx, 3);
     assert_eq!(bidi.next(), Some(40u64));
 
-    // Succ trait: no successor case
-    assert!(Succ::iter_bidi_from_succ(&ef, 51).is_none());
-    assert!(Succ::iter_bidi_from_succ_strict(&ef, 50).is_none());
+    // SuccBidiIter trait: no successor case
+    assert!(SuccBidiIter::iter_bidi_from_succ(&ef, 51).is_none());
+    assert!(SuccBidiIter::iter_bidi_from_succ_strict(&ef, 50).is_none());
 
-    let pred_result = Pred::iter_bidi_from_pred(&ef, 35);
+    let pred_result = PredBidiIter::iter_bidi_from_pred(&ef, 35);
     assert!(pred_result.is_some());
     let (idx, mut bidi) = pred_result.unwrap();
     assert_eq!(idx, 2);
     assert_eq!(bidi.next(), Some(30u64));
 
-    let pred_strict_result = Pred::iter_bidi_from_pred_strict(&ef, 30);
+    let pred_strict_result = PredBidiIter::iter_bidi_from_pred_strict(&ef, 30);
     assert!(pred_strict_result.is_some());
     let (idx, mut bidi) = pred_strict_result.unwrap();
     assert_eq!(idx, 1);
     assert_eq!(bidi.next(), Some(20u64));
 
-    // Pred trait: no predecessor case
-    assert!(Pred::iter_bidi_from_pred(&ef, 5).is_none());
-    assert!(Pred::iter_bidi_from_pred_strict(&ef, 10).is_none());
+    // PredBidiIter trait: no predecessor case
+    assert!(PredBidiIter::iter_bidi_from_pred(&ef, 5).is_none());
+    assert!(PredBidiIter::iter_bidi_from_pred_strict(&ef, 10).is_none());
 
     Ok(())
 }
@@ -1275,4 +1275,71 @@ fn test_u128_extend() {
     let ef = unsafe { ef.map_high_bits(SelectAdaptConst::<_, _>::new) };
     let collected: Vec<u128> = ef.iter().collect();
     assert_eq!(collected, values);
+}
+
+#[test]
+fn test_pred_beyond_last_value() -> Result<()> {
+    // Regression test: predecessor methods used to call pred_unchecked for
+    // values greater than the upper bound, performing an out-of-bounds
+    // select-zero operation.
+    let values: Vec<u64> = vec![10, 20, 30, 30, 50];
+    let n = values.len();
+    let u = 60u64;
+
+    let mut efb = EliasFanoBuilder::new(n, u);
+    for &v in &values {
+        efb.push(v);
+    }
+    let ef = efb.build_with_seq_and_dict();
+
+    for v in [51, u, u + 1, u64::MAX / 2, u64::MAX] {
+        assert_eq!(ef.pred(v), Some((n - 1, 50)));
+        assert_eq!(ef.pred_strict(v), Some((n - 1, 50)));
+        assert_eq!(ef.rank(v), n);
+
+        let (idx, mut iter) = ef.iter_from_pred(v).unwrap();
+        assert_eq!(idx, n - 1);
+        assert_eq!(iter.next(), Some(50));
+        assert_eq!(iter.next(), None);
+
+        let (idx, mut iter) = ef.iter_from_pred_strict(v).unwrap();
+        assert_eq!(idx, n - 1);
+        assert_eq!(iter.next(), Some(50));
+        assert_eq!(iter.next(), None);
+
+        let (idx, iter) = ef.iter_back_from_pred(v).unwrap();
+        assert_eq!(idx, n - 1);
+        assert_eq!(iter.collect::<Vec<_>>(), vec![50, 30, 30, 20, 10]);
+
+        let (idx, iter) = ef.iter_back_from_pred_strict(v).unwrap();
+        assert_eq!(idx, n - 1);
+        assert_eq!(iter.collect::<Vec<_>>(), vec![50, 30, 30, 20, 10]);
+
+        let (idx, mut bidi) = ef.iter_bidi_from_pred(v).unwrap();
+        assert_eq!(idx, n - 1);
+        assert_eq!(bidi.next(), Some(50));
+        assert_eq!(bidi.prev(), Some(50));
+        assert_eq!(bidi.prev(), Some(30));
+
+        let (idx, mut bidi) = ef.iter_bidi_from_pred_strict(v).unwrap();
+        assert_eq!(idx, n - 1);
+        assert_eq!(bidi.next(), Some(50));
+        assert_eq!(bidi.prev(), Some(50));
+        assert_eq!(bidi.prev(), Some(30));
+    }
+
+    // Empty structure: all predecessor methods must return None
+    let ef = EliasFanoBuilder::new(0, 10u64).build_with_seq_and_dict();
+    for v in [0, 5, 10, 11, u64::MAX] {
+        assert_eq!(ef.pred(v), None);
+        assert_eq!(ef.pred_strict(v), None);
+        assert!(ef.iter_from_pred(v).is_none());
+        assert!(ef.iter_from_pred_strict(v).is_none());
+        assert!(ef.iter_back_from_pred(v).is_none());
+        assert!(ef.iter_back_from_pred_strict(v).is_none());
+        assert!(ef.iter_bidi_from_pred(v).is_none());
+        assert!(ef.iter_bidi_from_pred_strict(v).is_none());
+    }
+
+    Ok(())
 }

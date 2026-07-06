@@ -510,6 +510,7 @@ impl<'a, T> From<&'a [T]> for FromSlice<'a, T> {
 /// assert_eq!(lender.next()?, Some(&2));
 /// assert_eq!(lender.next()?, None);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub struct FromCloneableIntoIterator<I: IntoIterator> {
     into_iter: I,
     iter: I::IntoIter,
@@ -846,6 +847,7 @@ where
 /// assert_eq!(lender.next()?, Some(1));
 /// assert_eq!(lender.next()?, None);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub struct FromIntoLenderFactory<L: IntoLender, E, F: FnMut() -> Result<L, E>> {
     f: F,
     lender: L::Lender,
@@ -936,6 +938,7 @@ impl<
 /// assert_eq!(lender.next()?, Some(1));
 /// assert_eq!(lender.next()?, None);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub struct FromIntoFallibleLenderFactory<L: IntoFallibleLender, E, F: FnMut() -> Result<L, E>> {
     f: F,
     lender: L::FallibleLender,

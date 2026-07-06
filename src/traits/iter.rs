@@ -478,9 +478,9 @@ pub trait IntoBidiIterator: Sized {
 /// setup of an iterator can be expensive, and that setup is usually
 /// required again after a skip.
 ///
-/// The cursor position `from` is interpreted as for
-/// [`IntoIteratorFrom`]: the first call to `next()` yields element `from`,
-/// while the first call to [`prev()`] yields element `from - 1`.
+/// The cursor position `from` is interpreted as for [`IntoIteratorFrom`]: the
+/// first call to `next()` yields element `from`, while the first call to
+/// [`prev()`] yields element `from - 1`.
 ///
 /// [`into_iter_bidi`]: IntoBidiIterator::into_iter_bidi
 /// [`skip`]: Iterator::skip

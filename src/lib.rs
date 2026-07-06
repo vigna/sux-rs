@@ -11,7 +11,7 @@
     feature(stdarch_aarch64_prefetch)
 )]
 #![cfg_attr(feature = "iter_advance_by", feature(iter_advance_by))]
-#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![deny(unconditional_recursion)]
 #![allow(clippy::duplicated_attributes)]
 #![allow(clippy::len_without_is_empty)]
@@ -64,14 +64,40 @@ pub(crate) trait Index<Idx> {
     fn index(&self, index: Idx) -> &Self::Output;
 }
 
-/// Parallel iterators performing very fast operations, such as [zeroing a
-/// bit] vector, should pass this argument
-/// to
-/// [IndexedParallelIterator::with_min_len].
+/// Parallel iterators performing very fast operations, such as [zeroing a bit
+/// vector], should pass this argument to
+/// [`IndexedParallelIterator::with_min_len`] or preferably
+/// [`ParallelWithLen::with_len`].
 ///
-/// [zeroing a bit]: crate::traits::BitVecOpsMut::reset
-/// [IndexedParallelIterator::with_min_len]: `rayon::iter::IndexedParallelIterator::with_min_len`
+/// [zeroing a bit vector]: crate::traits::BitVecOpsMut::reset
+/// [`IndexedParallelIterator::with_min_len`]: rayon::iter::IndexedParallelIterator::with_min_len
+/// [`ParallelWithLen::with_len`]: crate::ParallelWithLen::with_len
 pub const RAYON_MIN_LEN: usize = 100_000;
+
+/// Extension trait to fix Rayon's chunk size for parallel iterators.
+///
+/// This trait adds [`with_len`] to rayon's [`IndexedParallelIterator`], setting
+/// both [`with_min_len`] and [`with_max_len`] to the same value so that chunks are
+/// of exactly the specified size (the last chunk may be shorter).
+///
+/// This approach is useful for very fast operations of constant length per
+/// element, like [zeroing a bit vector].
+///
+/// [zeroing a bit vector]: crate::traits::BitVecOpsMut::reset
+/// [`with_len`]: ParallelWithLen::with_len
+/// [`with_min_len`]: rayon::iter::IndexedParallelIterator::with_min_len
+/// [`with_max_len`]: rayon::iter::IndexedParallelIterator::with_max_len
+/// [`IndexedParallelIterator`]: rayon::iter::IndexedParallelIterator
+#[cfg(feature = "rayon")]
+pub trait ParallelWithLen: rayon::iter::IndexedParallelIterator + Sized {
+    fn with_len(self, len: usize) -> rayon::iter::MaxLen<rayon::iter::MinLen<Self>> {
+        use rayon::iter::IndexedParallelIterator;
+        self.with_min_len(len).with_max_len(len)
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<T: rayon::iter::IndexedParallelIterator> ParallelWithLen for T {}
 
 macro_rules! panic_if_out_of_bounds {
     ($index: expr, $len: expr) => {
@@ -107,6 +133,7 @@ pub(crate) use debug_assert_bounds;
 
 /// Initializes the `env_logger` logger with a custom format including
 /// timestamps with elapsed time since initialization.
+#[cfg(feature = "cli")]
 pub fn init_env_logger() -> anyhow::Result<()> {
     use jiff::{
         SpanRound,

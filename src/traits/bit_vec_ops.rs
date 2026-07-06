@@ -41,7 +41,9 @@
 //! [`AtomicBitVec`]: crate::bits::AtomicBitVec
 //! [`Index`]: std::ops::Index
 
-use crate::traits::Word;
+#[cfg(feature = "rayon")]
+use crate::ParallelWithLen;
+use crate::{bits::test_unaligned_pos, traits::Word};
 use ambassador::delegatable_trait;
 use atomic_primitive::PrimitiveAtomicUnsigned;
 use impl_tools::autoimpl;
@@ -65,10 +67,15 @@ macro_rules! panic_if_out_of_bounds {
 /// [`AsRef<[W]>`](core::convert::AsRef) to provide word-based access to a bit
 /// vector on words of type `W`.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait BitLength {
     /// Returns a length in bits.
     fn len(&self) -> usize;
+
+    /// Returns true if the length is zero.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl<W: Word, T: ?Sized + AsRef<[W]> + BitLength> BitVecOps<W> for T {}
@@ -94,6 +101,133 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
         let word_index = index / bits_per_word;
         let word = unsafe { *self.as_ref().get_unchecked(word_index) };
         (word >> (index % bits_per_word)) & W::ONE != W::ZERO
+    }
+
+    /// Like [`BitVecValueOps::get_value`], but using a branchless unaligned
+    /// read.
+    ///
+    /// The read loads one full word starting at byte offset `pos / 8`,
+    /// shifts right by `pos % 8`, and masks to `width` bits. This
+    /// avoids a branch at the cost of a *position-dependent* width
+    /// constraint: the read is valid iff `width + (pos % 8) <=
+    /// W::BITS` (where `W` is the word type of the backend).
+    ///
+    /// Note that this is **not** the same constraint used by
+    /// [`BitFieldVec::get_unaligned`], which can exploit the fact that
+    /// its positions are multiples of `bit_width` to allow looser
+    /// widths such as `W::BITS - 4` and `W::BITS`. Here `pos` is
+    /// arbitrary, so in the worst case `pos % 8 == 7`, and only widths
+    /// up to `W::BITS - 7` are unconditionally safe.
+    ///
+    /// Additionally, a padding word must be present at the end of the
+    /// underlying storage.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `pos + width` exceeds the bit length, if
+    /// `width + (pos % 8)` exceeds `W::BITS`, or if the read would
+    /// exceed the allocation.
+    ///
+    /// [`BitFieldVec::get_unaligned`]: crate::bits::BitFieldVec::get_unaligned
+    fn get_value_unaligned(&self, pos: usize, width: usize) -> W {
+        assert!(
+            test_unaligned_pos!(W, pos, width),
+            "bit width {} at bit position {} does not fit in a single unaligned read on word type {} (width + (pos % 8) must be <= {})",
+            width,
+            pos,
+            stringify!(W),
+            W::BITS as usize,
+        );
+        assert!(
+            pos + width <= self.len(),
+            "bit range {}..{} out of bounds for length {}",
+            pos,
+            pos + width,
+            self.len()
+        );
+        assert!(
+            pos / 8 + size_of::<W>() <= std::mem::size_of_val(self.as_ref()),
+            "unaligned read at bit position {} would exceed allocation",
+            pos,
+        );
+        unsafe { self.get_value_unaligned_unchecked(pos, width) }
+    }
+
+    /// Like [`BitVecValueOps::get_value_unchecked`], but using a
+    /// branchless unaligned read.
+    ///
+    /// See [`get_value_unaligned`](Self::get_value_unaligned) for the
+    /// algorithm and the position-dependent width constraint.
+    ///
+    /// # Safety
+    ///
+    /// - `width + (pos % 8)` must be at most `W::BITS`. In particular,
+    ///   for *arbitrary* `pos`, only widths up to `W::BITS - 7` are
+    ///   unconditionally safe; larger widths (up to `W::BITS`) are
+    ///   safe only when `pos` is byte-aligned enough to leave room.
+    /// - `pos + width` must not exceed the bit length.
+    /// - A padding word must be present at the end of the underlying storage so
+    ///   that reading `size_of::<W>()` bytes starting at byte offset `pos / 8`
+    ///   does not exceed the allocation.
+    #[inline]
+    unsafe fn get_value_unaligned_unchecked(&self, pos: usize, width: usize) -> W {
+        debug_assert!(
+            test_unaligned_pos!(W, pos, width),
+            "bit width {} at bit position {} does not fit in a single unaligned read on word type {} (width + (pos % 8) must be <= {})",
+            width,
+            pos,
+            stringify!(W),
+            W::BITS as usize,
+        );
+        if width == 0 {
+            return W::ZERO;
+        }
+        let base_ptr = self.as_ref().as_ptr() as *const u8;
+        debug_assert!(
+            pos / 8 + size_of::<W>() <= std::mem::size_of_val(self.as_ref()),
+            "unaligned read at bit position {} would exceed allocation",
+            pos,
+        );
+        let ptr = unsafe { base_ptr.add(pos / 8) } as *const W;
+        let word = unsafe { core::ptr::read_unaligned(ptr) };
+        let l = W::BITS as usize - width;
+        ((word >> (pos % 8)) << l) >> l
+    }
+
+    /// Return the result of an unaligned read of a full word starting at bit
+    /// position `pos` checking that the read does not exceed the allocation.
+    ///
+    /// The actual number of valid bits in the word is `W::BITS - (pos % 8)`.
+    fn get_unaligned(&self, pos: usize) -> W {
+        assert!(
+            pos / 8 + size_of::<W>() <= std::mem::size_of_val(self.as_ref()),
+            "unaligned read at bit position {} would exceed allocation",
+            pos,
+        );
+        // SAFETY: we just checked that the read does not exceed the allocation
+        unsafe { self.get_unaligned_unchecked(pos) }
+    }
+
+    /// Return the result of an unaligned read of a full word starting at bit
+    /// position `pos` without checking that the read does not exceed the
+    /// allocation.
+    ///
+    /// The actual number of valid bits in the word is `W::BITS - (pos % 8)`.
+    ///
+    /// # Safety
+    ///
+    /// Reading `size_of::<W>()` bytes starting at byte offset `pos / 8`
+    /// must not exceed the allocation.
+    #[inline(always)]
+    unsafe fn get_unaligned_unchecked(&self, pos: usize) -> W {
+        let base_ptr = self.as_ref().as_ptr() as *const u8;
+        debug_assert!(
+            pos / 8 + size_of::<W>() <= std::mem::size_of_val(self.as_ref()),
+            "unaligned read at bit position {} would exceed allocation",
+            pos,
+        );
+        let ptr = unsafe { base_ptr.add(pos / 8) } as *const W;
+        unsafe { core::ptr::read_unaligned(ptr) >> (pos % 8) }
     }
 
     /// Returns an iterator over the bits of this bit vector as booleans.
@@ -124,7 +258,7 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
         let mut num_ones;
         num_ones = bits[..full_words]
             .par_iter()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .map(|x| x.count_ones() as usize)
             .sum();
         if residual != 0 {
@@ -192,7 +326,7 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
         let word_value: W = if value { !W::ZERO } else { W::ZERO };
         bits[..full_words]
             .par_iter_mut()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .for_each(|x| *x = word_value);
         if residual != 0 {
             let mask = (W::ONE << residual) - W::ONE;
@@ -233,7 +367,7 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
         let bits = self.as_mut();
         bits[..full_words]
             .par_iter_mut()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .for_each(|x| *x = !*x);
         if residual != 0 {
             let mask = (W::ONE << residual) - W::ONE;
@@ -580,7 +714,7 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
         core::sync::atomic::fence(Ordering::SeqCst);
         bits[..full_words]
             .par_iter()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .for_each(|x| x.store(word_value, ordering));
         if residual != 0 {
             let mask = (A::Value::ONE << residual) - A::Value::ONE;
@@ -633,7 +767,7 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
         core::sync::atomic::fence(Ordering::SeqCst);
         bits[..full_words]
             .par_iter()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .for_each(|x| _ = x.fetch_xor(!A::Value::ZERO, ordering));
         if residual != 0 {
             let mask = (A::Value::ONE << residual) - A::Value::ONE;
@@ -657,7 +791,7 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
         core::sync::atomic::fence(Ordering::SeqCst);
         num_ones = bits[..full_words]
             .par_iter()
-            .with_min_len(crate::RAYON_MIN_LEN)
+            .with_len(crate::RAYON_MIN_LEN)
             .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)
             .sum();
         if residual != 0 {

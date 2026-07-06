@@ -229,8 +229,6 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 /// A balanced parentheses structure supporting
 /// [`find_close`] queries, based on Jacobson's pioneer technique.
 ///
-/// [`find_close`]: Self::find_close
-///
 /// Open parentheses are represented as 1-bits and close parentheses as
 /// 0-bits, with bit 0 being the LSB.
 ///
@@ -255,8 +253,6 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 /// from each pioneer to its matching close parenthesis are stored in a
 /// [`SliceByValue`] structure. Three offset storage variants are available:
 ///
-/// [predecessor queries]: crate::traits::indexed_dict::PredUnchecked
-///
 /// - [`CompIntList`] (default, best space);
 /// - [`PrefixSumIntList`] (faster queries, more space);
 /// - [`BitFieldVec`] (fastest queries, largest space).
@@ -264,9 +260,6 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 /// Both structures can be replaced with custom implementations as long as they
 /// return the same values, using [`map_pioneer_positions`] and
 /// [`map_pioneer_match_offsets`].
-///
-/// [`map_pioneer_positions`]: Self::map_pioneer_positions
-/// [`map_pioneer_match_offsets`]: Self::map_pioneer_match_offsets
 ///
 /// Queries work in two stages:
 /// 1. **In-word**: byte-level lookup tables are used to find the matching close
@@ -290,11 +283,6 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 ///   [`new_with_bit_field_vec`] and [`new_with_prefix_sum`] constructors
 ///   for alternative configurations.
 ///
-/// [`PredUnchecked<Input = usize, Output<'_> = usize>`]: PredUnchecked
-/// [`SliceByValue<Value = usize>`]: SliceByValue
-/// [`new_with_bit_field_vec`]: Self::new_with_bit_field_vec
-/// [`new_with_prefix_sum`]: Self::new_with_prefix_sum
-///
 /// # Examples
 ///
 /// ```rust
@@ -314,6 +302,14 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 /// symposium on foundations of computer science (FOCS '89)*, pp. 549−554. IEEE,
 /// 1989.
 ///
+/// [`find_close`]: Self::find_close
+/// [predecessor queries]: crate::traits::indexed_dict::PredUnchecked
+/// [`map_pioneer_positions`]: Self::map_pioneer_positions
+/// [`map_pioneer_match_offsets`]: Self::map_pioneer_match_offsets
+/// [`PredUnchecked<Input = usize, Output<'_> = usize>`]: PredUnchecked
+/// [`SliceByValue<Value = usize>`]: SliceByValue
+/// [`new_with_bit_field_vec`]: Self::new_with_bit_field_vec
+/// [`new_with_prefix_sum`]: Self::new_with_prefix_sum
 /// [Space-efficient static trees and graphs]: https://ieeexplore.ieee.org/abstract/document/63533
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
@@ -371,12 +367,14 @@ fn build_pioneers(words: impl AsRef<[usize]> + BitLength) -> (EfDict<usize>, Vec
 
             for j in (0..l).rev() {
                 if words[block] & (1usize << j) == 0 {
+                    // Closed parenthesis
                     if excess > 0 {
                         excess = -1;
                     } else {
                         excess -= 1;
                     }
                 } else {
+                    // Open parenthesis
                     excess += 1;
                     if excess > 0 {
                         let mut matching_block = block;
@@ -411,6 +409,14 @@ fn build_pioneers(words: impl AsRef<[usize]> + BitLength) -> (EfDict<usize>, Vec
         count[block] = count_far_close(words[block], l) as i32;
     }
 
+    /*let open_parens = words.count_ones();
+    assert_eq!(
+        2 * open_parens,
+        words.len(),
+        "There are {} open parentheses but {} closed parentheses",
+        open_parens,
+        words.len() - open_parens
+    );*/
     for &c in &count {
         assert!(c == 0, "Unbalanced parentheses");
     }
@@ -442,12 +448,12 @@ impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B> {
     /// variable-length encoding. See also [`new_with_prefix_sum`].
     /// and [`new_with_bit_field_vec`].
     ///
-    /// [`new_with_prefix_sum`]: Self::new_with_prefix_sum
-    /// [`new_with_bit_field_vec`]: Self::new_with_bit_field_vec
-    ///
     /// # Panics
     ///
     /// Panics if the parentheses are not balanced.
+    ///
+    /// [`new_with_prefix_sum`]: Self::new_with_prefix_sum
+    /// [`new_with_bit_field_vec`]: Self::new_with_bit_field_vec
     #[must_use]
     pub fn new(paren: B) -> Self {
         let (ef_positions, matches) = build_pioneers(&paren);
@@ -470,12 +476,12 @@ impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B, EfDict<usize>, BitFieldV
     /// to query but uses more space than the default [`CompIntList`]-based
     /// [`new`] or the [`PrefixSumIntList`]-based [`new_with_prefix_sum`].
     ///
-    /// [`new`]: JacobsonBalParen::new
-    /// [`new_with_prefix_sum`]: Self::new_with_prefix_sum
-    ///
     /// # Panics
     ///
     /// Panics if the parentheses are not balanced.
+    ///
+    /// [`new`]: JacobsonBalParen::new
+    /// [`new_with_prefix_sum`]: Self::new_with_prefix_sum
     #[must_use]
     pub fn new_with_bit_field_vec(paren: B) -> Self {
         let (ef_positions, opening_pioneer_matches) = build_pioneers(&paren);
@@ -509,12 +515,12 @@ impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B, EfDict<usize>, PrefixSum
     /// returned by [`new`] and the [`BitFieldVec`]-based returned by
     /// [`new_with_bit_field_vec`].
     ///
-    /// [`new`]: JacobsonBalParen::new
-    /// [`new_with_bit_field_vec`]: Self::new_with_bit_field_vec
-    ///
     /// # Panics
     ///
     /// Panics if the parentheses are not balanced.
+    ///
+    /// [`new`]: JacobsonBalParen::new
+    /// [`new_with_bit_field_vec`]: Self::new_with_bit_field_vec
     #[must_use]
     pub fn new_with_prefix_sum(paren: B) -> Self {
         let (ef_positions, matches) = build_pioneers(&paren);

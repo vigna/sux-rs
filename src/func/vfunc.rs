@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use crate::traits::Backend;
 use value_traits::slices::SliceByValue;
 
 use super::shard_edge::FuseLge3Shards;
@@ -35,32 +34,34 @@ use std::borrow::Borrow;
 /// sets. Details on other possible [`ShardEdge`] implementations can be found
 /// in the [`shard_edge`] module documentation.
 ///
-/// Instances of this structure are immutable; they are built using
-/// [`try_new`] or one of its variants, and can be serialized
-/// using [ε-serde].
+/// Instances of this structure are immutable; they are built using [`try_new`]
+/// or one of its variants, and can be serialized using [ε-serde] or [`serde`].
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
 ///
 /// # Generics
 ///
-/// * `K`: The type of the keys.
-/// * `W`: The word used to store the data, which is also the output type. It
+/// * `K` - the type of the keys.
+///
+/// * `W` - the word used to store the data, which is also the output type. It
 ///   can be any unsigned type.
-/// * `D`: The backend storing the function data. It can be a
-///   [`BitFieldVec`]`<Box<[W]>>` or a `Box<[W]>`. In the first case, the data
+///
+/// * `D` - the backend storing the function data. It can be a
+///   [`BitFieldVec<Box<[W]>>`](crate::bits::BitFieldVec) or a `Box<[W]>`. In the first case, the data
 ///   is stored using exactly the number of bits needed, but access is slightly
 ///   slower, while in the second case the data is stored in a boxed slice of
 ///   `W`, thus forcing the number of bits to the number of bits of `W`, but
 ///   access will be faster. Note that for most bit sizes in the first case on
 ///   some architectures you can use [`TryIntoUnaligned`] to convert the
 ///   function into one using [unaligned reads] for faster queries.
-/// * `S`: The signature type. The default is `[u64; 2]`. You can switch to
-///   `[u64; 1]` (and possibly [`FuseLge3NoShards`]) for slightly faster
-///   construction and queries, but the construction will not scale beyond 3.8
-///   billion keys.
-/// * `E`: The sharding and edge logic type. The default is [`FuseLge3Shards`].
-///   For small sets of keys you might try [`FuseLge3NoShards`], possibly
+///
+/// * `S` - the signature type. The default is `[u64; 2]`. You can switch to
+///   `[u64; 1]` for slightly faster construction and queries, but the
+///   construction will not scale beyond 3.8 billion keys.
+///
+/// * `E` - the sharding and edge logic type. The default is [`FuseLge3Shards`].
+///   For small sets of keys you might try [`Fuse3NoShards`], possibly
 ///   coupled with `[u64; 1]` signatures. For functions with more than a few
 ///   dozen billion keys, you might try [`FuseLge3FullSigs`].
 ///
@@ -74,10 +75,11 @@ use std::borrow::Borrow;
 /// [`try_new`]: VFunc::try_new
 /// [ε-serde]: https://crates.io/crates/epserde
 /// [unaligned reads]: BitFieldVec::get_unaligned
-/// [`FuseLge3NoShards`]: crate::func::shard_edge::FuseLge3NoShards
 /// [`FuseLge3FullSigs`]: crate::func::shard_edge::FuseLge3FullSigs
+/// [`serde`]: https://crates.io/crates/serde
+/// [`Fuse3NoShards`]: crate::func::shard_edge::Fuse3NoShards
 #[derive(Debug, Clone, MemSize, MemDbg)]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(phantom(K, S)))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct VFunc<K: ?Sized, D, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) shard_edge: E,
@@ -87,8 +89,16 @@ pub struct VFunc<K: ?Sized, D, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) _marker: std::marker::PhantomData<(*const K, S)>,
 }
 
-impl<K: ?Sized, D: SliceByValue, S, E> Backend for VFunc<K, D, S, E> {
-    type Word = D::Value;
+impl<K: ?Sized, D, S, E> VFunc<K, D, S, E> {
+    /// Returns the number of keys in the function.
+    pub const fn len(&self) -> usize {
+        self.num_keys
+    }
+
+    /// Returns whether the function has no keys.
+    pub const fn is_empty(&self) -> bool {
+        self.num_keys == 0
+    }
 }
 
 impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc<K, BitFieldVec<Box<[W]>>, S, E> {
@@ -137,16 +147,6 @@ impl<K: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: Sh
     pub fn get(&self, key: impl Borrow<K>) -> D::Value {
         self.get_by_sig(K::to_sig(key.borrow(), self.seed))
     }
-
-    /// Returns the number of keys in the function.
-    pub const fn len(&self) -> usize {
-        self.num_keys
-    }
-
-    /// Returns whether the function has no keys.
-    pub const fn is_empty(&self) -> bool {
-        self.num_keys == 0
-    }
 }
 
 // ── Aligned ↔ Unaligned conversions ─────────────────────────────────
@@ -190,8 +190,8 @@ impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>>
 #[cfg(feature = "rayon")]
 mod build {
     use super::*;
-    use crate::func::VBuilder;
     use crate::traits::bit_field_slice::BitFieldSliceMut;
+    use crate::{func::VBuilder, traits::BitFieldSlice};
     use anyhow::Result;
     use core::error::Error;
     use dsi_progress_logger::ProgressLog;
@@ -200,24 +200,34 @@ mod build {
     use std::ops::{BitXor, BitXorAssign};
     use value_traits::slices::SliceByValueMut;
 
-    impl<K, W, S, E> VFunc<K, Box<[W]>, S, E>
-    where
+    fn log_size<K: ?Sized, D: BitFieldSlice, S, E>(
+        result: &VFunc<K, D, S, E>,
+        pl: &mut impl ProgressLog,
+    ) where
+        VFunc<K, D, S, E>: MemSize,
+    {
+        let num_keys = result.len() as f64;
+        let bit_size = result.mem_size(SizeFlags::default()) as f64 * 8.0;
+        pl.info(format_args!(
+            "Bits/key: {:.3} ({:+.3}% with respect to bit width)",
+            bit_size / num_keys,
+            100.0 * (bit_size / (result.data.bit_width() as f64 * num_keys) - 1.),
+        ));
+    }
+
+    impl<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         W: Word + BinSafe,
         S: Sig + Send + Sync,
-        E: ShardEdge<S, 3>,
+        E: ShardEdge<S, 3> + MemSize + FlatType,
+    > VFunc<K, Box<[W]>, S, E>
+    where
+        Box<[W]>: MemSize + FlatType,
         SigVal<S, W>: RadixKey,
         SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
     {
         /// Builds a [`VFunc`] with a `Box<[W]>` backend from keys and values
         /// using default [`VBuilder`] settings.
-        ///
-        /// * `keys` and `values` must be provided as
-        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
-        ///   same order). The [`lenders`] module provides easy ways to
-        ///   build such lenders.
-        /// * `n` is the expected number of keys; a significantly wrong
-        ///   value may degrade performance or cause extra retries.
         ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`] with
@@ -225,6 +235,17 @@ mod build {
         ///
         /// If keys and values are available as slices, [`try_par_new`]
         /// parallelizes the hash computation for faster construction.
+        ///
+        /// * `keys` and `values` -
+        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
+        ///   same order). The values lender may return more values than
+        ///   there are keys (in particular, it may be infinite); the
+        ///   extra values are ignored. If it returns fewer values, a
+        ///   [`MismatchedKeysAndValues`] error is returned.
+        ///   The [`lenders`] module provides easy ways to build such
+        ///   lenders.
+        ///
+        /// [`MismatchedKeysAndValues`]: crate::func::BuildError::MismatchedKeysAndValues
         ///
         /// # Examples
         ///
@@ -237,7 +258,6 @@ mod build {
         /// let func = <VFunc<usize, Box<[u8]>>>::try_new(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     FromCloneableIntoIterator::new(0..100_u8),
-        ///     100,
         ///     no_logging![],
         /// )?;
         ///
@@ -261,7 +281,6 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
-            n: usize,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self>
         where
@@ -270,17 +289,11 @@ mod build {
             for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
             for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
         {
-            Self::try_new_with_builder(keys, values, n, VBuilder::default(), pl)
+            Self::try_new_with_builder(keys, values, VBuilder::default(), pl)
         }
 
         /// Builds a [`VFunc`] with a `Box<[W]>` backend from keys and values
         /// using the given [`VBuilder`] configuration.
-        ///
-        /// * `keys` and `values` must be provided as
-        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
-        ///   same order). The [`lenders`] module provides easy ways to
-        ///   build such lenders.
-        /// * `n` is the expected number of keys.
         ///
         /// The builder controls construction parameters such as [offline
         /// mode], [thread count],
@@ -288,6 +301,17 @@ mod build {
         ///
         /// See also [`try_par_new_with_builder`]
         /// for parallel hash computation from slices.
+        ///
+        /// * `keys` and `values` -
+        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
+        ///   same order). The values lender may return more values than
+        ///   there are keys (in particular, it may be infinite); the
+        ///   extra values are ignored. If it returns fewer values, a
+        ///   [`MismatchedKeysAndValues`] error is returned.
+        ///   The [`lenders`] module provides easy ways to build such
+        ///   lenders.
+        ///
+        /// [`MismatchedKeysAndValues`]: crate::func::BuildError::MismatchedKeysAndValues
         ///
         /// # Examples
         ///
@@ -300,7 +324,6 @@ mod build {
         /// let func = <VFunc<usize, Box<[u8]>>>::try_new_with_builder(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     FromCloneableIntoIterator::new(0..100_u8),
-        ///     100,
         ///     VBuilder::default().offline(true),
         ///     no_logging![],
         /// )?;
@@ -328,7 +351,6 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
-            n: usize,
             builder: VBuilder<Box<[W]>, S, E>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self>
@@ -339,7 +361,6 @@ mod build {
             for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
         {
             Ok(builder
-                .expected_num_keys(n)
                 .try_build_func(
                     keys,
                     values,
@@ -347,6 +368,7 @@ mod build {
                     pl,
                 )?
                 .0)
+            .inspect(|vfunc| log_size(vfunc, pl))
         }
 
         /// Builds a [`VFunc`] with a `Box<[W]>` backend from in-memory key
@@ -393,8 +415,6 @@ mod build {
         ) -> Result<Self>
         where
             K: Sync,
-            S: Send,
-            W: Copy,
             for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
                 BitFieldSliceMut,
             for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
@@ -452,14 +472,19 @@ mod build {
         ) -> Result<Self>
         where
             K: Sync,
-            S: Send,
-            W: Copy,
             for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
                 BitFieldSliceMut,
             for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
             for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
         {
             let n = keys.len();
+            if n != values.len() {
+                return Err(crate::func::BuildError::MismatchedKeysAndValues {
+                    num_keys: n,
+                    num_values: values.len(),
+                }
+                .into());
+            }
             builder.expected_num_keys(n).try_par_populate_and_build(
                 keys,
                 &|i| values[i],
@@ -486,24 +511,19 @@ mod build {
         }
     }
 
-    impl<K, W, S, E> VFunc<K, BitFieldVec<Box<[W]>>, S, E>
-    where
+    impl<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         W: Word + BinSafe,
         S: Sig + Send + Sync,
-        E: ShardEdge<S, 3>,
+        E: ShardEdge<S, 3> + MemSize + FlatType,
+    > VFunc<K, BitFieldVec<Box<[W]>>, S, E>
+    where
+        BitFieldVec<Box<[W]>>: MemSize + FlatType,
         SigVal<S, W>: RadixKey,
         SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
     {
         /// Builds a [`VFunc`] with a [`BitFieldVec`] backend from keys and
         /// values using default [`VBuilder`] settings.
-        ///
-        /// * `keys` and `values` must be provided as
-        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
-        ///   same order). The [`lenders`] module provides easy ways to
-        ///   build such lenders.
-        /// * `n` is the expected number of keys; a significantly wrong
-        ///   value may degrade performance or cause extra retries.
         ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`] with
@@ -511,6 +531,17 @@ mod build {
         ///
         /// If keys and values are available as slices, [`try_par_new`]
         /// parallelizes the hash computation for faster construction.
+        ///
+        /// * `keys` and `values` -
+        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
+        ///   same order). The values lender may return more values than
+        ///   there are keys (in particular, it may be infinite); the
+        ///   extra values are ignored. If it returns fewer values, a
+        ///   [`MismatchedKeysAndValues`] error is returned.
+        ///   The [`lenders`] module provides easy ways to build such
+        ///   lenders.
+        ///
+        /// [`MismatchedKeysAndValues`]: crate::func::BuildError::MismatchedKeysAndValues
         ///
         /// # Examples
         ///
@@ -524,7 +555,6 @@ mod build {
         /// let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     FromCloneableIntoIterator::new(0..100),
-        ///     100,
         ///     no_logging![],
         /// )?;
         ///
@@ -548,20 +578,13 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
-            n: usize,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
-            Self::try_new_with_builder(keys, values, n, VBuilder::default(), pl)
+            Self::try_new_with_builder(keys, values, VBuilder::default(), pl)
         }
 
         /// Builds a [`VFunc`] with a [`BitFieldVec`] backend from keys and
         /// values using the given [`VBuilder`] configuration.
-        ///
-        /// * `keys` and `values` must be provided as
-        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
-        ///   same order). The [`lenders`] module provides easy ways to
-        ///   build such lenders.
-        /// * `n` is the expected number of keys.
         ///
         /// The builder controls construction parameters such as [offline
         /// mode], [thread count],
@@ -569,6 +592,17 @@ mod build {
         ///
         /// See also [`try_par_new_with_builder`]
         /// for parallel hash computation from slices.
+        ///
+        /// * `keys` and `values` -
+        ///   [`FallibleRewindableLender`]s, aligned (one value per key,
+        ///   same order). The values lender may return more values than
+        ///   there are keys (in particular, it may be infinite); the
+        ///   extra values are ignored. If it returns fewer values, a
+        ///   [`MismatchedKeysAndValues`] error is returned.
+        ///   The [`lenders`] module provides easy ways to build such
+        ///   lenders.
+        ///
+        /// [`MismatchedKeysAndValues`]: crate::func::BuildError::MismatchedKeysAndValues
         ///
         /// # Examples
         ///
@@ -582,7 +616,6 @@ mod build {
         /// let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     FromCloneableIntoIterator::new(0..100),
-        ///     100,
         ///     VBuilder::default().offline(true),
         ///     no_logging![],
         /// )?;
@@ -610,12 +643,10 @@ mod build {
                 RewindError: Error + Send + Sync + 'static,
                 Error: Error + Send + Sync + 'static,
             > + for<'lend> FallibleLending<'lend, Lend = &'lend W>,
-            n: usize,
             builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
             builder
-                .expected_num_keys(n)
                 .try_build_func(
                     keys,
                     values,
@@ -670,8 +701,6 @@ mod build {
         ) -> Result<Self>
         where
             K: Sync,
-            S: Send,
-            W: Copy,
         {
             Self::try_par_new_with_builder(keys, values, VBuilder::default(), pl)
         }
@@ -728,10 +757,15 @@ mod build {
         ) -> Result<Self>
         where
             K: Sync,
-            S: Send,
-            W: Copy,
         {
             let n = keys.len();
+            if n != values.len() {
+                return Err(crate::func::BuildError::MismatchedKeysAndValues {
+                    num_keys: n,
+                    num_values: values.len(),
+                }
+                .into());
+            }
             builder.expected_num_keys(n).try_par_populate_and_build(
                 keys,
                 &|i| values[i],

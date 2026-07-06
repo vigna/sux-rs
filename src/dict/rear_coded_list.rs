@@ -17,8 +17,6 @@
 //! want to achieve significant compression you can try to use a
 //! [`MappedRearCodedList`] instead.
 //!
-//! [`MappedRearCodedList`]: crate::dict::mapped_rear_coded_list
-//!
 //! The encoding is done in blocks of `ratio` elements: in each block the first
 //! string is encoded without compression, whereas the other elements are encoded
 //! with the common prefix removed.
@@ -117,9 +115,6 @@
 //! a buffer using the [`FromSlice`] adapter. Using the [`store_str`]
 //! function you could write directly to a file.
 //!
-//! [`FallibleRewindableLender`]: crate::utils::lenders::FallibleRewindableLender
-//! [`FromSlice`]: crate::utils::FromSlice
-//!
 //! ```
 //! # #[cfg(feature = "epserde")] {
 //! use std::io::{Cursor, Write};
@@ -163,6 +158,9 @@
 //! and `<rear_len>` is the length of the suffix of the previous string that must be
 //! removed to obtain the common prefix.
 //!
+//! [`MappedRearCodedList`]: crate::dict::mapped_rear_coded_list
+//! [`FallibleRewindableLender`]: crate::utils::lenders::FallibleRewindableLender
+//! [`FromSlice`]: crate::utils::FromSlice
 //! [`get_bytes_in_place`]: RearCodedListStr::get_bytes_in_place
 //! [`get_bytes`]: RearCodedListStr::get_bytes
 //! [`Iterator`]: RearCodedList::iter
@@ -1095,8 +1093,6 @@ impl<I: ?Sized + AsRef<[u8]>, const SORTED: bool> RearCodedListBuilder<I, SORTED
     /// in the list. This is particularly useful when building large lists from
     /// files using, for example, a [`FallibleRewindableLender`].
     ///
-    /// [`FallibleRewindableLender`]: crate::utils::FallibleRewindableLender
-    ///
     /// # Panics
     ///
     /// Panics if `SORTED` is `true` and any string is not greater than or equal
@@ -1123,6 +1119,8 @@ impl<I: ?Sized + AsRef<[u8]>, const SORTED: bool> RearCodedListBuilder<I, SORTED
     /// let rcl = rclb.build();
     /// assert_eq!(rcl.len(), 4);
     /// ```
+    ///
+    /// [`FallibleRewindableLender`]: crate::utils::FallibleRewindableLender
     pub fn extend<L: IntoLender>(&mut self, into_lender: L)
     where
         for<'lend> lender::Lend<'lend, <L as IntoLender>::Lender>: AsRef<I>,

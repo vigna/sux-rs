@@ -7,18 +7,20 @@
 #![allow(clippy::collapsible_else_if)]
 use std::ops::{BitXor, BitXorAssign};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
+use mem_dbg::{FlatType, MemSize};
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
+use sux::cli::{BuilderArgs, ShardingArgs, read_concat_lines, str_slice_from_offsets};
 use sux::dict::VFilter;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
 use sux::prelude::VBuilder;
-use sux::traits::{BitFieldSliceMut, Word};
+use sux::traits::{BitFieldSliceMut, TryIntoUnaligned, Word};
 use sux::utils::{
     BinSafe, DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig,
 };
@@ -30,85 +32,50 @@ use value_traits::slices::SliceByValueMut;
             ArgGroup::new("input")
                 .required(true)
                 .multiple(true)
-                .args(&["filename", "n"]),
+                .args(["filename", "n"]),
 ))]
 struct Args {
     /// The number of keys; if no filename is provided, use the 64-bit keys
-    /// [0..n).​
+    /// [0 . . n).​
     #[arg(short, long)]
     n: Option<usize>,
     /// A file containing UTF-8 keys, one per line (at most N keys will be read); it can be compressed with any format supported by the deko crate.​
     #[arg(short, long)]
     filename: Option<String>,
-    /// An optional name for the ε-serde serialized filter.​
+    /// Save the structure in unaligned form (faster, if available).​
+    #[arg(long, short)]
+    unaligned: bool,
+    /// A name for the ε-serde serialized filter.​
     filter: Option<String>,
     /// The number of bits of the hashes used by the filter.​
     #[arg(short, long, default_value_t = 8)]
     bits: usize,
-    /// Use this number of threads.​
+    /// Hashes keys sequentially without loading them in RAM.​
     #[arg(short, long)]
-    threads: Option<usize>,
-    /// Use disk-based buckets to reduce memory usage at construction time; providing the exact number of keys will speed up the construction.​
-    #[arg(short, long)]
-    offline: bool,
-    /// Sort shards and check for duplicate signatures.​
-    #[arg(short, long)]
-    check_dups: bool,
-    /// A 64-bit seed for the pseudorandom number generator.​
-    #[arg(long)]
-    seed: Option<u64>,
-    /// Use 64-bit signatures.​
-    #[arg(long, requires = "no_shards")]
-    sig64: bool,
-    /// The target relative space overhead due to sharding.​
-    #[arg(long, default_value_t = 0.001)]
-    eps: f64,
-    /// Always use the low-mem peel-by-signature algorithm (slightly slower).​
-    #[arg(long)]
-    low_mem: bool,
-    /// Always use the high-mem peel-by-signature algorithm (slightly faster).​
-    #[arg(long, conflicts_with = "low_mem")]
-    high_mem: bool,
-    /// Do not use sharding.​
-    #[arg(long)]
-    no_shards: bool,
-    /// Use slower edge logic reducing the probability of duplicate arcs for big
-    /// shards.​
-    #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
-    full_sigs: bool,
-    /// Use 3-hypergraphs.​
-    #[cfg(feature = "mwhc")]
-    #[arg(long, conflicts_with_all = ["sig64", "full_sigs"])]
-    mwhc: bool,
+    sequential: bool,
+    #[clap(flatten)]
+    builder: BuilderArgs,
+    #[clap(flatten)]
+    sharding: ShardingArgs,
+    #[clap(flatten)]
+    log: sux::cli::LogIntervalArg,
 }
 
-macro_rules! fuse {
-    ($args: expr, $main: ident, $ty: ty) => {
-        if $args.no_shards {
-            if $args.sig64 {
-                $main::<$ty, [u64; 1], FuseLge3NoShards>($args)
-            } else {
-                $main::<$ty, [u64; 2], FuseLge3NoShards>($args)
-            }
-        } else {
-            if $args.full_sigs {
-                $main::<$ty, [u64; 2], FuseLge3FullSigs>($args)
-            } else {
-                $main::<$ty, [u64; 2], FuseLge3Shards>($args)
-            }
+macro_rules! dispatch_edge {
+    ($args: expr, $main: ident, $ty: ty) => {{
+        use sux::cli::ShardEdgeType;
+        match $args.sharding.shard_edge {
+            ShardEdgeType::Fuse3NoShards64 => $main::<$ty, [u64; 1], Fuse3NoShards>($args),
+            ShardEdgeType::Fuse3NoShards128 => $main::<$ty, [u64; 2], Fuse3NoShards>($args),
+            ShardEdgeType::Fuse3Shards => $main::<$ty, [u64; 2], Fuse3Shards>($args),
+            ShardEdgeType::FuseLge3Shards => $main::<$ty, [u64; 2], FuseLge3Shards>($args),
+            ShardEdgeType::FuseLge3FullSigs => $main::<$ty, [u64; 2], FuseLge3FullSigs>($args),
+            #[cfg(feature = "mwhc")]
+            ShardEdgeType::Mwhc3 => $main::<$ty, [u64; 2], Mwhc3Shards>($args),
+            #[cfg(feature = "mwhc")]
+            ShardEdgeType::Mwhc3NoShards => $main::<$ty, [u64; 2], Mwhc3NoShards>($args),
         }
-    };
-}
-
-#[cfg(feature = "mwhc")]
-macro_rules! mwhc {
-    ($args: expr, $main: ident, $ty: ty) => {
-        if $args.no_shards {
-            $main::<$ty, [u64; 2], Mwhc3NoShards>($args)
-        } else {
-            $main::<$ty, [u64; 2], Mwhc3Shards>($args)
-        }
-    };
+    }};
 }
 
 fn main() -> Result<()> {
@@ -116,54 +83,20 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    #[cfg(feature = "mwhc")]
-    if args.mwhc {
-        return match args.bits {
-            8 => mwhc!(args, main_with_types_boxed_slice, u8),
-            16 => mwhc!(args, main_with_types_boxed_slice, u16),
-            32 => mwhc!(args, main_with_types_boxed_slice, u32),
-            64 => mwhc!(args, main_with_types_boxed_slice, u64),
-            _ => mwhc!(args, main_with_types_bit_field_vec, u64),
-        };
-    }
-
     match args.bits {
-        8 => fuse!(args, main_with_types_boxed_slice, u8),
-        16 => fuse!(args, main_with_types_boxed_slice, u16),
-        32 => fuse!(args, main_with_types_boxed_slice, u32),
-        64 => fuse!(args, main_with_types_boxed_slice, u64),
-        _ => fuse!(args, main_with_types_bit_field_vec, u64),
+        8 => dispatch_edge!(args, main_with_types_boxed_slice, u8),
+        16 => dispatch_edge!(args, main_with_types_boxed_slice, u16),
+        32 => dispatch_edge!(args, main_with_types_boxed_slice, u32),
+        64 => dispatch_edge!(args, main_with_types_boxed_slice, u64),
+        _ => dispatch_edge!(args, main_with_types_bit_field_vec, u64),
     }
 }
 
-fn set_builder<D: Send + Sync, S, E: ShardEdge<S, 3>>(
-    builder: VBuilder<D, S, E>,
-    args: &Args,
-) -> VBuilder<D, S, E> {
-    let mut builder = builder
-        .offline(args.offline)
-        .check_dups(args.check_dups)
-        .eps(args.eps);
-    if let Some(n) = args.n {
-        builder = builder.expected_num_keys(n);
-    }
-
-    if let Some(seed) = args.seed {
-        builder = builder.seed(seed);
-    }
-    if let Some(threads) = args.threads {
-        builder = builder.max_num_threads(threads);
-    }
-    if args.low_mem {
-        builder = builder.low_mem(true);
-    }
-    if args.high_mem {
-        builder = builder.low_mem(false);
-    }
-    builder
-}
-
-fn main_with_types_boxed_slice<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
+fn main_with_types_boxed_slice<
+    W: Word + BinSafe + MemSize + FlatType,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3> + MemSize + FlatType,
+>(
     args: Args,
 ) -> Result<()>
 where
@@ -181,44 +114,85 @@ where
     VFunc<str, BitFieldVec, S, E>: Serialize,
     VFunc<usize, Box<[W]>, S, E>: Serialize,
     VFunc<str, Box<[W]>, S, E>: Serialize,
-    VFilter<VFunc<usize, Box<[W]>, S, E>>: Serialize,
-    VFilter<VFunc<str, Box<[W]>, S, E>>: Serialize,
+    VFilter<usize, Box<[W]>, S, E>: Serialize,
+    VFilter<str, Box<[W]>, S, E>: Serialize,
+    Box<[W]>: MemSize + FlatType,
 {
-    #[cfg(not(feature = "no_logging"))]
+    if args.unaligned {
+        bail!("--unaligned is not supported for backend Box<[W]>; use a custom bit width");
+    }
+
     let mut pl = ProgressLogger::default();
-    #[cfg(feature = "no_logging")]
-    let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
+    pl.log_interval(args.log.log_interval);
 
     if let Some(filename) = &args.filename {
         let n = args.n.unwrap_or(usize::MAX);
-        let builder = set_builder(VBuilder::<Box<[W]>, S, E>::default(), &args);
-        let filter = <VFilter<VFunc<str, Box<[W]>, S, E>>>::try_new_with_builder(
-            DekoBufLineLender::from_path(filename)?.take(n),
-            args.n.unwrap_or(0),
-            builder,
-            &mut pl,
-        )?;
-        if let Some(filename) = args.filter {
-            unsafe { filter.store(filename) }?;
+        let mut builder = args
+            .builder
+            .configure(VBuilder::<Box<[W]>, S, E>::default());
+        if let Some(n_hint) = args.n {
+            builder = builder.expected_num_keys(n_hint);
+        }
+        if args.sequential {
+            let filter = <VFilter<str, Box<[W]>, S, E>>::try_new_with_builder(
+                DekoBufLineLender::from_path(filename)?.take(n),
+                builder,
+                &mut pl,
+            )?;
+            if let Some(filename) = args.filter {
+                unsafe { filter.store(filename) }?;
+            }
+        } else {
+            let (buffer, offsets) = read_concat_lines(filename, n)?;
+            let keys = str_slice_from_offsets(&buffer, &offsets);
+            if let Some(n_hint) = args.n {
+                if keys.len() != n_hint {
+                    bail!(
+                        "key count mismatch: read {} keys, expected {n_hint}",
+                        keys.len()
+                    );
+                }
+            }
+            let filter =
+                <VFilter<str, Box<[W]>, S, E>>::try_par_new_with_builder(&keys, builder, &mut pl)?;
+            if let Some(filename) = args.filter {
+                unsafe { filter.store(filename) }?;
+            }
         }
     } else {
         let n = args.n.unwrap();
-        let builder = set_builder(VBuilder::<Box<[W]>, S, E>::default(), &args);
-        let filter = <VFilter<VFunc<usize, Box<[W]>, S, E>>>::try_new_with_builder(
-            FromCloneableIntoIterator::from(0_usize..n),
-            n,
-            builder,
-            &mut pl,
-        )?;
-        if let Some(filename) = args.filter {
-            unsafe { filter.store(filename) }?;
+        let builder = args
+            .builder
+            .configure(VBuilder::<Box<[W]>, S, E>::default())
+            .expected_num_keys(n);
+        if args.sequential {
+            let filter = <VFilter<usize, Box<[W]>, S, E>>::try_new_with_builder(
+                FromCloneableIntoIterator::from(0_usize..n),
+                builder,
+                &mut pl,
+            )?;
+            if let Some(filename) = args.filter {
+                unsafe { filter.store(filename) }?;
+            }
+        } else {
+            let keys: Vec<usize> = (0..n).collect();
+            let filter = <VFilter<usize, Box<[W]>, S, E>>::try_par_new_with_builder(
+                &keys, builder, &mut pl,
+            )?;
+            if let Some(filename) = args.filter {
+                unsafe { filter.store(filename) }?;
+            }
         }
     }
 
     Ok(())
 }
 
-fn main_with_types_bit_field_vec<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
+fn main_with_types_bit_field_vec<
+    W: Word + BinSafe + MemSize + FlatType,
+    S: Sig + Send + Sync,
+    E: ShardEdge<S, 3> + MemSize + FlatType,
+>(
     args: Args,
 ) -> Result<()>
 where
@@ -228,40 +202,89 @@ where
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     SigVal<E::LocalSig, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>: Serialize,
-    VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>: Serialize,
+    VFilter<usize, BitFieldVec<Box<[W]>>, S, E>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    VFilter<str, BitFieldVec<Box<[W]>>, S, E>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    BitFieldVec<Box<[W]>>: MemSize + FlatType,
 {
-    #[cfg(not(feature = "no_logging"))]
     let mut pl = ProgressLogger::default();
-    #[cfg(feature = "no_logging")]
-    let mut pl = Option::<ConcurrentWrapper<ProgressLogger>>::None;
+    pl.log_interval(args.log.log_interval);
 
     if let Some(filename) = &args.filename {
         let n = args.n.unwrap_or(usize::MAX);
-        let builder = set_builder(VBuilder::<BitFieldVec<Box<[W]>>, S, E>::default(), &args);
-        let filter = <VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
-            DekoBufLineLender::from_path(filename)?.take(n),
-            args.n.unwrap_or(0),
-            args.bits,
-            builder,
-            &mut pl,
-        )?;
-        if let Some(filename) = args.filter {
-            unsafe { filter.store(filename)? };
+        let mut builder = args
+            .builder
+            .configure(VBuilder::<BitFieldVec<Box<[W]>>, S, E>::default());
+        if let Some(n_hint) = args.n {
+            builder = builder.expected_num_keys(n_hint);
+        }
+        if args.sequential {
+            let filter = <VFilter<str, BitFieldVec<Box<[W]>>, S, E>>::try_new_with_builder(
+                DekoBufLineLender::from_path(filename)?.take(n),
+                args.bits,
+                builder,
+                &mut pl,
+            )?;
+            if let Some(filename) = args.filter {
+                if args.unaligned {
+                    unsafe { filter.try_into_unaligned().unwrap().store(filename)? };
+                } else {
+                    unsafe { filter.store(filename)? };
+                }
+            }
+        } else {
+            let (buffer, offsets) = read_concat_lines(filename, n)?;
+            let keys = str_slice_from_offsets(&buffer, &offsets);
+            if let Some(n_hint) = args.n {
+                if keys.len() != n_hint {
+                    bail!(
+                        "key count mismatch: read {} keys, expected {n_hint}",
+                        keys.len()
+                    );
+                }
+            }
+            let filter = <VFilter<str, BitFieldVec<Box<[W]>>, S, E>>::try_par_new_with_builder(
+                &keys, args.bits, builder, &mut pl,
+            )?;
+            if let Some(filename) = args.filter {
+                if args.unaligned {
+                    unsafe { filter.try_into_unaligned().unwrap().store(filename)? };
+                } else {
+                    unsafe { filter.store(filename)? };
+                }
+            }
         }
     } else {
         let n = args.n.unwrap();
-        let mut builder = set_builder(VBuilder::<BitFieldVec<Box<[W]>>, S, E>::default(), &args);
-        builder = builder.expected_num_keys(n);
-        let filter = <VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>>::try_new_with_builder(
-            FromCloneableIntoIterator::from(0_usize..n),
-            n,
-            args.bits,
-            builder,
-            &mut pl,
-        )?;
-        if let Some(filename) = args.filter {
-            unsafe { filter.store(filename)? };
+        let builder = args
+            .builder
+            .configure(VBuilder::<BitFieldVec<Box<[W]>>, S, E>::default())
+            .expected_num_keys(n);
+        if args.sequential {
+            let filter = <VFilter<usize, BitFieldVec<Box<[W]>>, S, E>>::try_new_with_builder(
+                FromCloneableIntoIterator::from(0_usize..n),
+                args.bits,
+                builder,
+                &mut pl,
+            )?;
+            if let Some(filename) = args.filter {
+                if args.unaligned {
+                    unsafe { filter.try_into_unaligned().unwrap().store(filename)? };
+                } else {
+                    unsafe { filter.store(filename)? };
+                }
+            }
+        } else {
+            let keys: Vec<usize> = (0..n).collect();
+            let filter = <VFilter<usize, BitFieldVec<Box<[W]>>, S, E>>::try_par_new_with_builder(
+                &keys, args.bits, builder, &mut pl,
+            )?;
+            if let Some(filename) = args.filter {
+                if args.unaligned {
+                    unsafe { filter.try_into_unaligned().unwrap().store(filename)? };
+                } else {
+                    unsafe { filter.store(filename)? };
+                }
+            }
         }
     }
 

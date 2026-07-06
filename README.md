@@ -23,12 +23,13 @@ from [the DSI Utilities] and new structures.
   prefix omission].
 - new state-of-the-art structures for [static functions] and [static filters],
   scaling to trillions of keys, and providing very fast queries;
-- [monotone minimal perfect hash functions] based on longest common prefixes;
+- [monotone minimal perfect hash functions] based on longest common prefixes,
+  which are [the fastest available] (using less than log₂*n* space);
 - support for [signed minimal perfect hash functions];
 - [partial arrays], that is, “arrays with holes”, implemented using ranking or
   Elias–Fano;
 - [lists] (e.g., [compressed lists of integers]);
-- basic structures for [balanced parantheses].
+- basic structures for [balanced parentheses].
 
 The focus is on performance (e.g., there are unchecked versions of all methods
 and support for [unaligned access]) and on flexible composability (e.g., you can
@@ -36,6 +37,11 @@ fine-tune your [`EliasFano`] instance by choosing different types of internal
 indices, and whether to index zeros or ones). Whenever possible, there are
 mapping methods that replace an underlying structure with another one, provided
 it is compatible.
+
+You can run the [`vers_benchmarks`] and the [`cseq_benchmark`] benchmarks to see
+the performance of different implementations on your hardware. In our tests the
+structures in this crate are almost always as fast or faster than the ones in
+other libraries.
 
 This crate does not provide high-level genericity on bit vectors: [operations on
 bit vectors] are based on a word type `W`, on the [`BitLength`] trait, which
@@ -48,7 +54,7 @@ bit vectors, so you can read them as you would read a slice of `bool`.
 
 Rank/select structures are built on backends implementing the [`Backend`] trait,
 providing via an associated type the word type, and on the traits above;
-moreover, the strutures export the same traits by delegation, so you can use any
+moreover, the structures export the same traits by delegation, so you can use any
 structure as a backend for (further) rank/select structures, making arbitrary
 nesting of structures simple, typesafe and zero-cost. The same is true of
 structures for balanced parentheses. All structures [`Deref`] to their backends,
@@ -135,6 +141,8 @@ The crate has the following features:
 - `cli`: builds the binaries (implies `clap`, `epserde`, `deko`);
 - `mmap`: enables support for memory mapping in ε-serde (implies `epserde`);
 - `aarch64_prefetch`: enables prefetch support on aarch64 (requires nightly).
+- `iter_advance_by`: enables support for the `advance_by` method on iterators
+  (requires nightly).
 
 Note: The [`MemDbg`] and [`MemSize`] traits from the [`mem_dbg`] crate are
 always available as `mem_dbg` is a required dependency.
@@ -152,13 +160,13 @@ The `sux` benchmark, which tests rank and select structures, is instead a CLI
 command with options. Try
 
 ```bash
-cargo bench --bench sux -- --help
+cargo bench --bench rank_sel -- --help
 ```
 
 to see the available tests. For example, with
 
 ```bash
-cargo bench --bench sux -- Rank9 -d 0.5 -l 100000,1000000,10000000
+cargo bench --bench rank_sel -- Rank9 -d 0.5 -l 100000,1000000,10000000
 ```
 
 you can test the [`Rank9`] structure with a density of 0.5 on a few bit sizes.
@@ -166,7 +174,7 @@ Afterwards, you can generate an SVG plot and CSV
 data in the `plots` directory with
 
 ```bash
-./python/plot_benches.py --benches-path ./target/criterion/ --plot-dir plots
+./python/plot_rank_sel.py --benches-path ./target/criterion/ --plot-dir plots
 ```
 
 You can then open the `plots/plot.svg` with a browser to see the results, or
@@ -178,14 +186,14 @@ By specifying multiple structures (using also substring matching), you can
 compare the behavior of different structures. For example,
 
 ```bash
-cargo bench --bench sux -- SelectSmall SelectAdapt0 -d 0.5 -l 100000,1000000,10000000
+cargo bench --bench rank_sel -- SelectSmall SelectAdapt0 -d 0.5 -l 100000,1000000,10000000
 ```
 
 will test all variants of [`SelectSmall`] against a [`SelectAdapt`] with one (2⁰)
 `u64` per subinventory. The plot will highlight the differences in performance:
 
 ```bash
-./python/plot_benches.py --benches-path ./target/criterion/ --plot-dir plots
+./python/plot_rank_sel.py --benches-path ./target/criterion/ --plot-dir plots
 ```
 
 ## Acknowledgments
@@ -223,7 +231,7 @@ Union nor the Italian MUR can be held responsible for them.
 [serde]: https://crates.io/crates/serde/
 [`deko`]: https://crates.io/crates/deko/
 [`lenders`]: https://docs.rs/sux/latest/sux/utils/lenders/
-[signed minimal perfect hash functions]: https://docs.rs/sux/latest/sux/func/signed/struct.SignedVFunc.html
+[signed minimal perfect hash functions]: https://docs.rs/sux/latest/sux/func/signed/struct.SignedFunc.html
 [lists]: https://docs.rs/sux/latest/sux/list/index.html
 [compressed lists of integers]: https://docs.rs/sux/latest/sux/list/comp_int_list/struct.CompIntList.html
 [`AsRef<Backend:Word>`]: https://doc.rust-lang.org/core/convert/trait.AsRef.html
@@ -232,9 +240,13 @@ Union nor the Italian MUR can be held responsible for them.
 [`AsMut<W>`]: https://doc.rust-lang.org/core/convert/trait.AsMut.html
 [`Word`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html#associatedtype.Word
 [`Backend`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html
-[balanced parantheses]: https://docs.rs/sux/latest/sux/bal_paren/index.html
+[balanced parentheses]: https://docs.rs/sux/latest/sux/bal_paren/index.html
 [`Index<usize, Output = bool>`]: https://doc.rust-lang.org/core/ops/index/trait.Index.html
 [operations on bit vectors]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
 [`TryIntoUnaligned`]: https://docs.rs/sux/latest/sux/traits/trait.TryIntoUnaligned.html
 [`try_into_unaligned`]: https://docs.rs/sux/latest/sux/traits/trait.TryIntoUnaligned.html#tymethod.try_into_unaligned
 [`Deref`]: https://doc.rust-lang.org/core/ops/deref/trait.Deref.html
+[vectors of bit fields]: https://docs.rs/sux/latest/sux/bits/bit_field_vec/struct.BitFieldVec.html
+[the fastest available]: https://github.com/vigna/MMPHF-Experiments
+[`vers_benchmarks`]: https://github.com/Cydhra/vers_benchmarks
+[`cseq_benchmark`]: https://github.com/beling/bsuccinct-rs/

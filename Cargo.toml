@@ -5,35 +5,39 @@ authors = [
 	"Sebastiano Vigna <sebastiano.vigna@unimi.it>",
 ]
 description = "A pure Rust implementation of succinct and compressed data structures"
-version = "0.14.0"
+version = "0.15.0"
 edition = "2024"
 repository = "https://github.com/vigna/sux-rs"
 license = "Apache-2.0 OR LGPL-2.1-or-later"
 readme = "README.md"
 categories = ["compression", "data-structures"]
 keywords = ["succinct", "rank", "select"]
+exclude = ["python/"]
+documentation = "https://docs.rs/sux"
 rust-version = "1.85"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 anyhow = "1.0.79"
-arrayvec = "0.7"
-bitflags = "2.4.2"
 atomic-primitive = "0.1.1"
-num-primitive = "=0.2.1"
-libc = "0.2.147"
+num-primitive = "0.2.1"
 log = "0.4.20"
-dsi-progress-logger = ">=0.8.6"
+dsi-progress-logger = "0.8.7"
 tempfile = "3.9.0"
 lender = "0.6.0"
-epserde = { version = "0.12.5", optional = true, default-features = false, features = ["std", "derive"] }
+#epserde = { version = "0.12.5", optional = true, default-features = false, features = ["std", "derive"] }
+epserde = { path = "../epserde-rs/epserde", optional = true, default-features = false, features = ["std", "derive"] }
 zstd = { version = "0.13.1", optional = true }
 flate2 = { version = "1.0.28", optional = true }
 rand = "0.10.0"
 rdst = "0.20.12"
-mem_dbg = ">=0.4.1"
+mem_dbg = "0.4.1"
 rayon = { version = "1.8.1", optional = true }
-env_logger = { version = "0.11.0" }
-ambassador = { version = "0.5.0" }
+env_logger = { version = "0.11.0", optional = true }
+ambassador = "0.5.1"
 impl-tools = "0.11.2"
 clap = { version = "4.4.18", features = ["derive", "wrap_help"], optional = true }
 crossbeam-channel = "0.5.14"
@@ -41,7 +45,6 @@ arbitrary-chunks = "0.4.1"
 derivative = "2.2.0"
 derive_setters = "0.1.6"
 thiserror = "2.0.11"
-itertools = "0.14.0"
 lambert_w = { version = "1.0.17", default-features = false, features = ["std"] }
 deko = { version = "0.6.0", optional = true }
 thread-priority = { version = "3.0.0", optional = true }
@@ -49,42 +52,35 @@ value-traits = "0.2.0"
 serde = { version =  "1.0.225", optional = true, features = ["derive"] }
 serde_arrays = { version = "0.1.0", optional = true }
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
-
-# Fuzz
 arbitrary = { version = "1.3.2", features = ["derive"], optional = true }
 zerocopy = { version = "0.8.27", features = ["derive"] }
-jiff = "0.2.15"
+jiff = { version = "0.2.15", optional = true }
 fallible-iterator = "0.3.0"
 sync-cell-slice = "0.9.12"
-succinctly = "0.6.0"
 
 [dev-dependencies]
 criterion = { version = "0.7.0", default-features = false, features = ["html_reports", "plotters", "cargo_bench_support"] }
 clap = { version = "4.4.18", features = ["derive", "wrap_help"] }
+env_logger = "0.11.0"
 rand_distr = "0.6"
+ph = "0.11.0"
 
 [features]
 default = ["rayon", "flate2", "zstd"]
 clap = ["dep:clap"]
 flate2 = ["dep:flate2"]
 zstd = ["dep:zstd"]
-cli = ["clap", "dep:epserde", "dep:deko"] # Build the binary utils (it's here so that cargo bench doesn't build them)
+cli = ["clap", "epserde", "dep:deko", "dep:env_logger", "dep:jiff"] # Build the binary utils (it's here so that cargo bench doesn't build them)
 fuzz = ["dep:arbitrary"]
 slow_tests = [] # Run slow tests (use --release)
 aarch64_prefetch = [] # Enable aarch64 prefetch (requires nightly)
 iter_advance_by = [] # Enable iter_advance_by (requires nightly)
 mwhc = [] # Compile MWHC data structures (mainly for benchmarking)
-no_logging = [
-] # Disable logging for binaries that build functions and filters (for benchmarking)
 rayon = ["dep:rayon", "dep:thread-priority"]
 deko = ["dep:deko"]
 serde = ["dep:serde", "dep:serde_arrays"]
 epserde = ["dep:epserde"]
 mmap = ["epserde/mmap"]
-
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
 
 [profile.release]
 opt-level = 3 # like --release
@@ -118,6 +114,14 @@ name = "vfunc"
 required-features = ["cli", "epserde", "deko", "rayon"]
 
 [[bin]]
+name = "vfunc2"
+required-features = ["cli", "epserde", "deko", "rayon"]
+
+[[bin]]
+name = "comp_vfunc"
+required-features = ["cli", "epserde", "deko", "rayon"]
+
+[[bin]]
 name = "lcp_mmphf"
 required-features = ["cli", "epserde", "deko", "rayon"]
 
@@ -135,12 +139,32 @@ required-features = ["cli"]
 
 [[example]]
 name = "bench_vfunc"
-required-features = ["epserde", "clap"]
+required-features = ["cli", "epserde", "deko"]
 
 [[example]]
 name = "bench_vfilter"
-required-features = ["epserde", "clap"]
+required-features = ["cli", "epserde", "deko"]
 
+[[example]]
+name = "bench_comp_vfunc"
+required-features = ["cli", "epserde", "deko", "rayon"]
+
+[[example]]
+name = "bench_lcp_mmphf"
+required-features = ["epserde", "deko"]
+
+[[example]]
+name = "bench_phast"
+required-features = ["cli"]
+
+[[example]]
+name = "comp_vfunc_stress"
+required-features = ["cli"]
+
+[[example]]
+name = "bench_comp_vfunc_data"
+required-features = ["cli"]
+ 
 [[example]]
 name = "example_vfunc"
 required-features = ["rayon"]
@@ -176,9 +200,23 @@ harness = false
 [[bench]]
 name = "bench_lcp_mmphf"
 harness = false
-required-features = ["rayon"]
+required-features = ["cli"]
 
 [[bench]]
 name = "bench_vfunc"
 harness = false
-required-features = ["rayon"]
+required-features = ["cli"]
+
+[[bench]]
+name = "bench_comp_vfunc"
+harness = false
+required-features = ["cli", "rayon"]
+
+[[bench]]
+name = "bench_vfilter"
+harness = false
+required-features = ["cli"]
+
+[[bench]]
+name = "bit_field_vec"
+harness = false

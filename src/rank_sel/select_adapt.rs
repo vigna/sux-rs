@@ -63,16 +63,10 @@ use std::ops::Index;
 /// same functionality for zero bits. [`SelectAdaptConst`] provides similar
 /// functionality but with const parameters.
 ///
-/// [`SelectZeroAdapt`]: super::SelectZeroAdapt
-/// [`SelectAdaptConst`]: super::SelectAdaptConst
-///
 /// # Type Parameters
 ///
 /// - `B`: The bit-based [backend] (usually a [bit vector],
 ///   possibly wrapped in rank/select structures).
-///
-/// [bit vector]: crate::bits::BitVec
-/// [backend]: Backend
 /// - `I`: The inventory storage. Defaults to `Box<[usize]>`.
 ///
 /// # Implementation Details
@@ -81,8 +75,6 @@ use std::ops::Index;
 /// spill buffer to handle adaptively extreme cases. Similarly to
 /// [`Rank9`], the two levels are interleaved to reduce the number of cache
 /// misses.
-///
-/// [`Rank9`]: super::Rank9
 ///
 /// The inventory is sized so that the distance between two indexed ones is on
 /// average a given target value *L*. For each indexed one in the inventory (for
@@ -98,9 +90,6 @@ use std::ops::Index;
 /// twice that on 32-bit platforms. The space might be smaller for very
 /// sparse vectors as less than *M* subinventory words per inventory might
 /// be used.
-///
-/// [the default value of *L*]: default_target_inventory_span
-/// [the default value of *M*]: DEFAULT_LOG2_WORDS_PER_SUBINVENTORY
 ///
 /// Given a specific indexed one in the inventory, if the distance to the next
 /// indexed one is at most 2¹⁶ we use the *M* words associated to the
@@ -133,8 +122,6 @@ use std::ops::Index;
 /// structure has a different performance depending on the selected bit. In
 /// these cases, [`Select9`] might be a better choice.
 ///
-/// [`Select9`]: super::Select9
-///
 /// # Choosing Parameters
 ///
 /// The value *M* should almost always be 8, as it corresponds to the size of a
@@ -152,8 +139,6 @@ use std::ops::Index;
 /// should be on few words. The [default suggested value] is a reasonable
 /// choice modeled on a maximum of four words in the linear search for
 /// vectors with uniform density.
-///
-/// [default suggested value]: default_target_inventory_span
 ///
 /// Note that doubling *M* and *L* reduces space occupancy (because of the
 /// plus-one in the space occupancy formula) and, in the 64-bit case, doubles
@@ -271,6 +256,15 @@ use std::ops::Index;
 /// ```
 ///
 /// [Broadword Implementation of Rank/Select Queries]: https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12
+/// [`SelectZeroAdapt`]: super::SelectZeroAdapt
+/// [`SelectAdaptConst`]: super::SelectAdaptConst
+/// [bit vector]: crate::bits::BitVec
+/// [backend]: Backend
+/// [`Rank9`]: super::Rank9
+/// [the default value of *L*]: default_target_inventory_span
+/// [the default value of *M*]: DEFAULT_LOG2_WORDS_PER_SUBINVENTORY
+/// [`Select9`]: super::Select9
+/// [default suggested value]: default_target_inventory_span
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -567,15 +561,15 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     ///
     /// See the [documentation] for details on how to choose these parameters.
     ///
-    /// [*L*]: SelectAdapt
-    /// [`default_target_inventory_span(max_log2_words_per_subinv)`]: default_target_inventory_span
-    /// [*M*]: SelectAdapt
-    /// [documentation]: SelectAdapt
-    ///
     /// # Panics
     ///
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
     /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
+    ///
+    /// [*L*]: SelectAdapt
+    /// [`default_target_inventory_span(max_log2_words_per_subinv)`]: default_target_inventory_span
+    /// [*M*]: SelectAdapt
+    /// [documentation]: SelectAdapt
     #[must_use]
     pub fn with_span(
         bits: B,
@@ -611,8 +605,6 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     /// Unless you understand all the implications, it is preferable to use
     /// the [standard constructor].
     ///
-    /// [standard constructor]: SelectAdapt::new
-    ///
     /// # Arguments
     ///
     /// * `bits`: A bit vector.
@@ -626,13 +618,15 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     ///
     /// See the [documentation] for details on how to choose these parameters.
     ///
-    /// [*M*]: SelectAdapt
-    /// [documentation]: SelectAdapt
-    ///
     /// # Panics
     ///
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
     /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
+    ///
+    /// [standard constructor]: SelectAdapt::new
+    /// [*M*]: SelectAdapt
+    /// [documentation]: SelectAdapt
+    #[must_use]
     pub fn with_inv(
         bits: B,
         log2_ones_per_inventory: usize,
@@ -675,14 +669,15 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
     ///
     /// See the [documentation] for details on how to choose these parameters.
     ///
-    /// [*M*]: SelectAdapt
-    /// [documentation]: SelectAdapt
-    ///
     /// # Panics
     ///
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
     /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit), or if
     /// `overhead_percentage` is not positive.
+    ///
+    /// [*M*]: SelectAdapt
+    /// [documentation]: SelectAdapt
+    #[must_use]
     pub fn with_overhead(
         bits: B,
         overhead_percentage: f64,
@@ -1000,6 +995,7 @@ impl<
     I: AsRef<[usize]>,
 > SelectUnchecked for SelectAdapt<B, I>
 {
+    #[inline]
     unsafe fn select_unchecked(&self, rank: usize) -> usize {
         unsafe {
             let inventory = self.inventory.as_ref();
@@ -1027,6 +1023,26 @@ impl<
                     .select_hinted::<{ usize::MAX }>(rank, hint_pos, rank - residual);
             }
 
+            self.select_unchecked_cold(rank, inventory_start_pos, inventory_rank, subrank)
+        }
+    }
+}
+
+impl<
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength + SelectHinted,
+    I: AsRef<[usize]>,
+> SelectAdapt<B, I>
+{
+    #[inline(never)]
+    unsafe fn select_unchecked_cold(
+        &self,
+        rank: usize,
+        inventory_start_pos: usize,
+        inventory_rank: usize,
+        subrank: usize,
+    ) -> usize {
+        unsafe {
+            let inventory = self.inventory.as_ref();
             let words_per_subinventory = 1 << self.log2_words_per_subinventory;
 
             if inventory_rank.is_u32_span() {

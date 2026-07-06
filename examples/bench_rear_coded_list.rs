@@ -60,10 +60,12 @@ pub fn main() -> Result<()> {
     let mut rand = SmallRng::seed_from_u64(0);
 
     let start = std::time::Instant::now();
+    let mut u = 0usize;
     for _ in 0..args.accesses {
         let i = rand.random::<u64>() as usize % rca.len();
-        let _ = black_box(rca.get(i));
+        u ^= rca.get(i).len();
     }
+    black_box(u);
     let elapsed = start.elapsed();
     println!(
         "avg_rnd_access_speed: {} ns/access",

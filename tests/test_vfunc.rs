@@ -8,6 +8,7 @@
 #![cfg(feature = "rayon")]
 use anyhow::Result;
 use dsi_progress_logger::*;
+use mem_dbg::{FlatType, MemSize};
 use rdst::RadixKey;
 use std::ops::{BitXor, BitXorAssign};
 use sux::traits::TryIntoUnaligned;
@@ -16,15 +17,12 @@ use sux::{
     dict::VFilter,
     func::{
         VBuilder, VFunc,
-        shard_edge::{
-            Fuse3NoShards, Fuse3Shards, FuseLge3FullSigs, FuseLge3NoShards, FuseLge3Shards,
-            ShardEdge,
-        },
+        shard_edge::{Fuse3NoShards, Fuse3Shards, FuseLge3FullSigs, FuseLge3Shards, ShardEdge},
     },
     utils::{EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig},
 };
 
-fn _test_vfunc<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
+fn _test_vfunc<S: Sig + Send + Sync, E: ShardEdge<S, 3> + MemSize + FlatType>(
     sizes: &[usize],
     offline: bool,
     low_mem: bool,
@@ -46,7 +44,6 @@ where
         let func = <VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
             FromCloneableIntoIterator::from(0..n),
             FromCloneableIntoIterator::from(0_usize..),
-            n,
             VBuilder::default().offline(offline).low_mem(low_mem),
             &mut pl,
         )?;
@@ -65,8 +62,8 @@ where
 fn test_vfunc_lge() -> Result<()> {
     _test_vfunc::<[u64; 2], FuseLge3Shards>(&[0, 10, 1000, 100_000], false, false)?;
     _test_vfunc::<[u64; 2], FuseLge3Shards>(&[0, 10, 1000, 100_000], true, false)?;
-    _test_vfunc::<[u64; 1], FuseLge3NoShards>(&[0, 10, 1000, 100_000], false, false)?;
-    _test_vfunc::<[u64; 1], FuseLge3NoShards>(&[0, 10, 1000, 100_000], true, false)?;
+    _test_vfunc::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], false, false)?;
+    _test_vfunc::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], true, false)?;
     _test_vfunc::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], false, false)?;
     _test_vfunc::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], true, false)?;
     _test_vfunc::<[u64; 2], Fuse3Shards>(&[0, 10, 1000, 100_000], false, false)?;
@@ -80,10 +77,10 @@ fn test_vfunc_peeling_by_sig_vals() -> Result<()> {
     _test_vfunc::<[u64; 2], FuseLge3Shards>(&[1_000_000], false, true)?;
     _test_vfunc::<[u64; 2], FuseLge3Shards>(&[1_000_000], true, false)?;
     _test_vfunc::<[u64; 2], FuseLge3Shards>(&[1_000_000], true, true)?;
-    _test_vfunc::<[u64; 1], FuseLge3NoShards>(&[1_000_000], false, false)?;
-    _test_vfunc::<[u64; 1], FuseLge3NoShards>(&[1_000_000], false, true)?;
-    _test_vfunc::<[u64; 2], FuseLge3NoShards>(&[1_000_000], false, false)?;
-    _test_vfunc::<[u64; 2], FuseLge3NoShards>(&[1_000_000], false, true)?;
+    _test_vfunc::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, false)?;
+    _test_vfunc::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, true)?;
+    _test_vfunc::<[u64; 2], Fuse3NoShards>(&[1_000_000], false, false)?;
+    _test_vfunc::<[u64; 2], Fuse3NoShards>(&[1_000_000], false, true)?;
     _test_vfunc::<[u64; 2], FuseLge3FullSigs>(&[1_000_000], false, false)?;
     _test_vfunc::<[u64; 2], FuseLge3FullSigs>(&[1_000_000], false, true)?;
     _test_vfunc::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, false)?;
@@ -93,7 +90,7 @@ fn test_vfunc_peeling_by_sig_vals() -> Result<()> {
     Ok(())
 }
 
-fn _test_vfilter<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
+fn _test_vfilter<S: Sig + Send + Sync, E: ShardEdge<S, 3> + MemSize + FlatType>(
     sizes: &[usize],
     offline: bool,
     low_mem: bool,
@@ -112,9 +109,8 @@ where
 
     for &n in sizes {
         dbg!(offline, n);
-        let filter = <VFilter<VFunc<usize, Box<[u8]>, S, E>>>::try_new_with_builder(
+        let filter = <VFilter<usize, Box<[u8]>, S, E>>::try_new_with_builder(
             FromCloneableIntoIterator::from(0..n),
-            n,
             VBuilder::default().offline(offline).low_mem(low_mem),
             &mut pl,
         )?;
@@ -148,8 +144,8 @@ where
 fn test_vfilter_lge() -> Result<()> {
     _test_vfilter::<[u64; 2], FuseLge3Shards>(&[0, 10, 1000, 100_000], false, false)?;
     _test_vfilter::<[u64; 2], FuseLge3Shards>(&[0, 10, 1000, 100_000], true, false)?;
-    _test_vfilter::<[u64; 1], FuseLge3NoShards>(&[0, 10, 1000, 100_000], false, false)?;
-    _test_vfilter::<[u64; 1], FuseLge3NoShards>(&[0, 10, 1000, 100_000], true, false)?;
+    _test_vfilter::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], false, false)?;
+    _test_vfilter::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], true, false)?;
     _test_vfilter::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], false, false)?;
     _test_vfilter::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], true, false)?;
     _test_vfilter::<[u64; 2], Fuse3Shards>(&[0, 10, 1000, 100_000], false, false)?;
@@ -163,10 +159,10 @@ fn test_vfilter_peeling_by_sig_vals() -> Result<()> {
     _test_vfilter::<[u64; 2], FuseLge3Shards>(&[1_000_000], false, true)?;
     _test_vfilter::<[u64; 2], FuseLge3Shards>(&[1_000_000], true, false)?;
     _test_vfilter::<[u64; 2], FuseLge3Shards>(&[1_000_000], true, true)?;
-    _test_vfilter::<[u64; 1], FuseLge3NoShards>(&[1_000_000], false, false)?;
-    _test_vfilter::<[u64; 1], FuseLge3NoShards>(&[1_000_000], false, true)?;
-    _test_vfilter::<[u64; 2], FuseLge3NoShards>(&[1_000_000], false, false)?;
-    _test_vfilter::<[u64; 2], FuseLge3NoShards>(&[1_000_000], false, true)?;
+    _test_vfilter::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, false)?;
+    _test_vfilter::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, true)?;
+    _test_vfilter::<[u64; 2], Fuse3NoShards>(&[1_000_000], false, false)?;
+    _test_vfilter::<[u64; 2], Fuse3NoShards>(&[1_000_000], false, true)?;
     _test_vfilter::<[u64; 2], FuseLge3FullSigs>(&[1_000_000], false, false)?;
     _test_vfilter::<[u64; 2], FuseLge3FullSigs>(&[1_000_000], false, true)?;
     _test_vfilter::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, false)?;
@@ -187,12 +183,51 @@ fn test_dup_key() -> Result<()> {
         <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
             FromCloneableIntoIterator::from(std::iter::repeat_n(0, 10)),
             FromCloneableIntoIterator::from(0..),
-            10,
             VBuilder::default().check_dups(true),
             &mut ProgressLogger::default(),
         )
         .is_err()
     );
+
+    Ok(())
+}
+
+#[test]
+fn test_mismatched_keys_and_values() -> Result<()> {
+    use sux::func::BuildError;
+    let mut pl = ProgressLogger::default();
+
+    // Lender-based construction: fewer values than keys is an error
+    let result = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new(
+        FromCloneableIntoIterator::from(0..100_usize),
+        FromCloneableIntoIterator::from(0..50_usize),
+        &mut pl,
+    );
+    assert!(matches!(
+        result.unwrap_err().downcast_ref::<BuildError>(),
+        Some(BuildError::MismatchedKeysAndValues { .. })
+    ));
+
+    // Lender-based construction: extra values are allowed (the values
+    // lender may be infinite)
+    let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new(
+        FromCloneableIntoIterator::from(0..100_usize),
+        FromCloneableIntoIterator::from(0_usize..),
+        &mut pl,
+    )?;
+    assert_eq!(func.get(50), 50);
+
+    // Slice-based construction: lengths must match exactly
+    let keys: Vec<usize> = (0..100).collect();
+    for len in [50_usize, 200] {
+        let values: Vec<usize> = (0..len).collect();
+        let result =
+            <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_par_new(&keys, &values, &mut pl);
+        assert!(matches!(
+            result.unwrap_err().downcast_ref::<BuildError>(),
+            Some(BuildError::MismatchedKeysAndValues { .. })
+        ));
+    }
 
     Ok(())
 }

@@ -37,8 +37,6 @@ use std::ops::Index;
 
 /// A version of [`SelectSmall`] implementing [selection on zeros].
 ///
-/// [selection on zeros]: crate::traits::SelectZero
-///
 /// # Examples
 ///
 /// ```rust
@@ -75,6 +73,8 @@ use std::ops::Index;
 /// assert_eq!(sel.select(3), None);
 /// # }
 /// ```
+///
+/// [selection on zeros]: crate::traits::SelectZero
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

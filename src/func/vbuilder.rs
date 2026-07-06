@@ -17,7 +17,7 @@ use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
 use lender::FallibleLending;
-use log::info;
+use mem_dbg::{FlatType, MemSize, SizeFlags};
 use num_primitive::PrimitiveNumber;
 use rand::rngs::SmallRng;
 use rand::{Rng, RngExt, SeedableRng};
@@ -26,11 +26,9 @@ use rayon::slice::ParallelSlice;
 use rdst::*;
 use std::any::TypeId;
 use std::borrow::{Borrow, Cow};
-use std::hint::unreachable_unchecked;
 use std::marker::PhantomData;
 use std::mem::transmute;
 use std::ops::{BitXor, BitXorAssign};
-use std::slice::Iter;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
@@ -59,9 +57,6 @@ fn default_max_num_threads() -> usize {
 /// There are several setters: for example, you can [set the maximum number
 /// of threads].
 ///
-/// [offline]: VBuilder::offline
-/// [set the maximum number of threads]: VBuilder::max_num_threads
-///
 /// # Implementation details
 ///
 /// Initially, keys are scanned, turned into signatures, and stored in the
@@ -75,12 +70,14 @@ fn default_max_num_threads() -> usize {
 ///
 /// The generic parameters are explained in the [`VFunc`] /
 /// [`VFilter`] documentation.
-//
+///
 /// Most methods require to pass one or two [`FallibleRewindableLender`]s
 /// (keys and possibly values), as the construction might fail and keys might
 /// be scanned again. The structures in the [`lenders`] module provide easy ways
 /// to build such lenders.
 ///
+/// [offline]: VBuilder::offline
+/// [set the maximum number of threads]: VBuilder::max_num_threads
 /// [`VFilter`]: crate::dict::VFilter
 #[derive(Setters, Debug, Derivative)]
 #[derivative(Default)]
@@ -94,6 +91,26 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "None"))]
     expected_num_keys: Option<usize>,
+
+    /// Override the value used to size the sharding step.
+    ///
+    /// Normally [`set_up_shards`](ShardEdge::set_up_shards) is called
+    /// with the number of keys, which is correct for a construction
+    /// where each key produces exactly one hyperedge (VFunc). When
+    /// each key produces *multiple* hyperedges — as in
+    /// [`CompVFunc`], where each key's
+    /// Huffman-encoded value contributes one edge per codeword bit
+    /// — the graph actually has ≈ entropy × num_keys equations.
+    /// Sizing the shards for the smaller key count leaves every
+    /// shard oversized relative to the sharding strategy's intent.
+    ///
+    /// If this field is `Some(n)`, `n` is passed to
+    /// [`set_up_shards`](ShardEdge::set_up_shards) instead of the
+    /// runtime key count. CompVFunc sets this to the total edge
+    /// count after building the Huffman coder.
+    #[setters(generate = true, strip_option)]
+    #[derivative(Default(value = "None"))]
+    pub(crate) shard_size_hint: Option<usize>,
 
     /// The maximum number of parallel threads to use for both the population
     /// and solve phases. The default is `min(16, available_parallelism)`.
@@ -118,7 +135,7 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// than three threads and more than two shards.
     #[setters(generate = true, strip_option)]
     #[derivative(Default(value = "None"))]
-    low_mem: Option<bool>,
+    pub(crate) low_mem: Option<bool>,
 
     /// The seed for the random number generator.
     #[setters(generate = true)]
@@ -159,15 +176,15 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) num_keys: usize,
     /// The ratio between the number of vertices and the number of edges
     /// (i.e., between the number of variables and the number of equations).
-    c: f64,
+    pub(crate) c: f64,
     /// Whether we should use [lazy Gaussian elimination].
     ///
     /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
-    lge: bool,
+    pub(crate) lge: bool,
     /// The number of threads to use.
-    num_threads: usize,
+    pub(crate) num_threads: usize,
     /// Fast-stop for failed attempts.
-    failed: AtomicBool,
+    pub(crate) failed: AtomicBool,
     #[doc(hidden)]
     _marker: PhantomData<(D, S)>,
 }
@@ -229,6 +246,15 @@ pub enum BuildError {
     /// A value is too large for the specified bit size.
     #[error("Value too large for specified bit size")]
     ValueTooLarge,
+    /// All shards remained unsolvable after multiple attempts.
+    #[error("Unsolvable shard after multiple attempts")]
+    UnsolvableShard,
+    /// The number of values is different from the number of keys.
+    ///
+    /// When construction is lender-based the mismatch is detected lazily,
+    /// so the reported counts might be lower bounds.
+    #[error("Mismatch between number of keys ({num_keys}) and number of values ({num_values})")]
+    MismatchedKeysAndValues { num_keys: usize, num_values: usize },
 }
 
 /// Transient error during the build, leading to trying with a different seed.
@@ -273,194 +299,15 @@ enum PeelResult<
     },
 }
 
-/// A graph represented compactly.
-///
-/// Each (*k*-hyper)edge is a set of *k* vertices (by construction fuse graphs
-/// do not have degenerate edges), but we represent it internally as a vector.
-/// We call *side* the position of a vertex in the edge.
-///
-/// For each vertex we store information about the edges incident to the vertex
-/// and the sides of the vertex in such edges. While technically not necessary
-/// to perform peeling, the knowledge of the sides speeds up the peeling visit
-/// by reducing the number of tests that are necessary to update the degrees
-/// once the edge is peeled (see the `peel_by_*` methods). For the same reason
-/// it also speeds up assignment.
-///
-/// Depending on the peeling method (by signature or by index), the graph will
-/// store edge indices or signature/value pairs (the generic parameter `X`).
-///
-/// Edge information is packed together using Djamal's XOR trick (see
-/// [“Cache-Oblivious Peeling of Random Hypergraphs”]): since during the
-/// peeling visit we need to know the content of the list only when a single
-/// edge index is present, we can XOR together all the edge information.
-///
-/// We use a single byte to store the degree (six upper bits) and the XOR of the
-/// sides (lower two bits). The degree can be stored with a small number of bits
-/// because the graph is random, so the maximum degree is *O*(log log *n*).
-/// In any case, the Boolean field `overflow` will become `true` in case of
-/// overflow.
-///
-/// When we peel an edge, we just [zero the degree], leaving the edge
-/// information and the side in place for further processing later.
-///
-/// [zero the degree]: Self::zero
-///
-/// ["Cache-Oblivious Peeling of Random Hypergraphs"]: https://doi.org/10.1109/DCC.2014.48
-struct XorGraph<X: Copy + Default + BitXor + BitXorAssign> {
-    edges: Box<[X]>,
-    degrees_sides: Box<[u8]>,
-    overflow: bool,
-}
-
-impl<X: BitXor + BitXorAssign + Default + Copy> XorGraph<X> {
-    pub fn new(n: usize) -> XorGraph<X> {
-        XorGraph {
-            edges: vec![X::default(); n].into(),
-            degrees_sides: vec![0; n].into(),
-            overflow: false,
-        }
-    }
-
-    #[inline(always)]
-    pub fn add(&mut self, v: usize, x: X, side: usize) {
-        debug_assert!(side < 3);
-        let (degree_size, overflow) = self.degrees_sides[v].overflowing_add(4);
-        self.degrees_sides[v] = degree_size;
-        self.overflow |= overflow;
-        self.degrees_sides[v] ^= side as u8;
-        self.edges[v] ^= x;
-    }
-
-    #[inline(always)]
-    pub fn remove(&mut self, v: usize, x: X, side: usize) {
-        debug_assert!(side < 3);
-        self.degrees_sides[v] -= 4;
-        self.degrees_sides[v] ^= side as u8;
-        self.edges[v] ^= x;
-    }
-
-    #[inline(always)]
-    pub fn zero(&mut self, v: usize) {
-        self.degrees_sides[v] &= 0b11;
-    }
-
-    #[inline(always)]
-    pub fn edge_and_side(&self, v: usize) -> (X, usize) {
-        debug_assert!(self.degree(v) < 2);
-        (self.edges[v] as _, (self.degrees_sides[v] & 0b11) as _)
-    }
-
-    #[inline(always)]
-    pub fn degree(&self, v: usize) -> u8 {
-        self.degrees_sides[v] >> 2
-    }
-
-    pub fn degrees(
-        &self,
-    ) -> std::iter::Map<std::iter::Copied<std::slice::Iter<'_, u8>>, fn(u8) -> u8> {
-        self.degrees_sides.iter().copied().map(|d| d >> 2)
-    }
-}
-
-/// A preallocated stack implementation that avoids the expensive (even if
-/// rarely taken) branch of the `Vec` implementation in which memory is
-/// reallocated. Note that using [`Vec::with_capacity`] is not enough, because
-/// for the CPU the branch is still there.
-struct FastStack<X: Copy + Default> {
-    stack: Vec<X>,
-    top: usize,
-}
-
-impl<X: Copy + Default> FastStack<X> {
-    pub fn new(n: usize) -> FastStack<X> {
-        FastStack {
-            stack: vec![X::default(); n],
-            top: 0,
-        }
-    }
-
-    pub fn push(&mut self, x: X) {
-        debug_assert!(self.top < self.stack.len());
-        self.stack[self.top] = x;
-        self.top += 1;
-    }
-
-    pub fn len(&self) -> usize {
-        self.top
-    }
-
-    pub fn iter(&self) -> std::slice::Iter<'_, X> {
-        self.stack[..self.top].iter()
-    }
-}
-
-/// Two stacks in the same vector.
-///
-/// This struct implements a pair of stacks sharing the same memory. The lower
-/// stack grows from the beginning of the vector, the upper stack grows from the
-/// end of the vector. Since we use the lower stack for the visit and the upper
-/// stack for peeled edges (possibly represented by the vertex from which they
-/// have been peeled), the sum of the lengths of the two stacks cannot exceed
-/// the length of the vector.
-#[derive(Debug)]
-struct DoubleStack<V> {
-    stack: Vec<V>,
-    lower: usize,
-    upper: usize,
-}
-
-impl<V: Default + Copy> DoubleStack<V> {
-    fn new(n: usize) -> DoubleStack<V> {
-        DoubleStack {
-            stack: vec![V::default(); n],
-            lower: 0,
-            upper: n,
-        }
-    }
-}
-
-impl<V: Copy> DoubleStack<V> {
-    #[inline(always)]
-    fn push_lower(&mut self, v: V) {
-        debug_assert!(self.lower < self.upper);
-        self.stack[self.lower] = v;
-        self.lower += 1;
-    }
-
-    #[inline(always)]
-    fn push_upper(&mut self, v: V) {
-        debug_assert!(self.lower < self.upper);
-        self.upper -= 1;
-        self.stack[self.upper] = v;
-    }
-
-    #[inline(always)]
-    fn pop_lower(&mut self) -> Option<V> {
-        if self.lower == 0 {
-            None
-        } else {
-            self.lower -= 1;
-            Some(self.stack[self.lower])
-        }
-    }
-
-    fn upper_len(&self) -> usize {
-        self.stack.len() - self.upper
-    }
-
-    fn iter_upper(&self) -> Iter<'_, V> {
-        self.stack[self.upper..].iter()
-    }
-}
-
 /// An iterator over segments of data associated with each shard.
 type ShardDataIter<'a, D> = <D as SliceByValueMut>::ChunksMut<'a>;
 /// A segment of data associated with a specific shard.
 type ShardData<'a, D> = <ShardDataIter<'a, D> as Iterator>::Item;
 
-impl<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3>>
+impl<W: Word + BinSafe, S: Sig + Send + Sync, E: ShardEdge<S, 3> + MemSize + FlatType>
     VBuilder<BitFieldVec<Box<[W]>>, S, E>
 where
+    BitFieldVec<Box<[W]>>: MemSize + FlatType,
     SigVal<S, W>: RadixKey,
     SigVal<E::LocalSig, W>: BitXor + BitXorAssign,
 {
@@ -545,10 +392,7 @@ where
         let max_shard = shard_store.shard_sizes().max().unwrap_or(0);
         (self.c, self.lge) = self.shard_edge.set_up_graphs(self.num_keys, max_shard);
 
-        pl.info(format_args!(
-            "Number of keys: {} Max value: {max_value} Bitwidth: {}",
-            self.num_keys, self.bit_width,
-        ));
+        pl.info(format_args!("Max value: {max_value}"));
 
         let data: BitFieldVec<Box<[W]>> = BitFieldVec::<Box<[W]>>::new_padded(
             self.bit_width,
@@ -572,6 +416,7 @@ pub(crate) struct RetryState {
     prng: SmallRng,
     dup_count: u32,
     local_dup_count: u32,
+    unsolvable_count: u32,
 }
 
 impl RetryState {
@@ -595,8 +440,8 @@ impl RetryState {
             Err(error) => match error.downcast::<SolveError>() {
                 Ok(vfunc_error) => match vfunc_error {
                     SolveError::DuplicateSignature => {
-                        if self.dup_count >= 3 {
-                            pl.error(format_args!("Duplicate keys (duplicate 128-bit signatures with four different seeds)"));
+                        if self.dup_count >= 2 {
+                            pl.error(format_args!("Duplicate keys (duplicate 128-bit signatures with three different seeds)"));
                             return Err(BuildError::DuplicateKey.into());
                         }
                         pl.warn(format_args!(
@@ -623,7 +468,11 @@ impl RetryState {
                         Ok(None)
                     }
                     SolveError::UnsolvableShard => {
-                        pl.warn(format_args!(
+                        self.unsolvable_count += 1;
+                        if self.unsolvable_count >= 100 {
+                            panic!("Failed more than 100 attempts (this shouldn't happen)");
+                        }
+                        pl.info(format_args!(
                             "Unsolvable shard, trying again with a different seed..."
                         ));
                         Ok(None)
@@ -676,7 +525,10 @@ impl<
     where
         SigVal<S, D::Value>: RadixKey,
         SigVal<E::LocalSig, D::Value>: BitXor + BitXorAssign,
-        D: for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>,
+        D: for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>
+            + MemSize
+            + FlatType,
+        E: MemSize + FlatType,
         for<'a> ShardDataIter<'a, D>: Send,
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
@@ -693,10 +545,7 @@ impl<
                     builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
                 );
 
-                pl.info(format_args!(
-                    "Number of keys: {} Max value: {max_value} Bit width: {}",
-                    builder.num_keys, builder.bit_width,
-                ));
+                pl.info(format_args!("Max value: {max_value}",));
 
                 let func = builder.try_build_from_shard_iter(
                     seed,
@@ -757,7 +606,10 @@ impl<
     where
         SigVal<S, D::Value>: RadixKey,
         SigVal<E::LocalSig, D::Value>: BitXor + BitXorAssign,
-        D: for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>,
+        D: for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>
+            + MemSize
+            + FlatType,
+        E: MemSize + FlatType,
         for<'a> ShardDataIter<'a, D>: Send,
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
@@ -774,10 +626,7 @@ impl<
                     builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
                 );
 
-                pl.info(format_args!(
-                    "Number of keys: {} Max value: {max_value} Bit width: {}",
-                    builder.num_keys, builder.bit_width,
-                ));
+                pl.info(format_args!("Max value: {max_value}"));
 
                 let func = builder.try_build_from_shard_iter(
                     seed,
@@ -802,9 +651,9 @@ impl<
     /// deriving it from `max_value`, and derives stored values from
     /// signatures via `get_val`.
     ///
-    /// [`try_build_func_and_store`]: Self::try_build_func_and_store
-    ///
     /// `new_data(bit_width, len)` allocates the backend storage.
+    ///
+    /// [`try_build_func_and_store`]: Self::try_build_func_and_store
     pub(crate) fn try_build_filter<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<K>,
@@ -824,11 +673,15 @@ impl<
     where
         SigVal<S, EmptyVal>: RadixKey,
         SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
-        D: for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>,
+        D: for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>
+            + MemSize
+            + FlatType,
+        E: MemSize + FlatType,
         for<'a> ShardDataIter<'a, D>: Send,
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
         let mut rs = self.retry_state(pl);
+        let total_start = Instant::now();
 
         loop {
             let seed = rs.next_seed();
@@ -866,11 +719,6 @@ impl<
                             builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
                         );
 
-                        pl.info(format_args!(
-                            "Number of keys: {} Bit width: {}",
-                            builder.num_keys, builder.bit_width,
-                        ));
-
                         let func = builder.try_build_from_shard_iter(
                             seed,
                             data,
@@ -887,6 +735,13 @@ impl<
             };
 
             if let Some(r) = rs.handle_solve_result(result, pl)? {
+                let num_keys = self.num_keys;
+                pl.info(format_args!(
+                    "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                    total_start.elapsed().as_secs_f64(),
+                    num_keys,
+                    total_start.elapsed().as_nanos() as f64 / num_keys as f64
+                ));
                 return Ok(r);
             }
 
@@ -903,11 +758,15 @@ impl<
     /// [`try_populate_and_build`]: Self::try_populate_and_build
     pub(crate) fn retry_state(&mut self, pl: &mut impl ProgressLog) -> RetryState {
         self.init_shards_and_seed();
-        pl.info(format_args!("Using 2^{} buckets", self.log2_buckets));
+        pl.info(format_args!(
+            "Using a store with 2^{} buckets",
+            self.log2_buckets
+        ));
         RetryState {
             prng: SmallRng::seed_from_u64(self.seed),
             dup_count: 0,
             local_dup_count: 0,
+            unsolvable_count: 0,
         }
     }
 
@@ -921,7 +780,7 @@ impl<
     ///
     /// On each retry the lenders are rewound. Retries continue for
     /// [`SolveError::UnsolvableShard`] and
-    /// [`SolveError::MaxShardTooBig`]; after 4 duplicate-signature
+    /// [`SolveError::MaxShardTooBig`]; after 3 duplicate-signature
     /// retries [`BuildError::DuplicateKey`] is returned, and after 3
     /// duplicate-local-signature retries
     /// [`BuildError::DuplicateLocalSignatures`] is returned. Any other
@@ -967,6 +826,7 @@ impl<
         SigVal<S, V>: RadixKey,
     {
         let mut rs = self.retry_state(pl);
+        let total_start = Instant::now();
 
         loop {
             let seed = rs.next_seed();
@@ -977,9 +837,15 @@ impl<
                                     pl: &mut P,
                                     _state: &mut C| {
                     let mut maybe_max_value = V::default();
+                    let mut num_keys = 0;
                     while let Some(key) = keys.next()? {
                         pl.light_update();
-                        let &maybe_val = values.next()?.expect("Not enough values");
+                        num_keys += 1;
+                        let &maybe_val =
+                            values.next()?.ok_or(BuildError::MismatchedKeysAndValues {
+                                num_keys,
+                                num_values: num_keys - 1,
+                            })?;
                         maybe_max_value = Ord::max(maybe_max_value, maybe_val);
                         push(SigVal {
                             sig: K::to_sig(key.borrow(), seed),
@@ -993,6 +859,13 @@ impl<
             };
 
             if let Some(r) = rs.handle_solve_result(result, pl)? {
+                let num_keys = self.num_keys;
+                pl.info(format_args!(
+                    "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                    total_start.elapsed().as_secs_f64(),
+                    num_keys,
+                    total_start.elapsed().as_nanos() as f64 / num_keys as f64
+                ));
                 return Ok((r, keys));
             }
 
@@ -1001,17 +874,14 @@ impl<
         }
     }
 
-    /// Like [`try_populate_and_build`], but takes key and value
-    /// **slices** and parallelizes the hash computation and store
-    /// population using rayon.
+    /// Like [`try_populate_and_build`], but takes key and value slices and
+    /// parallelizes the hash computation and store population .
+    ///
+    /// This method calls [`SigStoreImpl::par_populate`] to compute signatures and
+    /// populate the store in parallel on rayon worker threads.
     ///
     /// [`try_populate_and_build`]: Self::try_populate_and_build
-    ///
-    /// Each key is hashed on a rayon worker thread and deposited directly
-    /// into its SigStore bucket (protected by a per-bucket mutex). This is
-    /// typically faster than the lender-based path for large in-memory key
-    /// sets, because the expensive per-key hashing runs on all available
-    /// cores.
+    /// [`SigStoreImpl::par_populate`]: crate::utils::sig_store::SigStoreImpl::par_populate
     pub(crate) fn try_par_populate_and_build<
         K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
         B: Borrow<K> + Sync,
@@ -1042,6 +912,7 @@ impl<
     {
         let mut rs = self.retry_state(pl);
         let n = keys.len();
+        let total_start = Instant::now();
 
         loop {
             let seed = rs.next_seed();
@@ -1053,28 +924,48 @@ impl<
                     self.expected_num_keys,
                 )?;
 
-                pl.expected_updates(Some(n));
+                pl.expected_updates(n);
                 pl.item_name("key");
                 pl.start(format!(
-                    "Computing and storing {}-bit signatures in memory (parallel) using seed 0x{seed:016x}...",
+                    "Computing and storing {}-bit signatures in parallel ({} threads) in RAM using seed 0x{seed:016x}...",
                     std::mem::size_of::<S>() * 8,
+                    self.max_num_threads,
                 ));
 
-                let maybe_max_value = sig_store.par_populate(n, self.max_num_threads, |i| SigVal {
-                    sig: K::to_sig(keys[i].borrow(), seed),
-                    val: val_fn(i),
-                });
+                let start = Instant::now();
+
+                let maybe_max_value =
+                    sig_store.par_populate(n, self.max_num_threads, |i| SigVal {
+                        sig: K::to_sig(keys[i].borrow(), seed),
+                        val: val_fn(i),
+                    })?;
 
                 pl.done();
 
                 let num_keys = sig_store.len();
+
+                pl.info(format_args!(
+                    "Computation of signatures from inputs completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                    start.elapsed().as_secs_f64(),
+                    num_keys,
+                    start.elapsed().as_nanos() as f64 / num_keys as f64
+                ));
+                // When `shard_size_hint` is set (e.g. by CompVFunc with
+                // `total_edges` after building the Huffman coder), the
+                // sharding strategy is sized for the hinted workload
+                // rather than the raw key count. See the doc comment on
+                // [`VBuilder::shard_size_hint`].
+                let shard_n = self.shard_size_hint.unwrap_or(num_keys);
                 let shard_edge = &mut self.shard_edge;
-                shard_edge.set_up_shards(num_keys, self.eps);
+                shard_edge.set_up_shards(shard_n, self.eps);
 
                 let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
                 let max_shard = shard_store.shard_sizes().max().unwrap_or(0);
 
-                if max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64 {
+                // Check for pathological (5x) deviation from the target ε-cost
+                if max_shard as f64
+                    > (1.0 + 5.0 * self.eps) * num_keys as f64 / shard_edge.num_shards() as f64
+                {
                     Err(SolveError::MaxShardTooBig.into())
                 } else {
                     (self.c, self.lge) = shard_edge.set_up_graphs(num_keys, max_shard);
@@ -1085,6 +976,13 @@ impl<
             };
 
             if let Some(r) = rs.handle_solve_result(result, pl)? {
+                let num_keys = self.num_keys;
+                pl.info(format_args!(
+                    "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                    total_start.elapsed().as_secs_f64(),
+                    num_keys,
+                    total_start.elapsed().as_nanos() as f64 / num_keys as f64
+                ));
                 return Ok(r);
             }
             // Keys and values are slices — no rewind needed.
@@ -1171,11 +1069,11 @@ impl<
 
     /// Inner generic implementation of [`try_solve_once`].
     ///
-    /// [`try_solve_once`]: Self::try_solve_once
-    ///
     /// This is generic over `SS` so that the `populate` closure can push
     /// to the concrete store type without dynamic dispatch. The `state`
     /// parameter is forwarded to both `populate` and `build_fn`.
+    ///
+    /// [`try_solve_once`]: Self::try_solve_once
     fn try_solve_once_inner<
         V: BinSafe + Default + Send + Sync + Ord,
         R,
@@ -1210,12 +1108,12 @@ impl<
         pl.expected_updates(self.expected_num_keys);
         pl.item_name("key");
         pl.start(format!(
-            "Computing and storing {}-bit signatures in {} using seed 0x{:016x}...",
+            "Computing and storing {}-bit signatures sequentially {} using seed 0x{:016x}...",
             std::mem::size_of::<S>() * 8,
             sig_store
                 .temp_dir()
-                .map(|d| d.path().to_string_lossy())
-                .unwrap_or(Cow::Borrowed("memory")),
+                .map(|d| Cow::Owned(format!("on disk ({})", d.path().display())))
+                .unwrap_or(Cow::Borrowed("in RAM")),
             seed
         ));
 
@@ -1232,29 +1130,34 @@ impl<
 
         let num_keys = sig_store.len();
 
-        info!(
+        pl.info(format_args!(
             "Computation of signatures from inputs completed in {:.3} seconds ({} keys, {:.3} ns/key)",
             start.elapsed().as_secs_f64(),
             num_keys,
             start.elapsed().as_nanos() as f64 / num_keys as f64
-        );
+        ));
 
+        // See the doc comment on [`VBuilder::shard_size_hint`]:
+        // when set, use it to size the sharding strategy instead of
+        // the runtime key count. Used by CompVFunc to pass the total
+        // edge count (≈ entropy × num_keys).
+        let shard_n = self.shard_size_hint.unwrap_or(num_keys);
         let shard_edge = &mut self.shard_edge;
-        shard_edge.set_up_shards(num_keys, self.eps);
-
-        let start = Instant::now();
+        shard_edge.set_up_shards(shard_n, self.eps);
 
         let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
         let max_shard = shard_store.shard_sizes().max().unwrap_or(0);
 
         if shard_edge.shard_high_bits() != 0 {
             pl.info(format_args!(
-                "Max shard / average shard: {:.2}%",
+                "Max shard / average shard: {:.3}%",
                 (100.0 * max_shard as f64) / (num_keys as f64 / shard_edge.num_shards() as f64)
             ));
         }
 
-        if max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64 {
+        if self.shard_size_hint.is_none()
+            && max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64
+        {
             return Err(SolveError::MaxShardTooBig.into());
         }
 
@@ -1263,14 +1166,7 @@ impl<
 
         let store = Box::new(shard_store) as Box<dyn ShardStore<S, V> + Send + Sync>;
 
-        build_fn(self, seed, store, maybe_max_value, num_keys, pl, state).inspect(|_| {
-            info!(
-                "Construction from signatures completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                start.elapsed().as_secs_f64(),
-                num_keys,
-                start.elapsed().as_nanos() as f64 / num_keys as f64
-            );
-        })
+        build_fn(self, seed, store, maybe_max_value, num_keys, pl, state)
     }
 }
 
@@ -1278,9 +1174,11 @@ impl<
     D: BitFieldSlice<Value: Word + BinSafe>
         + for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>
         + Send
-        + Sync,
+        + Sync
+        + MemSize
+        + FlatType,
     S: Sig + Send + Sync,
-    E: ShardEdge<S, 3>,
+    E: ShardEdge<S, 3> + MemSize + FlatType,
 > VBuilder<D, S, E>
 {
     /// Solves the 3-hypergraph system and returns a new [`VFunc`].
@@ -1300,8 +1198,6 @@ impl<
     ///   `self.num_keys` must be set up by the caller (typically by
     ///   [`try_solve_once`]).
     ///
-    /// [`try_solve_once`]: Self::try_solve_once
-    ///
     /// * `get_val` must be deterministic.
     ///
     /// # Errors
@@ -1314,6 +1210,7 @@ impl<
     /// `self.low_mem`; see the [`low_mem`] field documentation for the
     /// automatic selection heuristic.
     ///
+    /// [`try_solve_once`]: Self::try_solve_once
     /// [`low_mem`]: VBuilder::low_mem
     pub(crate) fn try_build_from_shard_iter<
         K: ?Sized + ToSig<S>,
@@ -1350,115 +1247,92 @@ impl<
         let shard_edge = &self.shard_edge;
         self.num_threads = shard_edge.num_shards().min(self.max_num_threads);
 
-        pl.info(format_args!("{}", self.shard_edge));
         pl.info(format_args!(
-            "c: {}, Overhead: {:+.4}% Number of threads: {}",
+            "Number of keys: {}; bit width: {}",
+            self.num_keys, self.bit_width,
+        ));
+
+        pl.info(format_args!(
+            "{}; signatures: {}",
+            shard_edge,
+            core::any::type_name::<S>()
+        ));
+
+        pl.info(format_args!(
+            "c: {}; overhead: {:+.3}%",
             self.c,
             100. * ((shard_edge.num_vertices() * shard_edge.num_shards()) as f64
                 / (self.num_keys as f64)
                 - 1.),
-            self.num_threads
         ));
 
-        // Shard processing details are logged at debug level
-        pl.log_level(log::Level::Debug);
+        // main_pl (shard counter) stays at info; per-shard detail at trace
+        let mut main_pl = pl.concurrent();
+        pl.log_level(log::Level::Trace);
 
         if self.lge {
-            pl.info(format_args!(
-                "Peeling with lazy Gaussian elimination fallback"
-            ));
             self.par_solve(
                 shard_iter,
                 &mut data,
+                0,
                 |this, shard_index, shard, data, pl| {
                     this.lge_shard(shard_index, shard, data, get_val, inspect, pl)
                 },
-                &mut pl.concurrent(),
+                &mut main_pl,
                 pl,
             )?;
         } else if self.low_mem == Some(true)
             || self.low_mem.is_none() && self.num_threads > 3 && shard_edge.num_shards() > 2
         {
-            // Less memory, but slower
             self.par_solve(
                 shard_iter,
                 &mut data,
+                0,
                 |this, shard_index, shard, data, pl| {
                     this.peel_by_sig_vals_low_mem(shard_index, shard, data, get_val, inspect, pl)
                 },
-                &mut pl.concurrent(),
+                &mut main_pl,
                 pl,
             )?;
         } else {
-            // More memory, but faster
             self.par_solve(
                 shard_iter,
                 &mut data,
+                0,
                 |this, shard_index, shard, data, pl| {
                     this.peel_by_sig_vals_high_mem(shard_index, shard, data, get_val, inspect, pl)
                 },
-                &mut pl.concurrent(),
+                &mut main_pl,
                 pl,
             )?;
         }
 
         pl.log_level(log::Level::Info);
 
-        pl.info(format_args!(
-            "Bits/keys: {} ({:+.4}%)",
-            data.len() as f64 * self.bit_width as f64 / self.num_keys as f64,
-            100.0 * (data.len() as f64 / self.num_keys as f64 - 1.),
-        ));
-
+        let num_keys = self.num_keys;
         Ok(VFunc {
             seed,
             shard_edge: self.shard_edge,
-            num_keys: self.num_keys,
+            num_keys,
             data,
             _marker: std::marker::PhantomData,
+        })
+        .inspect(|result| {
+            let bit_size = result.mem_size(SizeFlags::default()) as f64 * 8.0;
+            pl.info(format_args!(
+                "Bits/key: {:.3} ({:+.3}% with respect to bit width)",
+                bit_size / num_keys as f64,
+                100.0 * (bit_size / (result.data.bit_width() as f64 * num_keys as f64) - 1.),
+            ));
         })
     }
 }
 
-macro_rules! remove_edge {
-    ($xor_graph: ident, $e: ident, $side: ident, $edge: ident, $stack: ident, $push:ident, $conv: expr) => {
-        match $side {
-            0 => {
-                if $xor_graph.degree($e[1]) == 2 {
-                    $stack.$push($conv($e[1]));
-                }
-                $xor_graph.remove($e[1], $edge, 1);
-                if $xor_graph.degree($e[2]) == 2 {
-                    $stack.$push($conv($e[2]));
-                }
-                $xor_graph.remove($e[2], $edge, 2);
-            }
-            1 => {
-                if $xor_graph.degree($e[0]) == 2 {
-                    $stack.$push($conv($e[0]));
-                }
-                $xor_graph.remove($e[0], $edge, 0);
-                if $xor_graph.degree($e[2]) == 2 {
-                    $stack.$push($conv($e[2]));
-                }
-                $xor_graph.remove($e[2], $edge, 2);
-            }
-            2 => {
-                if $xor_graph.degree($e[0]) == 2 {
-                    $stack.$push($conv($e[0]));
-                }
-                $xor_graph.remove($e[0], $edge, 0);
-                if $xor_graph.degree($e[1]) == 2 {
-                    $stack.$push($conv($e[1]));
-                }
-                $xor_graph.remove($e[1], $edge, 1);
-            }
-            // SAFETY: side is always 0, 1, or 2 (encoded as a 2-bit
-            // field in the degrees_sides array).
-            _ => unsafe { unreachable_unchecked() },
-        }
-    };
-}
+// `XorGraph`, `DoubleStack`, `FastStack`, and the `remove_edge!`
+// macro live in [`crate::func::peeling`] so they can be shared with
+// [`crate::func::CompVFunc`]. VBuilder's peeler bodies are otherwise
+// unchanged.
+use crate::func::peeling::{DoubleStack, FastStack, XorGraph, remove_edge};
 
 impl<
     D: BitFieldSlice<Value: Word + BinSafe + Send + Sync>
@@ -1525,7 +1399,7 @@ impl<
     ///
     /// This method returns an error if one of the shards cannot be solved, or
     /// if duplicates are detected.
-    fn par_solve<
+    pub(crate) fn par_solve<
         'b,
         V: BinSafe,
         I: IntoIterator<IntoIter: Send, Item = Arc<Vec<SigVal<S, V>>>> + Send,
@@ -1539,6 +1413,7 @@ impl<
         &self,
         shard_iter: I,
         data: &'b mut D,
+        shard_stride_padding: usize,
         solve_shard: SS,
         main_pl: &mut C,
         pl: &mut P,
@@ -1550,9 +1425,9 @@ impl<
     {
         main_pl
             .item_name("shard")
-            .expected_updates(Some(self.shard_edge.num_shards()))
+            .expected_updates(self.shard_edge.num_shards())
             .display_memory(true)
-            .start("Solving shards...");
+            .start(format!("Solving shards ({} threads)...", self.num_threads));
 
         self.failed.store(false, Ordering::Relaxed);
         let num_shards = self.shard_edge.num_shards();
@@ -1567,9 +1442,10 @@ impl<
         let result = std::thread::scope(|scope| {
             scope.spawn(move || {
                 let _ = thread_priority::set_current_thread_priority(ThreadPriority::Max);
+                let shard_stride = self.shard_edge.num_vertices() + shard_stride_padding;
                 for val in shard_iter
                     .into_iter()
-                    .zip(data.try_chunks_mut(self.shard_edge.num_vertices()).unwrap())
+                    .zip(data.try_chunks_mut(shard_stride).unwrap())
                     .enumerate()
                 {
                     if data_send.send(val).is_err() {
@@ -1591,10 +1467,10 @@ impl<
                             Err(_) => return,
                             Ok((shard_index, (shard, mut data))) => {
                                 if shard.is_empty() {
-                                    return;
+                                    continue;
                                 }
 
-                                main_pl.info(format_args!(
+                                main_pl.debug(format_args!(
                                     "Analyzing shard {}/{}...",
                                     shard_index + 1,
                                     num_shards
@@ -1689,7 +1565,7 @@ impl<
 
                                 pl.done_with_count(shard.len());
 
-                                main_pl.info(format_args!(
+                                main_pl.debug(format_args!(
                                     "Solving shard {}/{}...",
                                     shard_index + 1,
                                     num_shards
@@ -1719,12 +1595,12 @@ impl<
                                     return;
                                 }
 
-                                main_pl.info(format_args!(
+                                main_pl.debug(format_args!(
                                     "Completed shard {}/{}",
                                     shard_index + 1,
                                     num_shards
                                 ));
-                                main_pl.update_and_display();
+                                main_pl.update();
                             }
                         }
                     }
@@ -1865,12 +1741,13 @@ impl<
         pl.done();
 
         if shard.len() != double_stack.upper_len() {
-            pl.info(format_args!(
-                "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
+            pl.debug(format_args!(
+                "Peeling failed for shard {}/{} (peeled {} out of {} edges, {:.2}% unpeeled)",
                 shard_index + 1,
                 num_shards,
                 double_stack.upper_len(),
                 shard.len(),
+                100.0 * (shard.len() - double_stack.upper_len()) as f64 / shard.len() as f64,
             ));
             return Ok(PeelResult::Partial {
                 shard_index,
@@ -1926,12 +1803,11 @@ impl<
     /// [`peel_by_sig_vals_low_mem`], which uses almost half the memory. It
     /// is the peeler of choice for low levels of parallelism.
     ///
-    /// [`peel_by_sig_vals_low_mem`]: VBuilder::peel_by_sig_vals_low_mem
-    ///
     /// This peeler cannot be used in conjunction with [lazy Gaussian
     /// elimination] as after a failed peeling it is not possible to retrieve
     /// information about the signature/value pairs in the shard.
     ///
+    /// [`peel_by_sig_vals_low_mem`]: VBuilder::peel_by_sig_vals_low_mem
     /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     fn peel_by_sig_vals_high_mem<
         V: BinSafe,
@@ -2028,14 +1904,16 @@ impl<
         }
 
         pl.done();
+        drop(xor_graph);
 
         if shard_len != sig_vals_stack.len() {
-            pl.info(format_args!(
-                "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
+            pl.debug(format_args!(
+                "Peeling failed for shard {}/{} (peeled {} out of {} edges, {:.2}% unpeeled)",
                 shard_index + 1,
                 num_shards,
                 sig_vals_stack.len(),
-                shard_len
+                shard_len,
+                100.0 * (shard_len - sig_vals_stack.len()) as f64 / shard_len as f64,
             ));
             return Err(());
         }
@@ -2068,12 +1946,11 @@ impl<
     /// the memory. It is the peeler of choice for significant levels of
     /// parallelism.
     ///
-    /// [`peel_by_sig_vals_high_mem`]: VBuilder::peel_by_sig_vals_high_mem
-    ///
     /// This peeler cannot be used in conjunction with [lazy Gaussian
     /// elimination] as after a failed peeling it is not possible to retrieve
     /// information about the signature/value pairs in the shard.
     ///
+    /// [`peel_by_sig_vals_high_mem`]: VBuilder::peel_by_sig_vals_high_mem
     /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     fn peel_by_sig_vals_low_mem<
         V: BinSafe,
@@ -2167,12 +2044,13 @@ impl<
         pl.done();
 
         if shard_len != visit_stack.upper_len() {
-            pl.info(format_args!(
-                "Peeling failed for shard {}/{} (peeled {} out of {} edges)",
+            pl.debug(format_args!(
+                "Peeling failed for shard {}/{} (peeled {} out of {} edges, {:.2}% unpeeled)",
                 shard_index + 1,
                 num_shards,
                 visit_stack.upper_len(),
-                shard_len
+                shard_len,
+                100.0 * (shard_len - visit_stack.upper_len()) as f64 / shard_len as f64,
             ));
             return Err(());
         }
@@ -2197,13 +2075,12 @@ impl<
     /// [partial], lazy Gaussian elimination is used to solve the remaining
     /// edges.
     ///
-    /// [peeled by index]: VBuilder::peel_by_index
-    /// [partial]: PeelResult::Partial
-    ///
     /// This method will scan the double stack, without emptying it, to check
     /// which edges have been peeled. The information will be then passed to
     /// [`VBuilder::assign`] to complete the assignment of values.
     ///
+    /// [peeled by index]: VBuilder::peel_by_index
+    /// [partial]: PeelResult::Partial
     /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     fn lge_shard<
         V: BinSafe,
@@ -2230,7 +2107,7 @@ impl<
                 double_stack,
                 sides_stack,
             }) => {
-                pl.info(format_args!("Switching to lazy Gaussian elimination..."));
+                pl.debug(format_args!("Switching to lazy Gaussian elimination..."));
                 // We now solve the remaining edges with Gaussian elimination.
                 pl.start(format!(
                     "Generating system for shard {}/{}...",

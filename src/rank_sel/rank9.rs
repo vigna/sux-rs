@@ -44,9 +44,6 @@ use std::ops::Index;
 /// provides faster extraction using the implicit zero extension of right-shift
 /// operations.
 ///
-/// [Broadword Implementation of Rank/Select Queries]: https://doi.org/10.1007/978-3-540-68552-4_12
-/// [Gog and Petri's reverse ordering of relative counters]: https://doi.org/10.1002/spe.2198
-///
 /// This structure forwards several traits and [`Deref`]'s to its backend.
 ///
 /// # Type Parameters
@@ -85,6 +82,8 @@ use std::ops::Index;
 /// # }
 /// ```
 ///
+/// [Broadword Implementation of Rank/Select Queries]: https://doi.org/10.1007/978-3-540-68552-4_12
+/// [Gog and Petri's reverse ordering of relative counters]: https://doi.org/10.1002/spe.2198
 /// [backend]: Backend
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
@@ -267,8 +266,6 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCount
     /// multiple of the number of bits in a word, but requires allocating an
     /// extra word otherwise. The content of the extra word is irrelevant.
     ///
-    /// [the length of the underlying bit vector]: crate::traits::BitLength::len
-    ///
     /// # Example
     ///
     /// ```rust
@@ -290,6 +287,8 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCount
     /// assert_eq!(unsafe { rank9.rank_unchecked(8) }, rank9.num_ones());
     /// # }
     /// ```
+    ///
+    /// [the length of the underlying bit vector]: crate::traits::BitLength::len
     #[inline(always)]
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
         debug_assert!(pos < self.bits.len().next_multiple_of(64));

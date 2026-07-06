@@ -72,6 +72,13 @@ fn test_small_patterns() {
     }
 }
 
+/* TODO
+#[test]
+fn test_wrong_paren_count() {
+    let _ = JacobsonBalParen::new(from_pattern("()("));
+}
+*/
+
 #[test]
 fn test_cross_word_boundary() {
     // Build a sequence long enough to cross 64-bit word boundaries.

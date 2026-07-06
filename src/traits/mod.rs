@@ -211,7 +211,7 @@ impl_word!(u8, u16, u32, u64, u128, usize);
 /// [`BitVecOps`]: crate::traits::BitVecOps
 /// [`PrimitiveAtomicUnsigned`]: PrimitiveAtomicUnsigned
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>, Rc<T>, Arc<T>)]
-#[delegatable_trait]
+#[delegatable_trait(inline = "always")]
 pub trait Backend {
     /// The word type used by this backend.
     type Word;

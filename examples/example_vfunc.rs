@@ -32,7 +32,6 @@ fn main() -> Result<()> {
     let func = <VFunc<str, BitFieldVec<Box<[usize]>>>>::try_new(
         FromSlice::new(&keys),
         FromCloneableIntoIterator::from(0..n),
-        n,
         &mut pl,
     )?;
 
@@ -52,7 +51,6 @@ fn main() -> Result<()> {
     // Hash width is u16 → false-positive rate 2⁻¹⁶ ≈ 0.0015%.
     let signed = <SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>>, Box<[u16]>>>::try_new(
         FromSlice::new(&keys),
-        n,
         &mut pl,
     )?;
 

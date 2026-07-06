@@ -8,7 +8,7 @@ use rand::{RngExt, SeedableRng};
 use rand_distr::{Distribution, Geometric, Zipf};
 use std::hint::black_box;
 use sux::bits::BitFieldVec;
-use sux::func::vfunc2::VFunc2;
+use sux::func::VFunc2;
 use sux::func::{VBuilder, VFunc};
 use sux::traits::TryIntoUnaligned;
 use sux::utils::FromSlice;
@@ -51,7 +51,6 @@ fn build_vfunc(n: usize, values: &[usize]) -> VFunc<usize, BitFieldVec<Box<[usiz
     <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
         FromSlice::new(&keys),
         FromSlice::new(values),
-        n,
         VBuilder::default().expected_num_keys(n),
         no_logging![],
     )
@@ -60,13 +59,7 @@ fn build_vfunc(n: usize, values: &[usize]) -> VFunc<usize, BitFieldVec<Box<[usiz
 
 fn build_vfunc2(n: usize, values: &[usize]) -> VFunc2<usize, BitFieldVec<Box<[usize]>>> {
     let keys: Vec<usize> = (0..n).collect();
-    VFunc2::try_new(
-        FromSlice::new(&keys),
-        FromSlice::new(values),
-        n,
-        no_logging![],
-    )
-    .unwrap()
+    VFunc2::try_new(FromSlice::new(&keys), FromSlice::new(values), no_logging![]).unwrap()
 }
 
 // ── Benchmarks ──────────────────────────────────────────────────────

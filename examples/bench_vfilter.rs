@@ -8,14 +8,13 @@
 use anyhow::Result;
 use clap::Parser;
 use epserde::prelude::*;
-use fallible_iterator::FallibleIterator;
-use lender::*;
 use sux::{
-    bits::BitFieldVec,
+    bits::{BitFieldVec, BitFieldVecU},
+    cli::{pack_strings, reservoir_sample},
     dict::VFilter,
-    func::{shard_edge::*, *},
-    traits::{BitFieldSlice, TryIntoUnaligned, Word},
-    utils::{BinSafe, LineLender, Sig, ToSig, ZstdLineLender},
+    func::shard_edge::*,
+    traits::{BitFieldSlice, Word},
+    utils::{BinSafe, Sig, ToSig},
 };
 
 #[cfg(target_pointer_width = "64")]
@@ -44,94 +43,55 @@ fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks VFilter with strings or 64-bit integers.", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
-    /// The maximum number of strings to use from the file, or the number of 64-bit keys.​
+    /// The number of queries to perform.​
     n: usize,
     /// A name for the ε-serde serialized filter.​
-    func: String,
+    filter: String,
     /// The number of bits of the hashes used by the filter.​
     #[arg(short, long, default_value_t = 8)]
-    bits: u32,
+    bits: usize,
     #[arg(short = 'f', long)]
-    /// A file containing UTF-8 keys, one per line. If not specified, the 64-bit keys [0..n) are used.​
+    /// A file containing UTF-8 keys, one per line; it can be compressed with any format supported by the deko crate. If not specified, the 64-bit keys [0..n) are used.​
     filename: Option<String>,
     /// The number of repetitions.​
     #[arg(short, long, default_value = "5")]
     repeats: usize,
-    /// The input file is compressed with zstd.​
-    #[arg(short, long)]
-    zstd: bool,
-    /// Use 64-bit signatures.​
-    #[arg(long)]
-    sig64: bool,
-    /// Do not use sharding.​
-    #[arg(long)]
-    no_shards: bool,
+    /// Shard/edge type.​
+    #[arg(long = "shard-edge", short = 'E', value_enum, default_value_t)]
+    shard_edge: sux::cli::ShardEdgeType,
     /// Use unaligned reads.​
-    #[arg(long)]
+    #[arg(long, short)]
     unaligned: bool,
-    /// Use slower edge logic reducing the probability of duplicate arcs for big
-    /// shards.​
-    #[arg(long, conflicts_with_all = ["sig64", "no_shards"])]
-    full_sigs: bool,
-    /// Use 3-hypergraphs.​
-    #[cfg(feature = "mwhc")]
-    #[arg(long, conflicts_with_all = ["sig64", "full_sigs"])]
-    mwhc: bool,
 }
 
-macro_rules! fuse {
-    ($args: expr, $main: ident, $ty: ty) => {
-        if $args.no_shards {
-            if $args.sig64 {
-                $main::<$ty, [u64; 1], FuseLge3NoShards>($args)
-            } else {
-                $main::<$ty, [u64; 2], FuseLge3NoShards>($args)
-            }
-        } else {
-            if $args.full_sigs {
-                $main::<$ty, [u64; 2], FuseLge3FullSigs>($args)
-            } else {
-                $main::<$ty, [u64; 2], FuseLge3Shards>($args)
-            }
+macro_rules! dispatch_edge {
+    ($args: expr, $main: ident, $ty: ty) => {{
+        use sux::cli::ShardEdgeType;
+        match $args.shard_edge {
+            ShardEdgeType::Fuse3NoShards64 => $main::<$ty, [u64; 1], Fuse3NoShards>($args),
+            ShardEdgeType::Fuse3NoShards128 => $main::<$ty, [u64; 2], Fuse3NoShards>($args),
+            ShardEdgeType::Fuse3Shards => $main::<$ty, [u64; 2], Fuse3Shards>($args),
+            ShardEdgeType::FuseLge3Shards => $main::<$ty, [u64; 2], FuseLge3Shards>($args),
+            ShardEdgeType::FuseLge3FullSigs => $main::<$ty, [u64; 2], FuseLge3FullSigs>($args),
+            #[cfg(feature = "mwhc")]
+            ShardEdgeType::Mwhc3 => $main::<$ty, [u64; 2], Mwhc3Shards>($args),
+            #[cfg(feature = "mwhc")]
+            ShardEdgeType::Mwhc3NoShards => $main::<$ty, [u64; 2], Mwhc3NoShards>($args),
         }
-    };
-}
-
-#[cfg(feature = "mwhc")]
-macro_rules! mwhc {
-    ($args: expr, $main: ident, $ty: ty) => {
-        if $args.no_shards {
-            $main::<$ty, [u64; 2], Mwhc3NoShards>($args)
-        } else {
-            $main::<$ty, [u64; 2], Mwhc3Shards>($args)
-        }
-    };
+    }};
 }
 
 fn main() -> Result<()> {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
-        .try_init()?;
+    sux::init_env_logger()?;
 
     let args = Args::parse();
 
-    #[cfg(feature = "mwhc")]
-    if args.mwhc {
-        return match args.bits {
-            8 => mwhc!(args, main_with_types_boxed_slice, u8),
-            16 => mwhc!(args, main_with_types_boxed_slice, u16),
-            32 => mwhc!(args, main_with_types_boxed_slice, u32),
-            64 => mwhc!(args, main_with_types_boxed_slice, u64),
-            _ => mwhc!(args, main_with_types_bit_field_vec, u64),
-        };
-    }
-
     match args.bits {
-        8 => fuse!(args, main_with_types_boxed_slice, u8),
-        16 => fuse!(args, main_with_types_boxed_slice, u16),
-        32 => fuse!(args, main_with_types_boxed_slice, u32),
-        64 => fuse!(args, main_with_types_boxed_slice, u64),
-        _ => fuse!(args, main_with_types_bit_field_vec, u64),
+        8 => dispatch_edge!(args, main_with_types_boxed_slice, u8),
+        16 => dispatch_edge!(args, main_with_types_boxed_slice, u16),
+        32 => dispatch_edge!(args, main_with_types_boxed_slice, u32),
+        64 => dispatch_edge!(args, main_with_types_boxed_slice, u64),
+        _ => dispatch_edge!(args, main_with_types_bit_field_vec, u64),
     }
 }
 
@@ -147,43 +107,43 @@ where
     usize: ToSig<S>,
     u64: num_primitive::PrimitiveNumberAs<W>,
     Box<[W]>: BitFieldSlice<Value = W>,
-    VFilter<VFunc<usize, Box<[W]>, S, E>>: Deserialize,
-    VFilter<VFunc<str, Box<[W]>, S, E>>: Deserialize,
+    VFilter<usize, Box<[W]>, S, E>: Deserialize,
+    VFilter<str, Box<[W]>, S, E>: Deserialize,
 {
     if args.unaligned {
         panic!("Unaligned reads are not supported for backend Box<[W]>");
     }
 
-    if let Some(filename) = args.filename {
-        let keys: Vec<_> = if args.zstd {
-            ZstdLineLender::from_path(filename)?
-                .map_into_iter(|x| Ok(x.to_owned()))
-                .take(args.n)
-                .collect()?
-        } else {
-            LineLender::from_path(filename)?
-                .map_into_iter(|x| Ok(x.to_owned()))
-                .take(args.n)
-                .collect()?
+    if let Some(ref filename) = args.filename {
+        let (packed, packed_offsets) = {
+            let queries = reservoir_sample(filename, args.n, 42)?;
+            pack_strings(&queries, args.n)
         };
 
-        let filter = unsafe { VFilter::<VFunc<str, Box<[W]>, S, E>>::load_full(&args.func) }?;
+        let filter = unsafe { VFilter::<str, Box<[W]>, S, E>::load_full(&args.filter) }?;
 
         bench(args.n, args.repeats, || {
-            for key in &keys {
-                std::hint::black_box(filter.contains(key.as_str()));
+            let mut u = 0usize;
+            for i in 0..args.n {
+                let s = packed_offsets[i];
+                let e = packed_offsets[i + 1];
+                let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
+                u ^= filter.contains(q) as usize;
             }
+            std::hint::black_box(u);
         });
     } else {
         // No filename
-        let filter = unsafe { VFilter::<VFunc<usize, Box<[W]>, S, E>>::load_full(&args.func) }?;
+        let filter = unsafe { VFilter::<usize, Box<[W]>, S, E>::load_full(&args.filter) }?;
 
         bench(args.n, args.repeats, || {
+            let mut u = 0usize;
             let mut key: usize = 0;
             for _ in 0..args.n {
                 key = key.wrapping_add(INCR);
-                std::hint::black_box(filter.contains(key));
+                u ^= filter.contains(key) as usize;
             }
+            std::hint::black_box(u);
         });
     }
     Ok(())
@@ -200,60 +160,68 @@ where
     str: ToSig<S>,
     usize: ToSig<S>,
     u64: num_primitive::PrimitiveNumberAs<W>,
-    VFilter<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>: Deserialize,
-    VFilter<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>: Deserialize,
+    VFilter<usize, BitFieldVec<Box<[W]>>, S, E>: Deserialize,
+    VFilter<str, BitFieldVec<Box<[W]>>, S, E>: Deserialize,
+    VFilter<usize, BitFieldVecU<Box<[W]>>, S, E>: Deserialize,
+    VFilter<str, BitFieldVecU<Box<[W]>>, S, E>: Deserialize,
 {
-    if let Some(filename) = args.filename {
-        let keys: Vec<_> = if args.zstd {
-            ZstdLineLender::from_path(filename)?
-                .map_into_iter(|x| Ok(x.to_owned()))
-                .take(args.n)
-                .collect()?
-        } else {
-            LineLender::from_path(filename)?
-                .map_into_iter(|x| Ok(x.to_owned()))
-                .take(args.n)
-                .collect()?
+    if let Some(ref filename) = args.filename {
+        let (packed, packed_offsets) = {
+            let queries = reservoir_sample(filename, args.n, 42)?;
+            pack_strings(&queries, args.n)
         };
 
-        let filter =
-            unsafe { VFilter::<VFunc<str, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func) }?;
-
         if args.unaligned {
-            let filter = filter.try_into_unaligned().unwrap();
+            let filter =
+                unsafe { VFilter::<str, BitFieldVecU<Box<[W]>>, S, E>::load_full(&args.filter) }?;
             bench(args.n, args.repeats, || {
-                for key in &keys {
-                    std::hint::black_box(filter.contains(key.as_str()));
+                let mut u = 0usize;
+                for i in 0..args.n {
+                    let s = packed_offsets[i];
+                    let e = packed_offsets[i + 1];
+                    let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
+                    u ^= filter.contains(q) as usize;
                 }
+                std::hint::black_box(u);
             });
         } else {
+            let filter =
+                unsafe { VFilter::<str, BitFieldVec<Box<[W]>>, S, E>::load_full(&args.filter) }?;
             bench(args.n, args.repeats, || {
-                for key in &keys {
-                    std::hint::black_box(filter.contains(key.as_str()));
+                let mut u = 0usize;
+                for i in 0..args.n {
+                    let s = packed_offsets[i];
+                    let e = packed_offsets[i + 1];
+                    let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
+                    u ^= filter.contains(q) as usize;
                 }
+                std::hint::black_box(u);
             });
         }
     } else {
-        // No filename
-        let filter =
-            unsafe { VFilter::<VFunc<usize, BitFieldVec<Box<[W]>>, S, E>>::load_full(&args.func) }?;
-
         if args.unaligned {
-            let filter = filter.try_into_unaligned().unwrap();
+            let filter =
+                unsafe { VFilter::<usize, BitFieldVecU<Box<[W]>>, S, E>::load_full(&args.filter) }?;
             bench(args.n, args.repeats, || {
+                let mut u = 0usize;
                 let mut key: usize = 0;
                 for _ in 0..args.n {
                     key = key.wrapping_add(INCR);
-                    std::hint::black_box(filter.contains(key));
+                    u ^= filter.contains(key) as usize;
                 }
+                std::hint::black_box(u);
             });
         } else {
+            let filter =
+                unsafe { VFilter::<usize, BitFieldVec<Box<[W]>>, S, E>::load_full(&args.filter) }?;
             bench(args.n, args.repeats, || {
+                let mut u = 0usize;
                 let mut key: usize = 0;
                 for _ in 0..args.n {
                     key = key.wrapping_add(INCR);
-                    std::hint::black_box(filter.contains(key));
+                    u ^= filter.contains(key) as usize;
                 }
+                std::hint::black_box(u);
             });
         }
     }
