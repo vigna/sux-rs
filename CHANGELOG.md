@@ -4,6 +4,9 @@
 
 ### New
 
+- New `VFunc2` and `Lcp2Mmphf` structures analogous to `VFunc` and `LcpMmphf`,
+  but performing compression by storing frequent values using less bits.
+
 - New `CompVFunc` compressed static function, using the algorithmic
   ideas of `VFunc` but representing data using the the zero-th order entropy
   (i.e., values are represented by a Huffman code).

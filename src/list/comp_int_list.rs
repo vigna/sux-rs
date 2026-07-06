@@ -142,8 +142,17 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
         let mut total_bits = 0u64;
         let mut all_widths_unaligned = true;
         for &v in values {
-            assert!(v >= min, "CompIntList: value must be >= the lower bound");
-            let offset = v - min + V::ONE;
+            let offset = v
+                .checked_sub(min)
+                .expect(
+                    format!("values must be greater than or equal to the lower bound {}",
+                    min)
+                )
+                .checked_add(V::ONE)
+                .expect(
+                    format!("CompIntList: values must be smaller than the maximum value minus the lower bound ({})",
+                    V::MAX - min)
+                );
             let width = (offset.bit_len() - 1) as usize;
             total_bits += width as u64;
             if !test_unaligned_any_pos!(V, width) {

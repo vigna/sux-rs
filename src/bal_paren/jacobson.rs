@@ -367,12 +367,14 @@ fn build_pioneers(words: impl AsRef<[usize]> + BitLength) -> (EfDict<usize>, Vec
 
             for j in (0..l).rev() {
                 if words[block] & (1usize << j) == 0 {
+                    // Closed parenthesis
                     if excess > 0 {
                         excess = -1;
                     } else {
                         excess -= 1;
                     }
                 } else {
+                    // Open parenthesis
                     excess += 1;
                     if excess > 0 {
                         let mut matching_block = block;
@@ -407,6 +409,14 @@ fn build_pioneers(words: impl AsRef<[usize]> + BitLength) -> (EfDict<usize>, Vec
         count[block] = count_far_close(words[block], l) as i32;
     }
 
+    /*let open_parens = words.count_ones();
+    assert_eq!(
+        2 * open_parens,
+        words.len(),
+        "There are {} open parentheses but {} closed parentheses",
+        open_parens,
+        words.len() - open_parens
+    );*/
     for &c in &count {
         assert!(c == 0, "Unbalanced parentheses");
     }
