@@ -479,7 +479,8 @@ impl<
                         + inventory_left;
                 }
                 _ => {
-                    return *subinv_ref.get_unchecked(rank % Self::ONES_PER_INVENTORY) as usize;
+                    return *subinv_ref.get_unchecked(subinv_pos + rank % Self::ONES_PER_INVENTORY)
+                        as usize;
                 }
             }
 

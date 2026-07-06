@@ -104,7 +104,7 @@ fn test_zeros() {
 fn test_few_ones() {
     let lens = [1 << 18, 1 << 19, 1 << 20];
     for len in lens {
-        for num_ones in [1, 2, 4, 8, 16, 32, 64, 128, 256] {
+        for num_ones in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024] {
             let bits = (0..len)
                 .map(|i| i % (len / num_ones) == 0)
                 .collect::<BitVec<Vec<u64>>>();
