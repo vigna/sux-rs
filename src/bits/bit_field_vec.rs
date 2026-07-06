@@ -439,7 +439,14 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
     /// This function will panic if `len * bit_width` is greater than the number
     /// of bits available in the backend.
     pub fn wrap(backend: B, bit_width: usize, len: usize) -> BitFieldVec<B> {
-        assert!(len * bit_width <= backend.as_ref().len() * B::Word::BITS as usize);
+        assert!(
+            len * bit_width <= backend.as_ref().len() * B::Word::BITS as usize,
+            "len * bit_width must be at most the number of bits in the backend"
+        );
+        assert!(
+            backend.as_ref().len() > 0 || bit_width == 0,
+            "backend must have at least one word when bit width is zero and len is nonzero"
+        );
         BitFieldVec {
             bits: backend,
             bit_width,

@@ -424,6 +424,8 @@ impl<W: Word> BitVec<Vec<W>> {
         let word_idx = self.len / bits_per_word;
         let bit_idx = self.len % bits_per_word;
 
+        // Clear bits
+        self.bits[word_idx] &= !(W::MAX << bit_idx);
         self.bits[word_idx] |= value << bit_idx;
         if bit_idx + width > bits_per_word {
             self.bits[word_idx + 1] = value.wrapping_shr(bit_idx.wrapping_neg() as u32);
@@ -494,6 +496,8 @@ impl<W: Word> BitVec<Vec<W>> {
             self.bits.reserve(new_word_count - self.bits.len());
 
             let last_idx = self.bits.len() - 1;
+            // Clear bits
+            self.bits[last_idx] &= !(W::MAX << offset);
             self.bits[last_idx] |= src[0] << offset;
 
             let shift_right = bpw - offset;

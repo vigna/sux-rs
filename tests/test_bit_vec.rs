@@ -949,6 +949,22 @@ fn test_append_cross_backend() {
 }
 
 #[test]
+fn test_append_dirty_last_word() {
+    // Test appending to a bit vector with a dirty last word
+    let mut a: BitVec = BitVec::new(0);
+    a.append_value(0xFFFFFFFFFFFFFFFF, 64);
+    a.resize(50, false); // dirty last word 
+    a.append_value(0, 64); // append to dirty last word
+    assert!(a[51] == false);
+
+    let mut a: BitVec = BitVec::new(0);
+    a.append_value(0xFFFFFFFFFFFFFFFF, 64);
+    a.resize(50, false); // dirty last word 
+    a.append(&bit_vec![0, 0, 0, 0, 0]);
+    assert!(a[51] == false);
+}
+
+#[test]
 fn test_reserve() {
     let mut b: BitVec = BitVec::new(0);
     b.reserve(100);
