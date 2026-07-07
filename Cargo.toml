@@ -130,7 +130,7 @@ required-features = ["cli", "epserde", "deko", "rayon"]
 
 [[bin]]
 name = "mem_usage"
-required-features = ["cli"]
+required-features = ["clap"]
 
 [[example]]
 name = "bench_rear_coded_list"
@@ -150,7 +150,7 @@ required-features = ["cli", "epserde", "deko", "rayon"]
 
 [[example]]
 name = "bench_lcp_mmphf"
-required-features = ["epserde", "deko"]
+required-features = ["cli", "epserde", "deko"]
 
 [[example]]
 name = "bench_phast"
