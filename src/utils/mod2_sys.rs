@@ -200,6 +200,14 @@ impl<W: Word> Modulo2System<W> {
                 let eq_i = &mut left[i];
                 let eq_j = &right[0];
 
+                // A later row reduced to `[] = c`: unsolvable if c != 0, else a
+                // redundant identity to skip. Without this, `eq_j.vars[0]` below
+                // would panic on the empty variable list.
+                if eq_j.vars.is_empty() {
+                    ensure!(!eq_j.is_unsolvable(), "System is unsolvable");
+                    continue;
+                }
+
                 let first_var_j = eq_j.vars[0];
 
                 if eq_i.vars[0] == first_var_j {
@@ -223,6 +231,12 @@ impl<W: Word> Modulo2System<W> {
     /// Solves the system using Gaussian elimination.
     pub fn gaussian_elimination(&mut self) -> Result<Vec<W>> {
         self.echelon_form()?;
+        // An equation reduced to `[] = c` with c != 0 has no solution; the
+        // back-substitution below would index `eq.vars[0]` on an empty variable
+        // list. `echelon_form` only checks emptiness for rows before the last.
+        for eq in &self.equations {
+            ensure!(!eq.is_unsolvable(), "System is unsolvable");
+        }
         let mut solution = vec![W::ZERO; self.num_vars];
         self.equations
             .iter()
@@ -456,6 +470,22 @@ mod tests {
         let eq1 = unsafe { Modulo2Equation::from_parts(vec![0], 1_usize) };
         system.push(eq1);
         let solution = system.lazy_gaussian_elimination();
+        assert!(solution.is_err());
+    }
+
+    #[test]
+    fn test_gaussian_elimination_last_unsolvable_equation() {
+        let mut system = Modulo2System::<usize>::new(1);
+        // SAFETY: variable 0 is in bounds for this one-variable system, and
+        // the variable list is sorted.
+        let eq0 = unsafe { Modulo2Equation::from_parts(vec![0], 0_usize) };
+        system.push(eq0);
+        // SAFETY: the empty variable list is sorted and contains no
+        // out-of-bounds variable indices.
+        let eq1 = unsafe { Modulo2Equation::from_parts(vec![], 1_usize) };
+        system.push(eq1);
+
+        let solution = system.gaussian_elimination();
         assert!(solution.is_err());
     }
 
