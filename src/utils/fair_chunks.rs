@@ -182,17 +182,30 @@ impl<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64>> Iterator for FairC
             return None;
         }
 
-        let target = self.current_weight + self.target_weight;
-        Some(if target > self.max_weight {
-            self.target_weight = 0;
-            self.curr_pos..self.num_weights
-        } else {
-            let (next_pos, next_weight) = unsafe { self.cwf.succ_unchecked::<false>(&target) };
-            self.current_weight = next_weight;
-            let res = self.curr_pos..next_pos;
-            self.curr_pos = next_pos;
-            res
-        })
+        // Use checked arithmetic: with `overflow-checks = false` the sum could
+        // wrap below the `> max_weight` guard on u64-scale weights, breaking the
+        // `succ_unchecked` precondition.
+        let target = match self.current_weight.checked_add(self.target_weight) {
+            Some(target) if target <= self.max_weight => target,
+            _ => {
+                // Past the last boundary (or overflow): emit the final chunk if
+                // any positions remain, then stop. Never emit an empty chunk.
+                self.target_weight = 0;
+                return if self.curr_pos == self.num_weights {
+                    None
+                } else {
+                    Some(self.curr_pos..self.num_weights)
+                };
+            }
+        };
+
+        // SAFETY: `target <= self.max_weight`, the largest cumulative weight, so
+        // a successor is guaranteed to exist.
+        let (next_pos, next_weight) = unsafe { self.cwf.succ_unchecked::<false>(&target) };
+        self.current_weight = next_weight;
+        let res = self.curr_pos..next_pos;
+        self.curr_pos = next_pos;
+        Some(res)
     }
 }
 

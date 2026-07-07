@@ -45,8 +45,51 @@ fn test_fair_chunks_single_element() {
     efb.extend(cwf.iter().copied());
     let ef = efb.build_with_seq_and_dict();
     let chunks: Vec<_> = FairChunks::new(50, &ef).collect();
-    // Returns 0..1 (the element) then 1..1 (empty final chunk since we haven't exhausted target_weight)
-    assert_eq!(chunks, vec![0..1, 1..1]);
+    // Returns only the single non-empty element chunk.
+    assert_eq!(chunks, vec![0..1]);
+}
+
+#[test]
+fn test_fair_chunks_u64_max_scale_weights_terminate() {
+    let cwf = [0u64, u64::MAX - 10, u64::MAX - 5, u64::MAX];
+    let mut efb = EliasFanoBuilder::new(cwf.len(), *cwf.last().unwrap());
+    efb.extend(cwf.iter().copied());
+    let ef = efb.build_with_seq_and_dict();
+
+    let num_weights = cwf.len() - 1;
+    let mut chunks = FairChunks::new(u64::MAX - 9, &ef);
+    let mut ranges: Vec<std::ops::Range<usize>> = Vec::new();
+    let mut terminated = false;
+
+    for _ in 0..=num_weights {
+        let Some(range) = chunks.next() else {
+            terminated = true;
+            break;
+        };
+
+        assert!(
+            range.start < range.end,
+            "FairChunks yielded an empty or backwards range: {range:?}"
+        );
+
+        if let Some(prev) = ranges.last() {
+            assert_eq!(
+                prev.end, range.start,
+                "FairChunks yielded non-contiguous ranges: {prev:?} then {range:?}"
+            );
+        } else {
+            assert_eq!(range.start, 0);
+        }
+
+        ranges.push(range);
+    }
+
+    assert!(
+        terminated,
+        "FairChunks did not terminate within {} chunks",
+        num_weights + 1
+    );
+    assert_eq!(ranges, vec![0..2, 2..3]);
 }
 
 #[test]
