@@ -122,6 +122,21 @@ fn test_diverse_keys() -> Result<()> {
 }
 
 #[test]
+fn test_parallel_sharded_str_preserves_store() -> Result<()> {
+    let keys: Vec<String> = (0..100_000).map(|i| format!("key_{i:06}")).collect();
+    let refs: Vec<&str> = keys.iter().map(|s| s.as_str()).collect();
+
+    let func = <LcpMmphfStr>::try_par_new(&refs, no_logging![])?;
+    let func = func.try_into_unaligned()?;
+
+    for (i, &key) in refs.iter().enumerate() {
+        assert_eq!(func.get(key), i, "key {key:?} at position {i}");
+    }
+
+    Ok(())
+}
+
+#[test]
 fn test_unsorted_error() {
     let keys = vec!["beta", "alpha"];
     let result: Result<LcpMmphfStr> = LcpMmphfStr::try_new(keys_lender(&keys), 2, no_logging![]);

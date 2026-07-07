@@ -1470,6 +1470,15 @@ impl<
                                     continue;
                                 }
 
+                                // Take sole ownership of the shard's Vec: drain the Arc when
+                                // uniquely owned, otherwise clone it. The store-preserving build
+                                // path (try_build_func_and_store) iterates the store by shared
+                                // reference and hands out cloned Arcs while retaining its own, so
+                                // mutating through a raw `&mut` alias of the shared Arc is UB and
+                                // would corrupt the retained store.
+                                let mut shard_vec: Vec<SigVal<S, V>> =
+                                    Arc::try_unwrap(shard).unwrap_or_else(|arc| (*arc).clone());
+
                                 main_pl.debug(format_args!(
                                     "Analyzing shard {}/{}...",
                                     shard_index + 1,
@@ -1483,11 +1492,7 @@ impl<
                                 ));
 
                                 {
-                                    // SAFETY: The Arc has refcount 1: this thread is the
-                                    // sole owner after receiving from the channel.
-                                    let shard = unsafe {
-                                        &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>)
-                                    };
+                                    let shard = &mut shard_vec;
 
                                     if self.check_dups {
                                         shard.radix_sort_builder().sort();
@@ -1512,12 +1517,10 @@ impl<
                                         // that implies equality of local
                                         // signatures.
 
-                                        // SAFETY: The Arc has refcount 1 at this point
-                                        // (this thread is the sole owner after receive),
-                                        // so the mutable reference does not violate
-                                        // aliasing. The memory layout of SigVal<S, V>
-                                        // and E::SortSigVal<V> is guaranteed compatible
-                                        // by the ShardEdge trait.
+                                        // SAFETY: `shard` is an exclusive `&mut` to a Vec we own
+                                        // (`shard_vec`), so this reborrow does not alias. The memory
+                                        // layout of SigVal<S, V> and E::SortSigVal<V> is guaranteed
+                                        // compatible by the ShardEdge trait.
                                         let shard = unsafe {
                                             transmute::<
                                                 &mut Vec<SigVal<S, V>>,
@@ -1563,7 +1566,11 @@ impl<
                                     }
                                 }
 
-                                pl.done_with_count(shard.len());
+                                pl.done_with_count(shard_vec.len());
+
+                                // Re-wrap for the solver, which takes an owned Arc. The retained
+                                // store (if any) still holds its own, unmodified Arc.
+                                let shard = Arc::new(shard_vec);
 
                                 main_pl.debug(format_args!(
                                     "Solving shard {}/{}...",
