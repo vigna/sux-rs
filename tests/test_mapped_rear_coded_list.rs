@@ -440,6 +440,23 @@ fn test_lender_from_bytes() {
 }
 
 #[test]
+fn test_lender_from_len_is_empty() {
+    let mrcl = build_test_mrcl_str();
+    let mut lender = mrcl.lender_from(mrcl.len());
+
+    assert_eq!(ExactSizeLender::len(&lender), 0);
+    assert!(lender.next().is_none());
+    assert!(mrcl.iter_from(mrcl.len()).next().is_none());
+}
+
+#[test]
+#[should_panic(expected = "Index out of bounds")]
+fn test_lender_from_past_len_panics() {
+    let mrcl = build_test_mrcl_str();
+    let _lender = mrcl.lender_from(mrcl.len() + 1);
+}
+
+#[test]
 fn test_lender_exact_size() {
     let mrcl = build_test_mrcl_str();
     let lender = mrcl.lender();
