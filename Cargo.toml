@@ -159,11 +159,11 @@ required-features = ["cli"]
 
 [[example]]
 name = "comp_vfunc_stress"
-required-features = ["cli"]
+required-features = ["cli", "rayon"]
 
 [[example]]
 name = "bench_comp_vfunc_data"
-required-features = ["cli"]
+required-features = ["cli", "rayon"]
  
 [[example]]
 name = "example_vfunc"
