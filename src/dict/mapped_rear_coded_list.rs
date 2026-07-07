@@ -367,6 +367,12 @@ where
     /// Creates a new lender over the rear-coded list starting from the given
     /// position.
     pub fn new_from(prcl: &'a MappedRearCodedList<I, O, D, P, Q, SORTED>, from: usize) -> Self {
+        assert!(
+            from <= prcl.len(),
+            "Index out of bounds: {} > {}",
+            from,
+            prcl.len()
+        );
         Self {
             prcl,
             buffer: Vec::with_capacity(128),
