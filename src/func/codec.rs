@@ -612,7 +612,14 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
             let lcp1 = unsafe { *self.last_codeword_plus_one.get_unchecked(curr) };
             idx += (lcp1 <= value) as usize;
         }
-        debug_assert!(idx < n);
+        // The derived block index can equal `n` for out-of-window (or empty-
+        // table) values; return None instead of an out-of-bounds unchecked read.
+        if idx >= n {
+            return None;
+        }
+        // SAFETY: `idx < n` is checked just above, so the `idx`-indexed reads of
+        // `last_codeword_plus_one` and `block_info` are in bounds; the
+        // `symbol` read is separately guarded by `sym_idx < nrs`.
         unsafe {
             let lcp1 = *self.last_codeword_plus_one.get_unchecked(idx);
             let bi = self.block_info.get_unchecked(idx);

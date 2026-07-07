@@ -284,6 +284,40 @@ fn test_huffman_length_limited() {
 }
 
 #[test]
+fn test_huffman_branchless_decode_out_of_range_returns_none() {
+    let f = freqs(&[(10, 7), (20, 3), (30, 1)]);
+    let coder = HuffmanConf::new().build_coder(&f);
+
+    let codeword = coder.encode(10).expect("10 is in the Huffman table");
+    let codeword_len = coder.codeword_len(10);
+    let max_codeword_len = coder.max_codeword_len();
+    let mut value = 0usize;
+    for k in 0..codeword_len {
+        value |= ((codeword >> k) & 1) << (max_codeword_len - 1 - k);
+    }
+
+    let mut branchy_decoder = coder.clone().into_decoder();
+    branchy_decoder.branchless(false);
+    assert!(!branchy_decoder.is_branchless());
+
+    let mut branchless_decoder = coder.into_decoder();
+    branchless_decoder.branchless(true);
+    assert!(branchless_decoder.is_branchless());
+
+    assert_eq!(
+        branchless_decoder.decode(value),
+        branchy_decoder.decode(value)
+    );
+    assert_eq!(branchless_decoder.decode(usize::MAX), None);
+
+    let empty_frequencies: HashMap<u64, usize> = HashMap::new();
+    let empty_coder = HuffmanConf::new().build_coder(&empty_frequencies);
+    let mut empty_decoder = empty_coder.into_decoder();
+    empty_decoder.branchless(true);
+    assert_eq!(empty_decoder.decode(0), None);
+}
+
+#[test]
 fn test_huffman_i8_with_negatives() {
     // Signed i8 values including negatives: -5 (0xFB), -1 (0xFF),
     // 0, 42, 127 (i8::MAX — no longer reserved).
