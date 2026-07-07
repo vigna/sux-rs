@@ -172,6 +172,34 @@ required-features = ["rayon"]
 name = "example_vfilter"
 required-features = ["rayon"]
 
+[[example]]
+name = "bench_shard_exp"
+required-features = ["rayon"]
+
+[[example]]
+name = "bench_solve_system"
+required-features = ["rayon"]
+
+[[example]]
+name = "corr_peel_sweep"
+required-features = ["rayon"]
+
+[[example]]
+name = "find_min_c"
+required-features = ["rayon"]
+
+[[example]]
+name = "prof_comp_vfunc"
+required-features = ["rayon"]
+
+[[example]]
+name = "profile_comp_vfunc"
+required-features = ["rayon"]
+
+[[example]]
+name = "sweep_c"
+required-features = ["rayon"]
+
 [[bench]]
 name = "rank_sel"
 harness = false
