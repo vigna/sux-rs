@@ -89,6 +89,29 @@ fn test_replacement_dense() {
 }
 
 #[test]
+#[should_panic(expected = "Too many values")]
+fn test_sparse_builder_too_many_values() {
+    let mut builder = partial_array::new_sparse(10, 1);
+
+    builder.set(2, "first");
+    builder.set(5, "second");
+}
+
+#[test]
+fn test_sparse_builder_exact_capacity() {
+    let mut builder = partial_array::new_sparse(10, 1);
+
+    builder.set(2, "only");
+
+    let array = builder.build();
+
+    assert_eq!(array.len(), 10);
+    assert_eq!(array.num_values(), 1);
+    assert_eq!(array.get(2), Some(&"only"));
+    assert_eq!(array.get(5), None);
+}
+
+#[test]
 #[should_panic(expected = "Index out of bounds: 10 >= 10")]
 fn test_builder_bounds_check_sparse() {
     let mut builder = partial_array::new_sparse::<&str>(10, 1);

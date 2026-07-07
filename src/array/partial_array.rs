@@ -195,8 +195,10 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
             );
         }
         panic_if_out_of_bounds!(position, self.len);
-        // SAFETY: conditions have been just checked
-        unsafe { self.builder.push_unchecked(position as u64) };
+        // usize fits u64 on all supported targets, so this cast is lossless. The
+        // checked push panics "Too many values" past the declared capacity,
+        // upholding EliasFano's unchecked "at most n pushes" precondition.
+        self.builder.push(position as u64);
         self.values.push(value);
         self.min_next_pos = position + 1;
     }
