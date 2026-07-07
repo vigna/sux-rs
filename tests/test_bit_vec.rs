@@ -1172,3 +1172,11 @@ fn test_value_ops_u64() {
 fn test_value_ops_usize() {
     test_value_ops_word_type!(usize);
 }
+
+#[cfg(target_pointer_width = "64")]
+#[test]
+#[should_panic(expected = "overflows usize")]
+fn test_get_value_panics_on_bit_range_end_overflow() {
+    let bv: BitVec = BitVec::new(8);
+    bv.get_value(usize::MAX, 1);
+}
