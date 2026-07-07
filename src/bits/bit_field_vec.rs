@@ -444,7 +444,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
             "len * bit_width must be at most the number of bits in the backend"
         );
         assert!(
-            backend.as_ref().len() > 0 || bit_width == 0,
+            !backend.as_ref().is_empty() || bit_width == 0,
             "backend must have at least one word when bit width is zero and len is nonzero"
         );
         BitFieldVec {
