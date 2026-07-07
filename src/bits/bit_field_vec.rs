@@ -252,6 +252,18 @@ fn mask<W: Word>(bit_width: usize) -> W {
     }
 }
 
+/// Computes `count * bit_width` (the number of bits needed to store `count`
+/// values of the given width), panicking on overflow. Used by the safe
+/// constructors and `resize` before the result sizes an allocation or guards
+/// an unchecked access; with `overflow-checks = false` a wrapping product
+/// would defeat those guards.
+#[inline]
+fn checked_bit_len(count: usize, bit_width: usize) -> usize {
+    count
+        .checked_mul(bit_width)
+        .expect("BitFieldVec length in bits (count * bit_width) overflows usize")
+}
+
 impl<B: Backend<Word: Word>> BitFieldVec<B> {
     /// Creates a new vector from the given backend, bit width, and length.
     ///
@@ -440,7 +452,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
     /// of bits available in the backend.
     pub fn wrap(backend: B, bit_width: usize, len: usize) -> BitFieldVec<B> {
         assert!(
-            len * bit_width <= backend.as_ref().len() * B::Word::BITS as usize,
+            checked_bit_len(len, bit_width) <= backend.as_ref().len() * B::Word::BITS as usize,
             "len * bit_width must be at most the number of bits in the backend"
         );
         assert!(
@@ -461,7 +473,10 @@ impl<W: Word> BitFieldVec<Vec<W>> {
     #[must_use]
     pub fn new(bit_width: usize, len: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
-        let n_of_words = Ord::max(1, (len * bit_width).div_ceil(W::BITS as usize));
+        let n_of_words = Ord::max(
+            1,
+            checked_bit_len(len, bit_width).div_ceil(W::BITS as usize),
+        );
         Self {
             bits: vec![W::ZERO; n_of_words],
             bit_width,
@@ -475,7 +490,10 @@ impl<W: Word> BitFieldVec<Vec<W>> {
     #[must_use]
     pub fn with_capacity(bit_width: usize, capacity: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
-        let n_of_words = Ord::max(1, (capacity * bit_width).div_ceil(W::BITS as usize));
+        let n_of_words = Ord::max(
+            1,
+            checked_bit_len(capacity, bit_width).div_ceil(W::BITS as usize),
+        );
         let mut bits = Vec::with_capacity(n_of_words);
         if bit_width == 0 {
             // A zero-width vector still needs one backing word so that
@@ -545,24 +563,31 @@ impl<W: Word> BitFieldVec<Vec<W>> {
     /// Adds a value at the end of the vector.
     pub fn push(&mut self, value: W) {
         panic_if_value!(value, self.mask, self.bit_width);
+        let next_len = self
+            .len
+            .checked_add(1)
+            .expect("BitFieldVec length overflows usize");
         if self.bits.is_empty()
-            || (self.len + 1) * self.bit_width > self.bits.len() * W::BITS as usize
+            || checked_bit_len(next_len, self.bit_width) > self.bits.len() * W::BITS as usize
         {
             self.bits.push(W::ZERO);
         }
+        // SAFETY: the grow above guarantees `self.bits` has a word covering the
+        // value at index `self.len` (which is `< next_len`), so this unchecked
+        // write stays in bounds.
         unsafe {
             self.set_value_unchecked(self.len, value);
         }
-        self.len += 1;
+        self.len = next_len;
     }
 
     /// Truncates or extends with `value` the vector.
     pub fn resize(&mut self, new_len: usize, value: W) {
         panic_if_value!(value, self.mask, self.bit_width);
         if new_len > self.len {
-            if new_len * self.bit_width > self.bits.len() * W::BITS as usize {
+            if checked_bit_len(new_len, self.bit_width) > self.bits.len() * W::BITS as usize {
                 self.bits.resize(
-                    (new_len * self.bit_width).div_ceil(W::BITS as usize),
+                    checked_bit_len(new_len, self.bit_width).div_ceil(W::BITS as usize),
                     W::ZERO,
                 );
             }
@@ -618,7 +643,7 @@ impl<W: Word> BitFieldVec<Box<[W]>> {
     ///
     /// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
     pub fn new_padded(bit_width: usize, len: usize) -> Self {
-        let n_of_words = (len * bit_width).div_ceil(W::BITS as usize);
+        let n_of_words = checked_bit_len(len, bit_width).div_ceil(W::BITS as usize);
         Self {
             bits: vec![W::ZERO; n_of_words + 1].into_boxed_slice(),
             bit_width,
@@ -817,11 +842,19 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
             self.bit_width, dst.bit_width
         );
         // Reduce len to the elements available in both vectors
-        let len = Ord::min(Ord::min(len, dst.len - to), self.len - from);
+        let len = Ord::min(
+            Ord::min(len, dst.len.saturating_sub(to)),
+            self.len.saturating_sub(from),
+        );
         if len == 0 {
             return;
         }
         let bit_width = Ord::min(self.bit_width, dst.bit_width);
+        if bit_width == 0 {
+            // Zero-width copy: all values are zero, nothing to move, and the
+            // `bit_len - 1` position math below would underflow.
+            return;
+        }
         let bit_len = len * bit_width;
         let src_pos = from * self.bit_width;
         let dst_pos = to * dst.bit_width;
@@ -1486,7 +1519,10 @@ impl<A: PrimitiveAtomicUnsigned<Value: Word>> AtomicBitFieldVec<Vec<A>> {
     #[must_use]
     pub fn new(bit_width: usize, len: usize) -> AtomicBitFieldVec<Vec<A>> {
         // we need at least two words to avoid branches in the gets
-        let n_of_words = Ord::max(1, (len * bit_width).div_ceil(A::Value::BITS as usize));
+        let n_of_words = Ord::max(
+            1,
+            checked_bit_len(len, bit_width).div_ceil(A::Value::BITS as usize),
+        );
         AtomicBitFieldVec {
             bits: (0..n_of_words).map(|_| A::new(A::Value::ZERO)).collect(),
             bit_width,

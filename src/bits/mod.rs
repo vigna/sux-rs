@@ -91,7 +91,8 @@ pub(crate) use test_unaligned;
 macro_rules! test_unaligned_pos {
     ($ty:ty, $pos:expr, $bw:expr) => {{
         let bits = <$ty>::BITS as usize;
-        $bw + (($pos as usize) & 7) <= bits
+        let bw = $bw;
+        bw <= bits && (($pos as usize) & 7) <= bits - bw
     }};
 }
 
@@ -106,7 +107,8 @@ pub(crate) use test_unaligned_pos;
 macro_rules! test_unaligned_any_pos {
     ($ty:ty, $bw:expr) => {{
         let bits = <$ty>::BITS as usize;
-        $bw + 7 <= bits
+        let bw = $bw;
+        bw <= bits - 7
     }};
 }
 

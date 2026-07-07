@@ -612,11 +612,14 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVecValueOps<B::Word> for BitV
             width,
             B::Word::BITS
         );
+        let end = pos
+            .checked_add(width)
+            .expect("bit range end (pos + width) overflows usize");
         assert!(
-            pos + width <= self.len,
+            end <= self.len,
             "bit range {}..{} out of bounds for length {}",
             pos,
-            pos + width,
+            end,
             self.len
         );
         // Disambiguate: `SliceByValue::get_value_unchecked` now also

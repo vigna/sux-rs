@@ -965,3 +965,35 @@ fn test_zero_width_macro_forms() {
     let b = bit_field_vec![0; 0, 0, 0];
     assert_zero_width_values(&b, 3);
 }
+
+#[cfg(target_pointer_width = "64")]
+#[test]
+#[should_panic(expected = "overflows usize")]
+fn test_new_panics_on_bit_len_overflow() {
+    let _ = BitFieldVec::<Vec<u64>>::new(64, usize::MAX / 64 + 2);
+}
+
+#[cfg(target_pointer_width = "64")]
+#[test]
+#[should_panic(expected = "overflows usize")]
+fn test_with_capacity_panics_on_bit_len_overflow() {
+    let _ = BitFieldVec::<Vec<u64>>::with_capacity(64, usize::MAX / 64 + 2);
+}
+
+#[cfg(target_pointer_width = "64")]
+#[test]
+#[should_panic(expected = "overflows usize")]
+fn test_zero_width_push_panics_on_len_overflow() {
+    let mut v = BitFieldVec::<Vec<usize>>::wrap(vec![0usize], 0, usize::MAX);
+    v.push(0);
+}
+
+#[test]
+fn test_zero_width_copy_is_noop() {
+    let src = BitFieldVec::<Vec<usize>>::new(0, 4);
+    let mut dst = BitFieldVec::<Vec<usize>>::new(0, 4);
+
+    SliceByValueMut::copy(&src, 1, &mut dst, 0, 3);
+
+    assert_zero_width_values(&dst, 4);
+}
