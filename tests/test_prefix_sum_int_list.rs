@@ -1,3 +1,4 @@
+use sux::dict::EliasFanoBuilder;
 use sux::list::prefix_sum_int_list::PrefixSumIntList;
 use value_traits::slices::SliceByValue;
 
@@ -111,6 +112,44 @@ fn test_empty() {
     let vec_list = to_vec_backend(PrefixSumIntList::new(&empty));
     assert_eq!(vec_list.len(), 0);
     assert!(vec_list.is_empty());
+}
+
+// ────────────────────── Elias–Fano conversion ──────────────────────
+
+#[test]
+#[should_panic(expected = "non-empty")]
+fn test_from_empty_elias_fano_panics() {
+    let efb = EliasFanoBuilder::new(0, 0usize);
+    let ef = efb.build_with_seq();
+    let _: PrefixSumIntList<_> = PrefixSumIntList::from(ef);
+}
+
+#[test]
+#[should_panic(expected = "first element")]
+fn test_from_elias_fano_with_nonzero_first_prefix_sum_panics() {
+    let prefix_sums = [2usize, 5, 8];
+    let mut efb = EliasFanoBuilder::new(prefix_sums.len(), *prefix_sums.last().unwrap());
+    efb.extend(prefix_sums);
+    let ef = efb.build_with_seq();
+    let _: PrefixSumIntList<_> = PrefixSumIntList::from(ef);
+}
+
+#[test]
+fn test_from_valid_elias_fano_prefix_sums() {
+    let prefix_sums = [0usize, 3, 4, 8, 8, 13];
+    let values = [3usize, 1, 4, 0, 5];
+    let mut efb = EliasFanoBuilder::new(prefix_sums.len(), *prefix_sums.last().unwrap());
+    efb.extend(prefix_sums);
+    let ef = efb.build_with_seq();
+
+    let list = PrefixSumIntList::from(ef);
+    assert_eq!(list.len(), values.len());
+    for (i, &value) in values.iter().enumerate() {
+        assert_eq!(list.index_value(i), value);
+    }
+    for (i, &prefix_sum) in prefix_sums.iter().enumerate() {
+        assert_eq!(list.prefix_sum(i), prefix_sum);
+    }
 }
 
 // ────────────────────── prefix_sum boundary ──────────────────────

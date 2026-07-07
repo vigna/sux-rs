@@ -148,10 +148,9 @@ impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
     From<EliasFano<usize, H, L>> for PrefixSumIntList<EliasFano<usize, H, L>>
 {
     fn from(elias_fano: EliasFano<usize, H, L>) -> Self {
-        PrefixSumIntList {
-            n: elias_fano.len() - 1,
-            prefix_sums: elias_fano,
-        }
+        Self::try_from_prefix_sums(elias_fano).expect(
+            "EliasFano is not a valid prefix-sum sequence (must be non-empty with a zero first element and nondecreasing values)",
+        )
     }
 }
 
