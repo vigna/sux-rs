@@ -2626,6 +2626,8 @@ where
     l: usize,
     low_bits: AtomicBitFieldVec<Vec<Atomic<V>>>,
     high_bits: AtomicBitVec,
+    /// Number of `set` calls, checked against `n` in `build`.
+    count: std::sync::atomic::AtomicUsize,
 }
 
 impl<V: Word + AtomicPrimitive + PrimitiveNumberAs<u128>> EliasFanoConcurrentBuilder<V>
@@ -2658,6 +2660,7 @@ where
             l,
             low_bits: AtomicBitFieldVec::<Vec<Atomic<V>>>::new(l, n),
             high_bits: AtomicBitVec::new(num_high_bits),
+            count: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 
@@ -2683,6 +2686,7 @@ where
 
         let high = (value >> self.l).as_to::<usize>() + index;
         self.high_bits.set(high, true, Ordering::Relaxed);
+        self.count.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Builds an Elias–Fano structure.
@@ -2700,6 +2704,12 @@ where
     /// [`build_with_seq`]: EliasFanoConcurrentBuilder::build_with_seq
     #[must_use]
     pub fn build(self) -> EliasFano<V> {
+        assert!(
+            self.count.load(Ordering::Relaxed) == self.n,
+            "EliasFanoConcurrentBuilder::set must be called exactly n times before build (n = {}, got {})",
+            self.n,
+            self.count.load(Ordering::Relaxed)
+        );
         let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
         let low_bits: BitFieldVec<Vec<V>> = self.low_bits.into();
         let low_bits: BitFieldVec<Box<[V]>> = low_bits.into();
