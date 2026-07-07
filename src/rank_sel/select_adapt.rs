@@ -738,9 +738,12 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
         let mut spilled = 0;
 
         let bits_per_word = B::Word::BITS as usize;
+        let num_words = bits.as_ref().len();
+        let residual = bits.len() % bits_per_word;
 
         // First phase: we build an inventory for each one out of ones_per_inventory.
         for (i, word) in bits.as_ref().iter().copied().enumerate() {
+            let word = super::mask_tail_word(word, i + 1 == num_words, residual);
             let ones_in_word = word.count_ones() as usize;
 
             while past_ones + ones_in_word > next_quantum {
