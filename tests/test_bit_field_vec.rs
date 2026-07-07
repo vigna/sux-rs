@@ -896,3 +896,72 @@ fn test_epserde() {
         assert_eq!(bfv.get_value(i), bfv2.get_value(i));
     }
 }
+
+fn assert_zero_width_values<W: Word>(b: &BitFieldVec<Vec<W>>, len: usize) {
+    assert_eq!(b.bit_width(), 0);
+    assert_eq!(b.len(), len);
+    for i in 0..len {
+        assert_eq!(b.index_value(i), W::ZERO);
+    }
+
+    let (backend, bit_width, raw_len) = b.clone().into_raw_parts();
+    assert!(!backend.is_empty());
+    assert_eq!(bit_width, 0);
+    assert_eq!(raw_len, len);
+}
+
+#[test]
+fn test_zero_width_with_capacity_push() {
+    for capacity in [1, 8] {
+        let mut b = BitFieldVec::<Vec<usize>>::with_capacity(0, capacity);
+        assert_zero_width_values(&b, 0);
+
+        for len in 1..=capacity {
+            b.push(0);
+            assert_zero_width_values(&b, len);
+        }
+    }
+}
+
+#[test]
+fn test_zero_width_new() {
+    for len in [0, 1, 5] {
+        let b = BitFieldVec::<Vec<u64>>::new(0, len);
+        assert_zero_width_values(&b, len);
+    }
+}
+
+#[test]
+fn test_zero_width_resize_grow() {
+    let mut b = BitFieldVec::<Vec<u16>>::with_capacity(0, 8);
+    assert_zero_width_values(&b, 0);
+
+    for len in [1, 5, 8] {
+        b.resize(len, 0);
+        assert_zero_width_values(&b, len);
+    }
+}
+
+#[test]
+fn test_zero_width_wrap_single_word() {
+    let b = BitFieldVec::<Vec<usize>>::wrap(vec![0usize], 0, 3);
+    assert_zero_width_values(&b, 3);
+}
+
+#[test]
+#[should_panic]
+fn test_zero_width_wrap_empty_nonzero_len_panics() {
+    let _ = BitFieldVec::<Vec<usize>>::wrap(Vec::new(), 0, 5);
+}
+
+#[test]
+fn test_zero_width_macro_forms() {
+    let b = bit_field_vec![0];
+    assert_zero_width_values(&b, 0);
+
+    let b = bit_field_vec![0 => 0; 5];
+    assert_zero_width_values(&b, 5);
+
+    let b = bit_field_vec![0; 0, 0, 0];
+    assert_zero_width_values(&b, 3);
+}

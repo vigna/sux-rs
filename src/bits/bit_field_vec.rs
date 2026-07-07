@@ -444,7 +444,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
             "len * bit_width must be at most the number of bits in the backend"
         );
         assert!(
-            !backend.as_ref().is_empty() || bit_width == 0,
+            !backend.as_ref().is_empty() || len == 0,
             "backend must have at least one word when bit width is zero and len is nonzero"
         );
         BitFieldVec {
@@ -476,8 +476,14 @@ impl<W: Word> BitFieldVec<Vec<W>> {
     pub fn with_capacity(bit_width: usize, capacity: usize) -> Self {
         // We need at least one word to handle the case of bit width zero.
         let n_of_words = Ord::max(1, (capacity * bit_width).div_ceil(W::BITS as usize));
+        let mut bits = Vec::with_capacity(n_of_words);
+        if bit_width == 0 {
+            // A zero-width vector still needs one backing word so that
+            // `set_value_unchecked` can index word 0.
+            bits.push(W::ZERO);
+        }
         Self {
-            bits: Vec::with_capacity(n_of_words),
+            bits,
             bit_width,
             mask: mask(bit_width),
             len: 0,
@@ -539,7 +545,9 @@ impl<W: Word> BitFieldVec<Vec<W>> {
     /// Adds a value at the end of the vector.
     pub fn push(&mut self, value: W) {
         panic_if_value!(value, self.mask, self.bit_width);
-        if (self.len + 1) * self.bit_width > self.bits.len() * W::BITS as usize {
+        if self.bits.is_empty()
+            || (self.len + 1) * self.bit_width > self.bits.len() * W::BITS as usize
+        {
             self.bits.push(W::ZERO);
         }
         unsafe {
@@ -557,6 +565,10 @@ impl<W: Word> BitFieldVec<Vec<W>> {
                     (new_len * self.bit_width).div_ceil(W::BITS as usize),
                     W::ZERO,
                 );
+            }
+            if self.bits.is_empty() {
+                // Zero-width vector: still needs one backing word.
+                self.bits.push(W::ZERO);
             }
             for i in self.len..new_len {
                 unsafe {
