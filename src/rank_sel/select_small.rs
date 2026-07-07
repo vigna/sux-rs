@@ -249,6 +249,10 @@ macro_rules! impl_rank_small_sel {
 
             fn _new(small_counters: C, num_ones: usize, log2_ones_per_inventory: usize) -> Self {
                 let bits_per_word = C::Word::BITS as usize;
+                let num_bits = small_counters.len();
+                let num_words = small_counters.as_ref().len();
+                let residual = num_bits % bits_per_word;
+                let words_per_superblock = Self::SUPERBLOCK_BIT_SIZE / bits_per_word;
                 let ones_per_inventory = 1 << log2_ones_per_inventory;
                 // half_ones is the midpoint within each inventory interval. We advance
                 // next_quantum by half_ones each step, alternating between primary and
@@ -268,12 +272,16 @@ macro_rules! impl_rank_small_sel {
                 let mut past_ones: usize = 0;
                 let mut next_quantum: usize = 0;
 
-                for superblock in small_counters
+                for (sb, superblock) in small_counters
                     .as_ref()
-                    .chunks(Self::SUPERBLOCK_BIT_SIZE / bits_per_word)
+                    .chunks(words_per_superblock)
+                    .enumerate()
                 {
                     let mut first = true;
                     for (i, word) in superblock.iter().copied().enumerate() {
+                        let global_word = sb * words_per_superblock + i;
+                        let word =
+                            super::mask_tail_word(word, global_word + 1 == num_words, residual);
                         let ones_in_word = word.count_ones() as usize;
 
                         while past_ones + ones_in_word > next_quantum {

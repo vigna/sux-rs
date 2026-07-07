@@ -22,6 +22,7 @@ use crate::{
     },
 };
 
+use super::mask_tail_word;
 use crate::ambassador_impl_Index;
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::bal_paren::{BalParen, ambassador_impl_BalParen};
@@ -624,6 +625,7 @@ macro_rules! impl_rank_small {
                 let bits_per_word = B::Word::BITS as usize;
                 let num_bits = bits.len();
                 let num_words = num_bits.div_ceil(bits_per_word);
+                let residual = num_bits % bits_per_word;
                 let num_upper_counts = (num_bits as u64).div_ceil(1u64 << 32) as usize;
                 let num_counts = num_bits.div_ceil(bits_per_word * Self::WORDS_PER_BLOCK);
 
@@ -643,7 +645,8 @@ macro_rules! impl_rank_small {
                     }
                     let mut count = Block32Counters::<$NUM_U32S, $COUNTER_WIDTH>::default();
                     count.absolute = (past_ones - upper_count) as u32;
-                    past_ones += bits.as_ref()[i].count_ones() as usize;
+                    past_ones += mask_tail_word(bits.as_ref()[i], i + 1 == num_words, residual)
+                        .count_ones() as usize;
 
                     for j in 1..Self::WORDS_PER_BLOCK {
                         #[allow(clippy::modulo_one)]
@@ -652,7 +655,12 @@ macro_rules! impl_rank_small {
                             count.set_rel(j / Self::WORDS_PER_SUBBLOCK, rel_count);
                         }
                         if i + j < num_words {
-                            past_ones += bits.as_ref()[i + j].count_ones() as usize;
+                            past_ones += mask_tail_word(
+                                bits.as_ref()[i + j],
+                                i + j + 1 == num_words,
+                                residual,
+                            )
+                            .count_ones() as usize;
                         }
                     }
 

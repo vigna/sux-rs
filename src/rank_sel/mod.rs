@@ -130,3 +130,22 @@ pub use rank9::*;
 
 mod select9;
 pub use select9::*;
+
+use crate::traits::Word;
+
+/// Masks the dirty padding bits of `word` when it is the final word of a bit
+/// vector whose logical length is not a multiple of the word bit-size.
+///
+/// A valid [`BitVec`](crate::bits::BitVec) may legally carry arbitrary bits
+/// past its logical length (its own `count_ones` masks them), so rank/select
+/// builders that sum raw word populations must mask the final word or they
+/// over-count. `residual` is `len % W::BITS` (0 when the last word is full).
+#[inline(always)]
+pub(crate) fn mask_tail_word<W: Word>(word: W, is_last: bool, residual: usize) -> W {
+    if is_last && residual != 0 {
+        // Keep only the low `residual` logical bits of the final word.
+        word & (W::MAX >> (W::BITS as usize - residual))
+    } else {
+        word
+    }
+}
