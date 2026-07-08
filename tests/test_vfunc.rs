@@ -231,3 +231,22 @@ fn test_mismatched_keys_and_values() -> Result<()> {
 
     Ok(())
 }
+
+/// The parallel builder does not support offline (disk-based) construction and
+/// must reject it rather than silently ignoring the flag.
+#[test]
+fn test_par_builder_rejects_offline() {
+    let keys: Vec<usize> = (0..1000).collect();
+    let values: Vec<usize> = (0..1000).collect();
+    let result = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
+        &keys,
+        &values,
+        VBuilder::default().offline(true),
+        &mut ProgressLogger::default(),
+    );
+    let err = result.expect_err("parallel builder must reject offline mode instead of ignoring it");
+    assert!(
+        err.to_string().contains("offline"),
+        "expected an offline-rejection error, got: {err}"
+    );
+}
