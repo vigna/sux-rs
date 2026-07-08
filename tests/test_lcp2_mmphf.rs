@@ -251,3 +251,22 @@ fn test_absent_keys_do_not_panic() -> Result<()> {
     assert!(checked > 0);
     Ok(())
 }
+
+/// A common prefix longer than 65535 bits must not wrap the stored LCP length.
+/// On 64-bit `LcpLen` is already u32, so this is a smoke test here; on 32-bit
+/// (i686 CI) it fails before the u16 -> u32 widening.
+#[test]
+fn test_long_common_prefix_str() -> Result<()> {
+    // 8200 bytes = 65600 bits of shared prefix, then a differing byte.
+    let prefix = "a".repeat(8200);
+    let a = format!("{prefix}0");
+    let b = format!("{prefix}1");
+    let mut keys = vec![a.as_str(), b.as_str()];
+    keys.sort();
+    let func: Lcp2MmphfStr = Lcp2MmphfStr::try_new(keys_lender(&keys), keys.len(), no_logging![])?;
+    let func = func.try_into_unaligned().unwrap();
+    for (i, key) in keys.iter().enumerate() {
+        assert_eq!(func.get(key), i, "long-prefix key at position {i}");
+    }
+    Ok(())
+}

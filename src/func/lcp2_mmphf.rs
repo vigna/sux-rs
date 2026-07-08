@@ -230,10 +230,9 @@ mod build {
         (remap, inv_map)
     }
 
-    #[cfg(target_pointer_width = "64")]
+    // Always u32 so that LCP bit-lengths above 65535 do not silently wrap on
+    // 32-bit targets (where this alias was previously u16).
     type LcpLen = u32;
-    #[cfg(not(target_pointer_width = "64"))]
-    type LcpLen = u16;
 
     impl<
         K: PrimitiveInteger + ToSig<S0> + std::fmt::Debug + Send + Sync + Copy + Ord,
@@ -459,7 +458,9 @@ mod build {
                                 // Start of a new bucket — flush the previous one.
                                 if offset == 0 && idx > 0 {
                                     let lcp = curr_lcp_bits;
-                                    state.lcp_bit_lens.push(lcp as LcpLen);
+                                    state.lcp_bit_lens.push(
+                                        LcpLen::try_from(lcp).expect("LCP length exceeds u32"),
+                                    );
                                     state.max_lcp = state.max_lcp.max(lcp);
                                     let bsize = buf.len();
                                     state.lcp_counts.add(lcp, bsize);
@@ -490,7 +491,9 @@ mod build {
                             // Flush the last (possibly partial) bucket.
                             if !buf.is_empty() {
                                 let lcp = curr_lcp_bits;
-                                state.lcp_bit_lens.push(lcp as LcpLen);
+                                state
+                                    .lcp_bit_lens
+                                    .push(LcpLen::try_from(lcp).expect("LCP length exceeds u32"));
                                 state.max_lcp = state.max_lcp.max(lcp);
                                 let bsize = buf.len();
                                 state.lcp_counts.add(lcp, bsize);
@@ -838,7 +841,7 @@ mod build {
                     // First key of a new bucket.
                     if i > 0 {
                         let lcp = curr_lcp_bits;
-                        lcp_bit_lens.push(lcp as LcpLen);
+                        lcp_bit_lens.push(LcpLen::try_from(lcp).expect("LCP length exceeds u32"));
                         max_lcp = max_lcp.max(lcp);
                         let bsize = bucket_size; // previous bucket was full
                         lcp_counts.add(lcp, bsize);
@@ -855,7 +858,7 @@ mod build {
             // Flush the last (possibly partial) bucket.
             {
                 let lcp = curr_lcp_bits;
-                lcp_bit_lens.push(lcp as LcpLen);
+                lcp_bit_lens.push(LcpLen::try_from(lcp).expect("LCP length exceeds u32"));
                 max_lcp = max_lcp.max(lcp);
                 let bsize = n - (num_buckets - 1) * bucket_size;
                 lcp_counts.add(lcp, bsize);
@@ -1261,7 +1264,9 @@ mod build {
                                 // Start of a new bucket — flush the previous one.
                                 if offset == 0 && idx > 0 {
                                     let lcp = curr_lcp_bits;
-                                    state.lcp_bit_lens.push(lcp as LcpLen);
+                                    state.lcp_bit_lens.push(
+                                        LcpLen::try_from(lcp).expect("LCP length exceeds u32"),
+                                    );
                                     state.max_lcp = state.max_lcp.max(lcp);
                                     let bsize = buf.len();
                                     state.lcp_counts.add(lcp, bsize);
@@ -1293,7 +1298,9 @@ mod build {
                             // Flush the last (possibly partial) bucket.
                             if !buf.is_empty() {
                                 let lcp = curr_lcp_bits;
-                                state.lcp_bit_lens.push(lcp as LcpLen);
+                                state
+                                    .lcp_bit_lens
+                                    .push(LcpLen::try_from(lcp).expect("LCP length exceeds u32"));
                                 state.max_lcp = state.max_lcp.max(lcp);
                                 let bsize = buf.len();
                                 state.lcp_counts.add(lcp, bsize);
@@ -1665,7 +1672,7 @@ mod build {
                     // First key of a new bucket.
                     if i > 0 {
                         let lcp = curr_lcp_bits;
-                        lcp_bit_lens.push(lcp as LcpLen);
+                        lcp_bit_lens.push(LcpLen::try_from(lcp).expect("LCP length exceeds u32"));
                         max_lcp = max_lcp.max(lcp);
                         let bsize = bucket_size; // previous bucket was full
                         lcp_counts.add(lcp, bsize);
@@ -1683,7 +1690,7 @@ mod build {
             // Flush the last (possibly partial) bucket.
             {
                 let lcp = curr_lcp_bits;
-                lcp_bit_lens.push(lcp as LcpLen);
+                lcp_bit_lens.push(LcpLen::try_from(lcp).expect("LCP length exceeds u32"));
                 max_lcp = max_lcp.max(lcp);
                 let bsize = n - (num_buckets - 1) * bucket_size;
                 lcp_counts.add(lcp, bsize);
@@ -1891,6 +1898,17 @@ mod build {
             // zero padding must not have been inserted into `inv_map`.
             assert_eq!(inv_map.get(15), escape_usize);
             assert_eq!(inv_map.get(0), escape_usize);
+        }
+
+        /// `LcpLen` must hold LCP bit-lengths above 65535 on every target (it
+        /// was previously u16 on 32-bit, silently wrapping long common
+        /// prefixes).
+        #[test]
+        fn lcp_len_holds_large_prefixes() {
+            assert!(
+                u64::from(LcpLen::MAX) >= 65536,
+                "LcpLen must hold LCP lengths above 65535 bits"
+            );
         }
     }
 } // mod build
