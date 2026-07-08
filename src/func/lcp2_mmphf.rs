@@ -737,7 +737,7 @@ mod build {
         /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
         /// let func = Lcp2MmphfInt::<u64>::try_par_new_with_builder(
         ///     &keys,
-        ///     VBuilder::default().offline(true),
+        ///     VBuilder::default(),
         ///     no_logging![],
         /// )?.try_into_unaligned()?;
         ///
@@ -1559,7 +1559,7 @@ mod build {
         /// let keys = vec!["a", "b", "c", "d", "e"];
         /// let func = <Lcp2MmphfStr>::try_par_new_with_builder(
         ///     &keys,
-        ///     VBuilder::default().offline(true),
+        ///     VBuilder::default(),
         ///     no_logging![],
         /// )?.try_into_unaligned()?;
         ///
