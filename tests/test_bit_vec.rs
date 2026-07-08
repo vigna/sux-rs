@@ -985,7 +985,7 @@ fn test_reserve() {
     assert!(b.capacity() >= 150);
 }
 
-/// Test get_value / get_value_unchecked / append_value with a given word type.
+/// Test get_bits / get_bits_unchecked / append_value with a given word type.
 macro_rules! test_value_ops_word_type {
     ($W:ty) => {{
         let bpw = <$W>::BITS as usize;
@@ -994,7 +994,7 @@ macro_rules! test_value_ops_word_type {
         {
             let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
             bv.push(true);
-            assert_eq!(bv.get_value(0, 0), (0 as $W));
+            assert_eq!(bv.get_bits(0, 0), (0 as $W));
         }
 
         // width == W::BITS, word-aligned (bit_index == 0)
@@ -1003,8 +1003,8 @@ macro_rules! test_value_ops_word_type {
             let val: $W = !(0 as $W) / 3; // alternating bits
             bv.append_value(val, bpw);
             assert_eq!(bv.len(), bpw);
-            assert_eq!(bv.get_value(0, bpw), val);
-            assert_eq!(unsafe { bv.get_value_unchecked(0, bpw) }, val);
+            assert_eq!(bv.get_bits(0, bpw), val);
+            assert_eq!(unsafe { bv.get_bits_unchecked(0, bpw) }, val);
         }
 
         // width == W::BITS, not word-aligned (bit_index > 0, spans two words)
@@ -1018,12 +1018,12 @@ macro_rules! test_value_ops_word_type {
                 let val: $W = !(0 as $W) / 5; // known pattern
                 bv.append_value(val, bpw);
                 assert_eq!(
-                    bv.get_value(offset, bpw),
+                    bv.get_bits(offset, bpw),
                     val,
                     "width={bpw}, offset={offset}"
                 );
                 assert_eq!(
-                    unsafe { bv.get_value_unchecked(offset, bpw) },
+                    unsafe { bv.get_bits_unchecked(offset, bpw) },
                     val,
                     "width={bpw}, offset={offset}"
                 );
@@ -1046,7 +1046,7 @@ macro_rules! test_value_ops_word_type {
                     };
                     let expected = (val >> pos) & mask;
                     assert_eq!(
-                        bv.get_value(pos, width),
+                        bv.get_bits(pos, width),
                         expected,
                         "single-word: pos={pos}, width={width}"
                     );
@@ -1074,7 +1074,7 @@ macro_rules! test_value_ops_word_type {
                     };
                     let expected = ((val0 >> pos) | (val1 << (bpw - pos))) & mask;
                     assert_eq!(
-                        bv.get_value(pos, width),
+                        bv.get_bits(pos, width),
                         expected,
                         "spanning: pos={pos}, width={width}"
                     );
@@ -1105,7 +1105,7 @@ macro_rules! test_value_ops_word_type {
                     }
                     bv.append_value(val, width);
                     assert_eq!(
-                        bv.get_value(offset, width),
+                        bv.get_bits(offset, width),
                         val,
                         "append round-trip: width={width}, offset={offset}"
                     );
@@ -1119,12 +1119,12 @@ macro_rules! test_value_ops_word_type {
                 let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
                 bv.append_value(!(0 as $W), width); // all bits set, but only `width` should survive
                 let mask = ((1 as $W) << width) - (1 as $W);
-                assert_eq!(bv.get_value(0, width), mask, "masking: width={width}");
+                assert_eq!(bv.get_bits(0, width), mask, "masking: width={width}");
             }
             // width == W::BITS: all bits survive
             let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
             bv.append_value(!(0 as $W), bpw);
-            assert_eq!(bv.get_value(0, bpw), !(0 as $W));
+            assert_eq!(bv.get_bits(0, bpw), !(0 as $W));
         }
 
         // Multiple appends at sequential positions
@@ -1139,7 +1139,7 @@ macro_rules! test_value_ops_word_type {
             }
             for (i, &v) in vals.iter().enumerate() {
                 assert_eq!(
-                    bv.get_value(i * width, width),
+                    bv.get_bits(i * width, width),
                     v,
                     "sequential: i={i}, width={width}"
                 );
@@ -1176,7 +1176,7 @@ fn test_value_ops_usize() {
 #[cfg(target_pointer_width = "64")]
 #[test]
 #[should_panic(expected = "overflows usize")]
-fn test_get_value_panics_on_bit_range_end_overflow() {
+fn test_get_bits_panics_on_bit_range_end_overflow() {
     let bv: BitVec = BitVec::new(8);
-    bv.get_value(usize::MAX, 1);
+    bv.get_bits(usize::MAX, 1);
 }

@@ -259,7 +259,7 @@ where
         let end = unsafe { iter.next_unchecked() } as usize;
         let width = end - start;
 
-        let bits = unsafe { self.data.get_value_unchecked(start, width) };
+        let bits = unsafe { self.data.get_bits_unchecked(start, width) };
         let stored = (B::Word::ONE << width) | bits;
 
         // stored = value - min + 1, so value = (stored - 1) + min

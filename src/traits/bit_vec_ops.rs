@@ -103,7 +103,7 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
         (word >> (index % bits_per_word)) & W::ONE != W::ZERO
     }
 
-    /// Like [`BitVecValueOps::get_value`], but using a branchless unaligned
+    /// Like [`BitVecValueOps::get_bits`], but using a branchless unaligned
     /// read.
     ///
     /// The read loads one full word starting at byte offset `pos / 8`,
@@ -153,7 +153,7 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
         unsafe { self.get_value_unaligned_unchecked(pos, width) }
     }
 
-    /// Like [`BitVecValueOps::get_value_unchecked`], but using a
+    /// Like [`BitVecValueOps::get_bits_unchecked`], but using a
     /// branchless unaligned read.
     ///
     /// See [`get_value_unaligned`](Self::get_value_unaligned) for the
@@ -389,7 +389,7 @@ pub trait BitVecValueOps<W: Word> {
     ///
     /// Panics if `pos + width` exceeds the bit length or if `width` >
     /// `W::BITS`.
-    fn get_value(&self, pos: usize, width: usize) -> W;
+    fn get_bits(&self, pos: usize, width: usize) -> W;
 
     /// Reads `width` bits starting at bit position `pos`, without bounds
     /// checks.
@@ -399,7 +399,7 @@ pub trait BitVecValueOps<W: Word> {
     /// - `pos + width` must not exceed the bit length of the underlying
     ///   storage.
     /// - `width` must be at most `W::BITS`.
-    unsafe fn get_value_unchecked(&self, pos: usize, width: usize) -> W;
+    unsafe fn get_bits_unchecked(&self, pos: usize, width: usize) -> W;
 }
 
 /// An iterator over the bits of a bit vector as booleans.

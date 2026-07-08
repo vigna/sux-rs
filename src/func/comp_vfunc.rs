@@ -185,9 +185,9 @@ impl<
         // The literal sits at the low end [0..esym_len).
         // SAFETY: the bit vector is padded.
         unsafe {
-            self.data.get_value_unchecked(v0, esym_len)
-                ^ self.data.get_value_unchecked(v1, esym_len)
-                ^ self.data.get_value_unchecked(v2, esym_len)
+            self.data.get_bits_unchecked(v0, esym_len)
+                ^ self.data.get_bits_unchecked(v1, esym_len)
+                ^ self.data.get_bits_unchecked(v2, esym_len)
         }
     }
 }
