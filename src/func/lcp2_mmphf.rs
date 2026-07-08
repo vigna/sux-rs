@@ -207,6 +207,29 @@ mod build {
         ));
     }
 
+    /// Builds the `remap` table and its inverse map from the value frequencies.
+    ///
+    /// `remap` is padded to `escape_usize` (not just `num_freq`) so that the
+    /// safe `get` can index it with any first-VFunc output in `[0, escape)`,
+    /// including the arbitrary outputs produced by absent keys. The padding
+    /// entries are zero and are excluded from `inv_map`, which maps only the
+    /// `num_freq` frequent values to their indices (missing values resolve to
+    /// the `escape_usize` sentinel).
+    fn build_remap_and_inv(
+        sorted_vals: &[usize],
+        escape_usize: usize,
+        num_freq: usize,
+        max_lcp: usize,
+    ) -> (Box<[usize]>, HybridMap<usize, usize>) {
+        let mut remap: Box<[usize]> = vec![0usize; escape_usize].into_boxed_slice();
+        remap[..num_freq].copy_from_slice(&sorted_vals[..num_freq]);
+        let mut inv_map: HybridMap<usize, usize> = HybridMap::new(Some(max_lcp), escape_usize);
+        for (i, &val) in remap[..num_freq].iter().enumerate() {
+            inv_map.insert(val, i);
+        }
+        (remap, inv_map)
+    }
+
     #[cfg(target_pointer_width = "64")]
     type LcpLen = u32;
     #[cfg(not(target_pointer_width = "64"))]
@@ -516,13 +539,12 @@ mod build {
                             let escape_usize = (1usize << best_r).wrapping_sub(1);
                             let num_freq = escape_usize.min(m);
 
-                            let remap: Box<[usize]> =
-                                sorted_vals[..num_freq].to_vec().into_boxed_slice();
-                            let mut inv_map: HybridMap<usize, usize> =
-                                HybridMap::new(Some(state.max_lcp), escape_usize);
-                            for (i, &val) in remap.iter().enumerate() {
-                                inv_map.insert(val, i);
-                            }
+                            let (remap, inv_map) = build_remap_and_inv(
+                                &sorted_vals,
+                                escape_usize,
+                                num_freq,
+                                state.max_lcp,
+                            );
 
                             let num_infreq = n_keys
                                 - sorted_vals[..num_freq]
@@ -856,11 +878,8 @@ mod build {
             let escape_usize = (1usize << best_r).wrapping_sub(1);
             let num_freq = escape_usize.min(m);
 
-            let remap: Box<[usize]> = sorted_vals[..num_freq].to_vec().into_boxed_slice();
-            let mut inv_map: HybridMap<usize, usize> = HybridMap::new(Some(max_lcp), escape_usize);
-            for (i, &val) in remap.iter().enumerate() {
-                inv_map.insert(val, i);
-            }
+            let (remap, inv_map) =
+                build_remap_and_inv(&sorted_vals, escape_usize, num_freq, max_lcp);
 
             let num_infreq = n - sorted_vals[..num_freq]
                 .iter()
@@ -1323,13 +1342,12 @@ mod build {
                             let escape_usize = (1usize << best_r).wrapping_sub(1);
                             let num_freq = escape_usize.min(m);
 
-                            let remap: Box<[usize]> =
-                                sorted_vals[..num_freq].to_vec().into_boxed_slice();
-                            let mut inv_map: HybridMap<usize, usize> =
-                                HybridMap::new(Some(state.max_lcp), escape_usize);
-                            for (i, &val) in remap.iter().enumerate() {
-                                inv_map.insert(val, i);
-                            }
+                            let (remap, inv_map) = build_remap_and_inv(
+                                &sorted_vals,
+                                escape_usize,
+                                num_freq,
+                                state.max_lcp,
+                            );
 
                             let num_infreq = n_keys
                                 - sorted_vals[..num_freq]
@@ -1688,11 +1706,8 @@ mod build {
             let escape_usize = (1usize << best_r).wrapping_sub(1);
             let num_freq = escape_usize.min(m);
 
-            let remap: Box<[usize]> = sorted_vals[..num_freq].to_vec().into_boxed_slice();
-            let mut inv_map: HybridMap<usize, usize> = HybridMap::new(Some(max_lcp), escape_usize);
-            for (i, &val) in remap.iter().enumerate() {
-                inv_map.insert(val, i);
-            }
+            let (remap, inv_map) =
+                build_remap_and_inv(&sorted_vals, escape_usize, num_freq, max_lcp);
 
             let num_infreq = n - sorted_vals[..num_freq]
                 .iter()
@@ -1849,6 +1864,33 @@ mod build {
                     total_start.elapsed().as_nanos() as f64 / n as f64
                 ));
             })
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// `build_remap_and_inv` must pad `remap` to the full escape range so
+        /// safe `get` cannot index out of bounds when the first VFunc returns a
+        /// value in `[num_freq, escape)` (reachable for absent keys). The
+        /// padding must be zero and excluded from `inv_map`.
+        #[test]
+        fn remap_padded_to_escape() {
+            let sorted_vals = [10usize, 20, 30, 40, 50];
+            let escape_usize = 7;
+            let num_freq = 5;
+            let (remap, inv_map) = build_remap_and_inv(&sorted_vals, escape_usize, num_freq, 100);
+            assert_eq!(remap.len(), escape_usize);
+            assert_eq!(&remap[..num_freq], &sorted_vals);
+            assert_eq!(&remap[num_freq..], &[0usize, 0]);
+            for (i, &v) in sorted_vals.iter().enumerate() {
+                assert_eq!(inv_map.get(v), i);
+            }
+            // A non-frequent value resolves to the escape sentinel, and the
+            // zero padding must not have been inserted into `inv_map`.
+            assert_eq!(inv_map.get(15), escape_usize);
+            assert_eq!(inv_map.get(0), escape_usize);
         }
     }
 } // mod build
