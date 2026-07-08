@@ -37,12 +37,46 @@ pub use bit_vec_ops::*;
 
 /// Error returned by [`TryIntoUnaligned::try_into_unaligned`] when the
 /// bit width does not satisfy the constraints for unaligned reads.
-#[derive(Debug)]
-pub struct UnalignedConversionError(pub String);
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum UnalignedConversionError {
+    /// The bit width does not satisfy the constraints for single unaligned
+    /// reads on a `word_bits`-bit word (it must be at most `word_bits - 6`,
+    /// exactly `word_bits - 4`, or exactly `word_bits`).
+    InvalidBitWidth { bit_width: usize, word_bits: u32 },
+    /// The bit width does not satisfy the constraints for arbitrary-position
+    /// unaligned reads on a `word_bits`-bit word (it must be at most
+    /// `word_bits - 7`).
+    InvalidPosition { bit_width: usize, word_bits: u32 },
+    /// A collection contains one or more values whose bit widths do not satisfy
+    /// the constraints for unaligned reads.
+    MixedBitWidths,
+}
 
 impl std::fmt::Display for UnalignedConversionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        match *self {
+            Self::InvalidBitWidth {
+                bit_width,
+                word_bits,
+            } => write!(
+                f,
+                "bit width {bit_width} does not satisfy the constraints for unaligned reads on a {word_bits}-bit word (must be <= {}, == {}, or == {word_bits})",
+                word_bits.saturating_sub(6),
+                word_bits.saturating_sub(4),
+            ),
+            Self::InvalidPosition {
+                bit_width,
+                word_bits,
+            } => write!(
+                f,
+                "bit width {bit_width} does not satisfy the constraints for arbitrary-position unaligned reads on a {word_bits}-bit word (must be <= {})",
+                word_bits.saturating_sub(7),
+            ),
+            Self::MixedBitWidths => f.write_str(
+                "a collection contains values whose bit widths do not satisfy the constraints for unaligned reads",
+            ),
+        }
     }
 }
 

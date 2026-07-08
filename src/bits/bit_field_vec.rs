@@ -2135,14 +2135,10 @@ impl<W: Word> crate::traits::TryIntoUnaligned for BitFieldVec<Box<[W]>> {
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         let bw = self.bit_width();
         if !test_unaligned!(W, bw) {
-            return Err(crate::traits::UnalignedConversionError(format!(
-                "bit width {} does not satisfy the constraints for unaligned reads on word type {} (must be <= {}, or == {}, or == {})",
-                bw,
-                stringify!(W),
-                W::BITS as usize - 6,
-                W::BITS as usize - 4,
-                W::BITS as usize,
-            )));
+            return Err(crate::traits::UnalignedConversionError::InvalidBitWidth {
+                bit_width: bw,
+                word_bits: W::BITS,
+            });
         }
         let needed = (SliceByValue::len(&self) * bw).div_ceil(W::BITS as usize);
         if self.as_slice().len() > needed {

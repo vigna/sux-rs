@@ -279,11 +279,7 @@ where
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         if !self.all_widths_unaligned {
-            return Err(crate::traits::UnalignedConversionError(
-                "CompIntList contains values whose bit widths do not satisfy the \
-                 constraints for unaligned reads"
-                    .to_string(),
-            ));
+            return Err(crate::traits::UnalignedConversionError::MixedBitWidths);
         }
 
         Ok(CompIntList {
