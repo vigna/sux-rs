@@ -400,10 +400,10 @@ fn build_coder_from_frequencies<W: Word + Hash>(
     // The codeword is read via get_unaligned_unchecked, which reads a
     // full W and shifts right by up to 7 bits.
     let w = coder.max_codeword_len();
-    let max = W::BITS - 7;
+    let max = (W::BITS - 7).min(usize::BITS - 2);
     if w > max {
         return Err(anyhow!(
-            "max codeword length {w} exceeds the unaligned-read limit of {max}: try again after limiting the Huffman codec"
+            "max codeword length {w} exceeds the readable limit of {max} (min of W::BITS-7 and usize::BITS-2): try again after limiting the Huffman codec"
         ));
     }
     Ok(coder)
@@ -521,20 +521,36 @@ where
             core::any::type_name::<S>()
         ));
         // Padding for multi-edge expansion
-        let raw_stride = num_vertices_per_shard + w as usize;
+        let raw_stride = num_vertices_per_shard
+            .checked_add(w as usize)
+            .ok_or_else(|| anyhow!("shard stride overflows usize"))?;
+        let force_index_peeler = raw_stride >= PackedEdge::MAX_VERTICES as usize;
+        if force_index_peeler && raw_stride as u64 > u32::MAX as u64 + 1 {
+            // The index peeler stores vertex indices as u32, so `base + off`
+            // below would truncate for a shard with more than u32::MAX + 1
+            // vertices (reachable only for ShardEdge families whose Vertex is
+            // wider than u32). Reject before rounding and allocating.
+            return Err(anyhow!(
+                "shard has too many vertices ({raw_stride}) for the u32 index peeler"
+            ));
+        }
         // `par_solve` chunks the data via `BitVec::try_chunks_mut`,
         // which requires `chunk_size` to be a multiple of `W::BITS`.
-        let stride = raw_stride.next_multiple_of(W::BITS as usize);
+        let word_bits = W::BITS as usize;
+        let stride = raw_stride
+            .div_ceil(word_bits)
+            .checked_mul(word_bits)
+            .ok_or_else(|| anyhow!("shard stride padding overflows usize"))?;
+        let total_bits = num_shards
+            .checked_mul(stride)
+            .ok_or_else(|| anyhow!("data size overflow"))?;
 
         pl.info(format_args!(
             "c: {}; overhead (vertices/edges): {:+.3}%",
             c,
-            100.0 * ((stride * num_shards) as f64 / (total_edges as f64) - 1.),
+            100.0 * (total_bits as f64 / (total_edges as f64) - 1.),
         ));
         let padding = stride - num_vertices_per_shard;
-        let total_bits = num_shards
-            .checked_mul(stride)
-            .ok_or_else(|| anyhow!("data size overflow"))?;
 
         let mut data = BitVec::<Box<[W]>>::new_padded(total_bits);
 
@@ -557,7 +573,6 @@ where
         // None of the peelers use a Gaussian elimination fallback as in
         // VBuilder: on any unpeeled remainder the shard is retried with a new
         // seed.
-        let force_index_peeler = raw_stride >= PackedEdge::MAX_VERTICES as usize;
         let use_low_mem = vb.low_mem == Some(true)
             || (vb.low_mem.is_none() && vb.num_threads > 3 && num_shards > 2);
         let solve_shard = |this: &VBuilder<BitVec<Box<[W]>>, S, E>,
@@ -1411,5 +1426,33 @@ impl<K: ?Sized, W: Word, S, E> From<CompVFunc<K, BitVecU<Box<[W]>>, S, E>>
             decoder: u.decoder,
             _marker: PhantomData,
         }
+    }
+}
+
+#[cfg(test)]
+mod codec_bound_tests {
+    use super::*;
+
+    #[test]
+    fn test_build_coder_rejects_overlong_codeword() {
+        // Fibonacci frequencies over `usize::BITS` u128 symbols force a
+        // maximally unbalanced Huffman tree (depth usize::BITS - 1), whose max
+        // codeword length exceeds usize::BITS - 2 even though it fits W::BITS - 7
+        // for W = u128. The preflight must reject it, since the decoder
+        // constructor asserts `w <= usize::BITS - 2`. Using usize::BITS symbols
+        // keeps the Fibonacci counts within usize on 32-bit as well.
+        let mut frequencies: HashMap<u128, usize> = HashMap::new();
+        let (mut prev, mut cur) = (1usize, 1usize);
+        for symbol in 0u128..u128::from(usize::BITS) {
+            frequencies.insert(symbol, cur);
+            let next = prev + cur;
+            prev = cur;
+            cur = next;
+        }
+        let result = build_coder_from_frequencies(HuffmanConf::unlimited(), &frequencies);
+        assert!(
+            result.is_err(),
+            "expected an error for a codeword longer than usize::BITS - 2"
+        );
     }
 }
