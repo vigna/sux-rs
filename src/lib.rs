@@ -36,8 +36,9 @@ pub mod fuzz;
 
 /// Imports the most common items.
 ///
-/// Note that [`bit_field_slice`] and [`indexed_dict`] are not included in
-/// the prelude, as they may cause ambiguities in some contexts.
+/// The [`bit_field_slice`] and [`indexed_dict`] module names are re-exported so
+/// their items can be reached through the prelude, but their contents are not
+/// glob-imported, as that would cause ambiguities in some contexts.
 ///
 /// [`bit_field_slice`]: crate::traits::bit_field_slice
 /// [`indexed_dict`]: crate::traits::indexed_dict
