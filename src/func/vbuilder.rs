@@ -119,6 +119,8 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) max_num_threads: usize,
 
     /// Use disk-based buckets to reduce core memory usage at construction time.
+    /// Only the sequential constructors honor this; the parallel constructors
+    /// return an error if it is set.
     #[setters(generate = true)]
     offline: bool,
 
@@ -910,6 +912,10 @@ impl<
         SigVal<S, V>: RadixKey,
         S: Send,
     {
+        anyhow::ensure!(
+            !self.offline,
+            "offline mode is not supported by the parallel builder; use the sequential constructor (try_new_with_builder)"
+        );
         let mut rs = self.retry_state(pl);
         let n = keys.len();
         let total_start = Instant::now();
