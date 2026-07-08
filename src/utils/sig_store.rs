@@ -1234,22 +1234,24 @@ where
 
     fn iter(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
         let filter = &self.filter;
-        let inner_shards: Vec<_> = self.inner.iter().collect();
+        // Filter one shard at a time, lazily, so the whole store is never
+        // materialized in RAM at once.
         Box::new(
-            inner_shards
-                .into_iter()
-                .map(move |shard| {
-                    let filtered: Vec<_> = shard.iter().filter(|sv| filter(sv)).copied().collect();
-                    Arc::new(filtered)
-                })
-                .collect::<Vec<_>>()
-                .into_iter(),
+            self.inner.iter().map(move |shard| {
+                Arc::new(shard.iter().filter(|sv| filter(sv)).copied().collect())
+            }),
         )
     }
 
     fn drain(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
-        // FilteredShardStore always re-filters, so drain == iter.
-        self.iter()
+        let filter = &self.filter;
+        // Same filtering as `iter`, but drains the inner store so each shard's
+        // memory is released as it is consumed.
+        Box::new(
+            self.inner.drain().map(move |shard| {
+                Arc::new(shard.iter().filter(|sv| filter(sv)).copied().collect())
+            }),
+        )
     }
 }
 
@@ -1381,5 +1383,98 @@ mod tests {
             [rand.random(), rand.random()]
         })?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod filtered_lazy_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    type SV = SigVal<[u64; 2], u8>;
+
+    /// An inner iterator that counts how many shards have been pulled.
+    struct Counting {
+        inner: std::vec::IntoIter<Arc<Vec<SV>>>,
+        counter: Arc<AtomicUsize>,
+    }
+    impl Iterator for Counting {
+        type Item = Arc<Vec<SV>>;
+        fn next(&mut self) -> Option<Self::Item> {
+            let next = self.inner.next();
+            if next.is_some() {
+                self.counter.fetch_add(1, Ordering::Relaxed);
+            }
+            next
+        }
+    }
+
+    /// A minimal in-memory [`ShardStore`] with separate counters for the
+    /// `iter` and `drain` paths.
+    struct Fake {
+        shards: Vec<Arc<Vec<SV>>>,
+        iter_pulls: Arc<AtomicUsize>,
+        drain_pulls: Arc<AtomicUsize>,
+    }
+    impl ShardStore<[u64; 2], u8> for Fake {
+        fn shard_sizes(&self) -> Box<dyn Iterator<Item = usize> + '_> {
+            let sizes: Vec<usize> = self.shards.iter().map(|s| s.len()).collect();
+            Box::new(sizes.into_iter())
+        }
+        fn set_shard_high_bits(&mut self, _new_bits: u32) {}
+        fn max_shard_high_bits(&self) -> u32 {
+            0
+        }
+        fn iter(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SV>>> + Send + Sync + '_> {
+            Box::new(Counting {
+                inner: self.shards.clone().into_iter(),
+                counter: self.iter_pulls.clone(),
+            })
+        }
+        fn drain(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SV>>> + Send + Sync + '_> {
+            Box::new(Counting {
+                inner: std::mem::take(&mut self.shards).into_iter(),
+                counter: self.drain_pulls.clone(),
+            })
+        }
+    }
+
+    #[test]
+    fn filtered_iter_is_lazy_and_drain_uses_inner_drain() {
+        let sv = |s: u64, v: u8| SigVal {
+            sig: [s, 0],
+            val: v,
+        };
+        let shards = vec![Arc::new(vec![sv(1, 0), sv(2, 1)]), Arc::new(vec![sv(3, 0)])];
+        let iter_pulls = Arc::new(AtomicUsize::new(0));
+        let drain_pulls = Arc::new(AtomicUsize::new(0));
+        let mut fake = Fake {
+            shards,
+            iter_pulls: iter_pulls.clone(),
+            drain_pulls: drain_pulls.clone(),
+        };
+        let mut fs = FilteredShardStore::new(&mut fake, 0, |sv: &SV| sv.val == 0, vec![1, 1]);
+
+        {
+            let mut it = fs.iter();
+            // Building the iterator must not pull any inner shard.
+            assert_eq!(iter_pulls.load(Ordering::Relaxed), 0);
+            let first = it.next().unwrap();
+            // Exactly one inner shard was pulled, filtered to val == 0.
+            assert_eq!(iter_pulls.load(Ordering::Relaxed), 1);
+            assert_eq!(first.len(), 1);
+            assert_eq!(first[0].sig, [1, 0]);
+        }
+
+        // `drain` is lazy too and goes through the inner `drain` path.
+        let mut drain_it = fs.drain();
+        assert_eq!(drain_pulls.load(Ordering::Relaxed), 0);
+        drain_it.next().unwrap();
+        assert_eq!(drain_pulls.load(Ordering::Relaxed), 1);
+        let rest: Vec<_> = drain_it.collect();
+        assert_eq!(drain_pulls.load(Ordering::Relaxed), 2);
+        // The `iter` path was not used by `drain`.
+        assert_eq!(iter_pulls.load(Ordering::Relaxed), 1);
+        assert_eq!(rest.len(), 1);
     }
 }
