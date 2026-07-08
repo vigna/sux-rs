@@ -997,3 +997,27 @@ fn test_zero_width_copy_is_noop() {
 
     assert_zero_width_values(&dst, 4);
 }
+
+#[test]
+fn test_set_atomic_accepts_store_orderings() {
+    use std::sync::atomic::AtomicUsize;
+    // With bit width 7 over 64-bit words, index 9 straddles a word boundary
+    // (bit 63), exercising the cross-word CAS path as well as the aligned one.
+    // set_atomic must accept every valid store/RMW ordering, including Release
+    // and AcqRel (which are illegal for the internal load / CAS-failure slot and
+    // previously panicked). Reads use a valid load ordering.
+    for order in [
+        Ordering::Relaxed,
+        Ordering::Release,
+        Ordering::AcqRel,
+        Ordering::SeqCst,
+    ] {
+        let v = AtomicBitFieldVec::<Vec<AtomicUsize>>::new(7, 16);
+        v.set_atomic(0, 5, order);
+        v.set_atomic(9, 100, order);
+        v.set_atomic(15, 42, order);
+        assert_eq!(v.get_atomic(0, Ordering::Relaxed), 5);
+        assert_eq!(v.get_atomic(9, Ordering::Relaxed), 100);
+        assert_eq!(v.get_atomic(15, Ordering::Relaxed), 42);
+    }
+}

@@ -264,6 +264,19 @@ fn checked_bit_len(count: usize, bit_width: usize) -> usize {
         .expect("BitFieldVec length in bits (count * bit_width) overflows usize")
 }
 
+/// Maps a store/RMW `Ordering` to a valid ordering for the internal atomic
+/// *load* and the compare-exchange *failure* slot, both of which reject
+/// `Release`/`AcqRel`: `Release` -> `Relaxed`, `AcqRel` -> `Acquire`, others
+/// unchanged. The success slot keeps the caller's requested ordering.
+#[inline]
+fn load_ordering(order: Ordering) -> Ordering {
+    match order {
+        Ordering::Release => Ordering::Relaxed,
+        Ordering::AcqRel => Ordering::Acquire,
+        other => other,
+    }
+}
+
 impl<B: Backend<Word: Word>> BitFieldVec<B> {
     /// Creates a new vector from the given backend, bit width, and length.
     ///
@@ -1626,22 +1639,24 @@ impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>>
 
             if bit_index + self.bit_width <= wbits {
                 // this is consistent
-                let mut current = data.get_unchecked(word_index).load(order);
+                let mut current = data.get_unchecked(word_index).load(load_ordering(order));
                 loop {
                     let mut new = current;
                     new &= !(self.mask << bit_index);
                     new |= value << bit_index;
 
-                    match data
-                        .get_unchecked(word_index)
-                        .compare_exchange(current, new, order, order)
-                    {
+                    match data.get_unchecked(word_index).compare_exchange(
+                        current,
+                        new,
+                        order,
+                        load_ordering(order),
+                    ) {
                         Ok(_) => break,
                         Err(e) => current = e,
                     }
                 }
             } else {
-                let mut word = data.get_unchecked(word_index).load(order);
+                let mut word = data.get_unchecked(word_index).load(load_ordering(order));
                 // try to wait for the other thread to finish
                 fence(Ordering::Acquire);
                 loop {
@@ -1650,10 +1665,12 @@ impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>>
                         - <B::Word as PrimitiveAtomic>::Value::ONE;
                     new |= value << bit_index;
 
-                    match data
-                        .get_unchecked(word_index)
-                        .compare_exchange(word, new, order, order)
-                    {
+                    match data.get_unchecked(word_index).compare_exchange(
+                        word,
+                        new,
+                        order,
+                        load_ordering(order),
+                    ) {
                         Ok(_) => break,
                         Err(e) => word = e,
                     }
@@ -1667,17 +1684,21 @@ impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>>
                 // should try to synchronize the threads as much as possible
                 compiler_fence(Ordering::SeqCst);
 
-                let mut word = data.get_unchecked(word_index + 1).load(order);
+                let mut word = data
+                    .get_unchecked(word_index + 1)
+                    .load(load_ordering(order));
                 fence(Ordering::Acquire);
                 loop {
                     let mut new = word;
                     new &= !(self.mask >> (wbits - bit_index));
                     new |= value >> (wbits - bit_index);
 
-                    match data
-                        .get_unchecked(word_index + 1)
-                        .compare_exchange(word, new, order, order)
-                    {
+                    match data.get_unchecked(word_index + 1).compare_exchange(
+                        word,
+                        new,
+                        order,
+                        load_ordering(order),
+                    ) {
                         Ok(_) => break,
                         Err(e) => word = e,
                     }
