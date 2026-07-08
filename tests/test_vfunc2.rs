@@ -56,6 +56,7 @@ fn test_vfunc2_wide_u128_values() -> Result<()> {
 
     let func: VFunc2<u64, BitFieldVec<Box<[u128]>>> =
         VFunc2::try_par_new(&keys, &values, no_logging![])?;
+    assert!(func.validate().is_ok(), "wide-u128 VFunc2 must validate");
 
     for (&key, &expected) in keys.iter().zip(&values) {
         assert_eq!(func.get(key), expected, "key {key}");

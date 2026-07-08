@@ -7,7 +7,7 @@
 use value_traits::slices::SliceByValue;
 
 use super::shard_edge::FuseLge3Shards;
-use crate::bits::BitFieldVec;
+use crate::bits::{BitFieldVec, ValidateBacking};
 use crate::func::shard_edge::ShardEdge;
 use crate::traits::Word;
 use crate::utils::*;
@@ -127,6 +127,8 @@ impl<K: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: Sh
     /// if the signature is not the signature of a key.
     ///
     /// This method is mainly useful in the construction of compound functions.
+    ///
+    /// See [`validate`](Self::validate) before querying deserialized instances.
     #[inline]
     pub fn get_by_sig(&self, sig: S) -> D::Value {
         let edge = self.shard_edge.edge(sig);
@@ -143,9 +145,37 @@ impl<K: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: Sh
 
     /// Returns the value associated with the given key, or a random value if the
     /// key is not present.
+    ///
+    /// If this instance was deserialized from an untrusted source, call
+    /// [`validate`](Self::validate) first: this method performs unchecked reads
+    /// that assume the builder-established layout invariants.
     #[inline(always)]
     pub fn get(&self, key: impl Borrow<K>) -> D::Value {
         self.get_by_sig(K::to_sig(key.borrow(), self.seed))
+    }
+}
+
+impl<K: ?Sized, D: ValidateBacking, S: Sig, E: ShardEdge<S, 3>> VFunc<K, D, S, E> {
+    /// Checks the invariants relied upon by [`get`](Self::get), for use after
+    /// deserializing from an untrusted source.
+    ///
+    /// Verifies that the backing storage is internally consistent and large
+    /// enough that the unchecked edge reads performed by `get` cannot go out of
+    /// bounds. On `Ok`, `get` is memory-safe for any key; otherwise an error is
+    /// returned.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        let shard_bits = self.shard_edge.shard_high_bits();
+        anyhow::ensure!(
+            shard_bits < usize::BITS,
+            "shard_high_bits {shard_bits} is too large"
+        );
+        let num_shards = 1usize << shard_bits;
+        let required = self
+            .shard_edge
+            .num_vertices()
+            .checked_mul(num_shards)
+            .ok_or_else(|| anyhow::anyhow!("num_vertices * num_shards overflows usize"))?;
+        self.data.validate_capacity(required)
     }
 }
 
@@ -791,3 +821,23 @@ mod build {
         }
     }
 } // mod build
+
+#[cfg(all(test, feature = "rayon"))]
+mod validate_tests {
+    use super::*;
+    use crate::bits::BitFieldVec;
+    use dsi_progress_logger::no_logging;
+
+    #[test]
+    fn test_validate() {
+        let keys: Vec<usize> = (0..1000).collect();
+        let values: Vec<usize> = (0..1000).collect();
+        let mut func =
+            VFunc::<usize, BitFieldVec<Box<[usize]>>>::try_par_new(&keys, &values, no_logging![])
+                .unwrap();
+        assert!(func.validate().is_ok());
+        // Truncating the data backing makes the edge reads go out of bounds.
+        func.data = BitFieldVec::<Vec<usize>>::new(10, 1).into();
+        assert!(func.validate().is_err());
+    }
+}

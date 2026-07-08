@@ -174,6 +174,8 @@ impl<
     ///
     /// This method is mainly useful in the construction of compound
     /// functions.
+    ///
+    /// See [`validate`](Self::validate) before querying deserialized instances.
     #[inline]
     pub fn get_by_sig(&self, sig: S) -> D::Value {
         let idx = self.first.get_by_sig(sig);
@@ -186,9 +188,52 @@ impl<
 
     /// Retrieves the value associated with the given key, or an arbitrary
     /// value if the key was not in the original set.
+    ///
+    /// If this instance was deserialized from an untrusted source, call
+    /// [`validate`](Self::validate) first: this method performs unchecked reads
+    /// that assume the builder-established layout invariants.
     #[inline(always)]
     pub fn get(&self, key: impl Borrow<K>) -> D::Value {
         self.get_by_sig(K::to_sig(key.borrow(), self.first.seed))
+    }
+}
+
+impl<
+    K: ?Sized,
+    D: SliceByValue<Value: Word + PrimitiveNumberAs<u128>>
+        + crate::bits::ValidateBacking
+        + crate::traits::BitWidth,
+    S: Sig,
+    E: ShardEdge<S, 3>,
+    F: ShardEdge<S, 3>,
+> VFunc2<K, D, S, E, F>
+{
+    /// Checks the invariants relied upon by [`get`](Self::get), for use after
+    /// deserializing from an untrusted source.
+    ///
+    /// Validates both underlying functions and that `remap` covers the whole
+    /// output range of the first function, so the unchecked `remap` index in
+    /// `get` cannot go out of bounds. On `Ok`, `get` is memory-safe for any key.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        self.first.validate()?;
+        self.second.validate()?;
+        let r = crate::traits::BitWidth::bit_width(&self.first.data);
+        anyhow::ensure!(r < 128, "first-function bit width {r} is too large");
+        // The first function outputs values in `[0, 2^r)`; `escape` must be its
+        // maximum `2^r - 1` so that any non-escape index is `< escape`.
+        let max = (1u128 << r) - 1;
+        anyhow::ensure!(
+            self.escape.as_to::<u128>() == max,
+            "escape does not match the first-function width"
+        );
+        let max_usize =
+            usize::try_from(max).map_err(|_| anyhow::anyhow!("escape range exceeds usize"))?;
+        anyhow::ensure!(
+            self.remap.len() >= max_usize,
+            "remap covers {} entries but {max_usize} are required",
+            self.remap.len()
+        );
+        Ok(())
     }
 }
 

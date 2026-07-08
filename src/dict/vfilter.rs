@@ -110,6 +110,19 @@ impl<K: ?Sized, D: SliceByValue, S, E> VFilter<K, D, S, E> {
     }
 }
 
+impl<K: ?Sized, D: SliceByValue + crate::bits::ValidateBacking, S: Sig, E: ShardEdge<S, 3>>
+    VFilter<K, D, S, E>
+{
+    /// Checks the invariants relied upon by [`contains`](Self::contains), for
+    /// use after deserializing from an untrusted source.
+    ///
+    /// Delegates to the underlying [`VFunc::validate`]; on `Ok`, `contains` is
+    /// memory-safe for any key.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        self.func.validate()
+    }
+}
+
 impl<K: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: ShardEdge<S, 3>>
     VFilter<K, D, S, E>
 where
@@ -125,6 +138,8 @@ where
     ///
     /// This is the signature-level entry point; most callers should use
     /// [`contains`] instead.
+    ///
+    /// See [`validate`](Self::validate) before querying deserialized instances.
     ///
     /// [`contains`]: Self::contains
     #[inline(always)]
@@ -166,6 +181,10 @@ where
     /// # #[cfg(not(feature = "rayon"))]
     /// # fn main() {}
     /// ```
+    ///
+    /// If this instance was deserialized from an untrusted source, call
+    /// [`validate`](Self::validate) first: it performs unchecked reads that
+    /// assume the builder-established layout invariants.
     ///
     /// [`contains_by_sig`]: Self::contains_by_sig
     #[inline]

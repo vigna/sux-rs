@@ -340,6 +340,49 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
         (&self.bits.as_ref()[word_index]) as *const _
     }
 
+    /// Checks the internal invariants relied upon by the unchecked accessors.
+    ///
+    /// Intended to be called after deserializing a [`BitFieldVec`] from an
+    /// untrusted source: it verifies that `bit_width` fits the word width, that
+    /// the cached `mask` matches `bit_width`, and that the backing storage is
+    /// large enough to hold `len` values. Once it returns `Ok`, the unchecked
+    /// accessors (and hence the safe getters) cannot read out of bounds.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        let w = B::Word::BITS as usize; // BITS <= 128, lossless
+        anyhow::ensure!(
+            self.bit_width <= w,
+            "bit_width {} exceeds the word width {w}",
+            self.bit_width
+        );
+        anyhow::ensure!(
+            self.mask == mask::<B::Word>(self.bit_width),
+            "cached mask does not match bit_width {}",
+            self.bit_width
+        );
+        anyhow::ensure!(
+            self.len == 0 || !self.bits.as_ref().is_empty(),
+            "a non-empty vector needs at least one backing word (len = {})",
+            self.len
+        );
+        let needed = self
+            .len
+            .checked_mul(self.bit_width)
+            .ok_or_else(|| anyhow::anyhow!("length in bits (len * bit_width) overflows usize"))?;
+        let have = self
+            .bits
+            .as_ref()
+            .len()
+            .checked_mul(w)
+            .ok_or_else(|| anyhow::anyhow!("backing size in bits overflows usize"))?;
+        anyhow::ensure!(
+            have >= needed,
+            "backing storage holds {have} bits but {needed} are required for {} values of width {}",
+            self.len,
+            self.bit_width
+        );
+        Ok(())
+    }
+
     /// Like [`SliceByValue::index_value`], but using unaligned reads.
     ///
     /// This method can be used only for bit width smaller than or equal to
@@ -2204,6 +2247,74 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> IntoUncheckedBackIterator
     }
 }
 
+/// Backing storage whose deserialization invariants can be validated.
+///
+/// A static function uses this, after deserializing from an untrusted source,
+/// to verify that an unchecked read of any index in `0..required_slots` stays
+/// within the backing.
+pub trait ValidateBacking {
+    /// Validates internal invariants and that indices in `0..required_slots`
+    /// are safe to read with the unchecked accessors.
+    fn validate_capacity(&self, required_slots: usize) -> anyhow::Result<()>;
+}
+
+impl<W: Word> ValidateBacking for Box<[W]> {
+    fn validate_capacity(&self, required_slots: usize) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.len() >= required_slots,
+            "backing slice holds {} values but {required_slots} are required",
+            self.len()
+        );
+        Ok(())
+    }
+}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> ValidateBacking for BitFieldVec<B> {
+    fn validate_capacity(&self, required_slots: usize) -> anyhow::Result<()> {
+        self.validate()?;
+        if required_slots > 0 {
+            if self.bit_width == 0 {
+                // Any zero-width read hits word 0, so a single word suffices.
+                anyhow::ensure!(
+                    !self.bits.as_ref().is_empty(),
+                    "zero-width backing needs at least one word"
+                );
+            } else {
+                anyhow::ensure!(
+                    self.len >= required_slots,
+                    "backing holds {} values but {required_slots} are required",
+                    self.len
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> ValidateBacking for BitFieldVecU<B> {
+    fn validate_capacity(&self, required_slots: usize) -> anyhow::Result<()> {
+        self.0.validate_capacity(required_slots)?;
+        anyhow::ensure!(
+            test_unaligned!(B::Word, self.0.bit_width),
+            "bit width {} does not satisfy the constraints for unaligned reads",
+            self.0.bit_width
+        );
+        // Unaligned reads need a trailing padding word past the last value.
+        let w = B::Word::BITS as usize; // BITS <= 128, lossless
+        let needed_words = self
+            .0
+            .len
+            .checked_mul(self.0.bit_width)
+            .ok_or_else(|| anyhow::anyhow!("length in bits overflows usize"))?
+            .div_ceil(w);
+        anyhow::ensure!(
+            self.0.bits.as_ref().len() > needed_words,
+            "unaligned backing is missing its trailing padding word"
+        );
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2303,5 +2414,49 @@ mod tests {
                 assert_eq!(dest_actual, dest_expected);
             }
         }
+    }
+
+    #[test]
+    fn test_validate() {
+        // Builder-produced vectors are valid.
+        assert!(BitFieldVec::<Vec<usize>>::new(7, 100).validate().is_ok());
+        assert!(BitFieldVec::<Vec<usize>>::new(0, 0).validate().is_ok());
+        assert!(BitFieldVec::<Vec<usize>>::new(0, 5).validate().is_ok());
+
+        // bit_width exceeds the word width.
+        let bad = BitFieldVec::<Vec<usize>> {
+            bits: vec![0; 4],
+            bit_width: 65,
+            mask: usize::MAX,
+            len: 1,
+        };
+        assert!(bad.validate().is_err());
+
+        // mask inconsistent with bit_width.
+        let bad = BitFieldVec::<Vec<usize>> {
+            bits: vec![0; 4],
+            bit_width: 8,
+            mask: 0,
+            len: 1,
+        };
+        assert!(bad.validate().is_err());
+
+        // backing too small for len (100 * 10 = 1000 bits > 64).
+        let bad = BitFieldVec::<Vec<usize>> {
+            bits: vec![0; 1],
+            bit_width: 10,
+            mask: mask::<usize>(10),
+            len: 100,
+        };
+        assert!(bad.validate().is_err());
+
+        // Zero-width but non-empty needs at least one backing word.
+        let bad = BitFieldVec::<Vec<usize>> {
+            bits: vec![],
+            bit_width: 0,
+            mask: 0,
+            len: 5,
+        };
+        assert!(bad.validate().is_err());
     }
 }

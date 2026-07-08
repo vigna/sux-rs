@@ -47,7 +47,9 @@ where
             VBuilder::default().offline(offline).low_mem(low_mem),
             &mut pl,
         )?;
+        assert!(func.validate().is_ok(), "aligned VFunc must validate");
         let func = func.try_into_unaligned().unwrap();
+        assert!(func.validate().is_ok(), "unaligned VFunc must validate");
         pl.start("Querying...");
         for i in 0..n {
             assert_eq!(i, func.get(i));
@@ -114,6 +116,7 @@ where
             VBuilder::default().offline(offline).low_mem(low_mem),
             &mut pl,
         )?;
+        assert!(filter.validate().is_ok(), "VFilter must validate");
         pl.start("Querying (positive)...");
         for i in 0..n {
             assert!(filter.contains(i), "Contains failed for {}", i);
