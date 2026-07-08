@@ -418,6 +418,7 @@ pub(crate) struct RetryState {
     prng: SmallRng,
     dup_count: u32,
     local_dup_count: u32,
+    max_shard_too_big: u32,
     unsolvable_count: u32,
 }
 
@@ -464,6 +465,15 @@ impl RetryState {
                         Ok(None)
                     }
                     SolveError::MaxShardTooBig => {
+                        self.max_shard_too_big += 1;
+                        if self.max_shard_too_big >= 100 {
+                            pl.error(format_args!(
+                                "The maximum shard was too big on more than 100 attempts"
+                            ));
+                            return Err(anyhow::anyhow!(
+                                "the maximum shard was too big on more than 100 attempts; try a larger eps"
+                            ));
+                        }
                         pl.warn(format_args!(
                             "The maximum shard is too big, trying again with a different seed..."
                         ));
@@ -682,7 +692,7 @@ impl<
         for<'a> ShardDataIter<'a, D>: Send,
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
-        let mut rs = self.retry_state(pl);
+        let mut rs = self.retry_state(pl)?;
         let total_start = Instant::now();
 
         loop {
@@ -758,18 +768,24 @@ impl<
     /// [`try_populate_and_build`] performs at the start.
     ///
     /// [`try_populate_and_build`]: Self::try_populate_and_build
-    pub(crate) fn retry_state(&mut self, pl: &mut impl ProgressLog) -> RetryState {
+    pub(crate) fn retry_state(&mut self, pl: &mut impl ProgressLog) -> anyhow::Result<RetryState> {
+        anyhow::ensure!(
+            self.eps.is_finite() && self.eps >= 0.0,
+            "eps must be finite and non-negative, got {}",
+            self.eps
+        );
         self.init_shards_and_seed();
         pl.info(format_args!(
             "Using a store with 2^{} buckets",
             self.log2_buckets
         ));
-        RetryState {
+        Ok(RetryState {
             prng: SmallRng::seed_from_u64(self.seed),
             dup_count: 0,
             local_dup_count: 0,
+            max_shard_too_big: 0,
             unsolvable_count: 0,
-        }
+        })
     }
 
     /// Populates a shard store from keys and values, then calls a build
@@ -827,7 +843,7 @@ impl<
     where
         SigVal<S, V>: RadixKey,
     {
-        let mut rs = self.retry_state(pl);
+        let mut rs = self.retry_state(pl)?;
         let total_start = Instant::now();
 
         loop {
@@ -916,7 +932,7 @@ impl<
             !self.offline,
             "offline mode is not supported by the parallel builder; use the sequential constructor (try_new_with_builder)"
         );
-        let mut rs = self.retry_state(pl);
+        let mut rs = self.retry_state(pl)?;
         let n = keys.len();
         let total_start = Instant::now();
 
@@ -2258,5 +2274,32 @@ impl<
             }
         }
         pl.done();
+    }
+}
+
+#[cfg(test)]
+mod retry_state_tests {
+    use super::*;
+
+    /// The `MaxShardTooBig` retry counter is capped: the first 99 occurrences
+    /// are retried, the 100th is fatal, so a pathological configuration cannot
+    /// loop forever.
+    #[test]
+    fn max_shard_too_big_is_bounded() {
+        let mut pl = no_logging![];
+        let mut rs = RetryState {
+            prng: SmallRng::seed_from_u64(0),
+            dup_count: 0,
+            local_dup_count: 0,
+            max_shard_too_big: 0,
+            unsolvable_count: 0,
+        };
+        for i in 0..99 {
+            let r =
+                rs.handle_solve_result(Err::<(), _>(SolveError::MaxShardTooBig.into()), &mut pl);
+            assert!(matches!(r, Ok(None)), "attempt {i} should be retried");
+        }
+        let r = rs.handle_solve_result(Err::<(), _>(SolveError::MaxShardTooBig.into()), &mut pl);
+        assert!(r.is_err(), "the 100th MaxShardTooBig must be fatal");
     }
 }

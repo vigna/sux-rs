@@ -395,7 +395,7 @@ mod build {
                 max_lcp: 0,
             };
 
-            let mut rs = builder.retry_state(pl);
+            let mut rs = builder.retry_state(pl)?;
 
             loop {
                 let seed = rs.next_seed();
@@ -1203,7 +1203,7 @@ mod build {
                 max_lcp: 0,
             };
 
-            let mut rs = builder.retry_state(pl);
+            let mut rs = builder.retry_state(pl)?;
 
             loop {
                 let seed = rs.next_seed();
