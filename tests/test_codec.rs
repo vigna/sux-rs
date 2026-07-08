@@ -136,6 +136,22 @@ fn test_zero_codec() {
 }
 
 #[test]
+#[should_panic(expected = "cannot encode a nonzero value")]
+fn test_zero_codec_rejects_nonzero_symbol() {
+    let freqs: HashMap<u64, usize> = HashMap::new();
+    let coder = <ZeroCodec as Codec<u64>>::build_coder(&ZeroCodec, &freqs);
+    // Encoding a nonzero value violates the ZeroCodec contract (debug_assert).
+    let _ = coder.encode(7);
+}
+
+#[test]
+fn test_zero_codec_encodes_default() {
+    let freqs: HashMap<u64, usize> = HashMap::new();
+    let coder = <ZeroCodec as Codec<u64>>::build_coder(&ZeroCodec, &freqs);
+    assert_eq!(coder.encode(0), Some(0));
+}
+
+#[test]
 fn test_huffman_single_symbol() {
     let f = freqs(&[(42, 100)]);
     let coder = HuffmanConf::new().build_coder(&f);

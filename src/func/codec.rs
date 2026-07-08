@@ -129,9 +129,9 @@ pub trait Decoder<W> {
 
 /// Degenerate codec that always emits length-0 codewords.
 ///
-/// Used when the value distribution has a single distinct value (or
-/// none): every key resolves to that value (or zero), so no bits need
-/// to be stored.
+/// Used when the value distribution is empty or entirely zero: every value
+/// decodes to zero, so no bits need to be stored. It cannot represent a
+/// nonzero value.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ZeroCodec;
 
@@ -153,7 +153,11 @@ impl<W: PrimitiveInteger + Hash> Codec<W> for ZeroCodec {
 
 impl<W: PrimitiveInteger> Coder<W> for ZeroCoder {
     type Decoder = ZeroDecoder;
-    fn encode(&self, _symbol: W) -> Option<usize> {
+    fn encode(&self, symbol: W) -> Option<usize> {
+        debug_assert!(
+            symbol == W::default(),
+            "ZeroCodec cannot encode a nonzero value"
+        );
         Some(0)
     }
     fn codeword_len(&self, _symbol: W) -> u32 {
