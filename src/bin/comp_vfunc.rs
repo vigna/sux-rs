@@ -16,6 +16,7 @@ use rand::{RngExt, SeedableRng};
 use rdst::RadixKey;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::num::NonZeroUsize;
 use sux::bits::BitVec;
 use sux::cli::{BuilderArgs, read_concat_lines, str_slice_from_offsets};
 use sux::func::codec::HuffmanConf;
@@ -65,10 +66,10 @@ struct Args {
     /// Generate values with a Zipf distribution (exponent 1) over
     /// [0 . . K).​
     #[arg(long)]
-    zipf: Option<usize>,
+    zipf: Option<NonZeroUsize>,
     /// Generate values uniformly distributed in [0 . . K).​
     #[arg(long)]
-    uniform: Option<usize>,
+    uniform: Option<NonZeroUsize>,
     /// Save the structure in unaligned form (faster, if available).​
     #[arg(long, short)]
     unaligned: bool,
@@ -171,11 +172,11 @@ fn generate_synthetic_values(args: &Args, n: usize) -> Result<Vec<usize>> {
             .map(|_| rng.random::<u64>().trailing_zeros() as usize)
             .collect())
     } else if let Some(k) = args.zipf {
-        let cdf = zipf_cdf(1.0, k);
+        let cdf = zipf_cdf(1.0, k.get());
         Ok((0..n).map(|_| sample_zipf(&cdf, &mut rng)).collect())
     } else if let Some(k) = args.uniform {
         Ok((0..n)
-            .map(|_| (rng.random::<u64>() % k as u64) as usize)
+            .map(|_| (rng.random::<u64>() % k.get() as u64) as usize)
             .collect())
     } else {
         bail!("one of --values, --geometric, --zipf, or --uniform is required");
