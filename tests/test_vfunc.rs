@@ -250,3 +250,22 @@ fn test_par_builder_rejects_offline() {
         "expected an offline-rejection error, got: {err}"
     );
 }
+
+/// A non-finite or negative `eps` is rejected up front rather than triggering an
+/// unbounded shard-resizing retry loop.
+#[test]
+fn test_builder_rejects_invalid_eps() {
+    for bad in [-1.0_f64, f64::NAN, f64::INFINITY] {
+        let result = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
+            FromCloneableIntoIterator::from(0..1000),
+            FromCloneableIntoIterator::from(0_usize..),
+            VBuilder::default().eps(bad),
+            &mut ProgressLogger::default(),
+        );
+        let err = result.expect_err("builder must reject invalid eps");
+        assert!(
+            err.to_string().contains("must be finite"),
+            "expected an eps-validation error for {bad}, got: {err}"
+        );
+    }
+}
