@@ -10,7 +10,7 @@ use dsi_progress_logger::no_logging;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::bits::BitFieldVec;
-use sux::func::{LcpMmphf, LcpMmphfInt, SignedFunc};
+use sux::func::{Lcp2MmphfInt, Lcp2MmphfStr, LcpMmphf, LcpMmphfInt, SignedFunc};
 use sux::traits::TryIntoUnaligned;
 use sux::utils::FromSlice;
 
@@ -244,5 +244,72 @@ fn test_bit_signed_u64_1000() -> Result<()> {
         assert_eq!(func.get(key), Some(i), "key {key} at position {i}");
     }
     assert_eq!(func.get(0), None);
+    Ok(())
+}
+
+// ── Signed Lcp2Mmphf tests ──────────────────────────────────────────
+
+type SignedLcp2MmphfStr = SignedFunc<Lcp2MmphfStr, Box<[u64]>>;
+type SignedLcp2MmphfInt<T> = SignedFunc<Lcp2MmphfInt<T>, Box<[u64]>>;
+type BitSignedLcp2MmphfInt<T> = SignedFunc<Lcp2MmphfInt<T>, BitFieldVec<Box<[usize]>>>;
+
+#[test]
+fn test_lcp2_u64_small() -> Result<()> {
+    let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    let func: SignedLcp2MmphfInt<u64> =
+        SignedLcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    let func = func.try_into_unaligned()?;
+    for (i, &key) in keys.iter().enumerate() {
+        assert_eq!(func.get(key), Some(i), "key {key}");
+    }
+    assert_eq!(func.get(999), None);
+    Ok(())
+}
+
+#[test]
+fn test_lcp2_u64_1000() -> Result<()> {
+    let mut rng = SmallRng::seed_from_u64(0);
+    let mut keys: Vec<u64> = (0..1000).map(|_| rng.random::<u64>()).collect();
+    keys.sort();
+    keys.dedup();
+    let n = keys.len();
+    let func: SignedLcp2MmphfInt<u64> =
+        SignedLcp2MmphfInt::try_new(FromSlice::new(&keys), n, no_logging![])?;
+    let func = func.try_into_unaligned()?;
+    for (i, &key) in keys.iter().enumerate() {
+        assert_eq!(func.get(key), Some(i), "key {key}");
+    }
+    assert_eq!(func.get(u64::MAX), None);
+    Ok(())
+}
+
+#[test]
+fn test_lcp2_str_small() -> Result<()> {
+    let mut keys = vec![
+        "alpha".to_owned(),
+        "beta".to_owned(),
+        "delta".to_owned(),
+        "gamma".to_owned(),
+    ];
+    keys.sort();
+    let func: SignedLcp2MmphfStr =
+        SignedLcp2MmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+    let func = func.try_into_unaligned()?;
+    for (i, key) in keys.iter().enumerate() {
+        assert_eq!(func.get(key.as_str()), Some(i), "key {key}");
+    }
+    assert_eq!(func.get("absent"), None);
+    Ok(())
+}
+
+#[test]
+fn test_lcp2_bit_signed_u64() -> Result<()> {
+    let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
+    let func: BitSignedLcp2MmphfInt<u64> =
+        BitSignedLcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
+    let func = func.try_into_unaligned()?;
+    for (i, &key) in keys.iter().enumerate() {
+        assert_eq!(func.get(key), Some(i), "key {key}");
+    }
     Ok(())
 }
