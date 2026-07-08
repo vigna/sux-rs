@@ -1,6 +1,6 @@
 # Change Log
 
-## unreleased
+## [0.16.0] - 2026-07-08
 
 ### New
 
@@ -41,6 +41,10 @@
 - New `BitFieldVec::wrap` method to create a bit-field vector with a
   given backend.
 
+- New `validate` method on `BitFieldVec`, `VFunc`, `VFunc2`, and `VFilter`
+  that checks the structure's invariants after deserializing from an
+  untrusted source, so that the safe getters cannot read out of bounds.
+
 ### Fixed
 
 - Unsound reference-based `From` implementations between `BitVec`,
@@ -71,6 +75,26 @@
 
 - Fixed subtraction overflow when appending to a vector with excess capacity.
 
+- Safe query and access paths now use checked arithmetic and mask dirty
+  padding bits, preventing overflow panics and spurious rank/select results
+  on structures built from unsanitized input.
+
+- A `BitFieldVec` of bit width zero always keeps a backing word, so
+  zero-width vectors no longer read out of bounds.
+
+- `Lcp2Mmphf` queries on absent keys no longer index the remap table out of
+  bounds, and LCP bit-lengths are stored as `u32` on all targets (they
+  previously wrapped above 65535 bits on 32-bit platforms).
+
+- `VFunc2` handles wide (`u128`) values and 32-bit `usize` losslessly:
+  distinct values sharing their low bits no longer collide.
+
+- The parallel `VBuilder` rejects `offline` mode instead of silently
+  ignoring it, bounds `MaxShardTooBig` retries, and validates `eps`.
+
+- Several CLI utilities validate their arguments instead of dividing by zero
+  or looping forever.
+
 ### Improved
 
 - Structured logging for structures with substructures.
@@ -89,6 +113,14 @@
 - Thanks to the new ε-serde, `VFilter` does not have `F` anymore
   as parameter. Moreover, other structures such as `VFunc2` will
   actually map into memory their bulk data.
+
+- **Breaking:** the two-argument bit-range methods of `BitVecValueOps`,
+  `get_value`/`get_value_unchecked`, are renamed to
+  `get_bits`/`get_bits_unchecked` to avoid clashing with the index-based
+  `SliceByValue` methods of the same names.
+
+- **Breaking:** `UnalignedConversionError` is now a structured
+  (`non_exhaustive`) enum instead of a wrapper around a `String`.
 
 ## [0.14.0] - 2026-04-11
 
