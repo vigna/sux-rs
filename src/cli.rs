@@ -23,7 +23,9 @@ pub fn read_concat_lines(filename: &str, n: usize) -> anyhow::Result<(String, Ve
     use lender::FallibleLender;
 
     let mut buffer = String::new();
-    let mut offsets: Vec<usize> = Vec::with_capacity(n.saturating_add(1));
+    // Cap the initial capacity: the default parallel path passes n = usize::MAX
+    // (read until EOF); the Vec grows naturally past the cap.
+    let mut offsets: Vec<usize> = Vec::with_capacity(n.min(1 << 20).saturating_add(1));
     offsets.push(0);
     let mut lender = crate::utils::DekoBufLineLender::from_path(filename)?;
     let mut count = 0usize;
@@ -249,4 +251,23 @@ pub struct LogIntervalArg {
     /// interpreted as milliseconds. Examples: "10s", "1m30s", "500".​
     #[arg(long, value_parser = parse_duration, default_value = "10s")]
     pub log_interval: Duration,
+}
+
+#[cfg(all(test, feature = "deko"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_read_concat_lines_unbounded_n() {
+        // The default parallel path passes n = usize::MAX; the initial capacity
+        // must be capped so this does not abort with a capacity overflow.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("keys.txt");
+        std::fs::write(&path, "alpha\nbeta\ngamma\n").unwrap();
+        let (_buffer, offsets) = read_concat_lines(path.to_str().unwrap(), usize::MAX).unwrap();
+        // Three lines -> four monotone offsets, starting at 0.
+        assert_eq!(offsets.len(), 4);
+        assert_eq!(offsets[0], 0);
+        assert!(offsets.windows(2).all(|w| w[0] <= w[1]));
+    }
 }
