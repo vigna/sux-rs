@@ -346,6 +346,20 @@ fn build_pioneers(words: impl AsRef<[usize]> + BitLength) -> (EfDict<usize>, Vec
     let num_words = len.div_ceil(WORD_BITS);
     debug_assert!(words.len() >= num_words);
 
+    // The constructors document a panic on unbalanced input. Validate up front:
+    // 1-bits open, 0-bits close; the depth must never go negative and must
+    // return to zero over the logical length.
+    let mut depth: i64 = 0;
+    for i in 0..len {
+        if words[i / WORD_BITS] & (1usize << (i % WORD_BITS)) != 0 {
+            depth += 1;
+        } else {
+            depth -= 1;
+            assert!(depth >= 0, "Unbalanced parentheses");
+        }
+    }
+    assert!(depth == 0, "Unbalanced parentheses");
+
     let mut count = vec![0i32; num_words];
     let mut residual = vec![0usize; num_words];
 
@@ -610,7 +624,7 @@ impl<
 
         // Try to find the close within the same word
         let result = find_near_close(words[word_idx] >> bit_idx);
-        if result < WORD_BITS - bit_idx {
+        if result < (WORD_BITS - bit_idx).min(self.paren.len() - pos) {
             return Some(word_idx * WORD_BITS + bit_idx + result);
         }
 

@@ -1,4 +1,5 @@
 use sux::bal_paren::jacobson::JacobsonBalParen;
+use sux::bit_vec;
 use sux::bits::{BitFieldVec, BitVec};
 use sux::list::prefix_sum_int_list::PrefixSumIntList;
 use sux::prelude::BalParen;
@@ -72,12 +73,58 @@ fn test_small_patterns() {
     }
 }
 
-/* TODO
 #[test]
+#[should_panic(expected = "Unbalanced parentheses")]
 fn test_wrong_paren_count() {
     let _ = JacobsonBalParen::new(from_pattern("()("));
 }
-*/
+
+#[test]
+#[should_panic(expected = "Unbalanced parentheses")]
+fn test_unbalanced_single_open_panics() {
+    let _ = JacobsonBalParen::new(bit_vec![1]);
+}
+
+#[test]
+#[should_panic(expected = "Unbalanced parentheses")]
+fn test_unbalanced_two_opens_panics() {
+    let _ = JacobsonBalParen::new(bit_vec![1, 1]);
+}
+
+#[test]
+#[should_panic(expected = "Unbalanced parentheses")]
+fn test_unbalanced_missing_close_panics() {
+    let _ = JacobsonBalParen::new(bit_vec![1, 1, 0]);
+}
+
+#[test]
+#[should_panic(expected = "Unbalanced parentheses")]
+fn test_unbalanced_extra_close_panics() {
+    let _ = JacobsonBalParen::new(bit_vec![1, 0, 0]);
+}
+
+#[test]
+fn test_find_close_non_word_multiple_length() {
+    let pattern = format!("{}(())", "()".repeat(31));
+    let paren = from_pattern(&pattern);
+    let bp = JacobsonBalParen::new(&paren);
+    let len = pattern.len();
+    assert_eq!(len, 66);
+
+    for (open, expected_close) in [(0, 1), (62, 65), (63, 64)] {
+        match bp.find_close(open) {
+            Some(close) => {
+                assert!(
+                    close < len,
+                    "find_close({open}) returned {close} outside len {len}"
+                );
+                assert_eq!(pattern.as_bytes()[close], b')');
+                assert_eq!(close, expected_close, "find_close({open}) failed");
+            }
+            None => panic!("find_close({open}) returned None"),
+        }
+    }
+}
 
 #[test]
 fn test_cross_word_boundary() {
