@@ -97,6 +97,8 @@ fn mem_usage<S: Struct + MemSize + MemDbg + BitLength>(
     name: &str,
 ) {
     let mut rng = SmallRng::seed_from_u64(0);
+    assert!(len >= 2, "len must be at least 2");
+    assert!(density > 0.0 && density <= 1.0, "density must be in (0, 1]");
     let (density0, density1) = if uniform {
         (density, density)
     } else {
