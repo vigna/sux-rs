@@ -29,10 +29,12 @@
 //!   [`LcpMmphfInt`]/[`LcpMmphf`] that use a [`VFunc2`]-like technique to reduce
 //!   space usage, at the cost of slightly slower queries.
 //!
-//! - [`SignedFunc`] wraps any of the above with per-key verification hashes,
-//!   returning `None` for keys outside the original set. Use `Box<[W]>` for
-//!   full-width hashes or [`BitFieldVec`] for sub-word-width hashes. Use
-//!   concrete types like `SignedFunc<LcpMmphfStr, Box<[u64]>>`.
+//! - [`SignedFunc`] wraps a [`VFunc`], [`LcpMmphfInt`]/[`LcpMmphf`], or
+//!   [`Lcp2MmphfInt`]/[`Lcp2Mmphf`] (but not [`VFunc2`]) with per-key
+//!   verification hashes, returning `None` for keys outside the original set.
+//!   Use `Box<[W]>` for full-width hashes or [`BitFieldVec`] for
+//!   sub-word-width hashes. Use concrete types like
+//!   `SignedFunc<LcpMmphfStr, Box<[u64]>>`.
 //!
 //! Most structures implement the [`TryIntoUnaligned`] trait, allowing them
 //! to be converted into (usually faster) structures using unaligned access.
