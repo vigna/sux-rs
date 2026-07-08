@@ -1392,12 +1392,10 @@ impl<K: ?Sized, W: Word, S, E> TryIntoUnaligned for CompVFunc<K, BitVec<Box<[W]>
     fn try_into_unaligned(self) -> Result<Self::Unaligned, UnalignedConversionError> {
         let esym = Decoder::escaped_symbols_len(&self.decoder) as usize;
         if esym > 0 && !test_unaligned_any_pos!(W, esym) {
-            return Err(UnalignedConversionError(format!(
-                "escaped-symbol bit width {esym} does not satisfy the constraints \
-                 for arbitrary-position unaligned reads on {} (must be <= {})",
-                core::any::type_name::<W>(),
-                W::BITS as usize - 7
-            )));
+            return Err(UnalignedConversionError::InvalidPosition {
+                bit_width: esym,
+                word_bits: W::BITS,
+            });
         }
         Ok(CompVFunc {
             shard_edge: self.shard_edge,

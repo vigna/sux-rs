@@ -1021,3 +1021,22 @@ fn test_set_atomic_accepts_store_orderings() {
         assert_eq!(v.get_atomic(15, Ordering::Relaxed), 42);
     }
 }
+
+#[test]
+fn test_unaligned_conversion_error() {
+    use sux::traits::{TryIntoUnaligned, UnalignedConversionError};
+    let word_bits = usize::BITS;
+    // W::BITS - 5 is a valid field width but not a valid unaligned width
+    // (not <= W-6, not == W-4, not == W).
+    let bad = usize::try_from(word_bits - 5).unwrap();
+    let v: BitFieldVec<Box<[usize]>> = BitFieldVec::<Vec<usize>>::new(bad, 4).into();
+    let err = v.try_into_unaligned().unwrap_err();
+    assert_eq!(
+        err,
+        UnalignedConversionError::InvalidBitWidth {
+            bit_width: bad,
+            word_bits,
+        }
+    );
+    assert!(err.to_string().contains(&format!("bit width {bad}")));
+}
