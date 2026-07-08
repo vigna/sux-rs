@@ -221,3 +221,33 @@ fn test_par_slice_u8() -> Result<()> {
     }
     Ok(())
 }
+
+/// Querying absent keys must never index the `remap` table out of bounds. The
+/// first VFunc can return any frequent-LCP index in `[0, escape)`, but
+/// construction previously sized `remap` to only the frequent lengths, so an
+/// absent key landing in `[num_freq, escape)` panicked in safe `get`.
+#[test]
+fn test_absent_keys_do_not_panic() -> Result<()> {
+    let mut rng = SmallRng::seed_from_u64(0);
+    let mut keys: Vec<u64> = (0..2000).map(|_| rng.random::<u64>()).collect();
+    keys.sort();
+    keys.dedup();
+    let n = keys.len();
+    let func = Lcp2MmphfInt::<u64>::try_new(FromSlice::new(&keys), n, no_logging![])?
+        .try_into_unaligned()
+        .unwrap();
+    let present: std::collections::HashSet<u64> = keys.iter().copied().collect();
+    let mut probe = SmallRng::seed_from_u64(12345);
+    let mut checked = 0u64;
+    for _ in 0..100_000 {
+        let k = probe.random::<u64>();
+        if present.contains(&k) {
+            continue;
+        }
+        // The result is arbitrary for an absent key, but it must not panic.
+        std::hint::black_box(func.get(k));
+        checked += 1;
+    }
+    assert!(checked > 0);
+    Ok(())
+}
