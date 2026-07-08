@@ -1361,7 +1361,7 @@ mod build {
         /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
         /// let func =
         ///     <SignedFunc<LcpMmphfInt<u64>, Box<[u16]>>>::try_par_new_with_builder(
-        ///         &keys, VBuilder::default().offline(true), no_logging![],
+        ///         &keys, VBuilder::default(), no_logging![],
         ///     )?.try_into_unaligned()?;
         ///
         /// for (i, &key) in keys.iter().enumerate() {
@@ -1557,7 +1557,7 @@ mod build {
         /// let keys = vec!["a", "b", "c", "d", "e"];
         /// let func =
         ///     <SignedFunc<LcpMmphfStr, Box<[u64]>>>::try_par_new_with_builder(
-        ///         &keys, VBuilder::default().offline(true), no_logging![],
+        ///         &keys, VBuilder::default(), no_logging![],
         ///     )?.try_into_unaligned()?;
         ///
         /// for (i, &key) in keys.iter().enumerate() {
@@ -1755,7 +1755,7 @@ mod build {
         /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
         /// let func =
         ///     <SignedFunc<Lcp2MmphfInt<u64>, Box<[u16]>>>::try_par_new_with_builder(
-        ///         &keys, VBuilder::default().offline(true), no_logging![],
+        ///         &keys, VBuilder::default(), no_logging![],
         ///     )?.try_into_unaligned()?;
         ///
         /// for (i, &key) in keys.iter().enumerate() {
@@ -1953,7 +1953,7 @@ mod build {
         /// let keys = vec!["a", "b", "c", "d", "e"];
         /// let func =
         ///     <SignedFunc<Lcp2MmphfStr, Box<[u64]>>>::try_par_new_with_builder(
-        ///         &keys, VBuilder::default().offline(true), no_logging![],
+        ///         &keys, VBuilder::default(), no_logging![],
         ///     )?.try_into_unaligned()?;
         ///
         /// for (i, &key) in keys.iter().enumerate() {
@@ -2163,7 +2163,7 @@ mod build {
         /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
         /// type BSFunc = SignedFunc<LcpMmphfInt<u64>, BitFieldVec<Box<[usize]>>>;
         /// let func =
-        ///     BSFunc::try_par_new_with_builder(&keys, 8, VBuilder::default().offline(true), no_logging![])?.try_into_unaligned()?;
+        ///     BSFunc::try_par_new_with_builder(&keys, 8, VBuilder::default(), no_logging![])?.try_into_unaligned()?;
         ///
         /// for (i, &key) in keys.iter().enumerate() {
         ///     assert_eq!(func.get(key), Some(i));
@@ -2377,7 +2377,7 @@ mod build {
         /// let keys = vec!["alpha", "beta", "delta", "gamma"];
         /// type BSFunc = SignedFunc<LcpMmphfStr, BitFieldVec<Box<[usize]>>>;
         /// let func =
-        ///     BSFunc::try_par_new_with_builder(&keys, 12, VBuilder::default().offline(true), no_logging![])?.try_into_unaligned()?;
+        ///     BSFunc::try_par_new_with_builder(&keys, 12, VBuilder::default(), no_logging![])?.try_into_unaligned()?;
         ///
         /// for (i, &key) in keys.iter().enumerate() {
         ///     assert_eq!(func.get(key), Some(i));
@@ -2590,7 +2590,7 @@ mod build {
         /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
         /// type BSFunc = SignedFunc<Lcp2MmphfInt<u64>, BitFieldVec<Box<[usize]>>>;
         /// let func =
-        ///     BSFunc::try_par_new_with_builder(&keys, 8, VBuilder::default().offline(true), no_logging![])?.try_into_unaligned()?;
+        ///     BSFunc::try_par_new_with_builder(&keys, 8, VBuilder::default(), no_logging![])?.try_into_unaligned()?;
         ///
         /// for (i, &key) in keys.iter().enumerate() {
         ///     assert_eq!(func.get(key), Some(i));
@@ -2798,7 +2798,7 @@ mod build {
         /// let keys = vec!["a", "b", "c", "d", "e"];
         /// type BSFunc = SignedFunc<Lcp2MmphfStr, BitFieldVec<Box<[usize]>>>;
         /// let func =
-        ///     BSFunc::try_par_new_with_builder(&keys, 8, VBuilder::default().offline(true), no_logging![])?.try_into_unaligned()?;
+        ///     BSFunc::try_par_new_with_builder(&keys, 8, VBuilder::default(), no_logging![])?.try_into_unaligned()?;
         ///
         /// for (i, &key) in keys.iter().enumerate() {
         ///     assert_eq!(func.get(key), Some(i));
