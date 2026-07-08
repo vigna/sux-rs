@@ -68,10 +68,10 @@
 //! # Slice-by-value support
 //!
 //! [`BitVec`] implement the [`BitFieldSlice`]/[`BitFieldSliceMut`] traits as a
-//! bit-field slice of width one. Note that the methods [`get_value`] and
-//! [`get_value_unchecked`] of [`SliceByValue`] conflicts with those of
-//! [`BitVecValueOps`], so if you absolutely need to pull in both traits you
-//! have to disambiguate the method calls. Moreover, as part of [`SliceByValueMut`]
+//! bit-field slice of width one. [`BitVecValueOps`] provides bit-range
+//! accessors (`get_bits`/`get_bits_unchecked`) whose names are distinct from
+//! the index-based [`get_value`]/[`get_value_unchecked`] of [`SliceByValue`],
+//! so the two traits can be pulled in together without disambiguation. Moreover, as part of [`SliceByValueMut`]
 //! you can also obtain [mutable chunks] from a bit vector, provided they are
 //! aligned enough.
 //!
@@ -605,7 +605,7 @@ impl<B: ToOwned> BitVec<B> {
 }
 
 impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVecValueOps<B::Word> for BitVec<B> {
-    fn get_value(&self, pos: usize, width: usize) -> B::Word {
+    fn get_bits(&self, pos: usize, width: usize) -> B::Word {
         assert!(
             width <= B::Word::BITS as usize,
             "width {} must be at most W::BITS ({})",
@@ -622,13 +622,13 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVecValueOps<B::Word> for BitV
             end,
             self.len
         );
-        // Disambiguate: `SliceByValue::get_value_unchecked` now also
-        // exists for `BitVec`, but with a different signature.
-        unsafe { <Self as BitVecValueOps<B::Word>>::get_value_unchecked(self, pos, width) }
+        // SAFETY: the assertions above guarantee `pos + width <= self.len` and
+        // `width <= W::BITS`, satisfying the contract of `get_bits_unchecked`.
+        unsafe { self.get_bits_unchecked(pos, width) }
     }
 
     #[inline]
-    unsafe fn get_value_unchecked(&self, pos: usize, width: usize) -> B::Word {
+    unsafe fn get_bits_unchecked(&self, pos: usize, width: usize) -> B::Word {
         let bits = B::Word::BITS as usize;
         let word_index = pos / bits;
         let bit_index = pos % bits;
@@ -1344,12 +1344,12 @@ impl<W: Word> crate::traits::TryIntoUnaligned for BitVec<Box<[W]>> {
 
 impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVecValueOps<B::Word> for BitVecU<B> {
     #[inline(always)]
-    fn get_value(&self, pos: usize, width: usize) -> B::Word {
+    fn get_bits(&self, pos: usize, width: usize) -> B::Word {
         self.0.get_value_unaligned(pos, width)
     }
 
     #[inline(always)]
-    unsafe fn get_value_unchecked(&self, pos: usize, width: usize) -> B::Word {
+    unsafe fn get_bits_unchecked(&self, pos: usize, width: usize) -> B::Word {
         unsafe { self.0.get_value_unaligned_unchecked(pos, width) }
     }
 }
