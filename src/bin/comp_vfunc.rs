@@ -221,6 +221,12 @@ where
             generate_synthetic_values(&args, n)?
         };
         let n = values.len();
+        if args.values.is_some() {
+            // With an explicit values file the key count must match exactly;
+            // otherwise keys past values.len() would be silently ignored.
+            let key_count = count_keys(filename)?;
+            ensure!(key_count == n, "key count {key_count} != value count {n}");
+        }
         if args.sequential {
             let keys = DekoBufLineLender::from_path(filename)?.take(n);
             let func = <CompVFunc<str, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
