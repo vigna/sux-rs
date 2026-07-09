@@ -147,6 +147,10 @@ impl<
 {
     /// Returns the value associated with `key`, or an arbitrary value
     /// if `key` is not in the original key set.
+    ///
+    /// If this instance was deserialized from an untrusted source, call
+    /// [`validate`](Self::validate) first: this method performs unchecked reads
+    /// that assume the builder-established layout invariants.
     #[inline(always)]
     pub fn get(&self, key: impl Borrow<K>) -> D::Word {
         self.get_by_sig(K::to_sig(key.borrow(), self.seed))
@@ -154,6 +158,8 @@ impl<
 
     /// Returns the value associated with the given signature, or an
     /// arbitrary value if no key has that signature.
+    ///
+    /// See [`validate`](Self::validate) before querying deserialized instances.
     #[inline(always)]
     pub fn get_by_sig(&self, sig: S) -> D::Word {
         // Here we compute manually the edge vertices. We cannot use
@@ -189,6 +195,60 @@ impl<
                 ^ self.data.get_bits_unchecked(v1, esym_len)
                 ^ self.data.get_bits_unchecked(v2, esym_len)
         }
+    }
+}
+
+impl<
+    K: ?Sized,
+    D: Backend<Word: Word> + AsRef<[D::Word]>,
+    S,
+    E: ShardEdge<S, 3>,
+> CompVFunc<K, D, S, E>
+{
+    /// Checks the invariants relied upon by [`get`](Self::get), for use after
+    /// deserializing from an untrusted source.
+    ///
+    /// Verifies that the shard/edge parameters are well formed and that the
+    /// backing storage is large enough that the unchecked reads performed by
+    /// `get` cannot go out of bounds. On `Ok`, `get` is memory-safe for any
+    /// key; the values returned for corrupt-but-in-bounds data are arbitrary.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        use num_primitive::PrimitiveInteger;
+        self.shard_edge.validate()?;
+        let shard_bits = self.shard_edge.shard_high_bits();
+        anyhow::ensure!(
+            shard_bits < usize::BITS,
+            "shard_high_bits {shard_bits} is too large"
+        );
+        let num_shards = 1usize << shard_bits;
+        let word_bits = D::Word::BITS as usize; // BITS <= 128, lossless
+        let esym_len = self.decoder.escaped_symbols_len() as usize; // u32, lossless
+        anyhow::ensure!(
+            esym_len <= word_bits,
+            "escaped symbols length {esym_len} exceeds the word size"
+        );
+        let num_vertices = self.shard_edge.num_vertices();
+        anyhow::ensure!(num_vertices > 0, "the shard edge has no vertices");
+        // Highest bit position `get` can touch: the unaligned word read at
+        // `shard_offset + v + esym_len` for the last vertex of the last
+        // shard ends at most `word_bits` bits later.
+        let last_read_end = (num_shards - 1)
+            .checked_mul(self.shard_size)
+            .and_then(|x| x.checked_add(num_vertices - 1))
+            .and_then(|x| x.checked_add(esym_len))
+            .and_then(|x| x.checked_add(word_bits))
+            .ok_or_else(|| anyhow::anyhow!("shard layout overflows usize"))?;
+        let backing_bits = self
+            .data
+            .as_ref()
+            .len()
+            .checked_mul(word_bits)
+            .ok_or_else(|| anyhow::anyhow!("backing size in bits overflows usize"))?;
+        anyhow::ensure!(
+            last_read_end <= backing_bits,
+            "backing holds {backing_bits} bits but reads may touch bit {last_read_end}"
+        );
+        Ok(())
     }
 }
 
@@ -1452,5 +1512,37 @@ mod codec_bound_tests {
             result.is_err(),
             "expected an error for a codeword longer than usize::BITS - 2"
         );
+    }
+}
+
+#[cfg(test)]
+mod validate_tests {
+    use super::*;
+    use crate::utils::FromCloneableIntoIterator;
+    use crate::utils::lenders::FromSlice;
+    use dsi_progress_logger::no_logging;
+
+    fn build_small() -> CompVFunc<usize> {
+        let n = 100usize;
+        let values: Vec<usize> = (0..n).map(|i| i % 5).collect();
+        CompVFunc::<usize>::try_new(
+            FromCloneableIntoIterator::from(0..n),
+            FromSlice::new(&values),
+            no_logging![],
+        )
+        .expect("build")
+    }
+
+    #[test]
+    fn test_validate_accepts_built_function() {
+        assert!(build_small().validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_rejects_truncated_backing() {
+        let mut func = build_small();
+        // Far smaller than any edge read the shard edge can produce.
+        func.data = BitVec::<Box<[usize]>>::new_padded(64);
+        assert!(func.validate().is_err());
     }
 }
