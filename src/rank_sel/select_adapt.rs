@@ -952,12 +952,15 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
                         SpanType::U64 => {
                             if subinventory_idx < words_per_subinventory {
                                 inventory[start_inv_idx + 1 + subinventory_idx] = bit_index;
-                                subinventory_idx += 1;
                             } else {
                                 assert!(spilled < spill_size);
                                 spill[spilled] = bit_index;
                                 spilled += 1;
                             }
+                            // Count every stored one (local or spilled) so the
+                            // early exit below can fire; the local-vs-spill
+                            // routing above is unchanged.
+                            subinventory_idx += 1;
                             // This exit is not necessary for correctness, but
                             // it avoids the additional loop iterations that
                             // would be necessary to find the position of the
