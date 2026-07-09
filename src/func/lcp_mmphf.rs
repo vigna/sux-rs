@@ -105,6 +105,20 @@ impl<K: PrimitiveInteger> IntBitPrefix<K> {
     }
 }
 
+/// Returns the bit length of a byte key including its virtual trailing NUL,
+/// i.e. `(bytes.len() + 1) * 8`, with overflow checking.
+///
+/// On 32-bit targets an enormous single key could otherwise wrap the `usize`
+/// multiplication and produce a bogus LCP length.
+#[inline]
+pub(crate) fn checked_full_key_bits(bytes: &[u8]) -> anyhow::Result<usize> {
+    bytes
+        .len()
+        .checked_add(1)
+        .and_then(|n| n.checked_mul(8))
+        .ok_or_else(|| anyhow::anyhow!("byte-key bit length overflows usize"))
+}
+
 /// Packs significant bits and bit_len into a contiguous stack buffer
 /// for one-shot xxh3 hashing. Returns the number of bytes written.
 /// Buffer must be at least `size_of::<K>() + size_of::<usize>()` bytes.
@@ -865,6 +879,11 @@ mod build {
                     );
                 }
 
+                // Validate the key length up front so both this bucket-start
+                // computation and lcp_bits_nul's internal `len * 8` cannot
+                // overflow on 32-bit targets.
+                let full_key_bits = checked_full_key_bits(key_bytes)?;
+
                 let offset = i & bucket_mask;
 
                 if offset == 0 {
@@ -874,7 +893,7 @@ mod build {
                     }
                     bucket_first_keys.push(key_bytes.to_vec());
                     // Initialize to full key bit-length (including virtual NUL).
-                    curr_lcp_bits = (key_bytes.len() + 1) * 8;
+                    curr_lcp_bits = full_key_bits;
                 } else {
                     // Subsequent key: minimize LCP.
                     curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul::<true>(key_bytes, &prev_key));
@@ -1097,6 +1116,11 @@ mod build {
                     );
                 }
 
+                // Validate the key length up front so both this bucket-start
+                // computation and lcp_bits_nul's internal `len * 8` cannot
+                // overflow on 32-bit targets.
+                let full_key_bits = checked_full_key_bits(key_bytes)?;
+
                 let offset = i & bucket_mask;
 
                 if offset == 0 {
@@ -1105,7 +1129,7 @@ mod build {
                         lcp_bit_lens.push(curr_lcp_bits);
                     }
                     bucket_first_keys.push(key_bytes.to_vec());
-                    curr_lcp_bits = (key_bytes.len() + 1) * 8;
+                    curr_lcp_bits = full_key_bits;
                 } else {
                     curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul::<true>(key_bytes, &prev_key));
                 }
@@ -1281,7 +1305,10 @@ where
     #[inline]
     pub fn get(&self, key: K) -> usize {
         let packed = self.lcp_len_offset.get(key);
-        let lcp_bit_len = packed >> self.log2_bucket_size;
+        // Absent keys yield an arbitrary packed value; clamp the decoded LCP
+        // length to the key width so IntBitPrefix::new cannot overflow. Present
+        // keys always have lcp_bit_len <= K::BITS, so this is a no-op for them.
+        let lcp_bit_len = (packed >> self.log2_bucket_size).min(K::BITS as usize);
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
         // XOR with K::MIN maps signed numeric order to bit-lexicographic
         // order by flipping the sign bit; for unsigned types K::MIN is 0,
@@ -1544,7 +1571,7 @@ where
         // without allocating a BitPrefix.
         let key_bytes: &[u8] = key.as_ref();
         let seed = self.lcp_to_bucket.seed;
-        let sig: S1 = if lcp_bit_len <= key_bytes.len() * 8 {
+        let sig: S1 = if lcp_bit_len <= key_bytes.len().saturating_mul(8) {
             bit_prefix_sig(key_bytes, lcp_bit_len, seed)
         } else {
             // Rare: LCP extends into the virtual NUL (at most 8 extra bits).

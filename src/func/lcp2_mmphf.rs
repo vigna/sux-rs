@@ -171,11 +171,15 @@ where
         let packed = self.lcp_freq_len_offset.get_by_sig(sig);
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
         let frequent_lcp = packed >> self.log2_bucket_size;
+        // Absent keys yield an arbitrary packed value; clamp the decoded LCP
+        // length to the key width so IntBitPrefix::new cannot overflow. Present
+        // keys always have lcp_bit_len <= K::BITS, so this is a no-op for them.
         let lcp_bit_len = if frequent_lcp != self.escape {
             self.remap[frequent_lcp]
         } else {
             self.lcp_infreq_len.get_by_sig(sig)
-        };
+        }
+        .min(K::BITS as usize);
         let prefix = IntBitPrefix::new(key ^ K::MIN, lcp_bit_len);
         let bucket = self.lcp_to_bucket.get(prefix);
         (bucket << self.log2_bucket_size) + offset
@@ -186,7 +190,7 @@ where
 mod build {
     use super::*;
     use crate::func::VBuilder;
-    use crate::func::lcp_mmphf::{lcp_bits, lcp_bits_nul, log2_bucket_size};
+    use crate::func::lcp_mmphf::{checked_full_key_bits, lcp_bits, lcp_bits_nul, log2_bucket_size};
     use crate::func::vfunc2::{HybridMap, find_optimal_r};
     use anyhow::{Result, bail};
     use dsi_progress_logger::ProgressLog;
@@ -1260,6 +1264,11 @@ mod build {
                                     );
                                 }
 
+                                // Validate the key length up front so both the
+                                // bucket-start computation and lcp_bits_nul's
+                                // internal `len * 8` cannot overflow on 32-bit.
+                                let full_key_bits = checked_full_key_bits(key_bytes)?;
+
                                 let offset = idx & bucket_mask;
 
                                 // Start of a new bucket — flush the previous one.
@@ -1281,9 +1290,9 @@ mod build {
                                         push(SigVal { sig, val: packed })?;
                                     }
                                     buf.clear();
-                                    curr_lcp_bits = (key_bytes.len() + 1) * 8;
+                                    curr_lcp_bits = full_key_bits;
                                 } else if offset == 0 {
-                                    curr_lcp_bits = (key_bytes.len() + 1) * 8;
+                                    curr_lcp_bits = full_key_bits;
                                 } else {
                                     curr_lcp_bits = curr_lcp_bits
                                         .min(lcp_bits_nul::<true>(key_bytes, &prev_key));
@@ -1672,6 +1681,11 @@ mod build {
                     );
                 }
 
+                // Validate the key length up front so both the bucket-start
+                // computation and lcp_bits_nul's internal `len * 8` cannot
+                // overflow on 32-bit targets.
+                let full_key_bits = checked_full_key_bits(key_bytes)?;
+
                 let offset = i & bucket_mask;
 
                 if offset == 0 {
@@ -1686,7 +1700,7 @@ mod build {
                         lcp_counts.add(lcp, bsize);
                     }
                     bucket_first_keys.push(key_bytes.to_vec());
-                    curr_lcp_bits = (key_bytes.len() + 1) * 8;
+                    curr_lcp_bits = full_key_bits;
                 } else {
                     curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul::<true>(key_bytes, &prev_key));
                 }
@@ -2127,7 +2141,7 @@ where
 
         let key_bytes: &[u8] = key.as_ref();
         let lcp2b_seed = self.lcp_to_bucket.seed;
-        let lcp2b_sig: S1 = if lcp_bit_len <= key_bytes.len() * 8 {
+        let lcp2b_sig: S1 = if lcp_bit_len <= key_bytes.len().saturating_mul(8) {
             bit_prefix_sig(key_bytes, lcp_bit_len, lcp2b_seed)
         } else {
             // Rare: LCP extends into the virtual NUL (at most 8 extra bits).
