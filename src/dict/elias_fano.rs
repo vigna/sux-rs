@@ -2673,6 +2673,11 @@ where
     /// - All indices must be distinct.
     /// - All values must be smaller than or equal to `u`.
     /// - All indices must be smaller than `n`.
+    /// - Values must be nondecreasing with respect to their indices: for
+    ///   `i < j`, the value set at index `i` must be less than or equal to the
+    ///   value set at index `j`. Otherwise, high bits can collide or appear
+    ///   out of order, and the resulting structure is invalid even though all
+    ///   other conditions hold.
     /// - You must call this function exactly `n` times.
     #[inline]
     pub unsafe fn set(&self, index: usize, value: V)
@@ -2716,6 +2721,21 @@ where
         let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
         let low_bits: BitFieldVec<Vec<V>> = self.low_bits.into();
         let low_bits: BitFieldVec<Box<[V]>> = low_bits.into();
+
+        // A nonmonotone (or colliding) assignment through `set` produces a
+        // high-bits array whose number of ones differs from `n`; catch it
+        // here before the endpoint scans below run off the words.
+        debug_assert_eq!(
+            high_bits
+                .as_ref()
+                .iter()
+                // Lossless: count_ones of a word fits usize.
+                .map(|w| w.count_ones() as usize)
+                .sum::<usize>(),
+            self.n,
+            "the high-bits array does not contain exactly n ones: \
+             EliasFanoConcurrentBuilder::set was called with nonmonotone values"
+        );
 
         let (first_val, last_val) = if self.n == 0 {
             (V::MAX, V::MIN)
