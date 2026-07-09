@@ -368,3 +368,25 @@ mod test_large {
         test_large!(3; 13);
     }
 }
+
+#[test]
+fn test_with_inv_dense_all_zeros() {
+    // blocks_per_inv = 1 produces a dense inventory with many more entries
+    // than backing words, exercising the terminal-sentinel path. The sentinel
+    // must bound an inventory index (inventory.len()), not the backing word
+    // count; the old value misrouted late queries.
+    let len = 1024;
+    let bits = BitVec::<Vec<u64>>::new(len); // all zeros
+    let sel = SelectZeroSmall::<2, 9, _>::with_inv(RankSmall::<64, 2, 9, _>::new(bits), 1);
+    for k in 0..len {
+        assert_eq!(sel.select_zero(k), Some(k));
+    }
+    assert_eq!(sel.select_zero(len), None);
+}
+
+#[test]
+#[should_panic(expected = "blocks_per_inv must be positive")]
+fn test_with_inv_zero_blocks() {
+    let bits = BitVec::<Vec<u64>>::new(64);
+    let _ = SelectZeroSmall::<2, 9, _>::with_inv(RankSmall::<64, 2, 9, _>::new(bits), 0);
+}

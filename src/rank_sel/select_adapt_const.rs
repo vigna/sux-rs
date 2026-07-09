@@ -225,6 +225,13 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTO
     const ONES_PER_SUB16_MASK: usize = (1 << Self::LOG2_ONES_PER_SUB16) - 1;
     const ONES_PER_INVENTORY: usize = (1 << LOG2_ONES_PER_INVENTORY);
     const ONES_PER_INVENTORY_MASK: usize = (1 << LOG2_ONES_PER_INVENTORY) - 1;
+    /// Compile-time check that the const parameters are valid shift amounts.
+    /// `usize::BITS as usize` is a lossless u32->usize widening.
+    const PARAMS_OK: () = assert!(
+        LOG2_ONES_PER_INVENTORY < usize::BITS as usize
+            && LOG2_WORDS_PER_SUBINVENTORY < usize::BITS as usize,
+        "LOG2_ONES_PER_INVENTORY and LOG2_WORDS_PER_SUBINVENTORY must be less than the word width"
+    );
 
     /// Computes adaptively the number of 32-bit subinventory entries
     #[inline(always)]
@@ -292,6 +299,8 @@ impl<
     #[must_use]
     pub fn new(bits: B) -> Self {
         assert_inventory_length(bits.len());
+        // Force the const-parameter validity check.
+        let () = Self::PARAMS_OK;
         let num_ones = bits.count_ones();
         let num_bits = max(1, bits.len());
         let inventory_size = num_ones.div_ceil(Self::ONES_PER_INVENTORY);

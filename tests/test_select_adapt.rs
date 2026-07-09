@@ -333,3 +333,10 @@ fn test_1_1_billion_bits() {
     }
     assert_eq!(sel.select(3), None);
 }
+
+#[test]
+#[should_panic(expected = "must be less than")]
+fn test_with_inv_oversized_log() {
+    let bits: AddNumBits<_> = BitVec::<Vec<usize>>::new(128).into();
+    let _ = SelectAdapt::<_>::with_inv(bits, usize::BITS as usize, 0);
+}
