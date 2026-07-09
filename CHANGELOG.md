@@ -151,6 +151,24 @@
 - **Breaking:** `UnalignedConversionError` is now a structured
   (`non_exhaustive`) enum instead of a wrapper around a `String`.
 
+- **Breaking:** `FairChunks::new_with` is now `unsafe`; the caller must uphold
+  its documented contract (a nondecreasing cumulative weight function,
+  `max_weight` equal to its last element, and `num_weights` one less than the
+  length of the function), which the constructor does not check.
+
+- **Breaking:** boxed `VFilter` backends wider than 64 bits are now rejected,
+  and the requested filter bit width is capped at `min(64, W::BITS)` and must
+  be positive. The verification hash is a 64-bit remixed hash, so wider words
+  previously stored fictional high-bit entropy; out-of-range widths now return
+  an error instead of building a filter with an unachievable false-positive
+  rate.
+
+- **Breaking:** the fallible constructors of `SignedFunc`, `LcpMmphf`, and
+  `Lcp2Mmphf` return `Err` instead of panicking on invalid input: `SignedFunc`
+  rejects a non-positive hash width, and the `LcpMmphf`/`Lcp2Mmphf` builders
+  report a key-count mismatch (the key iterator yielding a number of keys
+  different from the declared count).
+
 ## [0.14.0] - 2026-04-11
 
 ### New
