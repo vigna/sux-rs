@@ -235,6 +235,74 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength> Rank9<B, Box<[BlockC
     }
 }
 
+impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>>
+    Rank9<B, C>
+{
+    /// Checks that the rank counters are consistent with the bit vector.
+    ///
+    /// After deserializing from an untrusted or possibly stale source, call
+    /// this method before use: rank queries otherwise trust the counters and
+    /// can report out-of-range ranks on malformed input.
+    ///
+    /// The check rescans the whole bit vector (`O(len)`).
+    pub fn validate(&self) -> anyhow::Result<()> {
+        let num_bits = self.bits.len();
+        let num_words = num_bits.div_ceil(64);
+        let residual = num_bits % 64;
+        let num_counts = num_bits.div_ceil(64 * Self::WORDS_PER_BLOCK);
+        let counts = self.counts.as_ref();
+        let words = self.bits.as_ref();
+        anyhow::ensure!(
+            counts.len() == num_counts + 1,
+            "wrong number of block counters: {} for {} bits",
+            counts.len(),
+            num_bits
+        );
+        anyhow::ensure!(
+            words.len() >= num_words,
+            "the backend has {} words, too few for {} bits",
+            words.len(),
+            num_bits
+        );
+        let mut num_ones: u64 = 0;
+        for (block, count) in counts[..num_counts].iter().enumerate() {
+            let i = block * Self::WORDS_PER_BLOCK;
+            anyhow::ensure!(
+                count.absolute == num_ones,
+                "block {block}: absolute counter is {} instead of {num_ones}",
+                count.absolute
+            );
+            anyhow::ensure!(
+                count.rel(0) == 0,
+                "block {block}: relative counter 0 is {} instead of 0",
+                count.rel(0)
+            );
+            num_ones +=
+                u64::from(mask_tail_word(words[i], i + 1 == num_words, residual).count_ones());
+            for j in 1..8 {
+                // Lossless: a relative count within a block is at most 512.
+                let rel_count = (num_ones - count.absolute) as usize;
+                anyhow::ensure!(
+                    count.rel(j) == rel_count,
+                    "block {block}: relative counter {j} is {} instead of {rel_count}",
+                    count.rel(j)
+                );
+                if i + j < num_words {
+                    num_ones += u64::from(
+                        mask_tail_word(words[i + j], i + j + 1 == num_words, residual).count_ones(),
+                    );
+                }
+            }
+        }
+        anyhow::ensure!(
+            counts[num_counts].absolute == num_ones,
+            "the total counter is {} instead of {num_ones}",
+            counts[num_counts].absolute
+        );
+        Ok(())
+    }
+}
+
 impl<B, C> Deref for Rank9<B, C> {
     type Target = B;
 
@@ -338,6 +406,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCount
 mod tests {
     use super::*;
     use crate::traits::BitCount;
+    use crate::traits::BitVecOpsMut;
     #[test]
     fn test_last() {
         let bits = unsafe { BitVec::from_raw_parts(vec![!1u64; 1 << 10], (1 << 10) * 64) };
@@ -345,5 +414,31 @@ mod tests {
         let rank9 = Rank9::new(bits);
 
         assert_eq!(rank9.rank(rank9.len()), rank9.bits.count_ones());
+    }
+
+    #[test]
+    fn test_validate() -> anyhow::Result<()> {
+        let mut bits = BitVec::<Vec<u64>>::new(1000);
+        for i in (0..1000).step_by(3) {
+            bits.set(i, true);
+        }
+        let rank9 = Rank9::new(bits);
+        rank9.validate()?;
+
+        // Corrupt an absolute counter: the total is unchanged, but ranks
+        // inside the block are shifted.
+        let mut corrupt = rank9.clone();
+        let mut counts = corrupt.counts.to_vec();
+        counts[1].absolute += 1;
+        corrupt.counts = counts.into_boxed_slice();
+        assert!(corrupt.validate().is_err());
+
+        // Corrupt a relative counter lane.
+        let mut corrupt = rank9;
+        let mut counts = corrupt.counts.to_vec();
+        counts[0].relative ^= 1 << 9;
+        corrupt.counts = counts.into_boxed_slice();
+        assert!(corrupt.validate().is_err());
+        Ok(())
     }
 }

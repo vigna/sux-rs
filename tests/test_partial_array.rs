@@ -314,3 +314,29 @@ fn test_serialize() {
         assert_eq!(array.get(i), array2.get(i), "Mismatch at index {i}");
     }
 }
+
+#[test]
+fn test_validate() {
+    // Dense.
+    let mut builder = partial_array::new_dense(100);
+    builder.set(1, "a");
+    builder.set(50, "b");
+    let dense = builder.build();
+    assert!(dense.validate().is_ok());
+
+    // Sparse.
+    let mut builder = partial_array::new_sparse(100, 2);
+    builder.set(1, "a");
+    builder.set(50, "b");
+    let sparse = builder.build();
+    assert!(sparse.validate().is_ok());
+
+    // Empty variants.
+    assert!(partial_array::new_dense::<u8>(0).build().validate().is_ok());
+    assert!(
+        partial_array::new_sparse::<u8>(0, 0)
+            .build()
+            .validate()
+            .is_ok()
+    );
+}

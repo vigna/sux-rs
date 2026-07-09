@@ -22,6 +22,7 @@ use crate::traits::Backend;
 use crate::traits::TryIntoUnaligned;
 use crate::traits::Unaligned;
 use crate::traits::{BitVecOps, BitVecOpsMut};
+use crate::traits::BitCount;
 use crate::traits::{RankUnchecked, SuccUnchecked};
 
 // Rank9 is inherently u64-based, so the dense index must use u64 backing
@@ -335,6 +336,25 @@ impl<T, V: AsRef<[T]>> PartialArray<T, DenseIndex, V> {
         // SAFETY: necessarily value_index < num_values().
         Some(unsafe { self.values.as_ref().get_unchecked(value_index) })
     }
+
+    /// Checks that the rank index is consistent with the stored values.
+    ///
+    /// After deserializing from an untrusted or possibly stale source, call
+    /// this method before use: safe accessors otherwise trust the index and
+    /// reach unchecked reads of the value array on malformed input.
+    ///
+    /// The check verifies every rank counter against the marker bits
+    /// (`O(len)`).
+    pub fn validate(&self) -> anyhow::Result<()> {
+        self.index.validate()?;
+        anyhow::ensure!(
+            self.index.count_ones() == self.values.as_ref().len(),
+            "the index marks {} positions but {} values are stored",
+            self.index.count_ones(),
+            self.values.as_ref().len()
+        );
+        Ok(())
+    }
 }
 
 impl<
@@ -403,6 +423,52 @@ where
             Some(unsafe { self.values.as_ref().get_unchecked(index) })
         }
     }
+
+    /// Checks that the position index is consistent with the stored values.
+    ///
+    /// After deserializing from an untrusted or possibly stale source, call
+    /// this method before use: safe accessors otherwise trust the index and
+    /// reach unchecked reads of the value array on malformed input.
+    ///
+    /// The check validates the underlying [Elias–Fano] representation and
+    /// rescans the stored positions (`O(num_values)`). The inventories of the
+    /// selection wrapper are not validated: for fully untrusted data, rebuild
+    /// the index.
+    ///
+    /// [Elias–Fano]: crate::dict::EliasFano
+    pub fn validate(&self) -> anyhow::Result<()>
+    where
+        L: crate::traits::bit_field_slice::BitWidth,
+        SelectZeroAdaptConst<BitVec<D>, I>: AsRef<[usize]> + crate::traits::BitLength,
+    {
+        self.index.ef.validate()?;
+        anyhow::ensure!(
+            self.index.ef.len() == self.values.as_ref().len(),
+            "the index stores {} positions but {} values are stored",
+            self.index.ef.len(),
+            self.values.as_ref().len()
+        );
+        // The upper bound of the Elias–Fano structure is the array length,
+        // used as a sentinel: stored positions must be strictly smaller.
+        let len = self.index.ef.upper_bound();
+        let mut last = None;
+        for pos in self.index.ef.iter() {
+            anyhow::ensure!(
+                pos < len,
+                "stored position {pos} is not smaller than the array length {len}"
+            );
+            last = Some(pos);
+        }
+        // Lossless: usize fits u64 on all supported targets.
+        let first_invalid = self.index.first_invalid_pos as u64;
+        // Positions are < len <= u64::MAX, so the increment cannot overflow.
+        let expected = last.map_or(0, |p| p + 1);
+        anyhow::ensure!(
+            first_invalid == expected,
+            "the first invalid position is {first_invalid} instead of {expected}"
+        );
+        Ok(())
+    }
 }
 
 /// Returns an option even when using `get_value_unchecked` because it should be safe to call
@@ -468,5 +534,47 @@ impl<T, P: TryIntoUnaligned, V> TryIntoUnaligned for PartialArray<T, P, V> {
             values: self.values,
             _marker: PhantomData,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_rejects_corrupt_dense() {
+        let mut builder = new_dense(100);
+        builder.set(1, 10u8);
+        builder.set(50, 20);
+        let mut dense = builder.build();
+        // Fewer values than marked positions.
+        dense.values = vec![10u8].into_boxed_slice();
+        assert!(dense.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_rejects_corrupt_sparse() {
+        let mut builder = new_sparse(100, 2);
+        builder.set(1, 10u8);
+        builder.set(50, 20);
+        let mut sparse = builder.build();
+        // Wrong first invalid position.
+        sparse.index.first_invalid_pos = 60;
+        assert!(sparse.validate().is_err());
+
+        // A stored position equal to the array length: the Elias-Fano upper
+        // bound is a sentinel, so this passes plain EF validation but is
+        // inconsistent with the array semantics.
+        let mut efb = EliasFanoBuilder::<u64>::new(1, 100);
+        efb.push(100);
+        let sparse = PartialArray {
+            index: SparseIndex {
+                ef: efb.build_with_dict(),
+                first_invalid_pos: 101,
+            },
+            values: vec![10u8].into_boxed_slice(),
+            _marker: PhantomData,
+        };
+        assert!(sparse.validate().is_err());
     }
 }
