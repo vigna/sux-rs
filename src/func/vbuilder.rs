@@ -990,9 +990,15 @@ impl<
                 let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
                 let max_shard = shard_store.shard_sizes().max().unwrap_or(0);
 
-                // Check for pathological (5x) deviation from the target ε-cost
-                if max_shard as f64
-                    > (1.0 + 5.0 * self.eps) * num_keys as f64 / shard_edge.num_shards() as f64
+                // Check for pathological (5x) deviation from the target ε-cost.
+                // When `shard_size_hint` is set the sharding strategy is sized
+                // for the hinted workload, so the per-key average is
+                // meaningless — mirror the sequential path (see
+                // `try_populate_and_build`) and skip the check.
+                if self.shard_size_hint.is_none()
+                    && max_shard as f64
+                        > (1.0 + 5.0 * self.eps) * num_keys as f64
+                            / shard_edge.num_shards() as f64
                 {
                     Err(SolveError::MaxShardTooBig.into())
                 } else {
