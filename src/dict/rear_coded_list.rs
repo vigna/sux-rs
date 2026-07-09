@@ -870,8 +870,13 @@ fn memcmp(string: &[u8], data: &[u8]) -> core::cmp::Ordering {
 
 impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
     /// Creates a builder for a rear-coded list with a block size of `ratio`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `ratio` is zero.
     #[must_use]
     pub fn new(ratio: usize) -> Self {
+        assert!(ratio > 0, "ratio must be positive");
         Self {
             data: Vec::with_capacity(1024),
             last_str: Vec::with_capacity(1024),

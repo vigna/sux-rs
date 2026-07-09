@@ -343,3 +343,11 @@ fn test_ser_slice() -> anyhow::Result<()> {
     assert_eq!(&buf, &[2u8, 2u8]);
     Ok(())
 }
+
+#[test]
+#[should_panic(expected = "ratio must be positive")]
+fn test_builder_zero_ratio() {
+    // A zero ratio used to be accepted and made the first push divide by
+    // zero; the constructor must reject it with a clear message.
+    let _ = RearCodedListBuilder::<str, true>::new(0);
+}
