@@ -387,11 +387,12 @@ pub trait SelectHinted {
     /// # Safety
     ///
     /// `rank` must be between zero (included) and the number of ones
-    /// in the underlying bit vector (excluded). `hint_pos` must be between 0
-    /// (included) and the [length of the underlying bit vector] (included), and
-    /// must be the position of a one in the underlying bit vector. `hint_rank`
-    /// must be the number of ones in the underlying bit vector before
-    /// `hint_pos`, and must be less than or equal to `rank`.
+    /// in the underlying bit vector (excluded). `hint_pos` must be at most the
+    /// position of the one of rank `rank`; in particular it must be strictly
+    /// less than the [length of the underlying bit vector]. It need *not*
+    /// itself be the position of a one. `hint_rank` must be the number of ones
+    /// in the underlying bit vector strictly before `hint_pos` (hence at most
+    /// `rank`).
     ///
     /// [length of the underlying bit vector]: BitLength::len
     unsafe fn select_hinted<const WORDS_PER_SUBBLOCK: usize>(
@@ -453,11 +454,12 @@ pub trait SelectZeroHinted {
     ///
     /// # Safety
     /// `rank` must be between zero (included) and the number of zeros in the
-    /// underlying bit vector (excluded). `hint_pos` must be between 0 (included)
-    /// and the [length of the underlying bit vector] (included), and must be the
-    /// position of a zero in the underlying bit vector. `hint_rank` must be the
-    /// number of zeros in the underlying bit vector before `hint_pos`, and must
-    /// be less than or equal to `rank`.
+    /// underlying bit vector (excluded). `hint_pos` must be at most the
+    /// position of the zero of rank `rank`; in particular it must be strictly
+    /// less than the [length of the underlying bit vector]. It need *not*
+    /// itself be the position of a zero. `hint_rank` must be the number of
+    /// zeros in the underlying bit vector strictly before `hint_pos` (hence at
+    /// most `rank`).
     ///
     /// [length of the underlying bit vector]: BitLength::len
     unsafe fn select_zero_hinted<const WORDS_PER_SUBBLOCK: usize>(
