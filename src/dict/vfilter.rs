@@ -31,6 +31,15 @@ use value_traits::slices::SliceByValue;
 /// For values of *b* that correspond to the size of an unsigned type, you can
 /// use a boxed slice as a backend.
 ///
+/// The stored and expected hashes are derived from a 64-bit remixed hash, so
+/// at most 64 bits are usable: `b` is capped at 64 (a boxed backend must be at
+/// most 64 bits wide). Moreover, with the default sharded fuse edges the
+/// verification hash is derived from the same 64-bit local signature that
+/// selects the edge, so two distinct keys colliding on it are
+/// indistinguishable: the false-positive rate has a floor of roughly *n*⁄2⁶⁴
+/// for *n* keys, independent of *b*. Use `FuseLge3FullSigs` to make this
+/// floor negligible.
+///
 /// Instances of this structure are immutable; they are built using [`try_new`]
 /// or one of its variants, and can be serialized with [ε-serde] or [`serde`].
 ///
@@ -411,6 +420,14 @@ mod build {
             for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
             for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
         {
+            // The verification hash is a 64-bit remixed hash, so a boxed
+            // filter wider than 64 bits would store fictional entropy in its
+            // high bits and advertise an unachievable false-positive rate.
+            anyhow::ensure!(
+                W::BITS <= 64,
+                "boxed VFilter words must be at most 64 bits (got {})",
+                W::BITS
+            );
             let filter_mask = W::MAX;
             let func = builder.try_build_filter(
                 keys,
@@ -522,6 +539,14 @@ mod build {
             K: Sync,
         {
             let n = keys.len();
+            // The verification hash is a 64-bit remixed hash, so a boxed
+            // filter wider than 64 bits would store fictional entropy in its
+            // high bits and advertise an unachievable false-positive rate.
+            anyhow::ensure!(
+                W::BITS <= 64,
+                "boxed VFilter words must be at most 64 bits (got {})",
+                W::BITS
+            );
             let filter_mask = W::MAX;
             let func = builder.expected_num_keys(n).try_par_populate_and_build(
                 keys,
@@ -692,8 +717,14 @@ mod build {
             for<'a> <<BitFieldVec<Box<[W]>> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
                 Send,
         {
-            assert!(filter_bits > 0);
-            assert!(filter_bits <= W::BITS as usize);
+            anyhow::ensure!(filter_bits > 0, "filter_bits must be positive");
+            // Filters store at most 64 hash bits: the remixed hash is 64-bit.
+            anyhow::ensure!(
+                filter_bits <= 64.min(W::BITS as usize),
+                "filter_bits ({filter_bits}) must be at most min(64, W::BITS) = {}",
+                64.min(W::BITS as usize)
+            );
+            // Sound: filter_bits <= 64 <= W::BITS, checked above.
             let filter_mask = W::MAX >> (W::BITS - filter_bits as u32);
             let func = builder.try_build_filter(
                 keys,
@@ -810,9 +841,15 @@ mod build {
         where
             K: Sync,
         {
-            assert!(filter_bits > 0);
-            assert!(filter_bits <= W::BITS as usize);
+            anyhow::ensure!(filter_bits > 0, "filter_bits must be positive");
+            // Filters store at most 64 hash bits: the remixed hash is 64-bit.
+            anyhow::ensure!(
+                filter_bits <= 64.min(W::BITS as usize),
+                "filter_bits ({filter_bits}) must be at most min(64, W::BITS) = {}",
+                64.min(W::BITS as usize)
+            );
             let n = keys.len();
+            // Sound: filter_bits <= 64 <= W::BITS, checked above.
             let filter_mask = W::MAX >> (W::BITS - filter_bits as u32);
             let func = builder.expected_num_keys(n).try_par_populate_and_build(
                 keys,
@@ -910,6 +947,31 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_hash_bits_cap() {
+        use crate::bits::BitFieldVec;
+        let keys: Vec<usize> = (0..10).collect();
+        // A boxed filter wider than 64 bits stores fictional entropy and is
+        // rejected.
+        assert!(<VFilter<usize, Box<[u128]>>>::try_par_new(&keys, no_logging![]).is_err());
+        // A bit-field filter with more than 64 bits is rejected (u64 word so
+        // the cap is the same on 32- and 64-bit targets).
+        assert!(
+            <VFilter<usize, BitFieldVec<Box<[u64]>>>>::try_par_new(&keys, 65, no_logging![])
+                .is_err()
+        );
+        // Zero bits is rejected.
+        assert!(
+            <VFilter<usize, BitFieldVec<Box<[u64]>>>>::try_par_new(&keys, 0, no_logging![])
+                .is_err()
+        );
+        // Exactly 64 bits is accepted.
+        assert!(
+            <VFilter<usize, BitFieldVec<Box<[u64]>>>>::try_par_new(&keys, 64, no_logging![])
+                .is_ok()
+        );
     }
 
     #[test]

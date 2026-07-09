@@ -244,6 +244,12 @@ impl<K: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableFunc for VF
 /// storage: for `Box<[W]>` it is 2<sup>−`W::BITS`</sup>; for [`BitFieldVec`]
 /// it is 2<sup>−`hash_width`</sup>.
 ///
+/// The verification hashes are derived from a 64-bit remixed hash. With the
+/// default sharded fuse edges that hash is derived from the same 64-bit local
+/// signature that selects the edge, so distinct keys colliding on it are
+/// indistinguishable: the false-positive probability has a floor of roughly
+/// *n*⁄2⁶⁴ for *n* keys. Use `FuseLge3FullSigs` to make this floor negligible.
+///
 /// Instances of this structure are immutable; they are built using [`try_new`]
 /// or one of its variants, and can be serialized using [ε-serde] or [`serde`].
 ///
