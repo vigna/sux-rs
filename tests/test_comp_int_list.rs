@@ -118,3 +118,12 @@ fn test_value_below_min_panics() {
     let values = vec![0usize, 1, 2];
     let _ = CompIntList::new(1, &values);
 }
+
+#[test]
+fn test_validate() {
+    let values = vec![1u64, 5, 10, 1000];
+    let list = CompIntList::new(1, &values);
+    assert!(list.validate().is_ok());
+    let empty = CompIntList::new(0, &Vec::<u64>::new());
+    assert!(empty.validate().is_ok());
+}

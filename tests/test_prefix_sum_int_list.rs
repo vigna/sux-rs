@@ -161,3 +161,15 @@ fn test_prefix_sum_out_of_bounds() {
     let list = PrefixSumIntList::new(&values);
     list.prefix_sum(4); // n = 3, max valid is 3
 }
+
+#[test]
+fn test_validate() {
+    let list = PrefixSumIntList::new(&vec![3usize, 1, 4, 1, 5]);
+    assert!(list.validate().is_ok());
+    let empty = PrefixSumIntList::new(&Vec::<usize>::new());
+    assert!(empty.validate().is_ok());
+
+    // A non-monotone or non-zero-based prefix structure must be rejected.
+    let bad = PrefixSumIntList::try_from_prefix_sums(vec![1usize, 3, 2]);
+    assert!(bad.is_err());
+}

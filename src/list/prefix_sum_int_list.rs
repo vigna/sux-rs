@@ -186,6 +186,39 @@ impl<D: SliceByValue<Value = usize>> PrefixSumIntList<D> {
 }
 
 impl<D: SliceByValue<Value = usize>> PrefixSumIntList<D> {
+    /// Checks the structural invariants of this list.
+    ///
+    /// After deserializing from an untrusted or possibly stale source, call
+    /// this method before use: the accessors otherwise trust the cached
+    /// length and the monotonicity of the prefix sums, and can underflow on
+    /// malformed input.
+    ///
+    /// The check scans the whole prefix-sum structure (`O(n)`).
+    pub fn validate(&self) -> anyhow::Result<()> {
+        let len = self.prefix_sums.len();
+        anyhow::ensure!(
+            self
+                .n
+                .checked_add(1)
+                .is_some_and(|expected| len == expected),
+            "the prefix-sum structure has {len} elements instead of {} + 1",
+            self.n
+        );
+        let mut prev = self.prefix_sums.index_value(0);
+        anyhow::ensure!(prev == 0, "the first prefix sum is {prev} instead of 0");
+        for index in 1..len {
+            let cur = self.prefix_sums.index_value(index);
+            anyhow::ensure!(
+                cur >= prev,
+                "prefix sum {index} is {cur}, smaller than its predecessor {prev}"
+            );
+            prev = cur;
+        }
+        Ok(())
+    }
+}
+
+impl<D: SliceByValue<Value = usize>> PrefixSumIntList<D> {
     /// Replaces the prefix-sum structure.
     ///
     /// # Safety

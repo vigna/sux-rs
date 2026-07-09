@@ -52,7 +52,7 @@ use crate::bits::test_unaligned_any_pos;
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EfSeq;
 use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
-use crate::traits::{Backend, BitVecValueOps, TryIntoUnaligned, Word};
+use crate::traits::{Backend, BitLength, BitVecValueOps, TryIntoUnaligned, Word};
 use crate::utils::PrimitiveUnsignedExt;
 use mem_dbg::*;
 use value_traits::slices::SliceByValue;
@@ -236,6 +236,69 @@ impl<B: Backend<Word: Word> + BitVecValueOps<B::Word>, D: SliceByValue<Value = u
     /// Returns the underlying delimiter structure.
     pub fn into_inner(self) -> D {
         self.delimiters
+    }
+}
+
+impl<B: Backend<Word: Word> + BitLength, D: SliceByValue<Value = u64>> CompIntList<B, D> {
+    /// Checks the structural invariants of this list.
+    ///
+    /// After deserializing from an untrusted or possibly stale source, call
+    /// this method before use: the accessors otherwise trust the delimiter
+    /// structure and reach unchecked bit reads on malformed input.
+    ///
+    /// The check scans the whole delimiter structure (`O(n)`).
+    pub fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self
+                .n
+                .checked_add(1)
+                .is_some_and(|expected| self.delimiters.len() == expected),
+            "the delimiter structure has {} elements instead of {} + 1",
+            self.delimiters.len(),
+            self.n
+        );
+        let mut prev = self.delimiters.index_value(0);
+        anyhow::ensure!(prev == 0, "the first delimiter is {prev} instead of 0");
+        // Stored values have their most significant bit removed, so widths
+        // are at most one less than the word width. We derive the word width
+        // from the type size because inherent `BITS` does not resolve on the
+        // generic associated type. Lossless: word widths fit u64.
+        let word_bits = core::mem::size_of::<B::Word>() * 8;
+        let max_width = word_bits as u64 - 1;
+        let mut all_widths_unaligned = true;
+        for index in 1..=self.n {
+            let cur = self.delimiters.index_value(index);
+            anyhow::ensure!(
+                cur >= prev,
+                "delimiter {index} is {cur}, smaller than its predecessor {prev}"
+            );
+            let width = cur - prev;
+            anyhow::ensure!(
+                width <= max_width,
+                "element {} has width {width}, larger than the maximum {max_width}",
+                index - 1
+            );
+            // Same predicate as `test_unaligned_any_pos!`: the width must be
+            // readable at any bit position with a single unaligned read.
+            // Lossless: width <= max_width < 128, checked just above.
+            if width as usize > word_bits - 7 {
+                all_widths_unaligned = false;
+            }
+            prev = cur;
+        }
+        anyhow::ensure!(
+            self.all_widths_unaligned == all_widths_unaligned,
+            "the unaligned-widths flag is {} but the stored widths say {}",
+            self.all_widths_unaligned,
+            all_widths_unaligned
+        );
+        // Lossless: usize fits u64 on all supported targets.
+        anyhow::ensure!(
+            prev <= self.data.len() as u64,
+            "the last delimiter {prev} exceeds the data bit length {}",
+            self.data.len()
+        );
+        Ok(())
     }
 }
 
