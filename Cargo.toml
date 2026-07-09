@@ -28,8 +28,8 @@ log = "0.4.20"
 dsi-progress-logger = "0.8.7"
 tempfile = "3.9.0"
 lender = "0.6.0"
-# TODO: drop `path` once epserde 0.13.0 is published to crates.io.
-epserde = { version = "0.13", path = "../epserde-rs/epserde", optional = true, default-features = false, features = ["std", "derive"] }
+#epserde = { version = "0.12.5", optional = true, default-features = false, features = ["std", "derive"] }
+epserde = { path = "../epserde-rs/epserde", optional = true, default-features = false, features = ["std", "derive"] }
 zstd = { version = "0.13.1", optional = true }
 flate2 = { version = "1.0.28", optional = true }
 rand = "0.10.0"
