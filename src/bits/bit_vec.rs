@@ -27,8 +27,12 @@
 //!   not resizable) bit vector.
 //!
 //! Note that nothing is assumed about the content of the backend outside the
-//! bits of the bit vector. Moreover, the content of the backend outside of
-//! the bit vector is never modified by the methods of this structure.
+//! bits of the bit vector. Query and count methods never depend on it, and
+//! growth operations that write into the last touched word (for example
+//! [`resize`] filling with `true`) may set backend bits beyond the logical
+//! length within that word; only bits past the allocation are never touched.
+//!
+//! [`resize`]: BitVec::resize
 //!
 //! It is possible to juggle between all flavors using [`From`]/[`Into`], and
 //! with [`TryFrom`]/[`TryInto`] when going [from a non-atomic to an atomic bit vector].

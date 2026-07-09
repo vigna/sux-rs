@@ -234,7 +234,10 @@ impl<K: ?Sized, D: Backend<Word: Word>, S, E> CompVFunc<K, D, S, E> {
 // VBuilder<BitVec<Box<[W]>>, S, E> configured with the usual VBuilder knobs
 // (offline, check-dups, low-mem, threads, eps, seed). The only
 // CompVFunc-specific configuration is the Huffman codec used for values; the
-// default is unlimited-length Huffman.
+// default is HuffmanConf::new() (decoding-table cap 20, entropy threshold
+// 0.9), which escapes rare symbols; use HuffmanConf::unlimited() to drop the
+// table-size and entropy cuts (only the intrinsic codeword-length cap then
+// escapes symbols).
 //
 // Both build- and query-side edge generation go through
 // ShardEdge::local_edge(shard_edge.local_sig(sig)), which provides fuse-graph
