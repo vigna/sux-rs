@@ -566,11 +566,12 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
     /// Returns in place the string of given index by writing
     /// its bytes into the provided string.
     pub fn get_in_place(&self, index: usize, result: &mut String) {
-        let mut buffer = Vec::with_capacity(64);
+        // Reuse the caller's allocation: take its bytes, refill them
+        // (get_in_place_impl clears first), and rebuild the String.
+        let mut buffer = std::mem::take(result).into_bytes();
         self.get_in_place_impl(index, &mut buffer);
-        result.clear();
         debug_assert!(std::str::from_utf8(&buffer).is_ok());
-        result.push_str(std::str::from_utf8(&buffer).unwrap());
+        *result = String::from_utf8(buffer).expect("rear-coded list stores valid UTF-8");
     }
 
     /// Returns the bytes of the string of given index.
