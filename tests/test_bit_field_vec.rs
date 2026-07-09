@@ -1040,3 +1040,98 @@ fn test_unaligned_conversion_error() {
     );
     assert!(err.to_string().contains(&format!("bit width {bad}")));
 }
+
+#[test]
+fn test_iter_full_width() -> Result<()> {
+    let mut v = BitFieldVec::<Vec<u64>>::new(64, 0);
+    for x in [u64::MAX, 42, 0, 7] {
+        v.push(x);
+    }
+    assert_eq!(v.iter().collect::<Vec<_>>(), vec![u64::MAX, 42, 0, 7]);
+    assert_eq!(v.iter_from(1).collect::<Vec<_>>(), vec![42, 0, 7]);
+    Ok(())
+}
+
+#[test]
+fn test_iter_back_full_width() -> Result<()> {
+    use sux::traits::iter::{IntoUncheckedBackIterator, UncheckedIterator};
+    for (width, values) in [
+        (64usize, vec![u64::MAX, 42, 0, 7]),
+        (33, vec![1u64 << 32, 42, 0, (1 << 33) - 1]),
+        (1, vec![1u64, 0, 1, 1]),
+    ] {
+        let mut v = BitFieldVec::<Vec<u64>>::new(width, 0);
+        for &x in &values {
+            v.push(x);
+        }
+        let mut it = (&v).into_unchecked_iter_back();
+        let mut back = Vec::new();
+        for _ in 0..values.len() {
+            // SAFETY: we pull exactly len elements from an end-positioned
+            // backward iterator, so every call has a preceding element.
+            back.push(unsafe { it.next_unchecked() });
+        }
+        let expected: Vec<_> = values.iter().rev().copied().collect();
+        assert_eq!(back, expected, "width {width}");
+    }
+    Ok(())
+}
+
+#[test]
+fn test_apply_in_place_unchecked_full_width() -> Result<()> {
+    let mut v = BitFieldVec::<Vec<u64>>::new(64, 0);
+    for x in [u64::MAX, 42, 7] {
+        v.push(x);
+    }
+    let mut seen = Vec::new();
+    // SAFETY: the closure returns values fitting the (full) bit width.
+    unsafe {
+        v.apply_in_place_unchecked(|x| {
+            seen.push(x);
+            x.wrapping_add(1)
+        })
+    };
+    assert_eq!(seen, vec![u64::MAX, 42, 7]);
+    assert_eq!(v.iter().collect::<Vec<_>>(), vec![0, 43, 8]);
+    Ok(())
+}
+
+#[test]
+fn test_apply_in_place_unchecked_logical_only() -> Result<()> {
+    for width in [3usize, 5, 8, 64] {
+        // Backend with sentinel words beyond the words containing elements,
+        // and dirty tail bits in the last logical word.
+        let len = 5;
+        let words = (len * width).div_ceil(64);
+        let mut backend = vec![0u64; words + 2];
+        backend[words] = 0xDEAD_BEEF_DEAD_BEEF;
+        backend[words + 1] = 0xCAFE_BABE_CAFE_BABE;
+        let tail_bits = (len * width) % 64;
+        if tail_bits != 0 {
+            backend[words - 1] = u64::MAX << tail_bits;
+        }
+        let mut v = BitFieldVec::wrap(backend, width, len);
+        let mut count = 0usize;
+        // SAFETY: the closure returns 1, which fits every tested width.
+        unsafe {
+            v.apply_in_place_unchecked(|x| {
+                count += 1;
+                assert_eq!(x, 0, "width {width}: called on a non-element");
+                1
+            })
+        };
+        assert_eq!(count, len, "width {width}");
+        assert_eq!(v.iter().collect::<Vec<_>>(), vec![1; len], "width {width}");
+        let (backend, _, _) = v.into_raw_parts();
+        assert_eq!(backend[words], 0xDEAD_BEEF_DEAD_BEEF, "width {width}");
+        assert_eq!(backend[words + 1], 0xCAFE_BABE_CAFE_BABE, "width {width}");
+        if tail_bits != 0 {
+            assert_eq!(
+                backend[words - 1] & (u64::MAX << tail_bits),
+                u64::MAX << tail_bits,
+                "width {width}: tail bits must be preserved"
+            );
+        }
+    }
+    Ok(())
+}
