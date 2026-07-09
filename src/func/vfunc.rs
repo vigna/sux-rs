@@ -164,6 +164,7 @@ impl<K: ?Sized, D: ValidateBacking, S: Sig, E: ShardEdge<S, 3>> VFunc<K, D, S, E
     /// bounds. On `Ok`, `get` is memory-safe for any key; otherwise an error is
     /// returned.
     pub fn validate(&self) -> anyhow::Result<()> {
+        self.shard_edge.validate()?;
         let shard_bits = self.shard_edge.shard_high_bits();
         anyhow::ensure!(
             shard_bits < usize::BITS,

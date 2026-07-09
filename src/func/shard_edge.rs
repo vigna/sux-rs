@@ -225,6 +225,19 @@ pub trait ShardEdge<S, const K: usize>: Default + Display + Clone + Copy + Send 
     /// Returns the number of high bits used for sharding.
     fn shard_high_bits(&self) -> u32;
 
+    /// Validates the sharding/edge parameters of this instance, for use
+    /// after deserializing from an untrusted source.
+    ///
+    /// On `Ok`, the parameter accessors ([`shard_high_bits`],
+    /// [`num_vertices`]) and edge computations do not panic or overflow.
+    /// The default implementation accepts any instance.
+    ///
+    /// [`shard_high_bits`]: ShardEdge::shard_high_bits
+    /// [`num_vertices`]: ShardEdge::num_vertices
+    fn validate(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Returns the number of sorting keys to be used for count sorting
     /// signatures before processing.
     ///
@@ -506,6 +519,25 @@ mod fuse {
         type LocalSig = [u64; 1];
         type Vertex = u32;
 
+        fn validate(&self) -> anyhow::Result<()> {
+            anyhow::ensure!(
+                self.shard_bits_shift <= 63,
+                "shard_bits_shift {} exceeds 63",
+                self.shard_bits_shift
+            );
+            anyhow::ensure!(
+                self.log2_seg_size <= 32,
+                "log2_seg_size {} exceeds 32",
+                self.log2_seg_size
+            );
+            // The shift is in range: log2_seg_size <= 32 was checked above.
+            anyhow::ensure!(
+                (u128::from(self.l) + 2) << self.log2_seg_size <= 1u128 << 32,
+                "(l + 2) << log2_seg_size exceeds u32::MAX + 1"
+            );
+            Ok(())
+        }
+
         fn set_up_shards(&mut self, n: usize, eps: f64) {
             self.shard_bits_shift = 63
                 - if n <= Self::MAX_LIN_SIZE {
@@ -758,6 +790,20 @@ mod fuse {
         type LocalSig = [u64; 1];
         type Vertex = u32;
 
+        fn validate(&self) -> anyhow::Result<()> {
+            anyhow::ensure!(
+                self.log2_seg_size <= 32,
+                "log2_seg_size {} exceeds 32",
+                self.log2_seg_size
+            );
+            // The shift is in range: log2_seg_size <= 32 was checked above.
+            anyhow::ensure!(
+                (u128::from(self.l) + 2) << self.log2_seg_size <= 1u128 << 32,
+                "(l + 2) << log2_seg_size exceeds u32::MAX + 1"
+            );
+            Ok(())
+        }
+
         fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
@@ -828,6 +874,22 @@ mod fuse {
         type SortSigVal<V: BinSafe> = SigVal<[u64; 1], V>;
         type LocalSig = [u64; 2];
         type Vertex = u64;
+
+        fn validate(&self) -> anyhow::Result<()> {
+            anyhow::ensure!(
+                self.log2_seg_size <= 63,
+                "log2_seg_size {} exceeds 63",
+                self.log2_seg_size
+            );
+            // The shift is in range: log2_seg_size <= 63 was checked above.
+            // Vertices are computed in usize; `as u128` is a lossless
+            // widening (usize is at most 64 bits).
+            anyhow::ensure!(
+                (u128::from(self.l) + 2) << self.log2_seg_size <= usize::MAX as u128 + 1,
+                "(l + 2) << log2_seg_size exceeds usize::MAX + 1"
+            );
+            Ok(())
+        }
 
         fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 
@@ -1010,6 +1072,25 @@ mod fuse {
         type LocalSig = [u64; 1];
         type Vertex = u32;
 
+        fn validate(&self) -> anyhow::Result<()> {
+            anyhow::ensure!(
+                self.shard_bits_shift <= 63,
+                "shard_bits_shift {} exceeds 63",
+                self.shard_bits_shift
+            );
+            anyhow::ensure!(
+                self.log2_seg_size <= 32,
+                "log2_seg_size {} exceeds 32",
+                self.log2_seg_size
+            );
+            // The shift is in range: log2_seg_size <= 32 was checked above.
+            anyhow::ensure!(
+                (u128::from(self.l) + 2) << self.log2_seg_size <= 1u128 << 32,
+                "(l + 2) << log2_seg_size exceeds u32::MAX + 1"
+            );
+            Ok(())
+        }
+
         fn set_up_shards(&mut self, n: usize, eps: f64) {
             self.shard_bits_shift = 63
                 - if n <= Self::MIN_SHARD {
@@ -1174,6 +1255,10 @@ mod fuse {
         type LocalSig = [u64; 2];
         type Vertex = u32;
 
+        fn validate(&self) -> anyhow::Result<()> {
+            self.0.validate()
+        }
+
         fn set_up_shards(&mut self, n: usize, eps: f64) {
             self.0.set_up_shards(n, eps);
         }
@@ -1241,6 +1326,47 @@ mod fuse {
             )
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn test_validate_rejects_corrupt_fuse_lge_3_shards() {
+            let good = FuseLge3Shards::default();
+            assert!(ShardEdge::<[u64; 2], 3>::validate(&good).is_ok());
+            let bad = FuseLge3Shards {
+                shard_bits_shift: 64,
+                log2_seg_size: 0,
+                l: 0,
+            };
+            assert!(ShardEdge::<[u64; 2], 3>::validate(&bad).is_err());
+            let bad = FuseLge3Shards {
+                shard_bits_shift: 63,
+                log2_seg_size: 60,
+                l: 0,
+            };
+            assert!(ShardEdge::<[u64; 2], 3>::validate(&bad).is_err());
+        }
+
+        #[test]
+        fn test_validate_rejects_corrupt_fuse_3_shards() {
+            let good = Fuse3Shards::default();
+            assert!(ShardEdge::<[u64; 2], 3>::validate(&good).is_ok());
+            let bad = Fuse3Shards {
+                shard_bits_shift: 64,
+                log2_seg_size: 0,
+                l: 0,
+            };
+            assert!(ShardEdge::<[u64; 2], 3>::validate(&bad).is_err());
+            let bad = Fuse3Shards {
+                shard_bits_shift: 63,
+                log2_seg_size: 60,
+                l: 0,
+            };
+            assert!(ShardEdge::<[u64; 2], 3>::validate(&bad).is_err());
+        }
+    }
 }
 
 pub use fuse::*;
@@ -1275,6 +1401,15 @@ mod mwhc {
         type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = u64;
+
+        fn validate(&self) -> anyhow::Result<()> {
+            anyhow::ensure!(
+                self.seg_size.checked_mul(3).is_some(),
+                "seg_size {} * 3 overflows usize",
+                self.seg_size
+            );
+            Ok(())
+        }
 
         fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 
@@ -1425,6 +1560,20 @@ mod mwhc {
         type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = u32;
+
+        fn validate(&self) -> anyhow::Result<()> {
+            anyhow::ensure!(
+                self.shard_bits_shift <= 63,
+                "shard_bits_shift {} exceeds 63",
+                self.shard_bits_shift
+            );
+            anyhow::ensure!(
+                self.seg_size.checked_mul(3).is_some(),
+                "seg_size {} * 3 overflows usize",
+                self.seg_size
+            );
+            Ok(())
+        }
 
         fn set_up_shards(&mut self, n: usize, eps: f64) {
             self.shard_bits_shift =
