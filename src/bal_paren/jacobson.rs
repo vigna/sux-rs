@@ -338,6 +338,28 @@ pub struct JacobsonBalParen<B = BitVec<Box<[usize]>>, P = EfDict<usize>, O = Com
     pioneer_match_offsets: O,
 }
 
+/// Checks that `words` encodes a balanced parenthesis sequence over its first
+/// `len` bits: 1-bits open, 0-bits close, the running depth never goes
+/// negative, and it returns to zero at the end.
+fn check_balance(words: &[usize], len: usize) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        words.len() >= len.div_ceil(WORD_BITS),
+        "the backend has {} words, too few for {len} bits",
+        words.len()
+    );
+    let mut depth: i64 = 0;
+    for i in 0..len {
+        if words[i / WORD_BITS] & (1usize << (i % WORD_BITS)) != 0 {
+            depth += 1;
+        } else {
+            depth -= 1;
+            anyhow::ensure!(depth >= 0, "unbalanced parentheses: negative depth at position {i}");
+        }
+    }
+    anyhow::ensure!(depth == 0, "unbalanced parentheses: final depth is {depth} instead of 0");
+    Ok(())
+}
+
 /// Identifies pioneers and builds the Elias–Fano position index.
 ///
 /// Returns `(ef_positions, pioneer_match_offsets)` where the offsets are
@@ -348,19 +370,8 @@ fn build_pioneers(words: impl AsRef<[usize]> + BitLength) -> (EfDict<usize>, Vec
     let num_words = len.div_ceil(WORD_BITS);
     debug_assert!(words.len() >= num_words);
 
-    // The constructors document a panic on unbalanced input. Validate up front:
-    // 1-bits open, 0-bits close; the depth must never go negative and must
-    // return to zero over the logical length.
-    let mut depth: i64 = 0;
-    for i in 0..len {
-        if words[i / WORD_BITS] & (1usize << (i % WORD_BITS)) != 0 {
-            depth += 1;
-        } else {
-            depth -= 1;
-            assert!(depth >= 0, "Unbalanced parentheses");
-        }
-    }
-    assert!(depth == 0, "Unbalanced parentheses");
+    // The constructors document a panic on unbalanced input.
+    check_balance(words, len).expect("Unbalanced parentheses");
 
     let mut count = vec![0i32; num_words];
     let mut residual = vec![0usize; num_words];
@@ -479,6 +490,50 @@ impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B> {
             pioneer_positions: ef_positions,
             pioneer_match_offsets: offsets,
         }
+    }
+}
+
+impl<B: AsRef<[usize]> + BitLength, O: SliceByValue<Value = usize>>
+    JacobsonBalParen<B, EfDict<usize>, O>
+{
+    /// Checks that the pioneer index and match offsets are consistent with
+    /// the parenthesis bit vector.
+    ///
+    /// After deserializing from an untrusted or possibly stale source, call
+    /// this method before use: [`find_close`](BalParen::find_close) otherwise
+    /// trusts the pioneer positions and offsets and indexes the backing words
+    /// with `pioneer + offset`, which can read out of bounds on malformed
+    /// input.
+    ///
+    /// The check rebuilds the canonical pioneers from the bit vector and
+    /// compares them against the stored index (`O(len)`).
+    pub fn validate(&self) -> anyhow::Result<()> {
+        check_balance(self.paren.as_ref(), self.paren.len())?;
+        let (positions, matches) = build_pioneers(&self.paren);
+        anyhow::ensure!(
+            self.pioneer_match_offsets.len() == matches.len(),
+            "the offset structure has {} entries instead of {}",
+            self.pioneer_match_offsets.len(),
+            matches.len()
+        );
+        let mut stored = self.pioneer_positions.iter();
+        for (i, canonical) in positions.iter().enumerate() {
+            anyhow::ensure!(
+                stored.next() == Some(canonical),
+                "pioneer position {i} does not match the canonical position {canonical}"
+            );
+            let offset = self.pioneer_match_offsets.index_value(i);
+            anyhow::ensure!(
+                offset == matches[i],
+                "pioneer offset {i} is {offset} instead of {}",
+                matches[i]
+            );
+        }
+        anyhow::ensure!(
+            stored.next().is_none(),
+            "the pioneer index has more positions than the canonical rebuild"
+        );
+        Ok(())
     }
 }
 
@@ -1024,5 +1079,32 @@ mod tests {
         // "()" pairs: no far parens
         assert_eq!(count_far_open(usize::MAX / 3, WORD_BITS), 0);
         assert_eq!(count_far_close(usize::MAX / 3, WORD_BITS), 0);
+    }
+
+    #[test]
+    fn test_validate() {
+        let bp = JacobsonBalParen::new(random_balanced(256));
+        assert!(bp.validate().is_ok());
+
+        // Unbalanced parentheses: flip the first (open) bit to a close, so
+        // the running depth goes negative at position 0.
+        let mut bits = random_balanced(256);
+        bits.set(0, false);
+        let bad = JacobsonBalParen {
+            paren: bits,
+            pioneer_positions: bp.pioneer_positions.clone(),
+            pioneer_match_offsets: bp.pioneer_match_offsets.clone(),
+        };
+        assert!(bad.validate().is_err());
+
+        // Corrupt offsets: balanced parentheses but zeroed match offsets.
+        let count = bp.pioneer_match_offsets.len();
+        assert!(count > 0, "expected far matches at length 256");
+        let bad = JacobsonBalParen {
+            paren: random_balanced(256),
+            pioneer_positions: bp.pioneer_positions.clone(),
+            pioneer_match_offsets: CompIntList::new(0usize, &vec![0usize; count]),
+        };
+        assert!(bad.validate().is_err());
     }
 }
