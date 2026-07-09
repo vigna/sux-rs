@@ -282,3 +282,25 @@ fn test_builder_rejects_invalid_eps() {
     )
     .expect("the default eps must be accepted");
 }
+
+#[test]
+fn test_duplicate_keys_error() {
+    // Two identical keys make every solve attempt fail: the builder must
+    // detect the duplicate and return a DuplicateKey error instead of
+    // reseeding until it panics. check_dups is left at its default (false).
+    let mut pl = ProgressLogger::default();
+    let keys = vec![5usize, 5];
+    let values = vec![0usize, 1];
+    let result = <VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>>::try_new_with_builder(
+        FromCloneableIntoIterator::from(keys),
+        FromCloneableIntoIterator::from(values),
+        VBuilder::default(),
+        &mut pl,
+    );
+    let err = result.expect_err("duplicate keys must return an error, not panic or loop");
+    assert!(
+        err.downcast_ref::<sux::func::BuildError>()
+            .is_some_and(|e| matches!(e, sux::func::BuildError::DuplicateKey)),
+        "expected a DuplicateKey error, got: {err:#}"
+    );
+}

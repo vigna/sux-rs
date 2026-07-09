@@ -682,6 +682,7 @@ mod build {
                     )
                 };
 
+                builder.enable_dup_check_on_unsolvable(&result, pl);
                 if let Some(r) = rs.handle_solve_result(result, pl)? {
                     pl.info(format_args!(
                         "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
@@ -1505,6 +1506,7 @@ mod build {
                     )
                 };
 
+                builder.enable_dup_check_on_unsolvable(&result, pl);
                 if let Some(r) = rs.handle_solve_result(result, pl)? {
                     pl.info(format_args!(
                         "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",

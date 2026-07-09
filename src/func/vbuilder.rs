@@ -749,6 +749,7 @@ impl<
                 )
             };
 
+            self.enable_dup_check_on_unsolvable(&result, pl);
             if let Some(r) = rs.handle_solve_result(result, pl)? {
                 let num_keys = self.num_keys;
                 pl.info(format_args!(
@@ -792,6 +793,33 @@ impl<
             max_shard_too_big: 0,
             unsolvable_count: 0,
         })
+    }
+
+    /// Enables duplicate-key detection after a shard proves unsolvable.
+    ///
+    /// With duplicate detection off (the default), duplicate keys make every
+    /// solve attempt fail identically: equal keys hash to equal signatures
+    /// under every seed, and the peeling graph cancels the duplicate edge, so
+    /// no vertex ever reaches degree one. Left alone, the retry loop would
+    /// reseed until it panics. On the first [`SolveError::UnsolvableShard`],
+    /// turn on the duplicate scan so the next retry escalates genuine
+    /// duplicate keys to [`BuildError::DuplicateKey`] instead.
+    pub(crate) fn enable_dup_check_on_unsolvable<R>(
+        &mut self,
+        result: &anyhow::Result<R>,
+        pl: &mut impl ProgressLog,
+    ) {
+        if !self.check_dups
+            && matches!(
+                result.as_ref().err().and_then(|e| e.downcast_ref::<SolveError>()),
+                Some(SolveError::UnsolvableShard)
+            )
+        {
+            self.check_dups = true;
+            pl.info(format_args!(
+                "Unsolvable shard: enabling duplicate-key detection for subsequent retries"
+            ));
+        }
     }
 
     /// Populates a shard store from keys and values, then calls a build
@@ -882,6 +910,7 @@ impl<
                 self.try_solve_once(seed, &mut populate, build_fn, pl, &mut state)
             };
 
+            self.enable_dup_check_on_unsolvable(&result, pl);
             if let Some(r) = rs.handle_solve_result(result, pl)? {
                 let num_keys = self.num_keys;
                 pl.info(format_args!(
@@ -1009,6 +1038,7 @@ impl<
                 }
             };
 
+            self.enable_dup_check_on_unsolvable(&result, pl);
             if let Some(r) = rs.handle_solve_result(result, pl)? {
                 let num_keys = self.num_keys;
                 pl.info(format_args!(
