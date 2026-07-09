@@ -373,7 +373,7 @@ mod build {
                 i += 1;
             }
 
-            assert_eq!(i, n, "Expected {n} keys but got {i}");
+            anyhow::ensure!(i == n, "Expected {n} keys but got {i}");
             lcp_bit_lens.push(curr_lcp_bits);
             assert_eq!(lcp_bit_lens.len(), num_buckets);
 
@@ -885,7 +885,7 @@ mod build {
                 i += 1;
             }
 
-            assert_eq!(i, n, "Expected {n} keys but got {i}");
+            anyhow::ensure!(i == n, "Expected {n} keys but got {i}");
             lcp_bit_lens.push(curr_lcp_bits);
             assert_eq!(lcp_bit_lens.len(), num_buckets);
 

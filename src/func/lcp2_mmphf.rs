@@ -505,7 +505,7 @@ mod build {
                                 buf.clear();
                             }
 
-                            assert_eq!(idx, n, "Expected {n} keys but got {idx}");
+                            anyhow::ensure!(idx == n, "Expected {n} keys but got {idx}");
                             assert_eq!(state.lcp_bit_lens.len(), num_buckets);
 
                             Ok(max_value)
@@ -1316,7 +1316,7 @@ mod build {
                                 buf.clear();
                             }
 
-                            assert_eq!(idx, n, "Expected {n} keys but got {idx}");
+                            anyhow::ensure!(idx == n, "Expected {n} keys but got {idx}");
                             assert_eq!(state.lcp_bit_lens.len(), num_buckets);
 
                             Ok(max_value)

@@ -81,3 +81,12 @@ fn test_validate() -> Result<()> {
     assert!(func.validate().is_ok());
     Ok(())
 }
+
+#[test]
+fn test_hash_width_zero_errors() {
+    let mut pl = ProgressLogger::default();
+    // hash_width == 0 is invalid; the try_ constructor must return Err, not
+    // panic.
+    let r = MyBitSignedVFunc::try_new(FromCloneableIntoIterator::from(0..10usize), 0, &mut pl);
+    assert!(r.is_err());
+}

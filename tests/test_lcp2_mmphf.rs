@@ -270,3 +270,13 @@ fn test_long_common_prefix_str() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn test_key_count_mismatch() {
+    // Sorted keys but n larger than the actual count: the constructor must
+    // return Err (the count assert is now a recoverable error), not panic.
+    let keys: Vec<u64> = vec![100, 200];
+    let result: Result<Lcp2MmphfInt<u64>> =
+        Lcp2MmphfInt::try_new(FromSlice::new(&keys), 3, no_logging![]);
+    assert!(result.is_err());
+}
