@@ -95,6 +95,35 @@
 - Several CLI utilities validate their arguments instead of dividing by zero
   or looping forever.
 
+- Select structure builders (`Select9`, `SelectAdapt`, `SelectAdaptConst`,
+  `SelectSmall`) now ignore stale backing words beyond the logical length
+  (reachable via `BitVec::pop`/`resize`), instead of panicking or indexing
+  padding positions.
+
+- `Modulo2System::gaussian_elimination` no longer rejects solvable systems
+  containing redundant identity rows.
+
+- The branchy Huffman decoder returns `None` for out-of-window values
+  instead of panicking, matching the branchless strategy.
+
+- The parallel builder no longer applies the max-shard sanity check to
+  hinted builds, mirroring the sequential builder.
+
+- `VBuilder::eps` is now validated to lie in the open interval (0, 1).
+
+- New `ShardEdge::validate` used by `VFunc`/`VFunc2`/`VFilter` validation,
+  and new `CompVFunc::validate`, so corrupt deserialized shard parameters
+  are reported as errors instead of panicking.
+
+- `BitVec::reserve`, `reserve_exact`, and `append_value` use checked
+  bit-length arithmetic.
+
+- Oversized byte-key LCP lengths (> `u32::MAX` bits) are reported as errors
+  by the `Lcp2Mmphf` constructors instead of panicking.
+
+- The CLI utilities propagate unaligned-conversion errors instead of
+  panicking on `--unaligned`.
+
 ### Improved
 
 - Structured logging for structures with substructures.
