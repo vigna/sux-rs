@@ -138,11 +138,14 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
             stringify!(W),
             W::BITS as usize,
         );
+        let end = pos
+            .checked_add(width)
+            .expect("bit range end (pos + width) overflows usize");
         assert!(
-            pos + width <= self.len(),
+            end <= self.len(),
             "bit range {}..{} out of bounds for length {}",
             pos,
-            pos + width,
+            end,
             self.len()
         );
         assert!(
