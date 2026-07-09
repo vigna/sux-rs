@@ -1230,3 +1230,22 @@ fn test_bit_vec_chunks_mut_size_hint() {
     assert_eq!(chunks.len(), 4);
     assert_eq!(chunks.count(), 4);
 }
+
+#[test]
+fn test_atomic_flip_release_partial_word() {
+    // Release is a store-only ordering: the residual-word update must be a
+    // single RMW so that any ordering valid for the full-word path is also
+    // valid for a partial last word (len 65 used to panic with
+    // "there is no such thing as a release load").
+    for len in [64, 65] {
+        let mut bv = AtomicBitVec::<Vec<AtomicUsize>>::new(len);
+        bv.set(len - 1, true, Ordering::Relaxed);
+        bv.flip(Ordering::Release);
+        assert!(!bv.get(len - 1, Ordering::Relaxed), "len {len}");
+        assert!(bv.get(0, Ordering::Relaxed), "len {len}");
+        bv.fill(true, Ordering::Release);
+        assert!(bv.get(len - 1, Ordering::Relaxed), "len {len}");
+        bv.fill(false, Ordering::Release);
+        assert!(!bv.get(0, Ordering::Relaxed), "len {len}");
+    }
+}
