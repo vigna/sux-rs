@@ -1180,3 +1180,17 @@ fn test_get_bits_panics_on_bit_range_end_overflow() {
     let bv: BitVec = BitVec::new(8);
     bv.get_bits(usize::MAX, 1);
 }
+
+#[test]
+#[should_panic(expected = "bit length overflows usize")]
+fn test_reserve_panics_on_len_overflow() {
+    let mut b = BitVec::<Vec<usize>>::new(1);
+    b.reserve(usize::MAX);
+}
+
+#[test]
+#[should_panic(expected = "bit length overflows usize")]
+fn test_reserve_exact_panics_on_len_overflow() {
+    let mut b = BitVec::<Vec<usize>>::new(1);
+    b.reserve_exact(usize::MAX);
+}
