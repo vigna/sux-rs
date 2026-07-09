@@ -194,7 +194,12 @@ impl<W: Word> Modulo2System<W> {
         }
         let mut scratch: Vec<u32> = Vec::new();
         'main: for i in 0..equations.len() - 1 {
-            ensure!(!equations[i].vars.is_empty());
+            // A pivot row reduced to `[] = c`: unsolvable if c != 0, otherwise
+            // a redundant identity that takes no part in elimination.
+            if equations[i].vars.is_empty() {
+                ensure!(!equations[i].is_unsolvable(), "System is unsolvable");
+                continue;
+            }
             for j in i + 1..equations.len() {
                 let (left, right) = equations.split_at_mut(j);
                 let eq_i = &mut left[i];
@@ -487,6 +492,37 @@ mod tests {
 
         let solution = system.gaussian_elimination();
         assert!(solution.is_err());
+    }
+
+    #[test]
+    fn test_gaussian_elimination_leading_identity_row() {
+        let mut system = Modulo2System::<usize>::new(1);
+        // SAFETY: the empty variable list is sorted and contains no
+        // out-of-bounds variable indices.
+        let eq0 = unsafe { Modulo2Equation::from_parts(vec![], 0_usize) };
+        system.push(eq0);
+        // SAFETY: variable 0 is in bounds for this one-variable system, and
+        // the variable list is sorted.
+        let eq1 = unsafe { Modulo2Equation::from_parts(vec![0], 1_usize) };
+        system.push(eq1);
+
+        let solution = system.gaussian_elimination().unwrap();
+        assert!(system.check(&solution));
+    }
+
+    #[test]
+    fn test_gaussian_elimination_leading_unsolvable_row() {
+        let mut system = Modulo2System::<usize>::new(1);
+        // SAFETY: the empty variable list is sorted and contains no
+        // out-of-bounds variable indices.
+        let eq0 = unsafe { Modulo2Equation::from_parts(vec![], 1_usize) };
+        system.push(eq0);
+        // SAFETY: variable 0 is in bounds for this one-variable system, and
+        // the variable list is sorted.
+        let eq1 = unsafe { Modulo2Equation::from_parts(vec![0], 1_usize) };
+        system.push(eq1);
+
+        assert!(system.gaussian_elimination().is_err());
     }
 
     #[test]
