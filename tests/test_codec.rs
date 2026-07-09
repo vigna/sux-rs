@@ -393,3 +393,20 @@ fn test_huffman_i32_with_negatives() {
         round_trip_generic(&coder, &decoder, s);
     }
 }
+
+#[test]
+fn test_huffman_empty_distribution() {
+    // The Codec contract allows the empty map and promises a degenerate
+    // coder: encoding any symbol reports out-of-table, and decoding any
+    // window value reports no match with both decoding strategies.
+    let freqs: HashMap<u64, usize> = HashMap::new();
+    let coder = HuffmanConf::default().build_coder(&freqs);
+    assert_eq!(coder.encode(0), None);
+    assert_eq!(coder.encode(u64::MAX), None);
+    let mut decoder = coder.into_decoder();
+    assert_eq!(decoder.decode(0), None);
+    assert_eq!(decoder.decode(usize::MAX), None);
+    decoder.branchless(true);
+    assert_eq!(decoder.decode(0), None);
+    assert_eq!(decoder.decode(usize::MAX), None);
+}
