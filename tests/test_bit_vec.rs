@@ -1195,3 +1195,12 @@ fn test_reserve_exact_panics_on_len_overflow() {
     let mut b = BitVec::<Vec<usize>>::new(1);
     b.reserve_exact(usize::MAX);
 }
+
+#[test]
+#[should_panic(expected = "overflows usize")]
+fn test_unaligned_get_bits_overflow() {
+    let bv = BitVec::<Vec<usize>>::new(64);
+    // pos + width wraps in release without a checked add; the bounds check
+    // must reject it deterministically in both profiles.
+    let _ = bv.get_value_unaligned(usize::MAX, 2);
+}
