@@ -154,6 +154,9 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
 
     /// The target relative space loss due to [ε-cost sharding].
     ///
+    /// The value must lie in the open interval (0, 1); constructors return an
+    /// error otherwise.
+    ///
     /// The default is 0.001. Setting a larger target, for example, 0.01, will
     /// increase the space overhead due to sharding, but will provide in general
     /// finer shards. This might not always happen, however, because the ε-cost
@@ -769,9 +772,12 @@ impl<
     ///
     /// [`try_populate_and_build`]: Self::try_populate_and_build
     pub(crate) fn retry_state(&mut self, pl: &mut impl ProgressLog) -> anyhow::Result<RetryState> {
+        // The ε-cost formulas divide by ln(1 - eps): eps == 0 divides by
+        // zero and eps >= 1 yields NaN, so only the open interval is
+        // meaningful. The range check also rejects NaN and ±∞.
         anyhow::ensure!(
-            self.eps.is_finite() && self.eps >= 0.0,
-            "eps must be finite and non-negative, got {}",
+            self.eps > 0.0 && self.eps < 1.0,
+            "eps must be in the open interval (0, 1), got {}",
             self.eps
         );
         self.init_shards_and_seed();

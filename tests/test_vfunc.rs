@@ -251,11 +251,12 @@ fn test_par_builder_rejects_offline() {
     );
 }
 
-/// A non-finite or negative `eps` is rejected up front rather than triggering an
-/// unbounded shard-resizing retry loop.
+/// An `eps` outside the open interval (0, 1) — including NaN and ±∞ — is
+/// rejected up front rather than producing NaN shard sizing or an unbounded
+/// shard-resizing retry loop.
 #[test]
 fn test_builder_rejects_invalid_eps() {
-    for bad in [-1.0_f64, f64::NAN, f64::INFINITY] {
+    for bad in [-1.0_f64, 0.0, 1.0, 1.5, f64::NAN, f64::INFINITY] {
         let result = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
             FromCloneableIntoIterator::from(0..1000),
             FromCloneableIntoIterator::from(0_usize..),
@@ -264,8 +265,17 @@ fn test_builder_rejects_invalid_eps() {
         );
         let err = result.expect_err("builder must reject invalid eps");
         assert!(
-            err.to_string().contains("must be finite"),
+            err.to_string().contains("eps must be in the open interval"),
             "expected an eps-validation error for {bad}, got: {err}"
         );
     }
+
+    // The default eps stays accepted.
+    <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
+        FromCloneableIntoIterator::from(0..1000),
+        FromCloneableIntoIterator::from(0_usize..),
+        VBuilder::default().eps(0.001),
+        &mut ProgressLogger::default(),
+    )
+    .expect("the default eps must be accepted");
 }
