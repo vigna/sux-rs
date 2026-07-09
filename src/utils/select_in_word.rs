@@ -18,8 +18,19 @@
 /// assert_eq!(0x8000_0000_8000_0000_u64.select_in_word(1), 63);
 /// ```
 pub trait SelectInWord: core::ops::Not<Output = Self> + Sized + Copy {
+    /// Returns the position of the one of the given `rank` (0-based).
+    ///
+    /// `rank` must be strictly less than the number of ones in the word;
+    /// otherwise the result is unspecified and may panic (some
+    /// implementations index a lookup table out of bounds, others return a
+    /// position at or beyond the word width).
     fn select_in_word(&self, rank: usize) -> usize;
 
+    /// Returns the position of the zero of the given `rank` (0-based).
+    ///
+    /// `rank` must be strictly less than the number of zeros in the word;
+    /// otherwise the result is unspecified and may panic (see
+    /// [`select_in_word`](Self::select_in_word)).
     #[inline(always)]
     fn select_zero_in_word(&self, rank: usize) -> usize {
         (!*self).select_in_word(rank)
