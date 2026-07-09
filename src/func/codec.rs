@@ -156,10 +156,11 @@ pub trait Decoder<W> {
 /// [`escaped_symbols_len`]: Decoder::escaped_symbols_len
 #[derive(Debug, Clone, Copy)]
 pub struct HuffmanConf {
-    /// Hard cap on the number of distinct codeword lengths kept in
-    /// the decoding table. Symbols whose codeword length exceeds
-    /// this limit are encoded via the escape codeword followed by
-    /// a literal. Default: 20.
+    /// Hard cap on the number of blocks in the canonical decoding table,
+    /// *including* the escape block when escaping occurs: at most
+    /// `max_decoding_table_len - 1` distinct codeword lengths are kept, and
+    /// symbols beyond the cut are encoded via the escape codeword followed
+    /// by a literal. Default: 20.
     pub max_decoding_table_len: usize,
     /// Cumulative-entropy fraction threshold: the table is cut once
     /// the cumulative bit length of the codewords kept exceeds this
@@ -202,8 +203,10 @@ impl HuffmanConf {
     ///
     /// # Arguments
     ///
-    /// * `max_decoding_table_len` - caps the number of distinct
-    ///   codeword lengths in the canonical decoding table.
+    /// * `max_decoding_table_len` - caps the number of blocks in the
+    ///   canonical decoding table, including the escape block when escaping
+    ///   occurs (i.e., at most `max_decoding_table_len - 1` distinct
+    ///   codeword lengths are kept).
     ///
     /// * `entropy_threshold` - the cumulative-entropy fraction
     ///   beyond which infrequent symbols are diverted to the escape
