@@ -302,6 +302,11 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
             overhead_percentage > 0.0,
             "overhead_percentage must be positive"
         );
+        assert!(
+            max_log2_words_per_subinv < usize::BITS as usize,
+            "max_log2_words_per_subinv ({max_log2_words_per_subinv}) must be less than {}",
+            usize::BITS
+        );
         let m = 1usize << max_log2_words_per_subinv;
 
         let target_span =
@@ -318,6 +323,16 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
         max_log2_words_per_subinventory: usize,
     ) -> Self {
         assert_inventory_length(bits.len());
+        assert!(
+            log2_ones_per_inventory < usize::BITS as usize,
+            "log2_ones_per_inventory ({log2_ones_per_inventory}) must be less than {}",
+            usize::BITS
+        );
+        assert!(
+            max_log2_words_per_subinventory < usize::BITS as usize,
+            "max_log2_words_per_subinventory ({max_log2_words_per_subinventory}) must be less than {}",
+            usize::BITS
+        );
         let num_bits = max(1, bits.len());
         let ones_per_inventory = 1 << log2_ones_per_inventory;
         let ones_per_inventory_mask = ones_per_inventory - 1;

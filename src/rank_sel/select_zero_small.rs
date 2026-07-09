@@ -180,6 +180,7 @@ macro_rules! impl_select_zero_small {
             /// [`RankSmall`] blocks per inventory on average.
             #[must_use]
             pub fn with_inv(small_counters: C, blocks_per_inv: usize) -> Self {
+                assert!(blocks_per_inv > 0, "blocks_per_inv must be positive");
                 let num_bits = small_counters.len();
                 let num_ones = small_counters.len() - small_counters.num_ones();
 
@@ -250,7 +251,9 @@ macro_rules! impl_select_zero_small {
                     inventory.push(0);
                     inventory_begin.push(0 as usize);
                 } else {
-                    inventory_begin.push(small_counters.as_ref().len() as usize);
+                    // The sentinel bounds an inventory index, so it must be the
+                    // inventory length, not the backing word count.
+                    inventory_begin.push(inventory.len());
                 }
 
                 let inventory = inventory.into_boxed_slice();
