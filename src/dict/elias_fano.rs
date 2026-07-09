@@ -671,7 +671,10 @@ where
 
     #[inline(always)]
     fn into_iter_back_from(self, from: usize) -> EliasFanoBackIter<'a, V, H, L> {
-        self.iter_back_from(from + 1)
+        self.iter_back_from(
+            from.checked_add(1)
+                .expect("position overflow in into_iter_back_from"),
+        )
     }
 }
 
