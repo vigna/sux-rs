@@ -285,6 +285,106 @@ impl<
     }
 }
 
+impl<I: ?Sized, O, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
+    RearCodedList<I, O, D, P, SORTED>
+{
+    /// Shared validation logic; `check_utf8` additionally requires every
+    /// reconstructed element to be valid UTF-8 (used by the `str` variant).
+    fn validate_impl(&self, check_utf8: bool) -> anyhow::Result<()> {
+        anyhow::ensure!(self.ratio > 0, "ratio must be positive");
+        let data = self.data.as_ref();
+        let pointers = self.pointers.as_ref();
+        anyhow::ensure!(
+            pointers.len() == self.len.div_ceil(self.ratio),
+            "wrong number of block pointers: {} for {} elements with ratio {}",
+            pointers.len(),
+            self.len,
+            self.ratio
+        );
+        let mut buffer = Vec::new();
+        let mut rest: &[u8] = data;
+        for (block, &start) in pointers.iter().enumerate() {
+            let pos = data.len() - rest.len();
+            anyhow::ensure!(
+                start == pos,
+                "block {block} pointer {start} does not match the encoded stream position {pos}"
+            );
+            let in_block = Ord::min(self.ratio, self.len - block * self.ratio);
+            for k in 0..in_block {
+                let index = block * self.ratio + k;
+                let (suffix_len, r) = decode_int_checked(rest)
+                    .ok_or_else(|| anyhow::anyhow!("malformed length before element {index}"))?;
+                let r = if k == 0 {
+                    buffer.clear();
+                    r
+                } else {
+                    let (rear_len, r) = decode_int_checked(r).ok_or_else(|| {
+                        anyhow::anyhow!("malformed rear length before element {index}")
+                    })?;
+                    anyhow::ensure!(
+                        rear_len <= buffer.len(),
+                        "rear length {rear_len} of element {index} exceeds the previous element length {}",
+                        buffer.len()
+                    );
+                    buffer.truncate(buffer.len() - rear_len);
+                    r
+                };
+                anyhow::ensure!(
+                    suffix_len <= r.len(),
+                    "suffix length {suffix_len} of element {index} exceeds the remaining data ({})",
+                    r.len()
+                );
+                buffer.extend_from_slice(&r[..suffix_len]);
+                rest = &r[suffix_len..];
+                if check_utf8 {
+                    anyhow::ensure!(
+                        core::str::from_utf8(&buffer).is_ok(),
+                        "element {index} is not valid UTF-8"
+                    );
+                }
+            }
+        }
+        anyhow::ensure!(
+            rest.is_empty(),
+            "{} trailing bytes after the last encoded element",
+            rest.len()
+        );
+        Ok(())
+    }
+}
+
+impl<O, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
+    RearCodedList<str, O, D, P, SORTED>
+{
+    /// Checks the structural invariants of this list.
+    ///
+    /// After deserializing from an untrusted or possibly stale source, call
+    /// this method before use: the accessors otherwise trust the encoded
+    /// stream (lengths, block pointers, UTF-8 validity) and can panic or
+    /// return fabricated data on malformed input.
+    ///
+    /// The check decodes the whole list once (`O(n)` in the encoded size).
+    pub fn validate(&self) -> anyhow::Result<()> {
+        self.validate_impl(true)
+    }
+}
+
+impl<O, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
+    RearCodedList<[u8], O, D, P, SORTED>
+{
+    /// Checks the structural invariants of this list.
+    ///
+    /// After deserializing from an untrusted or possibly stale source, call
+    /// this method before use: the accessors otherwise trust the encoded
+    /// stream (lengths, block pointers) and can panic or return fabricated
+    /// data on malformed input.
+    ///
+    /// The check decodes the whole list once (`O(n)` in the encoded size).
+    pub fn validate(&self) -> anyhow::Result<()> {
+        self.validate_impl(false)
+    }
+}
+
 impl<
     I: PartialEq<O> + PartialEq + ?Sized,
     O: PartialEq<I> + PartialEq,
@@ -1194,6 +1294,30 @@ fn decode_int(mut data: &[u8]) -> (usize, &[u8]) {
     (value, data)
 }
 
+/// Bounds-checked VByte decoding for [`RearCodedList::validate`]: returns
+/// `None` on truncated input, overlong encodings, and value overflow.
+fn decode_int_checked(mut data: &[u8]) -> Option<(usize, &[u8])> {
+    // Each continuation byte contributes 7 bits, so more than this many
+    // bytes cannot encode a `usize`.
+    const MAX_BYTES: u32 = usize::BITS / 7 + 1;
+    let mut byte = *data.first()?;
+    data = &data[1..];
+    let mut value = usize::from(byte & 0x7F);
+    let mut bytes = 1;
+    while (byte >> 7) != 0 {
+        bytes += 1;
+        if bytes > MAX_BYTES {
+            return None;
+        }
+        value = value.checked_add(1)?;
+        byte = *data.first()?;
+        data = &data[1..];
+        // Multiplying by 128 is `<< 7` with overflow detection.
+        value = value.checked_mul(128)? | usize::from(byte & 0x7F);
+    }
+    Some((value, data))
+}
+
 // Structures for on-the-fly serialization with ε-serde
 #[cfg(feature = "epserde")]
 mod epserde_impl {
@@ -1490,6 +1614,86 @@ mod tests {
         assert_eq!(memcmp(b"abc", b"abc\0"), core::cmp::Ordering::Less);
         assert_eq!(memcmp(b"abc", b"ab\0"), core::cmp::Ordering::Greater);
         assert_eq!(memcmp(b"ab\0", b"abc"), core::cmp::Ordering::Less);
+    }
+
+    fn corrupt_list(
+        ratio: usize,
+        len: usize,
+        data: &[u8],
+        pointers: &[usize],
+    ) -> RearCodedList<[u8], Vec<u8>, Box<[u8]>, Box<[usize]>, true> {
+        RearCodedList {
+            ratio,
+            len,
+            data: data.into(),
+            pointers: pointers.into(),
+            _marker_i: PhantomData,
+            _marker_o: PhantomData,
+        }
+    }
+
+    #[test]
+    fn test_validate() {
+        let mut builder = RearCodedListBuilder::<[u8], true>::new(2);
+        for s in [b"aa".as_slice(), b"ab", b"ac", b"b"] {
+            builder.push(s);
+        }
+        let rcl = builder.build();
+        assert!(rcl.validate().is_ok());
+
+        // Zero ratio.
+        assert!(corrupt_list(0, 1, &[1, b'x'], &[0]).validate().is_err());
+        // Wrong number of block pointers.
+        assert!(corrupt_list(2, 1, &[1, b'x'], &[]).validate().is_err());
+        // Pointer not matching the stream position.
+        assert!(corrupt_list(2, 1, &[1, b'x'], &[1]).validate().is_err());
+        // Truncated suffix.
+        assert!(corrupt_list(2, 1, &[9, b'x'], &[0]).validate().is_err());
+        // Rear length exceeding the previous element: [3, "abc", 1, 4, "X"]
+        // asks to drop 4 bytes from a 3-byte element.
+        assert!(
+            corrupt_list(2, 2, &[3, b'a', b'b', b'c', 1, 4, b'X'], &[0])
+                .validate()
+                .is_err()
+        );
+        // Truncated VByte continuation.
+        assert!(corrupt_list(2, 1, &[0x80], &[0]).validate().is_err());
+        // Trailing bytes after the last element.
+        assert!(
+            corrupt_list(2, 1, &[1, b'x', b'y'], &[0]).validate().is_err()
+        );
+        // Empty list must validate.
+        assert!(corrupt_list(2, 0, &[], &[]).validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_utf8() {
+        let list = RearCodedList::<str, String, Box<[u8]>, Box<[usize]>, true> {
+            ratio: 2,
+            len: 1,
+            data: [1, 0xFF].as_slice().into(),
+            pointers: [0].as_slice().into(),
+            _marker_i: PhantomData,
+            _marker_o: PhantomData,
+        };
+        assert!(list.validate().is_err());
+    }
+
+    #[test]
+    fn test_decode_int_checked() {
+        // Round-trip against the encoder.
+        for value in [0usize, 1, 127, 128, 16383, 16384, usize::MAX] {
+            let mut data = Vec::new();
+            encode_int(value, &mut data);
+            let (decoded, rest) = decode_int_checked(&data).unwrap();
+            assert_eq!(decoded, value);
+            assert!(rest.is_empty());
+        }
+        // Truncated input.
+        assert_eq!(decode_int_checked(&[]), None);
+        assert_eq!(decode_int_checked(&[0x80]), None);
+        // Overlong encoding: more continuation bytes than a usize can hold.
+        assert_eq!(decode_int_checked(&[0xFF; 12]), None);
     }
 
     const UPPER_BOUND_1: usize = 128;
