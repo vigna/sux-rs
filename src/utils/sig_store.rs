@@ -476,6 +476,11 @@ pub fn new_offline<S: BinSafe + Sig, V: BinSafe>(
     _expected_num_keys: Option<usize>,
 ) -> Result<SigStoreImpl<S, V, BufWriter<File>>> {
     let temp_dir = tempfile::TempDir::new()?;
+    anyhow::ensure!(
+        buckets_high_bits < usize::BITS && max_shard_high_bits < usize::BITS,
+        "high bit counts must be less than {} (got buckets {buckets_high_bits}, max shard {max_shard_high_bits})",
+        usize::BITS
+    );
     let mut writers = VecDeque::new();
     for i in 0..1 << buckets_high_bits {
         let file = File::options()
@@ -516,6 +521,11 @@ pub fn new_online<S: BinSafe + Sig, V: BinSafe>(
     expected_num_keys: Option<usize>,
 ) -> Result<SigStoreImpl<S, V, Vec<SigVal<S, V>>>> {
     let mut writers = VecDeque::new();
+    anyhow::ensure!(
+        buckets_high_bits < usize::BITS && max_shard_high_bits < usize::BITS,
+        "high bit counts must be less than {} (got buckets {buckets_high_bits}, max shard {max_shard_high_bits})",
+        usize::BITS
+    );
     let initial_capacity = expected_num_keys
         .map(|n| (n.div_ceil(1 << buckets_high_bits) as f64 * 1.05) as usize)
         .unwrap_or(0);
@@ -1281,6 +1291,18 @@ impl<S: Sig, V: BinSafe> ShardStore<S, V> for Box<dyn ShardStore<S, V> + Send + 
 mod tests {
     use super::*;
     use rand::{RngExt, SeedableRng, rngs::SmallRng};
+
+    #[test]
+    fn test_high_bits_validation() {
+        // High-bit counts at or above the word width would overflow the
+        // `1 << bits` allocations and masks; they must be rejected.
+        assert!(new_offline::<[u64; 1], u64>(usize::BITS, 8, None).is_err());
+        assert!(new_offline::<[u64; 1], u64>(8, usize::BITS, None).is_err());
+        assert!(new_online::<[u64; 1], u64>(usize::BITS, 8, None).is_err());
+        assert!(new_online::<[u64; 1], u64>(8, usize::BITS, None).is_err());
+        // Valid parameters still succeed.
+        assert!(new_online::<[u64; 1], u64>(4, 8, None).is_ok());
+    }
 
     fn _test_sig_store<S: BinSafe + Sig + Send + Sync>(
         mut sig_store: impl SigStore<S, u64>,
