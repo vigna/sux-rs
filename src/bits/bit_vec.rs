@@ -402,7 +402,8 @@ impl<W: Word> BitVec<Vec<W>> {
     ///
     /// # Panics
     ///
-    /// Panics if `width` > `W::BITS`.
+    /// Panics if `width` > `W::BITS`, or if the resulting bit length
+    /// overflows `usize`.
     pub fn append_value(&mut self, value: W, width: usize) {
         assert!(
             width <= W::BITS as usize,
@@ -416,7 +417,10 @@ impl<W: Word> BitVec<Vec<W>> {
         let bits_per_word = W::BITS as usize;
         let l = bits_per_word - width;
         let value = (value << l) >> l;
-        let new_len = self.len + width;
+        let new_len = self
+            .len
+            .checked_add(width)
+            .expect("bit length overflows usize");
         let needed_words = new_len.div_ceil(bits_per_word);
         // Grow the backing storage if necessary.
         self.bits.resize(needed_words, W::ZERO);
@@ -451,8 +455,16 @@ impl<W: Word> BitVec<Vec<W>> {
     /// `self.len() + additional`. The allocator may reserve more space to
     /// speculatively avoid frequent reallocations. Does nothing if the
     /// capacity is already sufficient.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the resulting bit length overflows `usize`.
     pub fn reserve(&mut self, additional: usize) {
-        let needed_words = (self.len + additional).div_ceil(W::BITS as usize);
+        let needed_words = self
+            .len
+            .checked_add(additional)
+            .expect("bit length overflows usize")
+            .div_ceil(W::BITS as usize);
         self.bits
             .reserve(needed_words.saturating_sub(self.bits.len()));
     }
@@ -467,8 +479,16 @@ impl<W: Word> BitVec<Vec<W>> {
     /// Note that the allocator may give the collection more space than it
     /// requests. Therefore, capacity cannot be relied upon to be precisely
     /// minimal.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the resulting bit length overflows `usize`.
     pub fn reserve_exact(&mut self, additional: usize) {
-        let needed_words = (self.len + additional).div_ceil(W::BITS as usize);
+        let needed_words = self
+            .len
+            .checked_add(additional)
+            .expect("bit length overflows usize")
+            .div_ceil(W::BITS as usize);
         self.bits
             .reserve_exact(needed_words.saturating_sub(self.bits.len()));
     }
