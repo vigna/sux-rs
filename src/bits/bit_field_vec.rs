@@ -1019,24 +1019,48 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
             return;
         }
         let mask = self.mask;
-        let number_of_words: usize = self.bits.as_ref().len();
-        let last_word_idx = number_of_words.saturating_sub(1);
-
+        // Lossless: BITS <= 128 always fits usize.
         let bits = B::Word::BITS as usize;
+
+        // One element per word: the buffered paths below would shift by the
+        // word width, which is masked in release. The mask is all ones.
+        if bit_width == bits {
+            for i in 0..self.len {
+                // SAFETY: i < self.len and the backend holds at least
+                // ceil(len * bit_width / BITS) = len words (type invariant).
+                let value = *unsafe { self.bits.as_ref().get_unchecked(i) };
+                let new_value = f(value);
+                // SAFETY: same bound as the read above.
+                *unsafe { self.bits.as_mut().get_unchecked_mut(i) } = new_value;
+            }
+            return;
+        }
+
+        // Words containing logical elements. We must never invoke `f` on data
+        // beyond the logical end of the vector nor modify backing words (or
+        // bits) past it: the module contract states that storage outside the
+        // vector is not modified.
+        let logical_bits = self.len * bit_width;
+        let number_of_words = logical_bits.div_ceil(bits);
+        let last_word_idx = number_of_words - 1;
+        // Bits of the last logical word that belong to elements.
+        let mut buffer_limit = logical_bits % bits;
+        if buffer_limit == 0 {
+            buffer_limit = bits;
+        }
+
         let mut write_buffer: B::Word = B::Word::ZERO;
+        // SAFETY: the vector is nonempty with positive bit width, so the
+        // backend holds at least one word.
         let mut read_buffer: B::Word = *unsafe { self.bits.as_ref().get_unchecked(0) };
 
         // specialized case because it's much faster
         if bit_width.is_power_of_two() {
             let mut bits_in_buffer = 0;
 
-            let mut buffer_limit = (self.len() * bit_width) % bits;
-            if buffer_limit == 0 {
-                buffer_limit = bits;
-            }
-
             for read_idx in 1..number_of_words {
                 // pre-load the next word so it loads while we parse the buffer
+                // SAFETY: read_idx < number_of_words <= backend length.
                 let next_word: B::Word = *unsafe { self.bits.as_ref().get_unchecked(read_idx) };
 
                 // parse as much as we can from the buffer
@@ -1048,7 +1072,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
                     }
 
                     let value = read_buffer & mask;
-                    // throw away the bits we just read
+                    // throw away the bits we just read (bit_width < bits here)
                     read_buffer >>= bit_width;
                     // apply user func
                     let new_value = f(value);
@@ -1059,16 +1083,19 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
                 }
 
                 debug_assert_eq!(read_buffer, B::Word::ZERO);
+                // SAFETY: read_idx - 1 < number_of_words <= backend length.
                 *unsafe { self.bits.as_mut().get_unchecked_mut(read_idx - 1) } = write_buffer;
                 read_buffer = next_word;
                 write_buffer = B::Word::ZERO;
                 bits_in_buffer = 0;
             }
 
-            // write the last word if we have some bits left
+            // Process the elements of the last logical word, preserving any
+            // bits beyond the logical end of the vector.
+            let last_word_original = read_buffer;
             while bits_in_buffer < buffer_limit {
                 let value = read_buffer & mask;
-                // throw away the bits we just read
+                // throw away the bits we just read (bit_width < bits here)
                 read_buffer >>= bit_width;
                 // apply user func
                 let new_value = f(value);
@@ -1077,6 +1104,11 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
                 bits_in_buffer += bit_width;
             }
 
+            if buffer_limit != bits {
+                let tail_mask = B::Word::MAX << buffer_limit;
+                write_buffer |= last_word_original & tail_mask;
+            }
+            // SAFETY: last_word_idx < number_of_words <= backend length.
             *unsafe { self.bits.as_mut().get_unchecked_mut(last_word_idx) } = write_buffer;
             return;
         }
@@ -1092,7 +1124,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
         let mut lower_word_limit = 0;
         let mut upper_word_limit = bits;
 
-        // We iterate across the words
+        // We iterate across the words containing logical elements.
         for word_number in 0..last_word_idx {
             // We iterate across the elements in the word.
             while global_bit_index + bit_width <= upper_word_limit {
@@ -1109,6 +1141,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
             }
 
             // We retrieve the next word from the bitvec.
+            // SAFETY: word_number + 1 <= last_word_idx < backend length.
             let next_word = *unsafe { self.bits.as_ref().get_unchecked(word_number + 1) };
 
             let mut new_write_buffer = B::Word::ZERO;
@@ -1130,6 +1163,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
 
             read_buffer = next_word;
 
+            // SAFETY: word_number < last_word_idx < backend length.
             *unsafe { self.bits.as_mut().get_unchecked_mut(word_number) } = write_buffer;
 
             write_buffer = new_write_buffer;
@@ -1139,7 +1173,8 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
 
         let mut offset = global_bit_index - lower_word_limit;
 
-        // We iterate across the elements in the word.
+        // We iterate across the elements entirely contained in the last
+        // logical word.
         while offset < self.len() * bit_width - global_bit_index {
             // We retrieve the value from the current word.
             let element = self.mask & (read_buffer >> offset);
@@ -1152,6 +1187,12 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
             offset += bit_width;
         }
 
+        // Preserve any bits beyond the logical end of the vector.
+        if buffer_limit != bits {
+            let tail_mask = B::Word::MAX << buffer_limit;
+            write_buffer |= read_buffer & tail_mask;
+        }
+        // SAFETY: last_word_idx < number_of_words <= backend length.
         *unsafe { self.bits.as_mut().get_unchecked_mut(last_word_idx) } = write_buffer;
     }
 
@@ -1250,7 +1291,12 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> crate::traits::UncheckedIterator
         if self.fill >= bit_width {
             self.fill -= bit_width;
             let res = self.window & self.vec.mask;
-            self.window >>= bit_width;
+            self.window = if bit_width == B::Word::BITS as usize {
+                // A shift by the word width would be masked in release.
+                B::Word::ZERO
+            } else {
+                self.window >> bit_width
+            };
             return res;
         }
 
@@ -1259,7 +1305,13 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> crate::traits::UncheckedIterator
         self.window = *unsafe { self.vec.bits.as_ref().get_unchecked(self.word_index) };
         let res = (res | (self.window << self.fill)) & self.vec.mask;
         let used = bit_width - self.fill;
-        self.window >>= used;
+        self.window = if used == B::Word::BITS as usize {
+            // Happens for bit_width == B::Word::BITS and an empty window:
+            // a shift by the word width would be masked in release.
+            B::Word::ZERO
+        } else {
+            self.window >> used
+        };
         self.fill = B::Word::BITS as usize - used; // not in a loop
         res
     }
@@ -1332,9 +1384,18 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> crate::traits::UncheckedIterator
         self.word_index -= 1;
         self.window = *unsafe { self.vec.bits.as_ref().get_unchecked(self.word_index) };
         let used = bit_width - self.fill;
-        res = ((res << used) | (self.window >> (B::Word::BITS as usize - used))) & self.vec.mask; // not in a loop
-        self.window <<= used;
-        self.fill = B::Word::BITS as usize - used;
+        if used == B::Word::BITS as usize {
+            // The freshly loaded word is exactly the element (bit_width ==
+            // B::Word::BITS, empty window): the generic combine below would
+            // shift by the word width, which is masked in release.
+            res = self.window & self.vec.mask;
+            self.window = B::Word::ZERO;
+            self.fill = 0;
+        } else {
+            res = ((res << used) | (self.window >> (B::Word::BITS as usize - used))) & self.vec.mask; // not in a loop
+            self.window <<= used;
+            self.fill = B::Word::BITS as usize - used;
+        }
         res
     }
 }
