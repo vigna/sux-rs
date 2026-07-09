@@ -387,7 +387,10 @@ pub trait SigStore<S: Sig + BinSafe, V: BinSafe> {
     /// # Panics
     ///
     /// It must hold that `shard_high_bits` is at most
-    /// [`max_shard_high_bits`] or this method will panic.
+    /// [`max_shard_high_bits`] or this method will panic. For an offline
+    /// (file-backed) store, iterating the resulting shard store also panics
+    /// if a temp-file read or seek fails (a disk error or a truncated
+    /// temporary file); such a mid-build I/O failure is not recoverable.
     ///
     /// [`max_shard_high_bits`]: SigStore::max_shard_high_bits
     fn into_shard_store(self, shard_high_bits: u32) -> Result<Self::ShardStore>;
@@ -962,8 +965,12 @@ impl<
                 assert!(post.is_empty());
                 for i in self.next_bucket..self.next_bucket + to_aggr {
                     let bytes = store.buf_sizes[i] * core::mem::size_of::<SigVal<S, V>>();
-                    store.buckets[i].seek(SeekFrom::Start(0)).unwrap();
-                    store.buckets[i].read_exact(&mut buf[..bytes]).unwrap();
+                    store.buckets[i]
+                        .seek(SeekFrom::Start(0))
+                        .expect("offline signature store: temp-file seek failed");
+                    store.buckets[i].read_exact(&mut buf[..bytes]).expect(
+                        "offline signature store: temp-file read failed (disk error or truncation)",
+                    );
                     if !self.borrowed {
                         let _ = store.buckets[i].get_mut().set_len(0);
                     }
@@ -1003,7 +1010,7 @@ impl<
                 let shard_mask = (1 << store.shard_high_bits) - 1;
                 store.buckets[self.next_bucket]
                     .seek(SeekFrom::Start(0))
-                    .unwrap();
+                    .expect("offline signature store: temp-file seek failed");
 
                 while len > 0 {
                     let to_read = buf_size.min(len);
@@ -1014,7 +1021,9 @@ impl<
                     debug_assert!(pre.is_empty());
                     debug_assert!(after.is_empty());
 
-                    store.buckets[self.next_bucket].read_exact(buf).unwrap();
+                    store.buckets[self.next_bucket].read_exact(buf).expect(
+                        "offline signature store: temp-file read failed (disk error or truncation)",
+                    );
 
                     // We move each signature/value pair into its shard
                     for &v in &buffer {
