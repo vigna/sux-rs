@@ -113,7 +113,7 @@ macro_rules! maybe_store {
     ($func:expr, $out:expr, $unaligned:expr) => {
         if let Some(ref f) = $out {
             if $unaligned {
-                unsafe { $func.try_into_unaligned().unwrap().store(f) }?;
+                unsafe { $func.try_into_unaligned()?.store(f) }?;
             } else {
                 unsafe { $func.store(f) }?;
             }

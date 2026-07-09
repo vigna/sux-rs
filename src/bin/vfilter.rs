@@ -226,7 +226,7 @@ where
             )?;
             if let Some(filename) = args.filter {
                 if args.unaligned {
-                    unsafe { filter.try_into_unaligned().unwrap().store(filename)? };
+                    unsafe { filter.try_into_unaligned()?.store(filename)? };
                 } else {
                     unsafe { filter.store(filename)? };
                 }
@@ -247,7 +247,7 @@ where
             )?;
             if let Some(filename) = args.filter {
                 if args.unaligned {
-                    unsafe { filter.try_into_unaligned().unwrap().store(filename)? };
+                    unsafe { filter.try_into_unaligned()?.store(filename)? };
                 } else {
                     unsafe { filter.store(filename)? };
                 }
@@ -268,7 +268,7 @@ where
             )?;
             if let Some(filename) = args.filter {
                 if args.unaligned {
-                    unsafe { filter.try_into_unaligned().unwrap().store(filename)? };
+                    unsafe { filter.try_into_unaligned()?.store(filename)? };
                 } else {
                     unsafe { filter.store(filename)? };
                 }
@@ -280,7 +280,7 @@ where
             )?;
             if let Some(filename) = args.filter {
                 if args.unaligned {
-                    unsafe { filter.try_into_unaligned().unwrap().store(filename)? };
+                    unsafe { filter.try_into_unaligned()?.store(filename)? };
                 } else {
                     unsafe { filter.store(filename)? };
                 }

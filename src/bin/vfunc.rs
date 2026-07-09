@@ -89,7 +89,7 @@ macro_rules! filename_save_sign_seq(
             )?;
         if let Some(filename) = $func {
             if $unaligned {
-                unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                unsafe { func.try_into_unaligned()?.store(filename) }?;
             } else {
                 unsafe { func.store(filename) }?;
             }
@@ -107,7 +107,7 @@ macro_rules! n_save_sign_seq(
             )?;
         if let Some(filename) = $func {
             if $unaligned {
-                unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                unsafe { func.try_into_unaligned()?.store(filename) }?;
             } else {
                 unsafe { func.store(filename) }?;
             }
@@ -125,7 +125,7 @@ macro_rules! n_save_sign_par(
             )?;
         if let Some(filename) = $func {
             if $unaligned {
-                unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                unsafe { func.try_into_unaligned()?.store(filename) }?;
             } else {
                 unsafe { func.store(filename) }?;
             }
@@ -145,7 +145,7 @@ macro_rules! filename_save_sign_par(
             )?;
         if let Some(filename) = $func {
             if $unaligned {
-                unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                unsafe { func.try_into_unaligned()?.store(filename) }?;
             } else {
                 unsafe { func.store(filename) }?;
             }
@@ -207,7 +207,7 @@ where
                     )?;
                     if let Some(filename) = args.func {
                         if args.unaligned {
-                            unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                            unsafe { func.try_into_unaligned()?.store(filename) }?;
                         } else {
                             unsafe { func.store(filename) }?;
                         }
@@ -273,7 +273,7 @@ where
                         )?;
                     if let Some(filename) = args.func {
                         if args.unaligned {
-                            unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                            unsafe { func.try_into_unaligned()?.store(filename) }?;
                         } else {
                             unsafe { func.store(filename) }?;
                         }
@@ -311,7 +311,7 @@ where
                         )?;
                     if let Some(filename) = args.func {
                         if args.unaligned {
-                            unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                            unsafe { func.try_into_unaligned()?.store(filename) }?;
                         } else {
                             unsafe { func.store(filename) }?;
                         }
@@ -341,7 +341,7 @@ where
                         )?;
                     if let Some(filename) = args.func {
                         if args.unaligned {
-                            unsafe { func.try_into_unaligned().unwrap().store(filename) }?;
+                            unsafe { func.try_into_unaligned()?.store(filename) }?;
                         } else {
                             unsafe { func.store(filename) }?;
                         }
