@@ -258,10 +258,12 @@ impl HuffmanConf {
         }
     }
 
-    /// Returns an unlimited Huffman codec: no cap on codeword lengths, no
-    /// entropy cut. All symbols get a codeword; no escape mechanism
-    /// is used. This can produce very long codewords for skewed
-    /// distributions.
+    /// Returns a Huffman codec with no decoding-table-length cap and no
+    /// entropy cut: no symbol is escaped for table-size or entropy reasons.
+    /// A single intrinsic cap still applies: codewords cannot exceed
+    /// `usize::BITS - 2` bits (the width of the decoder's read window), so on
+    /// a distribution skewed enough to produce a deeper code the deepest
+    /// symbols are escaped rather than assigned an unrepresentable codeword.
     pub const fn unlimited() -> Self {
         Self {
             max_decoding_table_len: usize::MAX,
@@ -775,6 +777,13 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
     let mut d = 1usize;
     let mut cutpoint = 0usize;
     while cutpoint < size {
+        // Codewords are assembled in a `usize` buffer and the decoder reads a
+        // full `usize` window, so a length beyond `usize::BITS - 2` cannot be
+        // represented. Truncate here and escape the remaining (deeper)
+        // symbols instead of overflowing the shift in canonical assignment.
+        if length[cutpoint] > usize::BITS - 2 {
+            break;
+        }
         if current_length != length[cutpoint] {
             d += 1;
             if d >= max_decoding_table_len {

@@ -410,3 +410,31 @@ fn test_huffman_empty_distribution() {
     assert_eq!(decoder.decode(0), None);
     assert_eq!(decoder.decode(usize::MAX), None);
 }
+
+#[test]
+fn test_huffman_deep_distribution_escapes() {
+    // A Fibonacci-skewed distribution produces Huffman codewords deeper than
+    // usize::BITS - 2. The unlimited codec must escape the deepest symbols
+    // instead of assigning an unrepresentable codeword, which previously
+    // overflowed the shift in canonical assignment.
+    let num = usize::BITS as u64 + 2;
+    let mut pairs: Vec<(u64, usize)> = Vec::new();
+    let (mut prev, mut cur) = (1usize, 1usize);
+    for i in 0..num {
+        pairs.push((i, prev));
+        let next = prev + cur;
+        prev = cur;
+        cur = next;
+    }
+    let f: HashMap<u64, usize> = pairs.iter().copied().collect();
+    let coder = HuffmanConf::unlimited().build_coder(&f);
+    assert!(
+        coder.escaped_symbols_len() > 0,
+        "deep symbols must be escaped, not assigned an overlong codeword"
+    );
+    assert!(coder.max_codeword_len() <= usize::BITS - 2);
+    let decoder = coder.clone().into_decoder();
+    for (s, _) in &pairs {
+        round_trip(&coder, &decoder, *s);
+    }
+}

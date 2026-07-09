@@ -1492,13 +1492,11 @@ mod codec_bound_tests {
     use super::*;
 
     #[test]
-    fn test_build_coder_rejects_overlong_codeword() {
+    fn test_build_coder_escapes_overlong_codeword() {
         // Fibonacci frequencies over `usize::BITS` u128 symbols force a
-        // maximally unbalanced Huffman tree (depth usize::BITS - 1), whose max
-        // codeword length exceeds usize::BITS - 2 even though it fits W::BITS - 7
-        // for W = u128. The preflight must reject it, since the decoder
-        // constructor asserts `w <= usize::BITS - 2`. Using usize::BITS symbols
-        // keeps the Fibonacci counts within usize on 32-bit as well.
+        // maximally unbalanced Huffman tree (depth usize::BITS - 1). The codec
+        // now escapes the deepest symbols so the kept codewords stay within
+        // usize::BITS - 2, and the CompVFunc preflight accepts the coder.
         let mut frequencies: HashMap<u128, usize> = HashMap::new();
         let (mut prev, mut cur) = (1usize, 1usize);
         for symbol in 0u128..u128::from(usize::BITS) {
@@ -1507,10 +1505,12 @@ mod codec_bound_tests {
             prev = cur;
             cur = next;
         }
-        let result = build_coder_from_frequencies(HuffmanConf::unlimited(), &frequencies);
+        let coder = build_coder_from_frequencies(HuffmanConf::unlimited(), &frequencies)
+            .expect("deep symbols are escaped, so the coder builds within the limit");
+        assert!(coder.max_codeword_len() <= usize::BITS - 2);
         assert!(
-            result.is_err(),
-            "expected an error for a codeword longer than usize::BITS - 2"
+            coder.escaped_symbols_len() > 0,
+            "the deepest symbols must be escaped"
         );
     }
 }
