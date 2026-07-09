@@ -313,6 +313,23 @@ impl<F: SignableFunc, H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::
     pub fn is_empty(&self) -> bool {
         self.func.is_empty()
     }
+
+    /// Checks that the hash storage matches the function.
+    ///
+    /// After deserializing from an untrusted or possibly stale source, or
+    /// after building with [`from_parts`](Self::from_parts), call this method
+    /// before use: a hash array shorter than the function silently turns
+    /// present keys into `None` (a false negative), and the inner function's
+    /// own invariants should be checked separately with its `validate` method.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.hashes.len() == self.func.len(),
+            "the hash storage has {} entries but the function has {} keys",
+            self.hashes.len(),
+            self.func.len()
+        );
+        Ok(())
+    }
 }
 
 // ── VFunc `get` ──────────────────────────────────────────────────
@@ -2866,5 +2883,23 @@ where
             func: f.func.into(),
             hashes: f.hashes.into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::func::VFunc;
+    use crate::func::shard_edge::FuseLge3Shards;
+
+    #[test]
+    fn test_validate_length_mismatch() {
+        type F = VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>;
+        // Empty function with empty hashes: consistent.
+        let good = SignedFunc::from_parts(F::empty(), Box::<[usize]>::from([]));
+        assert!(good.validate().is_ok());
+        // Empty function with a nonempty hash array: mismatch.
+        let bad = SignedFunc::from_parts(F::empty(), Box::<[usize]>::from([0usize]));
+        assert!(bad.validate().is_err());
     }
 }

@@ -71,3 +71,13 @@ fn test_bit_signed_vfunc() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_validate() -> Result<()> {
+    let mut pl = ProgressLogger::default();
+    let n = 1000;
+    let func: MySignedVFunc =
+        MySignedVFunc::try_new(FromCloneableIntoIterator::from(0..n), &mut pl)?;
+    assert!(func.validate().is_ok());
+    Ok(())
+}
