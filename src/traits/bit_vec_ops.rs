@@ -724,11 +724,15 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
             .iter()
             .for_each(|x| x.store(word_value, ordering));
         if residual != 0 {
+            // Use RMW operations: a plain load+store pair would lose a
+            // concurrent update to the residual word and reject
+            // store-invalid orderings such as Release for the load.
             let mask = (A::Value::ONE << residual) - A::Value::ONE;
-            bits[full_words].store(
-                (bits[full_words].load(ordering) & !mask) | (word_value & mask),
-                ordering,
-            );
+            if value {
+                bits[full_words].fetch_or(mask, ordering);
+            } else {
+                bits[full_words].fetch_and(!mask, ordering);
+            }
         }
     }
 
@@ -753,11 +757,14 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
             .with_len(crate::RAYON_MIN_LEN)
             .for_each(|x| x.store(word_value, ordering));
         if residual != 0 {
+            // See `fill`: RMW keeps the residual update atomic and
+            // ordering-agnostic.
             let mask = (A::Value::ONE << residual) - A::Value::ONE;
-            bits[full_words].store(
-                (bits[full_words].load(ordering) & !mask) | (word_value & mask),
-                ordering,
-            );
+            if value {
+                bits[full_words].fetch_or(mask, ordering);
+            } else {
+                bits[full_words].fetch_and(!mask, ordering);
+            }
         }
     }
 
@@ -785,9 +792,10 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
             .iter()
             .for_each(|x| _ = x.fetch_xor(!A::Value::ZERO, ordering));
         if residual != 0 {
+            // Use fetch_xor like the full words: a load+store pair would lose
+            // a concurrent update and reject orderings such as Release.
             let mask = (A::Value::ONE << residual) - A::Value::ONE;
-            let last_word = bits[full_words].load(ordering);
-            bits[full_words].store((last_word & !mask) | (!last_word & mask), ordering);
+            bits[full_words].fetch_xor(mask, ordering);
         }
     }
 
@@ -806,9 +814,10 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
             .with_len(crate::RAYON_MIN_LEN)
             .for_each(|x| _ = x.fetch_xor(!A::Value::ZERO, ordering));
         if residual != 0 {
+            // See `flip`: RMW keeps the residual update atomic and
+            // ordering-agnostic.
             let mask = (A::Value::ONE << residual) - A::Value::ONE;
-            let last_word = bits[full_words].load(ordering);
-            bits[full_words].store((last_word & !mask) | (!last_word & mask), ordering);
+            bits[full_words].fetch_xor(mask, ordering);
         }
     }
 
