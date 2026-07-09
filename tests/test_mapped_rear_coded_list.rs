@@ -553,3 +553,31 @@ fn test_single_element() {
     assert_eq!(mrcl.get(0), "hello");
     assert_eq!(mrcl.iter().collect::<Vec<_>>(), vec!["hello".to_string()]);
 }
+
+#[test]
+fn test_validate() {
+    use sux::dict::MappedRearCodedListStr;
+
+    fn make_list() -> sux::dict::RearCodedListStr<true> {
+        let mut builder = RearCodedListBuilder::<str, true>::new(2);
+        for s in ["a", "b", "c"] {
+            builder.push(s);
+        }
+        builder.build()
+    }
+    fn make_map(values: [usize; 3]) -> BitFieldVec<Box<[usize]>> {
+        let mut map = BitFieldVec::<Vec<usize>>::new(2, 0);
+        for v in values {
+            map.push(v);
+        }
+        map.into()
+    }
+
+    // Valid permutation.
+    let mapped = MappedRearCodedListStr::from_parts(make_list(), make_map([2, 0, 1]));
+    assert!(mapped.validate().is_ok());
+
+    // Out-of-range mapping entry: 3 >= len.
+    let mapped = MappedRearCodedListStr::from_parts(make_list(), make_map([2, 0, 3]));
+    assert!(mapped.validate().is_err());
+}

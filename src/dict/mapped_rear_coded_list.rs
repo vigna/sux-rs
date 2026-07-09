@@ -136,7 +136,9 @@ impl<
     ///
     /// It is your responsibility to ensure that the mapping is valid,
     /// that is, that its length matches the length of the rear-coded list,
-    /// and that all indices are in range.
+    /// and that all indices are in range. For parts coming from an untrusted
+    /// or possibly stale source, check the result with
+    /// [`validate`](MappedRearCodedList::validate) before use.
     ///
     /// # Panics
     ///
@@ -158,6 +160,33 @@ impl<
         (self.rcl, self.map)
     }
 
+    /// Checks that every mapping entry is a valid index into the underlying
+    /// rear-coded list.
+    ///
+    /// After deserializing from an untrusted or possibly stale source, call
+    /// this method (or the variant-specific `validate`, which also checks the
+    /// underlying list) before use: the safe accessors otherwise pass mapping
+    /// values to unchecked list accessors.
+    pub fn validate_map(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.map.len() == self.rcl.len(),
+            "mapping length {} does not match the list length {}",
+            self.map.len(),
+            self.rcl.len()
+        );
+        // `Q` only guarantees indexed access (`SliceByValue`), so we cannot
+        // iterate it directly.
+        for index in 0..self.map.len() {
+            let mapped = self.map.index_value(index);
+            anyhow::ensure!(
+                mapped < self.rcl.len(),
+                "mapping entry {index} is {mapped}, beyond the list length {}",
+                self.rcl.len()
+            );
+        }
+        Ok(())
+    }
+
     /// Returns the number of elements.
     ///
     /// This method is equivalent to [`IndexedSeq::len`], but it is provided to
@@ -173,6 +202,42 @@ impl<
     fn get_in_place_impl(&self, index: usize, result: &mut Vec<u8>) {
         let index = self.map.index_value(index);
         self.rcl.get_in_place_impl(index, result)
+    }
+}
+
+impl<O, D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
+    MappedRearCodedList<str, O, D, P, Q, SORTED>
+{
+    /// Checks the structural invariants of the mapping and of the underlying
+    /// rear-coded list.
+    ///
+    /// After deserializing from an untrusted or possibly stale source, call
+    /// this method before use.
+    pub fn validate(&self) -> anyhow::Result<()>
+    where
+        str: PartialEq<O>,
+        O: PartialEq<str> + PartialEq,
+    {
+        self.rcl.validate()?;
+        self.validate_map()
+    }
+}
+
+impl<O, D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
+    MappedRearCodedList<[u8], O, D, P, Q, SORTED>
+{
+    /// Checks the structural invariants of the mapping and of the underlying
+    /// rear-coded list.
+    ///
+    /// After deserializing from an untrusted or possibly stale source, call
+    /// this method before use.
+    pub fn validate(&self) -> anyhow::Result<()>
+    where
+        [u8]: PartialEq<O>,
+        O: PartialEq<[u8]> + PartialEq,
+    {
+        self.rcl.validate()?;
+        self.validate_map()
     }
 }
 
