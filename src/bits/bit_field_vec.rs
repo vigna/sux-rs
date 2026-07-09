@@ -780,6 +780,21 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
         }
     }
 
+    fn apply_in_place<F>(&mut self, mut f: F)
+    where
+        F: FnMut(Self::Value) -> Self::Value,
+    {
+        for idx in 0..self.len {
+            // SAFETY: idx < self.len.
+            let value = unsafe { self.get_value_unchecked(idx) };
+            let new_value = f(value);
+            panic_if_value!(new_value, self.mask, self.bit_width);
+            // SAFETY: idx < self.len and new_value fits the bit width
+            // (checked just above).
+            unsafe { self.set_value_unchecked(idx, new_value) };
+        }
+    }
+
     unsafe fn set_value_unchecked(&mut self, index: usize, value: B::Word) {
         let bits = B::Word::BITS as usize;
         let pos = index * self.bit_width;

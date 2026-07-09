@@ -1135,3 +1135,28 @@ fn test_apply_in_place_unchecked_logical_only() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+#[should_panic(expected = "does not fit in 3 bits")]
+fn test_apply_in_place_oversized_panics() {
+    let mut v = BitFieldVec::<Vec<u64>>::new(3, 3);
+    // 0xFF does not fit in 3 bits: the safe method must panic like set_value,
+    // not spill into neighboring fields.
+    v.apply_in_place(|_| 0xFF);
+}
+
+#[test]
+fn test_apply_in_place_inputs() -> Result<()> {
+    let mut v = BitFieldVec::<Vec<u64>>::new(3, 3);
+    v.set_value(0, 1);
+    v.set_value(1, 2);
+    v.set_value(2, 3);
+    let mut seen = Vec::new();
+    v.apply_in_place(|x| {
+        seen.push(x);
+        7 - x
+    });
+    assert_eq!(seen, vec![1, 2, 3]);
+    assert_eq!(v.iter().collect::<Vec<_>>(), vec![6, 5, 4]);
+    Ok(())
+}
