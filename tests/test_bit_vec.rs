@@ -1203,3 +1203,30 @@ fn test_unaligned_get_bits_overflow() {
     // must reject it deterministically in both profiles.
     let _ = bv.get_value_unaligned(usize::MAX, 2);
 }
+
+#[test]
+fn test_bit_iter_size_hint() {
+    let mut bv = BitVec::<Vec<usize>>::new(100);
+    bv.set(1, true);
+    let mut iter = bv.iter();
+    assert_eq!(iter.size_hint(), (100, Some(100)));
+    assert_eq!(iter.len(), 100);
+    iter.next();
+    assert_eq!(iter.size_hint(), (99, Some(99)));
+
+    let abv = AtomicBitVec::<Vec<AtomicUsize>>::new(65);
+    let mut iter = abv.iter();
+    assert_eq!(iter.size_hint(), (65, Some(65)));
+    iter.next();
+    assert_eq!(iter.size_hint(), (64, Some(64)));
+}
+
+#[test]
+fn test_bit_vec_chunks_mut_size_hint() {
+    use value_traits::slices::SliceByValueMut;
+    let mut bv = BitVec::<Vec<usize>>::new(256);
+    let chunks = bv.try_chunks_mut(64).unwrap();
+    assert_eq!(chunks.size_hint(), (4, Some(4)));
+    assert_eq!(chunks.len(), 4);
+    assert_eq!(chunks.count(), 4);
+}

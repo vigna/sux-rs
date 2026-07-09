@@ -1160,3 +1160,13 @@ fn test_apply_in_place_inputs() -> Result<()> {
     assert_eq!(v.iter().collect::<Vec<_>>(), vec![6, 5, 4]);
     Ok(())
 }
+
+#[test]
+fn test_chunks_mut_size_hint() -> Result<()> {
+    let mut v = BitFieldVec::<Vec<u64>>::new(64, 10);
+    let chunks = v.try_chunks_mut(3).map_err(anyhow::Error::from)?;
+    assert_eq!(chunks.size_hint(), (4, Some(4)));
+    assert_eq!(chunks.len(), 4);
+    assert_eq!(chunks.count(), 4);
+    Ok(())
+}

@@ -202,3 +202,18 @@ fn test_fair_chunks_uniform_weights() {
     assert_eq!(chunks[0].start, 0);
     assert_eq!(chunks.last().unwrap().end, 10);
 }
+
+#[test]
+fn test_fair_chunks_size_hint() {
+    let cwf = [0u64, 10, 20, 30, 40];
+    let mut efb = EliasFanoBuilder::new(cwf.len(), *cwf.last().unwrap());
+    efb.extend(cwf.iter().copied());
+    let ef = efb.build_with_seq_and_dict();
+    let mut chunks = FairChunks::new(20, &ef);
+    let (lo, hi) = chunks.size_hint();
+    assert!(lo >= 1, "nonempty iterator must report a nonzero lower bound");
+    assert_eq!(hi, Some(4));
+    let n = chunks.by_ref().count();
+    assert!(lo <= n && n <= 4);
+    assert_eq!(chunks.size_hint(), (0, Some(0)));
+}

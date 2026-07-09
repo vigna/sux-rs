@@ -440,6 +440,12 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for BitIter<'_, W, B> {
         self.next_bit_pos += 1;
         Some(bit != W::ZERO)
     }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let rem = self.len - self.next_bit_pos;
+        (rem, Some(rem))
+    }
 }
 
 impl<W: Word, B: ?Sized + AsRef<[W]>> ExactSizeIterator for BitIter<'_, W, B> {
@@ -860,6 +866,12 @@ impl<A: PrimitiveAtomicUnsigned<Value: Word>, B: ?Sized + AsRef<[A]>> Iterator
         let bit = (word >> bit_idx) & A::Value::ONE;
         self.next_bit_pos += 1;
         Some(bit != A::Value::ZERO)
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let rem = self.len - self.next_bit_pos;
+        (rem, Some(rem))
     }
 }
 
