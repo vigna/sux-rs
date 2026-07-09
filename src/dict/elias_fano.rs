@@ -382,6 +382,139 @@ impl<V, H, L> EliasFano<V, H, L> {
     }
 }
 
+impl<
+    V: Word + PrimitiveNumberAs<usize>,
+    H: AsRef<[usize]> + BitLength,
+    L: SliceByValue<Value = V> + BitWidth,
+> EliasFano<V, H, L>
+{
+    /// Checks the representational invariants of this structure.
+    ///
+    /// After deserializing from an untrusted or possibly stale source, call
+    /// this method before use: the safe accessors otherwise trust `n`, `l`,
+    /// and the low/high-bits arrays, and reach unchecked selection on
+    /// malformed input.
+    ///
+    /// The check decodes the whole sequence once (`O(n)`), verifying counts,
+    /// monotonicity, the upper bound, and the cached endpoints. It does *not*
+    /// verify the inventories of selection wrappers (e.g. [`EfSeq`]): for
+    /// fully untrusted data, validate the representation and rebuild the
+    /// wrappers with [`map_high_bits`](EliasFano::map_high_bits).
+    pub fn validate(&self) -> anyhow::Result<()> {
+        // Lossless: BITS <= 128 always fits usize.
+        let v_bits = V::BITS as usize;
+        let word_bits = usize::BITS as usize;
+        anyhow::ensure!(
+            self.l < v_bits,
+            "number of lower bits {} out of range for value type of {v_bits} bits",
+            self.l
+        );
+        anyhow::ensure!(
+            self.low_bits.len() == self.n,
+            "the lower-bits array has {} elements instead of {}",
+            self.low_bits.len(),
+            self.n
+        );
+        anyhow::ensure!(
+            self.low_bits.bit_width() == self.l,
+            "the lower-bits array has bit width {} instead of {}",
+            self.low_bits.bit_width(),
+            self.l
+        );
+        let shifted = self.u >> self.l;
+        let max_high = shifted.as_to::<usize>();
+        // Round-trip equality proves the conversion was lossless (for wide
+        // value types the high universe might not fit a usize).
+        anyhow::ensure!(
+            V::as_from(max_high) == shifted,
+            "the high universe {shifted} does not fit a usize"
+        );
+        let expected_high_len = self
+            .n
+            .checked_add(max_high)
+            .and_then(|x| x.checked_add(1))
+            .ok_or_else(|| anyhow::anyhow!("the high-bits length overflows usize"))?;
+        anyhow::ensure!(
+            self.high_bits.len() == expected_high_len,
+            "the high-bits array has {} bits instead of {}",
+            self.high_bits.len(),
+            expected_high_len
+        );
+        let words = self.high_bits.as_ref();
+        let len = self.high_bits.len();
+        anyhow::ensure!(
+            words.len() >= len.div_ceil(word_bits),
+            "the high-bits backend has {} words, too few for {} bits",
+            words.len(),
+            len
+        );
+
+        // Walk the ones of the logical high bits, decoding each value.
+        let mut ones = 0;
+        let mut prev = V::ZERO;
+        let mut first = V::MAX;
+        let mut last = V::MIN;
+        for (word_idx, &raw) in words.iter().enumerate().take(len.div_ceil(word_bits)) {
+            let mut word = raw;
+            let residual = len - word_idx * word_bits;
+            if residual < word_bits {
+                // Mask padding bits beyond the logical length.
+                word &= (1usize << residual) - 1;
+            }
+            while word != 0 {
+                // Lossless: trailing_zeros of a word fits usize.
+                let pos = word_idx * word_bits + word.trailing_zeros() as usize;
+                anyhow::ensure!(
+                    ones < self.n,
+                    "the high bits contain more than {} ones",
+                    self.n
+                );
+                // The k-th one at position pos encodes high part pos - k;
+                // pos >= ones because the previous `ones` ones occupy
+                // distinct earlier positions.
+                let high = pos - ones;
+                anyhow::ensure!(
+                    high <= max_high,
+                    "the high part {high} of element {ones} exceeds the maximum {max_high}"
+                );
+                let value = (V::as_from(high) << self.l) | self.low_bits.index_value(ones);
+                anyhow::ensure!(
+                    value <= self.u,
+                    "element {ones} is {value}, larger than the upper bound {}",
+                    self.u
+                );
+                anyhow::ensure!(
+                    ones == 0 || value >= prev,
+                    "element {ones} is {value}, smaller than its predecessor {prev}"
+                );
+                if ones == 0 {
+                    first = value;
+                }
+                last = value;
+                prev = value;
+                ones += 1;
+                word &= word - 1;
+            }
+        }
+        anyhow::ensure!(
+            ones == self.n,
+            "the high bits contain {ones} ones instead of {}",
+            self.n
+        );
+        anyhow::ensure!(
+            self.first_val == first,
+            "the cached first value {} does not match the decoded first value {first}",
+            self.first_val
+        );
+        anyhow::ensure!(
+            self.last_val == last,
+            "the cached last value {} does not match the decoded last value {last}",
+            self.last_val
+        );
+        Ok(())
+    }
+}
+
 impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Value = V>> Types
     for EliasFano<V, H, L>
 {
@@ -2849,5 +2982,74 @@ impl<V: Word, H> From<Unaligned<EliasFano<V, H, BitFieldVec<Box<[V]>>>>>
             low_bits: ef.low_bits.into(),
             high_bits: ef.high_bits,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn valid_ef() -> EliasFano<usize> {
+        let mut efb = EliasFanoBuilder::new(4, 10);
+        for v in [0usize, 2, 8, 10] {
+            efb.push(v);
+        }
+        efb.build()
+    }
+
+    #[test]
+    fn test_validate() -> anyhow::Result<()> {
+        let ef = valid_ef();
+        ef.validate()?;
+
+        // Empty sequence.
+        let efb = EliasFanoBuilder::<usize>::new(0, 0);
+        efb.build().validate()?;
+
+        // Duplicates are allowed.
+        let mut efb = EliasFanoBuilder::new(3, 5);
+        for v in [2usize, 2, 5] {
+            efb.push(v);
+        }
+        efb.build().validate()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_rejects_corrupt() {
+        // Forged n: more elements than ones in the high bits.
+        let mut ef = valid_ef();
+        ef.n = 5;
+        assert!(ef.validate().is_err());
+
+        // Out-of-range number of lower bits.
+        let mut ef = valid_ef();
+        ef.l = usize::BITS as usize;
+        assert!(ef.validate().is_err());
+
+        // Cached endpoints not matching the decoded sequence.
+        let mut ef = valid_ef();
+        ef.first_val = 1;
+        assert!(ef.validate().is_err());
+        let mut ef = valid_ef();
+        ef.last_val = 9;
+        assert!(ef.validate().is_err());
+
+        // Upper bound smaller than the stored values.
+        let mut ef = valid_ef();
+        ef.u = 3;
+        assert!(ef.validate().is_err());
+
+        // High bits with a cleared one (count mismatch).
+        let mut ef = valid_ef();
+        let mut words: Vec<usize> = ef.high_bits.as_ref().to_vec();
+        let w0 = words[0];
+        words[0] = w0 & (w0 - 1); // clear the lowest one
+        // SAFETY: same backend word count and bit length as the original
+        // vector; we deliberately build an *invalid* EF representation to
+        // exercise validate(), never its accessors.
+        ef.high_bits =
+            unsafe { BitVec::from_raw_parts(words.into_boxed_slice(), ef.high_bits.len()) };
+        assert!(ef.validate().is_err());
     }
 }
