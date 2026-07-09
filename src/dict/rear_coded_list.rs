@@ -1401,6 +1401,11 @@ mod epserde_impl {
     }
 
     /// Serializes to a stream a rear-coded list of strings directly from a lender of `AsRef<str>`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the lender fails during the second (serialization) pass;
+    /// such a mid-serialization failure is not recoverable.
     #[cfg(feature = "epserde")]
     pub fn serialize_str<
         T: ?Sized + Borrow<str>,
@@ -1418,6 +1423,11 @@ mod epserde_impl {
     }
 
     /// Serializes to a stream a rear-coded list of byte sequences directly from a lender of `AsRef<[u8]>`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the lender fails during the second (serialization) pass;
+    /// such a mid-serialization failure is not recoverable.
     #[cfg(feature = "epserde")]
     pub fn serialize_slice_u8<
         T: ?Sized + Borrow<[u8]>,
@@ -1436,6 +1446,11 @@ mod epserde_impl {
 
     /// Stores into a file a rear-coded list of strings built directly from a lender of
     /// `AsRef<str>`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the lender fails during the second (serialization) pass;
+    /// such a mid-serialization failure is not recoverable.
     #[cfg(feature = "epserde")]
     pub fn store_str<
         T: ?Sized + Borrow<str>,
@@ -1450,13 +1465,18 @@ mod epserde_impl {
         filename: impl AsRef<std::path::Path>,
     ) -> anyhow::Result<usize> {
         let dst_file =
-            std::fs::File::create(filename.as_ref()).expect("Cannot create destination file");
+            std::fs::File::create(filename.as_ref())?;
         let mut buf_writer = std::io::BufWriter::new(dst_file);
         serialize_impl::<T, str, String, L, SORTED>(ratio, lender, &mut buf_writer)
     }
 
     /// Stores into a file a rear-coded list of strings built directly from a lender of
     /// `AsRef<[u8]>`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the lender fails during the second (serialization) pass;
+    /// such a mid-serialization failure is not recoverable.
     #[cfg(feature = "epserde")]
     pub fn store_slice_u8<
         T: ?Sized + Borrow<[u8]>,
@@ -1471,7 +1491,7 @@ mod epserde_impl {
         filename: impl AsRef<std::path::Path>,
     ) -> anyhow::Result<usize> {
         let dst_file =
-            std::fs::File::create(filename.as_ref()).expect("Cannot create destination file");
+            std::fs::File::create(filename.as_ref())?;
         let mut buf_writer = std::io::BufWriter::new(dst_file);
         serialize_impl::<T, [u8], Vec<u8>, L, SORTED>(ratio, lender, &mut buf_writer)
     }
