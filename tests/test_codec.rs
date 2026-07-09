@@ -135,6 +135,8 @@ fn test_zero_codec() {
     assert_eq!(out, Some(0));
 }
 
+// The contract is enforced by a debug_assert!, which compiles out in release.
+#[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "cannot encode a nonzero value")]
 fn test_zero_codec_rejects_nonzero_symbol() {
