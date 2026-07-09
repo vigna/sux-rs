@@ -70,7 +70,9 @@ use crate::traits::{IndexedSeq, SuccUnchecked};
 /// let mut efb = EliasFanoBuilder::new(cwf.len(), last_cwf);
 /// efb.extend(cwf);
 /// let ef = efb.build_with_dict();
-/// let chunks = FairChunks::new_with(50, &ef, weights.len(), last_cwf);
+/// // SAFETY: cwf is nondecreasing, weights.len() is one less than cwf.len(),
+/// // and last_cwf is the last element of cwf.
+/// let chunks = unsafe { FairChunks::new_with(50, &ef, weights.len(), last_cwf) };
 /// assert_eq!(
 ///     chunks.collect::<Vec<_>>(),
 ///     vec![
@@ -111,7 +113,8 @@ pub struct FairChunks<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64>> {
 }
 
 impl<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64>> FairChunks<I> {
-    /// Creates a fair chunk iterator using a structure supporting [`SuccUnchecked`].
+    /// Creates a fair chunk iterator using a structure supporting
+    /// [`SuccUnchecked`].
     ///
     /// # Arguments
     ///
@@ -123,9 +126,20 @@ impl<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64>> FairChunks<I> {
     ///
     /// * `max_weight` - The last element of the cumulative weight function.
     ///
+    /// # Safety
+    ///
+    /// `cwf` must be nondecreasing, `max_weight` must equal its last element,
+    /// and `num_weights` must be the number of weights, that is, one less than
+    /// the length of `cwf` (which starts with a leading zero). [`next`]
+    /// performs unchecked successor queries on `cwf` for targets it proves to
+    /// be at most `max_weight`; if `max_weight` overstates the last element, a
+    /// successor query is made for a value with no successor, which is
+    /// undefined behavior.
+    ///
+    /// [`next`]: Iterator::next
     /// [unchecked successor queries]: crate::traits::SuccUnchecked
     #[must_use]
-    pub fn new_with(target_weight: u64, cwf: I, num_weights: usize, max_weight: u64) -> Self {
+    pub unsafe fn new_with(target_weight: u64, cwf: I, num_weights: usize, max_weight: u64) -> Self {
         Self {
             target_weight,
             cwf,

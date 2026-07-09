@@ -31,7 +31,9 @@ fn test_fair_chunks_new_with() {
     let mut efb = EliasFanoBuilder::new(cwf.len(), *cwf.last().unwrap());
     efb.extend(cwf.iter().copied());
     let ef = efb.build_with_dict();
-    let chunks: Vec<_> = FairChunks::new_with(50, &ef, 4, 100).collect();
+    // SAFETY: cwf is nondecreasing, 4 is one less than cwf.len(), and 100 is
+    // the last element of cwf.
+    let chunks: Vec<_> = unsafe { FairChunks::new_with(50, &ef, 4, 100) }.collect();
     assert!(!chunks.is_empty());
     assert_eq!(chunks[0].start, 0);
     assert_eq!(chunks.last().unwrap().end, 4);
