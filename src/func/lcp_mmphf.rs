@@ -110,6 +110,8 @@ impl<K: PrimitiveInteger> IntBitPrefix<K> {
 ///
 /// On 32-bit targets an enormous single key could otherwise wrap the `usize`
 /// multiplication and produce a bogus LCP length.
+// Only the rayon-gated `build` modules of this file and `lcp2_mmphf` call this.
+#[cfg(feature = "rayon")]
 #[inline]
 pub(crate) fn checked_full_key_bits(bytes: &[u8]) -> anyhow::Result<usize> {
     bytes
