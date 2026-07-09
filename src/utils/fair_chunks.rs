@@ -207,6 +207,15 @@ impl<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64>> Iterator for FairC
         self.curr_pos = next_pos;
         Some(res)
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        if self.target_weight == 0 || self.curr_pos == self.num_weights {
+            return (0, Some(0));
+        }
+        // Each chunk covers at least one position, so at least one and at
+        // most `num_weights - curr_pos` chunks remain.
+        (1, Some(self.num_weights - self.curr_pos))
+    }
 }
 
 impl<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64>> FusedIterator for FairChunks<I> {}

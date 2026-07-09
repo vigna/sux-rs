@@ -444,6 +444,12 @@ impl<'a, W: Word> Iterator for ChunksMut<'a, W> {
             next
         })
     }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        // Exact: one chunk per inner slice chunk.
+        self.iter.size_hint()
+    }
 }
 
 impl<'a, W: Word> ExactSizeIterator for ChunksMut<'a, W> where
