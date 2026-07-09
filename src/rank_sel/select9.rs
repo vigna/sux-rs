@@ -208,7 +208,16 @@ impl<
         // construct the inventory
         let mut curr_num_ones = 0;
         let mut next_quantum = 0;
-        for (i, word) in rank9.bits.as_ref().iter().copied().enumerate() {
+        // Bound the scan to the logical words: the backing may legally hold
+        // stale words past `len().div_ceil(64)` (e.g. after `pop`/`resize`).
+        for (i, word) in rank9
+            .bits
+            .as_ref()
+            .iter()
+            .copied()
+            .take(num_words)
+            .enumerate()
+        {
             let word = super::mask_tail_word(word, i + 1 == num_words, residual);
             let ones_in_word = word.count_ones() as usize;
 
