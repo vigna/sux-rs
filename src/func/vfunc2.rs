@@ -98,8 +98,9 @@ pub struct VFunc2<
     F = E,
 > {
     /// First function: maps each key to an index (*r* bits), or [`escape`] for
-    /// infrequent values. When *r* = 0 this is an empty VFunc that always
-    /// returns 0, so the second function is always queried.
+    /// infrequent values. When *r* = 0 the escape value is 0, so this is a
+    /// minimal one-bit function that maps every key to 0 = escape and the
+    /// second function is always queried.
     ///
     /// [`escape`]: Self::escape
     pub(crate) first: VFunc<K, D, S, E>,
@@ -393,7 +394,13 @@ mod build {
 
         // r < w <= 128; shift in u128 so this cannot overflow a 32-bit usize.
         for r in 0..w {
-            let cost_first = if r == 0 { 0.0 } else { c * n as f64 * r as f64 };
+            // The first function is built with escape = (1 << r) - 1 as its
+            // max value, so its bit width is bit_len(escape): r for r >= 1 and
+            // 1 for r == 0 (bit_len(0) == 1). Charge the real one-bit cost at
+            // r == 0 so the optimizer does not treat the still-built one-bit
+            // first stage as free and over-select r == 0.
+            let first_width = if r == 0 { 1 } else { r };
+            let cost_first = c * n as f64 * first_width as f64;
             let cost_second = c * post as f64 * w as f64;
             let cost_remap = pos as f64 * w_bits as f64;
             let cost = cost_first + cost_second + cost_remap;
@@ -926,5 +933,23 @@ mod tests {
         let sorted_vals: Vec<u64> = vec![1 << 40, 1 << 39, 1 << 38, 1 << 37];
         let r = find_optimal_r(400, 1u64 << 40, &sorted_vals, |_| 100, 64);
         assert!(r <= 64);
+    }
+
+    /// The first function built for `r == 0` is a one-bit function
+    /// (`bit_len(0) == 1`), not a free/empty stage, so `find_optimal_r` must
+    /// charge its `c * n` bits. Otherwise the old `cost_first = 0.0` model
+    /// under-prices `r == 0` by `c * n` and over-selects it: here the honest
+    /// cost makes `r == 1` win (absorbing the frequent value shrinks the
+    /// second stage by more than the remap entry costs).
+    #[test]
+    fn find_optimal_r_charges_one_bit_first_stage_at_zero() {
+        let sorted_vals: Vec<u64> = vec![1, 2];
+        let count_of = |v: u64| match v {
+            1 => 60,
+            2 => 40,
+            _ => 0,
+        };
+        let r = find_optimal_r(100, 2u64, &sorted_vals, count_of, 64);
+        assert_eq!(r, 1);
     }
 }
