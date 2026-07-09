@@ -604,6 +604,11 @@ impl<W: Word> BitVec<Box<[W]>> {
 
 impl<W: Word> Extend<bool> for BitVec<Vec<W>> {
     fn extend<T: IntoIterator<Item = bool>>(&mut self, i: T) {
+        let i = i.into_iter();
+        // Reserve for the lower bound (one bit per element) to avoid repeated
+        // word reallocation.
+        let (lo, _) = i.size_hint();
+        self.reserve(lo);
         for b in i {
             self.push(b);
         }
