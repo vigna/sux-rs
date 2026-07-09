@@ -599,7 +599,9 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
                 }
             }
         }
-        unreachable!("decoder fell through all blocks")
+        // Out-of-window value (possible only for incomplete codes, e.g. a
+        // single-symbol table): mirror `decode_branchless` and report no match.
+        None
     }
 
     /// Branchless decode: counts blocks whose upper bound is `<=

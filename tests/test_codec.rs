@@ -167,6 +167,18 @@ fn test_huffman_single_symbol() {
 }
 
 #[test]
+fn test_huffman_single_symbol_branchy_out_of_window_returns_none() {
+    // A single-symbol table (one 1-bit codeword, no escape) defaults to the
+    // branchy strategy; the unused 1-bit window value must decode to `None`,
+    // mirroring the branchless strategy, instead of panicking.
+    let f = freqs(&[(42, 100)]);
+    let decoder = HuffmanConf::new().build_coder(&f).into_decoder();
+    assert!(!decoder.is_branchless());
+    assert_eq!(decoder.decode(0), Some(42));
+    assert_eq!(decoder.decode(1), None);
+}
+
+#[test]
 fn test_huffman_two_symbols() {
     // Regression: with exactly 2 symbols the Moffat-Katajainen
     // second pass range `0..=size-3` would underflow to
