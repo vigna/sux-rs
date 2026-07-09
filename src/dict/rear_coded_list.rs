@@ -353,9 +353,7 @@ impl<I: ?Sized, O, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
     }
 }
 
-impl<O, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
-    RearCodedList<str, O, D, P, SORTED>
-{
+impl<O, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> RearCodedList<str, O, D, P, SORTED> {
     /// Checks the structural invariants of this list.
     ///
     /// After deserializing from an untrusted or possibly stale source, call
@@ -1465,8 +1463,7 @@ mod epserde_impl {
         lender: L,
         filename: impl AsRef<std::path::Path>,
     ) -> anyhow::Result<usize> {
-        let dst_file =
-            std::fs::File::create(filename.as_ref())?;
+        let dst_file = std::fs::File::create(filename.as_ref())?;
         let mut buf_writer = std::io::BufWriter::new(dst_file);
         serialize_impl::<T, str, String, L, SORTED>(ratio, lender, &mut buf_writer)
     }
@@ -1491,8 +1488,7 @@ mod epserde_impl {
         lender: L,
         filename: impl AsRef<std::path::Path>,
     ) -> anyhow::Result<usize> {
-        let dst_file =
-            std::fs::File::create(filename.as_ref())?;
+        let dst_file = std::fs::File::create(filename.as_ref())?;
         let mut buf_writer = std::io::BufWriter::new(dst_file);
         serialize_impl::<T, [u8], Vec<u8>, L, SORTED>(ratio, lender, &mut buf_writer)
     }
@@ -1681,7 +1677,9 @@ mod tests {
         assert!(corrupt_list(2, 1, &[0x80], &[0]).validate().is_err());
         // Trailing bytes after the last element.
         assert!(
-            corrupt_list(2, 1, &[1, b'x', b'y'], &[0]).validate().is_err()
+            corrupt_list(2, 1, &[1, b'x', b'y'], &[0])
+                .validate()
+                .is_err()
         );
         // Empty list must validate.
         assert!(corrupt_list(2, 0, &[], &[]).validate().is_ok());

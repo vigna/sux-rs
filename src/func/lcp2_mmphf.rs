@@ -1248,69 +1248,33 @@ mod build {
                     state.lcp_counts = HybridMap::new(None, 0);
                     state.max_lcp = 0;
 
-                    let mut populate =
-                        |seed: u64,
-                         push: &mut dyn FnMut(SigVal<S0, u64>) -> anyhow::Result<()>,
-                         pl: &mut P,
-                         state: &mut State| {
-                            while let Some(key) = keys.next()? {
-                                pl.light_update();
-                                let key_bytes: &[u8] = key.as_ref();
+                    let mut populate = |seed: u64,
+                                        push: &mut dyn FnMut(
+                        SigVal<S0, u64>,
+                    )
+                        -> anyhow::Result<()>,
+                                        pl: &mut P,
+                                        state: &mut State| {
+                        while let Some(key) = keys.next()? {
+                            pl.light_update();
+                            let key_bytes: &[u8] = key.as_ref();
 
-                                if idx > 0 && key_bytes <= prev_key.as_slice() {
-                                    bail!(
-                                        "Keys are not in strictly increasing lexicographic order \
+                            if idx > 0 && key_bytes <= prev_key.as_slice() {
+                                bail!(
+                                    "Keys are not in strictly increasing lexicographic order \
                                  at position {idx}"
-                                    );
-                                }
-
-                                // Validate the key length up front so both the
-                                // bucket-start computation and lcp_bits_nul's
-                                // internal `len * 8` cannot overflow on 32-bit.
-                                let full_key_bits = checked_full_key_bits(key_bytes)?;
-
-                                let offset = idx & bucket_mask;
-
-                                // Start of a new bucket — flush the previous one.
-                                if offset == 0 && idx > 0 {
-                                    let lcp = curr_lcp_bits;
-                                    state.lcp_bit_lens.push(LcpLen::try_from(lcp).map_err(
-                                        |_| {
-                                            anyhow::anyhow!(
-                                                "LCP length of {lcp} bits exceeds u32::MAX"
-                                            )
-                                        },
-                                    )?);
-                                    state.max_lcp = state.max_lcp.max(lcp);
-                                    let bsize = buf.len();
-                                    state.lcp_counts.add(lcp, bsize);
-                                    for (i, &sig) in buf.iter().enumerate() {
-                                        let packed = ((lcp as u64) << log2_bs) | i as u64;
-                                        max_value = max_value.max(packed);
-                                        push(SigVal { sig, val: packed })?;
-                                    }
-                                    buf.clear();
-                                    curr_lcp_bits = full_key_bits;
-                                } else if offset == 0 {
-                                    curr_lcp_bits = full_key_bits;
-                                } else {
-                                    curr_lcp_bits = curr_lcp_bits
-                                        .min(lcp_bits_nul::<true>(key_bytes, &prev_key));
-                                }
-
-                                if offset == 0 {
-                                    state.bucket_first_keys.push(key_bytes.to_vec());
-                                }
-
-                                let sig = K::to_sig(key.borrow(), seed);
-                                buf.push(sig);
-                                prev_key.clear();
-                                prev_key.extend_from_slice(key_bytes);
-                                idx += 1;
+                                );
                             }
 
-                            // Flush the last (possibly partial) bucket.
-                            if !buf.is_empty() {
+                            // Validate the key length up front so both the
+                            // bucket-start computation and lcp_bits_nul's
+                            // internal `len * 8` cannot overflow on 32-bit.
+                            let full_key_bits = checked_full_key_bits(key_bytes)?;
+
+                            let offset = idx & bucket_mask;
+
+                            // Start of a new bucket — flush the previous one.
+                            if offset == 0 && idx > 0 {
                                 let lcp = curr_lcp_bits;
                                 state.lcp_bit_lens.push(LcpLen::try_from(lcp).map_err(|_| {
                                     anyhow::anyhow!("LCP length of {lcp} bits exceeds u32::MAX")
@@ -1324,13 +1288,47 @@ mod build {
                                     push(SigVal { sig, val: packed })?;
                                 }
                                 buf.clear();
+                                curr_lcp_bits = full_key_bits;
+                            } else if offset == 0 {
+                                curr_lcp_bits = full_key_bits;
+                            } else {
+                                curr_lcp_bits =
+                                    curr_lcp_bits.min(lcp_bits_nul::<true>(key_bytes, &prev_key));
                             }
 
-                            anyhow::ensure!(idx == n, "Expected {n} keys but got {idx}");
-                            assert_eq!(state.lcp_bit_lens.len(), num_buckets);
+                            if offset == 0 {
+                                state.bucket_first_keys.push(key_bytes.to_vec());
+                            }
 
-                            Ok(max_value)
-                        };
+                            let sig = K::to_sig(key.borrow(), seed);
+                            buf.push(sig);
+                            prev_key.clear();
+                            prev_key.extend_from_slice(key_bytes);
+                            idx += 1;
+                        }
+
+                        // Flush the last (possibly partial) bucket.
+                        if !buf.is_empty() {
+                            let lcp = curr_lcp_bits;
+                            state.lcp_bit_lens.push(LcpLen::try_from(lcp).map_err(|_| {
+                                anyhow::anyhow!("LCP length of {lcp} bits exceeds u32::MAX")
+                            })?);
+                            state.max_lcp = state.max_lcp.max(lcp);
+                            let bsize = buf.len();
+                            state.lcp_counts.add(lcp, bsize);
+                            for (i, &sig) in buf.iter().enumerate() {
+                                let packed = ((lcp as u64) << log2_bs) | i as u64;
+                                max_value = max_value.max(packed);
+                                push(SigVal { sig, val: packed })?;
+                            }
+                            buf.clear();
+                        }
+
+                        anyhow::ensure!(idx == n, "Expected {n} keys but got {idx}");
+                        assert_eq!(state.lcp_bit_lens.len(), num_buckets);
+
+                        Ok(max_value)
+                    };
 
                     builder.try_solve_once(
                         seed,
@@ -1712,9 +1710,11 @@ mod build {
             // Flush the last (possibly partial) bucket.
             {
                 let lcp = curr_lcp_bits;
-                lcp_bit_lens.push(LcpLen::try_from(lcp).map_err(|_| {
-                    anyhow::anyhow!("LCP length of {lcp} bits exceeds u32::MAX")
-                })?);
+                lcp_bit_lens.push(
+                    LcpLen::try_from(lcp).map_err(|_| {
+                        anyhow::anyhow!("LCP length of {lcp} bits exceeds u32::MAX")
+                    })?,
+                );
                 max_lcp = max_lcp.max(lcp);
                 let bsize = n - (num_buckets - 1) * bucket_size;
                 lcp_counts.add(lcp, bsize);

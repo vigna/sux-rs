@@ -249,8 +249,7 @@ impl<B: Backend<Word: Word> + BitLength, D: SliceByValue<Value = u64>> CompIntLi
     /// The check scans the whole delimiter structure (`O(n)`).
     pub fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(
-            self
-                .n
+            self.n
                 .checked_add(1)
                 .is_some_and(|expected| self.delimiters.len() == expected),
             "the delimiter structure has {} elements instead of {} + 1",

@@ -198,12 +198,8 @@ impl<
     }
 }
 
-impl<
-    K: ?Sized,
-    D: Backend<Word: Word> + AsRef<[D::Word]>,
-    S,
-    E: ShardEdge<S, 3>,
-> CompVFunc<K, D, S, E>
+impl<K: ?Sized, D: Backend<Word: Word> + AsRef<[D::Word]>, S, E: ShardEdge<S, 3>>
+    CompVFunc<K, D, S, E>
 {
     /// Checks the invariants relied upon by [`get`](Self::get), for use after
     /// deserializing from an untrusted source.

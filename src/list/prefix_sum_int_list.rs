@@ -197,8 +197,7 @@ impl<D: SliceByValue<Value = usize>> PrefixSumIntList<D> {
     pub fn validate(&self) -> anyhow::Result<()> {
         let len = self.prefix_sums.len();
         anyhow::ensure!(
-            self
-                .n
+            self.n
                 .checked_add(1)
                 .is_some_and(|expected| len == expected),
             "the prefix-sum structure has {len} elements instead of {} + 1",

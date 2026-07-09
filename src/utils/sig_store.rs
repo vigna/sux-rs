@@ -968,9 +968,9 @@ impl<
                     store.buckets[i]
                         .seek(SeekFrom::Start(0))
                         .expect("offline signature store: temp-file seek failed");
-                    store.buckets[i]
-                        .read_exact(&mut buf[..bytes])
-                        .expect("offline signature store: temp-file read failed (disk error or truncation)");
+                    store.buckets[i].read_exact(&mut buf[..bytes]).expect(
+                        "offline signature store: temp-file read failed (disk error or truncation)",
+                    );
                     if !self.borrowed {
                         let _ = store.buckets[i].get_mut().set_len(0);
                     }
@@ -1021,9 +1021,9 @@ impl<
                     debug_assert!(pre.is_empty());
                     debug_assert!(after.is_empty());
 
-                    store.buckets[self.next_bucket]
-                        .read_exact(buf)
-                        .expect("offline signature store: temp-file read failed (disk error or truncation)");
+                    store.buckets[self.next_bucket].read_exact(buf).expect(
+                        "offline signature store: temp-file read failed (disk error or truncation)",
+                    );
 
                     // We move each signature/value pair into its shard
                     for &v in &buffer {

@@ -1413,7 +1413,8 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> crate::traits::UncheckedIterator
             self.window = B::Word::ZERO;
             self.fill = 0;
         } else {
-            res = ((res << used) | (self.window >> (B::Word::BITS as usize - used))) & self.vec.mask; // not in a loop
+            res =
+                ((res << used) | (self.window >> (B::Word::BITS as usize - used))) & self.vec.mask; // not in a loop
             self.window <<= used;
             self.fill = B::Word::BITS as usize - used;
         }
@@ -1577,7 +1578,8 @@ impl<W: Word> core::iter::Extend<W> for BitFieldVec<Vec<W>> {
                 .and_then(|total| total.checked_mul(self.bit_width))
                 .map(|bits| bits.div_ceil(W::BITS as usize))
             {
-                self.bits.reserve(needed_words.saturating_sub(self.bits.len()));
+                self.bits
+                    .reserve(needed_words.saturating_sub(self.bits.len()));
             }
         }
         for value in iter {

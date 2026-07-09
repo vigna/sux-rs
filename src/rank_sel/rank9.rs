@@ -235,9 +235,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength> Rank9<B, Box<[BlockC
     }
 }
 
-impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>>
-    Rank9<B, C>
-{
+impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> Rank9<B, C> {
     /// Checks that the rank counters are consistent with the bit vector.
     ///
     /// After deserializing from an untrusted or possibly stale source, call

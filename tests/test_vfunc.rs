@@ -291,12 +291,13 @@ fn test_duplicate_keys_error() {
     let mut pl = ProgressLogger::default();
     let keys = vec![5usize, 5];
     let values = vec![0usize, 1];
-    let result = <VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>>::try_new_with_builder(
-        FromCloneableIntoIterator::from(keys),
-        FromCloneableIntoIterator::from(values),
-        VBuilder::default(),
-        &mut pl,
-    );
+    let result =
+        <VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>>::try_new_with_builder(
+            FromCloneableIntoIterator::from(keys),
+            FromCloneableIntoIterator::from(values),
+            VBuilder::default(),
+            &mut pl,
+        );
     let err = result.expect_err("duplicate keys must return an error, not panic or loop");
     assert!(
         err.downcast_ref::<sux::func::BuildError>()

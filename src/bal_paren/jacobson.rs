@@ -353,10 +353,16 @@ fn check_balance(words: &[usize], len: usize) -> anyhow::Result<()> {
             depth += 1;
         } else {
             depth -= 1;
-            anyhow::ensure!(depth >= 0, "unbalanced parentheses: negative depth at position {i}");
+            anyhow::ensure!(
+                depth >= 0,
+                "unbalanced parentheses: negative depth at position {i}"
+            );
         }
     }
-    anyhow::ensure!(depth == 0, "unbalanced parentheses: final depth is {depth} instead of 0");
+    anyhow::ensure!(
+        depth == 0,
+        "unbalanced parentheses: final depth is {depth} instead of 0"
+    );
     Ok(())
 }
 

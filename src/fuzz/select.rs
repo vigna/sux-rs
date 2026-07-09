@@ -88,7 +88,11 @@ pub fn harness(mut data: Data) {
         ($struct:expr) => {{
             let sel = $struct;
             for (i, &pos) in zeros_pos.iter().enumerate() {
-                assert_eq!(sel.select_zero(i).unwrap(), pos, "select_zero({i}) is wrong");
+                assert_eq!(
+                    sel.select_zero(i).unwrap(),
+                    pos,
+                    "select_zero({i}) is wrong"
+                );
             }
         }};
     }
@@ -97,14 +101,14 @@ pub fn harness(mut data: Data) {
     // A minimal subinventory (log2 = 0) forces the spill path.
     test_select_zero!(SelectZeroAdaptConst::<_, _, 13, 0>::new(&bitvec));
     test_select_zero!(SelectZeroAdapt::new(&bitvec));
-    test_select_zero!(SelectZeroSmall::<2, 9, _>::new(RankSmall::<64, 2, 9, _>::new(
-        bitvec64.clone()
-    )));
+    test_select_zero!(SelectZeroSmall::<2, 9, _>::new(
+        RankSmall::<64, 2, 9, _>::new(bitvec64.clone())
+    ));
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{harness, Data};
+    use super::{Data, harness};
 
     /// Drive the harness over hand-picked shapes so a regression in any
     /// covered select structure surfaces without a full fuzz campaign.

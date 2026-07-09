@@ -19,10 +19,10 @@ use crate::dict::elias_fano::EliasFano;
 use crate::panic_if_out_of_bounds;
 use crate::rank_sel::{Rank9, SelectZeroAdaptConst};
 use crate::traits::Backend;
+use crate::traits::BitCount;
 use crate::traits::TryIntoUnaligned;
 use crate::traits::Unaligned;
 use crate::traits::{BitVecOps, BitVecOpsMut};
-use crate::traits::BitCount;
 use crate::traits::{RankUnchecked, SuccUnchecked};
 
 // Rank9 is inherently u64-based, so the dense index must use u64 backing
