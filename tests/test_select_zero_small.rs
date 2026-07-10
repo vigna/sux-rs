@@ -7,6 +7,7 @@
 
 use rand::{RngExt, SeedableRng, rngs::SmallRng};
 use sux::prelude::*;
+use sux::traits::BitVecOps;
 
 macro_rules! test {
     ($WORD_BITS: literal; $NUM_U32S: literal; $COUNTER_WIDTH: literal) => {

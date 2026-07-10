@@ -17,18 +17,18 @@ use std::{
 };
 
 use crate::{
-    prelude::{BitCount, BitLength, SelectZeroHinted},
+    prelude::{BitLength, SelectZeroHinted},
     traits::{
         Backend, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
         SelectUnchecked, SelectZero, SelectZeroUnchecked, Word,
     },
 };
 
+use crate::traits::BitVecOps;
 use crate::ambassador_impl_Index;
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::bal_paren::{BalParen, ambassador_impl_BalParen};
 use crate::traits::bit_vec_ops::ambassador_impl_BitLength;
-use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
 use crate::traits::rank_sel::ambassador_impl_Rank;
 use crate::traits::rank_sel::ambassador_impl_RankHinted;
@@ -142,7 +142,6 @@ use std::ops::Index;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(crate::traits::Backend, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
-#[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
 #[delegate(crate::traits::bit_vec_ops::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
@@ -228,7 +227,7 @@ impl<B: BitLength, C> SelectZeroAdapt<B, C> {
     }
 }
 
-impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount>
+impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
     SelectZeroAdapt<B, Box<[usize]>>
 {
     /// See [`SelectAdapt::new`].

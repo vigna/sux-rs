@@ -252,13 +252,6 @@ impl<B: BitLength, C: AsRef<[BlockCounters]>> NumBits for Rank9<B, C> {
     }
 }
 
-impl<B: BitLength, C: AsRef<[BlockCounters]>> BitCount for Rank9<B, C> {
-    #[inline(always)]
-    fn count_ones(&self) -> usize {
-        self.num_ones()
-    }
-}
-
 impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCounters]>> RankUnchecked
     for Rank9<B, C>
 {
@@ -337,7 +330,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCount
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::traits::BitCount;
+    use crate::traits::BitVecOps;
     #[test]
     fn test_last() {
         let bits = unsafe { BitVec::from_raw_parts(vec![!1u64; 1 << 10], (1 << 10) * 64) };

@@ -7,6 +7,7 @@
 
 use rand::{RngExt, SeedableRng, rngs::SmallRng};
 use sux::prelude::*;
+use sux::traits::BitVecOps;
 
 #[test]
 fn test() {

@@ -13,7 +13,7 @@
 //! underlying implementations.
 
 use crate::ambassador_impl_Index;
-use crate::traits::Backend;
+use crate::traits::{Backend, Word};
 use ambassador::{Delegate, delegatable_trait};
 use impl_tools::autoimpl;
 use mem_dbg::{MemDbg, MemSize};
@@ -22,50 +22,31 @@ use std::ops::Index;
 
 use crate::traits::ambassador_impl_Backend;
 
-use crate::traits::bit_vec_ops::{BitLength, ambassador_impl_BitLength};
+use crate::traits::bit_vec_ops::{BitLength, BitVecOps, ambassador_impl_BitLength};
 
-/// Potentially expensive bit-counting methods.
-///
-/// The methods in this trait compute the number of ones or zeros
-/// in a bit vector (possibly underlying a succinct data structure).
-/// The computation can be expensive: if you need a constant-time
-/// version, use [`NumBits`]. If you need to cache the result
-/// of these methods, you can use [`AddNumBits`].
-#[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
-#[delegatable_trait(inline = "always")]
-pub trait BitCount: BitLength {
-    /// Returns the number of ones in the underlying bit vector,
-    /// with a possibly expensive computation; see [`NumBits::num_ones`]
-    /// for constant-time version.
-    fn count_ones(&self) -> usize;
-    /// Returns the number of zeros in the underlying bit vector,
-    /// with a possibly expensive computation; see [`NumBits::num_zeros`]
-    /// for constant-time version.
-    #[inline(always)]
-    fn count_zeros(&self) -> usize {
-        self.len() - self.count_ones()
-    }
-}
 
 /// Constant-time bit-counting methods.
 ///
 /// The methods in this trait compute the number of ones or zeros
 /// in a bit vector (possibly underlying a succinct data structure)
 /// in constant time. If you can be content with a potentially
-/// expensive computation, use [`BitCount`].
+/// expensive computation, use
+/// [`BitVecOps::count_ones`](crate::traits::BitVecOps::count_ones).
 ///
 /// If you need to implement this trait on a structure that already
-/// implements [`BitCount`], you can use [`AddNumBits`].
+/// computes its number of ones, you can use [`AddNumBits`].
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait(inline = "always")]
 pub trait NumBits: BitLength {
     /// Returns the number of ones in the underlying bit vector
     /// in constant time. If you can be content with a potentially
-    /// expensive computation, use [`BitCount::count_ones`].
+    /// expensive computation, use
+    /// [`BitVecOps::count_ones`](crate::traits::BitVecOps::count_ones).
     fn num_ones(&self) -> usize;
     /// Returns the number of zeros in the underlying bit vector
     /// in constant time. If you can be content with a potentially
-    /// expensive computation, use [`BitCount::count_zeros`].
+    /// expensive computation, use
+    /// [`BitVecOps::count_zeros`](crate::traits::BitVecOps::count_zeros).
     #[inline(always)]
     fn num_zeros(&self) -> usize {
         self.len() - self.num_ones()
@@ -505,10 +486,10 @@ impl<T: SelectZeroHinted + ?Sized> SelectZeroHinted for Box<T> {
 }
 
 /// A thin wrapper implementing [`NumBits`] by caching the result of
-/// [`BitCount::count_ones`].
+/// [`BitVecOps::count_ones`](crate::traits::BitVecOps::count_ones).
 ///
 /// This structure forwards to the wrapped structure all traits defined in [this
-/// module] except for [`NumBits`] and [`BitCount`]. It is typically used to
+/// module] except for [`NumBits`]. It is typically used to
 /// provide [`NumBits`] to [`Select`]/[`SelectZero`] implementations; see, for
 /// example, [`SelectAdapt`].
 ///
@@ -594,13 +575,6 @@ impl<B: BitLength> NumBits for AddNumBits<B> {
     }
 }
 
-impl<B: BitLength> BitCount for AddNumBits<B> {
-    #[inline(always)]
-    fn count_ones(&self) -> usize {
-        self.number_of_ones
-    }
-}
-
 impl<B> Deref for AddNumBits<B> {
     type Target = B;
     #[inline(always)]
@@ -609,7 +583,7 @@ impl<B> Deref for AddNumBits<B> {
     }
 }
 
-impl<B: BitCount> From<B> for AddNumBits<B> {
+impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength> From<B> for AddNumBits<B> {
     fn from(bits: B) -> Self {
         let number_of_ones = bits.count_ones();
         AddNumBits {

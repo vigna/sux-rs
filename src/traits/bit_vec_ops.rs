@@ -246,9 +246,36 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
         ZerosIter::new(self.as_ref(), self.len())
     }
 
-    /// A parallel version of [`BitCount::count_ones`].
+    /// Returns the number of ones in the bit vector.
     ///
-    /// [`BitCount::count_ones`]: crate::traits::BitCount::count_ones
+    /// Dirty bits past the logical length are masked out. The computation
+    /// scans the backing words; for a constant-time count on structures that
+    /// cache it, use [`NumBits::num_ones`](crate::traits::NumBits::num_ones).
+    fn count_ones(&self) -> usize {
+        let bits_per_word = W::BITS as usize;
+        let full_words = self.len() / bits_per_word;
+        let residual = self.len() % bits_per_word;
+        let bits = self.as_ref();
+        let mut num_ones: usize = bits[..full_words]
+            .iter()
+            .map(|x| x.count_ones() as usize)
+            .sum();
+        if residual != 0 {
+            num_ones += (bits[full_words] << (bits_per_word - residual)).count_ones() as usize;
+        }
+        num_ones
+    }
+
+    /// Returns the number of zeros in the bit vector.
+    ///
+    /// Dirty bits past the logical length are masked out. See
+    /// [`count_ones`](Self::count_ones) for the cost.
+    #[inline]
+    fn count_zeros(&self) -> usize {
+        self.len() - self.count_ones()
+    }
+
+    /// A parallel version of [`count_ones`](Self::count_ones).
     #[cfg(feature = "rayon")]
     fn par_count_ones(&self) -> usize {
         let bits_per_word = W::BITS as usize;
@@ -776,9 +803,9 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
         }
     }
 
-    /// A parallel version of [`BitCount::count_ones`].
+    /// Returns the number of ones in the bit vector, counted in parallel.
     ///
-    /// [`BitCount::count_ones`]: `crate::traits::BitCount::count_ones`
+    /// Dirty bits past the logical length are masked out.
     #[cfg(feature = "rayon")]
     fn par_count_ones(&self) -> usize {
         let bits_per_word = A::Value::BITS as usize;

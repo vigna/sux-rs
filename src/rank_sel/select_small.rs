@@ -19,7 +19,6 @@ use crate::rank_sel::ambassador_impl_SmallCounters;
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::bal_paren::ambassador_impl_BalParen;
 use crate::traits::bit_vec_ops::ambassador_impl_BitLength;
-use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
 use crate::traits::rank_sel::ambassador_impl_Rank;
 use crate::traits::rank_sel::ambassador_impl_RankHinted;
@@ -124,7 +123,6 @@ use std::ops::Index;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(crate::traits::Backend, target = "small_counters")]
 #[delegate(Index<usize>, target = "small_counters")]
-#[delegate(crate::traits::rank_sel::BitCount, target = "small_counters")]
 #[delegate(crate::traits::bit_vec_ops::BitLength, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "small_counters")]
 #[delegate(crate::traits::rank_sel::Rank, target = "small_counters")]

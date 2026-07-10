@@ -17,7 +17,7 @@ use std::{
 use crate::{
     prelude::{BitLength, BitVec, Rank, RankHinted, RankUnchecked, RankZero},
     traits::{
-        Backend, BitCount, NumBits, Select, SelectHinted, SelectUnchecked, SelectZero,
+        Backend, NumBits, Select, SelectHinted, SelectUnchecked, SelectZero,
         SelectZeroHinted, SelectZeroUnchecked, Word,
     },
 };
@@ -836,21 +836,6 @@ impl<
 {
     #[inline(always)]
     fn num_ones(&self) -> usize {
-        self.num_ones
-    }
-}
-
-impl<
-    const WORD_BITS: usize,
-    const NUM_U32S: usize,
-    const COUNTER_WIDTH: usize,
-    B: BitLength,
-    C1,
-    C2,
-> BitCount for RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B, C1, C2>
-{
-    #[inline(always)]
-    fn count_ones(&self) -> usize {
         self.num_ones
     }
 }

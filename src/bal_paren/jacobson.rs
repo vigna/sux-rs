@@ -24,7 +24,6 @@ use std::ops::{Deref, Index};
 use crate::ambassador_impl_Index;
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::bit_vec_ops::ambassador_impl_BitLength;
-use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
 use crate::traits::rank_sel::ambassador_impl_Rank;
 use crate::traits::rank_sel::ambassador_impl_RankHinted;
@@ -42,7 +41,7 @@ use crate::dict::{EfDict, EliasFanoBuilder};
 use crate::list::comp_int_list::CompIntList;
 use crate::list::prefix_sum_int_list::PrefixSumIntList;
 use crate::prelude::{
-    BitCount, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
+    NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
     SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked,
 };
 use crate::traits::bal_paren::BalParen;
@@ -317,7 +316,6 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 #[delegate(Index<usize>, target = "paren")]
 #[delegate(crate::traits::Backend, target = "paren")]
 #[delegate(crate::traits::bit_vec_ops::BitLength, target = "paren")]
-#[delegate(crate::traits::rank_sel::BitCount, target = "paren")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "paren")]
 #[delegate(crate::traits::rank_sel::RankHinted, target = "paren")]
 #[delegate(crate::traits::rank_sel::RankUnchecked, target = "paren")]

@@ -8,6 +8,7 @@
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::prelude::*;
+use sux::traits::BitVecOps;
 
 const INV: usize = 12;
 const SUB: usize = 2;

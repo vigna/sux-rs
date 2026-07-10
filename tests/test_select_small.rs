@@ -91,7 +91,7 @@ macro_rules! test_u32 {
                     _,
                 >::new(bits.clone()));
 
-            let ones = BitCount::count_ones(&bits);
+            let ones = BitVecOps::count_ones(&bits);
             let mut pos = Vec::with_capacity(ones);
             for (i, bit) in BitVecOps::<u32>::iter(&bits).enumerate() {
                 if bit {

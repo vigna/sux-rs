@@ -9,7 +9,7 @@
 use super::Rank9;
 use super::rank9::BlockCounters;
 use crate::traits::{
-    Backend, BitCount, BitLength, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select,
+    Backend, BitLength, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select,
     SelectHinted, SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word,
 };
 use crate::utils::SelectInWord;
@@ -47,7 +47,6 @@ use crate::ambassador_impl_Index;
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::bal_paren::{BalParen, ambassador_impl_BalParen};
 use crate::traits::bit_vec_ops::ambassador_impl_BitLength;
-use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
 use crate::traits::rank_sel::ambassador_impl_Rank;
 use crate::traits::rank_sel::ambassador_impl_RankHinted;
@@ -132,7 +131,6 @@ use std::ops::{Deref, Index};
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(Index<usize>, target = "rank9")]
 #[delegate(crate::traits::Backend, target = "rank9")]
-#[delegate(crate::traits::rank_sel::BitCount, target = "rank9")]
 #[delegate(crate::traits::bit_vec_ops::BitLength, target = "rank9")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "rank9")]
 #[delegate(crate::traits::rank_sel::Rank, target = "rank9")]

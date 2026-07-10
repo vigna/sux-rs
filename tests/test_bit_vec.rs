@@ -13,6 +13,7 @@ use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use std::sync::atomic::AtomicUsize;
 use sux::prelude::*;
+use sux::traits::BitVecOps;
 
 use sux::traits::BitVecValueOps;
 use sux::traits::bit_vec_ops::*;
@@ -634,14 +635,14 @@ macro_rules! test_word_type {
         // Test with_value + count_ones
         let bm: BitVec<Vec<$W>> = BitVec::with_value(u, true);
         assert_eq!(bm.len(), u);
-        assert_eq!(BitCount::count_ones(&bm), u);
+        assert_eq!(BitVecOps::count_ones(&bm), u);
         for i in 0..u {
             assert!(BitVecOps::<$W>::get(&bm, i));
         }
 
         // Test new (all zeros) + set/get
         let mut bm: BitVec<Vec<$W>> = BitVec::new(u);
-        assert_eq!(BitCount::count_ones(&bm), 0);
+        assert_eq!(BitVecOps::count_ones(&bm), 0);
 
         for _ in 0..10 {
             let mut values = (0..u).collect::<Vec<_>>();
@@ -761,7 +762,7 @@ macro_rules! test_word_type {
                 .map(|_| rng.random_bool(0.5))
                 .collect::<BitVec<Vec<$W>>>();
             let expected: usize = BitVecOps::<$W>::iter(&bits).filter(|&b| b).count();
-            assert_eq!(BitCount::count_ones(&bits), expected);
+            assert_eq!(BitVecOps::count_ones(&bits), expected);
         }
 
         // Test bit_vec! macro with word type
@@ -772,11 +773,11 @@ macro_rules! test_word_type {
 
         let b = bit_vec![$W: false; 10];
         assert_eq!(b.len(), 10);
-        assert_eq!(BitCount::count_ones(&b), 0);
+        assert_eq!(BitVecOps::count_ones(&b), 0);
 
         let b = bit_vec![$W: true; 10];
         assert_eq!(b.len(), 10);
-        assert_eq!(BitCount::count_ones(&b), 10);
+        assert_eq!(BitVecOps::count_ones(&b), 10);
 
         let b = bit_vec![$W];
         assert_eq!(b.len(), 0);

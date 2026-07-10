@@ -10,7 +10,7 @@ use super::{Inventory, LOG2_U16_PER_USIZE, SpanType, U32_PER_USIZE, assert_inven
 use crate::rank_sel::select_adapt;
 use crate::utils::SelectInWord;
 use crate::{
-    prelude::{BitCount, BitLength},
+    prelude::{BitLength},
     traits::{
         Backend, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
         SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word,
@@ -24,11 +24,11 @@ use std::{
     ops::Deref,
 };
 
+use crate::traits::BitVecOps;
 use crate::ambassador_impl_Index;
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::bal_paren::{BalParen, ambassador_impl_BalParen};
 use crate::traits::bit_vec_ops::ambassador_impl_BitLength;
-use crate::traits::rank_sel::ambassador_impl_BitCount;
 use crate::traits::rank_sel::ambassador_impl_NumBits;
 use crate::traits::rank_sel::ambassador_impl_Rank;
 use crate::traits::rank_sel::ambassador_impl_RankHinted;
@@ -142,7 +142,6 @@ use std::ops::Index;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(crate::traits::Backend, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
-#[delegate(crate::traits::rank_sel::BitCount, target = "bits")]
 #[delegate(crate::traits::bit_vec_ops::BitLength, target = "bits")]
 #[delegate(crate::traits::rank_sel::NumBits, target = "bits")]
 #[delegate(crate::traits::rank_sel::Rank, target = "bits")]
@@ -259,7 +258,7 @@ impl<
 }
 
 impl<
-    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitCount,
+    B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength,
     const LOG2_ZEROS_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
 > SelectZeroAdaptConst<B, Box<[usize]>, LOG2_ZEROS_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>

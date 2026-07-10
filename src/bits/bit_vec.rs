@@ -659,23 +659,6 @@ impl<B> BitLength for BitVec<B> {
     }
 }
 
-impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitCount for BitVec<B> {
-    fn count_ones(&self) -> usize {
-        let bits_per_word = B::Word::BITS as usize;
-        let full_words = self.len() / bits_per_word;
-        let residual = self.len() % bits_per_word;
-        let bits: &[B::Word] = self.as_ref();
-        let mut num_ones: usize = bits[..full_words]
-            .iter()
-            .map(|x| x.count_ones() as usize)
-            .sum();
-        if residual != 0 {
-            num_ones += (bits[full_words] << (bits_per_word - residual)).count_ones() as usize
-        }
-        num_ones
-    }
-}
-
 impl<B: Backend<Word: Word> + AsRef<[B::Word]>, C: Backend<Word = B::Word> + AsRef<[B::Word]>>
     PartialEq<BitVec<C>> for BitVec<B>
 {
@@ -994,10 +977,10 @@ impl<B> BitLength for AtomicBitVec<B> {
     }
 }
 
-impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>> BitCount
-    for AtomicBitVec<B>
-{
-    fn count_ones(&self) -> usize {
+impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>> AtomicBitVec<B> {
+    /// Returns the number of ones in the bit vector, reading every backing
+    /// word with a relaxed atomic load (dirty bits past the length are masked).
+    pub fn count_ones(&self) -> usize {
         let bits_per_word = <B::Word as PrimitiveAtomic>::Value::BITS as usize;
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;

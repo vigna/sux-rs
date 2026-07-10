@@ -45,7 +45,7 @@ macro_rules! test_rank_small {
             }
             assert_eq!(
                 rank_small.rank(bits.len() + 1),
-                BitCount::count_ones(&bits)
+                BitVecOps::count_ones(&bits)
             );
         }
     };

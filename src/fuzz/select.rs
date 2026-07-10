@@ -5,6 +5,7 @@
  */
 use crate::prelude::*;
 use crate::traits::BitVecOpsMut;
+use crate::traits::BitVecOps;
 use arbitrary::Arbitrary;
 use std::collections::BTreeSet;
 
