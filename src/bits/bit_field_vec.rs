@@ -585,11 +585,10 @@ impl<W: Word> BitFieldVec<Vec<W>> {
     pub fn resize(&mut self, new_len: usize, value: W) {
         panic_if_value!(value, self.mask, self.bit_width);
         if new_len > self.len {
-            if checked_bit_len(new_len, self.bit_width) > self.bits.len() * W::BITS as usize {
-                self.bits.resize(
-                    checked_bit_len(new_len, self.bit_width).div_ceil(W::BITS as usize),
-                    W::ZERO,
-                );
+            let bit_len = checked_bit_len(new_len, self.bit_width);
+            if bit_len > self.bits.len() * W::BITS as usize {
+                self.bits
+                    .resize(bit_len.div_ceil(W::BITS as usize), W::ZERO);
             }
             if self.bits.is_empty() {
                 // Zero-width vector: still needs one backing word.
