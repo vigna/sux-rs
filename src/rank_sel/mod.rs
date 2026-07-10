@@ -133,19 +133,32 @@ pub use select9::*;
 
 use crate::traits::Word;
 
-/// Masks the dirty padding bits of `word` when it is the final word of a bit
-/// vector whose logical length is not a multiple of the word bit-size.
+/// Returns the mask that keeps only the low `residual` logical bits of a word,
+/// or `W::MAX` when `residual == 0` (the last word is full, nothing to mask).
 ///
 /// A valid [`BitVec`](crate::bits::BitVec) may legally carry arbitrary bits
 /// past its logical length (its own `count_ones` masks them), so rank/select
 /// builders that sum raw word populations must mask the final word or they
-/// over-count. `residual` is `len % W::BITS` (0 when the last word is full).
+/// over-count. `residual` is `len % W::BITS`. This is computed once per build
+/// and fed to [`mask_tail_word`] inside the counting loop.
 #[inline(always)]
-pub(crate) fn mask_tail_word<W: Word>(word: W, is_last: bool, residual: usize) -> W {
-    if is_last && residual != 0 {
-        // Keep only the low `residual` logical bits of the final word.
-        word & (W::MAX >> (W::BITS as usize - residual))
+pub(crate) fn tail_mask<W: Word>(residual: usize) -> W {
+    if residual == 0 {
+        W::MAX
     } else {
-        word
+        W::MAX >> (W::BITS as usize - residual)
     }
+}
+
+/// Clears the dirty padding bits of the final word without a data-dependent
+/// branch.
+///
+/// Returns `word & tail_mask` for the last word and `word` unchanged
+/// otherwise. Both arms of the selection are trivial, so it lowers to a
+/// conditional move rather than a branch — the counting loops call this once
+/// per word, and masking a full mid-vector word with `W::MAX` is a no-op.
+/// `tail_mask` is [`tail_mask`] precomputed outside the loop.
+#[inline(always)]
+pub(crate) fn mask_tail_word<W: Word>(word: W, is_last: bool, tail_mask: W) -> W {
+    word & if is_last { tail_mask } else { W::MAX }
 }

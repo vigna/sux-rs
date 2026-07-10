@@ -194,7 +194,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength> Rank9<B, Box<[BlockC
         const { assert!(size_of::<B::Word>() == 8, "Rank9 requires 64-bit words") }
         let num_bits = bits.len();
         let num_words = num_bits.div_ceil(64);
-        let residual = num_bits % 64;
+        let tail_mask = super::tail_mask::<B::Word>(num_bits % 64);
         let num_counts = num_bits.div_ceil(64 * Self::WORDS_PER_BLOCK);
 
         // We use the last counter to store the total number of ones
@@ -208,14 +208,14 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength> Rank9<B, Box<[BlockC
                 relative: 0,
             };
             num_ones +=
-                mask_tail_word(bits.as_ref()[i], i + 1 == num_words, residual).count_ones() as u64;
+                mask_tail_word(bits.as_ref()[i], i + 1 == num_words, tail_mask).count_ones() as u64;
 
             for j in 1..8 {
                 let rel_count = (num_ones - count.absolute) as usize;
                 count.set_rel(j, rel_count);
                 if i + j < num_words {
                     num_ones +=
-                        mask_tail_word(bits.as_ref()[i + j], i + j + 1 == num_words, residual)
+                        mask_tail_word(bits.as_ref()[i + j], i + j + 1 == num_words, tail_mask)
                             .count_ones() as u64;
                 }
             }

@@ -196,7 +196,7 @@ impl<
         const { assert!(size_of::<B::Word>() == 8, "Select9 requires 64-bit words") }
         let num_bits = rank9.len();
         let num_words = num_bits.div_ceil(64);
-        let residual = num_bits % 64;
+        let tail_mask = super::tail_mask::<B::Word>(num_bits % 64);
         let inventory_size = rank9.num_ones().div_ceil(Self::ONES_PER_INVENTORY);
 
         let u64_per_subinventory = 4;
@@ -209,7 +209,7 @@ impl<
         let mut curr_num_ones = 0;
         let mut next_quantum = 0;
         for (i, word) in rank9.bits.as_ref().iter().copied().enumerate() {
-            let word = super::mask_tail_word(word, i + 1 == num_words, residual);
+            let word = super::mask_tail_word(word, i + 1 == num_words, tail_mask);
             let ones_in_word = word.count_ones() as usize;
 
             while curr_num_ones + ones_in_word > next_quantum {

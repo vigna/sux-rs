@@ -625,7 +625,7 @@ macro_rules! impl_rank_small {
                 let bits_per_word = B::Word::BITS as usize;
                 let num_bits = bits.len();
                 let num_words = num_bits.div_ceil(bits_per_word);
-                let residual = num_bits % bits_per_word;
+                let tail_mask = super::tail_mask::<B::Word>(num_bits % bits_per_word);
                 let num_upper_counts = (num_bits as u64).div_ceil(1u64 << 32) as usize;
                 let num_counts = num_bits.div_ceil(bits_per_word * Self::WORDS_PER_BLOCK);
 
@@ -645,7 +645,7 @@ macro_rules! impl_rank_small {
                     }
                     let mut count = Block32Counters::<$NUM_U32S, $COUNTER_WIDTH>::default();
                     count.absolute = (past_ones - upper_count) as u32;
-                    past_ones += mask_tail_word(bits.as_ref()[i], i + 1 == num_words, residual)
+                    past_ones += mask_tail_word(bits.as_ref()[i], i + 1 == num_words, tail_mask)
                         .count_ones() as usize;
 
                     for j in 1..Self::WORDS_PER_BLOCK {
@@ -658,7 +658,7 @@ macro_rules! impl_rank_small {
                             past_ones += mask_tail_word(
                                 bits.as_ref()[i + j],
                                 i + j + 1 == num_words,
-                                residual,
+                                tail_mask,
                             )
                             .count_ones() as usize;
                         }

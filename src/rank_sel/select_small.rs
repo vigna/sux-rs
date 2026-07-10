@@ -251,7 +251,7 @@ macro_rules! impl_rank_small_sel {
                 let bits_per_word = C::Word::BITS as usize;
                 let num_bits = small_counters.len();
                 let num_words = small_counters.as_ref().len();
-                let residual = num_bits % bits_per_word;
+                let tail_mask = super::tail_mask::<C::Word>(num_bits % bits_per_word);
                 let words_per_superblock = Self::SUPERBLOCK_BIT_SIZE / bits_per_word;
                 let ones_per_inventory = 1 << log2_ones_per_inventory;
                 // half_ones is the midpoint within each inventory interval. We advance
@@ -281,7 +281,7 @@ macro_rules! impl_rank_small_sel {
                     for (i, word) in superblock.iter().copied().enumerate() {
                         let global_word = sb * words_per_superblock + i;
                         let word =
-                            super::mask_tail_word(word, global_word + 1 == num_words, residual);
+                            super::mask_tail_word(word, global_word + 1 == num_words, tail_mask);
                         let ones_in_word = word.count_ones() as usize;
 
                         while past_ones + ones_in_word > next_quantum {
