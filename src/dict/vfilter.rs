@@ -894,7 +894,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "epserde")]
+    #[cfg(feature = "mmap")]
     fn test_epserde() -> anyhow::Result<()> {
         use crate::bits::BitFieldVec;
         use epserde::deser::{Deserialize, Flags};
