@@ -1234,7 +1234,7 @@ mod epserde_impl {
             builder.push(s.borrow());
             len += 1;
             byte_len += builder.data.len();
-            builder.data.truncate(0);
+            builder.data.clear();
         }
         info!("Counted {} strings, compressed in {} bytes", len, byte_len);
 
@@ -1397,7 +1397,7 @@ mod epserde_impl {
                     Ok(None) => None,
                     Ok(Some(s)) => {
                         // Empty the builder data and refill it
-                        builder.data.truncate(0);
+                        builder.data.clear();
                         builder.push(s.borrow());
                         let byte = builder.data[0];
                         self.pos = 1;
