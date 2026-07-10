@@ -7,7 +7,7 @@
 use num_primitive::{PrimitiveInteger, PrimitiveNumber, PrimitiveNumberAs};
 use std::collections::HashMap;
 use sux::func::codec::{
-    Codec, Coder, Decoder, HuffmanCoder, HuffmanConf, HuffmanDecoder, ZeroCodec,
+    Codec, Coder, Decoder, HuffmanCoder, HuffmanConf, HuffmanDecoder,
 };
 
 fn freqs(pairs: &[(u64, usize)]) -> HashMap<u64, usize> {
@@ -124,15 +124,6 @@ fn round_trip(coder: &HuffmanCoder<u64>, decoder: &HuffmanDecoder<u64>, symbol: 
             }
         }
     }
-}
-
-#[test]
-fn test_zero_codec() {
-    let freqs: HashMap<u64, usize> = HashMap::new();
-    let coder = <ZeroCodec as Codec<u64>>::build_coder(&ZeroCodec, &freqs);
-    let decoder = <sux::func::codec::ZeroCoder as Coder<u64>>::into_decoder(coder);
-    let out = decoder.decode(0xdead_beef);
-    assert_eq!(out, Some(0));
 }
 
 #[test]
