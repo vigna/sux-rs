@@ -11,7 +11,7 @@
 //! any n where construction fails.
 //!
 //! Usage:
-//!   cargo run --release --example sweep_c [start] [end] [trials]
+//!   cargo run --profile bench --example sweep_c [start] [end] [trials]
 //!
 //! Defaults: start=1, end=1_000_000, trials=5
 

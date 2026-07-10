@@ -16,7 +16,7 @@
 //! # Usage
 //!
 //! ```text
-//! cargo run --release --example comp_vfunc_stress -- \
+//! cargo run --profile bench --example comp_vfunc_stress -- \
 //!     --shard-edge fuselge3-shards --distribution zipf \
 //!     --zipf-s 1.0 --zipf-n 1000 \
 //!     --n-list 100,1000,10000,100000,1000000 \

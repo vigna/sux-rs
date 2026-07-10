@@ -9,7 +9,7 @@
 //! for the `comp_vfunc` CLI construction benchmarks.
 //!
 //! ```text
-//! cargo run --release --example gen_values -- \
+//! cargo run --profile bench --example gen_values -- \
 //!     --n 100000000 --dist geometric --output values_100M.txt
 //! ```
 

@@ -45,7 +45,7 @@
 //! # Usage
 //!
 //! ```text
-//! cargo run --release --example corr_peel_sweep -- \
+//! cargo run --profile bench --example corr_peel_sweep -- \
 //!     --variant a --shard-edge fuselge3 --distribution uniform \
 //!     --n-list 10,100,1000,10000,100000,1000000,10000000,100000000 \
 //!     --w-min 1 --w-max 16 --trials 5

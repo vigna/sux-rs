@@ -12,7 +12,7 @@
 //! Run from the repo root:
 //!
 //! ```sh
-//! cargo run --release --example bench_comp_vfunc_data -- keys.txt values.txt
+//! cargo run --profile bench --example bench_comp_vfunc_data -- keys.txt values.txt
 //! ```
 
 use anyhow::{Context, Result};

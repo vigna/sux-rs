@@ -9,7 +9,7 @@
 //!
 //! Run with:
 //! ```text
-//! cargo run --release --example example_vfunc
+//! cargo run --profile bench --example example_vfunc
 //! ```
 
 use anyhow::Result;

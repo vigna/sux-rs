@@ -8,7 +8,7 @@
 //! with `samply` or `cargo flamegraph`. Prints wall-clock build time
 //! to stderr and exits.
 //!
-//! Run with: `cargo run --release --example profile_comp_vfunc -- 100000000`
+//! Run with: `cargo run --profile bench --example profile_comp_vfunc -- 100000000`
 
 use dsi_progress_logger::no_logging;
 use rand::SeedableRng;

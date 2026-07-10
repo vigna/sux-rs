@@ -8,7 +8,7 @@
 //!
 //! Run with:
 //! ```text
-//! cargo run --release --example example_vfilter
+//! cargo run --profile bench --example example_vfilter
 //! ```
 
 use anyhow::Result;

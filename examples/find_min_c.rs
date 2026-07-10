@@ -26,7 +26,7 @@
 //! the success rate at that `c`.
 //!
 //! Usage:
-//!   cargo run --release --example find_min_c [start] [end] [trials]
+//!   cargo run --profile bench --example find_min_c [start] [end] [trials]
 //!
 //! Defaults: start=1, end=800000, trials=100
 
