@@ -51,7 +51,7 @@ fn test_elias_fano_concurrent() -> Result<()> {
 fn test_elias_fano_concurrent_build_panics_without_sets() {
     use sux::dict::elias_fano::EliasFanoConcurrentBuilder;
 
-    EliasFanoConcurrentBuilder::<u64>::new(1, 10u64).build();
+    let _ = EliasFanoConcurrentBuilder::<u64>::new(1, 10u64).build();
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn test_elias_fano_concurrent_build_panics_when_underfilled() {
     // the build-time popcount check must turn that under-fill into a panic
     // before the builder scans its bit vectors.
     unsafe { builder.set(0, 1) };
-    builder.build();
+    let _ = builder.build();
 }
 
 #[test]
