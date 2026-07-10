@@ -45,6 +45,53 @@ fn test_elias_fano_concurrent() -> Result<()> {
 }
 
 #[test]
+#[should_panic(
+    expected = "EliasFanoConcurrentBuilder::set must be called exactly n times before build"
+)]
+fn test_elias_fano_concurrent_build_panics_without_sets() {
+    use sux::dict::elias_fano::EliasFanoConcurrentBuilder;
+
+    EliasFanoConcurrentBuilder::<u64>::new(1, 10u64).build();
+}
+
+#[test]
+#[should_panic(
+    expected = "EliasFanoConcurrentBuilder::set must be called exactly n times before build"
+)]
+fn test_elias_fano_concurrent_build_panics_when_underfilled() {
+    use sux::dict::elias_fano::EliasFanoConcurrentBuilder;
+
+    let builder = EliasFanoConcurrentBuilder::<u64>::new(3, 10u64);
+    // Leaves two entries unset, violating the exact-count caller obligation;
+    // the build-time popcount check must turn that under-fill into a panic
+    // before the builder scans its bit vectors.
+    unsafe { builder.set(0, 1) };
+    builder.build();
+}
+
+#[test]
+fn test_elias_fano_concurrent_build_fully_populated() -> Result<()> {
+    use sux::dict::elias_fano::EliasFanoConcurrentBuilder;
+
+    let values = [0u64, 2, 8, 10];
+    let builder = EliasFanoConcurrentBuilder::new(values.len(), 10u64);
+    for (index, value) in values.iter().copied().enumerate() {
+        // SAFETY: each enumerated index is distinct and less than n, and the
+        // `values` array is sorted with every element at most u = 10.
+        unsafe { builder.set(index, value) };
+    }
+
+    let ef = builder.build_with_seq();
+    assert_eq!(ef.len(), values.len());
+    assert_eq!(ef.get(0), 0);
+    assert_eq!(ef.get(1), 2);
+    assert_eq!(ef.get(2), 8);
+    assert_eq!(ef.get(3), 10);
+
+    Ok(())
+}
+
+#[test]
 fn test_elias_fano() -> Result<()> {
     let mut rng = SmallRng::seed_from_u64(0);
     for (n, u) in [
