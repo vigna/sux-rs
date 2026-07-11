@@ -77,6 +77,11 @@ struct Args {
     /// Hashes keys sequentially without loading them in RAM.​
     #[arg(short, long)]
     sequential: bool,
+    /// With an explicit --values file, verify that the key count matches the
+    /// value count. This makes an extra pass over the key file, so it is
+    /// off by default.​
+    #[arg(long, requires = "values", conflicts_with_all = ["geometric", "zipf", "uniform"])]
+    check: bool,
     #[clap(flatten)]
     builder: BuilderArgs,
     #[clap(flatten)]
@@ -206,6 +211,13 @@ where
             generate_synthetic_values(&args, n)?
         };
         let n = values.len();
+        if args.check {
+            // Opt-in (--check requires --values): the key count must match the
+            // value count exactly, otherwise keys past values.len() would be
+            // silently ignored. This costs an extra pass over the key file.
+            let key_count = count_keys(filename)?;
+            ensure!(key_count == n, "key count {key_count} != value count {n}");
+        }
         let mut builder = args
             .builder
             .configure(VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default());
