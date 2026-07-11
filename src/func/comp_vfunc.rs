@@ -6,6 +6,7 @@
 
 use crate::bits::{BitVec, BitVecU, test_unaligned_any_pos};
 use crate::func::VBuilder;
+use crate::func::vbuilder::SolveError;
 use crate::func::codec::{Codec, Coder, Decoder, HuffmanCoder, HuffmanConf, HuffmanDecoder};
 use crate::func::peeling::{DoubleStack, FastStack, XorGraph, remove_edge};
 use crate::func::shard_edge::{Fuse3Shards, ShardEdge};
@@ -502,6 +503,21 @@ where
         // Compute the per-shard stride and allocate
         let num_vertices_per_shard = vb.shard_edge.num_vertices();
         let num_shards = vb.shard_edge.num_shards();
+
+        // Divergence check in the *edge* unit. The sharding is sized for the
+        // total edge count (the `shard_size_hint`), so the ε-cost guarantee
+        // bounds the max shard's edge count — not its key count, which is what
+        // the generic VBuilder check compares and therefore skips for hinted
+        // builds. A pathological (>5ε) deviation of `max_shard_edges` from the
+        // design average means resharding with a new seed; the bounded retry
+        // cap turns a persistently bad distribution into a clean error rather
+        // than an unbounded loop.
+        if max_shard_edges as f64
+            > (1.0 + 5.0 * vb.eps) * total_edges as f64 / num_shards as f64
+        {
+            return Err(SolveError::MaxShardTooBig.into());
+        }
+
         vb.num_threads = num_shards.min(vb.max_num_threads).max(1);
 
         pl.info(format_args!(
