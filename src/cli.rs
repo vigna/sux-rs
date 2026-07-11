@@ -23,7 +23,10 @@ pub fn read_concat_lines(filename: &str, n: usize) -> anyhow::Result<(String, Ve
     use lender::FallibleLender;
 
     let mut buffer = String::new();
-    let mut offsets: Vec<usize> = Vec::with_capacity(n.saturating_add(1));
+    // Cap the initial capacity hint: the default parallel path passes
+    // n = usize::MAX (read until EOF), which would abort with a capacity
+    // overflow. The Vec grows naturally past the cap.
+    let mut offsets: Vec<usize> = Vec::with_capacity(n.min(1 << 20));
     offsets.push(0);
     let mut lender = crate::utils::DekoBufLineLender::from_path(filename)?;
     let mut count = 0usize;
