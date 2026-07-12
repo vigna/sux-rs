@@ -248,7 +248,7 @@ macro_rules! impl_rank_small_sel {
             fn _new(small_counters: C, num_ones: usize, log2_ones_per_inventory: usize) -> Self {
                 let bits_per_word = C::Word::BITS as usize;
                 let num_bits = small_counters.len();
-                let num_words = small_counters.as_ref().len();
+                let num_words = num_bits.div_ceil(bits_per_word);
                 let tail_mask = super::tail_mask::<C::Word>(num_bits % bits_per_word);
                 let words_per_superblock = Self::SUPERBLOCK_BIT_SIZE / bits_per_word;
                 let ones_per_inventory = 1 << log2_ones_per_inventory;
@@ -270,8 +270,7 @@ macro_rules! impl_rank_small_sel {
                 let mut past_ones: usize = 0;
                 let mut next_quantum: usize = 0;
 
-                for (sb, superblock) in small_counters
-                    .as_ref()
+                for (sb, superblock) in small_counters.as_ref()[..num_words]
                     .chunks(words_per_superblock)
                     .enumerate()
                 {

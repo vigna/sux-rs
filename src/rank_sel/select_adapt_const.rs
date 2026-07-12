@@ -24,8 +24,8 @@ use crate::{
     },
 };
 
-use crate::traits::BitVecOps;
 use crate::ambassador_impl_Index;
+use crate::traits::BitVecOps;
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::bal_paren::{BalParen, ambassador_impl_BalParen};
 use crate::traits::bit_vec_ops::ambassador_impl_BitLength;
@@ -307,11 +307,11 @@ impl<
         let mut spilled = 0;
 
         let bits_per_word = B::Word::BITS as usize;
-        let num_words = bits.as_ref().len();
+        let num_words = bits.len().div_ceil(bits_per_word);
         let tail_mask = super::tail_mask::<B::Word>(bits.len() % bits_per_word);
 
         // First phase: we build an inventory for each one out of ones_per_inventory.
-        for (i, word) in bits.as_ref().iter().copied().enumerate() {
+        for (i, word) in bits.as_ref().iter().copied().take(num_words).enumerate() {
             let word = super::mask_tail_word(word, i + 1 == num_words, tail_mask);
             let ones_in_word = word.count_ones() as usize;
 

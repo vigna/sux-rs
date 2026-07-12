@@ -5,6 +5,7 @@
  */
 
 use sux::prelude::*;
+use sux::traits::BitVecOps;
 
 const LEN: usize = 130;
 const WORD_BITS: usize = 64;
@@ -132,4 +133,86 @@ fn test_select_small_ignores_dirty_padding() {
 
     assert_rank_answers(&clean, &dirty);
     assert_select_answers(&clean, &dirty);
+}
+
+/// Builds a BitVec via safe `push`, then `pop`s down so the backing retains
+/// stale one-bits in words beyond `len().div_ceil(word_bits)`. Bits
+/// `0..keep` are all ones, so `select(r) == Some(r)` and `rank(keep) == keep`.
+fn popped_ones(fill: usize, keep: usize) -> BitVec<Vec<usize>> {
+    let mut b = BitVec::<Vec<usize>>::new(0);
+    for _ in 0..fill {
+        b.push(true);
+    }
+    for _ in 0..fill - keep {
+        b.pop();
+    }
+    assert_eq!(b.len(), keep);
+    assert_eq!(b.count_ones(), keep);
+    b
+}
+
+fn assert_stale_select<S: Select>(s: &S, keep: usize) {
+    assert_eq!(s.num_ones(), keep);
+    for r in 0..keep {
+        assert_eq!(s.select(r), Some(r), "select({r})");
+    }
+    assert_eq!(s.select(keep), None, "select past the last one");
+}
+
+fn assert_stale_rank<R: Rank>(r: &R, keep: usize) {
+    assert_eq!(r.num_ones(), keep);
+    assert_eq!(r.rank(keep), keep);
+    assert_eq!(r.rank(keep / 2), keep / 2);
+}
+
+#[test]
+fn test_rank9_ignores_stale_backing_words() {
+    assert_stale_rank(&Rank9::new(popped_ones(130, 40)), 40);
+}
+
+#[test]
+fn test_rank_small_ignores_stale_backing_words() {
+    assert_stale_rank(&RankSmall::<64, 2, 9, _>::new(popped_ones(130, 40)), 40);
+}
+
+#[test]
+fn test_select9_ignores_stale_backing_words() {
+    // 600 logical ones cross a 512-quantum boundary while the stale backing
+    // holds 1200, so a builder scanning stale words corrupts the inventory.
+    let s = Select9::new(Rank9::new(popped_ones(1200, 600)));
+    assert_stale_rank(&s, 600);
+    assert_stale_select(&s, 600);
+}
+
+#[test]
+fn test_select_adapt_ignores_stale_backing_words() {
+    let bits: AddNumBits<_> = popped_ones(130, 40).into();
+    assert_stale_select(&SelectAdapt::new(bits), 40);
+}
+
+#[test]
+fn test_select_adapt_const_ignores_stale_backing_words() {
+    let bits: AddNumBits<_> = popped_ones(130, 40).into();
+    assert_stale_select(&SelectAdaptConst::<_, _>::new(bits), 40);
+}
+
+#[test]
+fn test_select_small_ignores_stale_backing_words() {
+    let s = SelectSmall::<2, 9, _>::new(RankSmall::<64, 2, 9, _>::new(popped_ones(1200, 600)));
+    assert_stale_rank(&s, 600);
+    assert_stale_select(&s, 600);
+}
+
+#[test]
+fn test_full_word_boundary_ignores_stale_backing_words() {
+    // `len % 64 == 0`: the tail mask is a no-op, so only the logical word
+    // bound protects against the stale third backing word.
+    assert_stale_rank(&Rank9::new(popped_ones(192, 128)), 128);
+
+    let s = Select9::new(Rank9::new(popped_ones(192, 128)));
+    assert_stale_rank(&s, 128);
+    assert_stale_select(&s, 128);
+
+    let bits: AddNumBits<_> = popped_ones(192, 128).into();
+    assert_stale_select(&SelectAdapt::new(bits), 128);
 }

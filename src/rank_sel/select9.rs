@@ -9,8 +9,8 @@
 use super::Rank9;
 use super::rank9::BlockCounters;
 use crate::traits::{
-    Backend, BitLength, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select,
-    SelectHinted, SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word,
+    Backend, BitLength, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
+    SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word,
 };
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
@@ -206,7 +206,14 @@ impl<
         // construct the inventory
         let mut curr_num_ones = 0;
         let mut next_quantum = 0;
-        for (i, word) in rank9.bits.as_ref().iter().copied().enumerate() {
+        for (i, word) in rank9
+            .bits
+            .as_ref()
+            .iter()
+            .copied()
+            .take(num_words)
+            .enumerate()
+        {
             let word = super::mask_tail_word(word, i + 1 == num_words, tail_mask);
             let ones_in_word = word.count_ones() as usize;
 
