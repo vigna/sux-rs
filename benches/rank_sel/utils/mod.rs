@@ -5,7 +5,7 @@ use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
 use sux::bits::BitVec;
 use sux::traits::Word;
-use sux::traits::{BitVecOps, BitLength, Rank, Select};
+use sux::traits::{BitLength, BitVecOps, Rank, Select};
 
 mod impls;
 pub use impls::*;

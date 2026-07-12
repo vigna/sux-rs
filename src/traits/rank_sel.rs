@@ -24,7 +24,6 @@ use crate::traits::ambassador_impl_Backend;
 
 use crate::traits::bit_vec_ops::{BitLength, BitVecOps, ambassador_impl_BitLength};
 
-
 /// Constant-time bit-counting methods.
 ///
 /// The methods in this trait compute the number of ones or zeros

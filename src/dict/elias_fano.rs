@@ -51,7 +51,9 @@
 //! [Efficient storage and retrieval by content and address of static files]: https://dl.acm.org/doi/abs/10.1145/321812.321820
 
 use crate::prelude::{indexed_dict::*, *};
-use crate::traits::{AtomicBitVecOps, BitVecOps, BitVecOpsMut, TryIntoUnaligned, Word, bit_field_slice::*};
+use crate::traits::{
+    AtomicBitVecOps, BitVecOps, BitVecOpsMut, TryIntoUnaligned, Word, bit_field_slice::*,
+};
 use crate::utils::SelectInWord;
 use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomicUnsigned};
 use core::sync::atomic::Ordering;

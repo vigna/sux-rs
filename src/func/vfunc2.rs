@@ -245,9 +245,7 @@ mod build {
         default: V,
     }
 
-    impl<K: Word + PrimitiveNumberAs<usize> + PrimitiveNumberAs<u128>, V: Copy + Eq>
-        HybridMap<K, V>
-    {
+    impl<K: Word + PrimitiveNumberAs<usize> + PrimitiveNumberAs<u128>, V: Copy + Eq> HybridMap<K, V> {
         /// Returns the flat-array index for `key`, or `None` when `key` does
         /// not fit in a `usize`. Guarding on the full-width value prevents two
         /// distinct wide keys (e.g. `u128` values differing only in their high
@@ -878,7 +876,11 @@ mod tests {
         .unwrap();
 
         for i in 0..n {
-            assert_eq!(func.get(&i), DISTINCT[i % DISTINCT.len()], "present key {i}");
+            assert_eq!(
+                func.get(&i),
+                DISTINCT[i % DISTINCT.len()],
+                "present key {i}"
+            );
         }
         // Absent keys yield an arbitrary value but must never panic (the first
         // function may return an index in [num_frequent, escape) into remap).

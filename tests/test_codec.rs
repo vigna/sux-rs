@@ -6,9 +6,7 @@
 
 use num_primitive::{PrimitiveInteger, PrimitiveNumber, PrimitiveNumberAs};
 use std::collections::HashMap;
-use sux::func::codec::{
-    Codec, Coder, Decoder, HuffmanCoder, HuffmanConf, HuffmanDecoder,
-};
+use sux::func::codec::{Codec, Coder, Decoder, HuffmanCoder, HuffmanConf, HuffmanDecoder};
 
 fn freqs(pairs: &[(u64, usize)]) -> HashMap<u64, usize> {
     pairs.iter().copied().collect()

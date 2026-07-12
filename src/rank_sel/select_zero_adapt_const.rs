@@ -10,7 +10,7 @@ use super::{Inventory, LOG2_U16_PER_USIZE, SpanType, U32_PER_USIZE, assert_inven
 use crate::rank_sel::select_adapt;
 use crate::utils::SelectInWord;
 use crate::{
-    prelude::{BitLength},
+    prelude::BitLength,
     traits::{
         Backend, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
         SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word,
@@ -24,8 +24,8 @@ use std::{
     ops::Deref,
 };
 
-use crate::traits::BitVecOps;
 use crate::ambassador_impl_Index;
+use crate::traits::BitVecOps;
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::bal_paren::{BalParen, ambassador_impl_BalParen};
 use crate::traits::bit_vec_ops::ambassador_impl_BitLength;

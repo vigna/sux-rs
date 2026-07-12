@@ -17,8 +17,8 @@ use std::{
 use crate::{
     prelude::{BitLength, BitVec, Rank, RankHinted, RankUnchecked, RankZero},
     traits::{
-        Backend, NumBits, Select, SelectHinted, SelectUnchecked, SelectZero,
-        SelectZeroHinted, SelectZeroUnchecked, Word,
+        Backend, NumBits, Select, SelectHinted, SelectUnchecked, SelectZero, SelectZeroHinted,
+        SelectZeroUnchecked, Word,
     },
 };
 

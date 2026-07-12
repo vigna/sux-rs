@@ -24,8 +24,8 @@ use crate::{
     },
 };
 
-use crate::traits::BitVecOps;
 use crate::ambassador_impl_Index;
+use crate::traits::BitVecOps;
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::bal_paren::{BalParen, ambassador_impl_BalParen};
 use crate::traits::bit_vec_ops::ambassador_impl_BitLength;

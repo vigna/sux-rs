@@ -997,8 +997,7 @@ impl<
                 // `try_populate_and_build`) and skip the check.
                 if self.shard_size_hint.is_none()
                     && max_shard as f64
-                        > (1.0 + 5.0 * self.eps) * num_keys as f64
-                            / shard_edge.num_shards() as f64
+                        > (1.0 + 5.0 * self.eps) * num_keys as f64 / shard_edge.num_shards() as f64
                 {
                     Err(SolveError::MaxShardTooBig.into())
                 } else {

@@ -41,8 +41,8 @@ use crate::dict::{EfDict, EliasFanoBuilder};
 use crate::list::comp_int_list::CompIntList;
 use crate::list::prefix_sum_int_list::PrefixSumIntList;
 use crate::prelude::{
-    NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
-    SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked,
+    NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted, SelectUnchecked,
+    SelectZero, SelectZeroHinted, SelectZeroUnchecked,
 };
 use crate::traits::bal_paren::BalParen;
 use crate::traits::indexed_dict::PredUnchecked;

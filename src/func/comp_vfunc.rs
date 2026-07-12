@@ -6,10 +6,10 @@
 
 use crate::bits::{BitVec, BitVecU, test_unaligned_any_pos};
 use crate::func::VBuilder;
-use crate::func::vbuilder::SolveError;
 use crate::func::codec::{Codec, Coder, Decoder, HuffmanCoder, HuffmanConf, HuffmanDecoder};
 use crate::func::peeling::{DoubleStack, FastStack, XorGraph, remove_edge};
 use crate::func::shard_edge::{Fuse3Shards, ShardEdge};
+use crate::func::vbuilder::SolveError;
 use crate::traits::bit_vec_ops::{BitVecOps, BitVecOpsMut};
 use crate::traits::{
     Backend, BitLength, BitVecValueOps, TryIntoUnaligned, UnalignedConversionError, Word,
@@ -512,9 +512,7 @@ where
         // design average means resharding with a new seed; the bounded retry
         // cap turns a persistently bad distribution into a clean error rather
         // than an unbounded loop.
-        if max_shard_edges as f64
-            > (1.0 + 5.0 * vb.eps) * total_edges as f64 / num_shards as f64
-        {
+        if max_shard_edges as f64 > (1.0 + 5.0 * vb.eps) * total_edges as f64 / num_shards as f64 {
             return Err(SolveError::MaxShardTooBig.into());
         }
 

@@ -8,8 +8,8 @@
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::prelude::*;
-use sux::traits::BitVecOps;
 use sux::rank_sel::select_adapt;
+use sux::traits::BitVecOps;
 
 #[test]
 fn test() {
