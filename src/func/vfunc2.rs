@@ -245,7 +245,18 @@ mod build {
         default: V,
     }
 
-    impl<K: Word + PrimitiveNumberAs<usize>, V: Copy + Eq> HybridMap<K, V> {
+    impl<K: Word + PrimitiveNumberAs<usize> + PrimitiveNumberAs<u128>, V: Copy + Eq>
+        HybridMap<K, V>
+    {
+        /// Returns the flat-array index for `key`, or `None` when `key` does
+        /// not fit in a `usize`. Guarding on the full-width value prevents two
+        /// distinct wide keys (e.g. `u128` values differing only in their high
+        /// bits) from truncating to the same array slot.
+        #[inline(always)]
+        fn key_index(key: K) -> Option<usize> {
+            usize::try_from(key.as_to::<u128>()).ok()
+        }
+
         /// Creates a new hybrid map.
         ///
         /// * `max_key` - optional upper bound on keys. When provided,
@@ -254,7 +265,9 @@ mod build {
         pub(crate) fn new(max_key: Option<K>, default: V) -> Self {
             let mut array_len = 1 << 10;
             if let Some(mk) = max_key {
-                array_len = array_len.min(mk.as_to::<usize>() + 1);
+                if let Some(k) = Self::key_index(mk) {
+                    array_len = array_len.min(k.saturating_add(1));
+                }
             }
             Self {
                 array: vec![default; array_len],
@@ -264,21 +277,19 @@ mod build {
         }
 
         pub(crate) fn insert(&mut self, key: K, value: V) {
-            let k: usize = key.as_to();
-            if k < self.array.len() {
-                self.array[k] = value;
-            } else {
-                self.map.insert(key, value);
+            match Self::key_index(key) {
+                Some(k) if k < self.array.len() => self.array[k] = value,
+                _ => {
+                    self.map.insert(key, value);
+                }
             }
         }
 
         #[inline(always)]
         pub(crate) fn get(&self, key: K) -> V {
-            let k: usize = key.as_to();
-            if k < self.array.len() {
-                self.array[k]
-            } else {
-                self.map.get(&key).copied().unwrap_or(self.default)
+            match Self::key_index(key) {
+                Some(k) if k < self.array.len() => self.array[k],
+                _ => self.map.get(&key).copied().unwrap_or(self.default),
             }
         }
 
@@ -301,7 +312,7 @@ mod build {
         }
     }
 
-    impl<K: Word + PrimitiveNumberAs<usize>> HybridMap<K, usize> {
+    impl<K: Word + PrimitiveNumberAs<usize> + PrimitiveNumberAs<u128>> HybridMap<K, usize> {
         #[inline(always)]
         pub(crate) fn incr(&mut self, key: K) {
             self.add(key, 1);
@@ -309,11 +320,9 @@ mod build {
 
         #[inline(always)]
         pub(crate) fn add(&mut self, key: K, amount: usize) {
-            let k: usize = key.as_to();
-            if k < self.array.len() {
-                self.array[k] += amount;
-            } else {
-                *self.map.entry(key).or_insert(0) += amount;
+            match Self::key_index(key) {
+                Some(k) if k < self.array.len() => self.array[k] += amount,
+                _ => *self.map.entry(key).or_insert(0) += amount,
             }
         }
     }
@@ -339,7 +348,7 @@ mod build {
         let mut best_r = 0usize;
         let mut best_cost = f64::MAX;
 
-        // r < w <= 64, so 1usize << r never overflows.
+        // r < w <= 128; shift in u128 so this cannot overflow a 32-bit usize.
         for r in 0..w {
             let cost_first = if r == 0 { 0.0 } else { c * n as f64 * r as f64 };
             let cost_second = c * post as f64 * w as f64;
@@ -351,7 +360,9 @@ mod build {
                 best_r = r;
             }
 
-            let to_absorb = (1usize << r).min(m - pos);
+            let to_absorb = usize::try_from(1u128 << r)
+                .unwrap_or(usize::MAX)
+                .min(m - pos);
             for _ in 0..to_absorb {
                 post -= count_of(sorted_vals[pos]);
                 pos += 1;
@@ -704,7 +715,9 @@ mod build {
                 W::BITS as usize,
             );
 
-            let escape_usize = (1usize << best_r).wrapping_sub(1); // 2^r - 1
+            // Shift in u128 so best_r >= 32 cannot overflow a 32-bit usize.
+            let escape_usize =
+                usize::try_from((1u128 << best_r) - 1).expect("escape range exceeds usize");
             let escape = W::try_from(escape_usize).ok().unwrap();
             let num_frequent = escape_usize.min(m);
 
@@ -872,5 +885,43 @@ mod tests {
         for i in n..n + 5_000 {
             std::hint::black_box(func.get(&i));
         }
+    }
+
+    /// Two distinct keys that share their low `usize` bits but differ in high
+    /// bits (only representable in `u128`) must map to distinct entries rather
+    /// than colliding on the same flat-array slot.
+    #[test]
+    fn hybrid_map_distinguishes_wide_keys() {
+        let mut m: HybridMap<u128, u32> = HybridMap::new(None, 0);
+        let low = 5u128;
+        let high = (1u128 << 64) | 5; // same low 64 bits as `low`
+        m.insert(low, 111);
+        m.insert(high, 222);
+        assert_eq!(m.get(low), 111);
+        assert_eq!(m.get(high), 222);
+        assert_eq!(m.get(7), 0); // absent -> default
+    }
+
+    /// The frequency-counter path (`add`/`incr`) must also keep wide keys
+    /// distinct instead of merging their counts on a shared array slot.
+    #[test]
+    fn hybrid_map_add_distinguishes_wide_keys() {
+        let mut m: HybridMap<u128, usize> = HybridMap::new(None, 0);
+        let low = 5u128;
+        let high = (1u128 << 64) | 5;
+        m.add(low, 3);
+        m.add(high, 7);
+        m.incr(low);
+        assert_eq!(m.get(low), 4);
+        assert_eq!(m.get(high), 7);
+    }
+
+    /// A value width above 32 bits must not overflow the `1 << r` shift on
+    /// 32-bit targets (it is computed in `u128`).
+    #[test]
+    fn find_optimal_r_handles_wide_values() {
+        let sorted_vals: Vec<u64> = vec![1 << 40, 1 << 39, 1 << 38, 1 << 37];
+        let r = find_optimal_r(400, 1u64 << 40, &sorted_vals, |_| 100, 64);
+        assert!(r <= 64);
     }
 }
