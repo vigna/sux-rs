@@ -712,9 +712,15 @@ mod build {
 
             // We must cover possible outputs of the first function in [m..escape_size)
             let mut remap: Box<[W]> = vec![W::ZERO; escape_usize].into();
-            remap.as_mut().copy_from_slice(&sorted_vals[..num_frequent]);
+            // Copy the frequent values into the prefix; the tail stays zeroed as
+            // padding so `get` can index remap with any first-function output in
+            // [0, escape), including the arbitrary outputs of absent keys (which
+            // may land in [num_frequent, escape) when escape > m).
+            remap[..num_frequent].copy_from_slice(&sorted_vals[..num_frequent]);
             let mut inv_map: HybridMap<W, W> = HybridMap::new(Some(max_value), escape);
-            for (i, &val) in remap.iter().enumerate() {
+            // Build inv_map from the frequent prefix only, so the zero padding
+            // does not pollute it (missing values resolve to the escape sentinel).
+            for (i, &val) in remap[..num_frequent].iter().enumerate() {
                 inv_map.insert(val, W::try_from(i).ok().unwrap());
             }
 
@@ -829,3 +835,42 @@ mod build {
 
 #[cfg(feature = "rayon")]
 pub(crate) use build::{HybridMap, find_optimal_r};
+
+#[cfg(all(test, feature = "rayon"))]
+mod tests {
+    use super::*;
+    use crate::bits::BitFieldVec;
+    use crate::utils::FromCloneableIntoIterator;
+    use dsi_progress_logger::no_logging;
+
+    /// When `find_optimal_r` picks an escape range larger than the distinct-value
+    /// count (`escape > m`), the `remap` table is padded to `escape`: the frequent
+    /// values fill the prefix and the tail stays zeroed. A near-uniform
+    /// distribution over a few *large* distinct values forces this regime — the
+    /// large value width makes escaping costly, so all `m` values are absorbed
+    /// with `escape = 2^ceil(log2 m) - 1 > m` (here `m = 5`, `escape = 7`).
+    ///
+    /// The build must not panic (the padding must be copied into the prefix, not
+    /// the whole slice), present keys must map to their correct value (the zero
+    /// padding must not pollute `inv_map`), and absent keys must not panic.
+    #[test]
+    fn test_remap_escape_gt_m() {
+        const DISTINCT: [usize; 5] = [0, 100_000, 200_000, 300_000, 400_000];
+        let n = 50_000usize;
+        let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> = VFunc2::try_new(
+            FromCloneableIntoIterator::new(0..n),
+            FromCloneableIntoIterator::new((0..n).map(|i| DISTINCT[i % DISTINCT.len()])),
+            no_logging![],
+        )
+        .unwrap();
+
+        for i in 0..n {
+            assert_eq!(func.get(&i), DISTINCT[i % DISTINCT.len()], "present key {i}");
+        }
+        // Absent keys yield an arbitrary value but must never panic (the first
+        // function may return an index in [num_frequent, escape) into remap).
+        for i in n..n + 5_000 {
+            std::hint::black_box(func.get(&i));
+        }
+    }
+}
