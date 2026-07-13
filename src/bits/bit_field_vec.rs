@@ -1369,7 +1369,8 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> crate::traits::UncheckedIterator
             self.window = B::Word::ZERO;
             self.fill = 0;
         } else {
-            res = ((res << used) | (self.window >> (B::Word::BITS as usize - used))) & self.vec.mask; // not in a loop
+            res =
+                ((res << used) | (self.window >> (B::Word::BITS as usize - used))) & self.vec.mask; // not in a loop
             self.window <<= used;
             self.fill = B::Word::BITS as usize - used;
         }

@@ -211,7 +211,10 @@ fn test_fair_chunks_size_hint() {
     let ef = efb.build_with_seq_and_dict();
     let mut chunks = FairChunks::new(20, &ef);
     let (lo, hi) = chunks.size_hint();
-    assert!(lo >= 1, "nonempty iterator must report a nonzero lower bound");
+    assert!(
+        lo >= 1,
+        "nonempty iterator must report a nonzero lower bound"
+    );
     assert_eq!(hi, Some(4));
     let n = chunks.by_ref().count();
     assert!(lo <= n && n <= 4);
