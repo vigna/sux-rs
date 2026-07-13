@@ -316,3 +316,17 @@ fn test_signed_i64_random_1000() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn test_absent_key_no_panic() {
+    // Absent-key queries decode an arbitrary packed value; the decoded LCP
+    // length must be clamped so IntBitPrefix::new never overflows (which used
+    // to panic in debug for ~half of all absent keys on narrow key types).
+    let keys: Vec<u8> = vec![10, 20, 30, 40, 50];
+    let func: LcpMmphfInt<u8> =
+        LcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+    // Query every possible u8, most of which are absent. Must not panic.
+    for k in 0u8..=255 {
+        let _ = func.get(k);
+    }
+}
