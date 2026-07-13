@@ -46,8 +46,11 @@ pub trait Codec<W> {
     type Coder: Coder<W>;
     /// Builds a coder for the given symbol → frequency map.
     ///
-    /// All frequencies must be strictly positive. The empty map is
-    /// allowed and yields a degenerate coder.
+    /// All frequencies must be strictly positive, and the map must be
+    /// non-empty: the empty map is not supported. A coder built from an empty
+    /// map is degenerate — every symbol is escaped and its decoder matches no
+    /// window value, so decoding is unspecified (the [Huffman](HuffmanConf)
+    /// decoder panics).
     fn build_coder(&self, frequencies: &HashMap<W, usize>) -> Self::Coder;
 }
 
