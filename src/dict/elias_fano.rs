@@ -2672,6 +2672,11 @@ where
     /// - All indices must be distinct.
     /// - All values must be smaller than or equal to `u`.
     /// - All indices must be smaller than `n`.
+    /// - Values must be nondecreasing with respect to their indices: for
+    ///   `i < j`, the value set at index `i` must be less than or equal to the
+    ///   value set at index `j`. Otherwise, high bits can collide or appear
+    ///   out of order, and the resulting structure is invalid even though all
+    ///   other conditions hold.
     /// - You must call this function exactly `n` times.
     #[inline]
     pub unsafe fn set(&self, index: usize, value: V)
@@ -2710,15 +2715,16 @@ where
         let low_bits: BitFieldVec<Box<[V]>> = low_bits.into();
 
         // `set` is documented to be called exactly `n` times with distinct
-        // indices; a valid sorted fill then sets exactly `n` distinct high bits
-        // (positions `(v_i >> l) + i` are strictly increasing). Enforcing this
-        // here rejects an under-filled (or duplicate-index) builder before the
-        // unbounded scans below, which would otherwise walk off `high_bits`.
-        // The check is a single build-time popcount, adding nothing to the
-        // concurrent `set` path.
+        // indices and nondecreasing values; a valid fill then sets exactly `n`
+        // distinct high bits (positions `(v_i >> l) + i` are strictly
+        // increasing). Enforcing this here rejects an under-filled,
+        // duplicate-index, or nonmonotone builder (any of which leaves fewer
+        // than `n` set high bits) before the unbounded scans below, which would
+        // otherwise walk off `high_bits`. The check is a single build-time
+        // popcount, adding nothing to the concurrent `set` path.
         assert!(
             high_bits.count_ones() == self.n,
-            "EliasFanoConcurrentBuilder::set must be called exactly n times before build (n = {}, got {} set high bits)",
+            "EliasFanoConcurrentBuilder::set was not called exactly n times with distinct indices and nondecreasing values (n = {}, got {} set high bits)",
             self.n,
             high_bits.count_ones()
         );

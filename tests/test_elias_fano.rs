@@ -46,7 +46,7 @@ fn test_elias_fano_concurrent() -> Result<()> {
 
 #[test]
 #[should_panic(
-    expected = "EliasFanoConcurrentBuilder::set must be called exactly n times before build"
+    expected = "EliasFanoConcurrentBuilder::set was not called exactly n times"
 )]
 fn test_elias_fano_concurrent_build_panics_without_sets() {
     use sux::dict::elias_fano::EliasFanoConcurrentBuilder;
@@ -56,7 +56,7 @@ fn test_elias_fano_concurrent_build_panics_without_sets() {
 
 #[test]
 #[should_panic(
-    expected = "EliasFanoConcurrentBuilder::set must be called exactly n times before build"
+    expected = "EliasFanoConcurrentBuilder::set was not called exactly n times"
 )]
 fn test_elias_fano_concurrent_build_panics_when_underfilled() {
     use sux::dict::elias_fano::EliasFanoConcurrentBuilder;
