@@ -110,7 +110,7 @@ impl<K: PrimitiveInteger> IntBitPrefix<K> {
 ///
 /// On 32-bit targets an enormous single key could otherwise wrap the `usize`
 /// multiplication and produce a bogus LCP length.
-// Only the rayon-gated `build` modules of this file and `lcp2_mmphf` call this.
+// Only the rayon-gated build modules of this file and lcp2_mmphf call this.
 #[cfg(feature = "rayon")]
 #[inline]
 pub(crate) fn checked_full_key_bits(bytes: &[u8]) -> anyhow::Result<usize> {
@@ -677,7 +677,7 @@ mod build {
         let pos = lcp_len(&a[..min_len], &b[..min_len]);
 
         if pos < min_len {
-            // Mismatch within the common part — fast path.
+            // Mismatch within the common part: fast path.
             return pos * 8 + (a[pos] ^ b[pos]).leading_zeros() as usize;
         }
 
@@ -882,7 +882,7 @@ mod build {
                 }
 
                 // Validate the key length up front so both this bucket-start
-                // computation and lcp_bits_nul's internal `len * 8` cannot
+                // computation and lcp_bits_nul's internal len * 8 cannot
                 // overflow on 32-bit targets.
                 let full_key_bits = checked_full_key_bits(key_bytes)?;
 
@@ -1119,7 +1119,7 @@ mod build {
                 }
 
                 // Validate the key length up front so both this bucket-start
-                // computation and lcp_bits_nul's internal `len * 8` cannot
+                // computation and lcp_bits_nul's internal len * 8 cannot
                 // overflow on 32-bit targets.
                 let full_key_bits = checked_full_key_bits(key_bytes)?;
 

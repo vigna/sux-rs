@@ -248,7 +248,7 @@ impl<K: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableFunc for VF
 /// verification hash is 64-bit in every edge variant). With the default sharded
 /// fuse edges (`FuseLge3Shards`) that same word also determines the local edge,
 /// so two distinct keys that share it land in the same slots with the same
-/// expected hash and are indistinguishable — an irreducible false positive that
+/// expected hash and are indistinguishable, an irreducible false positive that
 /// no larger hash width can remove. `FuseLge3FullSigs` computes the edge from
 /// the other signature word as well, so keys sharing the hash word usually land
 /// in different slots, avoiding that collision (the verification hash itself
@@ -325,7 +325,7 @@ impl<F: SignableFunc, H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::
     }
 }
 
-// ── VFunc `get` ──────────────────────────────────────────────────
+// ── VFunc get ──────────────────────────────────────────────────
 
 impl<
     K: ?Sized + ToSig<S>,
@@ -357,7 +357,7 @@ impl<
     }
 }
 
-// ── LcpMmphfInt `get` ────────────────────────────────────────────
+// ── LcpMmphfInt get ────────────────────────────────────────────
 
 impl<
     K: PrimitiveInteger + ToSig<S0> + Copy,
@@ -380,7 +380,7 @@ where
     }
 }
 
-// ── LcpMmphf `get` ──────────────────────────────────────────────
+// ── LcpMmphf get ──────────────────────────────────────────────
 
 impl<
     K: ?Sized + AsRef<[u8]> + ToSig<S0>,
@@ -403,7 +403,7 @@ where
     }
 }
 
-// ── Lcp2MmphfInt `get` ──────────────────────────────────────────
+// ── Lcp2MmphfInt get ──────────────────────────────────────────
 
 impl<
     K: PrimitiveInteger + ToSig<S0> + Copy,
@@ -427,7 +427,7 @@ where
     }
 }
 
-// ── Lcp2Mmphf `get` ─────────────────────────────────────────────
+// ── Lcp2Mmphf get ─────────────────────────────────────────────
 
 impl<
     K: ?Sized + AsRef<[u8]> + ToSig<S0>,
@@ -452,7 +452,7 @@ where
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Constructors — helper functions
+// Constructors: helper functions
 // (type aliases section removed: use SignedFunc<LcpMmphfStr, Box<[u64]>> etc. directly)
 // ═══════════════════════════════════════════════════════════════════
 
@@ -647,7 +647,7 @@ mod build {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Constructors — SignedFunc<VFunc<...>>
+    // Constructors: SignedFunc<VFunc<...>>
     // ═══════════════════════════════════════════════════════════════════
 
     impl<
@@ -920,7 +920,7 @@ mod build {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Constructors — SignedFunc<VFunc<...>, BitFieldVec<...>>
+    // Constructors: SignedFunc<VFunc<...>, BitFieldVec<...>>
     // ═══════════════════════════════════════════════════════════════════
 
     impl<
@@ -1224,7 +1224,7 @@ mod build {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Constructors — SignedFunc<LcpMmphfInt<...>>
+    // Constructors: SignedFunc<LcpMmphfInt<...>>
     // ═══════════════════════════════════════════════════════════════════
 
     impl<
@@ -1415,7 +1415,7 @@ mod build {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Constructors — SignedFunc<LcpMmphf<K, ...>>
+    // Constructors: SignedFunc<LcpMmphf<K, ...>>
     // ═══════════════════════════════════════════════════════════════════
 
     impl<
@@ -1614,7 +1614,7 @@ mod build {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Constructors — SignedFunc<Lcp2MmphfInt<...>>
+    // Constructors: SignedFunc<Lcp2MmphfInt<...>>
     // ═══════════════════════════════════════════════════════════════════
 
     impl<
@@ -1809,7 +1809,7 @@ mod build {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Constructors — SignedFunc<Lcp2Mmphf<K, ...>>
+    // Constructors: SignedFunc<Lcp2Mmphf<K, ...>>
     // ═══════════════════════════════════════════════════════════════════
 
     impl<
@@ -2010,7 +2010,7 @@ mod build {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Constructors — SignedFunc<LcpMmphfInt<...>, BitFieldVec<...>>
+    // Constructors: SignedFunc<LcpMmphfInt<...>, BitFieldVec<...>>
     // ═══════════════════════════════════════════════════════════════════
 
     impl<
@@ -2229,7 +2229,7 @@ mod build {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Constructors — SignedFunc<LcpMmphf<K, ...>, BitFieldVec<...>>
+    // Constructors: SignedFunc<LcpMmphf<K, ...>, BitFieldVec<...>>
     // ═══════════════════════════════════════════════════════════════════
 
     impl<
@@ -2457,7 +2457,7 @@ mod build {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Constructors — SignedFunc<Lcp2MmphfInt<...>, BitFieldVec<...>>
+    // Constructors: SignedFunc<Lcp2MmphfInt<...>, BitFieldVec<...>>
     // ═══════════════════════════════════════════════════════════════════
 
     impl<
@@ -2676,7 +2676,7 @@ mod build {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Constructors — SignedFunc<Lcp2Mmphf<K, ...>, BitFieldVec<...>>
+    // Constructors: SignedFunc<Lcp2Mmphf<K, ...>, BitFieldVec<...>>
     // ═══════════════════════════════════════════════════════════════════
 
     impl<

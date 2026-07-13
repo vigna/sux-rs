@@ -48,7 +48,7 @@ pub trait Codec<W> {
     ///
     /// All frequencies must be strictly positive, and the map must be
     /// non-empty: the empty map is not supported. A coder built from an empty
-    /// map is degenerate — every symbol is escaped and its decoder matches no
+    /// map is degenerate: every symbol is escaped and its decoder matches no
     /// window value, so decoding is unspecified (the [Huffman](HuffmanConf)
     /// decoder panics).
     fn build_coder(&self, frequencies: &HashMap<W, usize>) -> Self::Coder;
@@ -323,7 +323,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
         );
 
         // Number of distinct length blocks (plus one sentinel when
-        // the code has an escape — see below).
+        // the code has an escape; see below).
         let mut decoding_table_length: usize = 1;
         if size > 1 {
             for i in (0..size - 1).rev() {
@@ -394,7 +394,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
             size as u32
         };
 
-        // Default heuristic for branchy vs branchless: `> 3` distinct
+        // Default heuristic for branchy vs branchless: > 3 distinct
         // codeword lengths ⇒ branchless, otherwise branchy. We subtract
         // the sentinel block (present only when has_escape) so the
         // threshold counts real codeword lengths only.
@@ -404,7 +404,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
         // with three classes it is still a wash; with four or more, we start
         // losing time to mispredictions on any non-trivial frequency skew.
         // Callers that know the codeword distribution shape can override the
-        // choice with `HuffmanDecoder::branchless`.
+        // choice with HuffmanDecoder::branchless.
         let branchless = decoding_table_length - has_escape as usize > 3;
 
         HuffmanDecoder {
@@ -433,7 +433,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
 ///
 /// * **Branchless**: count how many block upper bounds are `<= value`
 ///   and use the resulting index. Always touches every block, but
-///   contains no data-dependent branch — the compiler lowers it to a
+///   contains no data-dependent branch: the compiler lowers it to a
 ///   tight `cset/add` (AArch64) or `setcc/add` (x86) chain. Wins when
 ///   the codeword distribution is broad enough to defeat branch
 ///   prediction.
@@ -522,7 +522,7 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
     fn decode_branchy(&self, value: usize) -> Option<W> {
         let nrs = self.num_coded_symbols as usize;
         for curr in 0..self.last_codeword_plus_one.len() {
-            // SAFETY: `curr` is bounded by the loop range.
+            // SAFETY: curr is bounded by the loop range.
             unsafe {
                 let lcp1 = *self.last_codeword_plus_one.get_unchecked(curr);
                 if value < lcp1 {
@@ -550,7 +550,7 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
         let n = self.last_codeword_plus_one.len();
         let mut idx: usize = 0;
         for curr in 0..n {
-            // SAFETY: `curr` is bounded by the loop range.
+            // SAFETY: curr is bounded by the loop range.
             let lcp1 = unsafe { *self.last_codeword_plus_one.get_unchecked(curr) };
             idx += (lcp1 <= value) as usize;
         }
@@ -619,7 +619,7 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
 
     // Moffat–Katajainen builds depths in place on a frequency array sorted
     // *ascending*. The array is reused to store parent-pointers, so it needs to
-    // be `u64`-wide regardless of W.
+    // be u64-wide regardless of W.
     let mut a: Vec<u64> = vec![0; size];
     for i in 0..size {
         a[size - 1 - i] = frequencies[&symbol[i]] as u64;
@@ -653,7 +653,7 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
         }
 
         // Second pass, right to left: internal node depths.
-        // When size == 2 the tree has no internal nodes — skip.
+        // When size == 2 the tree has no internal nodes; skip.
         a[size - 2] = 0;
         for next in (0..size.saturating_sub(2)).rev() {
             a[next] = a[a[next] as usize] + 1;
@@ -701,8 +701,8 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
     let mut d = 1usize;
     let mut cutpoint = 0usize;
     while cutpoint < size {
-        // Codewords are assembled in a `usize` buffer and the decoder reads a
-        // full `usize` window, so a length beyond `usize::BITS - 2` cannot be
+        // Codewords are assembled in a usize buffer and the decoder reads a
+        // full usize window, so a length beyond usize::BITS - 2 cannot be
         // represented. Truncate here and escape the remaining (deeper)
         // symbols instead of overflowing the shift in canonical assignment.
         if length[cutpoint] > usize::BITS - 2 {
@@ -747,7 +747,7 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
     }
 
     if has_escape {
-        // Escape codeword: all-ones in `current_length` bits.
+        // Escape codeword: all-ones in current_length bits.
         if current_length == 0 {
             codeword[cutpoint] = 0;
         } else {

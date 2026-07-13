@@ -248,7 +248,7 @@ impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
 /// An immutable partial array that supports efficient queries
 /// in compacted storage.
 ///
-/// This structure stores a *partial array*—an array in which only
+/// This structure stores a *partial array*, an array in which only
 /// some positions contain values. There is a [dense] and a [sparse]
 /// implementation with different space/time trade-offs.
 ///

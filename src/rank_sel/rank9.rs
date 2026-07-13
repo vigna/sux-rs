@@ -312,7 +312,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCount
         let word_pos = pos / 64;
         let block = word_pos / Self::WORDS_PER_BLOCK;
         crate::utils::prefetch_index(&self.bits, word_pos);
-        // `counts` can be large enough to not fit in L3, so needs prefetching as well.
+        // counts can be large enough to not fit in L3, so needs prefetching as well.
         crate::utils::prefetch_index(&self.counts, block);
     }
 }

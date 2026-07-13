@@ -33,12 +33,12 @@ use value_traits::slices::SliceByValue;
 ///
 /// The stored and expected hashes are `mix64` of a single 64-bit signature
 /// word, so at most 64 bits are usable: `b` is capped at 64 (a boxed backend
-/// must be at most 64 bits wide). This holds for every edge variant — the
+/// must be at most 64 bits wide). This holds for every edge variant: the
 /// verification hash is always 64-bit.
 ///
 /// With the default sharded fuse edges ([`FuseLge3Shards`]) that same 64-bit
 /// word also determines the local edge, so two distinct keys that share it land
-/// in the same slots with the same expected hash and are indistinguishable — an
+/// in the same slots with the same expected hash and are indistinguishable, an
 /// irreducible false positive that no larger `b` can remove.
 /// [`FuseLge3FullSigs`] computes the edge from the *other* signature word as
 /// well, so keys sharing the hash word usually land in different slots, avoiding
@@ -227,7 +227,7 @@ where
     /// [`contains`]: VFilter::contains
     #[inline(always)]
     fn index(&self, key: B) -> &Self::Output {
-        // Return references to static bools — this is the standard
+        // Return references to static bools; this is the standard
         // pattern for Index<_> -> &bool.
         if self.contains(key) { &true } else { &false }
     }

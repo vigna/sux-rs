@@ -12,14 +12,14 @@
 //! Rather, it considers anything that is `AsRef<[W]>` (where `W` implements
 //! [`Word`]) and implements [`BitLength`] as a bit vector.
 //!
-//! This approach was chosen for efficiency reasons—all methods are implemented
+//! This approach was chosen for efficiency reasons: all methods are implemented
 //! as efficiently as possible for a concrete representation. Other crates opt
 //! for a general trait representing a bit vector, but in our experiments the
 //! resulting code was not as efficient as the code we obtain.
 //!
 //! The Rust type system makes the approach quite flexible. We cannot, however,
 //! accommodate implicit representation of bit vectors (e.g., compressed or
-//! algorithmic). This is in fact in line with Rust's philosophy—the
+//! algorithmic). This is in fact in line with Rust's philosophy: the
 //! [`Index`] trait returns a reference, which forces an
 //! explicit representation of sequences (an alternative approach is provided by
 //! the [`value-traits`] crate, which is used by bit-field slices).
@@ -757,7 +757,7 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
             .with_len(crate::RAYON_MIN_LEN)
             .for_each(|x| x.store(word_value, ordering));
         if residual != 0 {
-            // See `fill`: RMW keeps the residual update atomic and
+            // See fill: RMW keeps the residual update atomic and
             // ordering-agnostic.
             let mask = (A::Value::ONE << residual) - A::Value::ONE;
             if value {
@@ -814,7 +814,7 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
             .with_len(crate::RAYON_MIN_LEN)
             .for_each(|x| _ = x.fetch_xor(!A::Value::ZERO, ordering));
         if residual != 0 {
-            // See `flip`: RMW keeps the residual update atomic and
+            // See flip: RMW keeps the residual update atomic and
             // ordering-agnostic.
             let mask = (A::Value::ONE << residual) - A::Value::ONE;
             bits[full_words].fetch_xor(mask, ordering);

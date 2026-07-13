@@ -155,7 +155,7 @@ pub(crate) fn tail_mask<W: Word>(residual: usize) -> W {
 ///
 /// Returns `word & tail_mask` for the last word and `word` unchanged
 /// otherwise. Both arms of the selection are trivial, so it lowers to a
-/// conditional move rather than a branch — the counting loops call this once
+/// conditional move rather than a branch: the counting loops call this once
 /// per word, and masking a full mid-vector word with `W::MAX` is a no-op.
 /// `tail_mask` is [`tail_mask`] precomputed outside the loop.
 #[inline(always)]

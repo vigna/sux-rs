@@ -203,12 +203,12 @@ impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, 
 /// A convenient macro to build a [`RankSmall`] structure with the correct
 /// parameters.
 ///
-/// **Default form** — `rank_small![bits]` or `rank_small![W: bits]` (no
+/// **Default form**: `rank_small![bits]` or `rank_small![W: bits]` (no
 /// variant index) selects the ~3.125% overhead variant (`RankSmall<W, 1, 11>`)
 /// for the given word type. This is the recommended starting point for most
 /// use cases.
 ///
-/// **Explicit form** — `rank_small![W: n; bits]` selects a specific variant
+/// **Explicit form**: `rank_small![W: n; bits]` selects a specific variant
 /// `n` for word type `W` (`u64`, `u32`, or `usize`). If `W:` is omitted,
 /// it defaults to `usize`.
 ///
@@ -229,7 +229,7 @@ impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, 
 /// - `rank_small![u32: 4; -]` → `RankSmall<32, 1, 11>` (3.125%) ← default
 /// - `rank_small![u32: 5; -]` → `RankSmall<32, 3, 13>` (1.56%)
 ///
-/// Default / `usize` variants — the index represents the rank in the
+/// Default / `usize` variants: the index represents the rank in the
 /// space-usage ordering for the platform's word size (0 = fastest, single
 /// popcount). `WORD_BITS` is `usize::BITS`.
 ///

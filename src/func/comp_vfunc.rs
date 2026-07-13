@@ -38,7 +38,7 @@ use std::marker::PhantomData;
 /// [`VFunc`].
 ///
 /// When the value distribution is skewed, this uses much less space than
-/// [`VFunc`]—roughly the empirical entropy of the value list plus ≈11%
+/// [`VFunc`], roughly the empirical entropy of the value list plus ≈11%
 /// overhead. This estimate, however, does not take into consideration the
 /// storage of the decoder, which can be significant when the number of
 /// keys is very small.
@@ -230,7 +230,7 @@ impl<K: ?Sized, D: Backend<Word: Word>, S, E> CompVFunc<K, D, S, E> {
 // ── Entry points ────────────────────────────────────────────────────
 //
 // CompVFunc shares its parallel infrastructure with
-// [`VBuilder`](crate::func::VBuilder): callers pass a
+// [VBuilder](crate::func::VBuilder): callers pass a
 // VBuilder<BitVec<Box<[W]>>, S, E> configured with the usual VBuilder knobs
 // (offline, check-dups, low-mem, threads, eps, seed). The only
 // CompVFunc-specific configuration is the Huffman codec used for values; the
@@ -368,26 +368,26 @@ where
 
 // ── Builder core ───────────────────────────────────────────────────
 //
-// Both `build_inner_seq` and `build_inner_par` are thin adapters
+// Both build_inner_seq and build_inner_par are thin adapters
 // around VBuilder's retry loop: they delegate the sig-store population,
 // duplicate check, and shard solving to VBuilder, and contribute a
-// CompVFunc-specific `build_fn` closure that (a) calls
-// `set_up_corr_graphs` on the shard edge with *equation* counts
-// rather than key counts and (b) calls [`VBuilder::par_solve`] with
+// CompVFunc-specific build_fn closure that (a) calls
+// set_up_corr_graphs on the shard edge with *equation* counts
+// rather than key counts and (b) calls [VBuilder::par_solve] with
 // a per-shard closure doing the multi-edge expansion, peeling, and
 // reverse-peel assignment.
 //
 // The only difference between the two is the VBuilder entry point:
-// `try_populate_and_build` for the lender-based sequential path,
-// `try_par_populate_and_build` for the slice-based parallel path.
-// Everything else — the Huffman setup, the build_fn closure, the
-// output re-wrapping — is shared via `build_coder_from_frequencies`
-// and `make_build_fn` below.
+// try_populate_and_build for the lender-based sequential path,
+// try_par_populate_and_build for the slice-based parallel path.
+// Everything else (the Huffman setup, the build_fn closure, the
+// output re-wrapping) is shared via build_coder_from_frequencies
+// and make_build_fn below.
 //
-// Storage during construction is `BitVec<Box<[W]>>`, which
-// implements `SliceByValueMut<Value = bool>` with a word-aligned
-// `try_chunks_mut` — exactly what VBuilder's `par_solve` requires.
-// The same `BitVec` is handed to `finish_build` unchanged.
+// Storage during construction is BitVec<Box<[W]>>, which
+// implements SliceByValueMut<Value = bool> with a word-aligned
+// try_chunks_mut, exactly what VBuilder's par_solve requires.
+// The same BitVec is handed to finish_build unchanged.
 
 /// Builds a [`HuffmanCoder`] from a frequency map. The parallel
 /// path populates the map by iterating a value slice; the sequential
@@ -493,7 +493,7 @@ where
             max_shard_keys = max_shard_keys.max(keys_in_shard);
         }
 
-        // Call the correlated-graph setup on the shard edge.`c is keyed at
+        // Call the correlated-graph setup on the shard edge.c is keyed at
         // max_shard_keys, log2_seg_size at max_shard_edges.
         let (c, lge) =
             vb.shard_edge
@@ -508,10 +508,10 @@ where
         let num_shards = vb.shard_edge.num_shards();
 
         // Divergence check in the *edge* unit. The sharding is sized for the
-        // total edge count (the `shard_size_hint`), so the ε-cost guarantee
-        // bounds the max shard's edge count — not its key count, which is what
+        // total edge count (the shard_size_hint), so the ε-cost guarantee
+        // bounds the max shard's edge count, not its key count, which is what
         // the generic VBuilder check compares and therefore skips for hinted
-        // builds. A pathological (>5ε) deviation of `max_shard_edges` from the
+        // builds. A pathological (>5ε) deviation of max_shard_edges from the
         // design average means resharding with a new seed; the bounded retry
         // cap turns a persistently bad distribution into a clean error rather
         // than an unbounded loop.
@@ -543,7 +543,7 @@ where
             .ok_or_else(|| anyhow!("shard stride overflows usize"))?;
         let force_index_peeler = raw_stride >= PackedEdge::MAX_VERTICES as usize;
         if force_index_peeler && raw_stride as u64 > u32::MAX as u64 + 1 {
-            // The index peeler stores vertex indices as u32, so `base + off`
+            // The index peeler stores vertex indices as u32, so base + off
             // below would truncate for a shard with more than u32::MAX + 1
             // vertices (reachable only for ShardEdge families whose Vertex is
             // wider than u32). Reject before rounding and allocating.
@@ -551,8 +551,8 @@ where
                 "shard has too many vertices ({raw_stride}) for the u32 index peeler"
             ));
         }
-        // `par_solve` chunks the data via `BitVec::try_chunks_mut`,
-        // which requires `chunk_size` to be a multiple of `W::BITS`.
+        // par_solve chunks the data via BitVec::try_chunks_mut,
+        // which requires chunk_size to be a multiple of W::BITS.
         let word_bits = W::BITS as usize;
         let stride = raw_stride
             .div_ceil(word_bits)
@@ -576,12 +576,12 @@ where
         // peel_by_edge_high_mem/peel_by_data_low_mem: edges are written
         // into a XorGraph<PackedEdge> which keeps in a [u32; 3] both
         // the edge and the associated bit, limiting the vertex count
-        // to `PackedEdge::MAX_VERTEX`; however, the representation is
+        // to PackedEdge::MAX_VERTEX; however, the representation is
         // compact and peeling is fast.
         //
         // peel_by_index materialises edges as a Vec<[u32; 3]> and BitVec
         // upfront, then peels by edge index. Used when per-shard vertex count
-        // exceeds `PackedEdge::MAX_VERTEX`.
+        // exceeds PackedEdge::MAX_VERTEX.
         //
         // Note that the tradeoffs here are very different than in VBuilder,
         // because we have a very large number of edges whose associated
@@ -959,7 +959,7 @@ fn peel_by_index<W: Word>(
                     c,
                     r ^ solution.get_unchecked(a as usize) ^ solution.get_unchecked(b as usize),
                 ),
-                // SAFETY: `side` is a 2-bit field in `XorGraph::degrees_sides`.
+                // SAFETY: side is a 2-bit field in XorGraph::degrees_sides.
                 _ => std::hint::unreachable_unchecked(),
             }
         };
@@ -998,7 +998,7 @@ fn _peel_by_index(num_variables: usize, edges: &[[u32; 3]]) -> (DoubleStack<u32>
     let n_edges = edges.len();
 
     // Payload per vertex is the edge index (0-based). We never read
-    // `xor_graph.edges[v]` unless `degree(v) == 1`, at which point it
+    // xor_graph.edges[v] unless degree(v) == 1, at which point it
     // holds the sole remaining incident edge's index.
     let mut xor_graph: XorGraph<u32> = XorGraph::new(num_variables);
     for (i, &[a, b, c]) in edges.iter().enumerate() {
@@ -1179,11 +1179,11 @@ unsafe fn reverse_peel_assign<W: Word>(
                 c,
                 r ^ solution.get_unchecked(a as usize) ^ solution.get_unchecked(b as usize),
             ),
-            // SAFETY: `side` is a 2-bit field in `XorGraph::degrees_sides`.
+            // SAFETY: side is a 2-bit field in XorGraph::degrees_sides.
             _ => std::hint::unreachable_unchecked(),
         }
     };
-    // SAFETY: `pivot < num_variables = solution.len()` by edge construction.
+    // SAFETY: pivot < num_variables = solution.len() by edge construction.
     unsafe {
         solution.set_unchecked(pivot as usize, val);
     }
@@ -1450,7 +1450,7 @@ mod codec_bound_tests {
 
     #[test]
     fn test_build_coder_escapes_overlong_codeword() {
-        // Fibonacci frequencies over `usize::BITS` u128 symbols force a
+        // Fibonacci frequencies over usize::BITS u128 symbols force a
         // maximally unbalanced Huffman tree (depth usize::BITS - 1). The codec
         // now escapes the deepest symbols so the kept codewords stay within
         // usize::BITS - 2, and the CompVFunc preflight accepts the coder.

@@ -194,7 +194,7 @@ impl<W: Word> Modulo2System<W> {
         }
         let mut scratch: Vec<u32> = Vec::new();
         'main: for i in 0..equations.len() - 1 {
-            // A pivot row reduced to `[] = c`: unsolvable if c != 0, otherwise
+            // A pivot row reduced to [] = c: unsolvable if c != 0, otherwise
             // a redundant identity that takes no part in elimination.
             if equations[i].vars.is_empty() {
                 ensure!(!equations[i].is_unsolvable(), "System is unsolvable");
@@ -205,8 +205,8 @@ impl<W: Word> Modulo2System<W> {
                 let eq_i = &mut left[i];
                 let eq_j = &right[0];
 
-                // A later row reduced to `[] = c`: unsolvable if c != 0, else a
-                // redundant identity to skip. Without this, `eq_j.vars[0]` below
+                // A later row reduced to [] = c: unsolvable if c != 0, else a
+                // redundant identity to skip. Without this, eq_j.vars[0] below
                 // would panic on the empty variable list.
                 if eq_j.vars.is_empty() {
                     ensure!(!eq_j.is_unsolvable(), "System is unsolvable");
@@ -236,9 +236,9 @@ impl<W: Word> Modulo2System<W> {
     /// Solves the system using Gaussian elimination.
     pub fn gaussian_elimination(&mut self) -> Result<Vec<W>> {
         self.echelon_form()?;
-        // An equation reduced to `[] = c` with c != 0 has no solution; the
-        // back-substitution below would index `eq.vars[0]` on an empty variable
-        // list. `echelon_form` only checks emptiness for rows before the last.
+        // An equation reduced to [] = c with c != 0 has no solution; the
+        // back-substitution below would index eq.vars[0] on an empty variable
+        // list. echelon_form only checks emptiness for rows before the last.
         for eq in &self.equations {
             ensure!(!eq.is_unsolvable(), "System is unsolvable");
         }

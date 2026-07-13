@@ -516,7 +516,7 @@ impl<W: Word> BitFieldVec<Vec<W>> {
         let mut bits = Vec::with_capacity(n_of_words);
         if bit_width == 0 {
             // A zero-width vector still needs one backing word so that
-            // `set_value_unchecked` can index word 0.
+            // set_value_unchecked can index word 0.
             bits.push(W::ZERO);
         }
         Self {
@@ -591,8 +591,8 @@ impl<W: Word> BitFieldVec<Vec<W>> {
         {
             self.bits.push(W::ZERO);
         }
-        // SAFETY: the grow above guarantees `self.bits` has a word covering the
-        // value at index `self.len` (which is `< next_len`), so this unchecked
+        // SAFETY: the grow above guarantees self.bits has a word covering the
+        // value at index self.len (which is < next_len), so this unchecked
         // write stays in bounds.
         unsafe {
             self.set_value_unchecked(self.len, value);
@@ -885,7 +885,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
         let bit_width = Ord::min(self.bit_width, dst.bit_width);
         if bit_width == 0 {
             // Zero-width copy: all values are zero, nothing to move, and the
-            // `bit_len - 1` position math below would underflow.
+            // bit_len - 1 position math below would underflow.
             return;
         }
         let bit_len = len * bit_width;
@@ -1013,7 +1013,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
             return;
         }
 
-        // Words containing logical elements. We must never invoke `f` on data
+        // Words containing logical elements. We must never invoke f on data
         // beyond the logical end of the vector nor modify backing words (or
         // bits) past it: the module contract states that storage outside the
         // vector is not modified.
@@ -1524,8 +1524,8 @@ impl<W: Word> core::iter::Extend<W> for BitFieldVec<Vec<W>> {
         let iter = iter.into_iter();
         // Reserve for the lower bound of the incoming iterator to avoid
         // repeated word reallocation. Best-effort: skip the hint if the total
-        // bit length would overflow (`push` would then panic anyway).
-        // `W::BITS as usize` is a lossless widen.
+        // bit length would overflow (push would then panic anyway).
+        // W::BITS as usize is a lossless widen.
         let (lo, _) = iter.size_hint();
         if self.bit_width != 0 {
             if let Some(needed_words) = self
@@ -1729,14 +1729,14 @@ impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>>
         value: <B::Word as PrimitiveAtomic>::Value,
         order: Ordering,
     ) {
-        // `order` is the store ordering requested for this write. We implement
+        // order is the store ordering requested for this write. We implement
         // the write as a load-then-compare_exchange loop, but a plain load and
-        // the *failure* slot of `compare_exchange` are read-only operations and
-        // reject `Release`/`AcqRel` (a failed CAS stores nothing, so there is no
-        // release to perform) — passing them there panics. So the caller's
-        // `order` is used only for the store side (the CAS success slot), while
-        // every internal load and CAS-failure slot uses `load_ordering(order)`,
-        // which downgrades `Release`->`Relaxed` and `AcqRel`->`Acquire` and
+        // the *failure* slot of compare_exchange are read-only operations and
+        // reject Release/AcqRel (a failed CAS stores nothing, so there is no
+        // release to perform); passing them there panics. So the caller's
+        // order is used only for the store side (the CAS success slot), while
+        // every internal load and CAS-failure slot uses load_ordering(order),
+        // which downgrades Release->Relaxed and AcqRel->Acquire and
         // leaves the read-valid orderings untouched.
         unsafe {
             let wbits = <B::Word as PrimitiveAtomic>::Value::BITS as usize;

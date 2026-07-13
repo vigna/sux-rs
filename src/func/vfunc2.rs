@@ -731,7 +731,7 @@ mod build {
             // We must cover possible outputs of the first function in [m..escape_size)
             let mut remap: Box<[W]> = vec![W::ZERO; escape_usize].into();
             // Copy the frequent values into the prefix; the tail stays zeroed as
-            // padding so `get` can index remap with any first-function output in
+            // padding so get can index remap with any first-function output in
             // [0, escape), including the arbitrary outputs of absent keys (which
             // may land in [num_frequent, escape) when escape > m).
             remap[..num_frequent].copy_from_slice(&sorted_vals[..num_frequent]);
@@ -864,7 +864,7 @@ mod tests {
     /// When `find_optimal_r` picks an escape range larger than the distinct-value
     /// count (`escape > m`), the `remap` table is padded to `escape`: the frequent
     /// values fill the prefix and the tail stays zeroed. A near-uniform
-    /// distribution over a few *large* distinct values forces this regime — the
+    /// distribution over a few *large* distinct values forces this regime: the
     /// large value width makes escaping costly, so all `m` values are absorbed
     /// with `escape = 2^ceil(log2 m) - 1 > m` (here `m = 5`, `escape = 7`).
     ///
@@ -903,7 +903,7 @@ mod tests {
     fn hybrid_map_distinguishes_wide_keys() {
         let mut m: HybridMap<u128, u32> = HybridMap::new(None, 0);
         let low = 5u128;
-        let high = (1u128 << 64) | 5; // same low 64 bits as `low`
+        let high = (1u128 << 64) | 5; // same low 64 bits as low
         m.insert(low, 111);
         m.insert(high, 222);
         assert_eq!(m.get(low), 111);

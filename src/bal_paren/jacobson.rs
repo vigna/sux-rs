@@ -166,7 +166,7 @@ fn count_far_close(word: usize, l: usize) -> usize {
 #[inline]
 pub fn find_near_close(word: usize) -> usize {
     // The input word has the open paren at bit 0. We shift right by 1 to
-    // skip it, so bit 0 of `scan_word` is the first bit after the open.
+    // skip it, so bit 0 of scan_word is the first bit after the open.
     // The initial excess is 1 (from the consumed open paren).
     let scan_word = word >> 1;
     let bytes = scan_word.to_le_bytes();
@@ -177,7 +177,7 @@ pub fn find_near_close(word: usize) -> usize {
         // excess + min_e <= 0
         if excess + min_e <= 0 {
             // The match is in this byte. We want the first position where
-            // byte running excess = -excess, i.e., drops by `excess`.
+            // byte running excess = -excess, i.e., drops by excess.
             // Table index: excess - 1 (0-based: target 0 means drop by 1).
             let target = (excess - 1) as usize;
             debug_assert!(target < 8);

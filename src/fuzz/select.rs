@@ -40,13 +40,13 @@ pub fn harness(mut data: Data) {
         bitvec.set(*value, true);
     });
     let number_of_ones = bitvec.count_ones();
-    // SAFETY: `AddNumBits::from_raw_parts` requires the supplied count to equal
-    // the number of ones in the bit vector; `number_of_ones` was just computed
-    // as `bitvec.count_ones()` on this exact value, so the invariant holds.
+    // SAFETY: AddNumBits::from_raw_parts requires the supplied count to equal
+    // the number of ones in the bit vector; number_of_ones was just computed
+    // as bitvec.count_ones() on this exact value, so the invariant holds.
     let bitvec = unsafe { AddNumBits::from_raw_parts(bitvec, number_of_ones) };
 
     // u64-backed copy: Select9 and SelectSmall wrap rank backends that own the
-    // bit vector, so they cannot borrow the shared `bitvec` above.
+    // bit vector, so they cannot borrow the shared bitvec above.
     let mut bitvec64 = BitVec::<Vec<u64>>::new(data.len);
     ones.iter().for_each(|value| {
         bitvec64.set(*value, true);
@@ -58,7 +58,7 @@ pub fn harness(mut data: Data) {
         .filter(|pos| !ones.contains(pos))
         .collect::<Vec<_>>();
 
-    // `select(i)` must return the position of the i-th one.
+    // select(i) must return the position of the i-th one.
     macro_rules! test_select {
         ($struct:expr) => {{
             let sel = $struct;
@@ -84,7 +84,7 @@ pub fn harness(mut data: Data) {
         bitvec64.clone()
     )));
 
-    // `select_zero(i)` must return the position of the i-th zero.
+    // select_zero(i) must return the position of the i-th zero.
     macro_rules! test_select_zero {
         ($struct:expr) => {{
             let sel = $struct;

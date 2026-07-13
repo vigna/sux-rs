@@ -43,29 +43,29 @@ pub use crate::bit_vec;
 // Three boolean predicates check whether a given bit width is safe
 // for various flavors of unaligned read:
 //
-// * [`test_unaligned!`] — `$bw` is OK for [`BitFieldVec`]-style reads
-//   at positions that are multiples of `$bw`.
-// * [`test_unaligned_pos!`] — `$bw` is OK for a single
-//   [`BitVec::get_value_unaligned_unchecked`] read at a specific
-//   bit position `$pos`.
-// * [`test_unaligned_any_pos!`] — `$bw` is OK for *every*
-//   [`BitVec::get_value_unaligned_unchecked`] read regardless of
+// * [test_unaligned!]: $bw is OK for [BitFieldVec]-style reads
+//   at positions that are multiples of $bw.
+// * [test_unaligned_pos!]: $bw is OK for a single
+//   [BitVec::get_value_unaligned_unchecked] read at a specific
+//   bit position $pos.
+// * [test_unaligned_any_pos!]: $bw is OK for *every*
+//   [BitVec::get_value_unaligned_unchecked] read regardless of
 //   position (used when bulk-converting a structure to its unaligned
 //   variant).
 //
 // The three differ in what they assume about the position. They
-// return only a `bool`; call sites compose them with `assert!`,
-// `debug_assert!`, or a `Result`-returning `if !test { return Err(…)
-// }` block as appropriate. The error/panic message is the call
-// site's responsibility — there's no point factoring it through a
+// return only a bool; call sites compose them with assert!,
+// debug_assert!, or a Result-returning if !test { return Err(…)
+// } block as appropriate. The error/panic message is the call
+// site's responsibility; there's no point factoring it through a
 // dedicated macro family because each call site gets exactly one of
 // the three forms anyway.
 //
-// [`BitFieldVec`]: crate::bits::BitFieldVec
-// [`BitVec::get_value_unaligned_unchecked`]: crate::traits::BitVecOps::get_value_unaligned_unchecked
+// [BitFieldVec]: crate::bits::BitFieldVec
+// [BitVec::get_value_unaligned_unchecked]: crate::traits::BitVecOps::get_value_unaligned_unchecked
 
 /// Returns `true` if `$bw` satisfies the bit-width constraints for
-/// *width-aligned* unaligned reads on word type `$ty` — that is, for
+/// *width-aligned* unaligned reads on word type `$ty`, that is, for
 /// reads of `$bw` bits at positions that are multiples of `$bw`, as
 /// used by [`BitFieldVec`].
 ///

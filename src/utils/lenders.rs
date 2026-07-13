@@ -1117,7 +1117,7 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    // Tests for the private `next` helper function - must stay in source file
+    // Tests for the private next helper function - must stay in source file
     #[test]
     fn test_next_with_newline() {
         let data = b"hello\nworld\n";

@@ -2714,14 +2714,14 @@ where
         let low_bits: BitFieldVec<Vec<V>> = self.low_bits.into();
         let low_bits: BitFieldVec<Box<[V]>> = low_bits.into();
 
-        // `set` is documented to be called exactly `n` times with distinct
-        // indices and nondecreasing values; a valid fill then sets exactly `n`
-        // distinct high bits (positions `(v_i >> l) + i` are strictly
+        // set is documented to be called exactly n times with distinct
+        // indices and nondecreasing values; a valid fill then sets exactly n
+        // distinct high bits (positions (v_i >> l) + i are strictly
         // increasing). Enforcing this here rejects an under-filled,
         // duplicate-index, or nonmonotone builder (any of which leaves fewer
-        // than `n` set high bits) before the unbounded scans below, which would
-        // otherwise walk off `high_bits`. The check is a single build-time
-        // popcount, adding nothing to the concurrent `set` path.
+        // than n set high bits) before the unbounded scans below, which would
+        // otherwise walk off high_bits. The check is a single build-time
+        // popcount, adding nothing to the concurrent set path.
         assert!(
             high_bits.count_ones() == self.n,
             "EliasFanoConcurrentBuilder::set was not called exactly n times with distinct indices and nondecreasing values (n = {}, got {} set high bits)",

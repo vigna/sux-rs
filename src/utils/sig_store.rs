@@ -449,7 +449,7 @@ pub struct SigStoreImpl<S, V, B> {
     max_shard_high_bits: u32,
     /// A mask for the lowest `buckets_high_bits` bits.
     buckets_mask: u64,
-    // A mask for the lowest `max_shard_high_bits` bits.
+    // A mask for the lowest max_shard_high_bits bits.
     max_shard_mask: u64,
     /// The writers associated to the buckets.
     buckets: VecDeque<B>,
@@ -1264,7 +1264,7 @@ where
 
     fn drain(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
         let filter = &self.filter;
-        // Same filtering as `iter`, but drains the inner store so each shard's
+        // Same filtering as iter, but drains the inner store so each shard's
         // memory is released as it is consumed.
         Box::new(
             self.inner.drain().map(move |shard| {
@@ -1304,7 +1304,7 @@ mod tests {
     #[test]
     fn test_high_bits_validation() {
         // High-bit counts at or above the word width would overflow the
-        // `1 << bits` allocations and masks; they must be rejected.
+        // 1 << bits allocations and masks; they must be rejected.
         assert!(new_offline::<[u64; 1], u64>(usize::BITS, 8, None).is_err());
         assert!(new_offline::<[u64; 1], u64>(8, usize::BITS, None).is_err());
         assert!(new_online::<[u64; 1], u64>(usize::BITS, 8, None).is_err());
@@ -1497,14 +1497,14 @@ mod filtered_lazy_tests {
             assert_eq!(first[0].sig, [1, 0]);
         }
 
-        // `drain` is lazy too and goes through the inner `drain` path.
+        // drain is lazy too and goes through the inner drain path.
         let mut drain_it = fs.drain();
         assert_eq!(drain_pulls.load(Ordering::Relaxed), 0);
         drain_it.next().unwrap();
         assert_eq!(drain_pulls.load(Ordering::Relaxed), 1);
         let rest: Vec<_> = drain_it.collect();
         assert_eq!(drain_pulls.load(Ordering::Relaxed), 2);
-        // The `iter` path was not used by `drain`.
+        // The iter path was not used by drain.
         assert_eq!(iter_pulls.load(Ordering::Relaxed), 1);
         assert_eq!(rest.len(), 1);
     }

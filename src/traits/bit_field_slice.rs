@@ -122,7 +122,7 @@ pub fn mask<W: Word>(bit_width: usize) -> W {
 ///
 /// This trait is separate from [`BitWidth`] because a blanket impl
 /// `impl<A: PrimitiveAtomicUnsigned> BitWidth<A> for [A]` would conflict
-/// with `impl<W: Word> BitWidth<W> for [W]` — the compiler cannot prove
+/// with `impl<W: Word> BitWidth<W> for [W]`: the compiler cannot prove
 /// that [`Word`] and [`PrimitiveAtomicUnsigned`] are disjoint. A dedicated
 /// trait sidesteps the overlap entirely.
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]

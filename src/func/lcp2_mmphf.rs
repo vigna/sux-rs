@@ -459,7 +459,7 @@ mod build {
 
                                 let offset = idx & bucket_mask;
 
-                                // Start of a new bucket — flush the previous one.
+                                // Start of a new bucket; flush the previous one.
                                 if offset == 0 && idx > 0 {
                                     let lcp = curr_lcp_bits;
                                     state.lcp_bit_lens.push(
@@ -1267,12 +1267,12 @@ mod build {
 
                             // Validate the key length up front so both the
                             // bucket-start computation and lcp_bits_nul's
-                            // internal `len * 8` cannot overflow on 32-bit.
+                            // internal len * 8 cannot overflow on 32-bit.
                             let full_key_bits = checked_full_key_bits(key_bytes)?;
 
                             let offset = idx & bucket_mask;
 
-                            // Start of a new bucket — flush the previous one.
+                            // Start of a new bucket; flush the previous one.
                             if offset == 0 && idx > 0 {
                                 let lcp = curr_lcp_bits;
                                 state.lcp_bit_lens.push(LcpLen::try_from(lcp).map_err(|_| {
@@ -1678,7 +1678,7 @@ mod build {
                 }
 
                 // Validate the key length up front so both the bucket-start
-                // computation and lcp_bits_nul's internal `len * 8` cannot
+                // computation and lcp_bits_nul's internal len * 8 cannot
                 // overflow on 32-bit targets.
                 let full_key_bits = checked_full_key_bits(key_bytes)?;
 
@@ -1917,7 +1917,7 @@ mod build {
                 assert_eq!(inv_map.get(v), i);
             }
             // A non-frequent value resolves to the escape sentinel, and the
-            // zero padding must not have been inserted into `inv_map`.
+            // zero padding must not have been inserted into inv_map.
             assert_eq!(inv_map.get(15), escape_usize);
             assert_eq!(inv_map.get(0), escape_usize);
         }

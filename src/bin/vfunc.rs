@@ -252,7 +252,7 @@ where
             }
         } else {
             // Parallel: read all keys into a single concatenated
-            // buffer, then build a `Vec<&str>` of slices into it for
+            // buffer, then build a Vec<&str> of slices into it for
             // cache-friendly access during sig hashing.
             let (buffer, offsets) = read_concat_lines(filename, n)?;
             let keys = str_slice_from_offsets(&buffer, &offsets);

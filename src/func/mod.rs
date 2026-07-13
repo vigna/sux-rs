@@ -21,7 +21,7 @@
 //!   in case the distribution of the output values is skewed.
 //!
 //! - [`LcpMmphfInt`]/[`LcpMmphf`] are *monotone minimal perfect hash
-//!   functions*—specialized static functions mapping keys in lexicographical
+//!   functions*, specialized static functions mapping keys in lexicographical
 //!   order to their lexicographical rank. See [`LcpMmphfStr`] and
 //!   [`LcpMmphfSliceU8`] for common instantiations.
 //!

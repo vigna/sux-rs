@@ -97,10 +97,10 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// Normally [`set_up_shards`](ShardEdge::set_up_shards) is called
     /// with the number of keys, which is correct for a construction
     /// where each key produces exactly one hyperedge (VFunc). When
-    /// each key produces *multiple* hyperedges — as in
+    /// each key produces *multiple* hyperedges (as in
     /// [`CompVFunc`], where each key's
-    /// Huffman-encoded value contributes one edge per codeword bit
-    /// — the graph actually has ≈ entropy × num_keys equations.
+    /// Huffman-encoded value contributes one edge per codeword bit),
+    /// the graph actually has ≈ entropy × num_keys equations.
     /// Sizing the shards for the smaller key count leaves every
     /// shard oversized relative to the sharding strategy's intent.
     ///
@@ -391,7 +391,7 @@ where
         self.num_keys = shard_store.len();
         self.bit_width = max_value.bit_len() as usize;
 
-        // The shard structure is fixed by the store (set at `into_shard_store`
+        // The shard structure is fixed by the store (set at into_shard_store
         // time). We only reconfigure graph parameters (c, lge, segment size,
         // vertex count) for the actual key count and shard sizes.
         let max_shard = shard_store.shard_sizes().max().unwrap_or(0);
@@ -978,11 +978,11 @@ impl<
                     num_keys,
                     start.elapsed().as_nanos() as f64 / num_keys as f64
                 ));
-                // When `shard_size_hint` is set (e.g. by CompVFunc with
-                // `total_edges` after building the Huffman coder), the
+                // When shard_size_hint is set (e.g. by CompVFunc with
+                // total_edges after building the Huffman coder), the
                 // sharding strategy is sized for the hinted workload
                 // rather than the raw key count. See the doc comment on
-                // [`VBuilder::shard_size_hint`].
+                // [VBuilder::shard_size_hint].
                 let shard_n = self.shard_size_hint.unwrap_or(num_keys);
                 let shard_edge = &mut self.shard_edge;
                 shard_edge.set_up_shards(shard_n, self.eps);
@@ -991,10 +991,10 @@ impl<
                 let max_shard = shard_store.shard_sizes().max().unwrap_or(0);
 
                 // Check for pathological (5x) deviation from the target ε-cost.
-                // When `shard_size_hint` is set the sharding strategy is sized
+                // When shard_size_hint is set the sharding strategy is sized
                 // for the hinted workload, so the per-key average is
-                // meaningless — mirror the sequential path (see
-                // `try_populate_and_build`) and skip the check.
+                // meaningless; mirror the sequential path (see
+                // try_populate_and_build) and skip the check.
                 if self.shard_size_hint.is_none()
                     && max_shard as f64
                         > (1.0 + 5.0 * self.eps) * num_keys as f64 / shard_edge.num_shards() as f64
@@ -1018,7 +1018,7 @@ impl<
                 ));
                 return Ok(r);
             }
-            // Keys and values are slices — no rewind needed.
+            // Keys and values are slices; no rewind needed.
         }
     }
 
@@ -1170,7 +1170,7 @@ impl<
             start.elapsed().as_nanos() as f64 / num_keys as f64
         ));
 
-        // See the doc comment on [`VBuilder::shard_size_hint`]:
+        // See the doc comment on [VBuilder::shard_size_hint]:
         // when set, use it to size the sharding strategy instead of
         // the runtime key count. Used by CompVFunc to pass the total
         // edge count (≈ entropy × num_keys).
@@ -1361,9 +1361,9 @@ impl<
     }
 }
 
-// `XorGraph`, `DoubleStack`, `FastStack`, and the `remove_edge!`
-// macro live in [`crate::func::peeling`] so they can be shared with
-// [`crate::func::CompVFunc`]. VBuilder's peeler bodies are otherwise
+// XorGraph, DoubleStack, FastStack, and the remove_edge!
+// macro live in [crate::func::peeling] so they can be shared with
+// [crate::func::CompVFunc]. VBuilder's peeler bodies are otherwise
 // unchanged.
 use crate::func::peeling::{DoubleStack, FastStack, XorGraph, remove_edge};
 
@@ -2263,8 +2263,8 @@ impl<
         for ((sig, val), side) in sigs_vals_sides {
             let edge = self.shard_edge.local_edge(sig);
             let side = side as usize;
-            // SAFETY: vertex indices from `local_edge` are guaranteed within
-            // bounds of `data` by the ShardEdge contract; `side` is always
+            // SAFETY: vertex indices from local_edge are guaranteed within
+            // bounds of data by the ShardEdge contract; side is always
             // 0, 1, or 2 because it encodes a hyperedge vertex index.
             unsafe {
                 let xor = match side {

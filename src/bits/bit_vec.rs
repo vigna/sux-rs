@@ -607,7 +607,7 @@ impl<W: Word> Extend<bool> for BitVec<Vec<W>> {
         let i = i.into_iter();
         // Reserve for the lower bound (one bit per element) to avoid repeated
         // word reallocation. Best-effort: skip the hint if the total bit
-        // length would overflow (`push` would then panic anyway).
+        // length would overflow (push would then panic anyway).
         let (lo, _) = i.size_hint();
         if let Some(needed_words) = self
             .len
@@ -659,8 +659,8 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVecValueOps<B::Word> for BitV
             end,
             self.len
         );
-        // SAFETY: the assertions above guarantee `pos + width <= self.len` and
-        // `width <= W::BITS`, satisfying the contract of `get_bits_unchecked`.
+        // SAFETY: the assertions above guarantee pos + width <= self.len and
+        // width <= W::BITS, satisfying the contract of get_bits_unchecked.
         unsafe { self.get_bits_unchecked(pos, width) }
     }
 
@@ -787,9 +787,9 @@ impl<'a, W: Word> Iterator for BitVecChunksMut<'a, W> {
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|chunk| {
             let size = Ord::min(self.chunk_size, self.remaining);
-            // SAFETY: `size` is bounded by the original length; the
-            // backing slice contains `size.div_ceil(W::BITS)` words,
-            // which is exactly what `std::slice::ChunksMut` hands us.
+            // SAFETY: size is bounded by the original length; the
+            // backing slice contains size.div_ceil(W::BITS) words,
+            // which is exactly what std::slice::ChunksMut hands us.
             let next = unsafe { BitVec::from_raw_parts(chunk, size) };
             self.remaining -= size;
             next
@@ -846,8 +846,8 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> SliceByValue for BitVec<B> {
 
     #[inline(always)]
     unsafe fn get_value_unchecked(&self, index: usize) -> B::Word {
-        // Delegate to the canonical `BitVecOps::get_unchecked`; LLVM
-        // collapses the `if` to the same `(word >> bit) & 1` it would
+        // Delegate to the canonical BitVecOps::get_unchecked; LLVM
+        // collapses the if to the same (word >> bit) & 1 it would
         // emit for a direct implementation.
         if unsafe { self.get_unchecked(index) } {
             B::Word::ONE
@@ -874,7 +874,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldSlice for BitVec<B> {
 impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueMut for BitVec<B> {
     #[inline(always)]
     unsafe fn set_value_unchecked(&mut self, index: usize, value: B::Word) {
-        // Delegate to `BitVecOpsMut::set_unchecked`: its `if value`
+        // Delegate to BitVecOpsMut::set_unchecked: its if value
         // form dead-code-eliminates to a single RMW when the caller
         // passes a compile-time constant, and ties my hand-rolled
         // branchless form on random-runtime values.
@@ -899,7 +899,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
         let len = self.len;
         let bits = B::Word::BITS as usize;
         if len <= chunk_size || chunk_size % bits == 0 {
-            // `std::slice::ChunksMut::new` panics on chunk_size 0, so
+            // std::slice::ChunksMut::new panics on chunk_size 0, so
             // use 1 when the chunk is empty; the iterator will yield
             // empty views anyway.
             let words_per_chunk = Ord::max(1, chunk_size.div_ceil(bits));
@@ -1223,8 +1223,8 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> RankHinted for BitVec<B> {
 
         debug_assert!(hp < bits.len(), "hint_pos: {}, len: {}", hp, bits.len());
 
-        // Prefetch the word containing `pos` so that the load below overlaps
-        // with the popcount accumulation loop — but only when the subblock
+        // Prefetch the word containing pos so that the load below overlaps
+        // with the popcount accumulation loop, but only when the subblock
         // spans more than one cache line.  When the subblock fits in a single
         // 64-byte cache line (e.g. 8 × u64 words), the first loop iteration
         // already pulls in the target word and the prefetch is pure overhead.

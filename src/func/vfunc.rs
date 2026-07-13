@@ -131,9 +131,9 @@ impl<K: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: Sh
     pub fn get_by_sig(&self, sig: S) -> D::Value {
         let edge = self.shard_edge.edge(sig);
         // SAFETY: The ShardEdge implementation guarantees that all indices
-        // returned by `edge()` are within bounds of `self.data`. This invariant
+        // returned by edge() are within bounds of self.data. This invariant
         // is established during construction by VBuilder, which ensures the
-        // data array is sized according to the ShardEdge's `num_vertices()`
+        // data array is sized according to the ShardEdge's num_vertices()
         unsafe {
             self.data.get_value_unchecked(edge[0])
                 ^ self.data.get_value_unchecked(edge[1])
