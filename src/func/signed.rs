@@ -1055,8 +1055,13 @@ mod build {
         where
             u64: PrimitiveNumberAs<H>,
         {
-            assert!(hash_width > 0);
-            assert!(hash_width <= H::BITS as usize);
+            assert!(hash_width > 0, "hash_width must be positive");
+            // Verification hashes come from a 64-bit remixed hash.
+            assert!(
+                hash_width <= 64.min(H::BITS as usize),
+                "hash_width ({hash_width}) must be at most min(64, H::BITS) = {}",
+                64.min(H::BITS as usize)
+            );
 
             let (func, mut store, _) = builder.try_build_func_and_store(
                 keys,
@@ -1193,8 +1198,13 @@ mod build {
             K: Sync,
             u64: PrimitiveNumberAs<H>,
         {
-            assert!(hash_width > 0);
-            assert!(hash_width <= H::BITS as usize);
+            assert!(hash_width > 0, "hash_width must be positive");
+            // Verification hashes come from a 64-bit remixed hash.
+            assert!(
+                hash_width <= 64.min(H::BITS as usize),
+                "hash_width ({hash_width}) must be at most min(64, H::BITS) = {}",
+                64.min(H::BITS as usize)
+            );
             let values: Vec<usize> = (0..keys.len()).collect();
             let func = <VFunc<K, BitFieldVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
                 keys, &values, builder, pl,
@@ -2091,7 +2101,12 @@ mod build {
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
-            assert!(hash_width > 0 && hash_width <= H::BITS as usize);
+            // Verification hashes come from a 64-bit remixed hash.
+            assert!(
+                hash_width > 0 && hash_width <= 64.min(H::BITS as usize),
+                "hash_width ({hash_width}) must be in [1..min(64, H::BITS)] = {}",
+                64.min(H::BITS as usize)
+            );
             let (func, keys) = LcpMmphfInt::try_new_inner(keys, n, builder, pl)?;
             let mut keys = keys.rewind()?;
             pl.push_log_target(" ▸ hashes");
@@ -2192,7 +2207,12 @@ mod build {
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
-            assert!(hash_width > 0 && hash_width <= H::BITS as usize);
+            // Verification hashes come from a 64-bit remixed hash.
+            assert!(
+                hash_width > 0 && hash_width <= 64.min(H::BITS as usize),
+                "hash_width ({hash_width}) must be in [1..min(64, H::BITS)] = {}",
+                64.min(H::BITS as usize)
+            );
             let func = LcpMmphfInt::try_par_new_inner(keys, builder, pl)?;
             pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes_from_slice::<K, K, H, S0, E0>(
@@ -2301,7 +2321,12 @@ mod build {
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
-            assert!(hash_width > 0 && hash_width <= H::BITS as usize);
+            // Verification hashes come from a 64-bit remixed hash.
+            assert!(
+                hash_width > 0 && hash_width <= 64.min(H::BITS as usize),
+                "hash_width ({hash_width}) must be in [1..min(64, H::BITS)] = {}",
+                64.min(H::BITS as usize)
+            );
             let (func, keys) = LcpMmphf::try_new_inner(keys, n, builder, pl)?;
             let mut keys = keys.rewind()?;
             pl.push_log_target(" ▸ hashes");
@@ -2410,7 +2435,12 @@ mod build {
         where
             K: Sync,
         {
-            assert!(hash_width > 0 && hash_width <= H::BITS as usize);
+            // Verification hashes come from a 64-bit remixed hash.
+            assert!(
+                hash_width > 0 && hash_width <= 64.min(H::BITS as usize),
+                "hash_width ({hash_width}) must be in [1..min(64, H::BITS)] = {}",
+                64.min(H::BITS as usize)
+            );
             let func = LcpMmphf::try_par_new_inner(keys, builder, pl)?;
             pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes_from_slice::<B, K, H, S0, E0>(
@@ -2522,7 +2552,12 @@ mod build {
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
-            assert!(hash_width > 0 && hash_width <= H::BITS as usize);
+            // Verification hashes come from a 64-bit remixed hash.
+            assert!(
+                hash_width > 0 && hash_width <= 64.min(H::BITS as usize),
+                "hash_width ({hash_width}) must be in [1..min(64, H::BITS)] = {}",
+                64.min(H::BITS as usize)
+            );
             let (func, keys) = Lcp2MmphfInt::try_new_inner(keys, n, builder, pl)?;
             let mut keys = keys.rewind()?;
             pl.push_log_target(" ▸ hashes");
@@ -2619,7 +2654,12 @@ mod build {
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
-            assert!(hash_width > 0 && hash_width <= H::BITS as usize);
+            // Verification hashes come from a 64-bit remixed hash.
+            assert!(
+                hash_width > 0 && hash_width <= 64.min(H::BITS as usize),
+                "hash_width ({hash_width}) must be in [1..min(64, H::BITS)] = {}",
+                64.min(H::BITS as usize)
+            );
             let func = Lcp2MmphfInt::try_par_new_inner(keys, builder, pl)?;
             pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes_from_slice::<K, K, H, S0, E0>(
@@ -2727,7 +2767,12 @@ mod build {
             builder: VBuilder<BitFieldVec<Box<[usize]>>, S0, E0>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
-            assert!(hash_width > 0 && hash_width <= H::BITS as usize);
+            // Verification hashes come from a 64-bit remixed hash.
+            assert!(
+                hash_width > 0 && hash_width <= 64.min(H::BITS as usize),
+                "hash_width ({hash_width}) must be in [1..min(64, H::BITS)] = {}",
+                64.min(H::BITS as usize)
+            );
             let (func, keys) = Lcp2Mmphf::try_new_inner(keys, n, builder, pl)?;
             let mut keys = keys.rewind()?;
             pl.push_log_target(" ▸ hashes");
@@ -2830,7 +2875,12 @@ mod build {
         where
             K: Sync,
         {
-            assert!(hash_width > 0 && hash_width <= H::BITS as usize);
+            // Verification hashes come from a 64-bit remixed hash.
+            assert!(
+                hash_width > 0 && hash_width <= 64.min(H::BITS as usize),
+                "hash_width ({hash_width}) must be in [1..min(64, H::BITS)] = {}",
+                64.min(H::BITS as usize)
+            );
             let func = Lcp2Mmphf::try_par_new_inner(keys, builder, pl)?;
             pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes_from_slice::<B, K, H, S0, E0>(
