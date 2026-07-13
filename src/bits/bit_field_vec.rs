@@ -1521,6 +1521,23 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> IntoIteratorFrom for &'a Bit
 
 impl<W: Word> core::iter::Extend<W> for BitFieldVec<Vec<W>> {
     fn extend<T: IntoIterator<Item = W>>(&mut self, iter: T) {
+        let iter = iter.into_iter();
+        // Reserve for the lower bound of the incoming iterator to avoid
+        // repeated word reallocation. Best-effort: skip the hint if the total
+        // bit length would overflow (`push` would then panic anyway).
+        // `W::BITS as usize` is a lossless widen.
+        let (lo, _) = iter.size_hint();
+        if self.bit_width != 0 {
+            if let Some(needed_words) = self
+                .len
+                .checked_add(lo)
+                .and_then(|total| total.checked_mul(self.bit_width))
+                .map(|bits| bits.div_ceil(W::BITS as usize))
+            {
+                self.bits
+                    .reserve(needed_words.saturating_sub(self.bits.len()));
+            }
+        }
         for value in iter {
             self.push(value);
         }

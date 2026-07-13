@@ -604,6 +604,19 @@ impl<W: Word> BitVec<Box<[W]>> {
 
 impl<W: Word> Extend<bool> for BitVec<Vec<W>> {
     fn extend<T: IntoIterator<Item = bool>>(&mut self, i: T) {
+        let i = i.into_iter();
+        // Reserve for the lower bound (one bit per element) to avoid repeated
+        // word reallocation. Best-effort: skip the hint if the total bit
+        // length would overflow (`push` would then panic anyway).
+        let (lo, _) = i.size_hint();
+        if let Some(needed_words) = self
+            .len
+            .checked_add(lo)
+            .map(|bits| bits.div_ceil(W::BITS as usize))
+        {
+            self.bits
+                .reserve(needed_words.saturating_sub(self.bits.len()));
+        }
         for b in i {
             self.push(b);
         }
