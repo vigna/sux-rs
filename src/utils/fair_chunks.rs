@@ -139,7 +139,12 @@ impl<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64>> FairChunks<I> {
     /// [`next`]: Iterator::next
     /// [unchecked successor queries]: crate::traits::SuccUnchecked
     #[must_use]
-    pub unsafe fn new_with(target_weight: u64, cwf: I, num_weights: usize, max_weight: u64) -> Self {
+    pub unsafe fn new_with(
+        target_weight: u64,
+        cwf: I,
+        num_weights: usize,
+        max_weight: u64,
+    ) -> Self {
         Self {
             target_weight,
             cwf,
