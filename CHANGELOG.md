@@ -41,6 +41,9 @@
 - New `BitFieldVec::wrap` method to create a bit-field vector with a
   given backend.
 
+- New opt-in `--check` flag for the `vfunc2` and `comp_vfunc` CLI utilities
+  that verifies that the number of keys and values match.
+
 ### Fixed
 
 - Unsound reference-based `From` implementations between `BitVec`,
@@ -71,11 +74,39 @@
 
 - Fixed subtraction overflow when appending to a vector with excess capacity.
 
+- Hardening pass over the safe query and access paths: they now use checked
+  arithmetic and mask dirty padding bits, so structures built from unsanitized
+  or deserialized input no longer panic or return spurious rank/select
+  results. This covers the select builders (stale backing words), zero-width
+  and full-word `BitFieldVec`, and `BitVec` length arithmetic.
+
+- `VFunc2`, `CompVFunc`, and the LCP MMPHFs handle their edge cases losslessly
+  and without panicking: wide (`u128`) and 32-bit values, absent-key queries,
+  and LCP lengths (now stored as `u32` on all targets, and reported as errors
+  when oversized).
+
+- Builders and CLI utilities validate their input instead of panicking,
+  dividing by zero, or looping forever: the parallel `VBuilder`, the
+  `EliasFano` concurrent builder, and the Jacobson, `PartialArray`,
+  `PrefixSumIntList`, `RearCodedListBuilder`, and `FairChunks` constructors,
+  as well as several binaries.
+
+- `Modulo2System::gaussian_elimination` accepts redundant identity rows and
+  returns an error, instead of panicking, on an unsolvable system.
+
+- Atomic bit-vector updates (`set_atomic`, `fill`, `flip`) use correct
+  read-modify-write orderings.
+
 ### Improved
 
 - Structured logging for structures with substructures.
 
 - Signing is parallel, and possibly from the store, when possible.
+
+- Fewer allocations and less build-time work: buffer reuse in
+  `RearCodedListStr::get_in_place`, capacity reservation in the `Extend`
+  implementations, lazy `FilteredShardStore` iteration, and a restored early
+  exit in the adaptive select builders.
 
 ### Changed
 
@@ -89,6 +120,27 @@
 - Thanks to the new ε-serde, `VFilter` does not have `F` anymore
   as parameter. Moreover, other structures such as `VFunc2` will
   actually map into memory their bulk data.
+
+- `BitVecValueOps::get_value`/`get_value_unchecked` are renamed
+  to `get_bits`/`get_bits_unchecked`, to avoid clashing with the index-based
+  `SliceByValue` methods of the same name.
+
+- `UnalignedConversionError` is now a structured
+  (`non_exhaustive`) enum instead of a wrapper around a `String`.
+
+- `FairChunks::new_with` is now `unsafe`: the caller must uphold
+  its documented contract (a nondecreasing cumulative weight function,
+  `max_weight` equal to its last element, and `num_weights` one less than the
+  length), which the constructor no longer checks.
+
+- `VFilter` rejects boxed backends wider than 64 bits and caps
+  the requested filter bit width at `min(64, W::BITS)`, matching its 64-bit
+  verification hash.
+
+- The `BitCount` trait has been removed; `count_ones` and
+  `count_zeros` are now provided by `BitVecOps`.
+
+- The `cli` feature now implies `rayon`.
 
 ## [0.14.0] - 2026-04-11
 
