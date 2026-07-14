@@ -1200,10 +1200,46 @@ fn write_binary<S: BinSafe + Sig, V: BinSafe>(
     writer: &mut impl Write,
     tuples: &[SigVal<S, V>],
 ) -> std::io::Result<()> {
-    let (pre, buf, post) = unsafe { tuples.align_to::<u8>() };
-    debug_assert!(pre.is_empty());
-    debug_assert!(post.is_empty());
-    writer.write_all(buf)
+    // `SigVal` is `repr(Rust)`; when the value type is narrower than the
+    // signature alignment (e.g. `u8`) the struct carries padding whose bytes
+    // are never initialized. Byte-casting `&[SigVal]` with `align_to::<u8>()`
+    // and writing it would read that uninitialized padding, which is undefined
+    // behavior. Instead we copy only the initialized `sig`/`val` field bytes
+    // into a zeroed buffer at their real struct offsets, so each on-disk record
+    // is byte-identical to the in-memory layout (the read side reconstructs it
+    // unchanged) but the padding is deterministic zero and never read.
+    const CHUNK: usize = 1024;
+    let elem_size = core::mem::size_of::<SigVal<S, V>>();
+    let sig_off = core::mem::offset_of!(SigVal<S, V>, sig);
+    let val_off = core::mem::offset_of!(SigVal<S, V>, val);
+    let sig_size = core::mem::size_of::<S>();
+    let val_size = core::mem::size_of::<V>();
+    let mut buf = vec![0u8; elem_size * CHUNK];
+    for chunk in tuples.chunks(CHUNK) {
+        for (i, sv) in chunk.iter().enumerate() {
+            let base = i * elem_size;
+            let src = (sv as *const SigVal<S, V>).cast::<u8>();
+            // SAFETY: `sig` and `val` are initialized fields at offsets
+            // `sig_off`/`val_off` within `*sv`, so `src.add(off)` reads exactly
+            // that field's initialized bytes; the destination ranges lie inside
+            // the zeroed `buf` because `base + off + size <= elem_size` and
+            // `base + elem_size <= buf.len()`.
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    src.add(sig_off),
+                    buf.as_mut_ptr().add(base + sig_off),
+                    sig_size,
+                );
+                core::ptr::copy_nonoverlapping(
+                    src.add(val_off),
+                    buf.as_mut_ptr().add(base + val_off),
+                    val_size,
+                );
+            }
+        }
+        writer.write_all(&buf[..elem_size * chunk.len()])?;
+    }
+    Ok(())
 }
 
 /// A [`ShardStore`] wrapper that filters entries and re-shards to an
