@@ -109,6 +109,11 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
     /// Sets a value at the given position.
     ///
     /// The provided position must be greater than the last position set.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `position` is not strictly greater than the previous position
+    /// set, or if `position >= len`.
     pub fn set(&mut self, position: usize, value: T) {
         if position < self.min_next_pos {
             panic!(
@@ -170,7 +175,9 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
 /// # Panics
 ///
 /// Panics if `num_values > len`, because strictly increasing in-bounds
-/// positions cannot satisfy that capacity.
+/// positions cannot satisfy that capacity, or if the underlying Elias--Fano
+/// structures would exceed `usize` in length (for example when `num_values` is
+/// near `usize::MAX`).
 ///
 /// [Elias-Fano]: crate::dict::EliasFano
 /// [dense partial array]: new_dense
@@ -195,6 +202,12 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
     ///
     /// The provided position must be greater than the last position
     /// set.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `position` is not strictly greater than the previous position
+    /// set, if `position >= len`, or if more than the declared number of values
+    /// are set.
     pub fn set(&mut self, position: usize, value: T) {
         if position < self.min_next_pos {
             panic!(
@@ -213,6 +226,10 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
     }
 
     /// Builds the immutable sparse partial array.
+    ///
+    /// # Panics
+    ///
+    /// Panics if fewer than the declared number of values were set.
     #[must_use]
     pub fn build(self) -> PartialArray<T, SparseIndex<Box<[usize]>>> {
         let (builder, values) = (self.builder, self.values);

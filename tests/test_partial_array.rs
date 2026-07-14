@@ -320,3 +320,13 @@ fn test_serialize() {
         assert_eq!(array.get(i), array2.get(i), "Mismatch at index {i}");
     }
 }
+
+/// `new_sparse` must panic (rather than silently overflow) when the underlying
+/// Elias-Fano structures would exceed `usize` in length. `usize::MAX` overflows
+/// the high-bit length computation before any allocation, so the test is cheap
+/// and portable to 32-bit targets.
+#[test]
+#[should_panic(expected = "is too large")]
+fn test_new_sparse_length_overflow_panics() {
+    let _ = partial_array::new_sparse::<()>(usize::MAX, usize::MAX);
+}

@@ -119,7 +119,9 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
     ///
     /// # Panics
     ///
-    /// Panics if any value is less than `min`.
+    /// Panics if any value is less than `min`, if any offset `v - min` equals
+    /// the maximum value of the word type (so it cannot be incremented by one),
+    /// or if the total encoded bit length exceeds `usize::MAX`.
     ///
     /// # Examples
     ///
