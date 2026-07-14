@@ -1911,21 +1911,10 @@ where
 
     #[inline]
     fn last(self) -> Option<Self::Item> {
-        if self.index >= self.ef.n {
-            return None;
-        }
-        let words = self.ef.high_bits.as_ref();
-        let mut word_idx = words.len() - 1;
-        // SAFETY: n > 0 implies the high bits contain at least one set bit
-        while unsafe { *words.get_unchecked(word_idx) } == 0 {
-            debug_assert!(word_idx > 0);
-            word_idx -= 1;
-        }
-        let word = unsafe { *words.get_unchecked(word_idx) };
-        let bit_idx = usize::BITS as usize - 1 - word.leading_zeros() as usize;
-        let high_bits = (word_idx * usize::BITS as usize) + bit_idx - (self.ef.n - 1);
-        let low = unsafe { self.ef.low_bits.get_value_unchecked(self.ef.n - 1) };
-        Some(V::as_from(high_bits) << self.ef.l | low)
+        // The forward iterator always ends at ef.n, so its last item is the
+        // sequence maximum, returned from the cache in O(1) rather than scanning
+        // the high bits.
+        (self.index < self.ef.n).then_some(self.ef.last_val)
     }
 
     #[inline]
@@ -2103,20 +2092,10 @@ where
 
     #[inline]
     fn last(self) -> Option<Self::Item> {
-        if self.index == 0 {
-            return None;
-        }
-        let words = self.ef.high_bits.as_ref();
-        let mut word_idx = 0;
-        // SAFETY: index > 0 implies the high bits contain at least one set bit
-        while unsafe { *words.get_unchecked(word_idx) } == 0 {
-            debug_assert!(word_idx + 1 < words.len());
-            word_idx += 1;
-        }
-        let bit_idx = unsafe { *words.get_unchecked(word_idx) }.trailing_zeros() as usize;
-        let high_bits = (word_idx * usize::BITS as usize) + bit_idx;
-        let low = unsafe { self.ef.low_bits.get_value_unchecked(0) };
-        Some(V::as_from(high_bits) << self.ef.l | low)
+        // The backward iterator always ends at index 0, so its last item is the
+        // sequence minimum, returned from the cache in O(1) rather than scanning
+        // the high bits.
+        (self.index != 0).then_some(self.ef.first_val)
     }
 
     #[inline]
@@ -2241,21 +2220,10 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
 
     #[inline]
     fn last(self) -> Option<Self::Item> {
-        if self.index >= self.ef.n {
-            return None;
-        }
-        let words = self.ef.high_bits.as_ref();
-        let mut word_idx = words.len() - 1;
-        // SAFETY: n > 0 implies the high bits contain at least one set bit
-        while unsafe { *words.get_unchecked(word_idx) } == 0 {
-            debug_assert!(word_idx > 0);
-            word_idx -= 1;
-        }
-        let word = unsafe { *words.get_unchecked(word_idx) };
-        let bit_idx = usize::BITS as usize - 1 - word.leading_zeros() as usize;
-        let high_bits = (word_idx * usize::BITS as usize) + bit_idx - (self.ef.n - 1);
-        let low = unsafe { self.ef.low_bits.get_value_unchecked(self.ef.n - 1) };
-        Some((V::as_from(high_bits) << self.ef.l) | low)
+        // The forward bidirectional iterator always ends at ef.n, so its last
+        // item is the sequence maximum, returned from the cache in O(1) rather
+        // than scanning the high bits.
+        (self.index < self.ef.n).then_some(self.ef.last_val)
     }
 
     #[inline]
@@ -2330,20 +2298,10 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
 
     #[inline]
     fn prev_last(self) -> Option<V> {
-        if self.index == 0 {
-            return None;
-        }
-        let words = self.ef.high_bits.as_ref();
-        let mut word_idx = 0;
-        // SAFETY: index > 0 implies the high bits contain at least one set bit
-        while unsafe { *words.get_unchecked(word_idx) } == 0 {
-            debug_assert!(word_idx + 1 < words.len());
-            word_idx += 1;
-        }
-        let bit_idx = unsafe { *words.get_unchecked(word_idx) }.trailing_zeros() as usize;
-        let high_bits = (word_idx * usize::BITS as usize) + bit_idx;
-        let low = unsafe { self.ef.low_bits.get_value_unchecked(0) };
-        Some((V::as_from(high_bits) << self.ef.l) | low)
+        // The backward walk always ends at index 0, so its last item is the
+        // sequence minimum, returned from the cache in O(1) rather than scanning
+        // the high bits.
+        (self.index != 0).then_some(self.ef.first_val)
     }
 
     #[inline]

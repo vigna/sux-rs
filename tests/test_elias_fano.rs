@@ -1462,3 +1462,81 @@ fn test_into_iter_back_from_overflow() {
     // iterator; it must panic deterministically in both profiles.
     let _ = (&ef).into_iter_back_from(usize::MAX);
 }
+
+/// The terminal iterator methods (`last`, `prev_last`) must return the cached
+/// sequence extrema in O(1) rather than re-scanning the high bits.
+#[test]
+fn test_iterator_extrema_do_not_rescan() {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use sux::traits::iter::*;
+
+    // A high-bits wrapper that counts `as_ref` calls; a terminal method that
+    // scans the high bits increments the counter, a cached read does not.
+    struct CountingHigh<H> {
+        inner: H,
+        count: Rc<Cell<usize>>,
+    }
+    impl<H: AsRef<[usize]>> AsRef<[usize]> for CountingHigh<H> {
+        fn as_ref(&self) -> &[usize] {
+            self.count.set(self.count.get() + 1);
+            self.inner.as_ref()
+        }
+    }
+    impl<H: SelectUnchecked> SelectUnchecked for CountingHigh<H> {
+        unsafe fn select_unchecked(&self, rank: usize) -> usize {
+            // SAFETY: forwards the caller's rank contract to the inner bits.
+            unsafe { self.inner.select_unchecked(rank) }
+        }
+    }
+
+    let values = [10u64, 20, 30, 40, 50];
+    let mut efb = EliasFanoBuilder::new(values.len(), 50u64);
+    efb.extend(values);
+    let ef = efb.build_with_seq();
+    let count = Rc::new(Cell::new(0usize));
+    // SAFETY: the wrapper delegates to the same bits, so the high-bit vector is
+    // unchanged as a bit vector.
+    let ef = unsafe {
+        ef.map_high_bits(|h| CountingHigh {
+            inner: h,
+            count: count.clone(),
+        })
+    };
+
+    let it = ef.iter();
+    let before = count.get();
+    assert_eq!(it.last(), Some(50), "iter().last() value");
+    assert_eq!(
+        count.get(),
+        before,
+        "iter().last() re-scanned the high bits"
+    );
+
+    let it = ef.iter_back();
+    let before = count.get();
+    assert_eq!(it.last(), Some(10), "iter_back().last() value");
+    assert_eq!(
+        count.get(),
+        before,
+        "iter_back().last() re-scanned the high bits"
+    );
+
+    let it = ef.iter_bidi();
+    let before = count.get();
+    assert_eq!(it.last(), Some(50), "iter_bidi().last() value");
+    assert_eq!(
+        count.get(),
+        before,
+        "iter_bidi().last() re-scanned the high bits"
+    );
+
+    let it = ef.iter_bidi_from(ef.len());
+    let before = count.get();
+    assert_eq!(it.prev_last(), Some(10), "iter_bidi().prev_last() value");
+    assert_eq!(
+        count.get(),
+        before,
+        "iter_bidi().prev_last() re-scanned the high bits"
+    );
+}
