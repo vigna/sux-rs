@@ -257,6 +257,16 @@ fn test_from_parts_length_mismatch() {
 }
 
 #[test]
+#[should_panic(expected = "Out-of-range mapping")]
+fn test_from_parts_rejects_out_of_range_mapping() {
+    let mut builder = RearCodedListBuilder::<str, true>::new(4);
+    builder.push("aa");
+    builder.push("aab");
+    let map = make_map(2, &[0, 2]);
+    let _ = MappedRearCodedListStr::from_parts(builder.build(), map);
+}
+
+#[test]
 fn test_into_parts() {
     let mrcl = build_test_mrcl_str();
     let (rcl, map) = mrcl.into_parts();
