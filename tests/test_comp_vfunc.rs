@@ -612,3 +612,24 @@ mod corr_graph_regime {
         }
     }
 }
+
+#[test]
+fn test_u8_multi_symbol_codewords() {
+    // Four equally frequent symbols give a Huffman code with maximum codeword
+    // length 2. The old u8 read limit of W::BITS - 7 = 1 rejected such a code;
+    // the word-based codeword fallback now supports it.
+    let n = 400usize;
+    let keys: Vec<u64> = (0..u64::try_from(n).expect("n fits u64")).collect();
+    let values: Vec<u8> = (0..n).map(|i| u8::try_from(i % 4).expect("fits u8")).collect();
+    let func = CompVFunc::<u64, BitVec<Box<[u8]>>>::try_par_new(&keys, &values, no_logging![])
+        .expect("build");
+    for (i, &v) in values.iter().enumerate() {
+        assert_eq!(func.get(keys[i]), v, "mismatch at key {i}");
+    }
+    // Also exercise the BitVecU (byte-unaligned) backend, whose
+    // get_bits_unchecked dispatch differs from BitVec's word-based one.
+    let func = func.try_into_unaligned().expect("into_unaligned");
+    for (i, &v) in values.iter().enumerate() {
+        assert_eq!(func.get(keys[i]), v, "mismatch at key {i} (unaligned)");
+    }
+}

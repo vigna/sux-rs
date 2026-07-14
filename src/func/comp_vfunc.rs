@@ -21,7 +21,7 @@ use core::error::Error;
 use dsi_progress_logger::ProgressLog;
 use lender::FallibleLending;
 use mem_dbg::{FlatType, MemDbg, MemSize, SizeFlags};
-use num_primitive::PrimitiveNumber;
+use num_primitive::{PrimitiveInteger, PrimitiveNumber};
 use rdst::RadixKey;
 use std::borrow::Borrow;
 use std::collections::HashMap;
@@ -172,12 +172,25 @@ impl<
         let v2 = shard_offset + local_edge[2];
         // The codeword is stored at the high end of the per-key layout
         // (offsets [esym_len..esym_len + w)), so we read at v + esym_len.
-        // SAFETY: the bit vector is padded.
+        let w = usize::try_from(self.decoder.max_codeword_len())
+            .expect("codeword length fits usize");
+        // SAFETY: the three vertices index a padded backend, so every read
+        // stays within the allocation. The `if` guard takes the byte-unaligned
+        // fast read only when the codeword width fits it at any position; the
+        // `else` uses the word-based `get_bits_unchecked`, which handles wider
+        // codewords on small word types. Both yield the codeword's `w` bits.
         let value = unsafe {
-            (self.data.get_unaligned_unchecked(v0 + esym_len)
-                ^ self.data.get_unaligned_unchecked(v1 + esym_len)
-                ^ self.data.get_unaligned_unchecked(v2 + esym_len))
-                & self.codeword_mask
+            if crate::bits::test_unaligned_any_pos!(D::Word, w) {
+                (self.data.get_unaligned_unchecked(v0 + esym_len)
+                    ^ self.data.get_unaligned_unchecked(v1 + esym_len)
+                    ^ self.data.get_unaligned_unchecked(v2 + esym_len))
+                    & self.codeword_mask
+            } else {
+                (self.data.get_bits_unchecked(v0 + esym_len, w)
+                    ^ self.data.get_bits_unchecked(v1 + esym_len, w)
+                    ^ self.data.get_bits_unchecked(v2 + esym_len, w))
+                    & self.codeword_mask
+            }
         };
         if let Some(decoded) = self.decoder.decode(value.as_to::<usize>()) {
             return decoded;
@@ -394,20 +407,21 @@ where
 /// path populates it by iterating a value lender (see
 /// [`build_inner_seq`]).
 ///
-/// Returns an error if the resulting code has a maximum codeword length exceeding
-/// the unaligned-read limit of `W::BITS - 7`.
+/// Returns an error if the resulting code has a maximum codeword length
+/// exceeding `W::BITS` (or `usize::BITS - 2`, the decoder limit).
 fn build_coder_from_frequencies<W: Word + Hash>(
     huffman: HuffmanConf,
     frequencies: &HashMap<W, usize>,
 ) -> Result<HuffmanCoder<W>> {
     let coder = huffman.build_coder(frequencies);
-    // The codeword is read via get_unaligned_unchecked, which reads a
-    // full W and shifts right by up to 7 bits.
+    // The codeword is read as `w` bits: via a byte-unaligned read when it fits
+    // at any position, otherwise via a word-based read. Both handle up to
+    // `W::BITS` bits; the decoder additionally needs the value to fit `usize`.
     let w = coder.max_codeword_len();
-    let max = (W::BITS - 7).min(usize::BITS - 2);
+    let max = W::BITS.min(usize::BITS - 2);
     if w > max {
         return Err(anyhow!(
-            "max codeword length {w} exceeds the readable limit of {max} (min of W::BITS-7 and usize::BITS-2): try again after limiting the Huffman codec"
+            "max codeword length {w} exceeds the readable limit of {max} (min of W::BITS and usize::BITS-2): try again after limiting the Huffman codec"
         ));
     }
     Ok(coder)
