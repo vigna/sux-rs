@@ -30,6 +30,15 @@ const MSBS_STEP_9: u64 = 0x100u64 * ONES_STEP_9;
 const ONES_STEP_16: u64 = (1u64 << 0) | (1u64 << 16) | (1u64 << 32) | (1u64 << 48);
 const MSBS_STEP_16: u64 = 0x8000u64 * ONES_STEP_16;
 
+/// Converts a u64 inventory bit position to a word index.
+///
+/// Dividing by 64 before narrowing to usize is load-bearing on 32-bit targets:
+/// the terminal inventory endpoint is `num_words * 64`, which reaches 2^32 for a
+/// ~512 MiB bit vector and would truncate under a `bit_pos as usize` cast.
+fn inventory_word(bit_pos: u64) -> usize {
+    usize::try_from(bit_pos / 64).expect("word index fits usize")
+}
+
 macro_rules! ULEQ_STEP_9 {
     ($x:ident, $y:ident) => {
         (((((($y) | MSBS_STEP_9) - (($x) & !MSBS_STEP_9)) | ($x ^ $y)) ^ ($x & !$y)) & MSBS_STEP_9)
@@ -236,13 +245,19 @@ impl<
 
         // construct the subinventory
         iter.for_each(|inventory_idx| {
-            let inv_left = inventory[inventory_idx] as usize;
-            let inv_right = inventory[inventory_idx + 1] as usize;
-            let subinv_start = (inv_left / 64) / u64_per_subinventory;
-            let subinv_end = (inv_right / 64) / u64_per_subinventory;
+            // Inventory entries are u64 bit positions; the terminal entry can be
+            // num_words * 64, which equals 2^32 for a ~512 MiB bit vector and does
+            // not fit a 32-bit usize. Reduce to word indices in u64 before
+            // narrowing, so the endpoint conversion never truncates.
+            let inv_left = inventory[inventory_idx];
+            let inv_right = inventory[inventory_idx + 1];
+            let inv_left_word = inventory_word(inv_left);
+            let inv_right_word = inventory_word(inv_right);
+            let subinv_start = inv_left_word / u64_per_subinventory;
+            let subinv_end = inv_right_word / u64_per_subinventory;
             let span = subinv_end - subinv_start;
-            let block_left = (inv_left / 64) / 8;
-            let block_span = (inv_right / 64) / 8 - block_left;
+            let block_left = inv_left_word / 8;
+            let block_span = inv_right_word / 8 - block_left;
             let counts_at_start = counts[block_left].absolute;
 
             let mut state = -1;
@@ -294,13 +309,16 @@ impl<
 
             if state != -1 {
                 // clean up the lower bits
-                let mut word_idx = inv_left / 64;
-                let bit_idx = inv_left % 64;
+                let mut word_idx = inv_left_word;
+                // inv_left is a real one's position (< num_bits), so it fits usize
+                // even on 32-bit; bit_idx is < 64.
+                let bit_idx = usize::try_from(inv_left % 64).expect("bit index fits usize");
                 let mut word = (rank9.bits.as_ref()[word_idx] >> bit_idx) << bit_idx;
 
-                let start_bit_idx = inv_left;
-                let end_bit_idx = inv_right;
-                let end_word_idx = end_bit_idx.div_ceil(64).min(num_words);
+                let start_bit_idx = usize::try_from(inv_left).expect("one position fits usize");
+                let end_word_idx = usize::try_from(inv_right.div_ceil(64))
+                    .expect("word index fits usize")
+                    .min(num_words);
                 let mut subinventory_idx = 0;
                 'outer: loop {
                     while word != B::Word::ZERO {
@@ -382,13 +400,18 @@ impl<
 
             debug_assert!(inventory_index_left <= self.inventory_size);
             let inventory_left =
-                *self.inventory.as_ref().get_unchecked(inventory_index_left) as usize;
+                usize::try_from(*self.inventory.as_ref().get_unchecked(inventory_index_left))
+                    .expect("one position fits usize");
 
-            let block_right = *self
-                .inventory
-                .as_ref()
-                .get_unchecked(inventory_index_left + 1) as usize
-                / 64;
+            // The terminal entry can be num_words * 64 (2^32 for a ~512 MiB
+            // vector), which does not fit a 32-bit usize, so divide to a word
+            // index in u64 before narrowing.
+            let block_right = inventory_word(
+                *self
+                    .inventory
+                    .as_ref()
+                    .get_unchecked(inventory_index_left + 1),
+            );
             let mut block_left = inventory_left / 64;
             let span = block_right / 4 - block_left / 4;
 
@@ -519,4 +542,20 @@ impl<
     I: AsRef<[u64]>,
 > Select for Select9<Rank9<B, C>, I>
 {
+}
+
+#[cfg(test)]
+mod tests {
+    use super::inventory_word;
+
+    #[test]
+    fn inventory_word_divides_before_narrowing() {
+        assert_eq!(inventory_word(0), 0);
+        assert_eq!(inventory_word(64), 1);
+        assert_eq!(inventory_word(127), 1);
+        // The terminal endpoint num_words * 64 can be 2^32 for a ~512 MiB bit
+        // vector; dividing first yields 2^26 instead of truncating to 0, which
+        // `bit_pos as usize / 64` did on a 32-bit usize.
+        assert_eq!(inventory_word(1u64 << 32), 1usize << 26);
+    }
 }
