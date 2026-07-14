@@ -175,6 +175,6 @@ pub fn init_env_logger() -> anyhow::Result<()> {
             record.args()
         )
     });
-    builder.init();
+    builder.try_init()?;
     Ok(())
 }
