@@ -238,15 +238,12 @@ Union nor the Italian MUR can be held responsible for them.
 [signed minimal perfect hash functions]: https://docs.rs/sux/latest/sux/func/signed/struct.SignedFunc.html
 [lists]: https://docs.rs/sux/latest/sux/list/index.html
 [compressed lists of integers]: https://docs.rs/sux/latest/sux/list/comp_int_list/struct.CompIntList.html
-[`AsRef<Backend:Word>`]: https://doc.rust-lang.org/core/convert/trait.AsRef.html
-[`AsMut<Backend:Word>`]: https://doc.rust-lang.org/core/convert/trait.AsMut.html
-[`AsRef<W>`]: https://doc.rust-lang.org/core/convert/trait.AsRef.html
-[`AsMut<W>`]: https://doc.rust-lang.org/core/convert/trait.AsMut.html
+[`AsRef<[W]>`]: https://doc.rust-lang.org/core/convert/trait.AsRef.html
+[`AsMut<[W]>`]: https://doc.rust-lang.org/core/convert/trait.AsMut.html
 [`Word`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html#associatedtype.Word
 [`Backend`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html
 [balanced parentheses]: https://docs.rs/sux/latest/sux/bal_paren/index.html
 [`Index<usize, Output = bool>`]: https://doc.rust-lang.org/core/ops/index/trait.Index.html
-[operations on bit vectors]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
 [`TryIntoUnaligned`]: https://docs.rs/sux/latest/sux/traits/trait.TryIntoUnaligned.html
 [`try_into_unaligned`]: https://docs.rs/sux/latest/sux/traits/trait.TryIntoUnaligned.html#tymethod.try_into_unaligned
 [`Deref`]: https://doc.rust-lang.org/core/ops/deref/trait.Deref.html
