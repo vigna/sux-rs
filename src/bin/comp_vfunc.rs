@@ -136,11 +136,29 @@ macro_rules! maybe_store {
     };
 }
 
+/// Validates the Huffman entropy threshold: a finite fraction in `[0.0, 1.0]`.
+///
+/// `RangeInclusive::contains` is false for NaN and infinities, so this rejects
+/// those as well as out-of-range values.
+fn validate_entropy_threshold(threshold: f64) -> Result<()> {
+    ensure!(
+        (0.0..=1.0).contains(&threshold),
+        "--huffman-entropy-threshold must be a finite fraction in [0.0, 1.0], got {threshold}"
+    );
+    Ok(())
+}
+
+/// Validates arguments whose constraints clap's type system cannot enforce.
+fn validate_args(args: &Args) -> Result<()> {
+    validate_entropy_threshold(args.huffman_entropy_threshold)
+}
+
 fn main() -> Result<()> {
     use sux::cli::ShardEdgeType;
     init_env_logger()?;
 
     let args = Args::parse();
+    validate_args(&args)?;
     match args.shard_edge {
         ShardEdgeType::Fuse3NoShards64 => main_with_types::<[u64; 1], Fuse3NoShards>(args),
         ShardEdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
@@ -287,7 +305,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::count_keys;
+    use super::{count_keys, validate_entropy_threshold};
     use std::io::Write;
 
     #[test]
@@ -313,5 +331,21 @@ mod tests {
         let path = f.path().to_str().unwrap();
         assert_eq!(count_keys(path, Some(1)).unwrap(), 1);
         assert!(count_keys(path, None).is_err());
+    }
+
+    #[test]
+    fn entropy_threshold_is_validated() {
+        for ok in [0.0, 0.5, 1.0] {
+            assert!(
+                validate_entropy_threshold(ok).is_ok(),
+                "{ok} should be valid"
+            );
+        }
+        for bad in [-0.1, 1.5, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(
+                validate_entropy_threshold(bad).is_err(),
+                "{bad} should be rejected"
+            );
+        }
     }
 }
