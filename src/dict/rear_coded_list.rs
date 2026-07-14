@@ -974,14 +974,21 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
             ratio(self.stats.sum_str_len, self.len)
         );
 
-        let ptr_size: usize = self.pointers.len() * core::mem::size_of::<usize>();
+        let ptr_size: usize = self
+            .pointers
+            .len()
+            .saturating_mul(core::mem::size_of::<usize>());
 
         fn human(key: &str, x: isize) {
             const UOM: &[&str] = &["B", "KB", "MB", "GB", "TB"];
             let sign = x.signum();
-            let mut y = x.abs() as f64;
+            // unsigned_abs avoids overflow at isize::MIN; the f64 cast is a
+            // display approximation.
+            let mut y = x.unsigned_abs() as f64;
             let mut uom_idx = 0;
-            while y > 1000.0 {
+            // Stop at the largest unit so a magnitude beyond ~1 PB does not index
+            // past UOM.
+            while y > 1000.0 && uom_idx < UOM.len() - 1 {
                 uom_idx += 1;
                 y /= 1000.0;
             }
@@ -994,7 +1001,9 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
             );
         }
 
-        let total_size = ptr_size + self.data.len() + core::mem::size_of::<Self>();
+        let total_size = ptr_size
+            .saturating_add(self.data.len())
+            .saturating_add(core::mem::size_of::<Self>());
         human("data_bytes", self.data.len() as isize);
         human("codes_bytes", self.stats.code_bytes as isize);
         human("suffixes_bytes", self.stats.suffixes_bytes as isize);
@@ -1004,7 +1013,9 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
 
         human(
             "optimal_size",
-            self.data.len() as isize - self.stats.redundancy,
+            isize::try_from(self.data.len())
+                .unwrap_or(isize::MAX)
+                .saturating_sub(self.stats.redundancy),
         );
         human("redundancy", self.stats.redundancy);
         let data_len = isize::try_from(self.data.len()).unwrap_or(isize::MAX);
@@ -1599,6 +1610,20 @@ pub use epserde_impl::{serialize_slice_u8, serialize_str, store_slice_u8, store_
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // sum_str_len is a usize; the PB-sized value only fits a 64-bit target.
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn print_stats_handles_extreme_stats() {
+        // print_stats is a display helper; extreme (synthetic) statistics must
+        // not panic. A sum_str_len beyond 1000^5 bytes would index past the unit
+        // table, and redundancy == isize::MIN would overflow abs and the
+        // optimal_size subtraction.
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.stats.sum_str_len = 1_000_000_000_000_001;
+        builder.stats.redundancy = isize::MIN;
+        builder.print_stats();
+    }
 
     #[test]
     fn test_memcmp() {
