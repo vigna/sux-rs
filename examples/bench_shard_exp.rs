@@ -7,15 +7,24 @@
 //! Experiment: build CompVFunc across sizes with uniform(0..256)
 //! and Zipf(1, 1_000_000), logging shard/entropy/overhead details.
 
+#[cfg(target_pointer_width = "64")]
 use dsi_progress_logger::{ProgressLog, ProgressLogger};
+#[cfg(target_pointer_width = "64")]
 use mem_dbg::{MemSize, SizeFlags};
+#[cfg(target_pointer_width = "64")]
 use rand::rngs::SmallRng;
+#[cfg(target_pointer_width = "64")]
 use rand::{RngExt, SeedableRng};
+#[cfg(target_pointer_width = "64")]
 use std::time::Instant;
+#[cfg(target_pointer_width = "64")]
 use sux::func::codec::{Decoder, HuffmanConf};
+#[cfg(target_pointer_width = "64")]
 use sux::func::shard_edge::Fuse3Shards;
+#[cfg(target_pointer_width = "64")]
 use sux::func::{CompVFunc, VBuilder};
 
+#[cfg(target_pointer_width = "64")]
 fn zipf_cdf(s: f64, n: usize) -> Vec<f64> {
     let h: f64 = (1..=n).map(|i| 1.0 / (i as f64).powf(s)).sum();
     let mut cdf = vec![0.0; n];
@@ -27,11 +36,13 @@ fn zipf_cdf(s: f64, n: usize) -> Vec<f64> {
     cdf
 }
 
+#[cfg(target_pointer_width = "64")]
 fn sample_zipf(cdf: &[f64], rng: &mut SmallRng) -> usize {
     let u: f64 = (rng.random::<u64>() >> 11) as f64 / ((1u64 << 53) as f64);
     cdf.partition_point(|&p| p < u) + 1
 }
 
+#[cfg(target_pointer_width = "64")]
 fn run(n: usize, values: &[usize]) {
     let keys: Vec<u64> = (0..n as u64).collect();
 
@@ -93,6 +104,7 @@ fn run(n: usize, values: &[usize]) {
     eprintln!();
 }
 
+#[cfg(target_pointer_width = "64")]
 fn main() {
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
@@ -123,4 +135,9 @@ fn main() {
     for &n in &sizes {
         run(n, &zipf_vals);
     }
+}
+
+#[cfg(not(target_pointer_width = "64"))]
+fn main() {
+    eprintln!("bench_shard_exp requires a 64-bit target");
 }
