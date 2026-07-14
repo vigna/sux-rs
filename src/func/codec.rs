@@ -46,15 +46,17 @@ pub trait Codec<W> {
     type Coder: Coder<W>;
     /// Builds a coder for the given symbol → frequency map.
     ///
-    /// All frequencies must be strictly positive, and the map must be
-    /// non-empty: the empty map is not supported. A coder built from an empty
-    /// map is degenerate: every symbol is escaped and its decoder matches no
-    /// window value, so decoding is unspecified (the [Huffman](HuffmanConf)
-    /// decoder panics).
+    /// Frequencies should be strictly positive. An empty map produces a
+    /// degenerate coder whose decoder returns `None` for every window value.
     fn build_coder(&self, frequencies: &HashMap<W, usize>) -> Self::Coder;
 }
 
-/// A prefix-free encoder for `W` symbols.
+/// A prefix-free encoder for symbols in the frequency map used to build it.
+///
+/// Methods accepting a symbol require that it belongs to that original
+/// alphabet. `None` from [`encode`](Self::encode) means a known alphabet symbol
+/// was assigned the escape code; it does not make arbitrary unseen symbols
+/// encodable.
 pub trait Coder<W> {
     type Decoder: Decoder<W>;
 
@@ -114,9 +116,8 @@ pub trait Decoder<W> {
     /// follows in the data and are masked off by the canonical-Huffman
     /// algorithm.
     ///
-    /// Returns `Some(symbol)` for a normal codeword, or `None` if
-    /// the codeword is the escape codeword (the caller must then
-    /// read the literal value separately).
+    /// Returns `Some(symbol)` for a normal codeword, or `None` for the escape
+    /// codeword or a width-conforming prefix that is not assigned to a symbol.
     fn decode(&self, value: usize) -> Option<W>;
 
     /// The maximum prefix code length in bits. This is the width of
@@ -159,11 +160,12 @@ pub trait Decoder<W> {
 /// [`escaped_symbols_len`]: Decoder::escaped_symbols_len
 #[derive(Debug, Clone, Copy)]
 pub struct HuffmanConf {
-    /// Hard cap on the number of blocks in the canonical decoding table,
-    /// *including* the escape block when escaping occurs: at most
-    /// `max_decoding_table_len - 1` distinct codeword lengths are kept, and
-    /// symbols beyond the cut are encoded via the escape codeword followed
-    /// by a literal. Default: 20.
+    /// Target cap on the number of blocks in the canonical decoding table,
+    /// *including* the escape block when escaping occurs. Values below two are
+    /// normalized to two so a nonempty alphabet can retain one length class and
+    /// one escape block. For larger values, at most
+    /// `max_decoding_table_len - 1` distinct codeword lengths are kept. Default:
+    /// 20.
     pub max_decoding_table_len: usize,
     /// Cumulative-entropy fraction threshold: the table is cut once
     /// the cumulative bit length of the codewords kept exceeds this
@@ -208,10 +210,10 @@ impl HuffmanConf {
     ///
     /// # Arguments
     ///
-    /// * `max_decoding_table_len` - caps the number of blocks in the
+    /// * `max_decoding_table_len` - targets the number of blocks in the
     ///   canonical decoding table, including the escape block when escaping
-    ///   occurs (i.e., at most `max_decoding_table_len - 1` distinct
-    ///   codeword lengths are kept).
+    ///   occurs. Values below two are normalized to two; otherwise at most
+    ///   `max_decoding_table_len - 1` distinct codeword lengths are kept.
     ///
     /// * `entropy_threshold` - the cumulative-entropy fraction
     ///   beyond which infrequent symbols are diverted to the escape
@@ -253,7 +255,7 @@ impl<W: PrimitiveInteger + Hash> Codec<W> for HuffmanConf {
     fn build_coder(&self, frequencies: &HashMap<W, usize>) -> HuffmanCoder<W> {
         build_huffman_coder(
             frequencies,
-            self.max_decoding_table_len,
+            self.max_decoding_table_len.max(2),
             self.entropy_threshold,
         )
     }
@@ -447,7 +449,7 @@ impl<W: PrimitiveInteger + Hash> Coder<W> for HuffmanCoder<W> {
 /// to override.
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(full_copy(W)))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct HuffmanDecoder<W> {
     /// For each length block, one past the last canonical codeword in
     /// the block, left-aligned to `max_codeword_len` bits. The
@@ -520,24 +522,24 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
     /// two blocks catch almost every query).
     #[inline(always)]
     fn decode_branchy(&self, value: usize) -> Option<W> {
-        let nrs = self.num_coded_symbols as usize;
-        for curr in 0..self.last_codeword_plus_one.len() {
-            // SAFETY: curr is bounded by the loop range.
-            unsafe {
-                let lcp1 = *self.last_codeword_plus_one.get_unchecked(curr);
-                if value < lcp1 {
-                    let bi = self.block_info.get_unchecked(curr);
-                    let off = (value >> bi.shift).wrapping_sub(lcp1 >> bi.shift);
-                    let idx = off.wrapping_add(bi.how_many_up_to_block as usize);
-                    return if idx < nrs {
-                        Some(*self.symbol.get_unchecked(idx))
-                    } else {
-                        None
-                    };
-                }
+        let nrs = usize::try_from(self.num_coded_symbols).unwrap_or(usize::MAX);
+        for (&lcp1, bi) in self
+            .last_codeword_plus_one
+            .iter()
+            .zip(self.block_info.iter())
+        {
+            if value < lcp1 {
+                let off = (value >> bi.shift).wrapping_sub(lcp1 >> bi.shift);
+                let idx = off
+                    .wrapping_add(usize::try_from(bi.how_many_up_to_block).unwrap_or(usize::MAX));
+                return if idx < nrs {
+                    self.symbol.get(idx).copied()
+                } else {
+                    None
+                };
             }
         }
-        unreachable!("decoder fell through all blocks")
+        None
     }
 
     /// Branchless decode: counts blocks whose upper bound is `<=
@@ -546,25 +548,25 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
     /// block.
     #[inline(always)]
     fn decode_branchless(&self, value: usize) -> Option<W> {
-        let nrs = self.num_coded_symbols as usize;
-        let n = self.last_codeword_plus_one.len();
+        let nrs = usize::try_from(self.num_coded_symbols).unwrap_or(usize::MAX);
+        let n = self.last_codeword_plus_one.len().min(self.block_info.len());
         let mut idx: usize = 0;
-        for curr in 0..n {
-            // SAFETY: curr is bounded by the loop range.
-            let lcp1 = unsafe { *self.last_codeword_plus_one.get_unchecked(curr) };
-            idx += (lcp1 <= value) as usize;
+        for &lcp1 in &self.last_codeword_plus_one[..n] {
+            idx += usize::from(lcp1 <= value);
         }
-        debug_assert!(idx < n);
-        unsafe {
-            let lcp1 = *self.last_codeword_plus_one.get_unchecked(idx);
-            let bi = self.block_info.get_unchecked(idx);
-            let off = (value >> bi.shift).wrapping_sub(lcp1 >> bi.shift);
-            let sym_idx = off.wrapping_add(bi.how_many_up_to_block as usize);
-            if sym_idx < nrs {
-                Some(*self.symbol.get_unchecked(sym_idx))
-            } else {
-                None
-            }
+        if idx >= n {
+            return None;
+        }
+
+        let lcp1 = self.last_codeword_plus_one[idx];
+        let bi = self.block_info[idx];
+        let off = (value >> bi.shift).wrapping_sub(lcp1 >> bi.shift);
+        let sym_idx =
+            off.wrapping_add(usize::try_from(bi.how_many_up_to_block).unwrap_or(usize::MAX));
+        if sym_idx < nrs {
+            self.symbol.get(sym_idx).copied()
+        } else {
+            None
         }
     }
 }

@@ -140,6 +140,38 @@ fn test_huffman_single_symbol() {
 }
 
 #[test]
+fn test_decoder_rejects_unmatched_windows_in_both_modes() {
+    let coder = HuffmanConf::new().build_coder(&freqs(&[(42, 100)]));
+    let mut decoder = coder.into_decoder();
+    for branchless in [false, true] {
+        decoder.branchless(branchless);
+        assert_eq!(decoder.decode(1), None);
+        assert_eq!(decoder.decode(usize::MAX), None);
+    }
+
+    let mut empty = HuffmanConf::new()
+        .build_coder(&HashMap::<u64, usize>::new())
+        .into_decoder();
+    for branchless in [false, true] {
+        empty.branchless(branchless);
+        assert_eq!(empty.decode(0), None);
+        assert_eq!(empty.decode(usize::MAX), None);
+    }
+}
+
+#[test]
+fn test_decoder_table_caps_below_two_are_normalized() {
+    let frequencies = freqs(&[(0, 21), (1, 13), (2, 8), (3, 5), (4, 3), (5, 2)]);
+    for cap in [0, 1] {
+        let coder = HuffmanConf::length_limited(cap, 1.0).build_coder(&frequencies);
+        let decoder = coder.clone().into_decoder();
+        for symbol in 0..=5 {
+            round_trip(&coder, &decoder, symbol);
+        }
+    }
+}
+
+#[test]
 fn test_huffman_two_symbols() {
     // Regression: with exactly 2 symbols the Moffat-Katajainen
     // second pass range `0..=size-3` would underflow to
