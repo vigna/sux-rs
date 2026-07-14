@@ -279,3 +279,18 @@ fn test_builder_rejects_invalid_eps() {
     )
     .expect("the default eps must be accepted");
 }
+
+#[test]
+fn test_zero_max_threads_falls_back_to_one() {
+    let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
+        FromCloneableIntoIterator::from(0..1000),
+        FromCloneableIntoIterator::from(0_usize..),
+        VBuilder::default().max_num_threads(0),
+        &mut ProgressLogger::default(),
+    )
+    .expect("zero as the thread limit must fall back to one worker");
+
+    for key in 0..1000 {
+        assert_eq!(func.get(key), key);
+    }
+}

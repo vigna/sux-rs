@@ -81,12 +81,11 @@ use value_traits::slices::SliceByValue;
         deser = "D::Value: for<'a> epserde::deser::DeserInner<DeserType<'a> = D::Value>, for<'a> <D as epserde::deser::DeserInner>::DeserType<'a>: SliceByValue<Value = D::Value>"
     ))
 )]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(
     feature = "serde",
     serde(bound(
-        serialize = "D: serde::Serialize, D::Value: serde::Serialize, E: serde::Serialize",
-        deserialize = "D: serde::Deserialize<'de>, D::Value: serde::Deserialize<'de>, E: serde::Deserialize<'de>"
+        serialize = "D: serde::Serialize, D::Value: serde::Serialize, E: serde::Serialize"
     ))
 )]
 pub struct VFilter<K: ?Sized, D: SliceByValue, S = [u64; 2], E = FuseLge3Shards> {
@@ -109,20 +108,6 @@ where
             .field("func", &self.func)
             .field("filter_mask", &self.filter_mask)
             .finish()
-    }
-}
-
-impl<K: ?Sized, D: SliceByValue, S, E> VFilter<K, D, S, E> {
-    /// Creates a new `VFilter` from a function, a filter mask, and hash
-    /// bit count.
-    ///
-    /// This is a low-level constructor; prefer
-    /// [`try_new`]/[`try_new_with_builder`] when possible.
-    ///
-    /// [`try_new`]: VFilter::try_new
-    /// [`try_new_with_builder`]: VFilter::try_new_with_builder
-    pub fn from_parts(func: VFunc<K, D, S, E>, filter_mask: D::Value) -> Self {
-        Self { func, filter_mask }
     }
 }
 

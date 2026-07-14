@@ -118,12 +118,11 @@ use std::marker::PhantomData;
                  for<'a> <D as epserde::deser::DeserInner>::DeserType<'a>: Backend<Word = D::Word>"
     ))
 )]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(
     feature = "serde",
     serde(bound(
-        serialize = "D: serde::Serialize, D::Word: serde::Serialize, E: serde::Serialize",
-        deserialize = "D: serde::Deserialize<'de>, D::Word: serde::Deserialize<'de>, E: serde::Deserialize<'de>"
+        serialize = "D: serde::Serialize, D::Word: serde::Serialize, E: serde::Serialize"
     ))
 )]
 pub struct CompVFunc<K: ?Sized, D: Backend = BitVec<Box<[usize]>>, S = [u64; 2], E = Fuse3Shards> {

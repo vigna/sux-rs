@@ -82,12 +82,11 @@ use value_traits::slices::SliceByValue;
         deser = "D::Value: for<'a> epserde::deser::DeserInner<DeserType<'a> = D::Value>, for<'a> <D as epserde::deser::DeserInner>::DeserType<'a>: SliceByValue<Value = D::Value>"
     ))
 )]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(
     feature = "serde",
     serde(bound(
-        serialize = "D: serde::Serialize, D::Value: serde::Serialize, E: serde::Serialize, F: serde::Serialize",
-        deserialize = "D: serde::Deserialize<'de>, D::Value: serde::Deserialize<'de>, E: serde::Deserialize<'de>, F: serde::Deserialize<'de>"
+        serialize = "D: serde::Serialize, D::Value: serde::Serialize, E: serde::Serialize, F: serde::Serialize"
     ))
 )]
 pub struct VFunc2<
