@@ -282,7 +282,7 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// [`iter`]: EliasFano::iter
 #[derive(Debug, Clone, Hash, MemSize, MemDbg, value_traits::Subslices)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[value_traits_subslices(bound = "V: Word + PrimitiveNumberAs<usize>")]
 #[value_traits_subslices(bound = "H: AsRef<[usize]> + SelectUnchecked")]
 #[value_traits_subslices(bound = "L: SliceByValue<Value = V>")]
@@ -433,7 +433,7 @@ where
     #[inline]
     fn index_of(&self, value: impl Borrow<Self::Input>) -> Option<usize> {
         let value = *value.borrow();
-        if value > self.u {
+        if self.n == 0 || value > self.u {
             return None;
         }
         let zeros_to_skip: usize = (value >> self.l).try_into().unwrap();
@@ -1096,6 +1096,9 @@ where
         value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Output<'_>) {
         let value = *value.borrow();
+        if value > self.last_val {
+            return (self.n - 1, self.last_val);
+        }
         let zeros_to_skip: usize = (value >> self.l).try_into().unwrap();
         let mut bit_pos = unsafe { self.high_bits.select_zero_unchecked(zeros_to_skip) } - 1;
 
@@ -1149,6 +1152,9 @@ where
     #[inline]
     unsafe fn rank_unchecked(&self, value: impl Borrow<V>) -> usize {
         let value = *value.borrow();
+        if value > self.last_val {
+            return self.n;
+        }
         let zeros_to_skip: usize = (value >> self.l).try_into().unwrap();
 
         // sel_high = position of the zeros_to_skip-th zero = end-of-bucket separator
@@ -1204,6 +1210,11 @@ where
         value: impl Borrow<Self::Input>,
     ) -> (usize, Self::Iter<'_>) {
         let value = *value.borrow();
+        if value > self.last_val {
+            // SAFETY: the caller guarantees a predecessor exists, so the
+            // structure is nonempty; last_val is in the represented universe.
+            return unsafe { self.iter_from_pred_unchecked::<false>(self.last_val) };
+        }
         let zeros_to_skip: usize = (value >> self.l).try_into().unwrap();
         let mut bit_pos = unsafe { self.high_bits.select_zero_unchecked(zeros_to_skip) } - 1;
 
@@ -1293,6 +1304,11 @@ where
         value: impl Borrow<Self::Input>,
     ) -> (usize, Self::BackIter<'_>) {
         let value = *value.borrow();
+        if value > self.last_val {
+            // SAFETY: the caller guarantees a predecessor exists, so the
+            // structure is nonempty; last_val is in the represented universe.
+            return unsafe { self.iter_back_from_pred_unchecked::<false>(self.last_val) };
+        }
         let zeros_to_skip: usize = (value >> self.l).try_into().unwrap();
         let mut bit_pos = unsafe { self.high_bits.select_zero_unchecked(zeros_to_skip) } - 1;
 
@@ -1372,6 +1388,11 @@ where
         value: impl Borrow<Self::Input>,
     ) -> (usize, Self::BidiIter<'_>) {
         let value = *value.borrow();
+        if value > self.last_val {
+            // SAFETY: the caller guarantees a predecessor exists, so the
+            // structure is nonempty; last_val is in the represented universe.
+            return unsafe { self.iter_bidi_from_pred_unchecked::<false>(self.last_val) };
+        }
         let zeros_to_skip: usize = (value >> self.l).try_into().unwrap();
         let mut bit_pos = unsafe { self.high_bits.select_zero_unchecked(zeros_to_skip) } - 1;
 
@@ -1457,7 +1478,7 @@ where
 
     #[inline]
     fn pred_strict(&self, value: impl Borrow<V>) -> Option<(usize, V)> {
-        if *value.borrow() <= self.first_val {
+        if self.n == 0 || *value.borrow() <= self.first_val {
             None
         } else if *value.borrow() > self.last_val {
             Some((self.n - 1, self.last_val))
@@ -1508,7 +1529,7 @@ where
         &self,
         value: impl Borrow<V>,
     ) -> Option<(usize, <Self as PredIterUnchecked>::Iter<'_>)> {
-        if *value.borrow() <= self.first_val {
+        if self.n == 0 || *value.borrow() <= self.first_val {
             None
         } else if *value.borrow() > self.last_val {
             // The strict predecessor is the last element; clamp, as
@@ -1549,7 +1570,7 @@ where
         &self,
         value: impl Borrow<V>,
     ) -> Option<(usize, <Self as PredIterBackUnchecked>::BackIter<'_>)> {
-        if *value.borrow() <= self.first_val {
+        if self.n == 0 || *value.borrow() <= self.first_val {
             None
         } else if *value.borrow() > self.last_val {
             // The strict predecessor is the last element; clamp, as
@@ -1590,7 +1611,7 @@ where
         &self,
         value: impl Borrow<V>,
     ) -> Option<(usize, <Self as PredBidiIterUnchecked>::BidiIter<'_>)> {
-        if *value.borrow() <= self.first_val {
+        if self.n == 0 || *value.borrow() <= self.first_val {
             None
         } else if *value.borrow() > self.last_val {
             // The strict predecessor is the last element; clamp, as
@@ -1691,7 +1712,7 @@ where
     for<'c> &'c L: IntoUncheckedIterator<Item = V>,
 {
     type Item = V;
-    type Iter = EliasFanoIter<'a, V, H, L>;
+    type Iter = std::iter::Take<EliasFanoIter<'a, V, H, L>>;
 }
 
 impl<
@@ -1705,7 +1726,9 @@ where
 {
     #[inline(always)]
     fn iter_value(&self) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
-        self.slice.iter_from(0)
+        self.slice
+            .iter_from(self.range.start)
+            .take(self.range.len())
     }
 }
 
@@ -1720,7 +1743,7 @@ where
     for<'c> &'c L: IntoUncheckedIterator<Item = V>,
 {
     type Item = V;
-    type IterFrom = EliasFanoIter<'a, V, H, L>;
+    type IterFrom = std::iter::Take<EliasFanoIter<'a, V, H, L>>;
 }
 
 impl<
@@ -1736,8 +1759,11 @@ where
     fn iter_value_from(
         &self,
         from: usize,
-    ) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
-        self.slice.iter_from(from)
+    ) -> <Self as value_traits::iter::IterateByValueFromGat<'_>>::IterFrom {
+        assert!(from <= self.range.len(), "iterator start out of bounds");
+        self.slice
+            .iter_from(self.range.start + from)
+            .take(self.range.len() - from)
     }
 }
 
@@ -2264,11 +2290,6 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
     }
 }
 
-impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
-    FusedIterator for EliasFanoBidiIter<'_, V, H, L>
-{
-}
-
 impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Value = V>> BidiIterator
     for EliasFanoBidiIter<'_, V, H, L>
 {
@@ -2357,11 +2378,6 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
     }
 }
 
-impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
-    FusedBidiIterator for EliasFanoBidiIter<'_, V, H, L>
-{
-}
-
 /// Convenience constructor that iterates over a slice.
 ///
 /// Note that this implementation requires a first scan to check monotonicity
@@ -2439,16 +2455,20 @@ impl<V: Word + PrimitiveNumberAs<u128>> EliasFanoBuilder<V> {
     /// When any of the underlying structures would exceed `usize` in length.
     #[must_use]
     pub fn new(n: usize, u: V) -> Self {
-        let n_u128 = n as u128;
+        let n_u128 = u128::try_from(n).expect("usize always fits in u128");
         let u_u128: u128 = u.as_to();
         let l = if n_u128 > 0 && u_u128 >= n_u128 {
-            // This is equal to ⌊log₂(u / n)⌋
-            (u_u128 / n_u128).ilog2() as usize
+            // This is equal to floor(log2(u / n)).
+            usize::try_from((u_u128 / n_u128).ilog2()).expect("a u128 logarithm fits in usize")
         } else {
             0
         };
 
-        let u_high: usize = (u >> l).try_into().unwrap_or(usize::MAX);
+        let u_high: usize = if n == 0 {
+            0
+        } else {
+            (u >> l).try_into().unwrap_or(usize::MAX)
+        };
         let num_high_bits = n
             .checked_add(1)
             .unwrap_or_else(|| panic!("n ({n}) is too large"))
@@ -2641,16 +2661,20 @@ where
     /// smaller than or equal to `u`.
     #[must_use]
     pub fn new(n: usize, u: V) -> Self {
-        let n_u128 = n as u128;
+        let n_u128 = u128::try_from(n).expect("usize always fits in u128");
         let u_u128: u128 = u.as_to();
         let l = if n_u128 > 0 && u_u128 >= n_u128 {
-            // This is equal to ⌊log₂(u / n)⌋
-            (u_u128 / n_u128).ilog2() as usize
+            // This is equal to floor(log2(u / n)).
+            usize::try_from((u_u128 / n_u128).ilog2()).expect("a u128 logarithm fits in usize")
         } else {
             0
         };
 
-        let u_high: usize = (u >> l).try_into().unwrap_or(usize::MAX);
+        let u_high: usize = if n == 0 {
+            0
+        } else {
+            (u >> l).try_into().unwrap_or(usize::MAX)
+        };
         let num_high_bits = n
             .checked_add(1)
             .unwrap_or_else(|| panic!("n ({n}) is too large"))
