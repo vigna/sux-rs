@@ -41,7 +41,6 @@ impl-tools = "0.11.2"
 clap = { version = "4.4.18", features = ["derive", "wrap_help"], optional = true }
 crossbeam-channel = "0.5.14"
 arbitrary-chunks = "0.4.1"
-derivative = "2.2.0"
 derive_setters = "0.1.6"
 thiserror = "2.0.11"
 lambert_w = { version = "1.0.17", default-features = false, features = ["std"] }
@@ -63,6 +62,7 @@ clap = { version = "4.4.18", features = ["derive", "wrap_help"] }
 env_logger = "0.11.0"
 rand_distr = "0.6"
 ph = "0.11.0"
+serde_json = "1.0"
 
 [features]
 default = ["rayon", "flate2", "zstd"]
@@ -79,7 +79,7 @@ rayon = ["dep:rayon", "dep:thread-priority"]
 deko = ["dep:deko"]
 serde = ["dep:serde", "dep:serde_arrays"]
 epserde = ["dep:epserde"]
-mmap = ["epserde/mmap"]
+mmap = ["epserde", "epserde/mmap"]
 
 [profile.release]
 opt-level = 3 # like --release
@@ -226,23 +226,27 @@ harness = false
 [[bench]]
 name = "bench_lcp_mmphf"
 harness = false
-required-features = ["cli"]
+required-features = ["rayon"]
 
 [[bench]]
 name = "bench_vfunc"
 harness = false
-required-features = ["cli"]
+required-features = ["rayon"]
 
 [[bench]]
 name = "bench_comp_vfunc"
 harness = false
-required-features = ["cli", "rayon"]
+required-features = ["rayon"]
 
 [[bench]]
 name = "bench_vfilter"
 harness = false
-required-features = ["cli"]
+required-features = ["rayon"]
 
 [[bench]]
 name = "bit_field_vec"
+harness = false
+
+[[bench]]
+name = "bench_jacobson"
 harness = false
