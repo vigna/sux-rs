@@ -1293,7 +1293,23 @@ mod epserde_impl {
         // First pass: count the number of strings and the byte length
         let mut builder = RearCodedListBuilder::<I, SORTED>::new(ratio);
         info!("Counting strings...");
+        // Reject unsorted input with a clean error instead of letting
+        // builder.push panic (only meaningful when SORTED); this also covers the
+        // low-memory CLI path, which streams through this pass.
+        let mut prev: Vec<u8> = Vec::new();
+        let mut have_prev = false;
         while let Some(s) = lender.next()? {
+            if SORTED {
+                let bytes = s.borrow().as_ref();
+                if have_prev && bytes < prev.as_slice() {
+                    anyhow::bail!(
+                        "input is not sorted: a string is smaller than the preceding one; build the list without SORTED for unsorted input"
+                    );
+                }
+                prev.clear();
+                prev.extend_from_slice(bytes);
+                have_prev = true;
+            }
             builder.push(s.borrow());
             len += 1;
             byte_len += builder.data.len();
@@ -1336,10 +1352,16 @@ mod epserde_impl {
 
     /// Serializes to a stream a rear-coded list of strings directly from a lender of `AsRef<str>`.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if `SORTED` is true and the input is not sorted (a value
+    /// is smaller than the preceding one), or if reading, rewinding, or
+    /// serializing the lender fails.
+    ///
     /// # Panics
     ///
-    /// Panics if the lender fails during the second (serialization) pass;
-    /// such a mid-serialization failure is not recoverable.
+    /// Panics if `ratio` is zero, or if the lender fails during the second
+    /// (serialization) pass; such a mid-serialization failure is not recoverable.
     #[cfg(feature = "epserde")]
     pub fn serialize_str<
         T: ?Sized + Borrow<str>,
@@ -1358,10 +1380,16 @@ mod epserde_impl {
 
     /// Serializes to a stream a rear-coded list of byte sequences directly from a lender of `AsRef<[u8]>`.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if `SORTED` is true and the input is not sorted (a value
+    /// is smaller than the preceding one), or if reading, rewinding, or
+    /// serializing the lender fails.
+    ///
     /// # Panics
     ///
-    /// Panics if the lender fails during the second (serialization) pass;
-    /// such a mid-serialization failure is not recoverable.
+    /// Panics if `ratio` is zero, or if the lender fails during the second
+    /// (serialization) pass; such a mid-serialization failure is not recoverable.
     #[cfg(feature = "epserde")]
     pub fn serialize_slice_u8<
         T: ?Sized + Borrow<[u8]>,
@@ -1381,10 +1409,16 @@ mod epserde_impl {
     /// Stores into a file a rear-coded list of strings built directly from a lender of
     /// `AsRef<str>`.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if `SORTED` is true and the input is not sorted (a value
+    /// is smaller than the preceding one), if reading or rewinding the lender
+    /// fails, or if the destination file cannot be created, written, or flushed.
+    ///
     /// # Panics
     ///
-    /// Panics if the lender fails during the second (serialization) pass;
-    /// such a mid-serialization failure is not recoverable.
+    /// Panics if `ratio` is zero, or if the lender fails during the second
+    /// (serialization) pass; such a mid-serialization failure is not recoverable.
     #[cfg(feature = "epserde")]
     pub fn store_str<
         T: ?Sized + Borrow<str>,
@@ -1408,10 +1442,16 @@ mod epserde_impl {
     /// Stores into a file a rear-coded list of strings built directly from a lender of
     /// `AsRef<[u8]>`.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if `SORTED` is true and the input is not sorted (a value
+    /// is smaller than the preceding one), if reading or rewinding the lender
+    /// fails, or if the destination file cannot be created, written, or flushed.
+    ///
     /// # Panics
     ///
-    /// Panics if the lender fails during the second (serialization) pass;
-    /// such a mid-serialization failure is not recoverable.
+    /// Panics if `ratio` is zero, or if the lender fails during the second
+    /// (serialization) pass; such a mid-serialization failure is not recoverable.
     #[cfg(feature = "epserde")]
     pub fn store_slice_u8<
         T: ?Sized + Borrow<[u8]>,

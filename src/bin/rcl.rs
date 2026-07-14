@@ -65,10 +65,25 @@ fn compress<R: BufRead, const SORTED: bool>(
     pl.display_memory(true);
     pl.start("Reading the input file...");
 
+    // Track the previous line so unsorted input is reported as a clean error
+    // instead of panicking inside RearCodedListBuilder::push (SORTED only).
+    let mut prev = String::new();
+    let mut have_prev = false;
+
     loop {
         match lender.next() {
             Ok(None) => break,
             Ok(Some(line)) => {
+                if SORTED {
+                    if have_prev && line < prev.as_str() {
+                        bail!(
+                            "input is not sorted ({line:?} follows {prev:?}); pass --unsorted to build an unsorted list"
+                        );
+                    }
+                    prev.clear();
+                    prev.push_str(line);
+                    have_prev = true;
+                }
                 rclb.push(line);
             }
             Err(e) => {
@@ -138,4 +153,56 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn temp_with_lines(lines: &[&str]) -> tempfile::NamedTempFile {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        for l in lines {
+            writeln!(f, "{l}").unwrap();
+        }
+        f
+    }
+
+    #[test]
+    fn compress_sorted_rejects_unsorted_input() {
+        let src = temp_with_lines(&["banana", "apple"]);
+        let lender = DekoBufLineLender::from_path(src.path().to_str().unwrap()).unwrap();
+        let dest = tempfile::NamedTempFile::new().unwrap();
+        let err = compress::<_, true>(lender, dest.path().to_str().unwrap(), 8).unwrap_err();
+        assert!(err.to_string().contains("not sorted"), "got: {err}");
+    }
+
+    #[test]
+    fn compress_sorted_accepts_duplicates() {
+        // Equal adjacent keys are valid in a sorted rear-coded list.
+        let src = temp_with_lines(&["apple", "apple", "banana"]);
+        let lender = DekoBufLineLender::from_path(src.path().to_str().unwrap()).unwrap();
+        let dest = tempfile::NamedTempFile::new().unwrap();
+        compress::<_, true>(lender, dest.path().to_str().unwrap(), 8).unwrap();
+    }
+
+    #[test]
+    fn store_str_sorted_rejects_unsorted_input() {
+        // The low-memory path streams through rear_coded_list::store_str, which
+        // must also reject unsorted input gracefully rather than panicking.
+        let src = temp_with_lines(&["banana", "apple"]);
+        let lender = DekoBufLineLender::from_path(src.path().to_str().unwrap()).unwrap();
+        let dest = tempfile::NamedTempFile::new().unwrap();
+        let err = rear_coded_list::store_str::<str, _, true>(8, lender, dest.path()).unwrap_err();
+        assert!(err.to_string().contains("not sorted"), "got: {err}");
+    }
+
+    #[test]
+    fn store_str_sorted_accepts_duplicates() {
+        // Equal adjacent keys are valid on the low-memory path too.
+        let src = temp_with_lines(&["apple", "apple", "banana"]);
+        let lender = DekoBufLineLender::from_path(src.path().to_str().unwrap()).unwrap();
+        let dest = tempfile::NamedTempFile::new().unwrap();
+        rear_coded_list::store_str::<str, _, true>(8, lender, dest.path()).unwrap();
+    }
 }
