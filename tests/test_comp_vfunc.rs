@@ -620,7 +620,9 @@ fn test_u8_multi_symbol_codewords() {
     // the word-based codeword fallback now supports it.
     let n = 400usize;
     let keys: Vec<u64> = (0..u64::try_from(n).expect("n fits u64")).collect();
-    let values: Vec<u8> = (0..n).map(|i| u8::try_from(i % 4).expect("fits u8")).collect();
+    let values: Vec<u8> = (0..n)
+        .map(|i| u8::try_from(i % 4).expect("fits u8"))
+        .collect();
     let func = CompVFunc::<u64, BitVec<Box<[u8]>>>::try_par_new(&keys, &values, no_logging![])
         .expect("build");
     for (i, &v) in values.iter().enumerate() {

@@ -209,7 +209,10 @@ fn test_degree_overflow_is_error_not_panic() -> Result<()> {
         VBuilder::default().check_dups(false),
         &mut ProgressLogger::default(),
     );
-    assert!(result.is_err(), "peel_by_index overflow must be a graceful error");
+    assert!(
+        result.is_err(),
+        "peel_by_index overflow must be a graceful error"
+    );
 
     // Fuse3NoShards selects the sig-val peelers: high-mem (low_mem=false) and
     // low-mem (low_mem=true).

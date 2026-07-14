@@ -117,9 +117,8 @@ fn test_signed_vfunc_mapped_query() -> Result<()> {
     // Zero-copy deserialization turns the `Box<[usize]>` hash store into a
     // borrowed `&[usize]`; the mapped function must still answer queries.
     // SAFETY: we just serialized a valid `MySignedVFunc` into this buffer.
-    let mapped = unsafe {
-        <MySignedVFunc>::read_mem(&mut cursor, len).expect("Could not deserialize")
-    };
+    let mapped =
+        unsafe { <MySignedVFunc>::read_mem(&mut cursor, len).expect("Could not deserialize") };
     let mapped = mapped.uncase();
     for i in 0..n {
         assert_eq!(Some(i), mapped.get(i));

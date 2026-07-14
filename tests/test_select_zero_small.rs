@@ -429,7 +429,8 @@ fn test_select_zero_small_mapped_query() {
     // Zero-copy deserialization borrows the inventory as &[u32]/&[usize]; the
     // mapped structure must still answer select_zero queries.
     // SAFETY: we just serialized a valid `Owned` into this buffer.
-    let mapped = unsafe { <Owned>::read_mem(&mut cursor, cursor_len).expect("Could not deserialize") };
+    let mapped =
+        unsafe { <Owned>::read_mem(&mut cursor, cursor_len).expect("Could not deserialize") };
     let mapped = mapped.uncase();
     for (i, &p) in pos.iter().enumerate() {
         assert_eq!(mapped.select_zero(i), Some(p));

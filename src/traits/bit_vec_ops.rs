@@ -279,8 +279,7 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
             return if bit_index == 0 {
                 data[word_index]
             } else {
-                (data[word_index] >> bit_index)
-                    | (data[word_index + 1] << (word_bits - bit_index))
+                (data[word_index] >> bit_index) | (data[word_index + 1] << (word_bits - bit_index))
             };
         }
         #[cfg(target_endian = "little")]

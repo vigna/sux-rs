@@ -25,11 +25,11 @@ use crate::func::VBuilder;
 #[cfg(feature = "rayon")]
 use crate::func::codec::{Codec, Coder, HuffmanCoder, HuffmanConf};
 #[cfg(feature = "rayon")]
-use crate::traits::bit_vec_ops::BitVecOpsMut;
-#[cfg(feature = "rayon")]
 use crate::func::peeling::{DoubleStack, FastStack, XorGraph, remove_edge};
 #[cfg(feature = "rayon")]
 use crate::func::vbuilder::SolveError;
+#[cfg(feature = "rayon")]
+use crate::traits::bit_vec_ops::BitVecOpsMut;
 #[cfg(feature = "rayon")]
 use crate::utils::sig_store::ShardStore;
 #[cfg(feature = "rayon")]
@@ -195,8 +195,8 @@ impl<
         let v2 = shard_offset + local_edge[2];
         // The codeword is stored at the high end of the per-key layout
         // (offsets [esym_len..esym_len + w)), so we read at v + esym_len.
-        let w = usize::try_from(self.decoder.max_codeword_len())
-            .expect("codeword length fits usize");
+        let w =
+            usize::try_from(self.decoder.max_codeword_len()).expect("codeword length fits usize");
         // SAFETY: the three vertices index a padded backend, so every read
         // stays within the allocation. The `if` guard takes the byte-unaligned
         // fast read only when the codeword width fits it at any position; the
@@ -538,9 +538,9 @@ where
         // Correlated-graph setup: the first argument is the total key count
         // (the regime selector, analogous to `n` in `set_up_graphs`), followed
         // by the largest per-shard key count and per-shard edge count.
-        let (c, lge) =
-            vb.shard_edge
-                .set_up_corr_graphs(num_keys, max_shard_keys, max_shard_edges);
+        let (c, lge) = vb
+            .shard_edge
+            .set_up_corr_graphs(num_keys, max_shard_keys, max_shard_edges);
         // This should never really happen--we have static checks
         assert!(!lge, "CompVFunc does not support LGE");
         vb.c = c;
