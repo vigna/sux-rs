@@ -507,3 +507,108 @@ fn test_mismatched_keys_and_values() {
         Some(BuildError::MismatchedKeysAndValues { .. })
     ));
 }
+
+/// Regression probe for the correlated-graph regime selector. Built-in
+/// `ShardEdge` implementations ignore the first `set_up_corr_graphs` argument,
+/// so a custom edge is the only way to check that the builder passes the key
+/// count (not the summed codeword length) as documented.
+mod corr_graph_regime {
+    use super::*;
+    use mem_dbg::{MemDbg, MemSize};
+    use sux::func::shard_edge::{Fuse3NoShards, ShardEdge};
+    use sux::utils::BinSafe;
+
+    const N: usize = 100;
+
+    #[derive(Debug, Clone, Copy, Default, MemSize, MemDbg)]
+    #[mem_size(flat)]
+    struct Probe(Fuse3NoShards);
+
+    impl std::fmt::Display for Probe {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            std::fmt::Display::fmt(&self.0, f)
+        }
+    }
+
+    // SAFETY: every method delegates to the inner Fuse3NoShards, whose ShardEdge
+    // impl already upholds the trait's bounds/transmutation invariants; the only
+    // added behaviour is an assertion in set_up_corr_graphs.
+    unsafe impl ShardEdge<[u64; 2], 3> for Probe {
+        type SortSigVal<V: BinSafe> = <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::SortSigVal<V>;
+        type LocalSig = <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::LocalSig;
+        type Vertex = <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::Vertex;
+
+        fn set_up_shards(&mut self, n: usize, eps: f64) {
+            <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::set_up_shards(&mut self.0, n, eps)
+        }
+        fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
+            <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::set_up_graphs(&mut self.0, n, max_shard)
+        }
+        fn set_up_corr_graphs(
+            &mut self,
+            num_keys: usize,
+            max_shard_keys: usize,
+            max_shard_edges: usize,
+        ) -> (f64, bool) {
+            assert_eq!(
+                num_keys, N,
+                "set_up_corr_graphs must receive the key count as its first argument"
+            );
+            <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::set_up_corr_graphs(
+                &mut self.0,
+                num_keys,
+                max_shard_keys,
+                max_shard_edges,
+            )
+        }
+        fn shard_high_bits(&self) -> u32 {
+            <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::shard_high_bits(&self.0)
+        }
+        fn num_sort_keys(&self) -> usize {
+            <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::num_sort_keys(&self.0)
+        }
+        fn sort_key(&self, sig: [u64; 2]) -> usize {
+            <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::sort_key(&self.0, sig)
+        }
+        fn edge_hash(&self, sig: Self::LocalSig) -> u64 {
+            <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::edge_hash(&self.0, sig)
+        }
+        fn num_vertices(&self) -> usize {
+            <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::num_vertices(&self.0)
+        }
+        fn shard(&self, sig: [u64; 2]) -> usize {
+            <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::shard(&self.0, sig)
+        }
+        fn local_sig(&self, sig: [u64; 2]) -> Self::LocalSig {
+            <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::local_sig(&self.0, sig)
+        }
+        fn local_edge(&self, local_sig: Self::LocalSig) -> [usize; 3] {
+            <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::local_edge(&self.0, local_sig)
+        }
+        fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
+            <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::edge(&self.0, sig)
+        }
+    }
+
+    #[test]
+    fn set_up_corr_graphs_receives_key_count() {
+        // Several distinct symbols so the summed Huffman codeword length differs
+        // from the key count; before the fix that sum was passed as num_keys and
+        // the assertion in Probe::set_up_corr_graphs would fire.
+        let keys: Vec<u64> = (0..u64::try_from(N).expect("N fits in u64")).collect();
+        let values: Vec<usize> = (0..N).map(|i| i % 4).collect();
+        let builder = VBuilder::<BitVec<Box<[usize]>>, [u64; 2], Probe>::default();
+        let func =
+            CompVFunc::<u64, BitVec<Box<[usize]>>, [u64; 2], Probe>::try_par_new_with_builder(
+                &keys,
+                &values,
+                HuffmanConf::new(),
+                builder,
+                no_logging![],
+            )
+            .expect("build");
+        for (i, &v) in values.iter().enumerate() {
+            assert_eq!(func.get(keys[i]), v);
+        }
+    }
+}

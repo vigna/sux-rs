@@ -371,8 +371,9 @@ where
 // around VBuilder's retry loop: they delegate the sig-store population,
 // duplicate check, and shard solving to VBuilder, and contribute a
 // CompVFunc-specific build_fn closure that (a) calls
-// set_up_corr_graphs on the shard edge with *equation* counts
-// rather than key counts and (b) calls [VBuilder::par_solve] with
+// set_up_corr_graphs on the shard edge with the total key count as the
+// regime selector plus the largest per-shard key and edge counts and (b)
+// calls [VBuilder::par_solve] with
 // a per-shard closure doing the multi-edge expansion, peeling, and
 // reverse-peel assignment.
 //
@@ -492,11 +493,12 @@ where
             max_shard_keys = max_shard_keys.max(keys_in_shard);
         }
 
-        // Call the correlated-graph setup on the shard edge.c is keyed at
-        // max_shard_keys, log2_seg_size at max_shard_edges.
+        // Correlated-graph setup: the first argument is the total key count
+        // (the regime selector, analogous to `n` in `set_up_graphs`), followed
+        // by the largest per-shard key count and per-shard edge count.
         let (c, lge) =
             vb.shard_edge
-                .set_up_corr_graphs(total_edges, max_shard_keys, max_shard_edges);
+                .set_up_corr_graphs(num_keys, max_shard_keys, max_shard_edges);
         // This should never really happen--we have static checks
         assert!(!lge, "CompVFunc does not support LGE");
         vb.c = c;
