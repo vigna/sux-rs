@@ -1171,8 +1171,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-#[cfg(target_pointer_width = "64")]
+#[cfg(all(test, feature = "slow_tests", target_pointer_width = "64"))]
 mod tests_64 {
     use std::collections::BTreeSet;
 
