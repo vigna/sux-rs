@@ -13,7 +13,6 @@ use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut};
 use crate::traits::{BitVecOpsMut, Word};
 use crate::utils::*;
 use core::error::Error;
-use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
 use lender::FallibleLending;
@@ -79,8 +78,7 @@ fn default_max_num_threads() -> usize {
 /// [offline]: VBuilder::offline
 /// [set the maximum number of threads]: VBuilder::max_num_threads
 /// [`VFilter`]: crate::dict::VFilter
-#[derive(Setters, Debug, Derivative)]
-#[derivative(Default)]
+#[derive(Setters, Debug)]
 #[setters(generate = false)]
 pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// The expected number of keys.
@@ -89,7 +87,6 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// on the actual number of keys will significantly speed up the
     /// construction.
     #[setters(generate = true, strip_option)]
-    #[derivative(Default(value = "None"))]
     expected_num_keys: Option<usize>,
 
     /// Override the value used to size the sharding step.
@@ -109,13 +106,11 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// runtime key count. CompVFunc sets this to the total edge
     /// count after building the Huffman coder.
     #[setters(generate = true, strip_option)]
-    #[derivative(Default(value = "None"))]
     pub(crate) shard_size_hint: Option<usize>,
 
     /// The maximum number of parallel threads to use for both the population
     /// and solve phases. The default is `min(16, available_parallelism)`.
     #[setters(generate = true)]
-    #[derivative(Default(value = "default_max_num_threads()"))]
     pub(crate) max_num_threads: usize,
 
     /// Use disk-based buckets to reduce core memory usage at construction time.
@@ -136,7 +131,6 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// high-mem and switches to low-mem if there are more
     /// than three threads and more than two shards.
     #[setters(generate = true, strip_option)]
-    #[derivative(Default(value = "None"))]
     pub(crate) low_mem: Option<bool>,
 
     /// The seed for the random number generator.
@@ -149,7 +143,6 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     ///
     /// [expected number of keys]: VBuilder::expected_num_keys
     #[setters(generate = true, strip_option)]
-    #[derivative(Default(value = "8"))]
     log2_buckets: u32,
 
     /// The target relative space loss due to [ε-cost sharding].
@@ -170,7 +163,6 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     ///
     /// [ε-cost sharding]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
     #[setters(generate = true, strip_option)]
-    #[derivative(Default(value = "0.001"))]
     pub(crate) eps: f64,
 
     /// The bit width of the maximum value.
@@ -192,6 +184,30 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) failed: AtomicBool,
     #[doc(hidden)]
     _marker: PhantomData<(D, S)>,
+}
+
+impl<D, S, E: Default> Default for VBuilder<D, S, E> {
+    fn default() -> Self {
+        Self {
+            expected_num_keys: None,
+            shard_size_hint: None,
+            max_num_threads: default_max_num_threads(),
+            offline: false,
+            check_dups: false,
+            low_mem: None,
+            seed: 0,
+            log2_buckets: 8,
+            eps: 0.001,
+            bit_width: 0,
+            shard_edge: E::default(),
+            num_keys: 0,
+            c: 0.0,
+            lge: false,
+            num_threads: 0,
+            failed: AtomicBool::new(false),
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync, S: Sig, E: ShardEdge<S, 3>>
@@ -485,7 +501,10 @@ impl RetryState {
                     SolveError::UnsolvableShard => {
                         self.unsolvable_count += 1;
                         if self.unsolvable_count >= 100 {
-                            panic!("Failed more than 100 attempts (this shouldn't happen)");
+                            pl.error(format_args!(
+                                "A shard remained unsolvable after 100 attempts"
+                            ));
+                            return Err(BuildError::UnsolvableShard.into());
                         }
                         pl.info(format_args!(
                             "Unsolvable shard, trying again with a different seed..."
@@ -1278,7 +1297,7 @@ impl<
         }
 
         let shard_edge = &self.shard_edge;
-        self.num_threads = shard_edge.num_shards().min(self.max_num_threads);
+        self.num_threads = shard_edge.num_shards().min(self.max_num_threads).max(1);
 
         pl.info(format_args!(
             "Number of keys: {}; bit width: {}",
@@ -1498,7 +1517,7 @@ impl<
                     loop {
                         match data_recv.recv() {
                             Err(_) => return,
-                            Ok((shard_index, (shard, mut data))) => {
+                            Ok((shard_index, (mut shard, mut data))) => {
                                 if shard.is_empty() {
                                     continue;
                                 }
@@ -1515,51 +1534,45 @@ impl<
                                     num_shards
                                 ));
 
-                                {
-                                    // SAFETY: The Arc has refcount 1: this thread is the
-                                    // sole owner after receiving from the channel.
-                                    let shard = unsafe {
-                                        &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>)
-                                    };
+                                let check_local_signatures = TypeId::of::<E::LocalSig>()
+                                    != TypeId::of::<S>()
+                                    && self.num_keys > Self::MAX_NO_LOCAL_SIG_CHECK;
+                                let sort_for_locality =
+                                    !check_local_signatures && self.shard_edge.num_sort_keys() != 1;
+
+                                if self.check_dups || check_local_signatures || sort_for_locality {
+                                    // A store may retain another Arc while iteration is in
+                                    // progress. Clone the shard only when mutation is required
+                                    // and it is actually shared.
+                                    let shard_data = Arc::make_mut(&mut shard);
 
                                     if self.check_dups {
-                                        shard.radix_sort_builder().sort();
-                                        if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
+                                        shard_data.radix_sort_builder().sort();
+                                        if shard_data.par_windows(2).any(|w| w[0].sig == w[1].sig) {
                                             let _ = err_send.send(SolveError::DuplicateSignature);
                                             return;
                                         }
                                     }
 
-                                    // The second conjunct is always true on 32-bit platforms
-                                    #[allow(clippy::absurd_extreme_comparisons)]
-                                    if TypeId::of::<E::LocalSig>() != TypeId::of::<S>()
-                                        && self.num_keys > Self::MAX_NO_LOCAL_SIG_CHECK
-                                    {
-                                        // Check for duplicate local signatures
+                                    if check_local_signatures {
+                                        // E::SortSig provides a transmutable view of SigVal
+                                        // with an implementation of RadixKey compatible with
+                                        // ShardEdge::sort_key. Its equality implies equality
+                                        // of local signatures.
 
-                                        // E::SortSig provides a transmutable
-                                        // view of SigVal with an implementation
-                                        // of RadixKey that is compatible with
-                                        // the sort induced by the key returned
-                                        // by ShardEdge::sort_key, and equality
-                                        // that implies equality of local
-                                        // signatures.
-
-                                        // SAFETY: The Arc has refcount 1 at this point
-                                        // (this thread is the sole owner after receive),
-                                        // so the mutable reference does not violate
-                                        // aliasing. The memory layout of SigVal<S, V>
-                                        // and E::SortSigVal<V> is guaranteed compatible
-                                        // by the ShardEdge trait.
-                                        let shard = unsafe {
+                                        // SAFETY: Arc::make_mut above gave this worker exclusive
+                                        // access to the vector. The memory layout of SigVal<S, V>
+                                        // and E::SortSigVal<V> is guaranteed compatible by the
+                                        // ShardEdge trait.
+                                        let shard_data = unsafe {
                                             transmute::<
                                                 &mut Vec<SigVal<S, V>>,
                                                 &mut Vec<E::SortSigVal<V>>,
-                                            >(shard)
+                                            >(shard_data)
                                         };
 
-                                        let builder = shard.radix_sort_builder();
-                                        if self.max_num_threads == 1 {
+                                        let builder = shard_data.radix_sort_builder();
+                                        if self.num_threads == 1 {
                                             builder
                                                 .with_single_threaded_tuner()
                                                 .with_parallel(false)
@@ -1568,31 +1581,25 @@ impl<
                                         }
                                         .sort();
 
-                                        let shard_len = shard.len();
-                                        shard.dedup();
+                                        let shard_len = shard_data.len();
+                                        shard_data.dedup();
 
                                         if TypeId::of::<V>() == TypeId::of::<EmptyVal>() {
-                                            // Duplicate local signatures on
-                                            // large filters can be simply
-                                            // removed: they do not change the
-                                            // semantics of the filter because
-                                            // hashes are computed on
-                                            // local signatures.
+                                            // Duplicate local signatures on large filters can
+                                            // be removed: they do not change filter semantics
+                                            // because hashes are computed on local signatures.
                                             pl.info(format_args!(
                                                 "Removed signatures: {}",
-                                                shard_len - shard.len()
+                                                shard_len - shard_data.len()
                                             ));
-                                        } else {
-                                            // For function, we have to try again
-                                            if shard_len != shard.len() {
-                                                let _ = err_send
-                                                    .send(SolveError::DuplicateLocalSignature);
-                                                return;
-                                            }
+                                        } else if shard_len != shard_data.len() {
+                                            // Functions cannot discard colliding values.
+                                            let _ =
+                                                err_send.send(SolveError::DuplicateLocalSignature);
+                                            return;
                                         }
-                                    } else if self.shard_edge.num_sort_keys() != 1 {
-                                        // Sorting the signatures increases locality
-                                        self.count_sort::<V>(shard);
+                                    } else if sort_for_locality {
+                                        self.count_sort::<V>(shard_data);
                                     }
                                 }
 
@@ -2305,5 +2312,32 @@ mod retry_state_tests {
         }
         let r = rs.handle_solve_result(Err::<(), _>(SolveError::MaxShardTooBig.into()), &mut pl);
         assert!(r.is_err(), "the 100th MaxShardTooBig must be fatal");
+    }
+
+    /// Unsolvable shards use the same finite retry policy as oversized shards
+    /// and report the public build error instead of panicking.
+    #[test]
+    fn unsolvable_shard_is_bounded() {
+        let mut pl = no_logging![];
+        let mut rs = RetryState {
+            prng: SmallRng::seed_from_u64(0),
+            dup_count: 0,
+            local_dup_count: 0,
+            max_shard_too_big: 0,
+            unsolvable_count: 0,
+        };
+        for i in 0..99 {
+            let result =
+                rs.handle_solve_result(Err::<(), _>(SolveError::UnsolvableShard.into()), &mut pl);
+            assert!(matches!(result, Ok(None)), "attempt {i} should be retried");
+        }
+
+        let error = rs
+            .handle_solve_result(Err::<(), _>(SolveError::UnsolvableShard.into()), &mut pl)
+            .expect_err("the 100th unsolvable shard must be fatal");
+        assert!(matches!(
+            error.downcast_ref::<BuildError>(),
+            Some(BuildError::UnsolvableShard)
+        ));
     }
 }
