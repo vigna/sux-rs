@@ -400,3 +400,39 @@ fn test_with_inv_zero_blocks() {
     let bits = BitVec::<Vec<u64>>::new(64);
     let _ = SelectZeroSmall::<2, 9, _>::with_inv(RankSmall::<64, 2, 9, _>::new(bits), 0);
 }
+
+#[cfg(feature = "epserde")]
+#[test]
+fn test_select_zero_small_mapped_query() {
+    use epserde::deser::Deserialize;
+    use epserde::prelude::Aligned64;
+    use epserde::ser::Serialize;
+    use epserde::utils::AlignedCursor;
+    use sux::traits::SelectZero;
+
+    type Owned = SelectZeroSmall<2, 9, RankSmall<64, 2, 9, BitVec<Vec<u64>>>>;
+
+    let mut rng = SmallRng::seed_from_u64(0);
+    let len = 5000usize;
+    let bits: BitVec<Vec<u64>> = (0..len).map(|_| rng.random_bool(0.5)).collect();
+    let pos: Vec<usize> = (0..len).filter(|&i| !bits[i]).collect();
+    let sel = Owned::new(RankSmall::<64, 2, 9, _>::new(bits));
+
+    let mut cursor = <AlignedCursor<Aligned64>>::new();
+    // SAFETY: `sel` was built by its safe constructor, so all epserde
+    // representation invariants hold.
+    unsafe {
+        sel.serialize(&mut cursor).expect("Could not serialize");
+    }
+    let cursor_len = cursor.len();
+    cursor.set_position(0);
+    // Zero-copy deserialization borrows the inventory as &[u32]/&[usize]; the
+    // mapped structure must still answer select_zero queries.
+    // SAFETY: we just serialized a valid `Owned` into this buffer.
+    let mapped = unsafe { <Owned>::read_mem(&mut cursor, cursor_len).expect("Could not deserialize") };
+    let mapped = mapped.uncase();
+    for (i, &p) in pos.iter().enumerate() {
+        assert_eq!(mapped.select_zero(i), Some(p));
+    }
+    assert_eq!(mapped.select_zero(pos.len() + 1), None);
+}

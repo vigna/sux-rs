@@ -293,7 +293,9 @@ macro_rules! impl_select_zero_small {
                 + BitLength
                 + NumBits
                 + SelectZeroHinted,
-        > SelectZeroUnchecked for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
+            I: AsRef<[u32]>,
+            O: AsRef<[usize]>,
+        > SelectZeroUnchecked for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C, I, O>
         {
             /// # Safety
             ///
@@ -409,7 +411,9 @@ macro_rules! impl_select_zero_small {
                 + BitLength
                 + NumBits
                 + SelectZeroHinted,
-        > SelectZero for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
+            I: AsRef<[u32]>,
+            O: AsRef<[usize]>,
+        > SelectZero for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C, I, O>
         {
         }
     };
@@ -421,7 +425,9 @@ impl<
         + AsRef<[C::Word]>
         + BitLength
         + NumBits,
-> SelectZeroSmall<2, 9, C>
+    I,
+    O,
+> SelectZeroSmall<2, 9, C, I, O>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -481,7 +487,9 @@ impl<
         + BitLength
         + NumBits
         + SelectZeroHinted,
-> SelectZeroSmall<1, 9, C>
+    I,
+    O,
+> SelectZeroSmall<1, 9, C, I, O>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -538,7 +546,9 @@ impl<
         + BitLength
         + NumBits
         + SelectZeroHinted,
-> SelectZeroSmall<1, 10, C>
+    I,
+    O,
+> SelectZeroSmall<1, 10, C, I, O>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -595,7 +605,9 @@ impl<
         + BitLength
         + NumBits
         + SelectZeroHinted,
-> SelectZeroSmall<1, 11, C>
+    I,
+    O,
+> SelectZeroSmall<1, 11, C, I, O>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -652,7 +664,9 @@ impl<
         + BitLength
         + NumBits
         + SelectZeroHinted,
-> SelectZeroSmall<3, 13, C>
+    I,
+    O,
+> SelectZeroSmall<3, 13, C, I, O>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -728,7 +742,9 @@ impl<
         + AsRef<[C::Word]>
         + BitLength
         + NumBits,
-> SelectZeroSmall<2, 8, C>
+    I,
+    O,
+> SelectZeroSmall<2, 8, C, I, O>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -788,7 +804,9 @@ impl<
         + BitLength
         + NumBits
         + SelectZeroHinted,
-> SelectZeroSmall<1, 8, C>
+    I,
+    O,
+> SelectZeroSmall<1, 8, C, I, O>
 {
     #[inline(always)]
     unsafe fn complete_select(
