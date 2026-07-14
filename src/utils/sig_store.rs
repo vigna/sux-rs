@@ -1714,7 +1714,7 @@ mod tests {
                             val: rand.random(),
                         })?;
                     }
-                    Ok(st.into_shard_store(s)?)
+                    st.into_shard_store(s)
                 },
                 n,
             )?;
@@ -1730,7 +1730,7 @@ mod tests {
                             val: rand.random(),
                         })?;
                     }
-                    Ok(st.into_shard_store(s)?)
+                    st.into_shard_store(s)
                 },
                 n,
             )?;
@@ -1896,7 +1896,7 @@ mod filtered_lazy_tests {
                     val: rand.random(),
                 })?;
             }
-            Ok(st.into_shard_store(4)?)
+            st.into_shard_store(4)
         };
         let build_offline = || -> anyhow::Result<_> {
             let mut st = new_offline::<[u64; 2], u64>(2, 8, None)?;
@@ -1907,7 +1907,7 @@ mod filtered_lazy_tests {
                     val: rand.random(),
                 })?;
             }
-            Ok(st.into_shard_store(4)?)
+            st.into_shard_store(4)
         };
         _check_filtered_drain("online", build_online, 4, pred)?;
         _check_filtered_drain("offline", build_offline, 4, pred)?;
