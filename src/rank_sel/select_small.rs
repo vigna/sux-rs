@@ -39,7 +39,7 @@ use std::ops::Index;
 ///
 /// [`SelectSmall`] adds a very sparse first-level inventory to a [`RankSmall`]
 /// structure to locate approximately the position of the desired one; the bit
-/// is then located using binary searches over [`RankSmall`]'s counters; this
+/// is then located using bounded linear scans over [`RankSmall`]'s counters; this
 /// technique is called _hinted bsearch_ and is described in “[Broadword
 /// Implementation of Rank/Select Queries]”.
 ///
