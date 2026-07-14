@@ -61,8 +61,10 @@ criterion = { version = "0.7.0", default-features = false, features = ["html_rep
 clap = { version = "4.4.18", features = ["derive", "wrap_help"] }
 env_logger = "0.11.0"
 rand_distr = "0.6"
-ph = "0.11.0"
 serde_json = "1.0"
+
+[target.'cfg(target_pointer_width = "64")'.dev-dependencies]
+ph = "0.11.0"
 
 [features]
 default = ["rayon", "flate2", "zstd"]
