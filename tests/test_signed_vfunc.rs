@@ -92,3 +92,41 @@ fn test_u128_hash_storage_is_queryable() -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(feature = "epserde")]
+#[test]
+fn test_signed_vfunc_mapped_query() -> Result<()> {
+    use epserde::deser::Deserialize;
+    use epserde::prelude::Aligned64;
+    use epserde::ser::Serialize;
+    use epserde::utils::AlignedCursor;
+
+    let mut pl = ProgressLogger::default();
+    let n = 1000usize;
+    let func: MySignedVFunc =
+        MySignedVFunc::try_new(FromCloneableIntoIterator::from(0..n), &mut pl)?;
+
+    let mut cursor = <AlignedCursor<Aligned64>>::new();
+    // SAFETY: `func` was built by its safe constructor, so all epserde
+    // representation invariants hold.
+    unsafe {
+        func.serialize(&mut cursor).expect("Could not serialize");
+    }
+    let len = cursor.len();
+    cursor.set_position(0);
+    // Zero-copy deserialization turns the `Box<[usize]>` hash store into a
+    // borrowed `&[usize]`; the mapped function must still answer queries.
+    // SAFETY: we just serialized a valid `MySignedVFunc` into this buffer.
+    let mapped = unsafe {
+        <MySignedVFunc>::read_mem(&mut cursor, len).expect("Could not deserialize")
+    };
+    let mapped = mapped.uncase();
+    for i in 0..n {
+        assert_eq!(Some(i), mapped.get(i));
+    }
+    for i in 0..n {
+        assert_eq!(None, mapped.get(i + n));
+    }
+
+    Ok(())
+}

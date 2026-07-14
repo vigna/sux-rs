@@ -74,6 +74,19 @@ where
     }
 }
 
+// epserde's zero-copy deserialization turns a `Box<[W]>` hash store into a
+// borrowed `&[W]`; provide the same full-width truncation so mapped signed
+// functions remain queryable.
+impl<W: PrimitiveNumber> TruncateHash<W> for &[W]
+where
+    u64: PrimitiveNumberAs<W>,
+{
+    #[inline(always)]
+    fn truncate_hash(&self, hash: u64) -> W {
+        hash.as_to::<W>()
+    }
+}
+
 impl<B: Backend<Word: Word>> TruncateHash<B::Word> for BitFieldVec<B>
 where
     u64: PrimitiveNumberAs<B::Word>,
