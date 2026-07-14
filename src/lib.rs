@@ -78,8 +78,10 @@ pub const RAYON_MIN_LEN: usize = 100_000;
 /// Extension trait to fix Rayon's chunk size for parallel iterators.
 ///
 /// This trait adds [`with_len`] to rayon's [`IndexedParallelIterator`], setting
-/// both [`with_min_len`] and [`with_max_len`] to the same value so that chunks are
-/// of exactly the specified size (the last chunk may be shorter).
+/// both [`with_min_len`] and [`with_max_len`] to the same value to make chunks
+/// approximately the specified size. Rayon splits work by recursive bisection,
+/// so `len` acts as a split-size target: exact chunk boundaries and sizes are
+/// not guaranteed (total work smaller than `len` is left unsplit).
 ///
 /// This approach is useful for very fast operations of constant length per
 /// element, like [zeroing a bit vector].
