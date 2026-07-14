@@ -346,8 +346,11 @@ mod build {
         let mut best_r = 0usize;
         let mut best_cost = f64::MAX;
 
-        // r < w <= 128; shift in u128 so this cannot overflow a 32-bit usize.
-        for r in 0..w {
+        // r <= w <= 128. r == w is the pure-first-function configuration, which
+        // is optimal when the alphabet fills most of the w-bit space (so no
+        // smaller width absorbs every distinct value). checked_shl keeps r == 128
+        // (a full u128 value width) from overflowing.
+        for r in 0..=w {
             // The first function is built with escape = (1 << r) - 1 as its
             // max value, so its bit width is bit_len(escape): r for r >= 1 and
             // 1 for r == 0 (bit_len(0) == 1). Charge the real one-bit cost at
@@ -356,7 +359,11 @@ mod build {
             let first_width = if r == 0 { 1 } else { r };
             let cost_first = c * n as f64 * first_width as f64;
             let cost_second = c * post as f64 * w as f64;
-            let cost_remap = pos as f64 * w_bits as f64;
+            // The remap table is allocated with `escape = 2^r - 1` entries
+            // (frequent values plus zero padding for first-function outputs in
+            // [m, escape)), so charge its full length, not just the used prefix.
+            let escape = 2f64.powi(i32::try_from(r).expect("r fits i32")) - 1.0;
+            let cost_remap = escape * w_bits as f64;
             let cost = cost_first + cost_second + cost_remap;
 
             if cost < best_cost {
@@ -364,7 +371,9 @@ mod build {
                 best_r = r;
             }
 
-            let to_absorb = usize::try_from(1u128 << r)
+            let to_absorb = 1u128
+                .checked_shl(u32::try_from(r).expect("r fits u32"))
+                .and_then(|v| usize::try_from(v).ok())
                 .unwrap_or(usize::MAX)
                 .min(m - pos);
             for _ in 0..to_absorb {
@@ -949,5 +958,44 @@ mod tests {
         };
         let r = find_optimal_r(100, 2u64, &sorted_vals, count_of, 64);
         assert_eq!(r, 1);
+    }
+
+    /// When the alphabet fills the `w`-bit non-escape space, no width below `w`
+    /// absorbs every distinct value, so `r == w` (the pure-first-function
+    /// configuration with an empty second function) is optimal. Here `w == 3`
+    /// (max_value 7) with all 7 non-escape ranks equally frequent: width 2
+    /// absorbs only 3 values and pays for a second function over the rest, while
+    /// width 3 absorbs all 7 with no second function. The old `0..w` loop could
+    /// not select `r == w`, and (before the remap cost was charged for its full
+    /// padded length) the model also mispriced this regime.
+    #[test]
+    fn find_optimal_r_selects_full_width_for_filled_alphabet() {
+        let sorted_vals: Vec<u8> = vec![7, 6, 5, 4, 3, 2, 1];
+        let r = find_optimal_r(
+            105,
+            7u8,
+            &sorted_vals,
+            |_| 15,
+            usize::try_from(u8::BITS).unwrap(),
+        );
+        assert_eq!(r, 3);
+    }
+
+    /// Regression for the padded-remap cost: only 5 of the 7 non-escape ranks
+    /// are present, so width 3 would allocate a 7-entry remap with two unused
+    /// (padded) slots, not worth the extra first-function bit; width 2 wins.
+    /// Pricing the remap by its used prefix instead of its allocated `2^r - 1`
+    /// length wrongly selects width 3 here.
+    #[test]
+    fn find_optimal_r_prices_padded_remap() {
+        let sorted_vals: Vec<u8> = vec![7, 6, 5, 4, 3];
+        let r = find_optimal_r(
+            100,
+            7u8,
+            &sorted_vals,
+            |_| 20,
+            usize::try_from(u8::BITS).unwrap(),
+        );
+        assert_eq!(r, 2);
     }
 }
