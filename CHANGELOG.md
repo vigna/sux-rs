@@ -41,8 +41,9 @@
 - New `BitFieldVec::wrap` method to create a bit-field vector with a
   given backend.
 
-- New opt-in `--check` flag for the `vfunc2` and `comp_vfunc` CLI utilities
-  that verifies that the number of keys and values match.
+- The `vfunc2` and `comp_vfunc` CLI utilities always verify that the selected
+  key and value counts match; `--n` limits the number of keys instead of
+  disabling validation.
 
 ### Fixed
 
@@ -108,6 +109,13 @@
   implementations, lazy `FilteredShardStore` iteration, and a restored early
   exit in the adaptive select builders.
 
+- `JacobsonBalParen` pioneer construction is linear rather than quadratic on
+  deeply nested parentheses, with 4.30x to 14.75x speedups at 4,096 to 16,384
+  pairs on the benchmark host.
+
+- Signed LCP and two-step LCP queries reuse the key signature for rank lookup
+  and verification instead of hashing byte-sequence keys twice.
+
 ### Changed
 
 - Field naming and logging have been reorganized. Serialized structures
@@ -141,6 +149,15 @@
   `count_zeros` are now provided by `BitVecOps`.
 
 - The `cli` feature now implies `rayon`.
+
+- Safe parts constructors validate cross-field lengths. The unused
+  `VFilter::from_parts` constructor was removed because its filter contents
+  could not be validated independently of the original keys.
+
+- `serde::Deserialize` is implemented only where structural invariants can be
+  validated during deserialization. Composite succinct structures that cannot
+  validate arbitrary generic backends remain serializable but no longer derive
+  `Deserialize`.
 
 ## [0.14.0] - 2026-04-11
 
