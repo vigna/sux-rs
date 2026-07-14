@@ -187,10 +187,13 @@ fn generate_synthetic_values(args: &Args, n: usize) -> Result<Vec<usize>> {
     }
 }
 
-fn count_keys(filename: &str) -> Result<usize> {
+fn count_keys(filename: &str, cap: Option<usize>) -> Result<usize> {
     let mut lender = DekoBufLineLender::from_path(filename)?;
     let mut count = 0;
-    while lender.next()?.is_some() {
+    // n is min(cap, total); once the cap is reached the rest of the file cannot
+    // change the answer, so stop reading (checking the cap before `next` also
+    // returns 0 immediately for a cap of 0).
+    while cap.is_none_or(|cap| count < cap) && lender.next()?.is_some() {
         count += 1;
     }
     Ok(count)
@@ -216,8 +219,7 @@ where
     pl.log_interval(args.log.log_interval);
 
     if let Some(filename) = &args.filename {
-        let key_count = count_keys(filename)?;
-        let n = args.n.map_or(key_count, |cap| cap.min(key_count));
+        let n = count_keys(filename, args.n)?;
         let values = if let Some(path) = &args.values {
             let values = read_values(path)?;
             ensure!(
@@ -281,4 +283,35 @@ where
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::count_keys;
+    use std::io::Write;
+
+    #[test]
+    fn count_keys_is_cap_aware() {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        for line in ["a", "b", "c", "d", "e"] {
+            writeln!(f, "{line}").unwrap();
+        }
+        let path = f.path().to_str().unwrap();
+        assert_eq!(count_keys(path, None).unwrap(), 5);
+        assert_eq!(count_keys(path, Some(0)).unwrap(), 0);
+        assert_eq!(count_keys(path, Some(3)).unwrap(), 3);
+        assert_eq!(count_keys(path, Some(5)).unwrap(), 5);
+        assert_eq!(count_keys(path, Some(10)).unwrap(), 5);
+    }
+
+    #[test]
+    fn count_keys_stops_before_reading_the_capped_suffix() {
+        // A valid line followed by invalid UTF-8: counting the whole file errors,
+        // but a cap of 1 must return before ever reading the bad line.
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        f.write_all(b"valid\n\xff\xfe\n").unwrap();
+        let path = f.path().to_str().unwrap();
+        assert_eq!(count_keys(path, Some(1)).unwrap(), 1);
+        assert!(count_keys(path, None).is_err());
+    }
 }
