@@ -155,6 +155,17 @@ use std::iter::FusedIterator;
 use std::{ops::Index, sync::atomic::Ordering};
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
+/// Number of unused high bits in the last word of a bit vector of length `len`
+/// whose words hold `bits_per_word` bits each (`0` when `len` fills the last
+/// word exactly).
+///
+/// Equivalent to `len.div_ceil(bits_per_word) * bits_per_word - len`, but
+/// without that multiplication: `n_of_words * bits_per_word` overflows usize for
+/// `len` near usize::MAX, reachable as a ~512 MiB bit vector on 32-bit targets.
+fn padding_bits(len: usize, bits_per_word: usize) -> usize {
+    (bits_per_word - len % bits_per_word) % bits_per_word
+}
+
 /// A bit vector.
 ///
 /// Instances can be created using [`new`], [`with_value`], with the
@@ -428,7 +439,7 @@ impl<W: Word> BitVec<Vec<W>> {
     pub fn with_value(len: usize, value: bool) -> Self {
         let bits_per_word = W::BITS as usize;
         let n_of_words = len.div_ceil(bits_per_word);
-        let extra_bits = (n_of_words * bits_per_word) - len;
+        let extra_bits = padding_bits(len, bits_per_word);
         let word_value = if value { !W::ZERO } else { W::ZERO };
         let mut bits = vec![word_value; n_of_words];
         if extra_bits > 0 {
@@ -454,13 +465,19 @@ impl<W: Word> BitVec<Vec<W>> {
 
     /// Returns the current capacity of this bit vector.
     pub fn capacity(&self) -> usize {
-        self.bits.capacity() * W::BITS as usize
+        // saturating: on 32-bit targets bits.capacity() * W::BITS can overflow;
+        // capacity() must never wrap below len(), so cap the report at usize::MAX.
+        self.bits.capacity().saturating_mul(W::BITS as usize)
     }
 
     /// Appends a bit to the end of this bit vector.
     pub fn push(&mut self, b: bool) {
         let bits_per_word = W::BITS as usize;
-        if self.bits.len() * bits_per_word == self.len {
+        let new_len = self.len.checked_add(1).expect("bit length overflows usize");
+        // `len / bits_per_word == bits.len()` means every allocated bit is in
+        // use; this avoids `bits.len() * bits_per_word`, which overflows usize
+        // for a near-usize::MAX-length vector on 32-bit targets.
+        if self.len / bits_per_word == self.bits.len() {
             self.bits.push(W::ZERO);
         }
         let word_index = self.len / bits_per_word;
@@ -471,7 +488,7 @@ impl<W: Word> BitVec<Vec<W>> {
         if b {
             self.bits[word_index] |= W::ONE << bit_index;
         }
-        self.len += 1;
+        self.len = new_len;
     }
 
     /// Appends the lower `width` bits of `value` to the end of this bit
@@ -580,13 +597,19 @@ impl<W: Word> BitVec<Vec<W>> {
             return;
         }
 
+        // checked: on 32-bit targets two large bit vectors can sum past usize.
+        // Done before mutating self so an overflow leaves self unchanged.
+        let new_total = self
+            .len
+            .checked_add(other_len)
+            .expect("appended bit-vector length overflows usize");
+
         let bpw = W::BITS as usize;
         let offset = self.len % bpw;
         let src: &[W] = other.bits.as_ref();
         let src_words = other_len.div_ceil(bpw);
         let self_words = self.len.div_ceil(bpw);
         self.bits.truncate(self_words);
-        let new_total = self.len + other_len;
         let new_word_count = new_total.div_ceil(bpw);
 
         if offset == 0 {
@@ -1070,7 +1093,7 @@ impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + From<Vec<B::Word>>
     pub fn with_value(len: usize, value: bool) -> Self {
         let bits_per_word = <B::Word as PrimitiveAtomic>::Value::BITS as usize;
         let n_of_words = len.div_ceil(bits_per_word);
-        let extra_bits = (n_of_words * bits_per_word) - len;
+        let extra_bits = padding_bits(len, bits_per_word);
         let word_value = if value {
             !<B::Word as PrimitiveAtomic>::Value::ZERO
         } else {
@@ -1537,5 +1560,24 @@ impl<B: Backend + AsRef<[B::Word]>> AsRef<[B::Word]> for BitVecU<B> {
     #[inline(always)]
     fn as_ref(&self) -> &[B::Word] {
         self.0.bits.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod padding_tests {
+    use super::padding_bits;
+
+    #[test]
+    fn padding_bits_is_overflow_safe() {
+        // Ordinary cases: pad up to the next word boundary.
+        assert_eq!(padding_bits(0, 64), 0);
+        assert_eq!(padding_bits(64, 64), 0);
+        assert_eq!(padding_bits(1, 64), 63);
+        assert_eq!(padding_bits(65, 64), 63);
+        assert_eq!(padding_bits(63, 64), 1);
+        // usize::MAX is not a multiple of 64 (2^64 is), so one padding bit is
+        // needed; the old `n_of_words * bits_per_word - len` form overflows here.
+        assert_eq!(padding_bits(usize::MAX, 64), 1);
+        assert_eq!(padding_bits(usize::MAX, 32), 1);
     }
 }
