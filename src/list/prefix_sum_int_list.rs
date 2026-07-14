@@ -78,7 +78,7 @@ use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
 /// [`EfSeq<usize>`]: EfSeq
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct PrefixSumIntList<D = EfSeq<usize>> {
     /// Number of stored values.
     ///
@@ -93,8 +93,8 @@ impl PrefixSumIntList {
     /// Creates a new `PrefixSumIntList` from a reference to a collection of
     /// nonnegative values.
     ///
-    /// The collection is iterated twice: once to compute the total sum, and
-    /// once to build the prefix-sum structure.
+    /// The collection is snapshotted once so construction does not depend on
+    /// repeated iteration yielding the same values.
     ///
     /// # Panics
     ///
@@ -116,25 +116,26 @@ impl PrefixSumIntList {
     where
         for<'a> &'a I: IntoIterator<Item = &'a usize>,
     {
-        // First pass: count elements and total sum
-        let mut n = 0;
-        let mut total: usize = 0;
-        for &v in values {
-            n += 1;
+        let values: Vec<usize> = values.into_iter().copied().collect();
+        let mut total = 0usize;
+        for &value in &values {
             total = total
-                .checked_add(v)
+                .checked_add(value)
                 .expect("PrefixSumIntList: prefix sum overflow");
         }
 
-        // Second pass: build prefix sums in Elias–Fano
-        let mut efb = EliasFanoBuilder::new(n + 1, total);
-        let mut prefix: usize = 0;
-        // SAFETY: prefix = 0 ≤ total and is the first push
-        unsafe { efb.push_unchecked(prefix) };
-        for &v in values {
-            // Cannot overflow
-            prefix += v;
-            // SAFETY: prefix is non-decreasing and ≤ total
+        let n = values.len();
+        let mut efb = EliasFanoBuilder::new(
+            n.checked_add(1)
+                .expect("PrefixSumIntList: number of values overflow"),
+            total,
+        );
+        // SAFETY: zero is the first prefix sum and is at most total.
+        unsafe { efb.push_unchecked(0) };
+        let mut prefix = 0usize;
+        for value in values {
+            prefix += value;
+            // SAFETY: the checked total proves every nondecreasing prefix is at most total.
             unsafe { efb.push_unchecked(prefix) };
         }
         let prefix_sums = efb.build_with_seq();
