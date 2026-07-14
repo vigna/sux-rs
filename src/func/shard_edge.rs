@@ -1304,6 +1304,13 @@ mod mwhc {
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
             self.seg_size = ((n as f64 * 1.23) / 3.).ceil() as usize;
+            // num_vertices = seg_size * 3 is used directly as the vertex-index bound
+            // and must fit usize; the check promotes to u128 (lossless widening) so
+            // the multiply cannot overflow, e.g. on 32-bit targets.
+            assert!(
+                self.seg_size as u128 * 3 <= usize::MAX as u128,
+                "Mwhc3NoShards total vertices overflow usize on this target"
+            );
             (1.23, false)
         }
 
@@ -1460,10 +1467,33 @@ mod mwhc {
         fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> (f64, bool) {
             self.seg_size = ((max_shard as f64 * 1.23) / 3.).ceil() as usize;
             if self.shard_high_bits() != 0 {
-                self.seg_size = self.seg_size.next_multiple_of(128);
+                // Round up to a multiple of 128 without `checked_next_multiple_of`
+                // (Rust 1.87; crate MSRV is 1.85): (n + 127) / 128 * 128, with the
+                // add checked so an oversized seg_size panics instead of wrapping.
+                self.seg_size = self
+                    .seg_size
+                    .checked_add(127)
+                    .map(|n| n / 128 * 128)
+                    .expect("Mwhc3Shards segment size overflows usize");
             }
 
-            assert!(self.seg_size * 3 - 1 <= Self::Vertex::MAX as usize);
+            // Per-shard num_vertices = seg_size * 3; its largest index
+            // (num_vertices - 1) must fit Vertex (u32), and the total across all
+            // shards must fit usize, since edge() computes shard * num_vertices +
+            // local. The checks promote to u128 (all casts are lossless widening) so
+            // they stay overflow-free for empty input (seg_size == 0) and on 32-bit
+            // targets where seg_size * 3 can exceed usize.
+            let num_vertices = self.seg_size as u128 * 3;
+            assert!(
+                num_vertices <= Self::Vertex::MAX as u128 + 1,
+                "Mwhc3Shards supports at most {} vertices per shard, but {num_vertices} were requested",
+                Self::Vertex::MAX as u128 + 1
+            );
+            let total = num_vertices * self.num_shards() as u128;
+            assert!(
+                total <= usize::MAX as u128,
+                "Mwhc3Shards total vertices ({total}) overflow usize on this target"
+            );
             (1.23, false)
         }
 
@@ -1518,6 +1548,59 @@ mod mwhc {
         #[inline(always)]
         fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
             edge(self.shard(sig), self.seg_size, sig)
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::super::ShardEdge;
+        use super::{Mwhc3NoShards, Mwhc3Shards};
+
+        #[test]
+        fn empty_input_does_not_underflow() {
+            // max_shard == 0 (empty input) makes seg_size == 0; the old
+            // `seg_size * 3 - 1` bound underflowed usize here.
+            let mut shards = Mwhc3Shards::default();
+            shards.set_up_graphs(0, 0);
+            assert_eq!(shards.num_vertices(), 0);
+
+            let mut no_shards = Mwhc3NoShards { seg_size: 0 };
+            no_shards.set_up_graphs(0, 0);
+            assert_eq!(no_shards.num_vertices(), 0);
+        }
+
+        #[test]
+        #[should_panic(expected = "Mwhc3NoShards total vertices")]
+        fn no_shards_total_vertices_is_bounded() {
+            // seg_size ~ usize::MAX * 1.23 / 3, so seg_size * 3 exceeds usize;
+            // the check is portable (no shift literals) and holds on 32 and 64
+            // bits. The old code had no guard here.
+            let mut no_shards = Mwhc3NoShards { seg_size: 0 };
+            no_shards.set_up_graphs(usize::MAX, 0);
+        }
+
+        #[cfg(target_pointer_width = "64")]
+        #[test]
+        #[should_panic(expected = "vertices per shard")]
+        fn per_shard_vertex_bound_is_enforced() {
+            // A shard needing more than Vertex::MAX + 1 (2^32) vertices must be
+            // rejected: seg_size = ceil(2^32 * 1.23 / 3) gives seg_size * 3 > 2^32.
+            let mut shards = Mwhc3Shards::default();
+            shards.set_up_graphs(0, 1usize << 32);
+        }
+
+        #[cfg(target_pointer_width = "64")]
+        #[test]
+        #[should_panic(expected = "overflow usize")]
+        fn total_vertex_product_is_enforced() {
+            // num_vertices (~2.5e7, within Vertex::MAX) times num_shards (2^40)
+            // exceeds usize::MAX; the old code had no total check and silently
+            // produced an invalid setup.
+            let mut shards = Mwhc3Shards {
+                seg_size: 0,
+                shard_bits_shift: 23, // shard_high_bits = 63 - 23 = 40
+            };
+            shards.set_up_graphs(0, 20_500_000);
         }
     }
 }
