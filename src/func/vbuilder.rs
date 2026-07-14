@@ -20,8 +20,6 @@ use mem_dbg::{FlatType, MemSize, SizeFlags};
 use num_primitive::PrimitiveNumber;
 use rand::rngs::SmallRng;
 use rand::{Rng, RngExt, SeedableRng};
-use rayon::iter::ParallelIterator;
-use rayon::slice::ParallelSlice;
 use rdst::*;
 use std::any::TypeId;
 use std::borrow::{Borrow, Cow};
@@ -43,6 +41,25 @@ fn default_max_num_threads() -> usize {
     std::thread::available_parallelism()
         .map(|p| p.get().min(16))
         .unwrap_or(1)
+}
+
+/// Sorts a shard's records by their radix key without using the global Rayon
+/// pool.
+///
+/// par_solve already runs one std worker thread per concurrent shard (bounded
+/// by [`max_num_threads`], plus a single producer thread). A nested parallel
+/// (Rayon) radix sort would instead schedule onto the shared global Rayon pool,
+/// whose workers run alongside those std workers and outside the configured
+/// thread budget, oversubscribing the machine. Shard-local work therefore
+/// always runs single-threaded; cross-shard parallelism is supplied by
+/// par_solve.
+///
+/// [`max_num_threads`]: VBuilder::max_num_threads
+fn sort_shard_single_threaded<T: RadixKey + Copy + Send + Sync>(data: &mut [T]) {
+    data.radix_sort_builder()
+        .with_single_threaded_tuner()
+        .with_parallel(false)
+        .sort();
 }
 
 /// A builder for [`VFunc`] and [`VFilter`].
@@ -1560,8 +1577,8 @@ impl<
                                     let shard_data = Arc::make_mut(&mut shard);
 
                                     if self.check_dups {
-                                        shard_data.radix_sort_builder().sort();
-                                        if shard_data.par_windows(2).any(|w| w[0].sig == w[1].sig) {
+                                        sort_shard_single_threaded(shard_data);
+                                        if shard_data.windows(2).any(|w| w[0].sig == w[1].sig) {
                                             let _ = err_send.send(SolveError::DuplicateSignature);
                                             return;
                                         }
@@ -1584,15 +1601,7 @@ impl<
                                             >(shard_data)
                                         };
 
-                                        let builder = shard_data.radix_sort_builder();
-                                        if self.num_threads == 1 {
-                                            builder
-                                                .with_single_threaded_tuner()
-                                                .with_parallel(false)
-                                        } else {
-                                            builder
-                                        }
-                                        .sort();
+                                        sort_shard_single_threaded(shard_data);
 
                                         let shard_len = shard_data.len();
                                         shard_data.dedup();
@@ -2366,5 +2375,49 @@ mod retry_state_tests {
         assert!(max_shard_too_big(16, 100, 10, 0.1));
         // At eps=0.001 the limit is 1.005 * 10 = 10.05, so 11 is rejected.
         assert!(max_shard_too_big(11, 100, 10, 0.001));
+    }
+}
+
+#[cfg(test)]
+mod sort_helper_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// Set by `Key::get_level` whenever a radix digit is read from a Rayon
+    /// worker thread, i.e. when the sort scheduled work onto the global pool.
+    static SORTED_ON_RAYON: AtomicBool = AtomicBool::new(false);
+
+    #[derive(Clone, Copy)]
+    struct Key(u32);
+
+    impl RadixKey for Key {
+        const LEVELS: usize = 4;
+        fn get_level(&self, level: usize) -> u8 {
+            if rayon::current_thread_index().is_some() {
+                SORTED_ON_RAYON.store(true, Ordering::Relaxed);
+            }
+            // Deliberate byte extraction: the LSD radix digit for `level`.
+            (self.0 >> (level * 8)) as u8
+        }
+    }
+
+    /// `sort_shard_single_threaded` must sort correctly without scheduling onto
+    /// the global Rayon pool, so per-shard sorts cannot oversubscribe alongside
+    /// par_solve's worker threads. The input is large enough that the default
+    /// (parallel) radix builder would offload to the pool.
+    #[test]
+    fn sort_shard_single_threaded_does_not_use_rayon() {
+        SORTED_ON_RAYON.store(false, Ordering::Relaxed);
+        let n: u32 = 1 << 21;
+        let mut data: Vec<Key> = (0..n).rev().map(Key).collect();
+        sort_shard_single_threaded(&mut data);
+        assert!(
+            data.windows(2).all(|w| w[0].0 <= w[1].0),
+            "helper must sort ascending"
+        );
+        assert!(
+            !SORTED_ON_RAYON.load(Ordering::Relaxed),
+            "single-threaded shard sort must not schedule onto the global Rayon pool"
+        );
     }
 }
