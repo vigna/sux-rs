@@ -193,6 +193,43 @@ fn test_dup_key() -> Result<()> {
 }
 
 #[test]
+fn test_degree_overflow_is_error_not_panic() -> Result<()> {
+    use sux::func::shard_edge::Fuse3NoShards;
+
+    // With duplicate detection disabled, 100 identical keys pile 100 edges onto
+    // the same three vertices, overflowing the u8 degree counter. Every peeler
+    // must report this as a build error (retried with fresh seeds, then given
+    // up on) rather than panicking with "Degree overflow".
+    let dup_keys = || FromCloneableIntoIterator::from(std::iter::repeat_n(0usize, 100));
+
+    // Default FuseLge3Shards routes small inputs through peel_by_index.
+    let result = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
+        dup_keys(),
+        dup_keys(),
+        VBuilder::default().check_dups(false),
+        &mut ProgressLogger::default(),
+    );
+    assert!(result.is_err(), "peel_by_index overflow must be a graceful error");
+
+    // Fuse3NoShards selects the sig-val peelers: high-mem (low_mem=false) and
+    // low-mem (low_mem=true).
+    for low_mem in [false, true] {
+        let result =
+            <VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>>::try_new_with_builder(
+                dup_keys(),
+                dup_keys(),
+                VBuilder::default().check_dups(false).low_mem(low_mem),
+                &mut ProgressLogger::default(),
+            );
+        assert!(
+            result.is_err(),
+            "sig-val peeler overflow (low_mem={low_mem}) must be a graceful error"
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn test_mismatched_keys_and_values() -> Result<()> {
     use sux::func::BuildError;
     let mut pl = ProgressLogger::default();

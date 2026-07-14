@@ -1738,12 +1738,12 @@ impl<
         }
         pl.done_with_count(shard.len());
 
-        assert!(
-            !xor_graph.overflow,
-            "Degree overflow for shard {}/{}",
-            shard_index + 1,
-            num_shards
-        );
+        // A degree overflow (a vertex incident to more than 63 edges, e.g. from
+        // many duplicate or colliding keys) is not fatal: report it as a shard
+        // failure so the builder retries with a fresh seed instead of panicking.
+        if xor_graph.overflow {
+            return Err(());
+        }
 
         if self.failed.load(Ordering::Relaxed) {
             return Err(());
@@ -1910,12 +1910,12 @@ impl<
         // drop will free the memory used by the signatures
         drop(shard);
 
-        assert!(
-            !xor_graph.overflow,
-            "Degree overflow for shard {}/{}",
-            shard_index + 1,
-            num_shards
-        );
+        // A degree overflow (a vertex incident to more than 63 edges, e.g. from
+        // many duplicate or colliding keys) is not fatal: report it as a shard
+        // failure so the builder retries with a fresh seed instead of panicking.
+        if xor_graph.overflow {
+            return Err(());
+        }
 
         if self.failed.load(Ordering::Relaxed) {
             return Err(());
@@ -2053,12 +2053,12 @@ impl<
         // drop will free the memory used by the signatures
         drop(shard);
 
-        assert!(
-            !xor_graph.overflow,
-            "Degree overflow for shard {}/{}",
-            shard_index + 1,
-            num_shards
-        );
+        // A degree overflow (a vertex incident to more than 63 edges, e.g. from
+        // many duplicate or colliding keys) is not fatal: report it as a shard
+        // failure so the builder retries with a fresh seed instead of panicking.
+        if xor_graph.overflow {
+            return Err(());
+        }
 
         if self.failed.load(Ordering::Relaxed) {
             return Err(());
