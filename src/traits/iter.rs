@@ -10,7 +10,7 @@
 //! - [`IntoIteratorFrom`] makes it possible to start iterators from
 //!   a given position, which is useful for compressed and succinct data
 //!   structures where the setup of an iterator can be expensive.
-//!   It is implemented for basic containers (arrays, vectors, etc.).
+//!   It is implemented for basic containers (slices, vectors, etc.).
 //!
 //! - [`UncheckedIterator`]/[`IntoUncheckedIterator`]/[`IntoUncheckedBackIterator`]
 //!   are traits providing unsafe cheap iteration. Their main purpose is to

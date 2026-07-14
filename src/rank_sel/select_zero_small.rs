@@ -76,7 +76,7 @@ use std::ops::Index;
 /// [selection on zeros]: crate::traits::SelectZero
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[delegate(crate::traits::Backend, target = "small_counters")]
 #[delegate(Index<usize>, target = "small_counters")]
 #[delegate(crate::traits::bit_vec_ops::BitLength, target = "small_counters")]
@@ -102,6 +102,12 @@ pub struct SelectZeroSmall<
     inventory: I,
     inventory_begin: O,
     log2_ones_per_inventory: usize,
+}
+
+impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
+    super::rank_small::small_counters_private::Sealed
+    for SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, C, I, O>
+{
 }
 
 impl<C: Backend + AsRef<[C::Word]>, const NUM_U32S: usize, const COUNTER_WIDTH: usize, I, O>
@@ -134,6 +140,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
     #[cfg(not(target_pointer_width = "64"))]
     const SUPERBLOCK_BIT_SIZE: usize = usize::MAX;
     const BLOCK_BIT_SIZE: usize = 1 << COUNTER_WIDTH;
+    const BLOCKS_PER_SUPERBLOCK: usize = 1 << (32 - COUNTER_WIDTH);
     /// Bits in each inventory `u32` used for the block index within the superblock.
     /// The remaining high `COUNTER_WIDTH` bits store the midpoint-block delta.
     const BLOCK_IDX_BITS: usize = 32 - COUNTER_WIDTH;
@@ -184,11 +191,16 @@ macro_rules! impl_select_zero_small {
                 let num_bits = small_counters.len();
                 let num_ones = small_counters.len() - small_counters.num_ones();
 
-                let target_inventory_span = blocks_per_inv * Self::BLOCK_BIT_SIZE;
-                let log2_ones_per_inventory = (num_ones as u64 * target_inventory_span as u64)
-                    .div_ceil(num_bits.max(1) as u64)
-                    .max(1)
-                    .ilog2() as usize;
+                let target_inventory_span = blocks_per_inv
+                    .saturating_mul(Self::BLOCK_BIT_SIZE)
+                    .min(num_bits.max(1));
+                let scaled_ones = u128::try_from(num_ones).expect("usize always fits in u128")
+                    * u128::try_from(target_inventory_span).expect("usize always fits in u128");
+                let scaled_bits =
+                    u128::try_from(num_bits.max(1)).expect("usize always fits in u128");
+                let log2_ones_per_inventory =
+                    usize::try_from(scaled_ones.div_ceil(scaled_bits).max(1).ilog2())
+                        .expect("u32 always fits in usize");
 
                 Self::_new(small_counters, num_ones, log2_ones_per_inventory)
             }
@@ -208,13 +220,17 @@ macro_rules! impl_select_zero_small {
 
                 let mut past_ones: usize = 0;
                 let mut next_quantum: usize = 0;
+                let mut last_primary_superblock = None;
 
-                let bits_per_word = C::Word::BITS as usize;
-                for superblock in small_counters
+                let bits_per_word =
+                    usize::try_from(C::Word::BITS).expect("u32 always fits in usize");
+                let words_per_superblock = 1usize << (32 - bits_per_word.ilog2());
+                for (sb, superblock) in small_counters
                     .as_ref()
-                    .chunks(Self::SUPERBLOCK_BIT_SIZE / bits_per_word)
+                    .chunks(words_per_superblock)
+                    .enumerate()
                 {
-                    let mut first = true;
+                    inventory_begin.push(inventory.len());
                     for (i, word) in superblock.iter().copied().map(|b| !b).enumerate() {
                         let ones_in_word = (word.count_ones() as usize).min(num_ones - past_ones);
 
@@ -224,20 +240,24 @@ macro_rules! impl_select_zero_small {
                             let block_in_superblock = in_superblock_index / Self::BLOCK_BIT_SIZE;
 
                             if half_ones == 0 || next_quantum & half_ones == 0 {
-                                if first {
-                                    inventory_begin.push(inventory.len() as usize);
-                                    first = false;
-                                }
-                                inventory.push(block_in_superblock as u32);
+                                inventory.push(
+                                    u32::try_from(block_in_superblock)
+                                        .expect("a superblock block index fits in u32"),
+                                );
+                                last_primary_superblock = Some(sb);
                             } else {
                                 let last = inventory.last_mut().unwrap();
-                                let delta =
-                                    block_in_superblock - (*last as usize & Self::BLOCK_IDX_MASK);
-                                debug_assert!(
-                                    delta < Self::BLOCK_BIT_SIZE,
-                                    "midpoint delta {delta} overflows COUNTER_WIDTH bits"
-                                );
-                                *last |= (delta as u32) << Self::BLOCK_IDX_BITS;
+                                if last_primary_superblock == Some(sb) {
+                                    let base_block = usize::try_from(*last)
+                                        .expect("u32 always fits in usize")
+                                        & Self::BLOCK_IDX_MASK;
+                                    let delta = block_in_superblock - base_block;
+                                    if delta < Self::BLOCK_BIT_SIZE {
+                                        *last |= u32::try_from(delta)
+                                            .expect("midpoint delta is bounded by block size")
+                                            << Self::BLOCK_IDX_BITS;
+                                    }
+                                }
                             }
                             next_quantum += step;
                         }
@@ -249,12 +269,10 @@ macro_rules! impl_select_zero_small {
 
                 if inventory.is_empty() {
                     inventory.push(0);
-                    inventory_begin.push(0 as usize);
-                } else {
-                    // The sentinel bounds an inventory index, so it must be the
-                    // inventory length, not the backing word count.
-                    inventory_begin.push(inventory.len());
                 }
+                // Terminal sentinel. Repeated entries before it represent
+                // superblocks with no primary inventory quantum.
+                inventory_begin.push(inventory.len());
 
                 let inventory = inventory.into_boxed_slice();
                 let inventory_begin = inventory_begin.into_boxed_slice();
@@ -315,8 +333,7 @@ macro_rules! impl_select_zero_small {
                     base_block + (mid_delta & second_half_mask)
                 } else {
                     0
-                } + upper_block_idx
-                    * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE);
+                } + upper_block_idx * Self::BLOCKS_PER_SUPERBLOCK;
 
                 // Prefetch all subblocks of the approximate target block now,
                 // so the bit-vector DRAM fetch can proceed in parallel with
@@ -348,11 +365,9 @@ macro_rules! impl_select_zero_small {
                         let next_base_block = (*unsafe { inventory.get_unchecked(inv_idx + 1) }
                             as usize)
                             & Self::BLOCK_IDX_MASK;
-                        next_base_block
-                            + 1
-                            + upper_block_idx * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE)
+                        next_base_block + 1 + upper_block_idx * Self::BLOCKS_PER_SUPERBLOCK
                     } else {
-                        (upper_block_idx + 1) * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE)
+                        (upper_block_idx + 1) * Self::BLOCKS_PER_SUPERBLOCK
                     };
                 } else {
                     // Since we use 32-bit inventory entries, we cannot add

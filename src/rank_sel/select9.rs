@@ -128,7 +128,7 @@ use std::ops::{Deref, Index};
 /// [Broadword Implementation of Rank/Select Queries]: https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[delegate(Index<usize>, target = "rank9")]
 #[delegate(crate::traits::Backend, target = "rank9")]
 #[delegate(crate::traits::bit_vec_ops::BitLength, target = "rank9")]

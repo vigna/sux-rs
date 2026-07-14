@@ -30,7 +30,7 @@ use crate::traits::bit_vec_ops::{BitLength, BitVecOps, ambassador_impl_BitLength
 /// in a bit vector (possibly underlying a succinct data structure)
 /// in constant time. If you can be content with a potentially
 /// expensive computation, use
-/// [`BitVecOps::count_ones`](crate::traits::BitVecOps::count_ones).
+/// [`BitVecOps::count_ones`].
 ///
 /// If you need to implement this trait on a structure that already
 /// computes its number of ones, you can use [`AddNumBits`].
@@ -40,12 +40,12 @@ pub trait NumBits: BitLength {
     /// Returns the number of ones in the underlying bit vector
     /// in constant time. If you can be content with a potentially
     /// expensive computation, use
-    /// [`BitVecOps::count_ones`](crate::traits::BitVecOps::count_ones).
+    /// [`BitVecOps::count_ones`].
     fn num_ones(&self) -> usize;
     /// Returns the number of zeros in the underlying bit vector
     /// in constant time. If you can be content with a potentially
     /// expensive computation, use
-    /// [`BitVecOps::count_zeros`](crate::traits::BitVecOps::count_zeros).
+    /// [`BitVecOps::count_zeros`].
     #[inline(always)]
     fn num_zeros(&self) -> usize {
         self.len() - self.num_ones()
@@ -209,10 +209,12 @@ pub trait RankHinted {
     /// # Safety
     ///
     /// `pos` must be between 0 (included) and the [length of the underlying bit
-    /// vector] (excluded). `hint_pos` must be between 0 (included) and
-    /// `pos` (included), expressed in words.
-    /// `hint_rank` must be the number of ones in the underlying bit vector
-    /// before the bit at the start of word `hint_pos`.
+    /// vector] (excluded). `hint_pos` is a word index and must be at most the
+    /// index of the word containing `pos`. `hint_rank` must be the number of
+    /// ones preceding the start of word `hint_pos`.
+    ///
+    /// `WORDS_PER_SUBBLOCK` must be `usize::MAX`, or it must be nonzero and
+    /// cover every word from `hint_pos` through the word containing `pos`.
     ///
     /// Some implementation might accept the length as a valid argument.
     ///
@@ -374,6 +376,9 @@ pub trait SelectHinted {
     /// in the underlying bit vector strictly before `hint_pos` (hence at most
     /// `rank`).
     ///
+    /// `WORDS_PER_SUBBLOCK` must be `usize::MAX`, or it must be nonzero and
+    /// cover every word from the word containing `hint_pos` through the target.
+    ///
     /// [length of the underlying bit vector]: BitLength::len
     unsafe fn select_hinted<const WORDS_PER_SUBBLOCK: usize>(
         &self,
@@ -441,6 +446,9 @@ pub trait SelectZeroHinted {
     /// zeros in the underlying bit vector strictly before `hint_pos` (hence at
     /// most `rank`).
     ///
+    /// `WORDS_PER_SUBBLOCK` must be `usize::MAX`, or it must be nonzero and
+    /// cover every word from the word containing `hint_pos` through the target.
+    ///
     /// [length of the underlying bit vector]: BitLength::len
     unsafe fn select_zero_hinted<const WORDS_PER_SUBBLOCK: usize>(
         &self,
@@ -487,7 +495,7 @@ impl<T: SelectZeroHinted + ?Sized> SelectZeroHinted for Box<T> {
 }
 
 /// A thin wrapper implementing [`NumBits`] by caching the result of
-/// [`BitVecOps::count_ones`](crate::traits::BitVecOps::count_ones).
+/// [`BitVecOps::count_ones`].
 ///
 /// This structure forwards to the wrapped structure all traits defined in [this
 /// module] except for [`NumBits`]. It is typically used to
@@ -508,7 +516,7 @@ impl<T: SelectZeroHinted + ?Sized> SelectZeroHinted for Box<T> {
 /// [`SelectAdapt`]: crate::rank_sel::SelectAdapt
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::Backend, target = "bits")]
 #[delegate(crate::traits::bit_vec_ops::BitLength, target = "bits")]
