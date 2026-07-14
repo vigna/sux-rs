@@ -46,9 +46,11 @@ impl<W: Word> Modulo2Equation<W> {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that the variables are sorted.
+    /// `vars` must be strictly increasing. In particular, duplicate variables
+    /// are invalid: repeated coefficients cancel in F2 and must be removed by
+    /// the caller before construction.
     pub unsafe fn from_parts(vars: Vec<u32>, c: W) -> Self {
-        debug_assert!(vars.iter().is_sorted());
+        debug_assert!(vars.windows(2).all(|pair| pair[0] < pair[1]));
         Modulo2Equation { vars, c }
     }
 
@@ -158,8 +160,9 @@ impl<W: Word> Modulo2System<W> {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that variables in each equation match the number
-    /// of variables in the system.
+    /// Every variable index in every equation must be strictly less than
+    /// `num_vars`. Equation variable lists must also satisfy
+    /// [`Modulo2Equation::from_parts`]'s strictly-increasing invariant.
     pub unsafe fn from_parts(num_vars: usize, equations: Vec<Modulo2Equation<W>>) -> Self {
         Modulo2System {
             num_vars,
@@ -168,7 +171,19 @@ impl<W: Word> Modulo2System<W> {
     }
 
     /// Adds an equation to the system.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the equation contains a variable outside this system.
     pub fn push(&mut self, equation: Modulo2Equation<W>) {
+        if let Some(&last_var) = equation.vars.last() {
+            let last_var = usize::try_from(last_var).expect("variable index does not fit in usize");
+            assert!(
+                last_var < self.num_vars,
+                "variable {last_var} is out of bounds for a system with {} variables",
+                self.num_vars
+            );
+        }
         self.equations.push(equation);
     }
 
@@ -465,6 +480,15 @@ mod tests {
         let solution = system.lazy_gaussian_elimination()?;
         assert!(system.check(&solution));
         Ok(())
+    }
+
+    #[test]
+    #[should_panic(expected = "out of bounds")]
+    fn test_push_rejects_out_of_range_variable() {
+        let mut system = Modulo2System::<usize>::new(1);
+        // SAFETY: a one-element variable list is strictly increasing.
+        let equation = unsafe { Modulo2Equation::from_parts(vec![1], 0_usize) };
+        system.push(equation);
     }
 
     #[test]
