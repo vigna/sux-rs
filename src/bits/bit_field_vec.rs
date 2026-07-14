@@ -348,7 +348,10 @@ impl<B: Backend<Word: Word>> BitFieldVec<B> {
     /// - `len` * `bit_width` must be between 0 (included) and the number of
     ///   bits in `bits` (included);
     ///
-    /// - there must be at least an allocated word when `bit_width` is zero.
+    /// When `bit_width` is zero the backend may be empty: all value
+    /// read/write/iteration methods special-case zero width and never touch the
+    /// backend. Calling [`addr_of`](Self::addr_of) additionally requires at
+    /// least one backing word.
     #[inline(always)]
     #[must_use]
     pub unsafe fn from_raw_parts(bits: B, bit_width: usize, len: usize) -> Self {
@@ -610,8 +613,8 @@ impl<W: Word> BitFieldVec<Vec<W>> {
         );
         let mut bits = Vec::with_capacity(n_of_words);
         if bit_width == 0 {
-            // A zero-width vector still needs one backing word so that
-            // set_value_unchecked can index word 0.
+            // Reserve a backing word so `addr_of` keeps working on vectors
+            // created here; value read/write paths do not need it.
             bits.push(W::ZERO);
         }
         Self {
@@ -1342,7 +1345,7 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVecUncheckedIter<'a,
         }
         let bits = B::Word::BITS as usize;
         let (fill, word_index);
-        let window = if index == vec.len() {
+        let window = if index == vec.len() || vec.bit_width == 0 {
             word_index = 0;
             fill = 0;
             B::Word::ZERO
@@ -1427,7 +1430,7 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVecUncheckedBackIter
         let bits = B::Word::BITS as usize;
         let (word_index, fill);
 
-        let window = if index == 0 {
+        let window = if index == 0 || vec.bit_width == 0 {
             word_index = 0;
             fill = 0;
             B::Word::ZERO

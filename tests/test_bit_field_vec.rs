@@ -772,7 +772,24 @@ fn test_zero_width_chunks_mut() -> Result<()> {
     let mut b = BitFieldVec::<Vec<u64>>::new(0, 5);
     let mut chunks = b.try_chunks_mut(2).map_err(anyhow::Error::from)?;
     assert_eq!(chunks.size_hint(), (3, Some(3)));
-    assert_eq!(chunks.next().unwrap().len(), 2);
+
+    // Each zero-width chunk is backed by an empty slice. Reading/iterating it
+    // must never touch the backend (regression: the forward and backward
+    // unchecked iterator constructors used to read word 0 of the empty
+    // backend, which is out-of-bounds UB reachable from safe `iter()`).
+    let c0 = chunks.next().unwrap();
+    assert_eq!(c0.len(), 2);
+    // Safe forward iteration goes through BitFieldVecUncheckedIter::new.
+    assert_eq!(c0.iter().collect::<Vec<u64>>(), vec![0, 0]);
+    // The backward unchecked constructor is the other affected path; merely
+    // building it triggered the bad read before any element was produced.
+    let mut back = (&c0).into_unchecked_iter_back_from(c0.len());
+    // SAFETY: `c0` has exactly 2 logical elements and the iterator is
+    // end-positioned, so two `next_unchecked` calls stay in range; for zero
+    // bit width each yields the constant zero without any backend access.
+    let back_vals = unsafe { [back.next_unchecked(), back.next_unchecked()] };
+    assert_eq!(back_vals, [0u64, 0]);
+
     assert_eq!(chunks.next().unwrap().len(), 2);
     assert_eq!(chunks.next().unwrap().len(), 1);
     assert!(chunks.next().is_none());
