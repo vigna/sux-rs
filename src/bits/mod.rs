@@ -104,6 +104,7 @@ pub(crate) use test_unaligned_pos;
 /// Position-independent worst-case: `$bw + 7 <= <$ty>::BITS`.
 ///
 /// [`BitVec::get_value_unaligned_unchecked`]: crate::traits::BitVecOps::get_value_unaligned_unchecked
+#[cfg(feature = "rayon")]
 macro_rules! test_unaligned_any_pos {
     ($ty:ty, $bw:expr) => {{
         let bits = <$ty>::BITS as usize;
@@ -112,4 +113,5 @@ macro_rules! test_unaligned_any_pos {
     }};
 }
 
+#[cfg(feature = "rayon")]
 pub(crate) use test_unaligned_any_pos;

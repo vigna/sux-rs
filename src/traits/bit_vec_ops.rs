@@ -61,6 +61,15 @@ macro_rules! panic_if_out_of_bounds {
     };
 }
 
+#[inline(always)]
+fn assert_backing_word(index: usize, bits_per_word: usize, backing_words: usize) {
+    let word_index = index / bits_per_word;
+    assert!(
+        word_index < backing_words,
+        "Bit-vector backing storage is too short: word {word_index} >= {backing_words}"
+    );
+}
+
 /// A trait expressing a length in bits.
 ///
 /// This trait is typically used in conjunction with
@@ -86,6 +95,13 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
     #[inline]
     fn get(&self, index: usize) -> bool {
         panic_if_out_of_bounds!(index, self.len());
+        assert_backing_word(
+            index,
+            usize::try_from(W::BITS).expect("word width fits in usize"),
+            self.as_ref().len(),
+        );
+        // SAFETY: both the logical bit bound and physical backing word were
+        // checked above.
         unsafe { self.get_unchecked(index) }
     }
 
@@ -94,7 +110,8 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
     ///
     /// # Safety
     ///
-    /// `index` must be between 0 (included) and [`BitLength::len`] (excluded).
+    /// `index` must be between 0 (included) and [`BitLength::len`] (excluded),
+    /// and `self.as_ref()` must contain the word holding `index`.
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> bool {
         let bits_per_word = W::BITS as usize;
@@ -308,6 +325,13 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
     #[inline]
     fn set(&mut self, index: usize, value: bool) {
         panic_if_out_of_bounds!(index, self.len());
+        assert_backing_word(
+            index,
+            usize::try_from(W::BITS).expect("word width fits in usize"),
+            self.as_ref().len(),
+        );
+        // SAFETY: both the logical bit bound and physical backing word were
+        // checked above.
         unsafe { self.set_unchecked(index, value) }
     }
 
@@ -315,7 +339,8 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
     ///
     /// # Safety
     ///
-    /// `index` must be between 0 (included) and [`BitLength::len`] (excluded).
+    /// `index` must be between 0 (included) and [`BitLength::len`] (excluded),
+    /// and `self.as_ref()` must contain the word holding `index`.
     #[inline(always)]
     unsafe fn set_unchecked(&mut self, index: usize, value: bool) {
         let bits_per_word = W::BITS as usize;
@@ -442,8 +467,17 @@ pub struct BitIter<'a, W: Word, B: ?Sized> {
 }
 
 impl<'a, W: Word, B: ?Sized + AsRef<[W]>> BitIter<'a, W, B> {
+    /// Creates an iterator over the first `len` bits in `bits`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the backing slice cannot hold `len` bits.
     pub fn new(bits: &'a B, len: usize) -> Self {
-        debug_assert!(len <= bits.as_ref().len() * W::BITS as usize);
+        let bits_per_word = usize::try_from(W::BITS).expect("word width fits in usize");
+        assert!(
+            len.div_ceil(bits_per_word) <= bits.as_ref().len(),
+            "Bit-vector backing storage is too short for {len} bits"
+        );
         BitIter {
             bits,
             len,
@@ -611,6 +645,13 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
     /// ordering.
     fn get(&self, index: usize, ordering: Ordering) -> bool {
         panic_if_out_of_bounds!(index, self.len());
+        assert_backing_word(
+            index,
+            usize::try_from(A::Value::BITS).expect("word width fits in usize"),
+            self.as_ref().len(),
+        );
+        // SAFETY: both the logical bit bound and physical backing word were
+        // checked above.
         unsafe { self.get_unchecked(index, ordering) }
     }
 
@@ -620,6 +661,13 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
     /// ordering.
     fn set(&self, index: usize, value: bool, ordering: Ordering) {
         panic_if_out_of_bounds!(index, self.len());
+        assert_backing_word(
+            index,
+            usize::try_from(A::Value::BITS).expect("word width fits in usize"),
+            self.as_ref().len(),
+        );
+        // SAFETY: both the logical bit bound and physical backing word were
+        // checked above.
         unsafe { self.set_unchecked(index, value, ordering) }
     }
 
@@ -630,6 +678,13 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
     /// ordering.
     fn swap(&self, index: usize, value: bool, ordering: Ordering) -> bool {
         panic_if_out_of_bounds!(index, self.len());
+        assert_backing_word(
+            index,
+            usize::try_from(A::Value::BITS).expect("word width fits in usize"),
+            self.as_ref().len(),
+        );
+        // SAFETY: both the logical bit bound and physical backing word were
+        // checked above.
         unsafe { self.swap_unchecked(index, value, ordering) }
     }
 
@@ -640,7 +695,8 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
     ///
     /// # Safety
     ///
-    /// `index` must be between 0 (included) and [`BitLength::len`] (excluded).
+    /// `index` must be between 0 (included) and [`BitLength::len`] (excluded),
+    /// and `self.as_ref()` must contain the atomic word holding `index`.
     #[inline]
     unsafe fn get_unchecked(&self, index: usize, ordering: Ordering) -> bool {
         let bits_per_word = A::Value::BITS as usize;
@@ -657,7 +713,8 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
     ///
     /// # Safety
     ///
-    /// `index` must be between 0 (included) and [`BitLength::len`] (excluded).
+    /// `index` must be between 0 (included) and [`BitLength::len`] (excluded),
+    /// and `self.as_ref()` must contain the atomic word holding `index`.
     #[inline]
     unsafe fn set_unchecked(&self, index: usize, value: bool, ordering: Ordering) {
         let bits_per_word = A::Value::BITS as usize;
@@ -685,7 +742,8 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
     ///
     /// # Safety
     ///
-    /// `index` must be between 0 (included) and [`BitLength::len`] (excluded).
+    /// `index` must be between 0 (included) and [`BitLength::len`] (excluded),
+    /// and `self.as_ref()` must contain the atomic word holding `index`.
     #[inline]
     unsafe fn swap_unchecked(&self, index: usize, value: bool, ordering: Ordering) -> bool {
         let bits_per_word = A::Value::BITS as usize;
@@ -871,8 +929,17 @@ pub struct AtomicBitIter<'a, A, B: ?Sized> {
 }
 
 impl<'a, A: PrimitiveAtomicUnsigned<Value: Word>, B: ?Sized + AsRef<[A]>> AtomicBitIter<'a, A, B> {
+    /// Creates an iterator over the first `len` atomic bits in `bits`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the backing slice cannot hold `len` bits.
     pub fn new(bits: &'a B, len: usize) -> Self {
-        debug_assert!(len <= bits.as_ref().len() * A::Value::BITS as usize);
+        let bits_per_word = usize::try_from(A::Value::BITS).expect("word width fits in usize");
+        assert!(
+            len.div_ceil(bits_per_word) <= bits.as_ref().len(),
+            "Atomic bit-vector backing storage is too short for {len} bits"
+        );
         AtomicBitIter {
             bits,
             len,

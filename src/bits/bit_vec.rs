@@ -169,12 +169,77 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 /// [module documentation]: mod@crate::bits::bit_vec
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[delegate(crate::traits::Backend, target = "bits")]
 pub struct BitVec<B = Vec<usize>> {
     bits: B,
     len: usize,
 }
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(rename = "BitVec")]
+struct BitVecSerde<B> {
+    bits: B,
+    len: usize,
+}
+
+#[cfg(feature = "serde")]
+impl<'de, B> serde::Deserialize<'de> for BitVec<B>
+where
+    B: Backend<Word: Word> + AsRef<[B::Word]> + serde::Deserialize<'de>,
+{
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let repr = BitVecSerde::<B>::deserialize(deserializer)?;
+        let word_bits = usize::try_from(B::Word::BITS).expect("word width always fits in usize");
+        let capacity = repr
+            .bits
+            .as_ref()
+            .len()
+            .checked_mul(word_bits)
+            .ok_or_else(|| serde::de::Error::custom("bit-vector capacity overflows usize"))?;
+        if repr.len > capacity {
+            return Err(serde::de::Error::custom(
+                "bit-vector length exceeds its backing storage",
+            ));
+        }
+        Ok(Self {
+            bits: repr.bits,
+            len: repr.len,
+        })
+    }
+}
+
+/// Converts a supported [`bit_vec!`] item to a bit.
+///
+/// This trait is public only so exported macro expansions can name it.
+#[doc(hidden)]
+pub trait BitVecValue {
+    fn into_bit(self) -> bool;
+}
+
+impl BitVecValue for bool {
+    #[inline(always)]
+    fn into_bit(self) -> bool {
+        self
+    }
+}
+
+macro_rules! impl_bit_vec_value {
+    ($($t:ty),+ $(,)?) => {
+        $(
+            impl BitVecValue for $t {
+                #[inline(always)]
+                fn into_bit(self) -> bool {
+                    self != 0
+                }
+            }
+        )+
+    };
+}
+
+impl_bit_vec_value!(
+    u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize
+);
 
 /// Convenient, [`vec!`]-like macro to initialize bit vectors.
 ///
@@ -270,8 +335,12 @@ macro_rules! bit_vec {
     };
     ($W:ty: $($x:expr),+ $(,)?) => {
         {
-            let mut b = $crate::bits::BitVec::<Vec<$W>>::with_capacity([$($x),+].len());
-            $( b.push($x != 0); )*
+            let capacity = [$(stringify!($x)),+].len();
+            let mut b = $crate::bits::BitVec::<Vec<$W>>::with_capacity(capacity);
+            $(
+                let value = $x;
+                b.push($crate::bits::BitVecValue::into_bit(value));
+            )*
             b
         }
     };
@@ -297,8 +366,12 @@ macro_rules! bit_vec {
     };
     ($($x:expr),+ $(,)?) => {
         {
-            let mut b = $crate::bits::BitVec::<Vec<usize>>::with_capacity([$($x),+].len());
-            $( b.push($x != 0); )*
+            let capacity = [$(stringify!($x)),+].len();
+            let mut b = $crate::bits::BitVec::<Vec<usize>>::with_capacity(capacity);
+            $(
+                let value = $x;
+                b.push($crate::bits::BitVecValue::into_bit(value));
+            )*
             b
         }
     };
@@ -448,7 +521,7 @@ impl<W: Word> BitVec<Vec<W>> {
             return None;
         }
         let last_pos = self.len - 1;
-        let result = unsafe { self.get_unchecked(last_pos) };
+        let result = self.get(last_pos);
         self.len = last_pos;
         Some(result)
     }
@@ -511,6 +584,8 @@ impl<W: Word> BitVec<Vec<W>> {
         let offset = self.len % bpw;
         let src: &[W] = other.bits.as_ref();
         let src_words = other_len.div_ceil(bpw);
+        let self_words = self.len.div_ceil(bpw);
+        self.bits.truncate(self_words);
         let new_total = self.len + other_len;
         let new_word_count = new_total.div_ceil(bpw);
 
@@ -813,8 +888,8 @@ impl<'a, W: Word> FusedIterator for BitVecChunksMut<'a, W> where
 {
 }
 
-/// Error returned when [`BitVec::try_chunks_mut`] cannot align the
-/// requested chunk size to word boundaries.
+/// Error returned when [`BitVec::try_chunks_mut`] receives a zero or
+/// insufficiently aligned chunk size.
 ///
 /// [`BitVec::try_chunks_mut`]: SliceByValueMut::try_chunks_mut
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -825,6 +900,9 @@ pub struct BitVecChunksMutError<W: Word> {
 
 impl<W: Word> fmt::Display for BitVecChunksMutError<W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.chunk_size == 0 {
+            return write!(f, "try_chunks_mut needs a nonzero chunk size");
+        }
         write!(
             f,
             "try_chunks_mut needs the chunk size ({}) to be a multiple of W::BITS ({}) to return more than one chunk",
@@ -890,7 +968,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
 
     /// # Errors
     ///
-    /// Returns an error if `chunk_size` is not a multiple of
+    /// Returns an error if `chunk_size` is zero, or if it is not a multiple of
     /// `W::BITS` and more than one chunk must be returned.
     fn try_chunks_mut(
         &mut self,
@@ -898,11 +976,8 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
     ) -> Result<Self::ChunksMut<'_>, BitVecChunksMutError<B::Word>> {
         let len = self.len;
         let bits = B::Word::BITS as usize;
-        if len <= chunk_size || chunk_size % bits == 0 {
-            // std::slice::ChunksMut::new panics on chunk_size 0, so
-            // use 1 when the chunk is empty; the iterator will yield
-            // empty views anyway.
-            let words_per_chunk = Ord::max(1, chunk_size.div_ceil(bits));
+        if chunk_size != 0 && (len <= chunk_size || chunk_size % bits == 0) {
+            let words_per_chunk = chunk_size.div_ceil(bits);
             Ok(BitVecChunksMut {
                 remaining: len,
                 chunk_size,
@@ -1022,16 +1097,16 @@ impl<B> BitLength for AtomicBitVec<B> {
 
 impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>> AtomicBitVec<B> {
     /// Returns the number of ones in the bit vector, reading every backing
-    /// word with a relaxed atomic load (dirty bits past the length are masked).
+    /// word with a relaxed atomic load and masking bits past the logical length.
+    ///
+    /// Concurrent writes may be observed independently, so the result is not a
+    /// linearizable snapshot of the entire vector.
     pub fn count_ones(&self) -> usize {
         let bits_per_word = <B::Word as PrimitiveAtomic>::Value::BITS as usize;
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;
         let bits: &[B::Word] = self.as_ref();
         let mut num_ones;
-        // Just to be sure, add a fence to ensure that we will see all the final
-        // values
-        core::sync::atomic::fence(Ordering::SeqCst);
         num_ones = bits[..full_words]
             .iter()
             .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)
@@ -1216,44 +1291,54 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> RankHinted for BitVec<B> {
         hint_pos: usize,
         hint_rank: usize,
     ) -> usize {
-        let bits_per_word = B::Word::BITS as usize;
+        let bits_per_word = usize::try_from(B::Word::BITS).expect("word width fits in usize");
         let bits: &[B::Word] = self.as_ref();
+        let target_word = pos / bits_per_word;
         let mut rank = hint_rank;
-        let mut hp = hint_pos;
+        let mut current_word = hint_pos;
 
-        debug_assert!(hp < bits.len(), "hint_pos: {}, len: {}", hp, bits.len());
+        debug_assert!(hint_pos <= target_word);
+        debug_assert!(target_word < bits.len());
+        debug_assert!(
+            WORDS_PER_SUBBLOCK == usize::MAX || WORDS_PER_SUBBLOCK > target_word - hint_pos
+        );
 
-        // Prefetch the word containing pos so that the load below overlaps
-        // with the popcount accumulation loop, but only when the subblock
-        // spans more than one cache line.  When the subblock fits in a single
-        // 64-byte cache line (e.g. 8 × u64 words), the first loop iteration
-        // already pulls in the target word and the prefetch is pure overhead.
-        if WORDS_PER_SUBBLOCK * std::mem::size_of::<B::Word>() > 64 {
-            crate::utils::prefetch_index(bits, pos / bits_per_word);
+        // Prefetch only for finite subblocks spanning more than a cache line.
+        if WORDS_PER_SUBBLOCK != usize::MAX
+            && WORDS_PER_SUBBLOCK > 64 / core::mem::size_of::<B::Word>()
+        {
+            crate::utils::prefetch_index(bits, target_word);
         }
 
         if WORDS_PER_SUBBLOCK == usize::MAX {
-            // Unbounded: fall back to while loop (used when the caller cannot
-            // provide a compile-time bound).
-            while (hp + 1) * bits_per_word <= pos {
-                rank += unsafe { bits.get_unchecked(hp) }.count_ones() as usize;
-                hp += 1;
+            while current_word < target_word {
+                // SAFETY: the caller guarantees that every word from the hint
+                // through the target is backed by the underlying bit vector.
+                let word = unsafe { bits.get_unchecked(current_word) };
+                rank += usize::try_from(word.count_ones()).expect("a word popcount fits in usize");
+                current_word += 1;
             }
         } else {
-            // Bounded: the loop runs at most WORDS_PER_SUBBLOCK-1 times.
-            // LLVM can fully unroll this when WORDS_PER_SUBBLOCK is small.
-            for _ in 0..WORDS_PER_SUBBLOCK - 1 {
-                if (hp + 1) * bits_per_word > pos {
+            for _ in 0..WORDS_PER_SUBBLOCK.saturating_sub(1) {
+                if current_word == target_word {
                     break;
                 }
-                rank += unsafe { bits.get_unchecked(hp) }.count_ones() as usize;
-                hp += 1;
+                // SAFETY: the caller guarantees that the finite subblock
+                // covers the target and all preceding scanned words.
+                let word = unsafe { bits.get_unchecked(current_word) };
+                rank += usize::try_from(word.count_ones()).expect("a word popcount fits in usize");
+                current_word += 1;
             }
         }
+        debug_assert_eq!(current_word, target_word);
 
-        rank + (unsafe { *bits.get_unchecked(hp) }
-            & (B::Word::ONE << (pos % bits_per_word) as u32).wrapping_sub(B::Word::ONE))
-        .count_ones() as usize
+        // SAFETY: pos is in bounds and current_word is the word containing it.
+        let word = unsafe { *bits.get_unchecked(current_word) };
+        let bit_offset = u32::try_from(pos % bits_per_word).expect("bit offset fits in u32");
+        rank + usize::try_from(
+            (word & (B::Word::ONE << bit_offset).wrapping_sub(B::Word::ONE)).count_ones(),
+        )
+        .expect("a word popcount fits in usize")
     }
 }
 
@@ -1267,29 +1352,36 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectHinted for 
         hint_pos: usize,
         hint_rank: usize,
     ) -> usize {
-        let bits_per_word = B::Word::BITS as usize;
+        let bits_per_word = usize::try_from(B::Word::BITS).expect("word width fits in usize");
         let bits: &[B::Word] = self.as_ref();
         let mut word_index = hint_pos / bits_per_word;
         let bit_index = hint_pos % bits_per_word;
         let mut residual = rank - hint_rank;
+        debug_assert!(WORDS_PER_SUBBLOCK == usize::MAX || WORDS_PER_SUBBLOCK > 0);
+
+        // SAFETY: the caller guarantees that hint_pos is within the bit vector.
         let mut word = (unsafe { *bits.get_unchecked(word_index) } >> bit_index) << bit_index;
-        // WORDS_PER_SUBBLOCK == usize::MAX means unbounded (caller doesn't know the bound).
-        // Otherwise the loop runs at most WORDS_PER_SUBBLOCK times, helping LLVM unroll.
-        let limit = if WORDS_PER_SUBBLOCK == usize::MAX {
-            usize::MAX
-        } else {
-            WORDS_PER_SUBBLOCK
-        };
-        for _ in 0..limit {
-            let bit_count = word.count_ones() as usize;
+        let mut remaining = WORDS_PER_SUBBLOCK;
+        loop {
+            let bit_count =
+                usize::try_from(word.count_ones()).expect("a word popcount fits in usize");
             if residual < bit_count {
                 return word_index * bits_per_word + word.select_in_word(residual);
             }
-            word_index += 1;
-            word = *unsafe { bits.get_unchecked(word_index) };
             residual -= bit_count;
+
+            if remaining != usize::MAX {
+                remaining -= 1;
+                if remaining == 0 {
+                    break;
+                }
+            }
+            word_index += 1;
+            // SAFETY: the caller guarantees that the bounded scan reaches the
+            // target, so every word loaded before the target exists.
+            word = unsafe { *bits.get_unchecked(word_index) };
         }
-        unreachable!()
+        unreachable!("WORDS_PER_SUBBLOCK did not cover the selected one")
     }
 }
 
@@ -1301,27 +1393,36 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
         hint_pos: usize,
         hint_rank: usize,
     ) -> usize {
-        let bits_per_word = B::Word::BITS as usize;
+        let bits_per_word = usize::try_from(B::Word::BITS).expect("word width fits in usize");
         let bits: &[B::Word] = self.as_ref();
         let mut word_index = hint_pos / bits_per_word;
         let bit_index = hint_pos % bits_per_word;
         let mut residual = rank - hint_rank;
+        debug_assert!(WORDS_PER_SUBBLOCK == usize::MAX || WORDS_PER_SUBBLOCK > 0);
+
+        // SAFETY: the caller guarantees that hint_pos is within the bit vector.
         let mut word = (!unsafe { *bits.get_unchecked(word_index) } >> bit_index) << bit_index;
-        let limit = if WORDS_PER_SUBBLOCK == usize::MAX {
-            usize::MAX
-        } else {
-            WORDS_PER_SUBBLOCK
-        };
-        for _ in 0..limit {
-            let bit_count = word.count_ones() as usize;
+        let mut remaining = WORDS_PER_SUBBLOCK;
+        loop {
+            let bit_count =
+                usize::try_from(word.count_ones()).expect("a word popcount fits in usize");
             if residual < bit_count {
                 return word_index * bits_per_word + word.select_in_word(residual);
             }
-            word_index += 1;
-            word = unsafe { !*bits.get_unchecked(word_index) };
             residual -= bit_count;
+
+            if remaining != usize::MAX {
+                remaining -= 1;
+                if remaining == 0 {
+                    break;
+                }
+            }
+            word_index += 1;
+            // SAFETY: the caller guarantees that the bounded scan reaches the
+            // target, so every word loaded before the target exists.
+            word = unsafe { !*bits.get_unchecked(word_index) };
         }
-        unreachable!()
+        unreachable!("WORDS_PER_SUBBLOCK did not cover the selected zero")
     }
 }
 
@@ -1332,10 +1433,8 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 /// which adds a padding word if one is not already present. You can recover
 /// the original [`BitVec`] using a [`From` implementation]
 ///
-/// Note that unaligned reads give correct results only when the bit width
-/// satisfies the unaligned constraints (at most `W::BITS - 6`, or exactly
-/// `W::BITS - 4`, or exactly `W::BITS`). Using other widths will not
-/// cause undefined behavior, but may return incorrect values.
+/// Reads use the one-word unaligned path when the requested range fits in one
+/// such read and fall back to the regular two-word path otherwise.
 ///
 /// We delegate [`Backend`], [`BitLength`], and
 /// [`AsRef<[Backend::Word]>`](core::convert::AsRef) to make [`BitVecOps`]
@@ -1346,11 +1445,36 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 /// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[delegate(Index<usize>, target = "0")]
 #[delegate(crate::traits::Backend, target = "0")]
 #[delegate(crate::traits::bit_vec_ops::BitLength, target = "0")]
 pub struct BitVecU<B>(BitVec<B>);
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(
+    rename = "BitVecU",
+    bound(deserialize = "BitVec<B>: serde::Deserialize<'de>")
+)]
+struct BitVecUSerde<B: Backend>(BitVec<B>);
+
+#[cfg(feature = "serde")]
+impl<'de, B> serde::Deserialize<'de> for BitVecU<B>
+where
+    B: Backend<Word: Word> + AsRef<[B::Word]> + serde::Deserialize<'de>,
+{
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let BitVecUSerde(bits) = BitVecUSerde::<B>::deserialize(deserializer)?;
+        let word_bits = usize::try_from(B::Word::BITS).expect("word width always fits in usize");
+        let logical_words = bits.len.div_ceil(word_bits);
+        if bits.bits.as_ref().len() <= logical_words {
+            return Err(serde::de::Error::custom(
+                "unaligned bit vector requires one padding word",
+            ));
+        }
+        Ok(Self(bits))
+    }
+}
 
 impl<W: Word> From<BitVecU<Box<[W]>>> for BitVec<Box<[W]>> {
     /// Converts a [`BitVecU`] back into a [`BitVec`].
@@ -1388,12 +1512,24 @@ impl<W: Word> crate::traits::TryIntoUnaligned for BitVec<Box<[W]>> {
 impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVecValueOps<B::Word> for BitVecU<B> {
     #[inline(always)]
     fn get_bits(&self, pos: usize, width: usize) -> B::Word {
-        self.0.get_value_unaligned(pos, width)
+        if crate::bits::test_unaligned_pos!(B::Word, pos, width) {
+            self.0.get_value_unaligned(pos, width)
+        } else {
+            self.0.get_bits(pos, width)
+        }
     }
 
     #[inline(always)]
     unsafe fn get_bits_unchecked(&self, pos: usize, width: usize) -> B::Word {
-        unsafe { self.0.get_value_unaligned_unchecked(pos, width) }
+        if crate::bits::test_unaligned_pos!(B::Word, pos, width) {
+            // SAFETY: the caller guarantees the range is within the logical
+            // vector; the branch additionally proves it fits one unaligned read.
+            unsafe { self.0.get_value_unaligned_unchecked(pos, width) }
+        } else {
+            // SAFETY: the caller guarantees `pos + width <= self.len()` and
+            // `width <= Word::BITS`, exactly the delegated method's contract.
+            unsafe { self.0.get_bits_unchecked(pos, width) }
+        }
     }
 }
 

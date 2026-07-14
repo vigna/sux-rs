@@ -18,6 +18,76 @@ use sux::traits::BitVecOps;
 use sux::traits::BitVecValueOps;
 use sux::traits::bit_vec_ops::*;
 
+struct ShortBits;
+
+impl AsRef<[usize]> for ShortBits {
+    fn as_ref(&self) -> &[usize] {
+        &[]
+    }
+}
+
+impl AsMut<[usize]> for ShortBits {
+    fn as_mut(&mut self) -> &mut [usize] {
+        &mut []
+    }
+}
+
+impl BitLength for ShortBits {
+    fn len(&self) -> usize {
+        1
+    }
+}
+
+struct ShortAtomicBits;
+
+impl AsRef<[Atomic<usize>]> for ShortAtomicBits {
+    fn as_ref(&self) -> &[Atomic<usize>] {
+        &[]
+    }
+}
+
+impl BitLength for ShortAtomicBits {
+    fn len(&self) -> usize {
+        1
+    }
+}
+
+#[test]
+fn test_short_backing_is_rejected_before_unchecked_access() {
+    let bits = ShortBits;
+    assert!(std::panic::catch_unwind(|| bits.get(0)).is_err());
+
+    let mut bits = ShortBits;
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| bits.set(0, true))).is_err());
+    assert!(std::panic::catch_unwind(|| BitIter::<usize, _>::new(&[] as &[usize], 1)).is_err());
+
+    let bits = ShortAtomicBits;
+    assert!(
+        std::panic::catch_unwind(|| {
+            AtomicBitVecOps::<Atomic<usize>>::get(&bits, 0, Ordering::Relaxed)
+        })
+        .is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(|| {
+            AtomicBitVecOps::<Atomic<usize>>::set(&bits, 0, true, Ordering::Relaxed)
+        })
+        .is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(|| {
+            AtomicBitVecOps::<Atomic<usize>>::swap(&bits, 0, true, Ordering::Relaxed)
+        })
+        .is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(|| {
+            AtomicBitIter::<Atomic<usize>, _>::new(&[] as &[Atomic<usize>], 1)
+        })
+        .is_err()
+    );
+}
+
 #[test]
 fn test() {
     let n = 50;
@@ -450,6 +520,29 @@ fn test_eq() {
     assert_eq!(b, d);
 }
 
+#[cfg(feature = "serde")]
+#[test]
+fn test_serde_validates_representation() {
+    use sux::traits::TryIntoUnaligned;
+
+    let bits = BitVec::<Vec<u64>>::with_value(65, true);
+    let encoded = serde_json::to_string(&bits).unwrap();
+    let decoded: BitVec<Vec<u64>> = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(decoded, bits);
+
+    let malformed = r#"{"bits":[],"len":1}"#;
+    assert!(serde_json::from_str::<BitVec<Vec<u64>>>(malformed).is_err());
+
+    let exact = BitVec::<Vec<u64>>::new(64);
+    let encoded = serde_json::to_string(&exact).unwrap();
+    assert!(serde_json::from_str::<BitVecU<Vec<u64>>>(&encoded).is_err());
+
+    let exact: BitVec<Box<[u64]>> = exact.into();
+    let padded = exact.try_into_unaligned().expect("supported word width");
+    let encoded = serde_json::to_string(&padded).unwrap();
+    let _: BitVecU<Box<[u64]>> = serde_json::from_str(&encoded).unwrap();
+}
+
 #[cfg(feature = "epserde")]
 #[test]
 fn test_epserde() -> Result<()> {
@@ -620,6 +713,23 @@ fn test_macro() {
     assert!(b[3]);
     assert!(!b[4]);
     assert!(!b[5]);
+}
+
+#[test]
+fn test_macro_evaluates_each_item_once() {
+    let mut calls = 0;
+    let b = bit_vec![
+        {
+            calls += 1;
+            false
+        },
+        {
+            calls += 1;
+            1_u8
+        },
+    ];
+    assert_eq!(calls, 2);
+    assert_eq!(b.iter().collect::<Vec<_>>(), [false, true]);
 }
 
 /// Test BitVec with all word types using a macro.
@@ -966,6 +1076,21 @@ fn test_append_dirty_last_word() {
 }
 
 #[test]
+fn test_append_after_shrink() {
+    let mut aligned = BitVec::<Vec<u64>>::with_value(128, true);
+    aligned.resize(0, false);
+    aligned.append(&bit_vec![u64: 0]);
+    assert_eq!(aligned.iter().collect::<Vec<_>>(), [false]);
+
+    let mut unaligned = BitVec::<Vec<u64>>::with_value(192, true);
+    unaligned.resize(65, false);
+    unaligned.append(&bit_vec![u64: 0, 1]);
+    assert_eq!(unaligned.len(), 67);
+    assert!(!unaligned[65]);
+    assert!(unaligned[66]);
+}
+
+#[test]
 fn test_reserve() {
     let mut b: BitVec = BitVec::new(0);
     b.reserve(100);
@@ -1230,6 +1355,16 @@ fn test_bit_vec_chunks_mut_size_hint() {
     assert_eq!(chunks.size_hint(), (4, Some(4)));
     assert_eq!(chunks.len(), 4);
     assert_eq!(chunks.count(), 4);
+}
+
+#[test]
+fn test_bit_vec_chunks_mut_rejects_zero_size() {
+    use value_traits::slices::SliceByValueMut;
+
+    for len in [0, 64] {
+        let mut bv = BitVec::<Vec<usize>>::new(len);
+        assert!(bv.try_chunks_mut(0).is_err());
+    }
 }
 
 #[test]
