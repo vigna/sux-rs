@@ -1704,6 +1704,8 @@ impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>>> AtomicBitFieldVec<B
     /// # Safety
     /// `len` * `bit_width` must be between 0 (included) and the number of
     /// bits in `bits` (included).
+    /// When `bit_width` is zero the backend may be empty: the atomic accessors
+    /// special-case zero width and never touch the backend.
     #[inline(always)]
     #[must_use]
     pub unsafe fn from_raw_parts(bits: B, bit_width: usize, len: usize) -> Self {
@@ -1794,6 +1796,9 @@ impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>>
         index: usize,
         order: Ordering,
     ) -> <B::Word as PrimitiveAtomic>::Value {
+        if self.bit_width == 0 {
+            return <B::Word as PrimitiveAtomic>::Value::ZERO;
+        }
         let wbits = <B::Word as PrimitiveAtomic>::Value::BITS as usize;
         let pos = index * self.bit_width;
         let word_index = pos / wbits;
@@ -1840,6 +1845,9 @@ impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>>
         value: <B::Word as PrimitiveAtomic>::Value,
         order: Ordering,
     ) {
+        if self.bit_width == 0 {
+            return;
+        }
         // order is the store ordering requested for this write. We implement
         // the write as a load-then-compare_exchange loop, but a plain load and
         // the *failure* slot of compare_exchange are read-only operations and
