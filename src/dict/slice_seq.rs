@@ -20,45 +20,30 @@ use crate::traits::{IndexedSeq, IntoIteratorFrom, Types};
 ///
 /// [indexed sequence]: crate::traits::IndexedSeq
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SliceSeq<O: PartialEq<usize> + PartialEq + Copy, A: AsRef<[O]>>(
-    A,
-    std::marker::PhantomData<O>,
-)
-where
-    usize: PartialEq<O>;
+pub struct SliceSeq<O: PartialEq + Copy, A: AsRef<[O]>>(A, std::marker::PhantomData<O>);
 
-impl<O: PartialEq<usize> + PartialEq + Copy, A: AsRef<[O]>> SliceSeq<O, A>
-where
-    usize: PartialEq<O>,
-{
+impl<O: PartialEq + Copy, A: AsRef<[O]>> SliceSeq<O, A> {
     #[must_use]
     pub fn new(slice: A) -> Self {
         Self(slice, std::marker::PhantomData)
     }
 }
 
-impl<O: PartialEq<usize> + PartialEq + Copy, A: AsRef<[O]>> From<A> for SliceSeq<O, A>
-where
-    usize: PartialEq<O>,
-{
+impl<O: PartialEq + Copy, A: AsRef<[O]>> From<A> for SliceSeq<O, A> {
     fn from(slice: A) -> Self {
         Self::new(slice)
     }
 }
 
-impl<O: PartialEq<usize> + PartialEq + Copy, A: AsRef<[O]>> Types for SliceSeq<O, A>
-where
-    usize: PartialEq<O>,
-{
-    type Input = usize;
+impl<O: PartialEq + Copy, A: AsRef<[O]>> Types for SliceSeq<O, A> {
+    type Input = O;
     type Output<'a> = O;
 }
 
-impl<O: PartialEq<usize> + PartialEq + Copy, A: AsRef<[O]>> IndexedSeq for SliceSeq<O, A>
-where
-    usize: PartialEq<O>,
-{
+impl<O: PartialEq + Copy, A: AsRef<[O]>> IndexedSeq for SliceSeq<O, A> {
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
+        // SAFETY: the caller guarantees `index < self.len()`, and `self.len()`
+        // is exactly the length of this backing slice.
         unsafe { *self.0.as_ref().get_unchecked(index) }
     }
 
@@ -67,19 +52,13 @@ where
     }
 }
 
-impl<O: PartialEq<usize> + PartialEq + Copy, A: AsRef<[O]>> SliceSeq<O, A>
-where
-    usize: PartialEq<O>,
-{
+impl<O: PartialEq + Copy, A: AsRef<[O]>> SliceSeq<O, A> {
     pub fn iter(&self) -> std::iter::Copied<std::slice::Iter<'_, O>> {
         self.0.as_ref().iter().copied()
     }
 }
 
-impl<'a, O: PartialEq<usize> + PartialEq + Copy, A: AsRef<[O]>> IntoIterator for &'a SliceSeq<O, A>
-where
-    usize: PartialEq<O>,
-{
+impl<'a, O: PartialEq + Copy, A: AsRef<[O]>> IntoIterator for &'a SliceSeq<O, A> {
     type Item = O;
     type IntoIter = std::iter::Copied<std::slice::Iter<'a, O>>;
 
@@ -88,11 +67,7 @@ where
     }
 }
 
-impl<'a, O: PartialEq<usize> + PartialEq + Copy, A: AsRef<[O]>> IntoIteratorFrom
-    for &'a SliceSeq<O, A>
-where
-    usize: PartialEq<O>,
-{
+impl<'a, O: PartialEq + Copy, A: AsRef<[O]>> IntoIteratorFrom for &'a SliceSeq<O, A> {
     type IntoIterFrom = std::iter::Skip<std::iter::Copied<std::slice::Iter<'a, O>>>;
 
     fn into_iter_from(self, from: usize) -> Self::IntoIterFrom {
