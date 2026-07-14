@@ -27,8 +27,8 @@
 //! - [`MappedRearCodedListSliceU8`]: stores byte sequences (`AsRef<[u8]>`),
 //!   returning `Vec<u8>` on access.
 //!
-//! These standard types use a `Box<[usize]>` for storing the mapping.
-//! However, it is possible to use any type implementing the
+//! These standard types store the mapping in a bit-packed [`BitFieldVec`] backed
+//! by `Box<[usize]>`. However, it is possible to use any type implementing the
 //! [`SliceByValue`] trait from the [`value_traits`] crate.
 //!
 //! Besides the standard access by means of the [`IndexedSeq`] trait, this
