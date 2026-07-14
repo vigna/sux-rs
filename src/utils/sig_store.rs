@@ -1300,7 +1300,7 @@ fn write_binary<S: BinSafe + Sig, V: BinSafe>(
                 );
             }
         }
-        writer.write_all(&buf[..elem_size * chunk.len()])?;
+        writer.write_all(&buf[..core::mem::size_of_val(chunk)])?;
     }
     Ok(())
 }
