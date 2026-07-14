@@ -106,6 +106,21 @@ fn main() -> Result<()> {
         if args.source == "-" {
             bail!("low-memory mode cannot read from standard input");
         }
+        // Refuse to clobber the input: low-memory mode truncates the
+        // destination (`store_str` calls `File::create`) before the two
+        // streaming passes read the source, so `rcl f f --low-mem` would
+        // destroy `f` and emit an empty list.
+        if let Ok(dst_canon) = std::fs::canonicalize(&args.dest) {
+            let src_canon = std::fs::canonicalize(&args.source)
+                .with_context(|| format!("cannot resolve source path '{}'", args.source))?;
+            if src_canon == dst_canon {
+                bail!(
+                    "low-memory mode cannot write the output '{}' over its input '{}'",
+                    args.dest,
+                    args.source
+                );
+            }
+        }
         let lender = DekoBufLineLender::from_path(&args.source)?;
         call_with_sorted!(
             args.unsorted,
