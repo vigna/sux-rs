@@ -767,10 +767,10 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
                     .map(|_| Vec::with_capacity(per_bucket))
                     .collect();
                 let mut shard_sizes: Box<[usize]> = vec![0usize; num_shards].into_boxed_slice();
-                let mut max_v = V::default();
+                let mut max_v: Option<V> = None;
                 for i in start..end {
                     let sv = f(i);
-                    max_v = Ord::max(max_v, sv.val);
+                    max_v = Some(max_v.map_or(sv.val, |m| Ord::max(m, sv.val)));
                     let bucket = sv.sig.high_bits(bhb, bmask) as usize;
                     let shard = sv.sig.high_bits(mshb, msmask) as usize;
                     shard_sizes[shard] += 1;
@@ -785,15 +785,17 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
             .collect();
         self.reserve_buckets(&bucket_totals);
 
-        let mut max_val = V::default();
+        let mut max_val: Option<V> = None;
         for (buckets, shard_sizes, local_max) in mini_stores {
-            max_val = Ord::max(max_val, local_max);
+            if let Some(lm) = local_max {
+                max_val = Some(max_val.map_or(lm, |m| Ord::max(m, lm)));
+            }
             // SAFETY: each mini-store uses the same bucket/shard geometry as
             // self, and increments shard_sizes for every value put in buckets.
             unsafe { self.merge_from(buckets, shard_sizes).unwrap() };
         }
 
-        Ok(max_val)
+        Ok(max_val.unwrap_or_default())
     }
 }
 
@@ -1479,6 +1481,32 @@ mod tests {
         _test_u8(new_offline(2, 2, None)?, |rand| {
             [rand.random(), rand.random()]
         })?;
+        Ok(())
+    }
+
+    #[cfg(feature = "rayon")]
+    #[test]
+    fn test_par_populate_all_negative_max() -> anyhow::Result<()> {
+        // par_populate must return the true maximum value even when every value
+        // is negative; seeding the accumulator with V::default() (0) would
+        // wrongly report 0 for an all-negative signed value type.
+        let neg = |n: usize, threads: usize| -> anyhow::Result<i64> {
+            let mut store = new_online::<[u64; 1], i64>(2, 2, None)?;
+            store.par_populate(n, threads, |i| {
+                let i = i64::try_from(i).expect("index fits i64");
+                SigVal {
+                    sig: [u64::try_from(i).expect("index fits u64") + 1],
+                    val: -i - 1,
+                }
+            })
+        };
+        assert_eq!(neg(10, 4)?, -1, "max of -1..=-10 is -1, not the default 0");
+        // Fewer values than threads leaves some worker chunks empty; the merge
+        // must skip them rather than fold in a spurious default 0.
+        assert_eq!(neg(2, 8)?, -1);
+        // Empty input returns the default.
+        let mut empty = new_online::<[u64; 1], i64>(2, 2, None)?;
+        assert_eq!(empty.par_populate(0, 4, |_| unreachable!())?, 0);
         Ok(())
     }
 }
