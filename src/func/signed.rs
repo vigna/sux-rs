@@ -375,8 +375,8 @@ where
     /// or `None` if the verification hash does not match.
     #[inline]
     pub fn get(&self, key: K) -> Option<usize> {
-        let rank = self.func.get(key);
-        self.verify(rank, K::to_sig(key, self.func.seed()))
+        let sig = K::to_sig(key, self.func.seed());
+        self.verify(self.func.get_by_sig(key, sig), sig)
     }
 }
 
@@ -398,8 +398,8 @@ where
     /// or `None` if the verification hash does not match.
     #[inline]
     pub fn get(&self, key: &K) -> Option<usize> {
-        let rank = self.func.get(key);
-        self.verify(rank, K::to_sig(key, self.func.seed()))
+        let sig = K::to_sig(key, self.func.seed());
+        self.verify(self.func.get_by_sig(key, sig), sig)
     }
 }
 
@@ -422,8 +422,8 @@ where
     /// or `None` if the verification hash does not match.
     #[inline]
     pub fn get(&self, key: K) -> Option<usize> {
-        let rank = self.func.get(key);
-        self.verify(rank, K::to_sig(key, self.func.seed()))
+        let sig = K::to_sig(key, self.func.seed());
+        self.verify(self.func.get_by_sig(key, sig), sig)
     }
 }
 
@@ -446,8 +446,8 @@ where
     /// or `None` if the verification hash does not match.
     #[inline]
     pub fn get(&self, key: &K) -> Option<usize> {
-        let rank = self.func.get(key);
-        self.verify(rank, K::to_sig(key, self.func.seed()))
+        let sig = K::to_sig(key, self.func.seed());
+        self.verify(self.func.get_by_sig(key, sig), sig)
     }
 }
 
