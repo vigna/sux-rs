@@ -109,7 +109,19 @@ use std::fmt::Display;
 /// [MWHC construction]: https://doi.org/10.1093/comjnl/39.6.547
 /// [`VBuilder`]: crate::func::VBuilder
 /// [`VFunc`]: crate::func::VFunc
-pub trait ShardEdge<S, const K: usize>: Default + Display + Clone + Copy + Send + Sync {
+/// # Safety
+///
+/// After the setup methods return, `num_shards() * num_vertices()` must fit in
+/// `usize`; `shard(sig)` must be smaller than `num_shards()`; every index from
+/// `edge(sig)` must be smaller than that product; and every index from
+/// `local_edge(local_sig)` must be smaller than `num_vertices()`.
+///
+/// For every `V`, `SortSigVal<V>` must have the same size, alignment, and valid
+/// representation as `SigVal<S, V>` so mutable-reference transmutation is
+/// sound. Its equality and radix order must satisfy the requirements below.
+pub unsafe trait ShardEdge<S, const K: usize>:
+    Default + Display + Clone + Copy + Send + Sync
+{
     /// The type to use for sorting signature when looking for duplicate edges.
     ///
     /// This type must be [transmutable] with `SigVal<S, V>`, but it must
@@ -391,7 +403,7 @@ mod fuse {
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
     pub struct FuseLge3Shards {
         shard_bits_shift: u32,
         log2_seg_size: u32,
@@ -501,7 +513,9 @@ mod fuse {
         }
     }
 
-    impl ShardEdge<[u64; 2], 3> for FuseLge3Shards {
+    // SAFETY: setup bounds all generated shard/global/local indices, and
+    // LowSortSigVal is a transparent SigVal<[u64; 2], V> wrapper.
+    unsafe impl ShardEdge<[u64; 2], 3> for FuseLge3Shards {
         type SortSigVal<V: BinSafe> = LowSortSigVal<V>;
         type LocalSig = [u64; 1];
         type Vertex = u32;
@@ -623,7 +637,7 @@ mod fuse {
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
     #[derive(Default)]
     pub struct Fuse3NoShards {
         log2_seg_size: u32,
@@ -753,7 +767,9 @@ mod fuse {
         }
     }
 
-    impl ShardEdge<[u64; 1], 3> for Fuse3NoShards {
+    // SAFETY: setup bounds all generated indices, and SortSigVal is exactly
+    // SigVal<[u64; 1], V>.
+    unsafe impl ShardEdge<[u64; 1], 3> for Fuse3NoShards {
         type SortSigVal<V: BinSafe> = SigVal<[u64; 1], V>;
         type LocalSig = [u64; 1];
         type Vertex = u32;
@@ -824,8 +840,10 @@ mod fuse {
         }
     }
 
-    impl ShardEdge<[u64; 2], 3> for Fuse3NoShards {
-        type SortSigVal<V: BinSafe> = SigVal<[u64; 1], V>;
+    // SAFETY: setup bounds all generated indices, and SortSigVal is exactly
+    // SigVal<[u64; 2], V>.
+    unsafe impl ShardEdge<[u64; 2], 3> for Fuse3NoShards {
+        type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = u64;
 
@@ -912,7 +930,7 @@ mod fuse {
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
     pub struct Fuse3Shards {
         shard_bits_shift: u32,
         log2_seg_size: u32,
@@ -1005,7 +1023,9 @@ mod fuse {
         }
     }
 
-    impl ShardEdge<[u64; 2], 3> for Fuse3Shards {
+    // SAFETY: setup bounds all generated shard/global/local indices, and
+    // LowSortSigVal is a transparent SigVal<[u64; 2], V> wrapper.
+    unsafe impl ShardEdge<[u64; 2], 3> for Fuse3Shards {
         type SortSigVal<V: BinSafe> = LowSortSigVal<V>;
         type LocalSig = [u64; 1];
         type Vertex = u32;
@@ -1134,7 +1154,7 @@ mod fuse {
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
     #[derive(Default)]
     pub struct FuseLge3FullSigs(FuseLge3Shards);
 
@@ -1169,7 +1189,9 @@ mod fuse {
         [v0, v1, v2]
     }
 
-    impl ShardEdge<[u64; 2], 3> for FuseLge3FullSigs {
+    // SAFETY: the delegated setup bounds all generated indices, and
+    // SortSigVal is exactly SigVal<[u64; 2], V>.
+    unsafe impl ShardEdge<[u64; 2], 3> for FuseLge3FullSigs {
         type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = u32;
@@ -1271,7 +1293,9 @@ mod mwhc {
         }
     }
 
-    impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
+    // SAFETY: setup bounds all generated indices, and SortSigVal is exactly
+    // SigVal<[u64; 2], V>.
+    unsafe impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
         type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = u64;
@@ -1421,7 +1445,9 @@ mod mwhc {
         }
     }
 
-    impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
+    // SAFETY: setup bounds all generated shard/global/local indices, and
+    // SortSigVal is exactly SigVal<[u64; 2], V>.
+    unsafe impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
         type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = u32;
