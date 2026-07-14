@@ -559,7 +559,6 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
     type Error = std::io::Error;
 
     fn try_push(&mut self, sig_val: SigVal<S, V>) -> Result<(), Self::Error> {
-        self.len += 1;
         // high_bits can be 0
         let buffer = sig_val
             .sig
@@ -568,10 +567,16 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
             .sig
             .high_bits(self.max_shard_high_bits, self.max_shard_mask) as usize;
 
+        // Account only after write_binary returns Ok, so a write error does not
+        // leave the counters claiming records that were never accepted. This
+        // fixes phantom counts; BufWriter still buffers, so it is not a
+        // transactional guarantee and the store should be discarded after an
+        // I/O error.
+        write_binary(&mut self.buckets[buffer], std::slice::from_ref(&sig_val))?;
+        self.len += 1;
         self.bucket_sizes[buffer] += 1;
         self.shard_sizes[shard] += 1;
-
-        write_binary(&mut self.buckets[buffer], std::slice::from_ref(&sig_val))
+        Ok(())
     }
 
     type ShardStore = ShardStoreImpl<S, V, BufReader<File>>;
@@ -625,9 +630,11 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
             "shard count mismatch"
         );
         for (b, mini_bucket) in buckets.into_vec().into_iter().enumerate() {
+            // Account only after the write succeeds (see try_push): a failure on
+            // bucket b must not inflate len/bucket_sizes for records not written.
+            write_binary(&mut self.buckets[b], &mini_bucket)?;
             self.len += mini_bucket.len();
             self.bucket_sizes[b] += mini_bucket.len();
-            write_binary(&mut self.buckets[b], &mini_bucket)?;
         }
         for (s, &c) in shard_sizes.iter().enumerate() {
             self.shard_sizes[s] += c;
@@ -1507,6 +1514,58 @@ mod tests {
         // Empty input returns the default.
         let mut empty = new_online::<[u64; 1], i64>(2, 2, None)?;
         assert_eq!(empty.par_populate(0, 4, |_| unreachable!())?, 0);
+        Ok(())
+    }
+
+    /// A failed bucket write in offline mode must not inflate the record
+    /// counters (len/bucket_sizes/shard_sizes); otherwise into_shard_store would
+    /// later read more records than were actually written. `/dev/full` fails
+    /// every write with ENOSPC, and a zero-capacity BufWriter forwards writes to
+    /// it without buffering.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_offline_try_push_write_error_keeps_counts_zero() -> anyhow::Result<()> {
+        use std::fs::File;
+        use std::io::BufWriter;
+        let mut store = new_offline::<[u64; 1], u8>(0, 0, None)?;
+        store.buckets[0] =
+            BufWriter::with_capacity(0, File::options().write(true).open("/dev/full")?);
+        let err = store
+            .try_push(SigVal {
+                sig: [1u64],
+                val: 0u8,
+            })
+            .unwrap_err();
+        assert_eq!(err.raw_os_error(), Some(28), "expected ENOSPC from /dev/full");
+        assert_eq!(store.len, 0, "len must not count an unwritten record");
+        assert_eq!(store.bucket_sizes[0], 0);
+        assert_eq!(store.shard_sizes[0], 0);
+        Ok(())
+    }
+
+    /// Same accounting invariant for the offline merge_from fast path.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_offline_merge_from_write_error_keeps_counts_zero() -> anyhow::Result<()> {
+        use std::fs::File;
+        use std::io::BufWriter;
+        let mut store = new_offline::<[u64; 1], u8>(0, 0, None)?;
+        store.buckets[0] =
+            BufWriter::with_capacity(0, File::options().write(true).open("/dev/full")?);
+        let buckets = vec![vec![SigVal {
+            sig: [1u64],
+            val: 0u8,
+        }]]
+        .into_boxed_slice();
+        let shard_sizes = vec![1usize].into_boxed_slice();
+        // SAFETY: a single bucket and a single shard match the store's layout
+        // (buckets_high_bits == max_shard_high_bits == 0); the write fails before
+        // any counter is applied, which is precisely the invariant asserted below.
+        let err = unsafe { store.merge_from(buckets, shard_sizes) }.unwrap_err();
+        assert_eq!(err.raw_os_error(), Some(28), "expected ENOSPC from /dev/full");
+        assert_eq!(store.len, 0);
+        assert_eq!(store.bucket_sizes[0], 0);
+        assert_eq!(store.shard_sizes[0], 0);
         Ok(())
     }
 }
