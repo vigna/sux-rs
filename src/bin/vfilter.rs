@@ -22,7 +22,8 @@ use sux::init_env_logger;
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSliceMut, TryIntoUnaligned, Word};
 use sux::utils::{
-    BinSafe, DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig,
+    BinSafe, DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, FromIntoFallibleLenderFactory,
+    Sig, SigVal, ToSig,
 };
 use value_traits::slices::SliceByValueMut;
 
@@ -135,7 +136,9 @@ where
         }
         if args.sequential {
             let filter = <VFilter<str, Box<[W]>, S, E>>::try_new_with_builder(
-                DekoBufLineLender::from_path(filename)?.take(n),
+                FromIntoFallibleLenderFactory::new(|| {
+                    DekoBufLineLender::from_path(filename).map(|keys| keys.take(n))
+                })?,
                 builder,
                 &mut pl,
             )?;
@@ -145,14 +148,6 @@ where
         } else {
             let (buffer, offsets) = read_concat_lines(filename, n)?;
             let keys = str_slice_from_offsets(&buffer, &offsets);
-            if let Some(n_hint) = args.n {
-                if keys.len() != n_hint {
-                    bail!(
-                        "key count mismatch: read {} keys, expected {n_hint}",
-                        keys.len()
-                    );
-                }
-            }
             let filter =
                 <VFilter<str, Box<[W]>, S, E>>::try_par_new_with_builder(&keys, builder, &mut pl)?;
             if let Some(filename) = args.filter {
@@ -219,7 +214,9 @@ where
         }
         if args.sequential {
             let filter = <VFilter<str, BitFieldVec<Box<[W]>>, S, E>>::try_new_with_builder(
-                DekoBufLineLender::from_path(filename)?.take(n),
+                FromIntoFallibleLenderFactory::new(|| {
+                    DekoBufLineLender::from_path(filename).map(|keys| keys.take(n))
+                })?,
                 args.bits,
                 builder,
                 &mut pl,
@@ -234,14 +231,6 @@ where
         } else {
             let (buffer, offsets) = read_concat_lines(filename, n)?;
             let keys = str_slice_from_offsets(&buffer, &offsets);
-            if let Some(n_hint) = args.n {
-                if keys.len() != n_hint {
-                    bail!(
-                        "key count mismatch: read {} keys, expected {n_hint}",
-                        keys.len()
-                    );
-                }
-            }
             let filter = <VFilter<str, BitFieldVec<Box<[W]>>, S, E>>::try_par_new_with_builder(
                 &keys, args.bits, builder, &mut pl,
             )?;

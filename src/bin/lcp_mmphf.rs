@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, ensure};
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
@@ -29,8 +29,8 @@ use sux::utils::{DekoBufLineLender, FromSlice};
                 .args(["filename", "n"]),
 ))]
 struct Args {
-    /// The number of keys; if no filename is provided, use the 64-bit keys
-    /// [0 . . n).​
+    /// The number of keys; if no filename is provided, generate that many
+    /// sorted distinct pseudorandom 64-bit keys using a fixed seed.​
     #[arg(short, long)]
     n: Option<usize>,
     /// A file containing sorted UTF-8 keys, one per line; it can be
@@ -64,21 +64,23 @@ fn main() -> Result<()> {
     let mut pl = ProgressLogger::default();
     pl.log_interval(args.log.log_interval);
 
-    let n = if let Some(ref filename) = args.filename {
-        if let Some(n) = args.n {
-            n
-        } else {
-            pl.info(format_args!("Counting keys..."));
-            let mut lender = DekoBufLineLender::from_path(filename)?;
-            let mut count = 0usize;
-            while FallibleLender::next(&mut lender)?.is_some() {
-                count += 1;
-            }
-            pl.info(format_args!("Found {count} keys"));
-            count
+    let n = if let Some(filename) = &args.filename {
+        pl.info(format_args!("Counting keys..."));
+        let mut lender = DekoBufLineLender::from_path(filename)?;
+        let mut count = 0usize;
+        while FallibleLender::next(&mut lender)?.is_some() {
+            count = count.checked_add(1).context("key count overflow")?;
         }
+        if let Some(expected) = args.n {
+            ensure!(
+                count == expected,
+                "key count mismatch: found {count}, expected {expected}"
+            );
+        }
+        pl.info(format_args!("Found {count} keys"));
+        count
     } else {
-        args.n.unwrap()
+        args.n.expect("clap requires --n when --filename is absent")
     };
 
     let builder = args.builder.to_builder();
@@ -111,10 +113,14 @@ fn gen_sorted_keys(k: usize, seed: u64) -> Vec<u64> {
 
 macro_rules! maybe_store {
     ($func:expr, $out:expr, $unaligned:expr) => {
-        if let Some(ref f) = $out {
+        if let Some(f) = &$out {
             if $unaligned {
+                // SAFETY: the function was built by its validated constructor,
+                // so its ε-serde representation invariants hold.
                 unsafe { $func.try_into_unaligned()?.store(f) }?;
             } else {
+                // SAFETY: the function was built by its validated constructor,
+                // so its ε-serde representation invariants hold.
                 unsafe { $func.store(f) }?;
             }
         }
@@ -138,14 +144,6 @@ fn build_single(
                 } else {
                     let (buffer, offsets) = read_concat_lines(filename, n)?;
                     let keys = str_slice_from_offsets(&buffer, &offsets);
-                    if let Some(n_hint) = args.n {
-                        if keys.len() != n_hint {
-                            bail!(
-                                "key count mismatch: read {} keys, expected {n_hint}",
-                                keys.len()
-                            );
-                        }
-                    }
                     let mmphf: LcpMmphfStr =
                         LcpMmphfStr::try_par_new_with_builder(&keys, builder, pl)?;
                     maybe_store!(mmphf, args.func, args.unaligned);
@@ -265,14 +263,6 @@ fn build_two_step(
                 } else {
                     let (buffer, offsets) = read_concat_lines(filename, n)?;
                     let keys = str_slice_from_offsets(&buffer, &offsets);
-                    if let Some(n_hint) = args.n {
-                        if keys.len() != n_hint {
-                            bail!(
-                                "key count mismatch: read {} keys, expected {n_hint}",
-                                keys.len()
-                            );
-                        }
-                    }
                     let mmphf: Lcp2MmphfStr =
                         Lcp2MmphfStr::try_par_new_with_builder(&keys, builder, pl)?;
                     maybe_store!(mmphf, args.func, args.unaligned);

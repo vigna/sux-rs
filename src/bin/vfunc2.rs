@@ -25,7 +25,10 @@ use sux::func::VFunc2;
 use sux::func::shard_edge::*;
 use sux::init_env_logger;
 use sux::traits::TryIntoUnaligned;
-use sux::utils::{DekoBufLineLender, FromCloneableIntoIterator, FromSlice, Sig, SigVal, ToSig};
+use sux::utils::{
+    DekoBufLineLender, FromCloneableIntoIterator, FromIntoFallibleLenderFactory, FromSlice, Sig,
+    SigVal, ToSig,
+};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -55,8 +58,8 @@ struct Args {
     /// the deko crate.​
     #[arg(short, long)]
     filename: Option<String>,
-    /// A file containing the values, one ASCII decimal integer per
-    /// line. The number of values must match the number of keys.​
+    /// A file containing the values, one ASCII decimal integer per line.
+    /// The number of values must match the selected keys after applying `--n`.​
     #[arg(short, long)]
     values: Option<String>,
     /// Generate values with a geometric distribution (trailing zeros
@@ -78,11 +81,6 @@ struct Args {
     /// Hashes keys sequentially without loading them in RAM.​
     #[arg(short, long)]
     sequential: bool,
-    /// With an explicit --values file, verify that the key count matches the
-    /// value count. This makes an extra pass over the key file, so it is
-    /// off by default.​
-    #[arg(long, requires = "values", conflicts_with_all = ["geometric", "zipf", "uniform"])]
-    check: bool,
     #[clap(flatten)]
     builder: BuilderArgs,
     #[clap(flatten)]
@@ -202,31 +200,27 @@ where
     pl.log_interval(args.log.log_interval);
 
     if let Some(filename) = &args.filename {
-        let values: Vec<usize> = if let Some(ref path) = args.values {
-            read_values(path)?
+        let key_count = count_keys(filename)?;
+        let n = args.n.map_or(key_count, |cap| cap.min(key_count));
+        let values = if let Some(path) = &args.values {
+            let values = read_values(path)?;
+            ensure!(
+                values.len() == n,
+                "selected key count {n} != value count {}",
+                values.len()
+            );
+            values
         } else {
-            let n = match args.n {
-                Some(n) => n,
-                None => count_keys(filename)?,
-            };
             generate_synthetic_values(&args, n)?
         };
-        let n = values.len();
-        if args.check {
-            // Opt-in (--check requires --values): the key count must match the
-            // value count exactly, otherwise keys past values.len() would be
-            // silently ignored. This costs an extra pass over the key file.
-            let key_count = count_keys(filename)?;
-            ensure!(key_count == n, "key count {key_count} != value count {n}");
-        }
-        let mut builder = args
+        let builder = args
             .builder
-            .configure(VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default());
-        if let Some(n_hint) = args.n {
-            builder = builder.expected_num_keys(n_hint);
-        }
+            .configure(VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default())
+            .expected_num_keys(n);
         if args.sequential {
-            let keys = DekoBufLineLender::from_path(filename)?.take(n);
+            let keys = FromIntoFallibleLenderFactory::new(|| {
+                DekoBufLineLender::from_path(filename).map(|keys| keys.take(n))
+            })?;
             let func = <VFunc2<str, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                 keys,
                 FromSlice::new(&values),

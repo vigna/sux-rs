@@ -20,7 +20,7 @@
 #
 # Default OUTDIR: /tmp/comp_vfunc_sweep_$(date +%Y%m%d)
 #
-set -u
+set -uo pipefail
 cd "$(dirname "$0")/.."
 
 OUTDIR="${1:-/tmp/comp_vfunc_sweep_$(date +%Y%m%d)}"
@@ -31,8 +31,11 @@ log() { echo "[$(date +%Y-%m-%d' '%H:%M:%S)] $*" | tee -a "$LOG"; }
 
 # ── Build ──────────────────────────────────────────────────────────
 log "Building stress binary..."
-cargo build --release --features "cli epserde deko rayon" \
-    --example comp_vfunc_stress 2>&1 | tee -a "$LOG"
+if ! cargo build --release --features "cli epserde deko rayon" \
+    --example comp_vfunc_stress 2>&1 | tee -a "$LOG"; then
+    log "Build failed; aborting sweep"
+    exit 1
+fi
 BIN=${CARGO_TARGET_DIR:-target}/release/examples/comp_vfunc_stress
 
 run_cell() {

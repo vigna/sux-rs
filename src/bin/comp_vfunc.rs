@@ -25,7 +25,9 @@ use sux::func::{CompVFunc, VBuilder};
 use sux::init_env_logger;
 use sux::traits::TryIntoUnaligned;
 use sux::utils::lenders::FromSlice;
-use sux::utils::{DekoBufLineLender, FromCloneableIntoIterator, Sig, SigVal, ToSig};
+use sux::utils::{
+    DekoBufLineLender, FromCloneableIntoIterator, FromIntoFallibleLenderFactory, Sig, SigVal, ToSig,
+};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -55,8 +57,8 @@ struct Args {
     /// the deko crate.​
     #[arg(short, long)]
     filename: Option<String>,
-    /// A file containing the values, one ASCII decimal integer per
-    /// line. The number of values must match the number of keys.​
+    /// A file containing the values, one ASCII decimal integer per line.
+    /// The number of values must match the selected keys after applying `--n`.​
     #[arg(short, long)]
     values: Option<String>,
     /// Generate values with a geometric distribution (trailing zeros
@@ -78,11 +80,6 @@ struct Args {
     /// Hashes keys sequentially without loading them in RAM.​
     #[arg(short, long)]
     sequential: bool,
-    /// With an explicit --values file, verify that the key count matches the
-    /// value count. This makes an extra pass over the key file, so it is
-    /// off by default.​
-    #[arg(long, requires = "values", conflicts_with_all = ["geometric", "zipf", "uniform"])]
-    check: bool,
     /// Cap on the number of distinct codeword lengths in the Huffman decoding
     /// table, which is the main factor in decoding speed. Rare symbols beyond
     /// the cap are diverted to the escape codeword and stored as literals.​
@@ -149,7 +146,9 @@ fn main() -> Result<()> {
         ShardEdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
         ShardEdgeType::Fuse3Shards => main_with_types::<[u64; 2], Fuse3Shards>(args),
         _ => {
-            bail!("comp_vfunc only supports --edge fuse, fuse-no-shards-64, and fuse-no-shards-128")
+            bail!(
+                "comp_vfunc supports only --shard-edge fuse3-shards, fuse3-no-shards64, or fuse3-no-shards128"
+            )
         }
     }
 }
@@ -217,25 +216,23 @@ where
     pl.log_interval(args.log.log_interval);
 
     if let Some(filename) = &args.filename {
-        let values: Vec<usize> = if let Some(ref path) = args.values {
-            read_values(path)?
+        let key_count = count_keys(filename)?;
+        let n = args.n.map_or(key_count, |cap| cap.min(key_count));
+        let values = if let Some(path) = &args.values {
+            let values = read_values(path)?;
+            ensure!(
+                values.len() == n,
+                "selected key count {n} != value count {}",
+                values.len()
+            );
+            values
         } else {
-            let n = match args.n {
-                Some(n) => n,
-                None => count_keys(filename)?,
-            };
             generate_synthetic_values(&args, n)?
         };
-        let n = values.len();
-        if args.check {
-            // Opt-in (--check requires --values): the key count must match the
-            // value count exactly, otherwise keys past values.len() would be
-            // silently ignored. This costs an extra pass over the key file.
-            let key_count = count_keys(filename)?;
-            ensure!(key_count == n, "key count {key_count} != value count {n}");
-        }
         if args.sequential {
-            let keys = DekoBufLineLender::from_path(filename)?.take(n);
+            let keys = FromIntoFallibleLenderFactory::new(|| {
+                DekoBufLineLender::from_path(filename).map(|keys| keys.take(n))
+            })?;
             let func = <CompVFunc<str, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                 keys,
                 FromSlice::new(&values),
