@@ -95,14 +95,16 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
     #[inline]
     fn get(&self, index: usize) -> bool {
         panic_if_out_of_bounds!(index, self.len());
-        assert_backing_word(
-            index,
-            usize::try_from(W::BITS).expect("word width fits in usize"),
-            self.as_ref().len(),
-        );
-        // SAFETY: both the logical bit bound and physical backing word were
-        // checked above.
-        unsafe { self.get_unchecked(index) }
+        let bits_per_word = usize::try_from(W::BITS).expect("word width fits in usize");
+        // Bind the backing slice once so the bounds check and the read use the
+        // same slice even if a backend's `AsRef` is not stable across calls.
+        let bits = self.as_ref();
+        assert_backing_word(index, bits_per_word, bits.len());
+        let word_index = index / bits_per_word;
+        // SAFETY: `assert_backing_word` proved `word_index < bits.len()` on this
+        // exact slice.
+        let word = unsafe { *bits.get_unchecked(word_index) };
+        (word >> (index % bits_per_word)) & W::ONE != W::ZERO
     }
 
     /// Returns true if the bit of given index is set, without
@@ -372,14 +374,23 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
     #[inline]
     fn set(&mut self, index: usize, value: bool) {
         panic_if_out_of_bounds!(index, self.len());
-        assert_backing_word(
-            index,
-            usize::try_from(W::BITS).expect("word width fits in usize"),
-            self.as_ref().len(),
-        );
-        // SAFETY: both the logical bit bound and physical backing word were
-        // checked above.
-        unsafe { self.set_unchecked(index, value) }
+        let bits_per_word = usize::try_from(W::BITS).expect("word width fits in usize");
+        // Bind the mutable backing once and check it: the previous code
+        // validated `self.as_ref()` but wrote through `self.as_mut()`, which is
+        // unsound if a backend's `AsRef`/`AsMut` slices ever disagree in length.
+        let bits = self.as_mut();
+        assert_backing_word(index, bits_per_word, bits.len());
+        let word_index = index / bits_per_word;
+        let bit_index = index % bits_per_word;
+        // SAFETY: `assert_backing_word` proved `word_index < bits.len()` on this
+        // exact mutable slice, so the unchecked writes are in bounds.
+        unsafe {
+            if value {
+                *bits.get_unchecked_mut(word_index) |= W::ONE << bit_index;
+            } else {
+                *bits.get_unchecked_mut(word_index) &= !(W::ONE << bit_index);
+            }
+        }
     }
 
     /// Sets the bit of given index to the given value without bound checks.
@@ -387,7 +398,7 @@ pub trait BitVecOpsMut<W: Word>: AsRef<[W]> + AsMut<[W]> + BitLength {
     /// # Safety
     ///
     /// `index` must be between 0 (included) and [`BitLength::len`] (excluded),
-    /// and `self.as_ref()` must contain the word holding `index`.
+    /// and `self.as_mut()` must contain the word holding `index`.
     #[inline(always)]
     unsafe fn set_unchecked(&mut self, index: usize, value: bool) {
         let bits_per_word = W::BITS as usize;
