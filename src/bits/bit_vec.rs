@@ -845,7 +845,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> Index<usize> for BitVec<B> {
 }
 
 impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> IntoIterator for &'a BitVec<B> {
-    type IntoIter = BitIter<'a, B::Word, B>;
+    type IntoIter = BitIter<'a, B::Word>;
     type Item = bool;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -1159,7 +1159,7 @@ impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>> 
 impl<'a, B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>> IntoIterator
     for &'a AtomicBitVec<B>
 {
-    type IntoIter = AtomicBitIter<'a, B::Word, B>;
+    type IntoIter = AtomicBitIter<'a, B::Word>;
     type Item = bool;
 
     fn into_iter(self) -> Self::IntoIter {

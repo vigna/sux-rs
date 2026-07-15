@@ -7,6 +7,7 @@
 
 use anyhow::Result;
 use atomic_primitive::Atomic;
+use core::cell::Cell;
 use core::sync::atomic::Ordering;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
@@ -59,7 +60,7 @@ fn test_short_backing_is_rejected_before_unchecked_access() {
 
     let mut bits = ShortBits;
     assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| bits.set(0, true))).is_err());
-    assert!(std::panic::catch_unwind(|| BitIter::<usize, _>::new(&[] as &[usize], 1)).is_err());
+    assert!(std::panic::catch_unwind(|| BitIter::<usize>::new(&[] as &[usize], 1)).is_err());
 
     let bits = ShortAtomicBits;
     assert!(
@@ -82,10 +83,186 @@ fn test_short_backing_is_rejected_before_unchecked_access() {
     );
     assert!(
         std::panic::catch_unwind(|| {
-            AtomicBitIter::<Atomic<usize>, _>::new(&[] as &[Atomic<usize>], 1)
+            AtomicBitIter::<Atomic<usize>>::new(&[] as &[Atomic<usize>], 1)
         })
         .is_err()
     );
+}
+
+/// A safe `AsRef` backend whose `as_ref` returns `first` on the very first call
+/// and `rest` (same length, different content) on every later call. Code that
+/// binds the backing slice once observes only `first`; code that re-fetches
+/// `as_ref` between a bounds check and the access would observe `rest`.
+struct AlternatingBits {
+    first: Vec<usize>,
+    rest: Vec<usize>,
+    len_bits: usize,
+    calls: Cell<usize>,
+}
+
+impl AlternatingBits {
+    fn new(first: Vec<usize>, rest_fill: usize) -> Self {
+        let len_bits = first.len() * usize::try_from(usize::BITS).unwrap();
+        let rest = vec![rest_fill; first.len()];
+        Self { first, rest, len_bits, calls: Cell::new(0) }
+    }
+
+    /// A stable variant (`rest == first`) whose reads are independent of whether
+    /// the caller binds the slice once, used as a reference oracle.
+    fn stable(first: Vec<usize>) -> Self {
+        let len_bits = first.len() * usize::try_from(usize::BITS).unwrap();
+        let rest = first.clone();
+        Self { first, rest, len_bits, calls: Cell::new(0) }
+    }
+}
+
+impl AsRef<[usize]> for AlternatingBits {
+    fn as_ref(&self) -> &[usize] {
+        let c = self.calls.get();
+        self.calls.set(c + 1);
+        if c == 0 { &self.first } else { &self.rest }
+    }
+}
+
+impl BitLength for AlternatingBits {
+    fn len(&self) -> usize {
+        self.len_bits
+    }
+}
+
+/// A safe atomic `AsRef` backend that alternates like [`AlternatingBits`].
+struct AlternatingAtomicBits {
+    first: Vec<Atomic<usize>>,
+    rest: Vec<Atomic<usize>>,
+    len_bits: usize,
+    calls: Cell<usize>,
+}
+
+impl AlternatingAtomicBits {
+    fn new(first: Vec<usize>, rest: Vec<usize>) -> Self {
+        let len_bits = first.len() * usize::try_from(usize::BITS).unwrap();
+        Self {
+            first: first.into_iter().map(Atomic::<usize>::new).collect(),
+            rest: rest.into_iter().map(Atomic::<usize>::new).collect(),
+            len_bits,
+            calls: Cell::new(0),
+        }
+    }
+
+    /// A stable variant (`rest == first`) used as a reference oracle.
+    fn stable(vals: Vec<usize>) -> Self {
+        Self::new(vals.clone(), vals)
+    }
+}
+
+impl AsRef<[Atomic<usize>]> for AlternatingAtomicBits {
+    fn as_ref(&self) -> &[Atomic<usize>] {
+        let c = self.calls.get();
+        self.calls.set(c + 1);
+        if c == 0 { &self.first } else { &self.rest }
+    }
+}
+
+impl BitLength for AlternatingAtomicBits {
+    fn len(&self) -> usize {
+        self.len_bits
+    }
+}
+
+// The tests below each exercise a single safe path against an unstable `AsRef`.
+// Each compares the unstable backend against a stable oracle (or asserts the
+// operation targeted `first`); a re-fetching implementation would observe `rest`
+// and diverge. Values fit a 32-bit `usize`.
+
+fn sample_words() -> Vec<usize> {
+    vec![0x0123_4567usize, 0x89ab_cdef, 0, 0x00ff_00ff]
+}
+
+#[test]
+fn test_get_unaligned_binds_slice_once() {
+    let first = sample_words();
+    let alt = AlternatingBits::new(first.clone(), usize::MAX);
+    let stable = AlternatingBits::stable(first);
+    assert_eq!(alt.get_unaligned(0), stable.get_unaligned(0));
+}
+
+#[test]
+fn test_get_value_unaligned_binds_slice_once() {
+    let first = sample_words();
+    let alt = AlternatingBits::new(first.clone(), usize::MAX);
+    let stable = AlternatingBits::stable(first);
+    assert_eq!(
+        alt.get_value_unaligned(8, 16),
+        stable.get_value_unaligned(8, 16),
+    );
+}
+
+#[test]
+fn test_bit_iter_binds_slice_once() {
+    let first = sample_words();
+    let alt = AlternatingBits::new(first.clone(), usize::MAX);
+    let stable = AlternatingBits::stable(first);
+    let got: Vec<bool> = BitIter::<usize>::new(&alt, alt.len()).collect();
+    let expected: Vec<bool> = BitIter::<usize>::new(&stable, stable.len()).collect();
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn test_ones_iter_binds_slice_once() {
+    let first = sample_words();
+    let alt = AlternatingBits::new(first.clone(), usize::MAX);
+    let stable = AlternatingBits::stable(first);
+    let got: Vec<usize> = OnesIter::<usize>::new(&alt, alt.len()).collect();
+    let expected: Vec<usize> = OnesIter::<usize>::new(&stable, stable.len()).collect();
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn test_zeros_iter_binds_slice_once() {
+    let first = sample_words();
+    let alt = AlternatingBits::new(first.clone(), usize::MAX);
+    let stable = AlternatingBits::stable(first);
+    let got: Vec<usize> = ZerosIter::<usize>::new(&alt, alt.len()).collect();
+    let expected: Vec<usize> = ZerosIter::<usize>::new(&stable, stable.len()).collect();
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn test_atomic_bit_iter_binds_slice_once() {
+    let first = sample_words();
+    let alt = AlternatingAtomicBits::new(first.clone(), vec![usize::MAX; first.len()]);
+    let stable = AlternatingAtomicBits::stable(first);
+    let got: Vec<bool> = AtomicBitIter::<Atomic<usize>>::new(&alt, alt.len()).collect();
+    let expected: Vec<bool> = AtomicBitIter::<Atomic<usize>>::new(&stable, stable.len()).collect();
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn test_atomic_get_binds_slice_once() {
+    // first has bit 0 set; a re-fetch would read the clear rest slice.
+    let ab = AlternatingAtomicBits::new(vec![1, 0], vec![0, 0]);
+    assert!(AtomicBitVecOps::<Atomic<usize>>::get(&ab, 0, Ordering::Relaxed));
+}
+
+#[test]
+fn test_atomic_set_binds_slice_once() {
+    // set must write into the first slice, not a re-fetched rest slice.
+    let ab = AlternatingAtomicBits::new(vec![0, 0], vec![0, 0]);
+    AtomicBitVecOps::<Atomic<usize>>::set(&ab, 0, true, Ordering::Relaxed);
+    assert_eq!(ab.first[0].load(Ordering::Relaxed) & 1, 1);
+}
+
+#[test]
+fn test_atomic_swap_binds_slice_once() {
+    // swap must report the first slice's previous bit and update the first slice.
+    let ab = AlternatingAtomicBits::new(vec![1, 0], vec![0, 0]);
+    assert!(AtomicBitVecOps::<Atomic<usize>>::swap(
+        &ab,
+        0,
+        false,
+        Ordering::Relaxed
+    ));
+    assert_eq!(ab.first[0].load(Ordering::Relaxed) & 1, 0);
 }
 
 #[test]

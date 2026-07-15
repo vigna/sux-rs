@@ -51,7 +51,7 @@ use mem_dbg::{MemDbg, MemSize};
 use num_primitive::PrimitiveInteger;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
-use std::{iter::FusedIterator, marker::PhantomData, sync::atomic::Ordering};
+use std::{iter::FusedIterator, sync::atomic::Ordering};
 
 macro_rules! panic_if_out_of_bounds {
     ($index: expr, $len: expr) => {
@@ -68,6 +68,89 @@ fn assert_backing_word(index: usize, bits_per_word: usize, backing_words: usize)
         word_index < backing_words,
         "Bit-vector backing storage is too short: word {word_index} >= {backing_words}"
     );
+}
+
+/// Reads a possibly-unaligned `width`-bit value starting at bit position `pos`
+/// from `data`, using a branchless read on little-endian targets.
+///
+/// # Safety
+///
+/// - `width + (pos % 8)` must be at most `W::BITS`.
+/// - Reading `size_of::<W>()` bytes starting at byte offset `pos / 8` must not
+///   exceed `data`.
+#[inline(always)]
+unsafe fn read_unaligned_value<W: Word>(data: &[W], pos: usize, width: usize) -> W {
+    if width == 0 {
+        return W::ZERO;
+    }
+    #[cfg(target_endian = "big")]
+    {
+        // Endian-independent word-based extraction; the caller's padding-word
+        // guarantee keeps the two-word straddle in bounds.
+        let word_bits = usize::try_from(W::BITS).expect("word width fits in usize");
+        let word_index = pos / word_bits;
+        let bit_index = pos % word_bits;
+        let low = data[word_index] >> bit_index;
+        let raw = if bit_index + width <= word_bits {
+            low
+        } else {
+            low | (data[word_index + 1] << (word_bits - bit_index))
+        };
+        let l = word_bits - width;
+        return (raw << l) >> l;
+    }
+    #[cfg(target_endian = "little")]
+    {
+        debug_assert!(
+            pos / 8 + size_of::<W>() <= std::mem::size_of_val(data),
+            "unaligned read at bit position {} would exceed allocation",
+            pos,
+        );
+        let base_ptr = data.as_ptr() as *const u8;
+        // SAFETY: the caller guarantees the size_of::<W>()-byte read at byte
+        // offset pos/8 stays within `data`; read_unaligned handles misalignment.
+        let ptr = unsafe { base_ptr.add(pos / 8) } as *const W;
+        let word = unsafe { core::ptr::read_unaligned(ptr) };
+        let l = usize::try_from(W::BITS).expect("word width fits in usize") - width;
+        ((word >> (pos % 8)) << l) >> l
+    }
+}
+
+/// Reads a possibly-unaligned full word starting at bit position `pos` from
+/// `data`.
+///
+/// # Safety
+///
+/// Reading `size_of::<W>()` bytes starting at byte offset `pos / 8` must not
+/// exceed `data`.
+#[inline(always)]
+unsafe fn read_unaligned_word<W: Word>(data: &[W], pos: usize) -> W {
+    #[cfg(target_endian = "big")]
+    {
+        // Endian-independent word-based read; the caller's padding-word
+        // guarantee keeps the two-word straddle in bounds.
+        let word_bits = usize::try_from(W::BITS).expect("word width fits in usize");
+        let word_index = pos / word_bits;
+        let bit_index = pos % word_bits;
+        return if bit_index == 0 {
+            data[word_index]
+        } else {
+            (data[word_index] >> bit_index) | (data[word_index + 1] << (word_bits - bit_index))
+        };
+    }
+    #[cfg(target_endian = "little")]
+    {
+        debug_assert!(
+            pos / 8 + size_of::<W>() <= std::mem::size_of_val(data),
+            "unaligned read at bit position {} would exceed allocation",
+            pos,
+        );
+        let base_ptr = data.as_ptr() as *const u8;
+        // SAFETY: the caller guarantees the size_of::<W>()-byte read at byte
+        // offset pos/8 stays within `data`; read_unaligned handles misalignment.
+        let ptr = unsafe { base_ptr.add(pos / 8) } as *const W;
+        unsafe { core::ptr::read_unaligned(ptr) >> (pos % 8) }
+    }
 }
 
 /// A trait expressing a length in bits.
@@ -167,12 +250,17 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
             end,
             self.len()
         );
+        let data = self.as_ref();
         assert!(
-            pos / 8 + size_of::<W>() <= std::mem::size_of_val(self.as_ref()),
+            pos / 8 + size_of::<W>() <= std::mem::size_of_val(data),
             "unaligned read at bit position {} would exceed allocation",
             pos,
         );
-        unsafe { self.get_value_unaligned_unchecked(pos, width) }
+        // SAFETY: `end <= self.len()` (checked above) keeps `pos + width` within
+        // the logical length, `test_unaligned_pos!` bounds `width + (pos % 8) <=
+        // W::BITS`, and this assertion proves the size_of::<W>()-byte read at byte
+        // offset pos/8 stays within `data` -- the exact slice passed to the reader.
+        unsafe { read_unaligned_value::<W>(data, pos, width) }
     }
 
     /// Like [`BitVecValueOps::get_bits_unchecked`], but using a
@@ -199,45 +287,12 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
             width,
             pos,
             stringify!(W),
-            W::BITS as usize,
+            usize::try_from(W::BITS).expect("word width fits in usize"),
         );
-        if width == 0 {
-            return W::ZERO;
-        }
-        #[cfg(target_endian = "big")]
-        {
-            // The little-endian byte read below assumes little-endian byte
-            // order; on big-endian targets fall back to an endian-independent
-            // word-based extraction. The caller's padding-word guarantee keeps
-            // the two-word straddle in bounds.
-            let word_bits = usize::try_from(W::BITS).expect("word width fits in usize");
-            let data = self.as_ref();
-            let word_index = pos / word_bits;
-            let bit_index = pos % word_bits;
-            let low = data[word_index] >> bit_index;
-            let raw = if bit_index + width <= word_bits {
-                low
-            } else {
-                low | (data[word_index + 1] << (word_bits - bit_index))
-            };
-            let l = word_bits - width;
-            return (raw << l) >> l;
-        }
-        #[cfg(target_endian = "little")]
-        {
-            let base_ptr = self.as_ref().as_ptr() as *const u8;
-            debug_assert!(
-                pos / 8 + size_of::<W>() <= std::mem::size_of_val(self.as_ref()),
-                "unaligned read at bit position {} would exceed allocation",
-                pos,
-            );
-            // SAFETY: the caller guarantees the padding word and in-bounds
-            // range; the debug assertion re-checks the derived byte range.
-            let ptr = unsafe { base_ptr.add(pos / 8) } as *const W;
-            let word = unsafe { core::ptr::read_unaligned(ptr) };
-            let l = usize::try_from(W::BITS).expect("word width fits in usize") - width;
-            ((word >> (pos % 8)) << l) >> l
-        }
+        // SAFETY: the caller guarantees `width + (pos % 8) <= W::BITS` and that a
+        // padding word makes the size_of::<W>()-byte read at byte offset pos/8
+        // stay within the backing slice.
+        unsafe { read_unaligned_value::<W>(self.as_ref(), pos, width) }
     }
 
     /// Return the result of an unaligned read of a full word starting at bit
@@ -245,13 +300,15 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
     ///
     /// The actual number of valid bits in the word is `W::BITS - (pos % 8)`.
     fn get_unaligned(&self, pos: usize) -> W {
+        let data = self.as_ref();
         assert!(
-            pos / 8 + size_of::<W>() <= std::mem::size_of_val(self.as_ref()),
+            pos / 8 + size_of::<W>() <= std::mem::size_of_val(data),
             "unaligned read at bit position {} would exceed allocation",
             pos,
         );
-        // SAFETY: we just checked that the read does not exceed the allocation
-        unsafe { self.get_unaligned_unchecked(pos) }
+        // SAFETY: the assertion proves the size_of::<W>()-byte read at byte
+        // offset pos/8 stays within `data`, the exact slice passed to the reader.
+        unsafe { read_unaligned_word::<W>(data, pos) }
     }
 
     /// Return the result of an unaligned read of a full word starting at bit
@@ -266,51 +323,24 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
     /// must not exceed the allocation.
     #[inline(always)]
     unsafe fn get_unaligned_unchecked(&self, pos: usize) -> W {
-        #[cfg(target_endian = "big")]
-        {
-            // The little-endian byte read below assumes little-endian byte
-            // order; on big-endian targets fall back to an endian-independent
-            // word-based read. The caller's padding-word guarantee keeps the
-            // two-word straddle in bounds.
-            let word_bits = usize::try_from(W::BITS).expect("word width fits in usize");
-            let data = self.as_ref();
-            let word_index = pos / word_bits;
-            let bit_index = pos % word_bits;
-            return if bit_index == 0 {
-                data[word_index]
-            } else {
-                (data[word_index] >> bit_index) | (data[word_index + 1] << (word_bits - bit_index))
-            };
-        }
-        #[cfg(target_endian = "little")]
-        {
-            let base_ptr = self.as_ref().as_ptr() as *const u8;
-            debug_assert!(
-                pos / 8 + size_of::<W>() <= std::mem::size_of_val(self.as_ref()),
-                "unaligned read at bit position {} would exceed allocation",
-                pos,
-            );
-            // SAFETY: the caller guarantees the read stays within the
-            // allocation (a padding word is present); read_unaligned handles
-            // the possible misalignment explicitly.
-            let ptr = unsafe { base_ptr.add(pos / 8) } as *const W;
-            unsafe { core::ptr::read_unaligned(ptr) >> (pos % 8) }
-        }
+        // SAFETY: the caller guarantees the size_of::<W>()-byte read at byte
+        // offset pos/8 stays within the backing slice.
+        unsafe { read_unaligned_word::<W>(self.as_ref(), pos) }
     }
 
     /// Returns an iterator over the bits of this bit vector as booleans.
     #[inline(always)]
-    fn iter(&self) -> BitIter<'_, W, [W]> {
+    fn iter(&self) -> BitIter<'_, W> {
         BitIter::new(self.as_ref(), self.len())
     }
 
     /// Returns an iterator over the positions of the ones in this bit vector.
-    fn iter_ones(&self) -> OnesIter<'_, W, [W]> {
+    fn iter_ones(&self) -> OnesIter<'_, W> {
         OnesIter::new(self.as_ref(), self.len())
     }
 
     /// Returns an iterator over the positions of the zeros in this bit vector.
-    fn iter_zeros(&self) -> ZerosIter<'_, W, [W]> {
+    fn iter_zeros(&self) -> ZerosIter<'_, W> {
         ZerosIter::new(self.as_ref(), self.len())
     }
 
@@ -516,44 +546,49 @@ pub trait BitVecValueOps<W: Word> {
 
 /// An iterator over the bits of a bit vector as booleans.
 #[derive(Debug, Clone, MemSize, MemDbg)]
-pub struct BitIter<'a, W: Word, B: ?Sized> {
-    bits: &'a B,
+pub struct BitIter<'a, W: Word> {
+    bits: &'a [W],
     len: usize,
     next_bit_pos: usize,
-    _phantom: PhantomData<W>,
 }
 
-impl<'a, W: Word, B: ?Sized + AsRef<[W]>> BitIter<'a, W, B> {
+impl<'a, W: Word> BitIter<'a, W> {
     /// Creates an iterator over the first `len` bits in `bits`.
+    ///
+    /// The backing slice is snapshotted once, so iteration is sound even if the
+    /// `AsRef` implementation does not return the same slice on every call.
     ///
     /// # Panics
     ///
     /// Panics if the backing slice cannot hold `len` bits.
-    pub fn new(bits: &'a B, len: usize) -> Self {
+    pub fn new<B: ?Sized + AsRef<[W]>>(bits: &'a B, len: usize) -> Self {
+        let bits = bits.as_ref();
         let bits_per_word = usize::try_from(W::BITS).expect("word width fits in usize");
         assert!(
-            len.div_ceil(bits_per_word) <= bits.as_ref().len(),
+            len.div_ceil(bits_per_word) <= bits.len(),
             "Bit-vector backing storage is too short for {len} bits"
         );
         BitIter {
             bits,
             len,
             next_bit_pos: 0,
-            _phantom: PhantomData,
         }
     }
 }
 
-impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for BitIter<'_, W, B> {
+impl<W: Word> Iterator for BitIter<'_, W> {
     type Item = bool;
     fn next(&mut self) -> Option<bool> {
         if self.next_bit_pos == self.len {
             return None;
         }
-        let bits_per_word = W::BITS as usize;
+        let bits_per_word = usize::try_from(W::BITS).expect("word width fits in usize");
         let word_idx = self.next_bit_pos / bits_per_word;
         let bit_idx = self.next_bit_pos % bits_per_word;
-        let word = unsafe { *self.bits.as_ref().get_unchecked(word_idx) };
+        // SAFETY: `new` checked `len.div_ceil(bits_per_word) <= self.bits.len()`
+        // against this exact snapshotted slice, and `next_bit_pos < len` here, so
+        // `word_idx < self.bits.len()`.
+        let word = unsafe { *self.bits.get_unchecked(word_idx) };
         let bit = (word >> bit_idx) & W::ONE;
         self.next_bit_pos += 1;
         Some(bit != W::ZERO)
@@ -566,30 +601,33 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for BitIter<'_, W, B> {
     }
 }
 
-impl<W: Word, B: ?Sized + AsRef<[W]>> ExactSizeIterator for BitIter<'_, W, B> {
+impl<W: Word> ExactSizeIterator for BitIter<'_, W> {
     fn len(&self) -> usize {
         self.len - self.next_bit_pos
     }
 }
 
-impl<W: Word, B: ?Sized + AsRef<[W]>> FusedIterator for BitIter<'_, W, B> {}
+impl<W: Word> FusedIterator for BitIter<'_, W> {}
 
 /// An iterator over the positions of the ones in a bit vector.
 #[derive(Debug, Clone, MemSize, MemDbg)]
-pub struct OnesIter<'a, W: Word, B: ?Sized> {
-    bits: &'a B,
+pub struct OnesIter<'a, W: Word> {
+    bits: &'a [W],
     len: usize,
     word_idx: usize,
     word: W,
 }
 
-impl<'a, W: Word, B: ?Sized + AsRef<[W]>> OnesIter<'a, W, B> {
-    pub fn new(bits: &'a B, len: usize) -> Self {
-        debug_assert!(len <= bits.as_ref().len() * W::BITS as usize);
-        let word = if bits.as_ref().is_empty() {
+impl<'a, W: Word> OnesIter<'a, W> {
+    pub fn new<B: ?Sized + AsRef<[W]>>(bits: &'a B, len: usize) -> Self {
+        let bits = bits.as_ref();
+        let bits_per_word = usize::try_from(W::BITS).expect("word width fits in usize");
+        debug_assert!(len <= bits.len() * bits_per_word);
+        let word = if bits.is_empty() {
             W::ZERO
         } else {
-            unsafe { *bits.as_ref().get_unchecked(0) }
+            // SAFETY: the slice is non-empty, so index 0 is in bounds.
+            unsafe { *bits.get_unchecked(0) }
         };
         Self {
             bits,
@@ -600,21 +638,22 @@ impl<'a, W: Word, B: ?Sized + AsRef<[W]>> OnesIter<'a, W, B> {
     }
 }
 
-impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for OnesIter<'_, W, B> {
+impl<W: Word> Iterator for OnesIter<'_, W> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let bits_per_word = W::BITS as usize;
+        let bits_per_word = usize::try_from(W::BITS).expect("word width fits in usize");
         // find the next word with ones
         while self.word == W::ZERO {
             self.word_idx += 1;
-            if self.word_idx >= self.bits.as_ref().len() {
+            if self.word_idx >= self.bits.len() {
                 return None;
             }
-            self.word = unsafe { *self.bits.as_ref().get_unchecked(self.word_idx) };
+            // SAFETY: the bound check above proved `word_idx < self.bits.len()`.
+            self.word = unsafe { *self.bits.get_unchecked(self.word_idx) };
         }
         // find the lowest bit set index in the word
-        let bit_idx = self.word.trailing_zeros() as usize;
+        let bit_idx = usize::try_from(self.word.trailing_zeros()).expect("bit index fits usize");
         // compute the global bit index
         let res = (self.word_idx * bits_per_word) + bit_idx;
         if res >= self.len {
@@ -627,24 +666,27 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for OnesIter<'_, W, B> {
     }
 }
 
-impl<W: Word, B: ?Sized + AsRef<[W]>> FusedIterator for OnesIter<'_, W, B> {}
+impl<W: Word> FusedIterator for OnesIter<'_, W> {}
 
 /// An iterator over the positions of the zeros in a bit vector.
 #[derive(Debug, Clone, MemSize, MemDbg)]
-pub struct ZerosIter<'a, W: Word, B: ?Sized> {
-    bits: &'a B,
+pub struct ZerosIter<'a, W: Word> {
+    bits: &'a [W],
     len: usize,
     word_idx: usize,
     word: W,
 }
 
-impl<'a, W: Word, B: ?Sized + AsRef<[W]>> ZerosIter<'a, W, B> {
-    pub fn new(bits: &'a B, len: usize) -> Self {
-        debug_assert!(len <= bits.as_ref().len() * W::BITS as usize);
-        let word = if bits.as_ref().is_empty() {
+impl<'a, W: Word> ZerosIter<'a, W> {
+    pub fn new<B: ?Sized + AsRef<[W]>>(bits: &'a B, len: usize) -> Self {
+        let bits = bits.as_ref();
+        let bits_per_word = usize::try_from(W::BITS).expect("word width fits in usize");
+        debug_assert!(len <= bits.len() * bits_per_word);
+        let word = if bits.is_empty() {
             W::ZERO
         } else {
-            unsafe { !*bits.as_ref().get_unchecked(0) }
+            // SAFETY: the slice is non-empty, so index 0 is in bounds.
+            unsafe { !*bits.get_unchecked(0) }
         };
         Self {
             bits,
@@ -655,21 +697,22 @@ impl<'a, W: Word, B: ?Sized + AsRef<[W]>> ZerosIter<'a, W, B> {
     }
 }
 
-impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for ZerosIter<'_, W, B> {
+impl<W: Word> Iterator for ZerosIter<'_, W> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let bits_per_word = W::BITS as usize;
+        let bits_per_word = usize::try_from(W::BITS).expect("word width fits in usize");
         // find the next flipped word with zeros
         while self.word == W::ZERO {
             self.word_idx += 1;
-            if self.word_idx >= self.bits.as_ref().len() {
+            if self.word_idx >= self.bits.len() {
                 return None;
             }
-            self.word = unsafe { !*self.bits.as_ref().get_unchecked(self.word_idx) };
+            // SAFETY: the bound check above proved `word_idx < self.bits.len()`.
+            self.word = unsafe { !*self.bits.get_unchecked(self.word_idx) };
         }
         // find the lowest zero bit index in the word
-        let bit_idx = self.word.trailing_zeros() as usize;
+        let bit_idx = usize::try_from(self.word.trailing_zeros()).expect("bit index fits usize");
         // compute the global bit index
         let res = (self.word_idx * bits_per_word) + bit_idx;
         if res >= self.len {
@@ -682,7 +725,7 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for ZerosIter<'_, W, B> {
     }
 }
 
-impl<W: Word, B: ?Sized + AsRef<[W]>> FusedIterator for ZerosIter<'_, W, B> {}
+impl<W: Word> FusedIterator for ZerosIter<'_, W> {}
 
 impl<A: PrimitiveAtomicUnsigned<Value: Word>, T: ?Sized + AsRef<[A]> + BitLength> AtomicBitVecOps<A>
     for T
@@ -702,14 +745,16 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
     /// ordering.
     fn get(&self, index: usize, ordering: Ordering) -> bool {
         panic_if_out_of_bounds!(index, self.len());
-        assert_backing_word(
-            index,
-            usize::try_from(A::Value::BITS).expect("word width fits in usize"),
-            self.as_ref().len(),
-        );
-        // SAFETY: both the logical bit bound and physical backing word were
-        // checked above.
-        unsafe { self.get_unchecked(index, ordering) }
+        let bits_per_word = usize::try_from(A::Value::BITS).expect("word width fits in usize");
+        // Bind the backing slice once so the bounds check and the atomic access
+        // use the same slice even if a backend's `AsRef` is not stable.
+        let bits = self.as_ref();
+        assert_backing_word(index, bits_per_word, bits.len());
+        let word_index = index / bits_per_word;
+        // SAFETY: `assert_backing_word` proved `word_index < bits.len()` on this
+        // exact slice; the load is a single atomic operation.
+        let word = unsafe { bits.get_unchecked(word_index).load(ordering) };
+        (word >> (index % bits_per_word)) & A::Value::ONE != A::Value::ZERO
     }
 
     /// Sets the bit of given index to the given value.
@@ -718,14 +763,24 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
     /// ordering.
     fn set(&self, index: usize, value: bool, ordering: Ordering) {
         panic_if_out_of_bounds!(index, self.len());
-        assert_backing_word(
-            index,
-            usize::try_from(A::Value::BITS).expect("word width fits in usize"),
-            self.as_ref().len(),
-        );
-        // SAFETY: both the logical bit bound and physical backing word were
-        // checked above.
-        unsafe { self.set_unchecked(index, value, ordering) }
+        let bits_per_word = usize::try_from(A::Value::BITS).expect("word width fits in usize");
+        // Bind the backing slice once so the bounds check and the atomic write
+        // use the same slice even if a backend's `AsRef` is not stable.
+        let bits = self.as_ref();
+        assert_backing_word(index, bits_per_word, bits.len());
+        let word_index = index / bits_per_word;
+        let bit_index = index % bits_per_word;
+        // SAFETY: `assert_backing_word` proved `word_index < bits.len()` on this
+        // exact slice; each RMW is a single atomic operation.
+        unsafe {
+            if value {
+                bits.get_unchecked(word_index)
+                    .fetch_or(A::Value::ONE << bit_index, ordering);
+            } else {
+                bits.get_unchecked(word_index)
+                    .fetch_and(!(A::Value::ONE << bit_index), ordering);
+            }
+        }
     }
 
     /// Sets the bit of given index to the given value and returns the previous
@@ -735,14 +790,25 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
     /// ordering.
     fn swap(&self, index: usize, value: bool, ordering: Ordering) -> bool {
         panic_if_out_of_bounds!(index, self.len());
-        assert_backing_word(
-            index,
-            usize::try_from(A::Value::BITS).expect("word width fits in usize"),
-            self.as_ref().len(),
-        );
-        // SAFETY: both the logical bit bound and physical backing word were
-        // checked above.
-        unsafe { self.swap_unchecked(index, value, ordering) }
+        let bits_per_word = usize::try_from(A::Value::BITS).expect("word width fits in usize");
+        // Bind the backing slice once so the bounds check and the atomic RMW use
+        // the same slice even if a backend's `AsRef` is not stable.
+        let bits = self.as_ref();
+        assert_backing_word(index, bits_per_word, bits.len());
+        let word_index = index / bits_per_word;
+        let bit_index = index % bits_per_word;
+        // SAFETY: `assert_backing_word` proved `word_index < bits.len()` on this
+        // exact slice; the RMW is a single atomic operation.
+        let old_word = unsafe {
+            if value {
+                bits.get_unchecked(word_index)
+                    .fetch_or(A::Value::ONE << bit_index, ordering)
+            } else {
+                bits.get_unchecked(word_index)
+                    .fetch_and(!(A::Value::ONE << bit_index), ordering)
+            }
+        };
+        (old_word >> bit_index) & A::Value::ONE != A::Value::ZERO
     }
 
     /// Returns true if the bit of given index is set.
@@ -968,7 +1034,7 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
     /// Nonetheless, all returned values have been valid at some point during
     /// the iteration.
     #[inline(always)]
-    fn iter(&self) -> AtomicBitIter<'_, A, [A]> {
+    fn iter(&self) -> AtomicBitIter<'_, A> {
         AtomicBitIter::new(self.as_ref(), self.len())
     }
 }
@@ -978,51 +1044,49 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
 /// Note that modifying the bit vector while iterating over it will lead to
 /// behavior depending on processor scheduling and memory model.
 #[derive(Debug, MemSize, MemDbg)]
-pub struct AtomicBitIter<'a, A, B: ?Sized> {
-    bits: &'a B,
+pub struct AtomicBitIter<'a, A> {
+    bits: &'a [A],
     len: usize,
     next_bit_pos: usize,
-    _phantom: PhantomData<A>,
 }
 
-impl<'a, A: PrimitiveAtomicUnsigned<Value: Word>, B: ?Sized + AsRef<[A]>> AtomicBitIter<'a, A, B> {
+impl<'a, A: PrimitiveAtomicUnsigned<Value: Word>> AtomicBitIter<'a, A> {
     /// Creates an iterator over the first `len` atomic bits in `bits`.
+    ///
+    /// The backing slice is snapshotted once, so iteration is sound even if the
+    /// `AsRef` implementation does not return the same slice on every call.
     ///
     /// # Panics
     ///
     /// Panics if the backing slice cannot hold `len` bits.
-    pub fn new(bits: &'a B, len: usize) -> Self {
+    pub fn new<B: ?Sized + AsRef<[A]>>(bits: &'a B, len: usize) -> Self {
+        let bits = bits.as_ref();
         let bits_per_word = usize::try_from(A::Value::BITS).expect("word width fits in usize");
         assert!(
-            len.div_ceil(bits_per_word) <= bits.as_ref().len(),
+            len.div_ceil(bits_per_word) <= bits.len(),
             "Atomic bit-vector backing storage is too short for {len} bits"
         );
         AtomicBitIter {
             bits,
             len,
             next_bit_pos: 0,
-            _phantom: PhantomData,
         }
     }
 }
 
-impl<A: PrimitiveAtomicUnsigned<Value: Word>, B: ?Sized + AsRef<[A]>> Iterator
-    for AtomicBitIter<'_, A, B>
-{
+impl<A: PrimitiveAtomicUnsigned<Value: Word>> Iterator for AtomicBitIter<'_, A> {
     type Item = bool;
     fn next(&mut self) -> Option<bool> {
         if self.next_bit_pos == self.len {
             return None;
         }
-        let bits_per_word = A::Value::BITS as usize;
+        let bits_per_word = usize::try_from(A::Value::BITS).expect("word width fits in usize");
         let word_idx = self.next_bit_pos / bits_per_word;
         let bit_idx = self.next_bit_pos % bits_per_word;
-        let word = unsafe {
-            self.bits
-                .as_ref()
-                .get_unchecked(word_idx)
-                .load(Ordering::Relaxed)
-        };
+        // SAFETY: `new` checked `len.div_ceil(bits_per_word) <= self.bits.len()`
+        // against this exact snapshotted slice, and `next_bit_pos < len` here, so
+        // `word_idx < self.bits.len()`.
+        let word = unsafe { self.bits.get_unchecked(word_idx).load(Ordering::Relaxed) };
         let bit = (word >> bit_idx) & A::Value::ONE;
         self.next_bit_pos += 1;
         Some(bit != A::Value::ZERO)
@@ -1035,15 +1099,10 @@ impl<A: PrimitiveAtomicUnsigned<Value: Word>, B: ?Sized + AsRef<[A]>> Iterator
     }
 }
 
-impl<A: PrimitiveAtomicUnsigned<Value: Word>, B: ?Sized + AsRef<[A]>> ExactSizeIterator
-    for AtomicBitIter<'_, A, B>
-{
+impl<A: PrimitiveAtomicUnsigned<Value: Word>> ExactSizeIterator for AtomicBitIter<'_, A> {
     fn len(&self) -> usize {
         self.len - self.next_bit_pos
     }
 }
 
-impl<A: PrimitiveAtomicUnsigned<Value: Word>, B: ?Sized + AsRef<[A]>> FusedIterator
-    for AtomicBitIter<'_, A, B>
-{
-}
+impl<A: PrimitiveAtomicUnsigned<Value: Word>> FusedIterator for AtomicBitIter<'_, A> {}
