@@ -21,7 +21,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-anyhow = "1.0.79"
+anyhow = "1.0.103"
 atomic-primitive = "0.1.1"
 num-primitive = "0.2.1"
 log = "0.4.20"
@@ -31,7 +31,7 @@ lender = "0.6.0"
 epserde = { version = "0.13.0", optional = true, default-features = false, features = ["std", "derive"] }
 zstd = { version = "0.13.1", optional = true }
 flate2 = { version = "1.0.28", optional = true }
-rand = "0.10.0"
+rand = "0.10.1"
 rdst = "0.20.12"
 mem_dbg = "0.4.1"
 rayon = { version = "1.8.1", optional = true }
