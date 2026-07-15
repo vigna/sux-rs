@@ -265,6 +265,21 @@ fn test_atomic_swap_binds_slice_once() {
     assert_eq!(ab.first[0].load(Ordering::Relaxed) & 1, 0);
 }
 
+#[cfg(feature = "rayon")]
+#[test]
+fn test_par_count_ones_binds_slice_once() {
+    // Non-word-aligned length so the residual-word branch runs: a re-fetch there
+    // would read the cleared `rest` slice and miss the single logical one.
+    let bits = usize::try_from(usize::BITS).unwrap();
+    let alt = AlternatingBits {
+        first: vec![0, 1],
+        rest: vec![0, 0],
+        len_bits: bits + 1,
+        calls: Cell::new(0),
+    };
+    assert_eq!(BitVecOps::<usize>::par_count_ones(&alt), 1);
+}
+
 #[test]
 fn test() {
     let n = 50;
