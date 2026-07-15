@@ -48,9 +48,6 @@ pub enum UnalignedConversionError {
     /// unaligned reads on a `word_bits`-bit word (it must be at most
     /// `word_bits - 7`).
     InvalidPosition { bit_width: usize, word_bits: u32 },
-    /// A collection contains one or more values whose bit widths do not satisfy
-    /// the constraints for unaligned reads.
-    MixedBitWidths,
 }
 
 impl std::fmt::Display for UnalignedConversionError {
@@ -72,9 +69,6 @@ impl std::fmt::Display for UnalignedConversionError {
                 f,
                 "bit width {bit_width} does not satisfy the constraints for arbitrary-position unaligned reads on a {word_bits}-bit word (must be <= {})",
                 word_bits.saturating_sub(7),
-            ),
-            Self::MixedBitWidths => f.write_str(
-                "a collection contains values whose bit widths do not satisfy the constraints for unaligned reads",
             ),
         }
     }

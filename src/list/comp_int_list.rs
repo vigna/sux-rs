@@ -48,7 +48,6 @@
 //! [map_data]: CompIntList::map_data
 
 use crate::bits::bit_vec::{BitVec, BitVecU};
-use crate::bits::test_unaligned_pos;
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EfSeq;
 use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
@@ -105,9 +104,6 @@ pub struct CompIntList<B: Backend = BitVec<Box<[usize]>>, D = EfSeq<u64>> {
     delimiters: D,
     /// Concatenated binary representations (MSB removed).
     data: B,
-    /// Whether all stored bit widths satisfy the constraints for unaligned
-    /// reads.
-    all_widths_unaligned: bool,
 }
 
 impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
@@ -140,7 +136,6 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
     {
         let mut encoded_values = Vec::new();
         let mut total_bits = 0usize;
-        let mut all_widths_unaligned = true;
         for &v in values {
             let offset = v
                 .checked_sub(min)
@@ -153,9 +148,6 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
                 });
             let width = usize::try_from(offset.bit_len() - 1)
                 .expect("CompIntList: bit width does not fit usize");
-            if !test_unaligned_pos!(V, total_bits, width) {
-                all_widths_unaligned = false;
-            }
             total_bits = total_bits
                 .checked_add(width)
                 .expect("CompIntList: total bit length overflow");
@@ -191,7 +183,6 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
             min,
             delimiters,
             data,
-            all_widths_unaligned,
         }
     }
 }
@@ -215,7 +206,6 @@ impl<B: Backend<Word: Word> + BitVecValueOps<B::Word>, D: SliceByValue<Value = u
             min: self.min,
             delimiters: func(self.delimiters),
             data: self.data,
-            all_widths_unaligned: self.all_widths_unaligned,
         }
     }
 
@@ -235,7 +225,6 @@ impl<B: Backend<Word: Word> + BitVecValueOps<B::Word>, D: SliceByValue<Value = u
             min: self.min,
             delimiters: self.delimiters,
             data: func(self.data),
-            all_widths_unaligned: self.all_widths_unaligned,
         }
     }
 
@@ -279,21 +268,18 @@ where
     D::Unaligned: SliceByValue<Value = u64>,
 {
     type Unaligned = CompIntList<BitVecU<Box<[V]>>, D::Unaligned>;
-    /// This method will fail if any stored value has a bit width that does not
-    /// satisfy the constraints for unaligned reads.
+    /// The value widths never block this conversion: the resulting [`BitVecU`]
+    /// data selects the fast unaligned read or a two-word fallback per value at
+    /// query time. It still fails if the delimiter or data backend cannot be
+    /// converted to its unaligned form.
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
-        if !self.all_widths_unaligned {
-            return Err(crate::traits::UnalignedConversionError::MixedBitWidths);
-        }
-
         Ok(CompIntList {
             n: self.n,
             min: self.min,
             delimiters: self.delimiters.try_into_unaligned()?,
             data: self.data.try_into_unaligned()?,
-            all_widths_unaligned: true,
         })
     }
 }
@@ -305,7 +291,24 @@ impl<V: Word, D> From<CompIntList<BitVecU<Box<[V]>>, D>> for CompIntList<BitVec<
             min: c.min,
             delimiters: c.delimiters,
             data: c.data.into(),
-            all_widths_unaligned: c.all_widths_unaligned,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mixed_width_list_converts_to_unaligned() {
+        // Encoded field widths (1, 1, 63) are mixed and the last one crosses a
+        // word boundary. Conversion used to reject mixed widths; it
+        // now succeeds and BitVecU dispatches the fast/fallback read per value.
+        let values = [1u64, 1, (1u64 << 63) - 1];
+        let list = CompIntList::new(0u64, &values);
+        let unaligned = list.try_into_unaligned().expect("conversion should succeed");
+        for (i, &v) in values.iter().enumerate() {
+            assert_eq!(unaligned.index_value(i), v);
         }
     }
 }
