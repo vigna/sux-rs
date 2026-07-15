@@ -1561,6 +1561,13 @@ mod epserde_impl {
                 }
             }
         }
+
+        #[inline(always)]
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            // Exact: required for the ExactSizeIterator impl below to satisfy the
+            // std contract (size_hint must equal (len(), Some(len()))).
+            (self.len(), Some(self.len()))
+        }
     }
 
     impl<
@@ -1602,6 +1609,13 @@ mod epserde_impl {
                 Some(ptr)
             }
         }
+
+        #[inline(always)]
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            // Exact: required for the ExactSizeIterator impl below to satisfy the
+            // std contract (size_hint must equal (len(), Some(len()))).
+            (self.len(), Some(self.len()))
+        }
     }
 
     impl<'a, I: ?Sized + AsRef<[u8]>, const SORTED: bool> ExactSizeIterator
@@ -1610,6 +1624,67 @@ mod epserde_impl {
         fn len(&self) -> usize {
             let builder = self.builder.borrow();
             builder.pointers.len() - self.pos
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::utils::lenders::FromSlice;
+
+        #[test]
+        fn pointers_iter_size_hint_is_exact() {
+            // ExactSizeIterator requires size_hint == (len(), Some(len())); before
+            // the fix these iterators returned the default (0, None).
+            let mut b = RearCodedListBuilder::<[u8], false>::new(2);
+            b.push(b"aa".as_slice());
+            b.push(b"ab".as_slice());
+            b.push(b"ac".as_slice());
+            let rc = RefCell::new(b);
+            let mut it = PointersIter::<[u8], false> { builder: &rc, pos: 0 };
+            let n = it.len();
+            assert!(n > 0);
+            assert_eq!(it.size_hint(), (n, Some(n)));
+            assert!(it.next().is_some());
+            let n = it.len();
+            assert_eq!(it.size_hint(), (n, Some(n)));
+        }
+
+        #[test]
+        fn bytes_iter_size_hint_is_exact() {
+            let data: Vec<Vec<u8>> = vec![b"aa".to_vec(), b"ab".to_vec(), b"ac".to_vec()];
+
+            // Compute the true encoded byte length with the same first pass the
+            // serializer uses, so ExactSizeIterator::len is truthful.
+            let mut counter = RearCodedListBuilder::<[u8], false>::new(2);
+            let mut byte_len = 0usize;
+            for s in &data {
+                counter.push(s.as_slice());
+                byte_len += counter.data.len();
+                counter.data.clear();
+            }
+            assert!(byte_len > 0);
+
+            let builder = RefCell::new(RearCodedListBuilder::<[u8], false>::new(2));
+            let mut it = BytesIter::<Vec<u8>, [u8], _, false> {
+                builder: &builder,
+                lender: FromSlice::new(data.as_slice()),
+                byte_len,
+                pos: 0,
+                _marker_i: PhantomData,
+            };
+
+            // The hint must be exact at the start and stay in lockstep with len()
+            // as the iterator drains, reaching (0, Some(0)) exactly when empty.
+            assert_eq!(it.size_hint(), (byte_len, Some(byte_len)));
+            let mut produced = 0usize;
+            while it.next().is_some() {
+                produced += 1;
+                let n = it.len();
+                assert_eq!(it.size_hint(), (n, Some(n)));
+            }
+            assert_eq!(produced, byte_len);
+            assert_eq!(it.size_hint(), (0, Some(0)));
         }
     }
 }
