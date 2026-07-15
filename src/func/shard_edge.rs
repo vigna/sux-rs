@@ -564,6 +564,15 @@ mod fuse {
                 .unwrap();
 
             assert!(((self.l as usize + 2) << self.log2_seg_size) - 1 <= u32::MAX as usize);
+            // The global edge index is `shard * num_vertices + local`, so the
+            // total vertex count across all shards must fit `usize`. Promote to
+            // u128 (lossless widening) so the check stays correct on 32-bit
+            // targets, where the product can otherwise wrap `usize`.
+            let total_vertices = self.num_vertices() as u128 * self.num_shards() as u128;
+            assert!(
+                total_vertices <= usize::MAX as u128,
+                "FuseLge3Shards total vertices ({total_vertices}) overflow usize on this target"
+            );
             (c, lge)
         }
 
@@ -1061,6 +1070,14 @@ mod fuse {
                 .unwrap();
 
             assert!(((self.l as usize + 2) << self.log2_seg_size) - 1 <= u32::MAX as usize);
+            // See FuseLge3Shards::set_up_graphs: the global edge index is
+            // `shard * num_vertices + local`, so the across-shard total must fit
+            // `usize`. u128 widening keeps the check sound on 32-bit targets.
+            let total_vertices = self.num_vertices() as u128 * self.num_shards() as u128;
+            assert!(
+                total_vertices <= usize::MAX as u128,
+                "Fuse3Shards total vertices ({total_vertices}) overflow usize on this target"
+            );
             (c, false) // false = no Gaussian elimination
         }
 
@@ -1088,6 +1105,14 @@ mod fuse {
                 .unwrap();
 
             assert!(((self.l as usize + 2) << self.log2_seg_size) - 1 <= u32::MAX as usize);
+            // Correlated-graph path: same across-shard total-vertex bound as
+            // set_up_graphs; the global edge index multiplies by num_shards, so
+            // guard the product in u128 for 32-bit soundness.
+            let total_vertices = self.num_vertices() as u128 * self.num_shards() as u128;
+            assert!(
+                total_vertices <= usize::MAX as u128,
+                "Fuse3Shards total vertices ({total_vertices}) overflow usize on this target"
+            );
             (c, false)
         }
 
