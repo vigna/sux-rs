@@ -225,14 +225,24 @@ macro_rules! impl_select_zero_small {
                 let bits_per_word =
                     usize::try_from(C::Word::BITS).expect("u32 always fits in usize");
                 let words_per_superblock = 1usize << (32 - bits_per_word.ilog2());
-                for (sb, superblock) in small_counters
-                    .as_ref()
+                let num_bits = small_counters.len();
+                let num_words = num_bits.div_ceil(bits_per_word);
+                let tail_mask = super::tail_mask::<C::Word>(num_bits % bits_per_word);
+                for (sb, superblock) in small_counters.as_ref()[..num_words]
                     .chunks(words_per_superblock)
                     .enumerate()
                 {
                     inventory_begin.push(inventory.len());
-                    for (i, word) in superblock.iter().copied().map(|b| !b).enumerate() {
-                        let ones_in_word = (word.count_ones() as usize).min(num_ones - past_ones);
+                    for (i, word) in superblock.iter().copied().enumerate() {
+                        // Take only logical words and mask the complemented tail so a
+                        // shrunk backing's stale words are neither scanned nor recorded
+                        // as extra inventory_begin entries (mirrors SelectSmall).
+                        let global_word = sb * words_per_superblock + i;
+                        let word =
+                            super::mask_tail_word(!word, global_word + 1 == num_words, tail_mask);
+                        let ones_in_word = usize::try_from(word.count_ones())
+                            .expect("a word popcount always fits in usize")
+                            .min(num_ones - past_ones);
 
                         while past_ones + ones_in_word > next_quantum {
                             let in_word_index = word.select_in_word(next_quantum - past_ones);
