@@ -99,7 +99,8 @@ impl PrefixSumIntList {
     /// # Panics
     ///
     /// Panics if the prefix sums overflow `usize`, or if the number of values is
-    /// `usize::MAX` (the value count plus one overflows).
+    /// `usize::MAX` (the value count plus one overflows). Use
+    /// [`try_new`](Self::try_new) to handle these cases without panicking.
     ///
     /// # Examples
     ///
@@ -117,18 +118,36 @@ impl PrefixSumIntList {
     where
         for<'a> &'a I: IntoIterator<Item = &'a usize>,
     {
+        Self::try_new(values).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Fallible version of [`new`](Self::new).
+    ///
+    /// The collection is snapshotted once so construction does not depend on
+    /// repeated iteration yielding the same values.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the prefix sums overflow `usize`, or if the number of
+    /// values is `usize::MAX` (the value count plus one overflows). The former
+    /// is reachable on 32-bit targets whenever the cumulative sum of the values
+    /// exceeds `usize::MAX`, even for a small collection.
+    pub fn try_new<I: ?Sized>(values: &I) -> Result<Self, &'static str>
+    where
+        for<'a> &'a I: IntoIterator<Item = &'a usize>,
+    {
         let values: Vec<usize> = values.into_iter().copied().collect();
         let mut total = 0usize;
         for &value in &values {
             total = total
                 .checked_add(value)
-                .expect("PrefixSumIntList: prefix sum overflow");
+                .ok_or("PrefixSumIntList: prefix sum overflow")?;
         }
 
         let n = values.len();
         let mut efb = EliasFanoBuilder::new(
             n.checked_add(1)
-                .expect("PrefixSumIntList: number of values overflow"),
+                .ok_or("PrefixSumIntList: number of values overflow")?,
             total,
         );
         // SAFETY: zero is the first prefix sum and is at most total.
@@ -141,7 +160,7 @@ impl PrefixSumIntList {
         }
         let prefix_sums = efb.build_with_seq();
 
-        PrefixSumIntList { n, prefix_sums }
+        Ok(PrefixSumIntList { n, prefix_sums })
     }
 }
 

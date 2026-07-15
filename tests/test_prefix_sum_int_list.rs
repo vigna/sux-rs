@@ -195,3 +195,23 @@ fn construction_does_not_require_repeatable_iteration() {
         assert_eq!(list.index_value(index), value);
     }
 }
+
+// ────────────────────── fallible construction ──────────────────────
+
+#[test]
+fn test_try_new_reports_prefix_sum_overflow() {
+    // The cumulative sum usize::MAX + 1 overflows usize; try_new must report it
+    // as an error instead of panicking (the panicking new does the latter).
+    let values = vec![usize::MAX, 1usize];
+    assert!(PrefixSumIntList::try_new(&values).is_err());
+}
+
+#[test]
+fn test_try_new_matches_new_for_ordinary_values() {
+    let values = vec![3usize, 1, 4, 1, 5];
+    let list = PrefixSumIntList::try_new(&values).expect("no overflow");
+    assert_eq!(list.len(), values.len());
+    for (i, &v) in values.iter().enumerate() {
+        assert_eq!(list.index_value(i), v);
+    }
+}

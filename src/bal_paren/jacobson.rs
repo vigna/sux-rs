@@ -545,18 +545,26 @@ impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B, EfDict<usize>, PrefixSum
     ///
     /// Panics if the parentheses are not balanced.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the cumulative sum of the pioneer match offsets
+    /// overflows `usize`. The offsets are summed by [`PrefixSumIntList`], and
+    /// the sum grows quadratically in the number of far-opening blocks, so on
+    /// 32-bit targets it can exceed `usize::MAX` even for a modestly sized
+    /// balanced sequence. Use [`new`] or [`new_with_bit_field_vec`], which store
+    /// the offsets without summing them, when this happens.
+    ///
     /// [`new`]: JacobsonBalParen::new
     /// [`new_with_bit_field_vec`]: Self::new_with_bit_field_vec
-    #[must_use]
-    pub fn new_with_prefix_sum(paren: B) -> Self {
+    pub fn new_with_prefix_sum(paren: B) -> Result<Self, &'static str> {
         let (ef_positions, matches) = build_pioneers(&paren);
-        let offsets = PrefixSumIntList::new(&matches);
+        let offsets = PrefixSumIntList::try_new(&matches)?;
 
-        JacobsonBalParen {
+        Ok(JacobsonBalParen {
             paren,
             pioneer_positions: ef_positions,
             pioneer_match_offsets: offsets,
-        }
+        })
     }
 }
 
