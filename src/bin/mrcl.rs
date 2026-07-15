@@ -4,12 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
-use std::fs;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use epserde::{deser::Deserialize, ser::Serialize};
 use sux::{init_env_logger, prelude::*, utils::PrimitiveUnsignedExt};
+use sux::traits::{BitVecOps, BitVecOpsMut};
 use value_traits::slices::SliceByValueMut;
 
 #[derive(Parser, Debug)]
@@ -29,13 +31,25 @@ struct Args {
     invert: bool,
 }
 
-fn build<const SORTED: bool>(args: &Args, file: &str) -> Result<()> {
+fn build<const SORTED: bool>(args: &Args) -> Result<()> {
     // SAFETY: ε-serde validates its storage envelope; representation validity
     // is an explicit precondition of this unsafe deserialization API.
     let rcl = unsafe { <RearCodedListStr<SORTED>>::load_full(&args.rcl)? };
     let len = rcl.len();
-    let mut values = Vec::with_capacity(len);
-    for (line_index, line) in file.lines().enumerate() {
+    let width = usize::try_from(len.bit_len()).expect("mapping bit width must fit into usize");
+    // Write parsed values straight into the packed map while streaming the
+    // mapping file, so peak memory is O(packed map) instead of also holding the
+    // whole text and an intermediate Vec<usize>. In invert mode a single-bit
+    // `seen` vector (len bits) rejects non-permutations without a second
+    // len-sized value buffer.
+    let mut map = bit_field_vec![width => 0; len];
+    let mut seen = BitVec::<Vec<usize>>::new(if args.invert { len } else { 0 });
+    let map_file = File::open(&args.map)
+        .with_context(|| format!("cannot open mapping file '{}'", args.map))?;
+    let mut count = 0usize;
+    for (line_index, line) in BufReader::new(map_file).lines().enumerate() {
+        let line = line
+            .with_context(|| format!("cannot read line {} of '{}'", line_index + 1, args.map))?;
         let value = line.trim().parse::<usize>().with_context(|| {
             format!(
                 "cannot parse mapping value on line {} of '{}'",
@@ -49,30 +63,24 @@ fn build<const SORTED: bool>(args: &Args, file: &str) -> Result<()> {
                 line_index + 1
             );
         }
-        values.push(value);
-    }
-    if values.len() != len {
-        bail!(
-            "mapping length mismatch: expected {len} values, found {}",
-            values.len()
-        );
-    }
-
-    if args.invert {
-        let mut inverse = vec![usize::MAX; len];
-        for (index, value) in values.into_iter().enumerate() {
-            if inverse[value] != usize::MAX {
+        // Fail fast (and stop reading) once the map has more entries than strings.
+        if count == len {
+            bail!("mapping length mismatch: expected {len} values, found more");
+        }
+        if args.invert {
+            // Invert a permutation: map[value] = index. Reject a repeated target.
+            if seen.get(value) {
                 bail!("mapping is not a permutation: value {value} appears more than once");
             }
-            inverse[value] = index;
+            seen.set(value, true);
+            map.set_value(value, line_index);
+        } else {
+            map.set_value(line_index, value);
         }
-        values = inverse;
+        count += 1;
     }
-
-    let width = usize::try_from(len.bit_len()).expect("mapping bit width must fit into usize");
-    let mut map = bit_field_vec![width => 0; len];
-    for (index, value) in values.into_iter().enumerate() {
-        map.set_value(index, value);
+    if count != len {
+        bail!("mapping length mismatch: expected {len} values, found {count}");
     }
 
     let mapped = MappedRearCodedListStr::<SORTED>::from_parts(rcl, map.into());
@@ -86,11 +94,9 @@ fn main() -> Result<()> {
     init_env_logger()?;
 
     let args = Args::parse();
-    let file = fs::read_to_string(&args.map)
-        .with_context(|| format!("cannot read mapping file '{}'", args.map))?;
     if args.unsorted {
-        build::<false>(&args, &file)
+        build::<false>(&args)
     } else {
-        build::<true>(&args, &file)
+        build::<true>(&args)
     }
 }
