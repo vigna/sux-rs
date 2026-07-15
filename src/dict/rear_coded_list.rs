@@ -1004,12 +1004,15 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
         let total_size = ptr_size
             .saturating_add(self.data.len())
             .saturating_add(core::mem::size_of::<Self>());
-        human("data_bytes", self.data.len() as isize);
-        human("codes_bytes", self.stats.code_bytes as isize);
-        human("suffixes_bytes", self.stats.suffixes_bytes as isize);
-        human("ptrs_bytes", ptr_size as isize);
-        human("uncompressed_size", self.stats.sum_str_len as isize);
-        human("total_size", total_size as isize);
+        // Clamp usize/isize display conversions: on 32-bit targets a logical
+        // magnitude (e.g. sum_str_len) can exceed isize::MAX, and a bare `as
+        // isize` would wrap it to a negative size.
+        human("data_bytes", isize::try_from(self.data.len()).unwrap_or(isize::MAX));
+        human("codes_bytes", isize::try_from(self.stats.code_bytes).unwrap_or(isize::MAX));
+        human("suffixes_bytes", isize::try_from(self.stats.suffixes_bytes).unwrap_or(isize::MAX));
+        human("ptrs_bytes", isize::try_from(ptr_size).unwrap_or(isize::MAX));
+        human("uncompressed_size", isize::try_from(self.stats.sum_str_len).unwrap_or(isize::MAX));
+        human("total_size", isize::try_from(total_size).unwrap_or(isize::MAX));
 
         human(
             "optimal_size",
@@ -1050,7 +1053,11 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
 
         // update stats
         self.stats.max_str_len = self.stats.max_str_len.max(string.len());
-        self.stats.sum_str_len += string.len();
+        // Diagnostic totals measure logical (uncompressed) quantities, which can
+        // exceed the encoded size and overflow usize on 32-bit targets for
+        // highly compressible input; saturate so a statistics counter never
+        // panics (debug) or wraps (release) the public push path.
+        self.stats.sum_str_len = self.stats.sum_str_len.saturating_add(string.len());
 
         let (lcp, order) = longest_common_prefix(&self.last_str, string);
 
@@ -1087,17 +1094,20 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
 
             // compute the redundancy
             if self.len != 0 {
-                self.stats.redundancy += lcp as isize;
-                self.stats.redundancy += encode_int_len(string.len()) as isize;
-                self.stats.redundancy -= encode_int_len(rear_length) as isize;
-                self.stats.redundancy -= encode_int_len(suffix_len) as isize;
+                self.stats.redundancy = self
+                    .stats
+                    .redundancy
+                    .saturating_add(isize::try_from(lcp).unwrap_or(isize::MAX))
+                    .saturating_add(isize::try_from(encode_int_len(string.len())).unwrap_or(isize::MAX))
+                    .saturating_sub(isize::try_from(encode_int_len(rear_length)).unwrap_or(isize::MAX))
+                    .saturating_sub(isize::try_from(encode_int_len(suffix_len)).unwrap_or(isize::MAX));
             }
             // just encode the whole string
             string
         } else {
             // update the stats
             self.stats.max_lcp = self.stats.max_lcp.max(lcp);
-            self.stats.sum_lcp += lcp;
+            self.stats.sum_lcp = self.stats.sum_lcp.saturating_add(lcp);
             // encode the len of the bytes in data
             let prev_len = self.data.len();
             encode_int(suffix_len, &mut self.data);
@@ -1623,6 +1633,31 @@ mod tests {
         builder.stats.sum_str_len = 1_000_000_000_000_001;
         builder.stats.redundancy = isize::MIN;
         builder.print_stats();
+    }
+
+    #[test]
+    fn push_stats_saturate_instead_of_overflowing() {
+        // The diagnostic totals measure logical (uncompressed) quantities, so on
+        // a 32-bit target they can overflow before the encoded data does. Seed
+        // them at their maxima and push again: under checked arithmetic (debug)
+        // the pre-fix `+=` panicked; the saturating updates keep them valid.
+
+        // Non-block path (ratio > 1): sum_str_len (every push) and sum_lcp
+        // (non-block entries) must saturate.
+        let mut b = RearCodedListBuilder::<str, false>::new(2);
+        b.push("aa");
+        b.stats.sum_str_len = usize::MAX;
+        b.stats.sum_lcp = usize::MAX;
+        b.push("ab"); // lcp == 1, non-block entry
+        assert_eq!(b.stats.sum_str_len, usize::MAX);
+        assert_eq!(b.stats.sum_lcp, usize::MAX);
+
+        // Block path (ratio == 1): the signed redundancy counter must saturate.
+        let mut b = RearCodedListBuilder::<str, false>::new(1);
+        b.push("aa");
+        b.stats.redundancy = isize::MAX;
+        b.push("ab"); // block entry at len != 0 adds to redundancy
+        assert!(b.stats.redundancy > isize::MAX - 1024);
     }
 
     #[test]
