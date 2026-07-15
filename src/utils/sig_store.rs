@@ -1277,7 +1277,10 @@ fn write_binary<S: BinSafe + Sig, V: BinSafe>(
     let val_off = core::mem::offset_of!(SigVal<S, V>, val);
     let sig_size = core::mem::size_of::<S>();
     let val_size = core::mem::size_of::<V>();
-    let mut buf = vec![0u8; elem_size * CHUNK];
+    // Size the reusable buffer to the actual work, not a fixed CHUNK: a
+    // single-record `try_push` (tuples.len() == 1) must not allocate and zero
+    // space for CHUNK records.
+    let mut buf = vec![0u8; elem_size * tuples.len().min(CHUNK)];
     for chunk in tuples.chunks(CHUNK) {
         for (i, sv) in chunk.iter().enumerate() {
             let base = i * elem_size;
