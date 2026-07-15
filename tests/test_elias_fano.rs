@@ -1540,3 +1540,15 @@ fn test_iterator_extrema_do_not_rescan() {
         "iter_bidi().prev_last() re-scanned the high bits"
     );
 }
+
+/// `estimate_size` is a public helper taking caller-supplied scalars; extreme
+/// values must saturate rather than overflow (debug panic / release wrap).
+#[test]
+fn test_estimate_size_no_overflow() {
+    // Would overflow `2 * n` under the old unchecked arithmetic.
+    assert_eq!(EliasFano::<usize>::estimate_size(1, usize::MAX), usize::MAX);
+    assert_eq!(EliasFano::<usize>::estimate_size(0, usize::MAX), usize::MAX);
+    // Ordinary inputs keep the historical estimate.
+    assert_eq!(EliasFano::<usize>::estimate_size(0, 0), 0);
+    assert_eq!(EliasFano::<usize>::estimate_size(1024, 128), 2 * 128 + 128 * 3);
+}

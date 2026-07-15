@@ -325,7 +325,15 @@ impl<V, H, L> EliasFano<V, H, L> {
         if n == 0 {
             0
         } else {
-            2 * n + (n * (u as f64 / n as f64).log2().ceil() as usize)
+            // Size estimate. The u64/usize -> f64 casts are an intended
+            // approximation (magnitudes above 2^53 lose low bits).
+            let bits = (u as f64 / n as f64).log2().ceil();
+            debug_assert!(!bits.is_nan(), "bit-width estimate must not be NaN");
+            // Intended saturating float -> int: a nonpositive estimate (u <= n,
+            // or u == 0 giving -inf) clamps to zero bits.
+            let bits_per_value = bits.max(0.0) as usize;
+            n.saturating_mul(2)
+                .saturating_add(n.saturating_mul(bits_per_value))
         }
     }
 
