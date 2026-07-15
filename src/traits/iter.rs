@@ -296,6 +296,18 @@ pub trait BidiIterator: Iterator + Sized {
 ///
 /// This is the backward counterpart of [`ExactSizeIterator`]: implementors
 /// must know exactly how many items remain in the backward direction.
+///
+/// # Contract
+///
+/// Analogously to [`ExactSizeIterator`], whose [`size_hint`](Iterator::size_hint)
+/// must be exact, an implementor of this trait must also make
+/// [`prev_size_hint`](BidiIterator::prev_size_hint) exact: it must return
+/// `(self.prev_len(), Some(self.prev_len()))`. The [`BidiIterator`] default
+/// `prev_size_hint` of `(0, None)` is *not* exact, so implementors must
+/// override it. [`SwappedIter`] relies on this: after swapping direction its
+/// [`Iterator::size_hint`] delegates to the wrapped `prev_size_hint`, so an
+/// inexact `prev_size_hint` would make `SwappedIter`'s [`ExactSizeIterator`]
+/// implementation return a non-exact `size_hint`, violating that trait.
 pub trait ExactSizeBidiIterator: BidiIterator {
     /// Returns the exact number of remaining items in the backward direction.
     fn prev_len(&self) -> usize;
@@ -331,6 +343,9 @@ impl<I: BidiIterator<SwappedIter = SwappedIter<I>>> Iterator for SwappedIter<I> 
         self.0.prev()
     }
 
+    // Exact whenever `I: ExactSizeBidiIterator`, which by contract returns an
+    // exact `prev_size_hint`; this is what makes the `ExactSizeIterator` impl
+    // below sound.
     #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.0.prev_size_hint()
