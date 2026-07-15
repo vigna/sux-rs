@@ -306,7 +306,9 @@ mod tests {
         // now succeeds and BitVecU dispatches the fast/fallback read per value.
         let values = [1u64, 1, (1u64 << 63) - 1];
         let list = CompIntList::new(0u64, &values);
-        let unaligned = list.try_into_unaligned().expect("conversion should succeed");
+        let unaligned = list
+            .try_into_unaligned()
+            .expect("conversion should succeed");
         for (i, &v) in values.iter().enumerate() {
             assert_eq!(unaligned.index_value(i), v);
         }

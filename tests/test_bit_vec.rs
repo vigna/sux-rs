@@ -104,7 +104,12 @@ impl AlternatingBits {
     fn new(first: Vec<usize>, rest_fill: usize) -> Self {
         let len_bits = first.len() * usize::try_from(usize::BITS).unwrap();
         let rest = vec![rest_fill; first.len()];
-        Self { first, rest, len_bits, calls: Cell::new(0) }
+        Self {
+            first,
+            rest,
+            len_bits,
+            calls: Cell::new(0),
+        }
     }
 
     /// A stable variant (`rest == first`) whose reads are independent of whether
@@ -112,7 +117,12 @@ impl AlternatingBits {
     fn stable(first: Vec<usize>) -> Self {
         let len_bits = first.len() * usize::try_from(usize::BITS).unwrap();
         let rest = first.clone();
-        Self { first, rest, len_bits, calls: Cell::new(0) }
+        Self {
+            first,
+            rest,
+            len_bits,
+            calls: Cell::new(0),
+        }
     }
 }
 
@@ -241,7 +251,11 @@ fn test_atomic_bit_iter_binds_slice_once() {
 fn test_atomic_get_binds_slice_once() {
     // first has bit 0 set; a re-fetch would read the clear rest slice.
     let ab = AlternatingAtomicBits::new(vec![1, 0], vec![0, 0]);
-    assert!(AtomicBitVecOps::<Atomic<usize>>::get(&ab, 0, Ordering::Relaxed));
+    assert!(AtomicBitVecOps::<Atomic<usize>>::get(
+        &ab,
+        0,
+        Ordering::Relaxed
+    ));
 }
 
 #[test]

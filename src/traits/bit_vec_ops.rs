@@ -387,8 +387,7 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
             .map(|x| x.count_ones() as usize)
             .sum();
         if residual != 0 {
-            num_ones +=
-                (bits[full_words] << (bits_per_word - residual)).count_ones() as usize
+            num_ones += (bits[full_words] << (bits_per_word - residual)).count_ones() as usize
         }
 
         num_ones

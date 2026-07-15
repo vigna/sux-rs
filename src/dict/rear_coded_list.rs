@@ -1007,12 +1007,30 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
         // Clamp usize/isize display conversions: on 32-bit targets a logical
         // magnitude (e.g. sum_str_len) can exceed isize::MAX, and a bare `as
         // isize` would wrap it to a negative size.
-        human("data_bytes", isize::try_from(self.data.len()).unwrap_or(isize::MAX));
-        human("codes_bytes", isize::try_from(self.stats.code_bytes).unwrap_or(isize::MAX));
-        human("suffixes_bytes", isize::try_from(self.stats.suffixes_bytes).unwrap_or(isize::MAX));
-        human("ptrs_bytes", isize::try_from(ptr_size).unwrap_or(isize::MAX));
-        human("uncompressed_size", isize::try_from(self.stats.sum_str_len).unwrap_or(isize::MAX));
-        human("total_size", isize::try_from(total_size).unwrap_or(isize::MAX));
+        human(
+            "data_bytes",
+            isize::try_from(self.data.len()).unwrap_or(isize::MAX),
+        );
+        human(
+            "codes_bytes",
+            isize::try_from(self.stats.code_bytes).unwrap_or(isize::MAX),
+        );
+        human(
+            "suffixes_bytes",
+            isize::try_from(self.stats.suffixes_bytes).unwrap_or(isize::MAX),
+        );
+        human(
+            "ptrs_bytes",
+            isize::try_from(ptr_size).unwrap_or(isize::MAX),
+        );
+        human(
+            "uncompressed_size",
+            isize::try_from(self.stats.sum_str_len).unwrap_or(isize::MAX),
+        );
+        human(
+            "total_size",
+            isize::try_from(total_size).unwrap_or(isize::MAX),
+        );
 
         human(
             "optimal_size",
@@ -1098,9 +1116,15 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
                     .stats
                     .redundancy
                     .saturating_add(isize::try_from(lcp).unwrap_or(isize::MAX))
-                    .saturating_add(isize::try_from(encode_int_len(string.len())).unwrap_or(isize::MAX))
-                    .saturating_sub(isize::try_from(encode_int_len(rear_length)).unwrap_or(isize::MAX))
-                    .saturating_sub(isize::try_from(encode_int_len(suffix_len)).unwrap_or(isize::MAX));
+                    .saturating_add(
+                        isize::try_from(encode_int_len(string.len())).unwrap_or(isize::MAX),
+                    )
+                    .saturating_sub(
+                        isize::try_from(encode_int_len(rear_length)).unwrap_or(isize::MAX),
+                    )
+                    .saturating_sub(
+                        isize::try_from(encode_int_len(suffix_len)).unwrap_or(isize::MAX),
+                    );
             }
             // just encode the whole string
             string
@@ -1641,7 +1665,10 @@ mod epserde_impl {
             b.push(b"ab".as_slice());
             b.push(b"ac".as_slice());
             let rc = RefCell::new(b);
-            let mut it = PointersIter::<[u8], false> { builder: &rc, pos: 0 };
+            let mut it = PointersIter::<[u8], false> {
+                builder: &rc,
+                pos: 0,
+            };
             let n = it.len();
             assert!(n > 0);
             assert_eq!(it.size_hint(), (n, Some(n)));

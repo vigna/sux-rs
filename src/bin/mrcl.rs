@@ -10,8 +10,8 @@ use std::io::{BufRead, BufReader};
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use epserde::{deser::Deserialize, ser::Serialize};
-use sux::{init_env_logger, prelude::*, utils::PrimitiveUnsignedExt};
 use sux::traits::{BitVecOps, BitVecOpsMut};
+use sux::{init_env_logger, prelude::*, utils::PrimitiveUnsignedExt};
 use value_traits::slices::SliceByValueMut;
 
 #[derive(Parser, Debug)]
@@ -48,8 +48,8 @@ fn build<const SORTED: bool>(args: &Args) -> Result<()> {
         .with_context(|| format!("cannot open mapping file '{}'", args.map))?;
     let mut count = 0usize;
     for (line_index, line) in BufReader::new(map_file).lines().enumerate() {
-        let line = line
-            .with_context(|| format!("cannot read line {} of '{}'", line_index + 1, args.map))?;
+        let line =
+            line.with_context(|| format!("cannot read line {} of '{}'", line_index + 1, args.map))?;
         let value = line.trim().parse::<usize>().with_context(|| {
             format!(
                 "cannot parse mapping value on line {} of '{}'",
