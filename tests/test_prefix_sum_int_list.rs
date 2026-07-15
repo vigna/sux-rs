@@ -1,3 +1,5 @@
+use core::cell::Cell;
+
 use sux::dict::EliasFanoBuilder;
 use sux::list::prefix_sum_int_list::PrefixSumIntList;
 use value_traits::slices::SliceByValue;
@@ -160,4 +162,56 @@ fn test_prefix_sum_out_of_bounds() {
     let values = vec![1usize, 2, 3];
     let list = PrefixSumIntList::new(&values);
     list.prefix_sum(4); // n = 3, max valid is 3
+}
+
+struct OneShotValues {
+    values: Vec<usize>,
+    iterations: Cell<usize>,
+}
+
+impl<'a> IntoIterator for &'a OneShotValues {
+    type Item = &'a usize;
+    type IntoIter = core::slice::Iter<'a, usize>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        assert_eq!(
+            self.iterations.replace(1),
+            0,
+            "input was iterated more than once"
+        );
+        self.values.iter()
+    }
+}
+
+#[test]
+fn construction_does_not_require_repeatable_iteration() {
+    let values = OneShotValues {
+        values: vec![3, 1, 4, 1, 5],
+        iterations: Cell::new(0),
+    };
+    let list = PrefixSumIntList::new(&values);
+    assert_eq!(list.len(), values.values.len());
+    for (index, &value) in values.values.iter().enumerate() {
+        assert_eq!(list.index_value(index), value);
+    }
+}
+
+// ────────────────────── fallible construction ──────────────────────
+
+#[test]
+fn test_try_new_reports_prefix_sum_overflow() {
+    // The cumulative sum usize::MAX + 1 overflows usize; try_new must report it
+    // as an error instead of panicking (the panicking new does the latter).
+    let values = vec![usize::MAX, 1usize];
+    assert!(PrefixSumIntList::try_new(&values).is_err());
+}
+
+#[test]
+fn test_try_new_matches_new_for_ordinary_values() {
+    let values = vec![3usize, 1, 4, 1, 5];
+    let list = PrefixSumIntList::try_new(&values).expect("no overflow");
+    assert_eq!(list.len(), values.len());
+    for (i, &v) in values.iter().enumerate() {
+        assert_eq!(list.index_value(i), v);
+    }
 }

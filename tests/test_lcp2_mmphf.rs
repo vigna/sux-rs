@@ -252,6 +252,19 @@ fn test_absent_keys_do_not_panic() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn test_cardinality_mismatch_is_error() {
+    let keys = vec![10_u64, 20];
+    for declared in [0, 1, 3] {
+        let result: Result<Lcp2MmphfInt<u64>> =
+            Lcp2MmphfInt::try_new(FromSlice::new(&keys), declared, no_logging![]);
+        assert!(
+            result.is_err(),
+            "declared count {declared} must be rejected"
+        );
+    }
+}
+
 /// A common prefix longer than 65535 bits must not wrap the stored LCP length.
 /// On 64-bit `LcpLen` is already u32, so this is a smoke test here; on 32-bit
 /// (i686 CI) it fails before the u16 -> u32 widening.

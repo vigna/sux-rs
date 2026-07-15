@@ -13,7 +13,6 @@ use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut};
 use crate::traits::{BitVecOpsMut, Word};
 use crate::utils::*;
 use core::error::Error;
-use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
 use lender::FallibleLending;
@@ -21,8 +20,6 @@ use mem_dbg::{FlatType, MemSize, SizeFlags};
 use num_primitive::PrimitiveNumber;
 use rand::rngs::SmallRng;
 use rand::{Rng, RngExt, SeedableRng};
-use rayon::iter::ParallelIterator;
-use rayon::slice::ParallelSlice;
 use rdst::*;
 use std::any::TypeId;
 use std::borrow::{Borrow, Cow};
@@ -44,6 +41,25 @@ fn default_max_num_threads() -> usize {
     std::thread::available_parallelism()
         .map(|p| p.get().min(16))
         .unwrap_or(1)
+}
+
+/// Sorts a shard's records by their radix key without using the global Rayon
+/// pool.
+///
+/// par_solve already runs one std worker thread per concurrent shard (bounded
+/// by [`max_num_threads`], plus a single producer thread). A nested parallel
+/// (Rayon) radix sort would instead schedule onto the shared global Rayon pool,
+/// whose workers run alongside those std workers and outside the configured
+/// thread budget, oversubscribing the machine. Shard-local work therefore
+/// always runs single-threaded; cross-shard parallelism is supplied by
+/// par_solve.
+///
+/// [`max_num_threads`]: VBuilder::max_num_threads
+fn sort_shard_single_threaded<T: RadixKey + Copy + Send + Sync>(data: &mut [T]) {
+    data.radix_sort_builder()
+        .with_single_threaded_tuner()
+        .with_parallel(false)
+        .sort();
 }
 
 /// A builder for [`VFunc`] and [`VFilter`].
@@ -79,8 +95,7 @@ fn default_max_num_threads() -> usize {
 /// [offline]: VBuilder::offline
 /// [set the maximum number of threads]: VBuilder::max_num_threads
 /// [`VFilter`]: crate::dict::VFilter
-#[derive(Setters, Debug, Derivative)]
-#[derivative(Default)]
+#[derive(Setters, Debug)]
 #[setters(generate = false)]
 pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// The expected number of keys.
@@ -89,7 +104,6 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// on the actual number of keys will significantly speed up the
     /// construction.
     #[setters(generate = true, strip_option)]
-    #[derivative(Default(value = "None"))]
     expected_num_keys: Option<usize>,
 
     /// Override the value used to size the sharding step.
@@ -109,13 +123,11 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// runtime key count. CompVFunc sets this to the total edge
     /// count after building the Huffman coder.
     #[setters(generate = true, strip_option)]
-    #[derivative(Default(value = "None"))]
     pub(crate) shard_size_hint: Option<usize>,
 
     /// The maximum number of parallel threads to use for both the population
     /// and solve phases. The default is `min(16, available_parallelism)`.
     #[setters(generate = true)]
-    #[derivative(Default(value = "default_max_num_threads()"))]
     pub(crate) max_num_threads: usize,
 
     /// Use disk-based buckets to reduce core memory usage at construction time.
@@ -136,7 +148,6 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// high-mem and switches to low-mem if there are more
     /// than three threads and more than two shards.
     #[setters(generate = true, strip_option)]
-    #[derivative(Default(value = "None"))]
     pub(crate) low_mem: Option<bool>,
 
     /// The seed for the random number generator.
@@ -149,7 +160,6 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     ///
     /// [expected number of keys]: VBuilder::expected_num_keys
     #[setters(generate = true, strip_option)]
-    #[derivative(Default(value = "8"))]
     log2_buckets: u32,
 
     /// The target relative space loss due to [ε-cost sharding].
@@ -170,7 +180,6 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     ///
     /// [ε-cost sharding]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
     #[setters(generate = true, strip_option)]
-    #[derivative(Default(value = "0.001"))]
     pub(crate) eps: f64,
 
     /// The bit width of the maximum value.
@@ -192,6 +201,30 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) failed: AtomicBool,
     #[doc(hidden)]
     _marker: PhantomData<(D, S)>,
+}
+
+impl<D, S, E: Default> Default for VBuilder<D, S, E> {
+    fn default() -> Self {
+        Self {
+            expected_num_keys: None,
+            shard_size_hint: None,
+            max_num_threads: default_max_num_threads(),
+            offline: false,
+            check_dups: false,
+            low_mem: None,
+            seed: 0,
+            log2_buckets: 8,
+            eps: 0.001,
+            bit_width: 0,
+            shard_edge: E::default(),
+            num_keys: 0,
+            c: 0.0,
+            lge: false,
+            num_threads: 0,
+            failed: AtomicBool::new(false),
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync, S: Sig, E: ShardEdge<S, 3>>
@@ -277,6 +310,16 @@ pub enum SolveError {
     /// A shard cannot be solved.
     #[error("Unsolvable shard")]
     UnsolvableShard,
+}
+
+/// Returns `true` when the largest shard deviates pathologically from the
+/// target ε-cost, i.e. exceeds `(1 + 5·eps)` times the average shard size. Both
+/// the sequential and parallel build paths use this predicate so their
+/// acceptance thresholds cannot drift apart.
+fn max_shard_too_big(max_shard: usize, num_keys: usize, num_shards: usize, eps: f64) -> bool {
+    // f64 ratio comparison; the usize->f64 precision loss is irrelevant at
+    // these magnitudes and matches the surrounding cost model.
+    max_shard as f64 > (1.0 + 5.0 * eps) * num_keys as f64 / num_shards as f64
 }
 
 /// The result of a peeling procedure.
@@ -485,7 +528,10 @@ impl RetryState {
                     SolveError::UnsolvableShard => {
                         self.unsolvable_count += 1;
                         if self.unsolvable_count >= 100 {
-                            panic!("Failed more than 100 attempts (this shouldn't happen)");
+                            pl.error(format_args!(
+                                "A shard remained unsolvable after 100 attempts"
+                            ));
+                            return Err(BuildError::UnsolvableShard.into());
                         }
                         pl.info(format_args!(
                             "Unsolvable shard, trying again with a different seed..."
@@ -996,8 +1042,7 @@ impl<
                 // meaningless; mirror the sequential path (see
                 // try_populate_and_build) and skip the check.
                 if self.shard_size_hint.is_none()
-                    && max_shard as f64
-                        > (1.0 + 5.0 * self.eps) * num_keys as f64 / shard_edge.num_shards() as f64
+                    && max_shard_too_big(max_shard, num_keys, shard_edge.num_shards(), self.eps)
                 {
                     Err(SolveError::MaxShardTooBig.into())
                 } else {
@@ -1188,8 +1233,12 @@ impl<
             ));
         }
 
+        // Reject pathological deviation from the target ε-cost, mirroring the
+        // parallel path (see par_solve). When shard_size_hint is set the
+        // sharding is sized for the hinted workload, so the per-key average is
+        // meaningless and the check is skipped.
         if self.shard_size_hint.is_none()
-            && max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64
+            && max_shard_too_big(max_shard, num_keys, shard_edge.num_shards(), self.eps)
         {
             return Err(SolveError::MaxShardTooBig.into());
         }
@@ -1278,7 +1327,7 @@ impl<
         }
 
         let shard_edge = &self.shard_edge;
-        self.num_threads = shard_edge.num_shards().min(self.max_num_threads);
+        self.num_threads = shard_edge.num_shards().min(self.max_num_threads).max(1);
 
         pl.info(format_args!(
             "Number of keys: {}; bit width: {}",
@@ -1498,7 +1547,7 @@ impl<
                     loop {
                         match data_recv.recv() {
                             Err(_) => return,
-                            Ok((shard_index, (shard, mut data))) => {
+                            Ok((shard_index, (mut shard, mut data))) => {
                                 if shard.is_empty() {
                                     continue;
                                 }
@@ -1515,84 +1564,64 @@ impl<
                                     num_shards
                                 ));
 
-                                {
-                                    // SAFETY: The Arc has refcount 1: this thread is the
-                                    // sole owner after receiving from the channel.
-                                    let shard = unsafe {
-                                        &mut *(Arc::as_ptr(&shard) as *mut Vec<SigVal<S, V>>)
-                                    };
+                                let check_local_signatures = TypeId::of::<E::LocalSig>()
+                                    != TypeId::of::<S>()
+                                    && self.num_keys > Self::MAX_NO_LOCAL_SIG_CHECK;
+                                let sort_for_locality =
+                                    !check_local_signatures && self.shard_edge.num_sort_keys() != 1;
+
+                                if self.check_dups || check_local_signatures || sort_for_locality {
+                                    // A store may retain another Arc while iteration is in
+                                    // progress. Clone the shard only when mutation is required
+                                    // and it is actually shared.
+                                    let shard_data = Arc::make_mut(&mut shard);
 
                                     if self.check_dups {
-                                        shard.radix_sort_builder().sort();
-                                        if shard.par_windows(2).any(|w| w[0].sig == w[1].sig) {
+                                        sort_shard_single_threaded(shard_data);
+                                        if shard_data.windows(2).any(|w| w[0].sig == w[1].sig) {
                                             let _ = err_send.send(SolveError::DuplicateSignature);
                                             return;
                                         }
                                     }
 
-                                    // The second conjunct is always true on 32-bit platforms
-                                    #[allow(clippy::absurd_extreme_comparisons)]
-                                    if TypeId::of::<E::LocalSig>() != TypeId::of::<S>()
-                                        && self.num_keys > Self::MAX_NO_LOCAL_SIG_CHECK
-                                    {
-                                        // Check for duplicate local signatures
+                                    if check_local_signatures {
+                                        // E::SortSig provides a transmutable view of SigVal
+                                        // with an implementation of RadixKey compatible with
+                                        // ShardEdge::sort_key. Its equality implies equality
+                                        // of local signatures.
 
-                                        // E::SortSig provides a transmutable
-                                        // view of SigVal with an implementation
-                                        // of RadixKey that is compatible with
-                                        // the sort induced by the key returned
-                                        // by ShardEdge::sort_key, and equality
-                                        // that implies equality of local
-                                        // signatures.
-
-                                        // SAFETY: The Arc has refcount 1 at this point
-                                        // (this thread is the sole owner after receive),
-                                        // so the mutable reference does not violate
-                                        // aliasing. The memory layout of SigVal<S, V>
-                                        // and E::SortSigVal<V> is guaranteed compatible
-                                        // by the ShardEdge trait.
-                                        let shard = unsafe {
+                                        // SAFETY: Arc::make_mut above gave this worker exclusive
+                                        // access to the vector. The memory layout of SigVal<S, V>
+                                        // and E::SortSigVal<V> is guaranteed compatible by the
+                                        // ShardEdge trait.
+                                        let shard_data = unsafe {
                                             transmute::<
                                                 &mut Vec<SigVal<S, V>>,
                                                 &mut Vec<E::SortSigVal<V>>,
-                                            >(shard)
+                                            >(shard_data)
                                         };
 
-                                        let builder = shard.radix_sort_builder();
-                                        if self.max_num_threads == 1 {
-                                            builder
-                                                .with_single_threaded_tuner()
-                                                .with_parallel(false)
-                                        } else {
-                                            builder
-                                        }
-                                        .sort();
+                                        sort_shard_single_threaded(shard_data);
 
-                                        let shard_len = shard.len();
-                                        shard.dedup();
+                                        let shard_len = shard_data.len();
+                                        shard_data.dedup();
 
                                         if TypeId::of::<V>() == TypeId::of::<EmptyVal>() {
-                                            // Duplicate local signatures on
-                                            // large filters can be simply
-                                            // removed: they do not change the
-                                            // semantics of the filter because
-                                            // hashes are computed on
-                                            // local signatures.
+                                            // Duplicate local signatures on large filters can
+                                            // be removed: they do not change filter semantics
+                                            // because hashes are computed on local signatures.
                                             pl.info(format_args!(
                                                 "Removed signatures: {}",
-                                                shard_len - shard.len()
+                                                shard_len - shard_data.len()
                                             ));
-                                        } else {
-                                            // For function, we have to try again
-                                            if shard_len != shard.len() {
-                                                let _ = err_send
-                                                    .send(SolveError::DuplicateLocalSignature);
-                                                return;
-                                            }
+                                        } else if shard_len != shard_data.len() {
+                                            // Functions cannot discard colliding values.
+                                            let _ =
+                                                err_send.send(SolveError::DuplicateLocalSignature);
+                                            return;
                                         }
-                                    } else if self.shard_edge.num_sort_keys() != 1 {
-                                        // Sorting the signatures increases locality
-                                        self.count_sort::<V>(shard);
+                                    } else if sort_for_locality {
+                                        self.count_sort::<V>(shard_data);
                                     }
                                 }
 
@@ -1718,12 +1747,12 @@ impl<
         }
         pl.done_with_count(shard.len());
 
-        assert!(
-            !xor_graph.overflow,
-            "Degree overflow for shard {}/{}",
-            shard_index + 1,
-            num_shards
-        );
+        // A degree overflow (a vertex incident to more than 63 edges, e.g. from
+        // many duplicate or colliding keys) is not fatal: report it as a shard
+        // failure so the builder retries with a fresh seed instead of panicking.
+        if xor_graph.overflow {
+            return Err(());
+        }
 
         if self.failed.load(Ordering::Relaxed) {
             return Err(());
@@ -1890,12 +1919,12 @@ impl<
         // drop will free the memory used by the signatures
         drop(shard);
 
-        assert!(
-            !xor_graph.overflow,
-            "Degree overflow for shard {}/{}",
-            shard_index + 1,
-            num_shards
-        );
+        // A degree overflow (a vertex incident to more than 63 edges, e.g. from
+        // many duplicate or colliding keys) is not fatal: report it as a shard
+        // failure so the builder retries with a fresh seed instead of panicking.
+        if xor_graph.overflow {
+            return Err(());
+        }
 
         if self.failed.load(Ordering::Relaxed) {
             return Err(());
@@ -2033,12 +2062,12 @@ impl<
         // drop will free the memory used by the signatures
         drop(shard);
 
-        assert!(
-            !xor_graph.overflow,
-            "Degree overflow for shard {}/{}",
-            shard_index + 1,
-            num_shards
-        );
+        // A degree overflow (a vertex incident to more than 63 edges, e.g. from
+        // many duplicate or colliding keys) is not fatal: report it as a shard
+        // failure so the builder retries with a fresh seed instead of panicking.
+        if xor_graph.overflow {
+            return Err(());
+        }
 
         if self.failed.load(Ordering::Relaxed) {
             return Err(());
@@ -2305,5 +2334,90 @@ mod retry_state_tests {
         }
         let r = rs.handle_solve_result(Err::<(), _>(SolveError::MaxShardTooBig.into()), &mut pl);
         assert!(r.is_err(), "the 100th MaxShardTooBig must be fatal");
+    }
+
+    /// Unsolvable shards use the same finite retry policy as oversized shards
+    /// and report the public build error instead of panicking.
+    #[test]
+    fn unsolvable_shard_is_bounded() {
+        let mut pl = no_logging![];
+        let mut rs = RetryState {
+            prng: SmallRng::seed_from_u64(0),
+            dup_count: 0,
+            local_dup_count: 0,
+            max_shard_too_big: 0,
+            unsolvable_count: 0,
+        };
+        for i in 0..99 {
+            let result =
+                rs.handle_solve_result(Err::<(), _>(SolveError::UnsolvableShard.into()), &mut pl);
+            assert!(matches!(result, Ok(None)), "attempt {i} should be retried");
+        }
+
+        let error = rs
+            .handle_solve_result(Err::<(), _>(SolveError::UnsolvableShard.into()), &mut pl)
+            .expect_err("the 100th unsolvable shard must be fatal");
+        assert!(matches!(
+            error.downcast_ref::<BuildError>(),
+            Some(BuildError::UnsolvableShard)
+        ));
+    }
+
+    /// The shard-size acceptance threshold scales with `eps` and is shared by
+    /// the sequential and parallel paths. With `eps = 0.1` the limit is
+    /// `(1 + 5*0.1) = 1.5` times the average, so a shard 10% over average is
+    /// accepted (the old fixed `1.01` rule rejected it), while one 60% over is
+    /// rejected. At a tiny `eps` the threshold stays tight.
+    #[test]
+    fn max_shard_too_big_scales_with_eps() {
+        // average shard = 100 / 10 = 10; limit at eps=0.1 is 1.5 * 10 = 15.
+        assert!(!max_shard_too_big(11, 100, 10, 0.1));
+        assert!(max_shard_too_big(16, 100, 10, 0.1));
+        // At eps=0.001 the limit is 1.005 * 10 = 10.05, so 11 is rejected.
+        assert!(max_shard_too_big(11, 100, 10, 0.001));
+    }
+}
+
+#[cfg(test)]
+mod sort_helper_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// Set by `Key::get_level` whenever a radix digit is read from a Rayon
+    /// worker thread, i.e. when the sort scheduled work onto the global pool.
+    static SORTED_ON_RAYON: AtomicBool = AtomicBool::new(false);
+
+    #[derive(Clone, Copy)]
+    struct Key(u32);
+
+    impl RadixKey for Key {
+        const LEVELS: usize = 4;
+        fn get_level(&self, level: usize) -> u8 {
+            if rayon::current_thread_index().is_some() {
+                SORTED_ON_RAYON.store(true, Ordering::Relaxed);
+            }
+            // Deliberate byte extraction: the LSD radix digit for `level`.
+            (self.0 >> (level * 8)) as u8
+        }
+    }
+
+    /// `sort_shard_single_threaded` must sort correctly without scheduling onto
+    /// the global Rayon pool, so per-shard sorts cannot oversubscribe alongside
+    /// par_solve's worker threads. The input is large enough that the default
+    /// (parallel) radix builder would offload to the pool.
+    #[test]
+    fn sort_shard_single_threaded_does_not_use_rayon() {
+        SORTED_ON_RAYON.store(false, Ordering::Relaxed);
+        let n: u32 = 1 << 21;
+        let mut data: Vec<Key> = (0..n).rev().map(Key).collect();
+        sort_shard_single_threaded(&mut data);
+        assert!(
+            data.windows(2).all(|w| w[0].0 <= w[1].0),
+            "helper must sort ascending"
+        );
+        assert!(
+            !SORTED_ON_RAYON.load(Ordering::Relaxed),
+            "single-threaded shard sort must not schedule onto the global Rayon pool"
+        );
     }
 }

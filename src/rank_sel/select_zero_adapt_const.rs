@@ -139,7 +139,7 @@ use std::ops::Index;
 /// [selection on zeros]: crate::traits::SelectZero
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[delegate(crate::traits::Backend, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::bit_vec_ops::BitLength, target = "bits")]
@@ -209,8 +209,9 @@ impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENT
     /// `usize::BITS as usize` is a lossless u32->usize widening.
     const PARAMS_OK: () = assert!(
         LOG2_ZEROS_PER_INVENTORY < usize::BITS as usize
-            && LOG2_WORDS_PER_SUBINVENTORY < usize::BITS as usize,
-        "LOG2_ZEROS_PER_INVENTORY and LOG2_WORDS_PER_SUBINVENTORY must be less than the word width"
+            && LOG2_WORDS_PER_SUBINVENTORY
+                <= super::select_adapt_const::MAX_CONST_LOG2_WORDS_PER_SUBINVENTORY,
+        "invalid inventory logarithm"
     );
 
     // Compute adaptively the number of 32-bit subinventory entries
@@ -293,11 +294,18 @@ impl<
         let mut next_quantum = 0;
         let mut spilled = 0;
 
-        let bits_per_word = B::Word::BITS as usize;
+        let bits_per_word =
+            usize::try_from(B::Word::BITS).expect("word width always fits in usize");
+        let num_words = bits.len().div_ceil(bits_per_word);
+        let tail_mask = super::tail_mask::<B::Word>(bits.len() % bits_per_word);
 
-        // First phase: we build an inventory for each one out of ones_per_inventory.
-        for (i, word) in bits.as_ref().iter().copied().map(|b| !b).enumerate() {
-            let ones_in_word = (word.count_ones() as usize).min(num_ones - past_ones);
+        // First phase: we build an inventory for each zero out of
+        // zeros_per_inventory.
+        for (i, word) in bits.as_ref().iter().copied().take(num_words).enumerate() {
+            let word = super::mask_tail_word(!word, i + 1 == num_words, tail_mask);
+            let ones_in_word = usize::try_from(word.count_ones())
+                .expect("a word popcount always fits in usize")
+                .min(num_ones - past_ones);
 
             while past_ones + ones_in_word > next_quantum {
                 let in_word_index = word.select_in_word(next_quantum - past_ones);
@@ -674,8 +682,7 @@ impl<
 {
 }
 
-#[cfg(test)]
-#[cfg(target_pointer_width = "64")]
+#[cfg(all(test, feature = "slow_tests", target_pointer_width = "64"))]
 mod tests {
     use std::collections::BTreeSet;
 

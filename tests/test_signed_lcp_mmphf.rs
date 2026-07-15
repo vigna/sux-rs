@@ -6,19 +6,39 @@
 
 #![cfg(feature = "rayon")]
 use anyhow::Result;
+use core::borrow::Borrow;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use dsi_progress_logger::no_logging;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::bits::BitFieldVec;
 use sux::func::{Lcp2MmphfInt, Lcp2MmphfStr, LcpMmphf, LcpMmphfInt, SignedFunc};
 use sux::traits::TryIntoUnaligned;
-use sux::utils::FromSlice;
+use sux::utils::{FromSlice, ToSig};
 
 type SignedLcpMmphfStr = SignedFunc<LcpMmphf<str>, Box<[u64]>>;
 type SignedLcpMmphfSliceU8 = SignedFunc<LcpMmphf<[u8]>, Box<[u64]>>;
 type SignedLcpMmphfInt<T> = SignedFunc<LcpMmphfInt<T>, Box<[u64]>>;
 type BitSignedLcpMmphfInt<T> = SignedFunc<LcpMmphfInt<T>, BitFieldVec<Box<[usize]>>>;
 type BitSignedLcpMmphfStr = SignedFunc<LcpMmphf<str>, BitFieldVec<Box<[usize]>>>;
+
+static SIGNATURE_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct CountingKey(Vec<u8>);
+
+impl AsRef<[u8]> for CountingKey {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl ToSig<[u64; 2]> for CountingKey {
+    fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 2] {
+        SIGNATURE_CALLS.fetch_add(1, Ordering::Relaxed);
+        <[u8] as ToSig<[u64; 2]>>::to_sig(key.borrow().as_ref(), seed)
+    }
+}
 
 // ── String tests ────────────────────────────────────────────────────
 
@@ -311,5 +331,23 @@ fn test_lcp2_bit_signed_u64() -> Result<()> {
     for (i, &key) in keys.iter().enumerate() {
         assert_eq!(func.get(key), Some(i), "key {key}");
     }
+    Ok(())
+}
+
+#[test]
+fn test_signed_lcp_queries_hash_key_once() -> Result<()> {
+    let keys = ["alpha", "beta", "delta", "gamma"].map(|key| CountingKey(key.as_bytes().to_vec()));
+
+    type CountingLcp = SignedFunc<LcpMmphf<CountingKey>, Box<[u64]>>;
+    let lcp = CountingLcp::try_par_new(&keys, no_logging![])?;
+    SIGNATURE_CALLS.store(0, Ordering::Relaxed);
+    assert_eq!(lcp.get(&keys[2]), Some(2));
+    assert_eq!(SIGNATURE_CALLS.load(Ordering::Relaxed), 1);
+
+    type CountingLcp2 = SignedFunc<sux::func::Lcp2Mmphf<CountingKey>, Box<[u64]>>;
+    let lcp2 = CountingLcp2::try_par_new(&keys, no_logging![])?;
+    SIGNATURE_CALLS.store(0, Ordering::Relaxed);
+    assert_eq!(lcp2.get(&keys[2]), Some(2));
+    assert_eq!(SIGNATURE_CALLS.load(Ordering::Relaxed), 1);
     Ok(())
 }

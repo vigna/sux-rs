@@ -45,7 +45,7 @@ type DenseIndex = Rank9<BitVec<Box<[u64]>>>;
 #[doc(hidden)]
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct SparseIndex<D, L = BitFieldVec<Box<[u64]>>, I = Box<[usize]>> {
     ef: EliasFano<u64, SelectZeroAdaptConst<BitVec<D>, I>, L>,
     /// self.ef should not be queried for values >= self.first_invalid_position
@@ -109,6 +109,11 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
     /// Sets a value at the given position.
     ///
     /// The provided position must be greater than the last position set.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `position` is not strictly greater than the previous position
+    /// set, or if `position >= len`.
     pub fn set(&mut self, position: usize, value: T) {
         if position < self.min_next_pos {
             panic!(
@@ -165,7 +170,14 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
 /// assert_eq!(array.get(7), Some(&"world"));
 /// ```
 ///
-/// Note that you must specify the number of values in advance.
+/// You must specify the number of values in advance.
+///
+/// # Panics
+///
+/// Panics if `num_values > len`, because strictly increasing in-bounds
+/// positions cannot satisfy that capacity, or if the underlying Elias--Fano
+/// structures would exceed `usize` in length (for example when `num_values` is
+/// near `usize::MAX`).
 ///
 /// [Elias-Fano]: crate::dict::EliasFano
 /// [dense partial array]: new_dense
@@ -173,6 +185,10 @@ pub fn new_sparse<T>(
     len: usize,
     num_values: usize,
 ) -> PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
+    assert!(
+        num_values <= len,
+        "number of values ({num_values}) must not exceed array length ({len})"
+    );
     PartialArrayBuilder {
         builder: EliasFanoBuilder::<u64>::new(num_values, len as u64),
         values: vec![],
@@ -186,6 +202,12 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
     ///
     /// The provided position must be greater than the last position
     /// set.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `position` is not strictly greater than the previous position
+    /// set, if `position >= len`, or if more than the declared number of values
+    /// are set.
     pub fn set(&mut self, position: usize, value: T) {
         if position < self.min_next_pos {
             panic!(
@@ -204,6 +226,10 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
     }
 
     /// Builds the immutable sparse partial array.
+    ///
+    /// # Panics
+    ///
+    /// Panics if fewer than the declared number of values were set.
     #[must_use]
     pub fn build(self) -> PartialArray<T, SparseIndex<Box<[usize]>>> {
         let (builder, values) = (self.builder, self.values);
@@ -264,7 +290,7 @@ impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
 /// [sparse]: new_sparse
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct PartialArray<T, P, V = Box<[T]>> {
     index: P,
     values: V,

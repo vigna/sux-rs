@@ -1,6 +1,7 @@
 target
 Cargo.lock
 .vscode
+.worktrees
 lcov.info
 TODO
 python/plots

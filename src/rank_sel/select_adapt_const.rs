@@ -24,6 +24,9 @@ use crate::{
     },
 };
 
+pub(super) const MAX_CONST_LOG2_WORDS_PER_SUBINVENTORY: usize =
+    if usize::BITS == 64 { 62 } else { 31 };
+
 use crate::ambassador_impl_Index;
 use crate::traits::BitVecOps;
 use crate::traits::ambassador_impl_Backend;
@@ -158,7 +161,7 @@ use std::ops::Index;
 /// [`SelectZeroAdaptConst`]: super::SelectZeroAdaptConst
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[delegate(crate::traits::Backend, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::bit_vec_ops::BitLength, target = "bits")]
@@ -228,8 +231,8 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTO
     /// `usize::BITS as usize` is a lossless u32->usize widening.
     const PARAMS_OK: () = assert!(
         LOG2_ONES_PER_INVENTORY < usize::BITS as usize
-            && LOG2_WORDS_PER_SUBINVENTORY < usize::BITS as usize,
-        "LOG2_ONES_PER_INVENTORY and LOG2_WORDS_PER_SUBINVENTORY must be less than the word width"
+            && LOG2_WORDS_PER_SUBINVENTORY <= MAX_CONST_LOG2_WORDS_PER_SUBINVENTORY,
+        "invalid inventory logarithm"
     );
 
     /// Computes adaptively the number of 32-bit subinventory entries
@@ -293,8 +296,8 @@ impl<
     ///
     /// # Panics
     ///
-    /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
+    /// Panics if the bit vector length exceeds 2⁶² − 1 on 64-bit platforms
+    /// or 2³¹ − 1 on 32-bit platforms.
     #[must_use]
     pub fn new(bits: B) -> Self {
         assert_inventory_length(bits.len());
@@ -696,8 +699,7 @@ impl<
 {
 }
 
-#[cfg(test)]
-#[cfg(target_pointer_width = "64")]
+#[cfg(all(test, feature = "slow_tests", target_pointer_width = "64"))]
 mod tests {
     use std::collections::BTreeSet;
 

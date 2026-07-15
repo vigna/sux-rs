@@ -78,7 +78,7 @@ use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
 /// [`EfSeq<usize>`]: EfSeq
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct PrefixSumIntList<D = EfSeq<usize>> {
     /// Number of stored values.
     ///
@@ -93,12 +93,14 @@ impl PrefixSumIntList {
     /// Creates a new `PrefixSumIntList` from a reference to a collection of
     /// nonnegative values.
     ///
-    /// The collection is iterated twice: once to compute the total sum, and
-    /// once to build the prefix-sum structure.
+    /// The collection is snapshotted once so construction does not depend on
+    /// repeated iteration yielding the same values.
     ///
     /// # Panics
     ///
-    /// Panics if the prefix sums overflow `usize`.
+    /// Panics if the prefix sums overflow `usize`, or if the number of values is
+    /// `usize::MAX` (the value count plus one overflows). Use
+    /// [`try_new`](Self::try_new) to handle these cases without panicking.
     ///
     /// # Examples
     ///
@@ -116,34 +118,60 @@ impl PrefixSumIntList {
     where
         for<'a> &'a I: IntoIterator<Item = &'a usize>,
     {
-        // First pass: count elements and total sum
-        let mut n = 0;
-        let mut total: usize = 0;
-        for &v in values {
-            n += 1;
+        Self::try_new(values).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Fallible version of [`new`](Self::new).
+    ///
+    /// The collection is snapshotted once so construction does not depend on
+    /// repeated iteration yielding the same values.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the prefix sums overflow `usize`, or if the number of
+    /// values is `usize::MAX` (the value count plus one overflows). The former
+    /// is reachable on 32-bit targets whenever the cumulative sum of the values
+    /// exceeds `usize::MAX`, even for a small collection.
+    pub fn try_new<I: ?Sized>(values: &I) -> Result<Self, &'static str>
+    where
+        for<'a> &'a I: IntoIterator<Item = &'a usize>,
+    {
+        let values: Vec<usize> = values.into_iter().copied().collect();
+        let mut total = 0usize;
+        for &value in &values {
             total = total
-                .checked_add(v)
-                .expect("PrefixSumIntList: prefix sum overflow");
+                .checked_add(value)
+                .ok_or("PrefixSumIntList: prefix sum overflow")?;
         }
 
-        // Second pass: build prefix sums in Elias–Fano
-        let mut efb = EliasFanoBuilder::new(n + 1, total);
-        let mut prefix: usize = 0;
-        // SAFETY: prefix = 0 ≤ total and is the first push
-        unsafe { efb.push_unchecked(prefix) };
-        for &v in values {
-            // Cannot overflow
-            prefix += v;
-            // SAFETY: prefix is non-decreasing and ≤ total
+        let n = values.len();
+        let mut efb = EliasFanoBuilder::new(
+            n.checked_add(1)
+                .ok_or("PrefixSumIntList: number of values overflow")?,
+            total,
+        );
+        // SAFETY: zero is the first prefix sum and is at most total.
+        unsafe { efb.push_unchecked(0) };
+        let mut prefix = 0usize;
+        for value in values {
+            prefix += value;
+            // SAFETY: the checked total proves every nondecreasing prefix is at most total.
             unsafe { efb.push_unchecked(prefix) };
         }
         let prefix_sums = efb.build_with_seq();
 
-        PrefixSumIntList { n, prefix_sums }
+        Ok(PrefixSumIntList { n, prefix_sums })
     }
 }
 
 /// Creates a `PrefixSumIntList` from an existing Elias--Fano structure.
+///
+/// # Panics
+///
+/// Panics if the Elias--Fano sequence is not a valid prefix-sum sequence, i.e.
+/// if it is empty, its first element is not zero, or its values are not
+/// nondecreasing. Use `try_from_prefix_sums` to handle those cases without
+/// panicking.
 impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
     From<EliasFano<usize, H, L>> for PrefixSumIntList<EliasFano<usize, H, L>>
 {

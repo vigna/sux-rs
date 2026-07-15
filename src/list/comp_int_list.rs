@@ -48,7 +48,6 @@
 //! [map_data]: CompIntList::map_data
 
 use crate::bits::bit_vec::{BitVec, BitVecU};
-use crate::bits::test_unaligned_any_pos;
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EfSeq;
 use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
@@ -92,7 +91,7 @@ use value_traits::slices::SliceByValue;
         deser = "for<'a> <B as epserde::deser::DeserInner>::DeserType<'a>: Backend<Word = B::Word>"
     ))
 )]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct CompIntList<B: Backend = BitVec<Box<[usize]>>, D = EfSeq<u64>> {
     /// Number of stored values.
     ///
@@ -105,22 +104,20 @@ pub struct CompIntList<B: Backend = BitVec<Box<[usize]>>, D = EfSeq<u64>> {
     delimiters: D,
     /// Concatenated binary representations (MSB removed).
     data: B,
-    /// Whether all stored bit widths satisfy the constraints for unaligned
-    /// reads.
-    all_widths_unaligned: bool,
 }
 
 impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
     /// Creates a new `CompIntList` from a lower bound and a reference to a
     /// collection of values not less than `min`.
     ///
-    /// The collection is iterated twice: once to compute statistics (element
-    /// count and total bit length), and once to build the delimiter and data
-    /// structures.
+    /// The collection is snapshotted once so construction does not depend on
+    /// repeated iteration yielding the same values.
     ///
     /// # Panics
     ///
-    /// Panics if any value is less than `min`.
+    /// Panics if any value is less than `min`, if any offset `v - min` equals
+    /// the maximum value of the word type (so it cannot be incremented by one),
+    /// or if the total encoded bit length exceeds `usize::MAX`.
     ///
     /// # Examples
     ///
@@ -137,10 +134,8 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
     where
         for<'a> &'a I: IntoIterator<Item = &'a V>,
     {
-        // First pass: count elements and total bits
-        let mut n = 0;
-        let mut total_bits = 0u64;
-        let mut all_widths_unaligned = true;
+        let mut encoded_values = Vec::new();
+        let mut total_bits = 0usize;
         for &v in values {
             let offset = v
                 .checked_sub(min)
@@ -151,30 +146,33 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
                 .unwrap_or_else(|| {
                     panic!("CompIntList: values must be smaller than the maximum value minus the lower bound ({})", V::MAX - min)
                 });
-            let width = (offset.bit_len() - 1) as usize;
-            total_bits += width as u64;
-            if !test_unaligned_any_pos!(V, width) {
-                all_widths_unaligned = false;
-            }
-            n += 1;
+            let width = usize::try_from(offset.bit_len() - 1)
+                .expect("CompIntList: bit width does not fit usize");
+            total_bits = total_bits
+                .checked_add(width)
+                .expect("CompIntList: total bit length overflow");
+            let bits = offset ^ (V::ONE << width);
+            encoded_values.push((bits, width));
         }
 
-        // Second pass: build delimiters and pack data
-        let mut efb = EliasFanoBuilder::new(n + 1, total_bits);
-        let mut pos = 0;
-        // SAFETY: pos = 0 ≤ total_bits and is the first push
+        let n = encoded_values.len();
+        let total_bits_u64 =
+            u64::try_from(total_bits).expect("CompIntList: total bit length does not fit u64");
+        let mut efb = EliasFanoBuilder::new(
+            n.checked_add(1)
+                .expect("CompIntList: number of values overflow"),
+            total_bits_u64,
+        );
+        // SAFETY: zero is the first delimiter and is at most total_bits.
         unsafe { efb.push_unchecked(0) };
 
         let mut data: BitVec<Vec<V>> = BitVec::new(0);
-        data.reserve(total_bits as usize);
-
-        for &v in values {
-            let offset = v - min + V::ONE;
-            let width = (offset.bit_len() - 1) as usize;
-            let bits = offset ^ (V::ONE << width);
+        data.reserve(total_bits);
+        let mut pos = 0u64;
+        for (bits, width) in encoded_values {
             data.append_value(bits, width);
-            pos += width as u64;
-            // SAFETY: pos is non-decreasing and ≤ total_bits
+            pos += u64::try_from(width).expect("CompIntList: bit width does not fit u64");
+            // SAFETY: widths are nonnegative and their checked sum is total_bits.
             unsafe { efb.push_unchecked(pos) };
         }
         let delimiters = efb.build_with_seq();
@@ -185,7 +183,6 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
             min,
             delimiters,
             data,
-            all_widths_unaligned,
         }
     }
 }
@@ -209,7 +206,6 @@ impl<B: Backend<Word: Word> + BitVecValueOps<B::Word>, D: SliceByValue<Value = u
             min: self.min,
             delimiters: func(self.delimiters),
             data: self.data,
-            all_widths_unaligned: self.all_widths_unaligned,
         }
     }
 
@@ -229,7 +225,6 @@ impl<B: Backend<Word: Word> + BitVecValueOps<B::Word>, D: SliceByValue<Value = u
             min: self.min,
             delimiters: self.delimiters,
             data: func(self.data),
-            all_widths_unaligned: self.all_widths_unaligned,
         }
     }
 
@@ -273,37 +268,49 @@ where
     D::Unaligned: SliceByValue<Value = u64>,
 {
     type Unaligned = CompIntList<BitVecU<Box<[V]>>, D::Unaligned>;
-    /// This method will fail if any stored value has a bit width that does not
-    /// satisfy the constraints for unaligned reads.
+    /// The value widths never block this conversion: the resulting [`BitVecU`]
+    /// data selects the fast unaligned read or a two-word fallback per value at
+    /// query time. It still fails if the delimiter or data backend cannot be
+    /// converted to its unaligned form.
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
-        if !self.all_widths_unaligned {
-            return Err(crate::traits::UnalignedConversionError::MixedBitWidths);
-        }
-
         Ok(CompIntList {
             n: self.n,
             min: self.min,
             delimiters: self.delimiters.try_into_unaligned()?,
             data: self.data.try_into_unaligned()?,
-            all_widths_unaligned: true,
         })
     }
 }
 
-impl<V: Word, D, D2: SliceByValue<Value = u64>> From<CompIntList<BitVecU<Box<[V]>>, D>>
-    for CompIntList<BitVec<Box<[V]>>, D2>
-where
-    D: Into<D2>,
-{
+impl<V: Word, D> From<CompIntList<BitVecU<Box<[V]>>, D>> for CompIntList<BitVec<Box<[V]>>, D> {
     fn from(c: CompIntList<BitVecU<Box<[V]>>, D>) -> Self {
         CompIntList {
             n: c.n,
             min: c.min,
-            delimiters: c.delimiters.into(),
+            delimiters: c.delimiters,
             data: c.data.into(),
-            all_widths_unaligned: c.all_widths_unaligned,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mixed_width_list_converts_to_unaligned() {
+        // Encoded field widths (1, 1, 63) are mixed and the last one crosses a
+        // word boundary. Conversion used to reject mixed widths; it
+        // now succeeds and BitVecU dispatches the fast/fallback read per value.
+        let values = [1u64, 1, (1u64 << 63) - 1];
+        let list = CompIntList::new(0u64, &values);
+        let unaligned = list
+            .try_into_unaligned()
+            .expect("conversion should succeed");
+        for (i, &v) in values.iter().enumerate() {
+            assert_eq!(unaligned.index_value(i), v);
         }
     }
 }

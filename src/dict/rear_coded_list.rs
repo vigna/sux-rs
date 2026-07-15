@@ -174,6 +174,7 @@ use core::marker::PhantomData;
 use lender::{ExactSizeLender, IntoLender, Lender, Lending, check_covariance};
 use lender::{FusedLender, for_};
 use mem_dbg::*;
+use num_primitive::PrimitiveNumber;
 use std::borrow::Borrow;
 
 #[derive(Debug, Clone, MemSize, MemDbg, Default)]
@@ -215,13 +216,13 @@ struct Stats {
 /// implementation of [`IndexedDict`].
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct RearCodedList<I: ?Sized, O, D = Box<[u8]>, P = Box<[usize]>, const SORTED: bool = true> {
     /// The number of strings in a block; this value trades off compression for speed.
     ratio: usize,
     /// Number of encoded strings.
     len: usize,
-    /// The encoded strings, `\0`-terminated.
+    /// The length-delimited encoded strings.
     data: D,
     /// The pointer to the starting string of each block.
     pointers: P,
@@ -251,6 +252,15 @@ impl<
     #[inline]
     pub const fn len(&self) -> usize {
         self.len
+    }
+
+    #[inline]
+    fn assert_index(&self, index: usize) {
+        assert!(
+            index < self.len,
+            "Index out of bounds: {index} >= {}",
+            self.len
+        );
     }
 
     /// Writes the index-th element to `result` as bytes. This is useful to avoid
@@ -311,6 +321,11 @@ where
     /// Note that [`iter_from`] is more convenient if you need owned
     /// elements.
     ///
+    /// # Panics
+    ///
+    /// Panics if `from > self.len()`. Passing `self.len()` returns an empty
+    /// lender.
+    ///
     /// [`iter_from`]: RearCodedList::iter_from
     #[inline(always)]
     pub fn lender_from(&self, from: usize) -> Lend<'_, I, O, D, P, SORTED> {
@@ -333,6 +348,11 @@ where
     ///
     /// Note that [`lender_from`] is more efficient if you need to
     /// iterate over many elements.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `from > self.len()`. Passing `self.len()` returns an empty
+    /// iterator.
     ///
     /// [`lender_from`]: RearCodedList::lender_from
     #[inline(always)]
@@ -438,6 +458,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
     /// Returns in place the byte sequence of given index by writing
     /// its bytes into the provided vector.
     pub fn get_in_place(&self, index: usize, result: &mut Vec<u8>) {
+        self.assert_index(index);
         self.get_in_place_impl(index, result);
     }
 }
@@ -466,6 +487,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
     /// Returns in place the string of given index by writing
     /// its bytes into the provided string.
     pub fn get_in_place(&self, index: usize, result: &mut String) {
+        self.assert_index(index);
         // Reuse the caller's allocation: take its bytes, refill them
         // (get_in_place_impl clears first), and rebuild the String.
         let mut buffer = std::mem::take(result).into_bytes();
@@ -482,6 +504,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
     /// however, that using invalid UTF-8 data may lead to undefined behavior.
     #[inline]
     pub fn get_bytes(&self, index: usize) -> Vec<u8> {
+        self.assert_index(index);
         let mut buf = Vec::with_capacity(64);
         self.get_in_place_impl(index, &mut buf);
         buf
@@ -496,6 +519,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
     /// however, that using invalid UTF-8 data may lead to undefined behavior.
     #[inline(always)]
     pub fn get_bytes_in_place(&self, index: usize, result: &mut Vec<u8>) {
+        self.assert_index(index);
         self.get_in_place_impl(index, result);
     }
 }
@@ -842,7 +866,7 @@ pub struct RearCodedListBuilder<I: ?Sized, const SORTED: bool = true> {
     ratio: usize,
     /// Number of encoded strings.
     len: usize,
-    /// The encoded strings, `\0`-terminated.
+    /// The length-delimited encoded strings.
     data: Vec<u8>,
     /// The total number of bytes written; this can be different
     /// than the length of data in the low-memory construction,
@@ -903,38 +927,68 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
     /// Prints in a human-readable format the statistics of the
     /// strings currently in the builder.
     pub fn print_stats(&self) {
-        println!(
-            "{:>20}: {:>10}",
-            "max_block_bytes", self.stats.max_block_bytes
-        );
+        fn ratio(numerator: usize, denominator: usize) -> f64 {
+            if denominator == 0 {
+                0.0
+            } else {
+                numerator.as_to::<f64>() / denominator.as_to::<f64>()
+            }
+        }
+
+        fn signed_ratio(numerator: isize, denominator: isize) -> f64 {
+            if denominator == 0 {
+                0.0
+            } else {
+                numerator.as_to::<f64>() / denominator.as_to::<f64>()
+            }
+        }
+
+        let open_block_bytes = self
+            .pointers
+            .last()
+            .map_or(0, |&start| self.written_bytes - start);
+        let sum_block_bytes = self
+            .stats
+            .sum_block_bytes
+            .checked_add(open_block_bytes)
+            .expect("rear-coded block byte count overflow");
+        let max_block_bytes = self.stats.max_block_bytes.max(open_block_bytes);
+        println!("{:>20}: {:>10}", "max_block_bytes", max_block_bytes);
         println!(
             "{:>20}: {:>10.3}",
             "avg_block_bytes",
-            self.stats.sum_block_bytes as f64 / self.len as f64
+            ratio(sum_block_bytes, self.pointers.len())
         );
 
         println!("{:>20}: {:>10}", "max_lcp", self.stats.max_lcp);
         println!(
             "{:>20}: {:>10.3}",
             "avg_lcp",
-            self.stats.sum_lcp as f64 / self.len as f64
+            ratio(self.stats.sum_lcp, self.len)
         );
 
         println!("{:>20}: {:>10}", "max_str_len", self.stats.max_str_len);
         println!(
             "{:>20}: {:>10.3}",
             "avg_str_len",
-            self.stats.sum_str_len as f64 / self.len as f64
+            ratio(self.stats.sum_str_len, self.len)
         );
 
-        let ptr_size: usize = self.pointers.len() * core::mem::size_of::<usize>();
+        let ptr_size: usize = self
+            .pointers
+            .len()
+            .saturating_mul(core::mem::size_of::<usize>());
 
         fn human(key: &str, x: isize) {
             const UOM: &[&str] = &["B", "KB", "MB", "GB", "TB"];
             let sign = x.signum();
-            let mut y = x.abs() as f64;
+            // unsigned_abs avoids overflow at isize::MIN; the f64 cast is a
+            // display approximation.
+            let mut y = x.unsigned_abs() as f64;
             let mut uom_idx = 0;
-            while y > 1000.0 {
+            // Stop at the largest unit so a magnitude beyond ~1 PB does not index
+            // past UOM.
+            while y > 1000.0 && uom_idx < UOM.len() - 1 {
                 uom_idx += 1;
                 y /= 1000.0;
             }
@@ -947,33 +1001,68 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
             );
         }
 
-        let total_size = ptr_size + self.data.len() + core::mem::size_of::<Self>();
-        human("data_bytes", self.data.len() as isize);
-        human("codes_bytes", self.stats.code_bytes as isize);
-        human("suffixes_bytes", self.stats.suffixes_bytes as isize);
-        human("ptrs_bytes", ptr_size as isize);
-        human("uncompressed_size", self.stats.sum_str_len as isize);
-        human("total_size", total_size as isize);
+        let total_size = ptr_size
+            .saturating_add(self.data.len())
+            .saturating_add(core::mem::size_of::<Self>());
+        // Clamp usize/isize display conversions: on 32-bit targets a logical
+        // magnitude (e.g. sum_str_len) can exceed isize::MAX, and a bare `as
+        // isize` would wrap it to a negative size.
+        human(
+            "data_bytes",
+            isize::try_from(self.data.len()).unwrap_or(isize::MAX),
+        );
+        human(
+            "codes_bytes",
+            isize::try_from(self.stats.code_bytes).unwrap_or(isize::MAX),
+        );
+        human(
+            "suffixes_bytes",
+            isize::try_from(self.stats.suffixes_bytes).unwrap_or(isize::MAX),
+        );
+        human(
+            "ptrs_bytes",
+            isize::try_from(ptr_size).unwrap_or(isize::MAX),
+        );
+        human(
+            "uncompressed_size",
+            isize::try_from(self.stats.sum_str_len).unwrap_or(isize::MAX),
+        );
+        human(
+            "total_size",
+            isize::try_from(total_size).unwrap_or(isize::MAX),
+        );
 
         human(
             "optimal_size",
-            self.data.len() as isize - self.stats.redundancy,
+            isize::try_from(self.data.len())
+                .unwrap_or(isize::MAX)
+                .saturating_sub(self.stats.redundancy),
         );
         human("redundancy", self.stats.redundancy);
-        let overhead = self.stats.redundancy + ptr_size as isize;
+        let data_len = isize::try_from(self.data.len()).unwrap_or(isize::MAX);
+        let uncompressed_len = isize::try_from(self.stats.sum_str_len).unwrap_or(isize::MAX);
+        let overhead = self
+            .stats
+            .redundancy
+            .saturating_add(isize::try_from(ptr_size).unwrap_or(isize::MAX));
         println!(
             "overhead_ratio: {:>10}",
-            overhead as f64 / (overhead + self.data.len() as isize) as f64
+            signed_ratio(overhead, overhead.saturating_add(data_len))
         );
         println!(
             "no_overhead_compression_ratio: {:.3}",
-            (self.data.len() as isize - self.stats.redundancy) as f64
-                / self.stats.sum_str_len as f64
+            signed_ratio(
+                data_len.saturating_sub(self.stats.redundancy),
+                uncompressed_len
+            )
         );
 
         println!(
             "compression_ratio: {:.3}",
-            (ptr_size + self.data.len()) as f64 / self.stats.sum_str_len as f64
+            ratio(
+                ptr_size.saturating_add(self.data.len()),
+                self.stats.sum_str_len
+            )
         );
     }
 
@@ -982,7 +1071,11 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
 
         // update stats
         self.stats.max_str_len = self.stats.max_str_len.max(string.len());
-        self.stats.sum_str_len += string.len();
+        // Diagnostic totals measure logical (uncompressed) quantities, which can
+        // exceed the encoded size and overflow usize on 32-bit targets for
+        // highly compressible input; saturate so a statistics counter never
+        // panics (debug) or wraps (release) the public push path.
+        self.stats.sum_str_len = self.stats.sum_str_len.saturating_add(string.len());
 
         let (lcp, order) = longest_common_prefix(&self.last_str, string);
 
@@ -1019,17 +1112,26 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
 
             // compute the redundancy
             if self.len != 0 {
-                self.stats.redundancy += lcp as isize;
-                self.stats.redundancy += encode_int_len(string.len()) as isize;
-                self.stats.redundancy -= encode_int_len(rear_length) as isize;
-                self.stats.redundancy -= encode_int_len(suffix_len) as isize;
+                self.stats.redundancy = self
+                    .stats
+                    .redundancy
+                    .saturating_add(isize::try_from(lcp).unwrap_or(isize::MAX))
+                    .saturating_add(
+                        isize::try_from(encode_int_len(string.len())).unwrap_or(isize::MAX),
+                    )
+                    .saturating_sub(
+                        isize::try_from(encode_int_len(rear_length)).unwrap_or(isize::MAX),
+                    )
+                    .saturating_sub(
+                        isize::try_from(encode_int_len(suffix_len)).unwrap_or(isize::MAX),
+                    );
             }
             // just encode the whole string
             string
         } else {
             // update the stats
             self.stats.max_lcp = self.stats.max_lcp.max(lcp);
-            self.stats.sum_lcp += lcp;
+            self.stats.sum_lcp = self.stats.sum_lcp.saturating_add(lcp);
             // encode the len of the bytes in data
             let prev_len = self.data.len();
             encode_int(suffix_len, &mut self.data);
@@ -1236,7 +1338,23 @@ mod epserde_impl {
         // First pass: count the number of strings and the byte length
         let mut builder = RearCodedListBuilder::<I, SORTED>::new(ratio);
         info!("Counting strings...");
+        // Reject unsorted input with a clean error instead of letting
+        // builder.push panic (only meaningful when SORTED); this also covers the
+        // low-memory CLI path, which streams through this pass.
+        let mut prev: Vec<u8> = Vec::new();
+        let mut have_prev = false;
         while let Some(s) = lender.next()? {
+            if SORTED {
+                let bytes = s.borrow().as_ref();
+                if have_prev && bytes < prev.as_slice() {
+                    anyhow::bail!(
+                        "input is not sorted: a string is smaller than the preceding one; build the list without SORTED for unsorted input"
+                    );
+                }
+                prev.clear();
+                prev.extend_from_slice(bytes);
+                have_prev = true;
+            }
             builder.push(s.borrow());
             len += 1;
             byte_len += builder.data.len();
@@ -1279,10 +1397,16 @@ mod epserde_impl {
 
     /// Serializes to a stream a rear-coded list of strings directly from a lender of `AsRef<str>`.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if `SORTED` is true and the input is not sorted (a value
+    /// is smaller than the preceding one), or if reading, rewinding, or
+    /// serializing the lender fails.
+    ///
     /// # Panics
     ///
-    /// Panics if the lender fails during the second (serialization) pass;
-    /// such a mid-serialization failure is not recoverable.
+    /// Panics if `ratio` is zero, or if the lender fails during the second
+    /// (serialization) pass; such a mid-serialization failure is not recoverable.
     #[cfg(feature = "epserde")]
     pub fn serialize_str<
         T: ?Sized + Borrow<str>,
@@ -1301,10 +1425,16 @@ mod epserde_impl {
 
     /// Serializes to a stream a rear-coded list of byte sequences directly from a lender of `AsRef<[u8]>`.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if `SORTED` is true and the input is not sorted (a value
+    /// is smaller than the preceding one), or if reading, rewinding, or
+    /// serializing the lender fails.
+    ///
     /// # Panics
     ///
-    /// Panics if the lender fails during the second (serialization) pass;
-    /// such a mid-serialization failure is not recoverable.
+    /// Panics if `ratio` is zero, or if the lender fails during the second
+    /// (serialization) pass; such a mid-serialization failure is not recoverable.
     #[cfg(feature = "epserde")]
     pub fn serialize_slice_u8<
         T: ?Sized + Borrow<[u8]>,
@@ -1324,10 +1454,16 @@ mod epserde_impl {
     /// Stores into a file a rear-coded list of strings built directly from a lender of
     /// `AsRef<str>`.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if `SORTED` is true and the input is not sorted (a value
+    /// is smaller than the preceding one), if reading or rewinding the lender
+    /// fails, or if the destination file cannot be created, written, or flushed.
+    ///
     /// # Panics
     ///
-    /// Panics if the lender fails during the second (serialization) pass;
-    /// such a mid-serialization failure is not recoverable.
+    /// Panics if `ratio` is zero, or if the lender fails during the second
+    /// (serialization) pass; such a mid-serialization failure is not recoverable.
     #[cfg(feature = "epserde")]
     pub fn store_str<
         T: ?Sized + Borrow<str>,
@@ -1343,16 +1479,24 @@ mod epserde_impl {
     ) -> anyhow::Result<usize> {
         let dst_file = std::fs::File::create(filename.as_ref())?;
         let mut buf_writer = std::io::BufWriter::new(dst_file);
-        serialize_impl::<T, str, String, L, SORTED>(ratio, lender, &mut buf_writer)
+        let written = serialize_impl::<T, str, String, L, SORTED>(ratio, lender, &mut buf_writer)?;
+        std::io::Write::flush(&mut buf_writer)?;
+        Ok(written)
     }
 
     /// Stores into a file a rear-coded list of strings built directly from a lender of
     /// `AsRef<[u8]>`.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if `SORTED` is true and the input is not sorted (a value
+    /// is smaller than the preceding one), if reading or rewinding the lender
+    /// fails, or if the destination file cannot be created, written, or flushed.
+    ///
     /// # Panics
     ///
-    /// Panics if the lender fails during the second (serialization) pass;
-    /// such a mid-serialization failure is not recoverable.
+    /// Panics if `ratio` is zero, or if the lender fails during the second
+    /// (serialization) pass; such a mid-serialization failure is not recoverable.
     #[cfg(feature = "epserde")]
     pub fn store_slice_u8<
         T: ?Sized + Borrow<[u8]>,
@@ -1368,7 +1512,10 @@ mod epserde_impl {
     ) -> anyhow::Result<usize> {
         let dst_file = std::fs::File::create(filename.as_ref())?;
         let mut buf_writer = std::io::BufWriter::new(dst_file);
-        serialize_impl::<T, [u8], Vec<u8>, L, SORTED>(ratio, lender, &mut buf_writer)
+        let written =
+            serialize_impl::<T, [u8], Vec<u8>, L, SORTED>(ratio, lender, &mut buf_writer)?;
+        std::io::Write::flush(&mut buf_writer)?;
+        Ok(written)
     }
 
     /// An iterator that will be wrapped in a [`SerIter`] to serialize directly the
@@ -1438,6 +1585,13 @@ mod epserde_impl {
                 }
             }
         }
+
+        #[inline(always)]
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            // Exact: required for the ExactSizeIterator impl below to satisfy the
+            // std contract (size_hint must equal (len(), Some(len()))).
+            (self.len(), Some(self.len()))
+        }
     }
 
     impl<
@@ -1479,6 +1633,13 @@ mod epserde_impl {
                 Some(ptr)
             }
         }
+
+        #[inline(always)]
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            // Exact: required for the ExactSizeIterator impl below to satisfy the
+            // std contract (size_hint must equal (len(), Some(len()))).
+            (self.len(), Some(self.len()))
+        }
     }
 
     impl<'a, I: ?Sized + AsRef<[u8]>, const SORTED: bool> ExactSizeIterator
@@ -1489,6 +1650,70 @@ mod epserde_impl {
             builder.pointers.len() - self.pos
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::utils::lenders::FromSlice;
+
+        #[test]
+        fn pointers_iter_size_hint_is_exact() {
+            // ExactSizeIterator requires size_hint == (len(), Some(len())); before
+            // the fix these iterators returned the default (0, None).
+            let mut b = RearCodedListBuilder::<[u8], false>::new(2);
+            b.push(b"aa".as_slice());
+            b.push(b"ab".as_slice());
+            b.push(b"ac".as_slice());
+            let rc = RefCell::new(b);
+            let mut it = PointersIter::<[u8], false> {
+                builder: &rc,
+                pos: 0,
+            };
+            let n = it.len();
+            assert!(n > 0);
+            assert_eq!(it.size_hint(), (n, Some(n)));
+            assert!(it.next().is_some());
+            let n = it.len();
+            assert_eq!(it.size_hint(), (n, Some(n)));
+        }
+
+        #[test]
+        fn bytes_iter_size_hint_is_exact() {
+            let data: Vec<Vec<u8>> = vec![b"aa".to_vec(), b"ab".to_vec(), b"ac".to_vec()];
+
+            // Compute the true encoded byte length with the same first pass the
+            // serializer uses, so ExactSizeIterator::len is truthful.
+            let mut counter = RearCodedListBuilder::<[u8], false>::new(2);
+            let mut byte_len = 0usize;
+            for s in &data {
+                counter.push(s.as_slice());
+                byte_len += counter.data.len();
+                counter.data.clear();
+            }
+            assert!(byte_len > 0);
+
+            let builder = RefCell::new(RearCodedListBuilder::<[u8], false>::new(2));
+            let mut it = BytesIter::<Vec<u8>, [u8], _, false> {
+                builder: &builder,
+                lender: FromSlice::new(data.as_slice()),
+                byte_len,
+                pos: 0,
+                _marker_i: PhantomData,
+            };
+
+            // The hint must be exact at the start and stay in lockstep with len()
+            // as the iterator drains, reaching (0, Some(0)) exactly when empty.
+            assert_eq!(it.size_hint(), (byte_len, Some(byte_len)));
+            let mut produced = 0usize;
+            while it.next().is_some() {
+                produced += 1;
+                let n = it.len();
+                assert_eq!(it.size_hint(), (n, Some(n)));
+            }
+            assert_eq!(produced, byte_len);
+            assert_eq!(it.size_hint(), (0, Some(0)));
+        }
+    }
 }
 
 #[cfg(feature = "epserde")]
@@ -1497,6 +1722,45 @@ pub use epserde_impl::{serialize_slice_u8, serialize_str, store_slice_u8, store_
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // sum_str_len is a usize; the PB-sized value only fits a 64-bit target.
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn print_stats_handles_extreme_stats() {
+        // print_stats is a display helper; extreme (synthetic) statistics must
+        // not panic. A sum_str_len beyond 1000^5 bytes would index past the unit
+        // table, and redundancy == isize::MIN would overflow abs and the
+        // optimal_size subtraction.
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.stats.sum_str_len = 1_000_000_000_000_001;
+        builder.stats.redundancy = isize::MIN;
+        builder.print_stats();
+    }
+
+    #[test]
+    fn push_stats_saturate_instead_of_overflowing() {
+        // The diagnostic totals measure logical (uncompressed) quantities, so on
+        // a 32-bit target they can overflow before the encoded data does. Seed
+        // them at their maxima and push again: under checked arithmetic (debug)
+        // the pre-fix `+=` panicked; the saturating updates keep them valid.
+
+        // Non-block path (ratio > 1): sum_str_len (every push) and sum_lcp
+        // (non-block entries) must saturate.
+        let mut b = RearCodedListBuilder::<str, false>::new(2);
+        b.push("aa");
+        b.stats.sum_str_len = usize::MAX;
+        b.stats.sum_lcp = usize::MAX;
+        b.push("ab"); // lcp == 1, non-block entry
+        assert_eq!(b.stats.sum_str_len, usize::MAX);
+        assert_eq!(b.stats.sum_lcp, usize::MAX);
+
+        // Block path (ratio == 1): the signed redundancy counter must saturate.
+        let mut b = RearCodedListBuilder::<str, false>::new(1);
+        b.push("aa");
+        b.stats.redundancy = isize::MAX;
+        b.push("ab"); // block entry at len != 0 adds to redundancy
+        assert!(b.stats.redundancy > isize::MAX - 1024);
+    }
 
     #[test]
     fn test_memcmp() {

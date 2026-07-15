@@ -6,17 +6,24 @@
 
 #![allow(clippy::collapsible_else_if)]
 
+#[cfg(target_pointer_width = "64")]
 use anyhow::Result;
+#[cfg(target_pointer_width = "64")]
 use clap::Parser;
+#[cfg(target_pointer_width = "64")]
 use mem_dbg::{MemSize, SizeFlags};
+#[cfg(target_pointer_width = "64")]
 use ph::{
     BuildDefaultSeededHasher, GetSize,
     fmph::Bits8,
     phast::{self, DefaultCompressedArray, Params, SeedOnly, bits_per_seed_to_100_bucket_size},
 };
+#[cfg(target_pointer_width = "64")]
 use sux::bit_field_vec;
+#[cfg(target_pointer_width = "64")]
 use value_traits::slices::*;
 
+#[cfg(target_pointer_width = "64")]
 fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
     let mut timings = Vec::with_capacity(repeats);
     for _ in 0..repeats {
@@ -35,6 +42,7 @@ fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
     );
 }
 
+#[cfg(target_pointer_width = "64")]
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks Phast+ + array with strings or 64-bit integers", long_about = None)]
 struct Args {
@@ -49,6 +57,7 @@ struct Args {
     repeats: usize,
 }
 
+#[cfg(target_pointer_width = "64")]
 fn main() -> Result<()> {
     sux::init_env_logger()?;
 
@@ -95,4 +104,9 @@ fn main() -> Result<()> {
     });
 
     Ok(())
+}
+
+#[cfg(not(target_pointer_width = "64"))]
+fn main() {
+    eprintln!("bench_phast requires a 64-bit target");
 }

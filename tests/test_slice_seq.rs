@@ -127,3 +127,10 @@ fn test_slice_seq_debug() {
     let debug_str = format!("{:?}", seq);
     assert!(debug_str.contains("SliceSeq"));
 }
+
+#[test]
+fn test_slice_seq_non_usize_values() {
+    let data = [1u32, 2, 3];
+    let seq = SliceSeq::new(&data);
+    assert_eq!(seq.get(1), 2);
+}

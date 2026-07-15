@@ -84,7 +84,7 @@
 //! structure with one that is slower but uses much less space: the method
 //! is unsafe because in principle you might replace the structure with
 //! something built on a different bit vector, leading to an inconsistent
-//! state; note how we use `into_inner()` to get rid of the [`AddNumBits`]
+//! state; note how we use `into_inner()` to get rid of the [`Rank9`]
 //! wrapper.
 //!
 //! Some structures depend on the internals of others, and thus cannot be

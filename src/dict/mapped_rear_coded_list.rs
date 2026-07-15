@@ -27,8 +27,8 @@
 //! - [`MappedRearCodedListSliceU8`]: stores byte sequences (`AsRef<[u8]>`),
 //!   returning `Vec<u8>` on access.
 //!
-//! These standard types use a `Box<[usize]>` for storing the mapping.
-//! However, it is possible to use any type implementing the
+//! These standard types store the mapping in a bit-packed [`BitFieldVec`] backed
+//! by `Box<[usize]>`. However, it is possible to use any type implementing the
 //! [`SliceByValue`] trait from the [`value_traits`] crate.
 //!
 //! Besides the standard access by means of the [`IndexedSeq`] trait, this
@@ -103,7 +103,7 @@ use value_traits::slices::SliceByValue;
 /// [`MappedRearCodedListSliceU8`].
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(phantom(I, O)))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct MappedRearCodedList<
     I: ?Sized,
     O,
@@ -134,14 +134,13 @@ impl<
 {
     /// Creates a new instance from its parts.
     ///
-    /// It is your responsibility to ensure that the mapping is valid,
-    /// that is, that its length matches the length of the rear-coded list,
-    /// and that all indices are in range.
+    /// The mapping may reorder or collapse indices, but every mapped index must
+    /// address an element of the rear-coded list.
     ///
     /// # Panics
     ///
-    /// This method will panic if the length of the mapping does not match
-    /// the length of the rear-coded list.
+    /// This method panics if the mapping length differs from the rear-coded
+    /// list length or if a mapped index is out of range.
     pub fn from_parts(rcl: RearCodedList<I, O, D, P, SORTED>, map: Q) -> Self {
         assert_eq!(
             rcl.len(),
@@ -150,6 +149,16 @@ impl<
             rcl.len(),
             map.len()
         );
+        // SliceByValue deliberately provides indexed access without requiring
+        // an iterator, so validation must visit its positions explicitly.
+        for position in 0..map.len() {
+            let mapped = map.index_value(position);
+            assert!(
+                mapped < rcl.len(),
+                "Out-of-range mapping at position {position}: {mapped} >= {}",
+                rcl.len()
+            );
+        }
         Self { rcl, map }
     }
 
@@ -167,12 +176,23 @@ impl<
         self.rcl.len()
     }
 
+    /// Resolves an index through the mapping and validates the result.
+    #[inline(always)]
+    fn mapped_index(&self, index: usize) -> usize {
+        let mapped = self.map.index_value(index);
+        assert!(
+            mapped < self.rcl.len(),
+            "Out-of-range mapping at position {index}: {mapped} >= {}",
+            self.rcl.len()
+        );
+        mapped
+    }
+
     /// Writes the index-th element to `result` as bytes. This is useful to avoid
     /// allocating a new vector for every query.
     #[inline]
     fn get_in_place_impl(&self, index: usize, result: &mut Vec<u8>) {
-        let index = self.map.index_value(index);
-        self.rcl.get_in_place_impl(index, result)
+        self.rcl.get_in_place_impl(self.mapped_index(index), result)
     }
 }
 
@@ -203,6 +223,11 @@ where
     /// Note that [`iter_from`] is more convenient if you need owned
     /// elements.
     ///
+    /// # Panics
+    ///
+    /// Panics if `from > self.len()`. Passing `self.len()` returns an empty
+    /// lender.
+    ///
     /// [`iter_from`]: MappedRearCodedList::iter_from
     #[inline(always)]
     pub fn lender_from(&self, from: usize) -> Lend<'_, I, O, D, P, Q, SORTED> {
@@ -225,6 +250,11 @@ where
     ///
     /// Note that [`lender_from`] is more efficient if you need to
     /// iterate over many elements.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `from > self.len()`. Passing `self.len()` returns an empty
+    /// iterator.
     ///
     /// [`lender_from`]: MappedRearCodedList::lender_from
     #[inline(always)]
@@ -253,7 +283,8 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SO
 {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
-        let index = self.map.index_value(index);
+        let index = self.mapped_index(index);
+        // SAFETY: mapped_index checked that index is within the rear-coded list.
         unsafe { self.rcl.get_unchecked(index) }
     }
 
@@ -269,8 +300,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SO
     /// Returns in place the byte sequence of given index by writing
     /// its bytes into the provided vector.
     pub fn get_in_place(&self, index: usize, result: &mut Vec<u8>) {
-        let index = self.map.index_value(index);
-        self.rcl.get_in_place_impl(index, result);
+        self.rcl.get_in_place_impl(self.mapped_index(index), result);
     }
 }
 
@@ -279,7 +309,8 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SO
 {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
-        let index = self.map.index_value(index);
+        let index = self.mapped_index(index);
+        // SAFETY: mapped_index checked that index is within the rear-coded list.
         unsafe { self.rcl.get_unchecked(index) }
     }
 
@@ -295,7 +326,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SO
     /// Returns in place the string of given index by writing
     /// its bytes into the provided string.
     pub fn get_in_place(&self, index: usize, result: &mut String) {
-        let index = self.map.index_value(index);
+        let index = self.mapped_index(index);
         self.rcl.get_in_place(index, result)
     }
 
@@ -307,7 +338,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SO
     /// however, that using invalid UTF-8 data may lead to undefined behavior.
     #[inline]
     pub fn get_bytes(&self, index: usize) -> Vec<u8> {
-        let index = self.map.index_value(index);
+        let index = self.mapped_index(index);
         self.rcl.get_bytes(index)
     }
 
@@ -320,7 +351,7 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SO
     /// however, that using invalid UTF-8 data may lead to undefined behavior.
     #[inline(always)]
     pub fn get_bytes_in_place(&self, index: usize, result: &mut Vec<u8>) {
-        let index = self.map.index_value(index);
+        let index = self.mapped_index(index);
         self.rcl.get_in_place_impl(index, result);
     }
 }

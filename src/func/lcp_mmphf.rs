@@ -68,7 +68,7 @@ use xxhash_rust::xxh3;
 #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
 #[mem_size(flat)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct IntBitPrefix<K> {
     /// The original integer value.
     value: K,
@@ -325,6 +325,7 @@ mod build {
         ) -> Result<(Self, L)> {
             let total_start = std::time::Instant::now();
             if n == 0 {
+                anyhow::ensure!(keys.next()?.is_none(), "Expected 0 keys but got at least 1");
                 return Ok((
                     Self {
                         n: 0,
@@ -389,7 +390,7 @@ mod build {
                 i += 1;
             }
 
-            assert_eq!(i, n, "Expected {n} keys but got {i}");
+            anyhow::ensure!(i == n, "Expected {n} keys but got {i}");
             lcp_bit_lens.push(curr_lcp_bits);
             assert_eq!(lcp_bit_lens.len(), num_buckets);
 
@@ -835,6 +836,7 @@ mod build {
         ) -> Result<(Self, L)> {
             let total_start = std::time::Instant::now();
             if n == 0 {
+                anyhow::ensure!(keys.next()?.is_none(), "Expected 0 keys but got at least 1");
                 return Ok((
                     Self {
                         n: 0,
@@ -906,7 +908,7 @@ mod build {
                 i += 1;
             }
 
-            assert_eq!(i, n, "Expected {n} keys but got {i}");
+            anyhow::ensure!(i == n, "Expected {n} keys but got {i}");
             lcp_bit_lens.push(curr_lcp_bits);
             assert_eq!(lcp_bit_lens.len(), num_buckets);
 
@@ -1257,7 +1259,7 @@ pub(crate) use build::{lcp_bits, lcp_bits_nul, log2_bucket_size};
     derive(epserde::Epserde),
     epserde(phantom(K, S0, S1))
 )]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct LcpMmphfInt<
     K,
     D = BitFieldVec<Box<[usize]>>,
@@ -1306,7 +1308,13 @@ where
     /// (same contract as [`VFunc::get`]).
     #[inline]
     pub fn get(&self, key: K) -> usize {
-        let packed = self.lcp_len_offset.get(key);
+        let sig = K::to_sig(key, self.lcp_len_offset.seed);
+        self.get_by_sig(key, sig)
+    }
+
+    #[inline]
+    pub(crate) fn get_by_sig(&self, key: K, sig: S0) -> usize {
+        let packed = self.lcp_len_offset.get_by_sig(sig);
         // Absent keys yield an arbitrary packed value; clamp the decoded LCP
         // length to the key width so IntBitPrefix::new cannot overflow. Present
         // keys always have lcp_bit_len <= K::BITS, so this is a no-op for them.
@@ -1336,7 +1344,7 @@ where
 /// bytes, avoiding any allocation.
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct BitPrefix {
     bytes: Vec<u8>,
     bit_len: usize,
@@ -1434,7 +1442,7 @@ impl ToSig<[u64; 1]> for BitPrefix {
     derive(epserde::Epserde),
     epserde(phantom(K, S0, S1))
 )]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct LcpMmphf<
     K: ?Sized,
     D = BitFieldVec<Box<[usize]>>,
@@ -1566,7 +1574,13 @@ where
     /// (same contract as [`VFunc::get`]).
     #[inline]
     pub fn get(&self, key: &K) -> usize {
-        let packed = self.lcp_len_offset.get(key);
+        let sig = K::to_sig(key, self.lcp_len_offset.seed);
+        self.get_by_sig(key, sig)
+    }
+
+    #[inline]
+    pub(crate) fn get_by_sig(&self, key: &K, sig: S0) -> usize {
+        let packed = self.lcp_len_offset.get_by_sig(sig);
         let lcp_bit_len = packed >> self.log2_bucket_size;
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
         // Compute the lcp_to_bucket signature directly from the key bytes

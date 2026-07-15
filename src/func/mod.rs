@@ -100,9 +100,7 @@ pub mod shard_edge;
 
 pub mod codec;
 
-#[cfg(feature = "rayon")]
 mod comp_vfunc;
-#[cfg(feature = "rayon")]
 pub use comp_vfunc::CompVFunc;
 
 /// Avalanches bits using the finalization step of Austin Appleby's

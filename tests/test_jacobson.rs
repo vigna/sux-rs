@@ -210,7 +210,7 @@ fn test_all_offset_variants_agree() {
     let bp_ci = JacobsonBalParen::new(&paren);
     let bp_bfv =
         <JacobsonBalParen<_, _, BitFieldVec<Box<[usize]>>>>::new_with_bit_field_vec(&paren);
-    let bp_ps = <JacobsonBalParen<_, _, PrefixSumIntList>>::new_with_prefix_sum(&paren);
+    let bp_ps = <JacobsonBalParen<_, _, PrefixSumIntList>>::new_with_prefix_sum(&paren).unwrap();
 
     for i in 0..paren.len() {
         let ci = bp_ci.find_close(i);

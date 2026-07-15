@@ -64,7 +64,7 @@ use xxhash_rust::xxh3;
 ///   and `lcp_infreq_len`).
 /// - `E0`: the [`ShardEdge`] for the key maps (`lcp_freq_len_offset`).
 /// - `F0`: the [`ShardEdge`] for `lcp_infreq_len`. Defaults to
-///   `E0`.
+///   [`Fuse3Shards`].
 /// - `S1`: the  [signature type] for the prefix-to-bucket map
 ///   (`lcp_to_bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
@@ -84,12 +84,11 @@ use xxhash_rust::xxh3;
     derive(epserde::Epserde),
     epserde(phantom(K, S0, S1))
 )]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(
     feature = "serde",
     serde(bound(
-        serialize = "VFunc<K, D, S0, E0>: serde::Serialize, VFunc<K, D, S0, F0>: serde::Serialize, VFunc<IntBitPrefix<K>, D, S1, E1>: serde::Serialize",
-        deserialize = "VFunc<K, D, S0, E0>: serde::Deserialize<'de>, VFunc<K, D, S0, F0>: serde::Deserialize<'de>, VFunc<IntBitPrefix<K>, D, S1, E1>: serde::Deserialize<'de>"
+        serialize = "VFunc<K, D, S0, E0>: serde::Serialize, VFunc<K, D, S0, F0>: serde::Serialize, VFunc<IntBitPrefix<K>, D, S1, E1>: serde::Serialize"
     ))
 )]
 pub struct Lcp2MmphfInt<
@@ -168,6 +167,11 @@ where
     #[inline]
     pub fn get(&self, key: K) -> usize {
         let sig = K::to_sig(key, self.lcp_freq_len_offset.seed);
+        self.get_by_sig(key, sig)
+    }
+
+    #[inline]
+    pub(crate) fn get_by_sig(&self, key: K, sig: S0) -> usize {
         let packed = self.lcp_freq_len_offset.get_by_sig(sig);
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
         let frequent_lcp = packed >> self.log2_bucket_size;
@@ -209,6 +213,14 @@ mod build {
             100.0 * (total_bits as f64 / n as f64 / log2n - 1.0),
             log2n
         ));
+    }
+
+    fn percentage(part: usize, total: usize) -> f64 {
+        if total == 0 {
+            return 0.0;
+        }
+        // Diagnostics tolerate the possible loss of integer precision in f64.
+        100.0 * part as f64 / total as f64
     }
 
     /// Builds the `remap` table and its inverse map from the value frequencies.
@@ -380,6 +392,7 @@ mod build {
         ) -> Result<(Self, L)> {
             let total_start = std::time::Instant::now();
             if n == 0 {
+                anyhow::ensure!(keys.next()?.is_none(), "Expected 0 keys but got at least 1");
                 return Ok((
                     Self {
                         n: 0,
@@ -398,8 +411,6 @@ mod build {
             let bucket_size = 1usize << log2_bs;
             let bucket_mask = bucket_size - 1;
             let num_buckets = n.div_ceil(bucket_size);
-            let saved_max_num_threads = builder.max_num_threads;
-            let saved_eps = builder.eps;
 
             pl.info(format_args!(
                 "LCP bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
@@ -509,7 +520,7 @@ mod build {
                                 buf.clear();
                             }
 
-                            assert_eq!(idx, n, "Expected {n} keys but got {idx}");
+                            anyhow::ensure!(idx == n, "Expected {n} keys but got {idx}");
                             assert_eq!(state.lcp_bit_lens.len(), num_buckets);
 
                             Ok(max_value)
@@ -562,7 +573,7 @@ mod build {
                             let w = max_value.bit_len();
                             pl.info(format_args!(
                                 "r: {best_r}; distinct values: {m}; frequent values: {num_freq} ({:.3}%); max_value: {max_value} ({w} bits)",
-                                100.0 * num_freq as f64 / n_keys as f64,
+                                percentage(num_freq, m),
                             ));
 
                             // -- Build lcp_freq_len_offset --
@@ -662,9 +673,8 @@ mod build {
                                 })),
                                 FromCloneableIntoIterator::new(0..num_buckets),
                                 VBuilder::default()
-                                    .expected_num_keys(num_buckets)
-                                    .max_num_threads(saved_max_num_threads)
-                                    .eps(saved_eps),
+                                    .set_from(builder)
+                                    .expected_num_keys(num_buckets),
                                 pl,
                             )?;
                             pl.pop_log_target();
@@ -812,8 +822,6 @@ mod build {
             let bucket_size = 1usize << log2_bs;
             let bucket_mask = bucket_size - 1;
             let num_buckets = n.div_ceil(bucket_size);
-            let saved_max_num_threads = builder.max_num_threads;
-            let saved_eps = builder.eps;
 
             pl.info(format_args!(
                 "LCP bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
@@ -912,7 +920,7 @@ mod build {
                     let w = max_value.bit_len();
                     pl.info(format_args!(
                         "r: {best_r}; distinct values: {m}; frequent values: {num_freq} ({:.3}%); max_value: {max_value} ({w} bits)",
-                        100.0 * num_freq as f64 / n as f64
+                        percentage(num_freq, m)
                     ));
 
                     // -- Build lcp_freq_len_offset --
@@ -1009,9 +1017,8 @@ mod build {
                     })),
                     FromCloneableIntoIterator::new(0..num_buckets),
                     VBuilder::default()
-                        .expected_num_keys(num_buckets)
-                        .max_num_threads(saved_max_num_threads)
-                        .eps(saved_eps),
+                        .set_from(builder)
+                        .expected_num_keys(num_buckets),
                     pl,
                 )?;
                     pl.pop_log_target();
@@ -1188,6 +1195,7 @@ mod build {
         ) -> Result<(Self, L)> {
             let total_start = std::time::Instant::now();
             if n == 0 {
+                anyhow::ensure!(keys.next()?.is_none(), "Expected 0 keys but got at least 1");
                 return Ok((
                     Self {
                         n: 0,
@@ -1206,8 +1214,6 @@ mod build {
             let bucket_size = 1usize << log2_bs;
             let bucket_mask = bucket_size - 1;
             let num_buckets = n.div_ceil(bucket_size);
-            let saved_max_num_threads = builder.max_num_threads;
-            let saved_eps = builder.eps;
 
             pl.info(format_args!(
                 "LCP bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
@@ -1323,7 +1329,7 @@ mod build {
                             buf.clear();
                         }
 
-                        assert_eq!(idx, n, "Expected {n} keys but got {idx}");
+                        anyhow::ensure!(idx == n, "Expected {n} keys but got {idx}");
                         assert_eq!(state.lcp_bit_lens.len(), num_buckets);
 
                         Ok(max_value)
@@ -1376,7 +1382,7 @@ mod build {
                             let w = max_value.bit_len();
                             pl.info(format_args!(
                                 "r: {best_r}; distinct values: {m}; frequent values: {num_freq} ({:.3}%); max_value: {max_value} ({w} bits)",
-                                100.0 * num_freq as f64 / n_keys as f64
+                                percentage(num_freq, m)
                             ));
 
                             // -- Build lcp_freq_len_offset --
@@ -1488,9 +1494,8 @@ mod build {
                                 })),
                                 FromCloneableIntoIterator::new(0..num_buckets),
                                 VBuilder::default()
-                                    .expected_num_keys(num_buckets)
-                                    .max_num_threads(saved_max_num_threads)
-                                    .eps(saved_eps),
+                                    .set_from(builder)
+                                    .expected_num_keys(num_buckets),
                                 pl,
                             )?;
                             pl.pop_log_target();
@@ -1650,8 +1655,6 @@ mod build {
             let bucket_size = 1usize << log2_bs;
             let bucket_mask = bucket_size - 1;
             let num_buckets = n.div_ceil(bucket_size);
-            let saved_max_num_threads = builder.max_num_threads;
-            let saved_eps = builder.eps;
 
             pl.info(format_args!(
                 "LCP bucket size: 2^{log2_bs} = {bucket_size} ({num_buckets} buckets for {n} keys)"
@@ -1762,7 +1765,7 @@ mod build {
                     let w = max_value.bit_len();
                     pl.info(format_args!(
                         "r: {best_r}; distinct values: {m}; frequent values: {num_freq} ({:.3}%); max_value: {max_value} ({w} bits)",
-                        100.0 * num_freq as f64 / n as f64
+                        percentage(num_freq, m)
                     ));
 
                     // -- Build lcp_freq_len_offset --
@@ -1863,9 +1866,8 @@ mod build {
                         })),
                         FromCloneableIntoIterator::new(0..num_buckets),
                         VBuilder::default()
-                            .expected_num_keys(num_buckets)
-                            .max_num_threads(saved_max_num_threads)
-                            .eps(saved_eps),
+                            .set_from(builder)
+                            .expected_num_keys(num_buckets),
                         pl,
                     )?;
                     pl.pop_log_target();
@@ -1950,14 +1952,14 @@ mod build {
 ///
 /// # Type parameters
 ///
-/// - `K`: the integer key type.
+/// - `K`: the byte-sequence key type.
 /// - `D`: the backing store for [`VFunc`] data (e.g.,
 ///   [`BitFieldVec`]).
 /// - `S0`: the [signature type] for the key maps (`lcp_freq_len_offset`
 ///   and `lcp_infreq_len`).
 /// - `E0`: the [`ShardEdge`] for the key maps (`lcp_freq_len_offset`).
 /// - `F0`: the [`ShardEdge`] for `lcp_infreq_len`. Defaults to
-///   `E0`.
+///   [`Fuse3Shards`].
 /// - `S1`: the  [signature type] for the prefix-to-bucket map
 ///   (`lcp_to_bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
@@ -1978,12 +1980,11 @@ mod build {
     derive(epserde::Epserde),
     epserde(phantom(K, S0, S1))
 )]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(
     feature = "serde",
     serde(bound(
-        serialize = "VFunc<K, D, S0, E0>: serde::Serialize, VFunc<K, D, S0, F0>: serde::Serialize, VFunc<BitPrefix, D, S1, E1>: serde::Serialize",
-        deserialize = "VFunc<K, D, S0, E0>: serde::Deserialize<'de>, VFunc<K, D, S0, F0>: serde::Deserialize<'de>, VFunc<BitPrefix, D, S1, E1>: serde::Deserialize<'de>"
+        serialize = "VFunc<K, D, S0, E0>: serde::Serialize, VFunc<K, D, S0, F0>: serde::Serialize, VFunc<BitPrefix, D, S1, E1>: serde::Serialize"
     ))
 )]
 pub struct Lcp2Mmphf<
@@ -2128,6 +2129,11 @@ where
     #[inline]
     pub fn get(&self, key: &K) -> usize {
         let sig = K::to_sig(key, self.lcp_freq_len_offset.seed);
+        self.get_by_sig(key, sig)
+    }
+
+    #[inline]
+    pub(crate) fn get_by_sig(&self, key: &K, sig: S0) -> usize {
         let packed = self.lcp_freq_len_offset.get_by_sig(sig);
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
         let freq_lcp = packed >> self.log2_bucket_size;

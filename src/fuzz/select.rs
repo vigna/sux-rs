@@ -65,6 +65,8 @@ pub fn harness(mut data: Data) {
             for (i, &pos) in ones_pos.iter().enumerate() {
                 assert_eq!(sel.select(i).unwrap(), pos, "select({i}) is wrong");
             }
+            assert_eq!(sel.select(ones_pos.len()), None);
+            assert_eq!(sel.select(usize::MAX), None);
         }};
     }
     test_select!(SelectAdaptConst::<_, _, 6>::new(&bitvec));
@@ -95,6 +97,8 @@ pub fn harness(mut data: Data) {
                     "select_zero({i}) is wrong"
                 );
             }
+            assert_eq!(sel.select_zero(zeros_pos.len()), None);
+            assert_eq!(sel.select_zero(usize::MAX), None);
         }};
     }
     test_select_zero!(SelectZeroAdaptConst::<_, _, 10>::new(&bitvec));

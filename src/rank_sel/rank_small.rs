@@ -36,6 +36,10 @@ use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
 use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
 use std::ops::Index;
 
+pub(super) mod small_counters_private {
+    pub trait Sealed {}
+}
+
 /// A trait abstracting the access to the internal counters of a [`RankSmall`]
 /// structure.
 ///
@@ -46,7 +50,10 @@ use std::ops::Index;
 /// [`SelectSmall`]: crate::rank_sel::SelectSmall
 /// [`SelectZeroSmall`]: crate::rank_sel::SelectZeroSmall
 #[delegatable_trait(inline = "always")]
-pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
+#[allow(private_bounds)]
+pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize>:
+    small_counters_private::Sealed
+{
     fn upper_counts(&self) -> &[u64];
     fn counts(&self) -> &[Block32Counters<NUM_U32S, COUNTER_WIDTH>];
 }
@@ -148,7 +155,7 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// [backend]: Backend
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::Backend, target = "bits")]
 #[delegate(crate::traits::bit_vec_ops::BitLength, target = "bits")]
@@ -189,8 +196,8 @@ impl<
     }
 }
 
-impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, B> Deref
-    for RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B>
+impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2> Deref
+    for RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     type Target = B;
 
@@ -384,9 +391,16 @@ macro_rules! rank_small {
         }
     };
     // 32-bit only: one more variant than 64-bit
-    (5 ; $bits:expr) => {
-        $crate::prelude::RankSmall::<{ usize::BITS as usize }, 3, 13, _, _, _>::new($bits)
-    };
+    (5 ; $bits:expr) => {{
+        #[cfg(target_pointer_width = "32")]
+        {
+            $crate::prelude::RankSmall::<{ usize::BITS as usize }, 3, 13, _, _, _>::new($bits)
+        }
+        #[cfg(not(target_pointer_width = "32"))]
+        {
+            compile_error!("rank_small selector 5 is only available on 32-bit targets")
+        }
+    }};
     // Explicit usize prefix: forward to the bare-number arms
     (usize : $n:tt ; $bits:expr) => {
         $crate::rank_small![$n ; $bits]
@@ -810,12 +824,16 @@ impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, 
     ///
     /// # Safety
     ///
-    /// This method is unsafe because it is not possible to guarantee that the
-    /// new backend is identical to the old one as a bit vector.
-    pub unsafe fn map<B1: BitLength>(
+    /// `f` must return a backend containing exactly the same logical bits and
+    /// logical length as the old backend.
+    pub unsafe fn map<B1>(
         self,
         f: impl FnOnce(B) -> B1,
-    ) -> RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B1, C1, C2> {
+    ) -> RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B1, C1, C2>
+    where
+        B: Backend,
+        B1: Backend<Word = B::Word> + BitLength,
+    {
         RankSmall {
             bits: f(self.bits),
             upper_counts: self.upper_counts,
@@ -838,6 +856,11 @@ impl<
     fn num_ones(&self) -> usize {
         self.num_ones
     }
+}
+
+impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2>
+    small_counters_private::Sealed for RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B, C1, C2>
+{
 }
 
 impl<

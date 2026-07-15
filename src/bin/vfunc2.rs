@@ -25,7 +25,10 @@ use sux::func::VFunc2;
 use sux::func::shard_edge::*;
 use sux::init_env_logger;
 use sux::traits::TryIntoUnaligned;
-use sux::utils::{DekoBufLineLender, FromCloneableIntoIterator, FromSlice, Sig, SigVal, ToSig};
+use sux::utils::{
+    DekoBufLineLender, FromCloneableIntoIterator, FromIntoFallibleLenderFactory, FromSlice, Sig,
+    SigVal, ToSig,
+};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -55,8 +58,8 @@ struct Args {
     /// the deko crate.​
     #[arg(short, long)]
     filename: Option<String>,
-    /// A file containing the values, one ASCII decimal integer per
-    /// line. The number of values must match the number of keys.​
+    /// A file containing the values, one ASCII decimal integer per line.
+    /// The number of values must match the selected keys after applying `--n`.​
     #[arg(short, long)]
     values: Option<String>,
     /// Generate values with a geometric distribution (trailing zeros
@@ -78,11 +81,6 @@ struct Args {
     /// Hashes keys sequentially without loading them in RAM.​
     #[arg(short, long)]
     sequential: bool,
-    /// With an explicit --values file, verify that the key count matches the
-    /// value count. This makes an extra pass over the key file, so it is
-    /// off by default.​
-    #[arg(long, requires = "values", conflicts_with_all = ["geometric", "zipf", "uniform"])]
-    check: bool,
     #[clap(flatten)]
     builder: BuilderArgs,
     #[clap(flatten)]
@@ -168,18 +166,19 @@ fn generate_synthetic_values(args: &Args, n: usize) -> Result<Vec<usize>> {
         let cdf = zipf_cdf(1.0, k.get());
         Ok((0..n).map(|_| sample_zipf(&cdf, &mut rng)).collect())
     } else if let Some(k) = args.uniform {
-        Ok((0..n)
-            .map(|_| (rng.random::<u64>() % k.get() as u64) as usize)
-            .collect())
+        Ok((0..n).map(|_| rng.random_range(0..k.get())).collect())
     } else {
         bail!("one of --values, --geometric, --zipf, or --uniform is required");
     }
 }
 
-fn count_keys(filename: &str) -> Result<usize> {
+fn count_keys(filename: &str, cap: Option<usize>) -> Result<usize> {
     let mut lender = DekoBufLineLender::from_path(filename)?;
     let mut count = 0;
-    while lender.next()?.is_some() {
+    // n is min(cap, total); once the cap is reached the rest of the file cannot
+    // change the answer, so stop reading (checking the cap before `next` also
+    // returns 0 immediately for a cap of 0).
+    while cap.is_none_or(|cap| count < cap) && lender.next()?.is_some() {
         count += 1;
     }
     Ok(count)
@@ -202,31 +201,26 @@ where
     pl.log_interval(args.log.log_interval);
 
     if let Some(filename) = &args.filename {
-        let values: Vec<usize> = if let Some(ref path) = args.values {
-            read_values(path)?
+        let n = count_keys(filename, args.n)?;
+        let values = if let Some(path) = &args.values {
+            let values = read_values(path)?;
+            ensure!(
+                values.len() == n,
+                "selected key count {n} != value count {}",
+                values.len()
+            );
+            values
         } else {
-            let n = match args.n {
-                Some(n) => n,
-                None => count_keys(filename)?,
-            };
             generate_synthetic_values(&args, n)?
         };
-        let n = values.len();
-        if args.check {
-            // Opt-in (--check requires --values): the key count must match the
-            // value count exactly, otherwise keys past values.len() would be
-            // silently ignored. This costs an extra pass over the key file.
-            let key_count = count_keys(filename)?;
-            ensure!(key_count == n, "key count {key_count} != value count {n}");
-        }
-        let mut builder = args
+        let builder = args
             .builder
-            .configure(VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default());
-        if let Some(n_hint) = args.n {
-            builder = builder.expected_num_keys(n_hint);
-        }
+            .configure(VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default())
+            .expected_num_keys(n);
         if args.sequential {
-            let keys = DekoBufLineLender::from_path(filename)?.take(n);
+            let keys = FromIntoFallibleLenderFactory::new(|| {
+                DekoBufLineLender::from_path(filename).map(|keys| keys.take(n))
+            })?;
             let func = <VFunc2<str, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                 keys,
                 FromSlice::new(&values),
@@ -277,4 +271,35 @@ where
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::count_keys;
+    use std::io::Write;
+
+    #[test]
+    fn count_keys_is_cap_aware() {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        for line in ["a", "b", "c", "d", "e"] {
+            writeln!(f, "{line}").unwrap();
+        }
+        let path = f.path().to_str().unwrap();
+        assert_eq!(count_keys(path, None).unwrap(), 5);
+        assert_eq!(count_keys(path, Some(0)).unwrap(), 0);
+        assert_eq!(count_keys(path, Some(3)).unwrap(), 3);
+        assert_eq!(count_keys(path, Some(5)).unwrap(), 5);
+        assert_eq!(count_keys(path, Some(10)).unwrap(), 5);
+    }
+
+    #[test]
+    fn count_keys_stops_before_reading_the_capped_suffix() {
+        // A valid line followed by invalid UTF-8: counting the whole file errors,
+        // but a cap of 1 must return before ever reading the bad line.
+        let mut f = tempfile::NamedTempFile::new().unwrap();
+        f.write_all(b"valid\n\xff\xfe\n").unwrap();
+        let path = f.path().to_str().unwrap();
+        assert_eq!(count_keys(path, Some(1)).unwrap(), 1);
+        assert!(count_keys(path, None).is_err());
+    }
 }

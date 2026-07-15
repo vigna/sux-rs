@@ -13,6 +13,8 @@ use indexed_dict::*;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::prelude::*;
+use value_traits::iter::{IterateByValue, IterateByValueFrom};
+use value_traits::slices::SliceByValueSubsliceRange;
 
 #[test]
 #[cfg(feature = "rayon")]
@@ -245,9 +247,33 @@ fn test_elias_fano() -> Result<()> {
 
 #[test]
 fn test_empty() {
-    let efb = EliasFanoBuilder::new(0, 10u64);
-    let ef = efb.build_with_seq_and_dict();
+    let ef = EliasFanoBuilder::new(0, u128::MAX).build_with_seq_and_dict();
     assert_eq!(ef.len(), 0);
+    assert_eq!(ef.index_of(0), None);
+    assert_eq!(ef.index_of(u128::MAX), None);
+
+    let concurrent = sux::dict::elias_fano::EliasFanoConcurrentBuilder::new(0, u64::MAX)
+        .build_with_seq_and_dict();
+    assert_eq!(concurrent.len(), 0);
+    assert_eq!(concurrent.index_of(0), None);
+    assert_eq!(concurrent.index_of(u64::MAX), None);
+}
+
+#[test]
+fn test_subslice_iterators_respect_range() {
+    let mut builder = EliasFanoBuilder::new(6, 50u64);
+    builder.extend([0, 10, 20, 30, 40, 50]);
+    let ef = builder.build_with_seq();
+
+    let subslice = ef.index_subslice(1..5);
+    assert_eq!(
+        subslice.iter_value().collect::<Vec<_>>(),
+        vec![10, 20, 30, 40]
+    );
+    assert_eq!(
+        subslice.iter_value_from(2).collect::<Vec<_>>(),
+        vec![30, 40]
+    );
 }
 
 #[test]
@@ -1340,6 +1366,30 @@ fn test_pred_beyond_last_value() -> Result<()> {
         assert_eq!(ef.pred_strict(v), Some((n - 1, 50)));
         assert_eq!(ef.rank(v), n);
 
+        // SAFETY: the dictionary is nonempty, so a predecessor exists for
+        // every query in this loop, including values above its upper bound.
+        assert_eq!(
+            unsafe { PredUnchecked::pred_unchecked::<false>(&ef, v) },
+            (n - 1, 50)
+        );
+        // SAFETY: all elements are strictly less than these queries.
+        assert_eq!(unsafe { PredUnchecked::rank_unchecked(&ef, v) }, n);
+        // SAFETY: the dictionary is nonempty, so each query has a predecessor.
+        let (idx, mut unchecked_iter) =
+            unsafe { PredIterUnchecked::iter_from_pred_unchecked::<true>(&ef, v) };
+        assert_eq!(idx, n - 1);
+        assert_eq!(unchecked_iter.next(), Some(50));
+        // SAFETY: the dictionary is nonempty, so each query has a predecessor.
+        let (idx, unchecked_back) =
+            unsafe { PredIterBackUnchecked::iter_back_from_pred_unchecked::<true>(&ef, v) };
+        assert_eq!(idx, n - 1);
+        assert_eq!(unchecked_back.take(2).collect::<Vec<_>>(), vec![50, 30]);
+        // SAFETY: the dictionary is nonempty, so each query has a predecessor.
+        let (idx, mut unchecked_bidi) =
+            unsafe { PredBidiIterUnchecked::iter_bidi_from_pred_unchecked::<true>(&ef, v) };
+        assert_eq!(idx, n - 1);
+        assert_eq!(unchecked_bidi.next(), Some(50));
+
         let (idx, mut iter) = ef.iter_from_pred(v).unwrap();
         assert_eq!(idx, n - 1);
         assert_eq!(iter.next(), Some(50));
@@ -1411,4 +1461,97 @@ fn test_into_iter_back_from_overflow() {
     // usize::MAX + 1 used to wrap in release, silently yielding an empty
     // iterator; it must panic deterministically in both profiles.
     let _ = (&ef).into_iter_back_from(usize::MAX);
+}
+
+/// The terminal iterator methods (`last`, `prev_last`) must return the cached
+/// sequence extrema in O(1) rather than re-scanning the high bits.
+#[test]
+fn test_iterator_extrema_do_not_rescan() {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use sux::traits::iter::*;
+
+    // A high-bits wrapper that counts `as_ref` calls; a terminal method that
+    // scans the high bits increments the counter, a cached read does not.
+    struct CountingHigh<H> {
+        inner: H,
+        count: Rc<Cell<usize>>,
+    }
+    impl<H: AsRef<[usize]>> AsRef<[usize]> for CountingHigh<H> {
+        fn as_ref(&self) -> &[usize] {
+            self.count.set(self.count.get() + 1);
+            self.inner.as_ref()
+        }
+    }
+    impl<H: SelectUnchecked> SelectUnchecked for CountingHigh<H> {
+        unsafe fn select_unchecked(&self, rank: usize) -> usize {
+            // SAFETY: forwards the caller's rank contract to the inner bits.
+            unsafe { self.inner.select_unchecked(rank) }
+        }
+    }
+
+    let values = [10u64, 20, 30, 40, 50];
+    let mut efb = EliasFanoBuilder::new(values.len(), 50u64);
+    efb.extend(values);
+    let ef = efb.build_with_seq();
+    let count = Rc::new(Cell::new(0usize));
+    // SAFETY: the wrapper delegates to the same bits, so the high-bit vector is
+    // unchanged as a bit vector.
+    let ef = unsafe {
+        ef.map_high_bits(|h| CountingHigh {
+            inner: h,
+            count: count.clone(),
+        })
+    };
+
+    let it = ef.iter();
+    let before = count.get();
+    assert_eq!(it.last(), Some(50), "iter().last() value");
+    assert_eq!(
+        count.get(),
+        before,
+        "iter().last() re-scanned the high bits"
+    );
+
+    let it = ef.iter_back();
+    let before = count.get();
+    assert_eq!(it.last(), Some(10), "iter_back().last() value");
+    assert_eq!(
+        count.get(),
+        before,
+        "iter_back().last() re-scanned the high bits"
+    );
+
+    let it = ef.iter_bidi();
+    let before = count.get();
+    assert_eq!(it.last(), Some(50), "iter_bidi().last() value");
+    assert_eq!(
+        count.get(),
+        before,
+        "iter_bidi().last() re-scanned the high bits"
+    );
+
+    let it = ef.iter_bidi_from(ef.len());
+    let before = count.get();
+    assert_eq!(it.prev_last(), Some(10), "iter_bidi().prev_last() value");
+    assert_eq!(
+        count.get(),
+        before,
+        "iter_bidi().prev_last() re-scanned the high bits"
+    );
+}
+
+/// `estimate_size` is a public helper taking caller-supplied scalars; extreme
+/// values must saturate rather than overflow (debug panic / release wrap).
+#[test]
+fn test_estimate_size_no_overflow() {
+    // Would overflow `2 * n` under the old unchecked arithmetic.
+    assert_eq!(EliasFano::<usize>::estimate_size(1, usize::MAX), usize::MAX);
+    assert_eq!(EliasFano::<usize>::estimate_size(0, usize::MAX), usize::MAX);
+    // Ordinary inputs keep the historical estimate.
+    assert_eq!(EliasFano::<usize>::estimate_size(0, 0), 0);
+    assert_eq!(
+        EliasFano::<usize>::estimate_size(1024, 128),
+        2 * 128 + 128 * 3
+    );
 }

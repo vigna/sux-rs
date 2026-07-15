@@ -53,7 +53,6 @@ use ambassador::delegatable_trait;
 use atomic_primitive::PrimitiveAtomicUnsigned;
 use core::sync::atomic::Ordering;
 use impl_tools::autoimpl;
-use num_primitive::PrimitiveInteger;
 #[cfg(feature = "rayon")]
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use value_traits::slices::{SliceByValue, SliceByValueMut};
@@ -109,12 +108,23 @@ pub trait BitFieldSliceMut: BitFieldSlice + SliceByValueMut {
 
 /// Returns the mask to apply to values to ensure they fit in the given bit
 /// width, i.e., the value 2^`bit_width` - 1.
+///
+/// # Panics
+///
+/// Panics if `bit_width` exceeds `W::BITS`.
 #[inline(always)]
 pub fn mask<W: Word>(bit_width: usize) -> W {
+    let word_bits = usize::try_from(W::BITS).expect("word width always fits in usize");
+    assert!(
+        bit_width <= word_bits,
+        "bit_width ({bit_width}) exceeds word width ({word_bits})"
+    );
     if bit_width == 0 {
         W::ZERO
     } else {
-        W::MAX >> (W::BITS - bit_width as u32)
+        let shift =
+            u32::try_from(word_bits - bit_width).expect("word width difference fits in u32");
+        W::MAX >> shift
     }
 }
 
@@ -181,11 +191,16 @@ pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBi
     /// Returns the value at the specified index.
     ///
     /// # Panics
-    /// May panic if the index is not in [0..[len])
+    ///
+    /// May panic if the index is not in [0..[len]) or if the implementation
+    /// rejects `order`. Primitive atomic slices reject `Release` and `AcqRel`
+    /// loads.
     ///
     /// [len]: SliceByValue::len
     fn get_atomic(&self, index: usize, order: Ordering) -> A::Value {
         panic_if_out_of_bounds!(index, self.len());
+        // SAFETY: `index < self.len()` is checked above; the unsafe method has
+        // no additional value precondition for loads.
         unsafe { self.get_atomic_unchecked(index, order) }
     }
 
@@ -193,7 +208,7 @@ pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBi
     ///
     /// # Safety
     /// - `index` must be in [0..[len]);
-    /// - `value` must fit within [`BitWidth::bit_width`] bits.
+    /// - `value` must fit within [`AtomicBitWidth::atomic_bit_width`] bits.
     ///
     /// No bound or bit-width check is performed.
     ///
@@ -202,20 +217,21 @@ pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBi
 
     /// Sets the element of the slice at the specified index.
     ///
-    /// May panic if the index is not in [0..[len])
-    /// or the value does not fit in [`AtomicBitWidth::atomic_bit_width`] bits.
+    /// # Panics
+    ///
+    /// May panic if the index is not in [0..[len]), the value does not fit in
+    /// [`AtomicBitWidth::atomic_bit_width`] bits, or the implementation rejects
+    /// `order`. Primitive atomic slices reject `Acquire` and `AcqRel` stores.
     ///
     /// [len]: SliceByValue::len
     fn set_atomic(&self, index: usize, value: A::Value, order: Ordering) {
         panic_if_out_of_bounds!(index, self.len());
         let bw = self.atomic_bit_width();
 
-        let mask = if bw == 0 {
-            A::Value::ZERO
-        } else {
-            A::Value::MAX >> (A::Value::BITS - bw as u32)
-        };
+        let mask = mask::<A::Value>(bw);
         panic_if_value!(value, mask, bw);
+        // SAFETY: the index and value bounds required by the unsafe method are
+        // checked above.
         unsafe {
             self.set_atomic_unchecked(index, value, order);
         }

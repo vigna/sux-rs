@@ -1,5 +1,8 @@
+use core::cell::Cell;
+
 use sux::bits::BitVec;
 use sux::prelude::*;
+use sux::traits::TryIntoUnaligned;
 use sux::traits::Word;
 use value_traits::slices::SliceByValue;
 
@@ -117,4 +120,47 @@ fn test_empty() {
 fn test_value_below_min_panics() {
     let values = vec![0usize, 1, 2];
     let _ = CompIntList::new(1, &values);
+}
+
+struct OneShotValues {
+    values: Vec<u64>,
+    iterations: Cell<usize>,
+}
+
+impl<'a> IntoIterator for &'a OneShotValues {
+    type Item = &'a u64;
+    type IntoIter = std::slice::Iter<'a, u64>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        assert_eq!(
+            self.iterations.replace(1),
+            0,
+            "input was iterated more than once"
+        );
+        self.values.iter()
+    }
+}
+
+#[test]
+fn construction_does_not_require_repeatable_iteration() {
+    let values = OneShotValues {
+        values: vec![1, 3, 7, 255],
+        iterations: Cell::new(0),
+    };
+    let list = CompIntList::new(1, &values);
+    assert_eq!(list.len(), values.values.len());
+    for (index, &value) in values.values.iter().enumerate() {
+        assert_eq!(list.index_value(index), value);
+    }
+}
+
+#[test]
+fn unaligned_conversion_accepts_wide_aligned_value() {
+    let value = (1u64 << 58) - 1;
+    let values = [value];
+    let list = CompIntList::new(0, &values);
+    let unaligned = list
+        .try_into_unaligned()
+        .expect("58 bits at bit position zero fit in a u64");
+    assert_eq!(unaligned.index_value(0), value);
 }

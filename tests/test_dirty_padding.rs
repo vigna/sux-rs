@@ -138,8 +138,8 @@ fn test_select_small_ignores_dirty_padding() {
 /// Builds a BitVec via safe `push`, then `pop`s down so the backing retains
 /// stale one-bits in words beyond `len().div_ceil(word_bits)`. Bits
 /// `0..keep` are all ones, so `select(r) == Some(r)` and `rank(keep) == keep`.
-fn popped_ones(fill: usize, keep: usize) -> BitVec<Vec<usize>> {
-    let mut b = BitVec::<Vec<usize>>::new(0);
+fn popped_ones(fill: usize, keep: usize) -> BitVec<Vec<u64>> {
+    let mut b = BitVec::<Vec<u64>>::new(0);
     for _ in 0..fill {
         b.push(true);
     }

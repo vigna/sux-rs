@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
  */
 
+use anyhow::{Context, Result, bail};
 use clap::{Parser, ValueEnum};
 use mem_dbg::*;
 use rand::{RngExt, SeedableRng, rngs::SmallRng};
@@ -16,16 +17,38 @@ use sux::{
 #[derive(Parser)]
 #[command(about = "Prints the memory layout of rank and select structures.", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
-    /// The length of the bit vector.​
+    /// The length of the bit vector (at least 2).​
+    #[arg(value_parser = parse_len)]
     len: usize,
-    /// The density of ones in the bit vector.​
+    /// The finite density of ones in the bit vector, in (0, 1].​
+    #[arg(value_parser = parse_density)]
     density: f64,
-    /// Use non-uniform density (1% in the first half, 99% in the second).​
+    /// Scale the density by 1% in the first half and 99% in the second.​
     #[arg(short, long)]
     non_uniform: bool,
     /// The rank/select structure to test.​
     #[arg(value_enum)]
     sel_type: StructType,
+}
+
+fn parse_len(value: &str) -> Result<usize> {
+    let len = value
+        .parse::<usize>()
+        .with_context(|| format!("invalid bit-vector length '{value}'"))?;
+    if len < 2 {
+        bail!("bit-vector length must be at least 2");
+    }
+    Ok(len)
+}
+
+fn parse_density(value: &str) -> Result<f64> {
+    let density = value
+        .parse::<f64>()
+        .with_context(|| format!("invalid density '{value}'"))?;
+    if !(density.is_finite() && 0.0 < density && density <= 1.0) {
+        bail!("density must be finite and in (0, 1]");
+    }
+    Ok(density)
 }
 
 trait Struct {
@@ -97,24 +120,20 @@ fn mem_usage<S: Struct + MemSize + MemDbg + BitLength>(
     name: &str,
 ) {
     let mut rng = SmallRng::seed_from_u64(0);
-    assert!(len >= 2, "len must be at least 2");
-    assert!(density > 0.0 && density <= 1.0, "density must be in (0, 1]");
     let (density0, density1) = if uniform {
         (density, density)
     } else {
         (density * 0.01, density * 0.99)
     };
 
-    let first_half = loop {
-        let b = (0..len / 2)
-            .map(|_| rng.random_bool(density0))
-            .collect::<BitVec<Vec<u64>>>();
-        if b.count_ones() > 0 {
-            break b;
-        }
-    };
+    let mut first_half = (0..len / 2)
+        .map(|_| rng.random_bool(density0))
+        .collect::<BitVec<Vec<u64>>>();
+    if first_half.count_ones() == 0 {
+        first_half.set(0, true);
+    }
 
-    let second_half = (0..len / 2)
+    let second_half = (0..len - len / 2)
         .map(|_| rng.random_bool(density1))
         .collect::<BitVec<Vec<u64>>>();
 
@@ -135,7 +154,10 @@ fn mem_usage<S: Struct + MemSize + MemDbg + BitLength>(
 }
 
 fn mem_cost<S: Struct + MemSize + MemDbg + BitLength>(s: &S) -> f64 {
-    (((s.mem_size(SizeFlags::default()) * 8 - s.len()) * 100) as f64) / (s.len() as f64)
+    use num_primitive::PrimitiveNumber;
+
+    let overhead_bits = (s.mem_size(SizeFlags::default()) * 8).saturating_sub(s.len());
+    overhead_bits.as_to::<f64>() * 100.0 / s.len().as_to::<f64>()
 }
 
 fn main() {

@@ -248,6 +248,19 @@ fn test_empty_u64() -> Result<()> {
 }
 
 #[test]
+fn test_cardinality_mismatch_is_error() {
+    let keys = vec![10_u64, 20];
+    for declared in [0, 1, 3] {
+        let result: Result<LcpMmphfInt<u64>> =
+            LcpMmphfInt::try_new(FromSlice::new(&keys), declared, no_logging![]);
+        assert!(
+            result.is_err(),
+            "declared count {declared} must be rejected"
+        );
+    }
+}
+
+#[test]
 fn test_signed_i64_crossing_zero() -> Result<()> {
     // Keys spanning the sign boundary — the critical case.
     let keys: Vec<i64> = vec![-100, -10, -1, 0, 1, 10, 100];

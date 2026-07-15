@@ -139,7 +139,7 @@ use std::ops::Index;
 /// [selection on zeros]: crate::traits::SelectZero
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[delegate(crate::traits::Backend, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::bit_vec_ops::BitLength, target = "bits")]
@@ -298,22 +298,12 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
         overhead_percentage: f64,
         max_log2_words_per_subinv: usize,
     ) -> Self {
-        assert!(
-            overhead_percentage > 0.0,
-            "overhead_percentage must be positive"
+        let target_span = super::select_adapt::target_span_from_overhead(
+            overhead_percentage,
+            max_log2_words_per_subinv,
         );
-        assert!(
-            max_log2_words_per_subinv < usize::BITS as usize,
-            "max_log2_words_per_subinv ({max_log2_words_per_subinv}) must be less than {}",
-            usize::BITS
-        );
-        let m = 1usize << max_log2_words_per_subinv;
 
-        let target_span =
-            ((1 + m) as f64 * usize::BITS as f64 * 100.0 / overhead_percentage) as usize;
-        let min_span = m * (usize::BITS as usize * usize::BITS as usize) / 16;
-
-        Self::with_span(bits, target_span.max(min_span), max_log2_words_per_subinv)
+        Self::with_span(bits, target_span, max_log2_words_per_subinv)
     }
 
     fn _new(
@@ -329,9 +319,9 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
             usize::BITS
         );
         assert!(
-            max_log2_words_per_subinventory < usize::BITS as usize,
-            "max_log2_words_per_subinventory ({max_log2_words_per_subinventory}) must be less than {}",
-            usize::BITS
+            max_log2_words_per_subinventory <= super::select_adapt::MAX_LOG2_WORDS_PER_SUBINVENTORY,
+            "max_log2_words_per_subinventory ({max_log2_words_per_subinventory}) exceeds the supported maximum ({})",
+            super::select_adapt::MAX_LOG2_WORDS_PER_SUBINVENTORY
         );
         let num_bits = max(1, bits.len());
         let ones_per_inventory = 1 << log2_ones_per_inventory;
@@ -359,14 +349,22 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
         let mut inventory: Vec<usize> = Vec::with_capacity(inventory_words);
 
         let bits_per_word = B::Word::BITS as usize;
+        let num_words = bits.len().div_ceil(bits_per_word);
+        let tail_mask = super::tail_mask::<B::Word>(bits.len() % bits_per_word);
 
         let mut past_ones = 0;
         let mut next_quantum = 0;
         let mut spilled = 0;
 
         // First phase: we build an inventory for each one out of ones_per_inventory.
-        for (i, word) in bits.as_ref().iter().copied().map(|b| !b).enumerate() {
-            let ones_in_word = (word.count_ones() as usize).min(num_ones - past_ones);
+        // Take only the logical words and mask the complemented tail so a shrunk
+        // BitVec's stale backing words are not scanned (mirrors SelectAdapt and
+        // SelectZeroAdaptConst).
+        for (i, word) in bits.as_ref().iter().copied().take(num_words).enumerate() {
+            let word = super::mask_tail_word(!word, i + 1 == num_words, tail_mask);
+            let ones_in_word = usize::try_from(word.count_ones())
+                .expect("a word popcount always fits in usize")
+                .min(num_ones - past_ones);
 
             while past_ones + ones_in_word > next_quantum {
                 let in_word_index = word.select_in_word(next_quantum - past_ones);
@@ -741,8 +739,7 @@ impl<
 {
 }
 
-#[cfg(test)]
-#[cfg(target_pointer_width = "64")]
+#[cfg(all(test, feature = "slow_tests", target_pointer_width = "64"))]
 mod tests {
     use std::collections::BTreeSet;
 

@@ -86,10 +86,9 @@ use std::ops::Index;
 /// respect to the target space occupancy.
 ///
 /// For example, using [the default value of *L*] and [the default value of
-/// *M*], the space occupancy is between 7% and 14% on 64-bit platforms and
-/// twice that on 32-bit platforms. The space might be smaller for very
-/// sparse vectors as less than *M* subinventory words per inventory might
-/// be used.
+/// *M*], the space occupancy is between 14.0625% and 28.125% on both 32-bit
+/// and 64-bit platforms. The space might be smaller for very sparse vectors as
+/// less than *M* subinventory words per inventory might be used.
 ///
 /// Given a specific indexed one in the inventory, if the distance to the next
 /// indexed one is at most 2¹⁶ we use the *M* words associated to the
@@ -140,11 +139,10 @@ use std::ops::Index;
 /// choice modeled on a maximum of four words in the linear search for
 /// vectors with uniform density.
 ///
-/// Note that doubling *M* and *L* reduces space occupancy (because of the
-/// plus-one in the space occupancy formula) and, in the 64-bit case, doubles
-/// the frequency of the second-level inventory, so there is no reason to choose
-/// a value of *M* smaller than 4. Larger values might be useful in the
-/// 64-bit case, but unlikely in the 32-bit case.
+/// Note that doubling *M* and *L* reduces space occupancy slightly (because of
+/// the plus-one in the space occupancy formula) while preserving the nominal
+/// second-level sampling interval. There is generally no reason to choose a
+/// value of *M* smaller than 4.
 ///
 /// Finally, combination of values resulting in linear searches shorter than a
 /// couple of words will not generally improve performance.
@@ -267,7 +265,7 @@ use std::ops::Index;
 /// [default suggested value]: default_target_inventory_span
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[delegate(crate::traits::Backend, target = "bits")]
 #[delegate(Index<usize>, target = "bits")]
 #[delegate(crate::traits::bit_vec_ops::BitLength, target = "bits")]
@@ -333,14 +331,63 @@ pub const DEFAULT_LOG2_WORDS_PER_SUBINVENTORY: usize = 3;
 /// At the end, in the 64-bit case we halve the span to compensate for uneven
 /// density (in the 32-bit case that leads to excessive space occupancy, so we
 /// do not halve the span).
+#[cfg(target_pointer_width = "64")]
+pub(super) const MAX_LOG2_WORDS_PER_SUBINVENTORY: usize = 53;
+#[cfg(target_pointer_width = "32")]
+pub(super) const MAX_LOG2_WORDS_PER_SUBINVENTORY: usize = 23;
+
 pub const fn default_target_inventory_span(log2_words_per_subinventory: usize) -> usize {
-    let target = ((usize::BITS as usize * usize::BITS as usize) / 4) << log2_words_per_subinventory;
+    assert!(
+        log2_words_per_subinventory <= MAX_LOG2_WORDS_PER_SUBINVENTORY,
+        "log2_words_per_subinventory is too large"
+    );
     #[cfg(target_pointer_width = "64")]
     {
-        target / 2
+        (1024usize << log2_words_per_subinventory) / 2
     }
     #[cfg(target_pointer_width = "32")]
-    target
+    {
+        256usize << log2_words_per_subinventory
+    }
+}
+
+pub(super) fn target_span_from_overhead(
+    overhead_percentage: f64,
+    max_log2_words_per_subinv: usize,
+) -> usize {
+    assert!(
+        overhead_percentage.is_finite() && overhead_percentage > 0.0,
+        "overhead_percentage must be finite and positive"
+    );
+    assert!(
+        max_log2_words_per_subinv <= MAX_LOG2_WORDS_PER_SUBINVENTORY,
+        "max_log2_words_per_subinv ({max_log2_words_per_subinv}) exceeds the supported maximum ({MAX_LOG2_WORDS_PER_SUBINVENTORY})"
+    );
+    let m = 1usize << max_log2_words_per_subinv;
+    debug_assert!(
+        max_log2_words_per_subinv <= 53,
+        "validated logarithm bounds m"
+    );
+    // `m` is a power of two no larger than 2^53, so this conversion is exact.
+    let m_float = m as f64;
+    let raw_target = (1.0 + m_float) * f64::from(usize::BITS) * 100.0 / overhead_percentage;
+    assert!(
+        raw_target.is_finite(),
+        "requested overhead produces an unrepresentable target span"
+    );
+    // Deliberate truncation of a positive finite target; Rust saturates values
+    // above `usize::MAX`, which is the desired maximum-span behavior.
+    let target_span = raw_target.trunc() as usize;
+
+    let word_bits = usize::try_from(usize::BITS).expect("word width always fits in usize");
+    let span_factor = word_bits
+        .checked_mul(word_bits)
+        .expect("supported word widths square without overflow")
+        / 16;
+    let min_span = m
+        .checked_mul(span_factor)
+        .expect("validated subinventory logarithm bounds the minimum span");
+    target_span.max(min_span)
 }
 
 /// Maximum bit-vector length supported by the inventory encoding.
@@ -448,7 +495,7 @@ impl Inventory for usize {
 }
 
 // The type of subinventory entries for a span. It is used by all variants.
-// On 32-bit, the assert on bit vector length (≤ usize::MAX >> 2)
+// On 32-bit, the assert on bit vector length (≤ usize::MAX >> 1)
 // guarantees that U64 spans are unreachable.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -529,8 +576,8 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
     ///
     /// # Panics
     ///
-    /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
+    /// Panics if the bit vector length exceeds 2⁶² − 1 on 64-bit platforms
+    /// or 2³¹ − 1 on 32-bit platforms.
     ///
     /// [default values]: SelectAdapt
     #[must_use]
@@ -562,8 +609,8 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
     ///
     /// # Panics
     ///
-    /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
+    /// Panics if the bit vector length exceeds 2⁶² − 1 on 64-bit platforms
+    /// or 2³¹ − 1 on 32-bit platforms.
     ///
     /// [*L*]: SelectAdapt
     /// [`default_target_inventory_span(max_log2_words_per_subinv)`]: default_target_inventory_span
@@ -619,8 +666,8 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
     ///
     /// # Panics
     ///
-    /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
+    /// Panics if the bit vector length exceeds 2⁶² − 1 on 64-bit platforms
+    /// or 2³¹ − 1 on 32-bit platforms.
     ///
     /// [standard constructor]: SelectAdapt::new
     /// [*M*]: SelectAdapt
@@ -670,9 +717,9 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
     ///
     /// # Panics
     ///
-    /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit), or if
-    /// `overhead_percentage` is not positive.
+    /// Panics if the bit vector length exceeds 2⁶² − 1 on 64-bit platforms
+    /// or 2³¹ − 1 on 32-bit platforms, or if `overhead_percentage` is not
+    /// positive.
     ///
     /// [*M*]: SelectAdapt
     /// [documentation]: SelectAdapt
@@ -682,27 +729,9 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
         overhead_percentage: f64,
         max_log2_words_per_subinv: usize,
     ) -> Self {
-        assert!(
-            overhead_percentage > 0.0,
-            "overhead_percentage must be positive"
-        );
-        assert!(
-            max_log2_words_per_subinv < usize::BITS as usize,
-            "max_log2_words_per_subinv ({max_log2_words_per_subinv}) must be less than {}",
-            usize::BITS
-        );
-        let m = 1usize << max_log2_words_per_subinv;
+        let target_span = target_span_from_overhead(overhead_percentage, max_log2_words_per_subinv);
 
-        // Target span from overhead: overhead% = (1+M) · usize::BITS / T · 100
-        // ⇒ T = (1+M) · usize::BITS · 100 / overhead%
-        let target_span =
-            ((1 + m) as f64 * usize::BITS as f64 * 100.0 / overhead_percentage) as usize;
-
-        // Ensure worst-case linear search is at least 1 word:
-        // T / (M · usize::BITS / 16) ≥ usize::BITS  ⇒  T ≥ M · usize::BITS² / 16
-        let min_span = m * (usize::BITS as usize * usize::BITS as usize) / 16;
-
-        Self::with_span(bits, target_span.max(min_span), max_log2_words_per_subinv)
+        Self::with_span(bits, target_span, max_log2_words_per_subinv)
     }
 
     fn _new(
@@ -718,9 +747,8 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
             usize::BITS
         );
         assert!(
-            max_log2_words_per_subinventory < usize::BITS as usize,
-            "max_log2_words_per_subinventory ({max_log2_words_per_subinventory}) must be less than {}",
-            usize::BITS
+            max_log2_words_per_subinventory <= MAX_LOG2_WORDS_PER_SUBINVENTORY,
+            "max_log2_words_per_subinventory ({max_log2_words_per_subinventory}) exceeds the supported maximum ({MAX_LOG2_WORDS_PER_SUBINVENTORY})"
         );
         let num_bits = max(1, bits.len());
         let ones_per_inventory = 1 << log2_ones_per_inventory;
@@ -1143,8 +1171,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-#[cfg(target_pointer_width = "64")]
+#[cfg(all(test, feature = "slow_tests", target_pointer_width = "64"))]
 mod tests_64 {
     use std::collections::BTreeSet;
 

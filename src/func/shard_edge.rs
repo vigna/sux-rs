@@ -109,7 +109,19 @@ use std::fmt::Display;
 /// [MWHC construction]: https://doi.org/10.1093/comjnl/39.6.547
 /// [`VBuilder`]: crate::func::VBuilder
 /// [`VFunc`]: crate::func::VFunc
-pub trait ShardEdge<S, const K: usize>: Default + Display + Clone + Copy + Send + Sync {
+/// # Safety
+///
+/// After the setup methods return, `num_shards() * num_vertices()` must fit in
+/// `usize`; `shard(sig)` must be smaller than `num_shards()`; every index from
+/// `edge(sig)` must be smaller than that product; and every index from
+/// `local_edge(local_sig)` must be smaller than `num_vertices()`.
+///
+/// For every `V`, `SortSigVal<V>` must have the same size, alignment, and valid
+/// representation as `SigVal<S, V>` so mutable-reference transmutation is
+/// sound. Its equality and radix order must satisfy the requirements below.
+pub unsafe trait ShardEdge<S, const K: usize>:
+    Default + Display + Clone + Copy + Send + Sync
+{
     /// The type to use for sorting signature when looking for duplicate edges.
     ///
     /// This type must be [transmutable] with `SigVal<S, V>`, but it must
@@ -391,7 +403,7 @@ mod fuse {
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
     pub struct FuseLge3Shards {
         shard_bits_shift: u32,
         log2_seg_size: u32,
@@ -501,7 +513,9 @@ mod fuse {
         }
     }
 
-    impl ShardEdge<[u64; 2], 3> for FuseLge3Shards {
+    // SAFETY: setup bounds all generated shard/global/local indices, and
+    // LowSortSigVal is a transparent SigVal<[u64; 2], V> wrapper.
+    unsafe impl ShardEdge<[u64; 2], 3> for FuseLge3Shards {
         type SortSigVal<V: BinSafe> = LowSortSigVal<V>;
         type LocalSig = [u64; 1];
         type Vertex = u32;
@@ -550,6 +564,15 @@ mod fuse {
                 .unwrap();
 
             assert!(((self.l as usize + 2) << self.log2_seg_size) - 1 <= u32::MAX as usize);
+            // The global edge index is `shard * num_vertices + local`, so the
+            // total vertex count across all shards must fit `usize`. Promote to
+            // u128 (lossless widening) so the check stays correct on 32-bit
+            // targets, where the product can otherwise wrap `usize`.
+            let total_vertices = self.num_vertices() as u128 * self.num_shards() as u128;
+            assert!(
+                total_vertices <= usize::MAX as u128,
+                "FuseLge3Shards total vertices ({total_vertices}) overflow usize on this target"
+            );
             (c, lge)
         }
 
@@ -623,7 +646,7 @@ mod fuse {
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
     #[derive(Default)]
     pub struct Fuse3NoShards {
         log2_seg_size: u32,
@@ -753,7 +776,9 @@ mod fuse {
         }
     }
 
-    impl ShardEdge<[u64; 1], 3> for Fuse3NoShards {
+    // SAFETY: setup bounds all generated indices, and SortSigVal is exactly
+    // SigVal<[u64; 1], V>.
+    unsafe impl ShardEdge<[u64; 1], 3> for Fuse3NoShards {
         type SortSigVal<V: BinSafe> = SigVal<[u64; 1], V>;
         type LocalSig = [u64; 1];
         type Vertex = u32;
@@ -824,10 +849,12 @@ mod fuse {
         }
     }
 
-    impl ShardEdge<[u64; 2], 3> for Fuse3NoShards {
-        type SortSigVal<V: BinSafe> = SigVal<[u64; 1], V>;
+    // SAFETY: setup bounds all generated indices, and SortSigVal is exactly
+    // SigVal<[u64; 2], V>.
+    unsafe impl ShardEdge<[u64; 2], 3> for Fuse3NoShards {
+        type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
-        type Vertex = u64;
+        type Vertex = usize;
 
         fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 
@@ -912,7 +939,7 @@ mod fuse {
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
     pub struct Fuse3Shards {
         shard_bits_shift: u32,
         log2_seg_size: u32,
@@ -1005,7 +1032,9 @@ mod fuse {
         }
     }
 
-    impl ShardEdge<[u64; 2], 3> for Fuse3Shards {
+    // SAFETY: setup bounds all generated shard/global/local indices, and
+    // LowSortSigVal is a transparent SigVal<[u64; 2], V> wrapper.
+    unsafe impl ShardEdge<[u64; 2], 3> for Fuse3Shards {
         type SortSigVal<V: BinSafe> = LowSortSigVal<V>;
         type LocalSig = [u64; 1];
         type Vertex = u32;
@@ -1041,6 +1070,14 @@ mod fuse {
                 .unwrap();
 
             assert!(((self.l as usize + 2) << self.log2_seg_size) - 1 <= u32::MAX as usize);
+            // See FuseLge3Shards::set_up_graphs: the global edge index is
+            // `shard * num_vertices + local`, so the across-shard total must fit
+            // `usize`. u128 widening keeps the check sound on 32-bit targets.
+            let total_vertices = self.num_vertices() as u128 * self.num_shards() as u128;
+            assert!(
+                total_vertices <= usize::MAX as u128,
+                "Fuse3Shards total vertices ({total_vertices}) overflow usize on this target"
+            );
             (c, false) // false = no Gaussian elimination
         }
 
@@ -1068,6 +1105,14 @@ mod fuse {
                 .unwrap();
 
             assert!(((self.l as usize + 2) << self.log2_seg_size) - 1 <= u32::MAX as usize);
+            // Correlated-graph path: same across-shard total-vertex bound as
+            // set_up_graphs; the global edge index multiplies by num_shards, so
+            // guard the product in u128 for 32-bit soundness.
+            let total_vertices = self.num_vertices() as u128 * self.num_shards() as u128;
+            assert!(
+                total_vertices <= usize::MAX as u128,
+                "Fuse3Shards total vertices ({total_vertices}) overflow usize on this target"
+            );
             (c, false)
         }
 
@@ -1134,7 +1179,7 @@ mod fuse {
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
     #[derive(Default)]
     pub struct FuseLge3FullSigs(FuseLge3Shards);
 
@@ -1169,7 +1214,9 @@ mod fuse {
         [v0, v1, v2]
     }
 
-    impl ShardEdge<[u64; 2], 3> for FuseLge3FullSigs {
+    // SAFETY: the delegated setup bounds all generated indices, and
+    // SortSigVal is exactly SigVal<[u64; 2], V>.
+    unsafe impl ShardEdge<[u64; 2], 3> for FuseLge3FullSigs {
         type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = u32;
@@ -1271,15 +1318,24 @@ mod mwhc {
         }
     }
 
-    impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
+    // SAFETY: setup bounds all generated indices, and SortSigVal is exactly
+    // SigVal<[u64; 2], V>.
+    unsafe impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
         type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
-        type Vertex = u64;
+        type Vertex = usize;
 
         fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
             self.seg_size = ((n as f64 * 1.23) / 3.).ceil() as usize;
+            // num_vertices = seg_size * 3 is used directly as the vertex-index bound
+            // and must fit usize; the check promotes to u128 (lossless widening) so
+            // the multiply cannot overflow, e.g. on 32-bit targets.
+            assert!(
+                self.seg_size as u128 * 3 <= usize::MAX as u128,
+                "Mwhc3NoShards total vertices overflow usize on this target"
+            );
             (1.23, false)
         }
 
@@ -1421,7 +1477,9 @@ mod mwhc {
         }
     }
 
-    impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
+    // SAFETY: setup bounds all generated shard/global/local indices, and
+    // SortSigVal is exactly SigVal<[u64; 2], V>.
+    unsafe impl ShardEdge<[u64; 2], 3> for Mwhc3Shards {
         type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = u32;
@@ -1434,10 +1492,33 @@ mod mwhc {
         fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> (f64, bool) {
             self.seg_size = ((max_shard as f64 * 1.23) / 3.).ceil() as usize;
             if self.shard_high_bits() != 0 {
-                self.seg_size = self.seg_size.next_multiple_of(128);
+                // Round up to a multiple of 128 without `checked_next_multiple_of`
+                // (Rust 1.87; crate MSRV is 1.85): (n + 127) / 128 * 128, with the
+                // add checked so an oversized seg_size panics instead of wrapping.
+                self.seg_size = self
+                    .seg_size
+                    .checked_add(127)
+                    .map(|n| n / 128 * 128)
+                    .expect("Mwhc3Shards segment size overflows usize");
             }
 
-            assert!(self.seg_size * 3 - 1 <= Self::Vertex::MAX as usize);
+            // Per-shard num_vertices = seg_size * 3; its largest index
+            // (num_vertices - 1) must fit Vertex (u32), and the total across all
+            // shards must fit usize, since edge() computes shard * num_vertices +
+            // local. The checks promote to u128 (all casts are lossless widening) so
+            // they stay overflow-free for empty input (seg_size == 0) and on 32-bit
+            // targets where seg_size * 3 can exceed usize.
+            let num_vertices = self.seg_size as u128 * 3;
+            assert!(
+                num_vertices <= Self::Vertex::MAX as u128 + 1,
+                "Mwhc3Shards supports at most {} vertices per shard, but {num_vertices} were requested",
+                Self::Vertex::MAX as u128 + 1
+            );
+            let total = num_vertices * self.num_shards() as u128;
+            assert!(
+                total <= usize::MAX as u128,
+                "Mwhc3Shards total vertices ({total}) overflow usize on this target"
+            );
             (1.23, false)
         }
 
@@ -1492,6 +1573,59 @@ mod mwhc {
         #[inline(always)]
         fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
             edge(self.shard(sig), self.seg_size, sig)
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::super::ShardEdge;
+        use super::{Mwhc3NoShards, Mwhc3Shards};
+
+        #[test]
+        fn empty_input_does_not_underflow() {
+            // max_shard == 0 (empty input) makes seg_size == 0; the old
+            // `seg_size * 3 - 1` bound underflowed usize here.
+            let mut shards = Mwhc3Shards::default();
+            shards.set_up_graphs(0, 0);
+            assert_eq!(shards.num_vertices(), 0);
+
+            let mut no_shards = Mwhc3NoShards { seg_size: 0 };
+            no_shards.set_up_graphs(0, 0);
+            assert_eq!(no_shards.num_vertices(), 0);
+        }
+
+        #[test]
+        #[should_panic(expected = "Mwhc3NoShards total vertices")]
+        fn no_shards_total_vertices_is_bounded() {
+            // seg_size ~ usize::MAX * 1.23 / 3, so seg_size * 3 exceeds usize;
+            // the check is portable (no shift literals) and holds on 32 and 64
+            // bits. The old code had no guard here.
+            let mut no_shards = Mwhc3NoShards { seg_size: 0 };
+            no_shards.set_up_graphs(usize::MAX, 0);
+        }
+
+        #[cfg(target_pointer_width = "64")]
+        #[test]
+        #[should_panic(expected = "vertices per shard")]
+        fn per_shard_vertex_bound_is_enforced() {
+            // A shard needing more than Vertex::MAX + 1 (2^32) vertices must be
+            // rejected: seg_size = ceil(2^32 * 1.23 / 3) gives seg_size * 3 > 2^32.
+            let mut shards = Mwhc3Shards::default();
+            shards.set_up_graphs(0, 1usize << 32);
+        }
+
+        #[cfg(target_pointer_width = "64")]
+        #[test]
+        #[should_panic(expected = "overflow usize")]
+        fn total_vertex_product_is_enforced() {
+            // num_vertices (~2.5e7, within Vertex::MAX) times num_shards (2^40)
+            // exceeds usize::MAX; the old code had no total check and silently
+            // produced an invalid setup.
+            let mut shards = Mwhc3Shards {
+                seg_size: 0,
+                shard_bits_shift: 23, // shard_high_bits = 63 - 23 = 40
+            };
+            shards.set_up_graphs(0, 20_500_000);
         }
     }
 }

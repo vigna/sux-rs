@@ -19,7 +19,7 @@
 //!
 //! [Space-efficient static trees and graphs]: https://ieeexplore.ieee.org/abstract/document/63533
 
-use std::ops::{Deref, Index};
+use core::ops::{Deref, Index};
 
 use crate::ambassador_impl_Index;
 use crate::traits::ambassador_impl_Backend;
@@ -201,10 +201,20 @@ pub fn find_near_close(word: usize) -> usize {
 ///
 /// This uses the same `BYTE_MIN_EXCESS` and `BYTE_FIND_CLOSE` tables
 /// as [`find_near_close`].
+///
+/// # Panics
+///
+/// Panics if `k` is negative, does not fit within one word, or the requested
+/// far close does not exist.
 #[inline]
 pub fn find_far_close(word: usize, k: i64) -> usize {
+    let word_bits = i64::try_from(WORD_BITS).expect("word width must fit i64");
+    assert!(
+        (0..word_bits).contains(&k),
+        "find_far_close: k={k} is outside 0..{WORD_BITS}"
+    );
     let bytes = word.to_le_bytes();
-    let target = -(k + 1) as i32; // target global excess
+    let target = -i32::try_from(k + 1).expect("validated far-close index fits i32");
     let mut excess: i32 = 0; // cumulative excess at byte boundary
 
     for (i, &b) in bytes.iter().enumerate() {
@@ -215,7 +225,8 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
             // within this byte. Since excess + local_excess = target, and
             // BYTE_FIND_CLOSE[b][t] gives where local excess = -(t+1),
             // we need t = k + excess (guaranteed to be in 0..7).
-            let t = (k as i32 + excess) as usize;
+            let t = usize::try_from(k + i64::from(excess))
+                .expect("reachable byte target must be nonnegative");
             debug_assert!(t < 8);
             return i * 8 + BYTE_FIND_CLOSE[b as usize][t] as usize;
         }
@@ -312,7 +323,7 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 /// [Space-efficient static trees and graphs]: https://ieeexplore.ieee.org/abstract/document/63533
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[delegate(Index<usize>, target = "paren")]
 #[delegate(crate::traits::Backend, target = "paren")]
 #[delegate(crate::traits::bit_vec_ops::BitLength, target = "paren")]
@@ -360,25 +371,27 @@ fn build_pioneers(words: impl AsRef<[usize]> + BitLength) -> (EfDict<usize>, Vec
     }
     assert!(depth == 0, "Unbalanced parentheses");
 
-    let mut count = vec![0i32; num_words];
-    let mut residual = vec![0usize; num_words];
+    // Stack of processed blocks with unmatched far closes. Scanning
+    // right-to-left puts the nearest live block at the end, so matching a far
+    // open is constant-time instead of scanning all blocks to its right.
+    let mut live_close_blocks: Vec<(usize, usize, usize)> = Vec::new();
 
     let mut opening_pioneers = Vec::new();
     let mut opening_pioneer_matches = Vec::new();
 
     // Scan words right-to-left to identify far opening parentheses
     // and select pioneers among them.
-    for block in (0..num_words).rev() {
+    for (block, &word) in words.iter().take(num_words).enumerate().rev() {
         let l = std::cmp::min(WORD_BITS, len - block * WORD_BITS);
 
         // The last word has no words to its right, so it cannot
         // contain far opening parentheses.
         if block != num_words - 1 {
             let mut excess = 0i32;
-            let mut count_far_opening = count_far_open(words[block], l) as i32;
+            let mut count_far_opening = count_far_open(word, l);
 
             for j in (0..l).rev() {
-                if words[block] & (1usize << j) == 0 {
+                if word & (1usize << j) == 0 {
                     // Closed parenthesis
                     if excess > 0 {
                         excess = -1;
@@ -389,49 +402,50 @@ fn build_pioneers(words: impl AsRef<[usize]> + BitLength) -> (EfDict<usize>, Vec
                     // Open parenthesis
                     excess += 1;
                     if excess > 0 {
-                        let mut matching_block = block;
-                        loop {
-                            matching_block += 1;
-                            if count[matching_block] != 0 {
-                                break;
-                            }
-                        }
-                        count_far_opening -= 1;
+                        count_far_opening = count_far_opening
+                            .checked_sub(1)
+                            .expect("far-open count must match the word scan");
 
-                        if {
-                            count[matching_block] -= 1;
-                            count[matching_block]
-                        } == 0
-                            || count_far_opening == 0
-                        {
+                        let (matching_block, matching_residual, exhausted) = {
+                            let (matching_block, remaining, consumed) = live_close_blocks
+                                .last_mut()
+                                .expect("Unbalanced parentheses");
+                            *remaining = remaining
+                                .checked_sub(1)
+                                .expect("live close blocks must be nonempty");
+                            let result = (*matching_block, *consumed, *remaining == 0);
+                            *consumed =
+                                consumed.checked_add(1).expect("per-word residual overflow");
+                            result
+                        };
+
+                        if exhausted || count_far_opening == 0 {
                             let pos = block * WORD_BITS + j;
                             let match_pos = matching_block * WORD_BITS
                                 + find_far_close(
                                     words[matching_block],
-                                    residual[matching_block] as i64,
+                                    i64::try_from(matching_residual)
+                                        .expect("per-word residual must fit i64"),
                                 );
                             opening_pioneers.push(pos);
                             opening_pioneer_matches.push(match_pos - pos);
                         }
-                        residual[matching_block] += 1;
+
+                        if exhausted {
+                            live_close_blocks.pop();
+                        }
                     }
                 }
             }
         }
-        count[block] = count_far_close(words[block], l) as i32;
+
+        let far_closes = count_far_close(word, l);
+        if far_closes != 0 {
+            live_close_blocks.push((block, far_closes, 0usize));
+        }
     }
 
-    /*let open_parens = words.count_ones();
-    assert_eq!(
-        2 * open_parens,
-        words.len(),
-        "There are {} open parentheses but {} closed parentheses",
-        open_parens,
-        words.len() - open_parens
-    );*/
-    for &c in &count {
-        assert!(c == 0, "Unbalanced parentheses");
-    }
+    assert!(live_close_blocks.is_empty(), "Unbalanced parentheses");
 
     // Reverse to get increasing order.
     opening_pioneers.reverse();
@@ -531,18 +545,26 @@ impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B, EfDict<usize>, PrefixSum
     ///
     /// Panics if the parentheses are not balanced.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the cumulative sum of the pioneer match offsets
+    /// overflows `usize`. The offsets are summed by [`PrefixSumIntList`], and
+    /// the sum grows quadratically in the number of far-opening blocks, so on
+    /// 32-bit targets it can exceed `usize::MAX` even for a modestly sized
+    /// balanced sequence. Use [`new`] or [`new_with_bit_field_vec`], which store
+    /// the offsets without summing them, when this happens.
+    ///
     /// [`new`]: JacobsonBalParen::new
     /// [`new_with_bit_field_vec`]: Self::new_with_bit_field_vec
-    #[must_use]
-    pub fn new_with_prefix_sum(paren: B) -> Self {
+    pub fn new_with_prefix_sum(paren: B) -> Result<Self, &'static str> {
         let (ef_positions, matches) = build_pioneers(&paren);
-        let offsets = PrefixSumIntList::new(&matches);
+        let offsets = PrefixSumIntList::try_new(&matches)?;
 
-        JacobsonBalParen {
+        Ok(JacobsonBalParen {
             paren,
             pioneer_positions: ef_positions,
             pioneer_match_offsets: offsets,
-        }
+        })
     }
 }
 
@@ -822,6 +844,12 @@ mod tests {
         assert_eq!(find_far_close(0, 0), 0);
         assert_eq!(find_far_close(0, 1), 1);
         assert_eq!(find_far_close(0, 2), 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "outside")]
+    fn test_find_far_close_rejects_large_index() {
+        let _ = find_far_close(0, 1_i64 << 32);
     }
 
     #[cfg(target_pointer_width = "64")]

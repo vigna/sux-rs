@@ -17,7 +17,26 @@ use rand::{RngExt, SeedableRng};
 use sux::prelude::*;
 use sux::traits::Word;
 
-use value_traits::slices::{SliceByValue, SliceByValueMut};
+use value_traits::iter::{IterateByValue, IterateByValueFrom};
+use value_traits::slices::{
+    SliceByValue, SliceByValueMut, SliceByValueSubsliceRange, SliceByValueSubsliceRangeMut,
+};
+
+#[test]
+fn test_subslice_iterators_respect_range() {
+    let mut bit_fields = BitFieldVec::<Vec<usize>>::new(4, 8);
+    for value in 0..8 {
+        bit_fields.set_value(value, value);
+    }
+
+    let subslice = bit_fields.index_subslice(2..6);
+    assert_eq!(subslice.iter_value().collect::<Vec<_>>(), vec![2, 3, 4, 5]);
+    assert_eq!(subslice.iter_value_from(2).collect::<Vec<_>>(), vec![4, 5]);
+
+    let subslice = bit_fields.index_subslice_mut(3..7);
+    assert_eq!(subslice.iter_value().collect::<Vec<_>>(), vec![3, 4, 5, 6]);
+    assert_eq!(subslice.iter_value_from(3).collect::<Vec<_>>(), vec![6]);
+}
 
 #[test]
 fn test() {
@@ -749,6 +768,35 @@ fn test_try_chunks_mut() {
 }
 
 #[test]
+fn test_zero_width_chunks_mut() -> Result<()> {
+    let mut b = BitFieldVec::<Vec<u64>>::new(0, 5);
+    let mut chunks = b.try_chunks_mut(2).map_err(anyhow::Error::from)?;
+    assert_eq!(chunks.size_hint(), (3, Some(3)));
+
+    // Each zero-width chunk is backed by an empty slice. Reading/iterating it
+    // must never touch the backend (regression: the forward and backward
+    // unchecked iterator constructors used to read word 0 of the empty
+    // backend, which is out-of-bounds UB reachable from safe `iter()`).
+    let c0 = chunks.next().unwrap();
+    assert_eq!(c0.len(), 2);
+    // Safe forward iteration goes through BitFieldVecUncheckedIter::new.
+    assert_eq!(c0.iter().collect::<Vec<u64>>(), vec![0, 0]);
+    // The backward unchecked constructor is the other affected path; merely
+    // building it triggered the bad read before any element was produced.
+    let mut back = (&c0).into_unchecked_iter_back_from(c0.len());
+    // SAFETY: `c0` has exactly 2 logical elements and the iterator is
+    // end-positioned, so two `next_unchecked` calls stay in range; for zero
+    // bit width each yields the constant zero without any backend access.
+    let back_vals = unsafe { [back.next_unchecked(), back.next_unchecked()] };
+    assert_eq!(back_vals, [0u64, 0]);
+
+    assert_eq!(chunks.next().unwrap().len(), 2);
+    assert_eq!(chunks.next().unwrap().len(), 1);
+    assert!(chunks.next().is_none());
+    Ok(())
+}
+
+#[test]
 fn test_iter_from() {
     let b = bit_field_vec![7; 0, 1, 2, 3, 4, 5];
     for i in 0..b.len() {
@@ -814,6 +862,42 @@ fn test_iter_double_ended() {
         let expected: Vec<_> = (0..n).rev().map(|i| i & mask).collect();
         assert_eq!(rev, expected, "Failed for bit_width={bit_width}");
     }
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn test_serde_validates_representation() {
+    use sux::traits::TryIntoUnaligned;
+
+    let fields = BitFieldVec::<Vec<u64>>::new(7, 10);
+    let encoded = serde_json::to_string(&fields).unwrap();
+    let decoded: BitFieldVec<Vec<u64>> = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(decoded, fields);
+
+    let invalid_width = r#"{"bits":[0],"bit_width":65,"mask":0,"len":1}"#;
+    assert!(serde_json::from_str::<BitFieldVec<Vec<u64>>>(invalid_width).is_err());
+    let short_backing = r#"{"bits":[],"bit_width":1,"mask":1,"len":1}"#;
+    assert!(serde_json::from_str::<BitFieldVec<Vec<u64>>>(short_backing).is_err());
+    let stale_mask = r#"{"bits":[0],"bit_width":1,"mask":0,"len":1}"#;
+    assert!(serde_json::from_str::<BitFieldVec<Vec<u64>>>(stale_mask).is_err());
+    let zero_width_unaligned = r#"{"bits":[],"bit_width":0,"mask":0,"len":1}"#;
+    assert!(serde_json::from_str::<BitFieldVecU<Vec<u64>>>(zero_width_unaligned).is_err());
+    let unsupported = BitFieldVec::<Box<[u64]>>::new_padded(59, 1);
+    let encoded = serde_json::to_string(&unsupported).unwrap();
+    assert!(serde_json::from_str::<BitFieldVecU<Box<[u64]>>>(&encoded).is_err());
+
+    let empty_zero = BitFieldVec::wrap(Vec::<u64>::new(), 0, 0);
+    let encoded = serde_json::to_string(&empty_zero).unwrap();
+    let _: BitFieldVec<Vec<u64>> = serde_json::from_str(&encoded).unwrap();
+
+    let exact = BitFieldVec::<Vec<u64>>::new(8, 8);
+    let encoded = serde_json::to_string(&exact).unwrap();
+    assert!(serde_json::from_str::<BitFieldVecU<Vec<u64>>>(&encoded).is_err());
+
+    let exact: BitFieldVec<Box<[u64]>> = exact.into();
+    let padded = exact.try_into_unaligned().expect("supported field width");
+    let encoded = serde_json::to_string(&padded).unwrap();
+    let _: BitFieldVecU<Box<[u64]>> = serde_json::from_str(&encoded).unwrap();
 }
 
 #[cfg(feature = "epserde")]
@@ -1097,6 +1181,22 @@ fn test_apply_in_place_unchecked_full_width() -> Result<()> {
 }
 
 #[test]
+fn test_apply_in_place_unchecked_zero_width() -> Result<()> {
+    let mut v = BitFieldVec::<Vec<u64>>::new(0, 5);
+    let mut count = 0;
+    // SAFETY: zero is the only value fitting a zero-width field.
+    unsafe {
+        v.apply_in_place_unchecked(|value| {
+            assert_eq!(value, 0);
+            count += 1;
+            0
+        })
+    };
+    assert_eq!(count, 5);
+    Ok(())
+}
+
+#[test]
 fn test_apply_in_place_unchecked_logical_only() -> Result<()> {
     for width in [3usize, 5, 8, 64] {
         // Backend with sentinel words beyond the words containing elements,
@@ -1143,6 +1243,16 @@ fn test_apply_in_place_oversized_panics() {
     // 0xFF does not fit in 3 bits: the safe method must panic like set_value,
     // not spill into neighboring fields.
     v.apply_in_place(|_| 0xFF);
+}
+
+#[test]
+fn test_unchecked_set_masks_value() {
+    let mut v = BitFieldVec::<Vec<u64>>::new(3, 2);
+    // SAFETY: index zero is in bounds. SliceByValueMut imposes no separate
+    // value-width precondition on this method.
+    unsafe { v.set_value_unchecked(0, 8) };
+    assert_eq!(v.get_value(0), Some(0));
+    assert_eq!(v.get_value(1), Some(0));
 }
 
 #[test]

@@ -21,7 +21,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-anyhow = "1.0.79"
+anyhow = "1.0.103"
 atomic-primitive = "0.1.1"
 num-primitive = "0.2.1"
 log = "0.4.20"
@@ -31,7 +31,7 @@ lender = "0.6.0"
 epserde = { version = "0.13.0", optional = true, default-features = false, features = ["std", "derive"] }
 zstd = { version = "0.13.1", optional = true }
 flate2 = { version = "1.0.28", optional = true }
-rand = "0.10.0"
+rand = "0.10.1"
 rdst = "0.20.12"
 mem_dbg = "0.4.1"
 rayon = { version = "1.8.1", optional = true }
@@ -41,7 +41,6 @@ impl-tools = "0.11.2"
 clap = { version = "4.4.18", features = ["derive", "wrap_help"], optional = true }
 crossbeam-channel = "0.5.14"
 arbitrary-chunks = "0.4.1"
-derivative = "2.2.0"
 derive_setters = "0.1.6"
 thiserror = "2.0.11"
 lambert_w = { version = "1.0.17", default-features = false, features = ["std"] }
@@ -62,6 +61,9 @@ criterion = { version = "0.7.0", default-features = false, features = ["html_rep
 clap = { version = "4.4.18", features = ["derive", "wrap_help"] }
 env_logger = "0.11.0"
 rand_distr = "0.6"
+serde_json = "1.0"
+
+[target.'cfg(target_pointer_width = "64")'.dev-dependencies]
 ph = "0.11.0"
 
 [features]
@@ -69,7 +71,7 @@ default = ["rayon", "flate2", "zstd"]
 clap = ["dep:clap"]
 flate2 = ["dep:flate2"]
 zstd = ["dep:zstd"]
-cli = ["clap", "epserde", "rayon", "dep:deko", "dep:env_logger", "dep:jiff"] # Build the binary utils (it's here so that cargo bench doesn't build them)
+cli = ["clap", "epserde", "rayon", "deko", "dep:env_logger", "dep:jiff"] # Build the binary utils (it's here so that cargo bench doesn't build them)
 fuzz = ["dep:arbitrary"]
 slow_tests = [] # Run slow tests (use --release)
 aarch64_prefetch = [] # Enable aarch64 prefetch (requires nightly)
@@ -79,7 +81,7 @@ rayon = ["dep:rayon", "dep:thread-priority"]
 deko = ["dep:deko"]
 serde = ["dep:serde", "dep:serde_arrays"]
 epserde = ["dep:epserde"]
-mmap = ["epserde/mmap"]
+mmap = ["epserde", "epserde/mmap"]
 
 [profile.release]
 opt-level = 3 # like --release
@@ -226,23 +228,27 @@ harness = false
 [[bench]]
 name = "bench_lcp_mmphf"
 harness = false
-required-features = ["cli"]
+required-features = ["rayon"]
 
 [[bench]]
 name = "bench_vfunc"
 harness = false
-required-features = ["cli"]
+required-features = ["rayon"]
 
 [[bench]]
 name = "bench_comp_vfunc"
 harness = false
-required-features = ["cli", "rayon"]
+required-features = ["rayon"]
 
 [[bench]]
 name = "bench_vfilter"
 harness = false
-required-features = ["cli"]
+required-features = ["rayon"]
 
 [[bench]]
 name = "bit_field_vec"
+harness = false
+
+[[bench]]
+name = "bench_jacobson"
 harness = false

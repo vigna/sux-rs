@@ -30,7 +30,6 @@
 //! `get` methods.
 
 use std::borrow::Borrow;
-use std::mem::size_of;
 
 use crate::bits::{BitFieldVec, BitFieldVecU};
 use crate::func::VFunc;
@@ -42,6 +41,17 @@ use crate::utils::*;
 use mem_dbg::*;
 use num_primitive::{PrimitiveInteger, PrimitiveNumber, PrimitiveNumberAs};
 use value_traits::slices::SliceByValue;
+
+#[cfg(feature = "rayon")]
+fn validate_hash_width<H: Word>(hash_width: usize) -> anyhow::Result<()> {
+    let word_bits = usize::try_from(H::BITS).expect("word width always fits in usize");
+    let max_width = 64.min(word_bits);
+    anyhow::ensure!(
+        (1..=max_width).contains(&hash_width),
+        "hash_width ({hash_width}) must be in [1..={max_width}]"
+    );
+    Ok(())
+}
 
 /// Truncates a hash to a given width.
 ///
@@ -55,6 +65,19 @@ pub trait TruncateHash<W> {
 }
 
 impl<W: PrimitiveNumber> TruncateHash<W> for Box<[W]>
+where
+    u64: PrimitiveNumberAs<W>,
+{
+    #[inline(always)]
+    fn truncate_hash(&self, hash: u64) -> W {
+        hash.as_to::<W>()
+    }
+}
+
+// epserde's zero-copy deserialization turns a `Box<[W]>` hash store into a
+// borrowed `&[W]`; provide the same full-width truncation so mapped signed
+// functions remain queryable.
+impl<W: PrimitiveNumber> TruncateHash<W> for &[W]
 where
     u64: PrimitiveNumberAs<W>,
 {
@@ -241,8 +264,8 @@ impl<K: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableFunc for VF
 /// Wraps an inner function `F` (any type implementing [`SignableFunc`]) and adds
 /// per-key verification hashes so that queries for keys outside the original
 /// set return `None`. The false-positive probability depends on the hash
-/// storage: for `Box<[W]>` it is 2<sup>−`W::BITS`</sup>; for [`BitFieldVec`]
-/// it is 2<sup>−`hash_width`</sup>.
+/// storage: for `Box<[W]>` it is 2<sup>−min(`W::BITS`, 64)</sup>; for
+/// [`BitFieldVec`] it is 2<sup>−`hash_width`</sup>.
 ///
 /// The verification hashes are `mix64` of a single 64-bit signature word (the
 /// verification hash is 64-bit in every edge variant). With the default sharded
@@ -269,21 +292,51 @@ impl<K: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableFunc for VF
 /// [`serde`]: https://crates.io/crates/serde
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct SignedFunc<F, H> {
     pub(crate) func: F,
     pub(crate) hashes: H,
 }
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(rename = "SignedFunc")]
+struct SignedFuncSerde<F, H> {
+    func: F,
+    hashes: H,
+}
 
-impl<F, H> SignedFunc<F, H> {
-    /// Creates a new `SignedFunc` from a function and a hash slice.
+#[cfg(feature = "serde")]
+impl<'de, F, H> serde::Deserialize<'de> for SignedFunc<F, H>
+where
+    F: SignableFunc + serde::Deserialize<'de>,
+    H: SliceByValue + serde::Deserialize<'de>,
+{
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let repr = SignedFuncSerde::<F, H>::deserialize(deserializer)?;
+        if repr.func.len() != repr.hashes.len() {
+            return Err(serde::de::Error::custom(
+                "signed-function hash storage length does not match the function length",
+            ));
+        }
+        Ok(Self {
+            func: repr.func,
+            hashes: repr.hashes,
+        })
+    }
+}
+
+impl<F: SignableFunc, H: SliceByValue> SignedFunc<F, H> {
+    /// Creates a new `SignedFunc` from a function and its hash storage.
     ///
-    /// This is a low-level constructor; prefer
-    /// [`try_new`]/[`try_new_with_builder`] when possible.
+    /// # Panics
     ///
-    /// [`try_new`]: Self::try_new
-    /// [`try_new_with_builder`]: Self::try_new_with_builder
+    /// Panics if the hash storage length differs from the function length.
     pub fn from_parts(func: F, hashes: H) -> Self {
+        assert_eq!(
+            func.len(),
+            hashes.len(),
+            "hash storage length must match the function length"
+        );
         Self { func, hashes }
     }
 }
@@ -297,12 +350,6 @@ impl<F: SignableFunc, H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::
     /// given index and signature.
     #[inline(always)]
     fn verify<V: PrimitiveNumber>(&self, index: V, sig: F::Sig) -> Option<V> {
-        const {
-            assert!(
-                size_of::<H::Value>() <= size_of::<u64>(),
-                "Hash value type must fit in u64 without truncation"
-            );
-        }
         let expected = self
             .hashes
             .truncate_hash(self.func.shard_edge().remixed_hash(sig));
@@ -375,8 +422,8 @@ where
     /// or `None` if the verification hash does not match.
     #[inline]
     pub fn get(&self, key: K) -> Option<usize> {
-        let rank = self.func.get(key);
-        self.verify(rank, K::to_sig(key, self.func.seed()))
+        let sig = K::to_sig(key, self.func.seed());
+        self.verify(self.func.get_by_sig(key, sig), sig)
     }
 }
 
@@ -398,8 +445,8 @@ where
     /// or `None` if the verification hash does not match.
     #[inline]
     pub fn get(&self, key: &K) -> Option<usize> {
-        let rank = self.func.get(key);
-        self.verify(rank, K::to_sig(key, self.func.seed()))
+        let sig = K::to_sig(key, self.func.seed());
+        self.verify(self.func.get_by_sig(key, sig), sig)
     }
 }
 
@@ -422,8 +469,8 @@ where
     /// or `None` if the verification hash does not match.
     #[inline]
     pub fn get(&self, key: K) -> Option<usize> {
-        let rank = self.func.get(key);
-        self.verify(rank, K::to_sig(key, self.func.seed()))
+        let sig = K::to_sig(key, self.func.seed());
+        self.verify(self.func.get_by_sig(key, sig), sig)
     }
 }
 
@@ -446,8 +493,8 @@ where
     /// or `None` if the verification hash does not match.
     #[inline]
     pub fn get(&self, key: &K) -> Option<usize> {
-        let rank = self.func.get(key);
-        self.verify(rank, K::to_sig(key, self.func.seed()))
+        let sig = K::to_sig(key, self.func.seed());
+        self.verify(self.func.get_by_sig(key, sig), sig)
     }
 }
 
@@ -476,9 +523,9 @@ mod build {
     /// remixed hash through `shard_edge`. The resulting full-width hashes
     /// are stored in a newly allocated boxed slice.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the lender yields fewer than `n` elements.
+    /// Returns an error if the lender yields fewer than `n` elements.
     fn fill_hashes<W, S, E, L>(
         shard_edge: &E,
         seed: u64,
@@ -500,8 +547,10 @@ mod build {
         pl.log_level(log::Level::Info);
         pl.start("Signing keys...");
         let mut hashes = vec![W::MIN; n];
-        for hash in hashes.iter_mut() {
-            let key = keys.next()?.expect("Not enough keys for hashes");
+        for (index, hash) in hashes.iter_mut().enumerate() {
+            let key = keys.next()?.ok_or_else(|| {
+                anyhow::anyhow!("expected {n} keys while signing, but got {index}")
+            })?;
             *hash = shard_edge.remixed_hash(to_sig(&key, seed)).as_to::<W>();
             pl.light_update();
         }
@@ -518,9 +567,9 @@ mod build {
     /// [`BitFieldVec`]'s stored mask and stored in a [`BitFieldVec`] of the
     /// given `hash_width`.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the lender yields fewer than `n` elements.
+    /// Returns an error if the lender yields fewer than `n` elements.
     ///
     /// [`BitFieldVec<Box<[H]>>`]: BitFieldVec
     fn fill_bit_hashes<H, S, E, L>(
@@ -545,10 +594,12 @@ mod build {
         pl.log_level(log::Level::Info);
         pl.start("Signing keys...");
         let mut hashes = BitFieldVec::<Box<[H]>>::new_padded(hash_width, n);
-        for i in 0..n {
-            let key = keys.next()?.expect("Not enough keys for hashes");
+        for index in 0..n {
+            let key = keys.next()?.ok_or_else(|| {
+                anyhow::anyhow!("expected {n} keys while signing, but got {index}")
+            })?;
             let h = hashes.truncate_hash(shard_edge.remixed_hash(to_sig(&key, seed)));
-            hashes.set_value(i, h);
+            hashes.set_value(index, h);
             pl.light_update();
         }
         pl.done();
@@ -664,8 +715,8 @@ mod build {
         /// default [`VBuilder`] settings.
         ///
         /// The function maps each key to its index in the input sequence
-        /// and stores `H::BITS`-bit hashes for verification, giving a
-        /// false-positive rate of 2<sup>-`H::BITS`</sup>.
+        /// and stores full-word hashes for verification, giving a false-positive
+        /// rate of 2<sup>-min(`H::BITS`, 64)</sup>.
         ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`] with `VBuilder::default()`.
@@ -717,8 +768,8 @@ mod build {
         /// given [`VBuilder`] configuration.
         ///
         /// The function maps each key to its index in the input sequence
-        /// and stores `H::BITS`-bit hashes for verification, giving a
-        /// false-positive rate of 2<sup>-`H::BITS`</sup>.
+        /// and stores full-word hashes for verification, giving a false-positive
+        /// rate of 2<sup>-min(`H::BITS`, 64)</sup>.
         ///
         /// The builder controls construction parameters such as [offline
         /// mode], [thread count], [sharding overhead], and [PRNG seed].
@@ -783,6 +834,7 @@ mod build {
                 use rayon::prelude::*;
                 use sync_cell_slice::SyncSlice;
                 let shards: Vec<_> = store.iter().collect();
+                let num_shards = shards.len();
                 let mut shard_pl = pl.clone();
                 shard_pl.item_name("shard");
                 shard_pl.expected_updates(Some(shards.len()));
@@ -798,7 +850,7 @@ mod build {
                         }
                     }
                 });
-                shard_pl.update_with_count(num_keys);
+                shard_pl.update_with_count(num_shards);
                 shard_pl.done();
             }
             pl.pop_log_target();
@@ -811,8 +863,8 @@ mod build {
         /// rayon, using default [`VBuilder`] settings.
         ///
         /// The function maps each key to its index in the input sequence
-        /// and stores `H::BITS`-bit hashes for verification, giving a
-        /// false-positive rate of 2<sup>-`H::BITS`</sup>.
+        /// and stores full-word hashes for verification, giving a false-positive
+        /// rate of 2<sup>-min(`H::BITS`, 64)</sup>.
         ///
         /// This is a convenience wrapper around
         /// [`try_par_new_with_builder`] with `VBuilder::default()`.
@@ -859,8 +911,8 @@ mod build {
         /// rayon, using the given [`VBuilder`] configuration.
         ///
         /// The function maps each key to its index in the input sequence
-        /// and stores `H::BITS`-bit hashes for verification, giving a
-        /// false-positive rate of 2<sup>-`H::BITS`</sup>.
+        /// and stores full-word hashes for verification, giving a false-positive
+        /// rate of 2<sup>-min(`H::BITS`, 64)</sup>.
         ///
         /// The builder controls construction parameters such as [offline
         /// mode], [thread count], [sharding overhead], and [PRNG seed].
@@ -944,13 +996,13 @@ mod build {
         /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are available as a slice, [`try_par_new`] parallelizes
-        /// the hash computation for faster construction.
+        /// inner-function construction.
         ///
         /// * `keys` - a [`FallibleRewindableLender`].
         ///   The [`lenders`] module provides easy ways to build
         ///   such lenders.
-        /// * `hash_width` - the number of hash bits per key (at most
-        ///   `H::BITS`).
+        /// * `hash_width` - the number of hash bits per key
+        ///   (`1..=min(H::BITS, 64)`).
         ///
         /// # Examples
         ///
@@ -1003,14 +1055,14 @@ mod build {
         /// The builder controls construction parameters such as [offline
         /// mode], [thread count], [sharding overhead], and [PRNG seed].
         ///
-        /// See also [`try_par_new_with_builder`] for parallel hash
-        /// computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel inner-function
+        /// construction from slices.
         ///
         /// * `keys` - a [`FallibleRewindableLender`].
         ///   The [`lenders`] module provides easy ways to build
         ///   such lenders.
-        /// * `hash_width` - the number of hash bits per key (at most
-        ///   `H::BITS`).
+        /// * `hash_width` - the number of hash bits per key
+        ///   (`1..=min(H::BITS, 64)`).
         ///
         /// # Examples
         ///
@@ -1055,13 +1107,7 @@ mod build {
         where
             u64: PrimitiveNumberAs<H>,
         {
-            assert!(hash_width > 0, "hash_width must be positive");
-            // Verification hashes come from a 64-bit remixed hash.
-            assert!(
-                hash_width <= 64.min(H::BITS as usize),
-                "hash_width ({hash_width}) must be at most min(64, H::BITS) = {}",
-                64.min(H::BITS as usize)
-            );
+            validate_hash_width::<H>(hash_width)?;
 
             let (func, mut store, _) = builder.try_build_func_and_store(
                 keys,
@@ -1095,8 +1141,8 @@ mod build {
         }
 
         /// Builds a [`SignedFunc`] wrapping a [`VFunc`] from in-memory key
-        /// slices, parallelizing hash computation and store population with
-        /// rayon, using default [`VBuilder`] settings.
+        /// slices, parallelizing inner-function construction with rayon and
+        /// using default [`VBuilder`] settings.
         ///
         /// The function maps each key to its index in the input sequence
         /// and stores `hash_width`-bit hashes for verification, giving a
@@ -1144,8 +1190,8 @@ mod build {
         }
 
         /// Builds a [`SignedFunc`] wrapping a [`VFunc`] from in-memory key
-        /// slices, parallelizing hash computation and store population with
-        /// rayon, using the given [`VBuilder`] configuration.
+        /// slices, parallelizing inner-function construction with rayon and
+        /// using the given [`VBuilder`] configuration.
         ///
         /// The function maps each key to its index in the input sequence
         /// and stores `hash_width`-bit hashes for verification, giving a
@@ -1198,13 +1244,7 @@ mod build {
             K: Sync,
             u64: PrimitiveNumberAs<H>,
         {
-            assert!(hash_width > 0, "hash_width must be positive");
-            // Verification hashes come from a 64-bit remixed hash.
-            assert!(
-                hash_width <= 64.min(H::BITS as usize),
-                "hash_width ({hash_width}) must be at most min(64, H::BITS) = {}",
-                64.min(H::BITS as usize)
-            );
+            validate_hash_width::<H>(hash_width)?;
             let values: Vec<usize> = (0..keys.len()).collect();
             let func = <VFunc<K, BitFieldVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
                 keys, &values, builder, pl,
@@ -1437,7 +1477,8 @@ mod build {
         /// Creates a new signed LCP-based MMPHF for byte-sequence keys.
         ///
         /// The keys must be in strictly increasing lexicographic order
-        /// (byte-level comparison).
+        /// (byte-level comparison), and must either contain no zero bytes or be
+        /// prefix-free (a virtual zero byte is appended internally).
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
@@ -1519,7 +1560,9 @@ mod build {
         /// a slice, using parallel hash computation and default [`VBuilder`]
         /// settings.
         ///
-        /// The keys must be in strictly increasing lexicographic order.
+        /// The keys must be in strictly increasing lexicographic order, and must
+        /// either contain no zero bytes or be prefix-free (a virtual zero byte is
+        /// appended internally).
         ///
         /// This is a convenience wrapper around
         /// [`try_par_new_with_builder`] with `VBuilder::default()`.
@@ -1835,6 +1878,10 @@ mod build {
     {
         /// Creates a new signed two-step LCP-based MMPHF for byte-sequence keys.
         ///
+        /// The keys must be in strictly increasing lexicographic order, and must
+        /// either contain no zero bytes or be prefix-free (a virtual zero byte is
+        /// appended internally).
+        ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
@@ -1915,7 +1962,9 @@ mod build {
         /// keys from a slice, using parallel hash computation and default
         /// [`VBuilder`] settings.
         ///
-        /// The keys must be in strictly increasing lexicographic order.
+        /// The keys must be in strictly increasing lexicographic order, and must
+        /// either contain no zero bytes or be prefix-free (a virtual zero byte is
+        /// appended internally).
         ///
         /// This is a convenience wrapper around
         /// [`try_par_new_with_builder`] with `VBuilder::default()`.
@@ -2032,15 +2081,15 @@ mod build {
         /// Creates a new signed LCP-based MMPHF for integers with
         /// sub-word-width hashes.
         ///
-        /// `hash_width` is the number of hash bits stored per key (must be
-        /// in `1 . . H::BITS`). False-positive probability is
+        /// `hash_width` is the number of hash bits stored per key (must be in
+        /// `1..=min(H::BITS, 64)`). False-positive probability is
         /// 2<sup>−`hash_width`</sup>.
         ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are available as a slice, [`try_par_new`] parallelizes
-        /// the hash computation for faster construction.
+        /// inner-function construction.
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
@@ -2086,8 +2135,8 @@ mod build {
         /// Like [`try_new`], but uses the given [`VBuilder`] to configure
         /// the internal `lcp_len_offset` VFunc.
         ///
-        /// See also [`try_par_new_with_builder`] for parallel hash
-        /// computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel inner-function
+        /// construction from slices.
         ///
         /// [`try_new`]: Self::try_new
         /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
@@ -2102,11 +2151,7 @@ mod build {
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
             // Verification hashes come from a 64-bit remixed hash.
-            assert!(
-                hash_width > 0 && hash_width <= 64.min(H::BITS as usize),
-                "hash_width ({hash_width}) must be in [1..min(64, H::BITS)] = {}",
-                64.min(H::BITS as usize)
-            );
+            validate_hash_width::<H>(hash_width)?;
             let (func, keys) = LcpMmphfInt::try_new_inner(keys, n, builder, pl)?;
             let mut keys = keys.rewind()?;
             pl.push_log_target(" ▸ hashes");
@@ -2124,11 +2169,11 @@ mod build {
         }
 
         /// Creates a new signed LCP-based MMPHF for integers with
-        /// sub-word-width hashes from a slice, using parallel hash
-        /// computation and default [`VBuilder`] settings.
+        /// sub-word-width hashes from a slice, using parallel inner-function
+        /// construction and default [`VBuilder`] settings.
         ///
-        /// `hash_width` is the number of hash bits stored per key (must be
-        /// in `1 . . H::BITS`). False-positive probability is
+        /// `hash_width` is the number of hash bits stored per key (must be in
+        /// `1..=min(H::BITS, 64)`). False-positive probability is
         /// 2<sup>−`hash_width`</sup>.
         ///
         /// This is a convenience wrapper around
@@ -2208,11 +2253,7 @@ mod build {
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
             // Verification hashes come from a 64-bit remixed hash.
-            assert!(
-                hash_width > 0 && hash_width <= 64.min(H::BITS as usize),
-                "hash_width ({hash_width}) must be in [1..min(64, H::BITS)] = {}",
-                64.min(H::BITS as usize)
-            );
+            validate_hash_width::<H>(hash_width)?;
             let func = LcpMmphfInt::try_par_new_inner(keys, builder, pl)?;
             pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes_from_slice::<K, K, H, S0, E0>(
@@ -2251,15 +2292,19 @@ mod build {
         /// Creates a new signed LCP-based MMPHF for byte-sequence keys with
         /// sub-word-width hashes.
         ///
-        /// `hash_width` is the number of hash bits stored per key (must be
-        /// in `1 . . H::BITS`). False-positive probability is
+        /// The keys must be in strictly increasing lexicographic order, and must
+        /// either contain no zero bytes or be prefix-free (a virtual zero byte is
+        /// appended internally).
+        ///
+        /// `hash_width` is the number of hash bits stored per key (must be in
+        /// `1..=min(H::BITS, 64)`). False-positive probability is
         /// 2<sup>−`hash_width`</sup>.
         ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are available as a slice, [`try_par_new`] parallelizes
-        /// the hash computation for faster construction.
+        /// inner-function construction.
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
@@ -2273,7 +2318,7 @@ mod build {
         /// # use sux::bits::BitFieldVec;
         /// # use dsi_progress_logger::no_logging;
         /// # use sux::utils::FromSlice;
-        /// # use crate::sux::traits::TryIntoUnaligned;
+        /// # use sux::traits::TryIntoUnaligned;
         /// let keys = vec!["alpha", "beta", "delta", "gamma"];
         /// type BSFunc = SignedFunc<LcpMmphfStr, BitFieldVec<Box<[usize]>>>;
         /// let func =
@@ -2306,8 +2351,8 @@ mod build {
         /// Like [`try_new`], but uses the given [`VBuilder`] to configure
         /// the internal `lcp_len_offset` VFunc.
         ///
-        /// See also [`try_par_new_with_builder`] for parallel hash
-        /// computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel inner-function
+        /// construction from slices.
         ///
         /// [`try_new`]: Self::try_new
         /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
@@ -2322,11 +2367,7 @@ mod build {
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
             // Verification hashes come from a 64-bit remixed hash.
-            assert!(
-                hash_width > 0 && hash_width <= 64.min(H::BITS as usize),
-                "hash_width ({hash_width}) must be in [1..min(64, H::BITS)] = {}",
-                64.min(H::BITS as usize)
-            );
+            validate_hash_width::<H>(hash_width)?;
             let (func, keys) = LcpMmphf::try_new_inner(keys, n, builder, pl)?;
             let mut keys = keys.rewind()?;
             pl.push_log_target(" ▸ hashes");
@@ -2344,11 +2385,15 @@ mod build {
         }
 
         /// Creates a new signed LCP-based MMPHF for byte-sequence keys with
-        /// sub-word-width hashes from a slice, using parallel hash computation
-        /// and default [`VBuilder`] settings.
+        /// sub-word-width hashes from a slice, using parallel inner-function
+        /// construction and default [`VBuilder`] settings.
         ///
-        /// `hash_width` is the number of hash bits stored per key (must be
-        /// in `1 . . H::BITS`). False-positive probability is
+        /// The keys must be in strictly increasing lexicographic order, and must
+        /// either contain no zero bytes or be prefix-free (a virtual zero byte is
+        /// appended internally).
+        ///
+        /// `hash_width` is the number of hash bits stored per key (must be in
+        /// `1..=min(H::BITS, 64)`). False-positive probability is
         /// 2<sup>−`hash_width`</sup>.
         ///
         /// This is a convenience wrapper around
@@ -2436,11 +2481,7 @@ mod build {
             K: Sync,
         {
             // Verification hashes come from a 64-bit remixed hash.
-            assert!(
-                hash_width > 0 && hash_width <= 64.min(H::BITS as usize),
-                "hash_width ({hash_width}) must be in [1..min(64, H::BITS)] = {}",
-                64.min(H::BITS as usize)
-            );
+            validate_hash_width::<H>(hash_width)?;
             let func = LcpMmphf::try_par_new_inner(keys, builder, pl)?;
             pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes_from_slice::<B, K, H, S0, E0>(
@@ -2492,7 +2533,7 @@ mod build {
         /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are available as a slice, [`try_par_new`] parallelizes
-        /// the hash computation for faster construction.
+        /// inner-function construction.
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
@@ -2506,7 +2547,7 @@ mod build {
         /// # use sux::bits::BitFieldVec;
         /// # use dsi_progress_logger::no_logging;
         /// # use sux::utils::FromSlice;
-        /// # use crate::sux::traits::TryIntoUnaligned;
+        /// # use sux::traits::TryIntoUnaligned;
         /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
         /// let func =
         ///     <SignedFunc<Lcp2MmphfInt<u64>, BitFieldVec<Box<[usize]>>>>::try_new(
@@ -2537,8 +2578,8 @@ mod build {
         /// Like [`try_new`], but uses the given [`VBuilder`] to configure
         /// the internal VFuncs.
         ///
-        /// See also [`try_par_new_with_builder`] for parallel hash
-        /// computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel inner-function
+        /// construction from slices.
         ///
         /// [`try_new`]: Self::try_new
         /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
@@ -2553,11 +2594,7 @@ mod build {
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
             // Verification hashes come from a 64-bit remixed hash.
-            assert!(
-                hash_width > 0 && hash_width <= 64.min(H::BITS as usize),
-                "hash_width ({hash_width}) must be in [1..min(64, H::BITS)] = {}",
-                64.min(H::BITS as usize)
-            );
+            validate_hash_width::<H>(hash_width)?;
             let (func, keys) = Lcp2MmphfInt::try_new_inner(keys, n, builder, pl)?;
             let mut keys = keys.rewind()?;
             pl.push_log_target(" ▸ hashes");
@@ -2575,8 +2612,8 @@ mod build {
         }
 
         /// Creates a new signed two-step LCP-based MMPHF for integers with
-        /// sub-word-width hashes from a slice, using parallel hash computation
-        /// and default [`VBuilder`] settings.
+        /// sub-word-width hashes from a slice, using parallel inner-function
+        /// construction and default [`VBuilder`] settings.
         ///
         /// This is a convenience wrapper around
         /// [`try_par_new_with_builder`] with `VBuilder::default()`.
@@ -2655,11 +2692,7 @@ mod build {
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
             // Verification hashes come from a 64-bit remixed hash.
-            assert!(
-                hash_width > 0 && hash_width <= 64.min(H::BITS as usize),
-                "hash_width ({hash_width}) must be in [1..min(64, H::BITS)] = {}",
-                64.min(H::BITS as usize)
-            );
+            validate_hash_width::<H>(hash_width)?;
             let func = Lcp2MmphfInt::try_par_new_inner(keys, builder, pl)?;
             pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes_from_slice::<K, K, H, S0, E0>(
@@ -2703,11 +2736,15 @@ mod build {
         /// Creates a new signed two-step LCP-based MMPHF for byte-sequence keys
         /// with sub-word-width hashes.
         ///
+        /// The keys must be in strictly increasing lexicographic order, and must
+        /// either contain no zero bytes or be prefix-free (a virtual zero byte is
+        /// appended internally).
+        ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
         /// If keys are available as a slice, [`try_par_new`] parallelizes
-        /// the hash computation for faster construction.
+        /// inner-function construction.
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
@@ -2752,8 +2789,8 @@ mod build {
         /// Like [`try_new`], but uses the given [`VBuilder`] to configure
         /// the internal VFuncs.
         ///
-        /// See also [`try_par_new_with_builder`] for parallel hash
-        /// computation from slices.
+        /// See also [`try_par_new_with_builder`] for parallel inner-function
+        /// construction from slices.
         ///
         /// [`try_new`]: Self::try_new
         /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
@@ -2768,11 +2805,7 @@ mod build {
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
             // Verification hashes come from a 64-bit remixed hash.
-            assert!(
-                hash_width > 0 && hash_width <= 64.min(H::BITS as usize),
-                "hash_width ({hash_width}) must be in [1..min(64, H::BITS)] = {}",
-                64.min(H::BITS as usize)
-            );
+            validate_hash_width::<H>(hash_width)?;
             let (func, keys) = Lcp2Mmphf::try_new_inner(keys, n, builder, pl)?;
             let mut keys = keys.rewind()?;
             pl.push_log_target(" ▸ hashes");
@@ -2790,8 +2823,12 @@ mod build {
         }
 
         /// Creates a new signed two-step LCP-based MMPHF for byte-sequence
-        /// keys with sub-word-width hashes from a slice, using parallel hash
-        /// computation and default [`VBuilder`] settings.
+        /// keys with sub-word-width hashes from a slice, using parallel
+        /// inner-function construction and default [`VBuilder`] settings.
+        ///
+        /// The keys must be in strictly increasing lexicographic order, and must
+        /// either contain no zero bytes or be prefix-free (a virtual zero byte is
+        /// appended internally).
         ///
         /// This is a convenience wrapper around
         /// [`try_par_new_with_builder`] with `VBuilder::default()`.
@@ -2876,11 +2913,7 @@ mod build {
             K: Sync,
         {
             // Verification hashes come from a 64-bit remixed hash.
-            assert!(
-                hash_width > 0 && hash_width <= 64.min(H::BITS as usize),
-                "hash_width ({hash_width}) must be in [1..min(64, H::BITS)] = {}",
-                64.min(H::BITS as usize)
-            );
+            validate_hash_width::<H>(hash_width)?;
             let func = Lcp2Mmphf::try_par_new_inner(keys, builder, pl)?;
             pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes_from_slice::<B, K, H, S0, E0>(

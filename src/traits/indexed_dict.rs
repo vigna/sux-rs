@@ -571,8 +571,8 @@ where
     /// greatest value in the dictionary that is less than the given value, if
     /// `STRICT` is `true`.
     ///
-    /// If there are repeated values, the index of the one returned depends on
-    /// the implementation.
+    /// If values repeat, the returned index is the last occurrence of the
+    /// predecessor value.
     ///
     /// # Safety
     ///
@@ -741,7 +741,7 @@ where
     /// The iterator's first [`next()`] call returns the
     /// predecessor value itself; the first
     /// [`prev()`] call returns the element
-    /// after the predecessor.
+    /// before the predecessor.
     ///
     /// # Safety
     ///
@@ -787,18 +787,17 @@ where
     /// The predecessor is the greatest value in the dictionary
     /// that is less than or equal to the given value.
     ///
-    /// If there are repeated values, the index of the one returned
-    /// depends on the implementation.
+    /// If values repeat, the returned index is the last occurrence of the
+    /// predecessor value. This makes `index + 1` the insertion position after
+    /// all values less than or equal to the predecessor.
     fn pred(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)>;
 
     /// Returns the index of the strict predecessor and the strict predecessor
     /// of the given value, or `None` if there is no strict predecessor.
     ///
     /// The strict predecessor is the greatest value in the dictionary
-    /// that is less than the given value.
-    ///
-    /// If there are repeated values, the index of the one returned
-    /// depends on the implementation.
+    /// that is less than the given value. If values repeat, the returned index
+    /// is its last occurrence.
     fn pred_strict(&self, value: impl Borrow<Self::Input>) -> Option<(usize, Self::Output<'_>)>;
 
     /// Returns the number of elements strictly less than the given value.
