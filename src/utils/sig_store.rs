@@ -754,7 +754,10 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
     {
         use rayon::prelude::*;
 
-        let num_threads = max_num_threads.max(1);
+        // Never create more workers than there are records: an empty chunk still
+        // allocates a full per-shard counter array (1 << max_shard_high_bits), so
+        // cap the worker count by n to keep memory proportional to the input.
+        let num_threads = max_num_threads.max(1).min(n.max(1));
         let chunk_size = n.div_ceil(num_threads);
         let num_buckets = 1usize << self.buckets_high_bits;
         let num_shards = 1usize << self.max_shard_high_bits;
