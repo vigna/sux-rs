@@ -495,7 +495,7 @@ impl Inventory for usize {
 }
 
 // The type of subinventory entries for a span. It is used by all variants.
-// On 32-bit, the assert on bit vector length (≤ usize::MAX >> 2)
+// On 32-bit, the assert on bit vector length (≤ usize::MAX >> 1)
 // guarantees that U64 spans are unreachable.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -576,8 +576,8 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
     ///
     /// # Panics
     ///
-    /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
+    /// Panics if the bit vector length exceeds 2⁶² − 1 on 64-bit platforms
+    /// or 2³¹ − 1 on 32-bit platforms.
     ///
     /// [default values]: SelectAdapt
     #[must_use]
@@ -609,8 +609,8 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
     ///
     /// # Panics
     ///
-    /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
+    /// Panics if the bit vector length exceeds 2⁶² − 1 on 64-bit platforms
+    /// or 2³¹ − 1 on 32-bit platforms.
     ///
     /// [*L*]: SelectAdapt
     /// [`default_target_inventory_span(max_log2_words_per_subinv)`]: default_target_inventory_span
@@ -666,8 +666,8 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
     ///
     /// # Panics
     ///
-    /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
+    /// Panics if the bit vector length exceeds 2⁶² − 1 on 64-bit platforms
+    /// or 2³¹ − 1 on 32-bit platforms.
     ///
     /// [standard constructor]: SelectAdapt::new
     /// [*M*]: SelectAdapt
@@ -717,9 +717,9 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
     ///
     /// # Panics
     ///
-    /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit), or if
-    /// `overhead_percentage` is not positive.
+    /// Panics if the bit vector length exceeds 2⁶² − 1 on 64-bit platforms
+    /// or 2³¹ − 1 on 32-bit platforms, or if `overhead_percentage` is not
+    /// positive.
     ///
     /// [*M*]: SelectAdapt
     /// [documentation]: SelectAdapt
