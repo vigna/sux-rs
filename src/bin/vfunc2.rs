@@ -167,7 +167,7 @@ fn generate_synthetic_values(args: &Args, n: usize) -> Result<Vec<usize>> {
         Ok((0..n).map(|_| sample_zipf(&cdf, &mut rng)).collect())
     } else if let Some(k) = args.uniform {
         Ok((0..n)
-            .map(|_| (rng.random::<u64>() % k.get() as u64) as usize)
+            .map(|_| rng.random_range(0..k.get()))
             .collect())
     } else {
         bail!("one of --values, --geometric, --zipf, or --uniform is required");
