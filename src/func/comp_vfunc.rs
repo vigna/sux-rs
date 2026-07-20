@@ -5,28 +5,51 @@
  */
 
 use crate::bits::{BitVec, BitVecU, test_unaligned_any_pos};
-use crate::func::VBuilder;
-use crate::func::codec::{Codec, Coder, Decoder, HuffmanCoder, HuffmanConf, HuffmanDecoder};
-use crate::func::peeling::{DoubleStack, FastStack, XorGraph, remove_edge};
+use crate::func::codec::{Decoder, HuffmanDecoder};
 use crate::func::shard_edge::{Fuse3Shards, ShardEdge};
-use crate::func::vbuilder::SolveError;
-use crate::traits::bit_vec_ops::{BitVecOps, BitVecOpsMut};
+use crate::traits::bit_vec_ops::BitVecOps;
 use crate::traits::{
     Backend, BitLength, BitVecValueOps, TryIntoUnaligned, UnalignedConversionError, Word,
 };
-use crate::utils::sig_store::ShardStore;
-use crate::utils::{BinSafe, FallibleRewindableLender, Sig, SigVal, ToSig};
-use anyhow::{Result, anyhow, bail};
-use core::error::Error;
-use dsi_progress_logger::ProgressLog;
-use lender::FallibleLending;
-use mem_dbg::{FlatType, MemDbg, MemSize, SizeFlags};
+use crate::utils::{BinSafe, Sig, ToSig};
+use anyhow::Result;
+use mem_dbg::{MemDbg, MemSize};
 use num_primitive::PrimitiveNumber;
-use rdst::RadixKey;
 use std::borrow::Borrow;
-use std::collections::HashMap;
-use std::hash::Hash;
 use std::marker::PhantomData;
+
+// Construction-only imports: a CompVFunc is built through VBuilder, which
+// requires rayon, but the type and its query/conversion methods do not.
+#[cfg(feature = "rayon")]
+use crate::func::VBuilder;
+#[cfg(feature = "rayon")]
+use crate::func::codec::{Codec, Coder, HuffmanCoder, HuffmanConf};
+#[cfg(feature = "rayon")]
+use crate::func::peeling::{DoubleStack, FastStack, XorGraph, remove_edge};
+#[cfg(feature = "rayon")]
+use crate::func::vbuilder::SolveError;
+#[cfg(feature = "rayon")]
+use crate::traits::bit_vec_ops::BitVecOpsMut;
+#[cfg(feature = "rayon")]
+use crate::utils::sig_store::ShardStore;
+#[cfg(feature = "rayon")]
+use crate::utils::{FallibleRewindableLender, SigVal};
+#[cfg(feature = "rayon")]
+use anyhow::{anyhow, bail};
+#[cfg(feature = "rayon")]
+use core::error::Error;
+#[cfg(feature = "rayon")]
+use dsi_progress_logger::ProgressLog;
+#[cfg(feature = "rayon")]
+use lender::FallibleLending;
+#[cfg(feature = "rayon")]
+use mem_dbg::{FlatType, SizeFlags};
+#[cfg(feature = "rayon")]
+use rdst::RadixKey;
+#[cfg(feature = "rayon")]
+use std::collections::HashMap;
+#[cfg(feature = "rayon")]
+use std::hash::Hash;
 
 // ── CompVFunc struct ────────────────────────────────────────────────
 
@@ -244,6 +267,7 @@ impl<K: ?Sized, D: Backend<Word: Word>, S, E> CompVFunc<K, D, S, E> {
 // structured base positions in [0..num_vertices). The multi-edge layout then
 // adds (w − 1 − l) per codeword bit to each base position.
 
+#[cfg(feature = "rayon")]
 impl<K, W, S, E> CompVFunc<K, BitVec<Box<[W]>>, S, E>
 where
     K: ?Sized + ToSig<S> + std::fmt::Debug,
@@ -309,6 +333,7 @@ where
     }
 }
 
+#[cfg(feature = "rayon")]
 impl<K, W, S, E> CompVFunc<K, BitVec<Box<[W]>>, S, E>
 where
     K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
@@ -372,8 +397,9 @@ where
 // around VBuilder's retry loop: they delegate the sig-store population,
 // duplicate check, and shard solving to VBuilder, and contribute a
 // CompVFunc-specific build_fn closure that (a) calls
-// set_up_corr_graphs on the shard edge with *equation* counts
-// rather than key counts and (b) calls [VBuilder::par_solve] with
+// set_up_corr_graphs on the shard edge with the total key count as the
+// regime selector plus the largest per-shard key and edge counts and (b)
+// calls [VBuilder::par_solve] with
 // a per-shard closure doing the multi-edge expansion, peeling, and
 // reverse-peel assignment.
 //
@@ -396,6 +422,7 @@ where
 ///
 /// Returns an error if the resulting code has a maximum codeword length exceeding
 /// the unaligned-read limit of `W::BITS - 7`.
+#[cfg(feature = "rayon")]
 fn build_coder_from_frequencies<W: Word + Hash>(
     huffman: HuffmanConf,
     frequencies: &HashMap<W, usize>,
@@ -414,6 +441,7 @@ fn build_coder_from_frequencies<W: Word + Hash>(
 }
 
 /// Slice fast-path for the frequency map used by [`build_inner_par`].
+#[cfg(feature = "rayon")]
 fn frequencies_from_slice<W: Word + Hash>(values: &[W]) -> HashMap<W, usize> {
     let mut frequencies: HashMap<W, usize> = HashMap::new();
     for &v in values {
@@ -430,6 +458,7 @@ fn frequencies_from_slice<W: Word + Hash>(values: &[W]) -> HashMap<W, usize> {
 /// (b) allocates the data array with the correct per-shard stride,
 /// and (c) dispatches `par_solve` with the multi-edge per-shard
 /// solver.
+#[cfg(feature = "rayon")]
 #[allow(clippy::type_complexity)]
 fn make_build_fn<'c, W, S, E, P>(
     coder: &'c HuffmanCoder<W>,
@@ -493,11 +522,12 @@ where
             max_shard_keys = max_shard_keys.max(keys_in_shard);
         }
 
-        // Call the correlated-graph setup on the shard edge.c is keyed at
-        // max_shard_keys, log2_seg_size at max_shard_edges.
-        let (c, lge) =
-            vb.shard_edge
-                .set_up_corr_graphs(total_edges, max_shard_keys, max_shard_edges);
+        // Correlated-graph setup: the first argument is the total key count
+        // (the regime selector, analogous to n in set_up_graphs), followed
+        // by the largest per-shard key count and per-shard edge count.
+        let (c, lge) = vb
+            .shard_edge
+            .set_up_corr_graphs(num_keys, max_shard_keys, max_shard_edges);
         // This should never really happen--we have static checks
         assert!(!lge, "CompVFunc does not support LGE");
         vb.c = c;
@@ -702,6 +732,7 @@ where
 
 /// Finalizes a successful build by packing the construction-side [`BitVec`]
 /// into a [`CompVFunc`].
+#[cfg(feature = "rayon")]
 fn finish_build<K: ?Sized, W: Word + MemSize + FlatType, S, E: MemSize + FlatType>(
     shard_edge: E,
     coder: HuffmanCoder<W>,
@@ -752,6 +783,7 @@ where
 }
 
 /// Empty-function short-circuit shared by both entry points.
+#[cfg(feature = "rayon")]
 fn empty_comp_vfunc<K, W, S, E>() -> CompVFunc<K, BitVec<Box<[W]>>, S, E>
 where
     K: ?Sized,
@@ -788,6 +820,7 @@ where
 }
 
 /// Lender-based sequential path.
+#[cfg(feature = "rayon")]
 fn build_inner_seq<
     K: ?Sized + ToSig<S> + std::fmt::Debug,
     W: Word + BinSafe + Hash + MemSize + FlatType,
@@ -859,6 +892,7 @@ where
 }
 
 /// Slice-based parallel path.
+#[cfg(feature = "rayon")]
 fn build_inner_par<
     K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
     W: Word + BinSafe + Hash + MemSize + FlatType,
@@ -901,6 +935,7 @@ where
 /// `PackedEdge::MAX_VERTEX` and we cannot use the other two peelers. It
 /// materializes the edge list in a `Vec<[u32; 3]>` and the right-hand side in a
 /// `BitVec`, then peels by edge index.
+#[cfg(feature = "rayon")]
 fn peel_by_index<W: Word>(
     num_variables: usize,
     edges: &[[u32; 3]],
@@ -994,6 +1029,7 @@ fn peel_by_index<W: Word>(
 ///
 /// The caller checks `double_stack.upper_len()` against `edges.len()` to decide
 /// whether peeling succeeded.
+#[cfg(feature = "rayon")]
 fn _peel_by_index(num_variables: usize, edges: &[[u32; 3]]) -> (DoubleStack<u32>, Vec<u8>) {
     let n_edges = edges.len();
 
@@ -1052,6 +1088,7 @@ fn _peel_by_index(num_variables: usize, edges: &[[u32; 3]]) -> (DoubleStack<u32>
 /// The associated bit is stored in the high bit of `v2`. This gives us a very
 /// compact memory layout, at the cost of being limited to a maximum of
 /// [`PackedEdge::MAX_VERTICES`] = 2³¹ vertices.
+#[cfg(feature = "rayon")]
 #[derive(Clone, Copy, Default, Debug)]
 struct PackedEdge {
     /// First vertex.
@@ -1062,6 +1099,7 @@ struct PackedEdge {
     v2_bit: u32,
 }
 
+#[cfg(feature = "rayon")]
 impl PackedEdge {
     /// Maximum number of representable vertices, due to packing of the
     /// associated bit into the high bit of the third vertex.
@@ -1089,6 +1127,7 @@ impl PackedEdge {
     }
 }
 
+#[cfg(feature = "rayon")]
 impl std::ops::BitXorAssign for PackedEdge {
     #[inline(always)]
     fn bitxor_assign(&mut self, other: Self) {
@@ -1108,6 +1147,7 @@ impl std::ops::BitXorAssign for PackedEdge {
 ///
 /// [`XorGraph<PackedEdge>`]: super::peeling::XorGraph
 /// [`SigVal`]: crate::utils::sig_store::SigVal
+#[cfg(feature = "rayon")]
 fn populate_data_graph<W: BinSafe + Word, S, E>(
     shard: &[SigVal<S, W>],
     shard_edge: &E,
@@ -1158,6 +1198,7 @@ where
 }
 
 /// Reverse-peel assignment for a single [`PackedEdge`].
+#[cfg(feature = "rayon")]
 #[inline(always)]
 unsafe fn reverse_peel_assign<W: Word>(
     solution: &mut BitVec<&mut [W]>,
@@ -1195,6 +1236,7 @@ unsafe fn reverse_peel_assign<W: Word>(
 /// populated, peeled-edge metadata lands in a [`FastStack<PackedEdge>`] for
 /// cheap reverse-peel access. Faster than [`peel_by_edge_low_mem`] at the cost
 /// of an extra `n_edges × 16` bytes of peel-time memory.
+#[cfg(feature = "rayon")]
 fn peel_by_edge_high_mem<W: Word + BinSafe, S, E>(
     shard: std::sync::Arc<Vec<SigVal<S, W>>>,
     shard_edge: &E,
@@ -1305,6 +1347,7 @@ where
 /// worse locality on reverse-peel assignment.
 ///
 /// [`peel_by_edge_high_mem`]: peel_by_edge_high_mem
+#[cfg(feature = "rayon")]
 fn peel_by_edge_low_mem<W: Word + BinSafe, S, E>(
     shard: std::sync::Arc<Vec<SigVal<S, W>>>,
     shard_edge: &E,
@@ -1444,7 +1487,7 @@ impl<K: ?Sized, W: Word, S, E> From<CompVFunc<K, BitVecU<Box<[W]>>, S, E>>
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "rayon"))]
 mod codec_bound_tests {
     use super::*;
 

@@ -100,7 +100,8 @@ impl PrefixSumIntList {
     ///
     /// # Panics
     ///
-    /// Panics if the prefix sums overflow `usize`.
+    /// Panics if the prefix sums overflow `usize`, or if the number of values is
+    /// `usize::MAX` (the value count plus one overflows).
     ///
     /// # Examples
     ///
@@ -147,6 +148,13 @@ impl PrefixSumIntList {
 }
 
 /// Creates a `PrefixSumIntList` from an existing Elias--Fano structure.
+///
+/// # Panics
+///
+/// Panics if the Elias--Fano sequence is not a valid prefix-sum sequence, i.e.
+/// if it is empty, its first element is not zero, or its values are not
+/// nondecreasing. Use `try_from_prefix_sums` to handle those cases without
+/// panicking.
 impl<H: AsRef<[usize]> + SelectUnchecked, L: SliceByValue<Value = usize>>
     From<EliasFano<usize, H, L>> for PrefixSumIntList<EliasFano<usize, H, L>>
 {

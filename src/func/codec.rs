@@ -629,7 +629,10 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
         a[size - 1 - i] = frequencies[&symbol[i]] as u64;
     }
 
-    let mut overall_length: u64 = 0;
+    // Weighted length totals are sum(depth * frequency); with frequencies up to
+    // usize::MAX (the public Coder contract bounds only positivity, not the sum)
+    // a u64 total overflows. u128 holds any realistic alphabet.
+    let mut overall_length: u128 = 0;
     if size > 1 {
         // First pass, left to right: build sibling pointers.
         a[0] = a[0].wrapping_add(a[1]);
@@ -677,7 +680,8 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
             }
             while available > used {
                 let symbol_index = (size as i64 - next_i - 1) as usize;
-                overall_length += depth * frequencies[&symbol[symbol_index]] as u64;
+                // usize -> u128 is lossless widening.
+                overall_length += u128::from(depth) * frequencies[&symbol[symbol_index]] as u128;
                 a[next_i as usize] = depth;
                 next_i -= 1;
                 available -= 1;
@@ -700,7 +704,7 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
     // Truncate the table at the cutpoint where adding the next length
     // class would either exceed the table size cap or push us past the
     // cumulative-entropy threshold.
-    let mut accumulated: u64 = 0;
+    let mut accumulated: u128 = 0;
     let mut current_length = length[0];
     let mut d = 1usize;
     let mut cutpoint = 0usize;
@@ -717,6 +721,7 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
             if d >= max_decoding_table_len {
                 break;
             }
+            // f64 ratio of two u128 weighted totals is an intended approximation.
             if overall_length != 0
                 && (accumulated as f64) / (overall_length as f64) > entropy_threshold
             {
@@ -724,7 +729,8 @@ fn build_huffman_coder<W: PrimitiveInteger + Hash>(
             }
             current_length = length[cutpoint];
         }
-        accumulated += length[cutpoint] as u64 * frequencies[&symbol[cutpoint]] as u64;
+        // usize -> u128 is lossless widening (see overall_length).
+        accumulated += u128::from(length[cutpoint]) * frequencies[&symbol[cutpoint]] as u128;
         cutpoint += 1;
     }
 
@@ -809,5 +815,22 @@ mod tests {
         assert_eq!(coder.symbol.len(), 3);
         assert_eq!(coder.escape_codeword_len, 0);
         assert_eq!(coder.escaped_symbols_len, 0);
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn build_coder_handles_large_frequencies_without_overflow() {
+        // sum(depth * frequency) can exceed u64 even when the total frequency
+        // fits usize: depths [1, 2, 2] give overall_length == usize::MAX + 2 on a
+        // 64-bit target. Building must not overflow (pre-fix: debug panic /
+        // release wrap of the u64 weighted-length accumulators). unlimited()
+        // disables the entropy cut so both overall_length and accumulated consume
+        // all three terms; the total frequency stays usize::MAX so entropy()'s
+        // u64 count sum is unaffected.
+        let f: HashMap<u64, usize> = [(1u64, usize::MAX - 2), (2, 1), (3, 1)]
+            .into_iter()
+            .collect();
+        let coder: HuffmanCoder<u64> = HuffmanConf::unlimited().build_coder(&f);
+        assert!(!coder.codeword.is_empty());
     }
 }

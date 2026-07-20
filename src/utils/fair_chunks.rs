@@ -176,6 +176,11 @@ impl<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64> + IndexedSeq> FairC
     /// [`SuccUnchecked`]: crate::traits::SuccUnchecked
     /// [`new_with`]: Self::new_with
     /// [`EliasFano`]: crate::dict::EliasFano
+    ///
+    /// # Panics
+    ///
+    /// Panics if `cwf` is empty; a cumulative weight function must have at least
+    /// one element (the initial zero).
     #[must_use]
     pub fn new(target_weight: u64, cwf: I) -> Self {
         let len = cwf.len();

@@ -349,14 +349,22 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
         let mut inventory: Vec<usize> = Vec::with_capacity(inventory_words);
 
         let bits_per_word = B::Word::BITS as usize;
+        let num_words = bits.len().div_ceil(bits_per_word);
+        let tail_mask = super::tail_mask::<B::Word>(bits.len() % bits_per_word);
 
         let mut past_ones = 0;
         let mut next_quantum = 0;
         let mut spilled = 0;
 
         // First phase: we build an inventory for each one out of ones_per_inventory.
-        for (i, word) in bits.as_ref().iter().copied().map(|b| !b).enumerate() {
-            let ones_in_word = (word.count_ones() as usize).min(num_ones - past_ones);
+        // Take only the logical words and mask the complemented tail so a shrunk
+        // BitVec's stale backing words are not scanned (mirrors SelectAdapt and
+        // SelectZeroAdaptConst).
+        for (i, word) in bits.as_ref().iter().copied().take(num_words).enumerate() {
+            let word = super::mask_tail_word(!word, i + 1 == num_words, tail_mask);
+            let ones_in_word = usize::try_from(word.count_ones())
+                .expect("a word popcount always fits in usize")
+                .min(num_ones - past_ones);
 
             while past_ones + ones_in_word > next_quantum {
                 let in_word_index = word.select_in_word(next_quantum - past_ones);

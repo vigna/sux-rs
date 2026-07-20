@@ -42,17 +42,17 @@ impl<O: PartialEq + Copy, A: AsRef<[O]>> Types for SliceSeq<O, A> {
 
 impl<O: PartialEq + Copy, A: AsRef<[O]>> IndexedSeq for SliceSeq<O, A> {
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
-        // SAFETY: the caller guarantees `index < self.len()`, and `self.len()`
+        // SAFETY: the caller guarantees index < self.len(), and self.len()
         // is exactly the length of this backing slice.
         unsafe { *self.0.as_ref().get_unchecked(index) }
     }
 
     fn get(&self, index: usize) -> Self::Output<'_> {
-        // Snapshot the backing slice once. `AsRef::as_ref` gives no stability
-        // guarantee across calls, so the default `get` (which bounds-checks
-        // `self.len()` and then calls `get_unchecked`, each re-invoking
-        // `as_ref`) could bounds-check one slice and index another. Binding the
-        // slice once makes the checked access sound for any `AsRef` backend.
+        // Snapshot the backing slice once. AsRef::as_ref gives no stability
+        // guarantee across calls, so the default get (which bounds-checks
+        // self.len() and then calls get_unchecked, each re-invoking
+        // as_ref) could bounds-check one slice and index another. Binding the
+        // slice once makes the checked access sound for any AsRef backend.
         let slice = self.0.as_ref();
         slice[index]
     }

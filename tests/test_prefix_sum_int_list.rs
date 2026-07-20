@@ -17,7 +17,7 @@ fn to_vec_backend(list: PrefixSumIntList) -> PrefixSumIntList<Vec<usize>> {
     }
 }
 
-/// Builds a `PrefixSumIntList`, then verifies every element and prefix sum—
+/// Builds a `PrefixSumIntList`, then verifies every element and prefix sum:
 /// first with EfSeq backend, then with Vec<u64> backend.
 fn check(values: Vec<usize>) {
     let list = PrefixSumIntList::new(&values);

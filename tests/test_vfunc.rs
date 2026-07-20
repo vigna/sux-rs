@@ -251,7 +251,7 @@ fn test_par_builder_rejects_offline() {
     );
 }
 
-/// An `eps` outside the open interval (0, 1) — including NaN and ±∞ — is
+/// An `eps` outside the open interval (0, 1), including NaN and ±∞, is
 /// rejected up front rather than producing NaN shard sizing or an unbounded
 /// shard-resizing retry loop.
 #[test]

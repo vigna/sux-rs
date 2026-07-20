@@ -295,6 +295,16 @@ pub enum SolveError {
     UnsolvableShard,
 }
 
+/// Returns `true` when the largest shard deviates pathologically from the
+/// target ε-cost, i.e. exceeds `(1 + 5·eps)` times the average shard size. Both
+/// the sequential and parallel build paths use this predicate so their
+/// acceptance thresholds cannot drift apart.
+fn max_shard_too_big(max_shard: usize, num_keys: usize, num_shards: usize, eps: f64) -> bool {
+    // f64 ratio comparison; the usize->f64 precision loss is irrelevant at
+    // these magnitudes and matches the surrounding cost model.
+    max_shard as f64 > (1.0 + 5.0 * eps) * num_keys as f64 / num_shards as f64
+}
+
 /// The result of a peeling procedure.
 enum PeelResult<
     'a,
@@ -1012,8 +1022,7 @@ impl<
                 // meaningless; mirror the sequential path (see
                 // try_populate_and_build) and skip the check.
                 if self.shard_size_hint.is_none()
-                    && max_shard as f64
-                        > (1.0 + 5.0 * self.eps) * num_keys as f64 / shard_edge.num_shards() as f64
+                    && max_shard_too_big(max_shard, num_keys, shard_edge.num_shards(), self.eps)
                 {
                     Err(SolveError::MaxShardTooBig.into())
                 } else {
@@ -1204,8 +1213,12 @@ impl<
             ));
         }
 
+        // Reject pathological deviation from the target ε-cost, mirroring the
+        // parallel path (see par_solve). When shard_size_hint is set the
+        // sharding is sized for the hinted workload, so the per-key average is
+        // meaningless and the check is skipped.
         if self.shard_size_hint.is_none()
-            && max_shard as f64 > 1.01 * num_keys as f64 / shard_edge.num_shards() as f64
+            && max_shard_too_big(max_shard, num_keys, shard_edge.num_shards(), self.eps)
         {
             return Err(SolveError::MaxShardTooBig.into());
         }
@@ -1575,7 +1588,7 @@ impl<
                                         };
 
                                         let builder = shard.radix_sort_builder();
-                                        if self.num_threads == 1 {
+                                        if self.max_num_threads == 1 {
                                             builder
                                                 .with_single_threaded_tuner()
                                                 .with_parallel(false)
@@ -2321,5 +2334,19 @@ mod retry_state_tests {
         }
         let r = rs.handle_solve_result(Err::<(), _>(SolveError::MaxShardTooBig.into()), &mut pl);
         assert!(r.is_err(), "the 100th MaxShardTooBig must be fatal");
+    }
+
+    /// The shard-size acceptance threshold scales with `eps` and is shared by
+    /// the sequential and parallel paths. With `eps = 0.1` the limit is
+    /// `(1 + 5*0.1) = 1.5` times the average, so a shard 10% over average is
+    /// accepted (the old fixed `1.01` rule rejected it), while one 60% over is
+    /// rejected. At a tiny `eps` the threshold stays tight.
+    #[test]
+    fn max_shard_too_big_scales_with_eps() {
+        // average shard = 100 / 10 = 10; limit at eps=0.1 is 1.5 * 10 = 15.
+        assert!(!max_shard_too_big(11, 100, 10, 0.1));
+        assert!(max_shard_too_big(16, 100, 10, 0.1));
+        // At eps=0.001 the limit is 1.005 * 10 = 10.05, so 11 is rejected.
+        assert!(max_shard_too_big(11, 100, 10, 0.001));
     }
 }

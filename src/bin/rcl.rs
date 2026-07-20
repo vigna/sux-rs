@@ -87,7 +87,7 @@ fn compress<R: BufRead, const SORTED: bool>(
     let dst_file = std::fs::File::create(dest.borrow())
         .with_context(|| format!("cannot create file '{}'", dest.borrow()))?;
     let mut dst_file = std::io::BufWriter::new(dst_file);
-    // SAFETY: `rcl` was built by `RearCodedListBuilder`, so all serialized
+    // SAFETY: rcl was built by RearCodedListBuilder, so all serialized
     // representation invariants are established by safe construction.
     unsafe {
         rcl.serialize(&mut dst_file)
@@ -107,9 +107,9 @@ fn main() -> Result<()> {
             bail!("low-memory mode cannot read from standard input");
         }
         // Refuse to clobber the input: low-memory mode truncates the
-        // destination (`store_str` calls `File::create`) before the two
-        // streaming passes read the source, so `rcl f f --low-mem` would
-        // destroy `f` and emit an empty list.
+        // destination (store_str calls File::create) before the two
+        // streaming passes read the source, so rcl f f --low-mem would
+        // destroy f and emit an empty list.
         if let Ok(dst_canon) = std::fs::canonicalize(&args.dest) {
             let src_canon = std::fs::canonicalize(&args.source)
                 .with_context(|| format!("cannot resolve source path '{}'", args.source))?;

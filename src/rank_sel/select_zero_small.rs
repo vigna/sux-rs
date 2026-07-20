@@ -217,13 +217,21 @@ macro_rules! impl_select_zero_small {
 
                 let bits_per_word = C::Word::BITS as usize;
                 let words_per_superblock = 1usize << (32 - bits_per_word.ilog2());
-                for (sb, superblock) in small_counters
-                    .as_ref()
+                let num_bits = small_counters.len();
+                let num_words = num_bits.div_ceil(bits_per_word);
+                let tail_mask = super::tail_mask::<C::Word>(num_bits % bits_per_word);
+                for (sb, superblock) in small_counters.as_ref()[..num_words]
                     .chunks(words_per_superblock)
                     .enumerate()
                 {
                     inventory_begin.push(inventory.len());
-                    for (i, word) in superblock.iter().copied().map(|b| !b).enumerate() {
+                    for (i, word) in superblock.iter().copied().enumerate() {
+                        // Take only logical words and mask the complemented tail so a
+                        // shrunk backing's stale words are neither scanned nor recorded
+                        // as extra inventory_begin entries (mirrors SelectSmall).
+                        let global_word = sb * words_per_superblock + i;
+                        let word =
+                            super::mask_tail_word(!word, global_word + 1 == num_words, tail_mask);
                         let ones_in_word = (word.count_ones() as usize).min(num_ones - past_ones);
 
                         while past_ones + ones_in_word > next_quantum {
@@ -280,7 +288,9 @@ macro_rules! impl_select_zero_small {
                 + BitLength
                 + NumBits
                 + SelectZeroHinted,
-        > SelectZeroUnchecked for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
+            I: AsRef<[u32]>,
+            O: AsRef<[usize]>,
+        > SelectZeroUnchecked for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C, I, O>
         {
             /// # Safety
             ///
@@ -396,7 +406,9 @@ macro_rules! impl_select_zero_small {
                 + BitLength
                 + NumBits
                 + SelectZeroHinted,
-        > SelectZero for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
+            I: AsRef<[u32]>,
+            O: AsRef<[usize]>,
+        > SelectZero for SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C, I, O>
         {
         }
     };
@@ -408,7 +420,9 @@ impl<
         + AsRef<[C::Word]>
         + BitLength
         + NumBits,
-> SelectZeroSmall<2, 9, C>
+    I,
+    O,
+> SelectZeroSmall<2, 9, C, I, O>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -468,7 +482,9 @@ impl<
         + BitLength
         + NumBits
         + SelectZeroHinted,
-> SelectZeroSmall<1, 9, C>
+    I,
+    O,
+> SelectZeroSmall<1, 9, C, I, O>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -525,7 +541,9 @@ impl<
         + BitLength
         + NumBits
         + SelectZeroHinted,
-> SelectZeroSmall<1, 10, C>
+    I,
+    O,
+> SelectZeroSmall<1, 10, C, I, O>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -582,7 +600,9 @@ impl<
         + BitLength
         + NumBits
         + SelectZeroHinted,
-> SelectZeroSmall<1, 11, C>
+    I,
+    O,
+> SelectZeroSmall<1, 11, C, I, O>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -639,7 +659,9 @@ impl<
         + BitLength
         + NumBits
         + SelectZeroHinted,
-> SelectZeroSmall<3, 13, C>
+    I,
+    O,
+> SelectZeroSmall<3, 13, C, I, O>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -715,7 +737,9 @@ impl<
         + AsRef<[C::Word]>
         + BitLength
         + NumBits,
-> SelectZeroSmall<2, 8, C>
+    I,
+    O,
+> SelectZeroSmall<2, 8, C, I, O>
 {
     #[inline(always)]
     unsafe fn complete_select(
@@ -775,7 +799,9 @@ impl<
         + BitLength
         + NumBits
         + SelectZeroHinted,
-> SelectZeroSmall<1, 8, C>
+    I,
+    O,
+> SelectZeroSmall<1, 8, C, I, O>
 {
     #[inline(always)]
     unsafe fn complete_select(

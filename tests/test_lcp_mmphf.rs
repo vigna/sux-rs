@@ -180,7 +180,7 @@ fn test_monotone_1000_u64() -> Result<()> {
 
 #[test]
 fn test_dense_u64() -> Result<()> {
-    // Consecutive integers — minimal bit-level LCP differences.
+    // Consecutive integers: minimal bit-level LCP differences.
     let keys: Vec<u64> = (1000..1200).collect();
     let func: LcpMmphfInt<u64> =
         LcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
@@ -262,7 +262,7 @@ fn test_cardinality_mismatch_is_error() {
 
 #[test]
 fn test_signed_i64_crossing_zero() -> Result<()> {
-    // Keys spanning the sign boundary — the critical case.
+    // Keys spanning the sign boundary: the critical case.
     let keys: Vec<i64> = vec![-100, -10, -1, 0, 1, 10, 100];
     let func: LcpMmphfInt<i64> =
         LcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;

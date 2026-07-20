@@ -22,7 +22,7 @@ fn to_vec_delimiters<V: Word>(
 }
 
 /// Builds a `CompIntList` with the given `min` and `values`, then verifies
-/// every element is read back correctly—first with EfSeq delimiters, then
+/// every element is read back correctly: first with EfSeq delimiters, then
 /// with Vec<usize> delimiters.
 fn check<V: Word>(min: V, values: Vec<V>) {
     let list = CompIntList::new(min, &values);

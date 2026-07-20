@@ -298,8 +298,8 @@ impl<
     ///
     /// # Panics
     ///
-    /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit).
+    /// Panics if the bit vector length exceeds 2⁶² − 1 on 64-bit platforms
+    /// or 2³¹ − 1 on 32-bit platforms.
     #[must_use]
     pub fn new(bits: B) -> Self {
         assert_inventory_length(bits.len());

@@ -73,6 +73,19 @@ where
     }
 }
 
+// epserde's zero-copy deserialization turns a Box<[W]> hash store into a
+// borrowed &[W]; provide the same full-width truncation so mapped signed
+// functions remain queryable.
+impl<W: PrimitiveNumber> TruncateHash<W> for &[W]
+where
+    u64: PrimitiveNumberAs<W>,
+{
+    #[inline(always)]
+    fn truncate_hash(&self, hash: u64) -> W {
+        hash.as_to::<W>()
+    }
+}
+
 impl<B: Backend<Word: Word>> TruncateHash<B::Word> for BitFieldVec<B>
 where
     u64: PrimitiveNumberAs<B::Word>,
@@ -1435,7 +1448,8 @@ mod build {
         /// Creates a new signed LCP-based MMPHF for byte-sequence keys.
         ///
         /// The keys must be in strictly increasing lexicographic order
-        /// (byte-level comparison).
+        /// (byte-level comparison), and must either contain no zero bytes or be
+        /// prefix-free (a virtual zero byte is appended internally).
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
         /// module provides easy ways to build such lenders.
@@ -1517,7 +1531,9 @@ mod build {
         /// a slice, using parallel hash computation and default [`VBuilder`]
         /// settings.
         ///
-        /// The keys must be in strictly increasing lexicographic order.
+        /// The keys must be in strictly increasing lexicographic order, and must
+        /// either contain no zero bytes or be prefix-free (a virtual zero byte is
+        /// appended internally).
         ///
         /// This is a convenience wrapper around
         /// [`try_par_new_with_builder`] with `VBuilder::default()`.
@@ -1833,6 +1849,10 @@ mod build {
     {
         /// Creates a new signed two-step LCP-based MMPHF for byte-sequence keys.
         ///
+        /// The keys must be in strictly increasing lexicographic order, and must
+        /// either contain no zero bytes or be prefix-free (a virtual zero byte is
+        /// appended internally).
+        ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
@@ -1913,7 +1933,9 @@ mod build {
         /// keys from a slice, using parallel hash computation and default
         /// [`VBuilder`] settings.
         ///
-        /// The keys must be in strictly increasing lexicographic order.
+        /// The keys must be in strictly increasing lexicographic order, and must
+        /// either contain no zero bytes or be prefix-free (a virtual zero byte is
+        /// appended internally).
         ///
         /// This is a convenience wrapper around
         /// [`try_par_new_with_builder`] with `VBuilder::default()`.
@@ -2241,6 +2263,10 @@ mod build {
         /// Creates a new signed LCP-based MMPHF for byte-sequence keys with
         /// sub-word-width hashes.
         ///
+        /// The keys must be in strictly increasing lexicographic order, and must
+        /// either contain no zero bytes or be prefix-free (a virtual zero byte is
+        /// appended internally).
+        ///
         /// `hash_width` is the number of hash bits stored per key (must be in
         /// `1..=min(H::BITS, 64)`). False-positive probability is
         /// 2<sup>−`hash_width`</sup>.
@@ -2332,6 +2358,10 @@ mod build {
         /// Creates a new signed LCP-based MMPHF for byte-sequence keys with
         /// sub-word-width hashes from a slice, using parallel inner-function
         /// construction and default [`VBuilder`] settings.
+        ///
+        /// The keys must be in strictly increasing lexicographic order, and must
+        /// either contain no zero bytes or be prefix-free (a virtual zero byte is
+        /// appended internally).
         ///
         /// `hash_width` is the number of hash bits stored per key (must be in
         /// `1..=min(H::BITS, 64)`). False-positive probability is
@@ -2677,6 +2707,10 @@ mod build {
         /// Creates a new signed two-step LCP-based MMPHF for byte-sequence keys
         /// with sub-word-width hashes.
         ///
+        /// The keys must be in strictly increasing lexicographic order, and must
+        /// either contain no zero bytes or be prefix-free (a virtual zero byte is
+        /// appended internally).
+        ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
@@ -2762,6 +2796,10 @@ mod build {
         /// Creates a new signed two-step LCP-based MMPHF for byte-sequence
         /// keys with sub-word-width hashes from a slice, using parallel
         /// inner-function construction and default [`VBuilder`] settings.
+        ///
+        /// The keys must be in strictly increasing lexicographic order, and must
+        /// either contain no zero bytes or be prefix-free (a virtual zero byte is
+        /// appended internally).
         ///
         /// This is a convenience wrapper around
         /// [`try_par_new_with_builder`] with `VBuilder::default()`.

@@ -960,7 +960,7 @@ impl<'lend, L: IntoFallibleLender, E, F: FnMut() -> Result<L, E>> FallibleLendin
 impl<L: IntoFallibleLender, E, F: FnMut() -> Result<L, E>> FallibleLender
     for FromIntoFallibleLenderFactory<L, E, F>
 {
-    // SAFETY: the lend is that of `L::FallibleLender`.
+    // SAFETY: the lend is that of L::FallibleLender.
     unsafe_assume_covariance_fallible!();
     type Error = <L::FallibleLender as FallibleLender>::Error;
 

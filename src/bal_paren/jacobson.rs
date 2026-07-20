@@ -533,7 +533,12 @@ impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B, EfDict<usize>, PrefixSum
     ///
     /// # Panics
     ///
-    /// Panics if the parentheses are not balanced.
+    /// Panics if the parentheses are not balanced, or if the sum of the
+    /// pioneer match offsets overflows `usize`. The sum grows roughly
+    /// quadratically with the number of far-opening blocks, so on 32-bit
+    /// targets the overflow is reachable for large balanced inputs; in that
+    /// case, use [`new`] or [`new_with_bit_field_vec`], which store offsets
+    /// without summing them.
     ///
     /// [`new`]: JacobsonBalParen::new
     /// [`new_with_bit_field_vec`]: Self::new_with_bit_field_vec

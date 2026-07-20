@@ -152,8 +152,8 @@ fn test_branchy_decoder_rejects_unmatched_windows() {
 #[test]
 fn test_huffman_two_symbols() {
     // Regression: with exactly 2 symbols the Moffat-Katajainen
-    // second pass range `0..=size-3` would underflow to
-    // `0..=usize::MAX`, crashing with index out of bounds.
+    // second pass range 0..=size-3 would underflow to
+    // 0..=usize::MAX, crashing with index out of bounds.
     let f = freqs(&[(10, 7), (20, 3)]);
     let coder = HuffmanConf::new().build_coder(&f);
     assert_eq!(coder.max_codeword_len(), 1);
@@ -285,7 +285,7 @@ fn test_huffman_length_limited() {
 #[test]
 fn test_huffman_i8_with_negatives() {
     // Signed i8 values including negatives: -5 (0xFB), -1 (0xFF),
-    // 0, 42, 127 (i8::MAX — no longer reserved).
+    // 0, 42, 127 (i8::MAX, no longer reserved).
     let f = freqs_i8(&[(-5, 100), (-1, 50), (0, 30), (42, 20), (127, 10)]);
     let coder = <HuffmanConf as Codec<i8>>::build_coder(&HuffmanConf::new(), &f);
     let decoder = coder.clone().into_decoder();

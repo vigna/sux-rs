@@ -559,7 +559,6 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
     type Error = std::io::Error;
 
     fn try_push(&mut self, sig_val: SigVal<S, V>) -> Result<(), Self::Error> {
-        self.len += 1;
         // high_bits can be 0
         let buffer = sig_val
             .sig
@@ -568,10 +567,16 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
             .sig
             .high_bits(self.max_shard_high_bits, self.max_shard_mask) as usize;
 
+        // Account only after write_binary returns Ok, so a write error does not
+        // leave the counters claiming records that were never accepted. This
+        // fixes phantom counts; BufWriter still buffers, so it is not a
+        // transactional guarantee and the store should be discarded after an
+        // I/O error.
+        write_binary(&mut self.buckets[buffer], std::slice::from_ref(&sig_val))?;
+        self.len += 1;
         self.bucket_sizes[buffer] += 1;
         self.shard_sizes[shard] += 1;
-
-        write_binary(&mut self.buckets[buffer], std::slice::from_ref(&sig_val))
+        Ok(())
     }
 
     type ShardStore = ShardStoreImpl<S, V, BufReader<File>>;
@@ -625,9 +630,11 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
             "shard count mismatch"
         );
         for (b, mini_bucket) in buckets.into_vec().into_iter().enumerate() {
+            // Account only after the write succeeds (see try_push): a failure on
+            // bucket b must not inflate len/bucket_sizes for records not written.
+            write_binary(&mut self.buckets[b], &mini_bucket)?;
             self.len += mini_bucket.len();
             self.bucket_sizes[b] += mini_bucket.len();
-            write_binary(&mut self.buckets[b], &mini_bucket)?;
         }
         for (s, &c) in shard_sizes.iter().enumerate() {
             self.shard_sizes[s] += c;
@@ -733,7 +740,9 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
     /// Each thread populates a local store. The local stores are then merged
     /// into this store via [`merge_from`], which does a bulk copy per bucket.
     ///
-    /// Returns the maximum value seen (for bit-width computation).
+    /// Returns the maximum value seen (for bit-width computation). Since the
+    /// maximum is accumulated starting from [`V::default()`](Default), it is
+    /// meaningful for unsigned value types only.
     ///
     /// [`merge_from`]: SigStore::merge_from
     pub fn par_populate(
@@ -747,7 +756,10 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
     {
         use rayon::prelude::*;
 
-        let num_threads = max_num_threads.max(1);
+        // Never create more workers than there are records: an empty chunk still
+        // allocates a full per-shard counter array (1 << max_shard_high_bits), so
+        // cap the worker count by n to keep memory proportional to the input.
+        let num_threads = max_num_threads.max(1).min(n.max(1));
         let chunk_size = n.div_ceil(num_threads);
         let num_buckets = 1usize << self.buckets_high_bits;
         let num_shards = 1usize << self.max_shard_high_bits;
@@ -823,9 +835,11 @@ pub trait ShardStore<S: Sig, V: BinSafe> {
 
     /// Returns an iterator on shards, draining the store.
     ///
-    /// Like [`iter`], but frees each shard's memory as it is consumed.
-    /// After draining, subsequent calls to `iter` or `drain` will yield
-    /// no elements.
+    /// Like [`iter`], but frees each shard's memory as it is consumed and
+    /// drops the store's accounting for each drained shard, so `len` and
+    /// `shard_sizes` track only the data left after a full or partial drain.
+    /// After a full drain, subsequent `iter`/`drain` calls yield only empty
+    /// shards (no signature/value pairs).
     ///
     /// [`iter`]: Self::iter
     fn drain(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_>;
@@ -833,8 +847,9 @@ pub trait ShardStore<S: Sig, V: BinSafe> {
     /// Changes the shard granularity.
     ///
     /// `new_bits` must be at most [`max_shard_high_bits`]. Both coarsening
-    /// and refining are supported; the fine-grained counters from
-    /// construction are never discarded.
+    /// and refining are supported: changing the granularity re-aggregates the
+    /// fine-grained per-shard counters rather than discarding them (draining,
+    /// by contrast, does clear the counts for consumed shards).
     ///
     /// # Panics
     ///
@@ -872,7 +887,9 @@ pub struct ShardStoreImpl<S, V, B> {
     buckets: Vec<B>,
     /// The number of keys in each bucket.
     buf_sizes: Vec<usize>,
-    /// Per-shard key counts at `max_shard_high_bits` granularity (never changed).
+    /// Per-shard key counts at `max_shard_high_bits` granularity. Changing the
+    /// shard granularity re-aggregates these; draining clears the counts for
+    /// consumed shards so `len`/`shard_sizes` track only what remains.
     fine_shard_sizes: Vec<usize>,
     /// Keeps the backing temporary directory alive while the bucket readers
     /// are open (offline stores only). It must be declared after `buckets` so
@@ -991,6 +1008,10 @@ impl<
                     );
                     if !self.borrowed {
                         let _ = store.buckets[i].get_mut().set_len(0);
+                        // Drop the store's accounting for this drained bucket so
+                        // len() and any later iter() do not read a now-truncated
+                        // temp file.
+                        store.buf_sizes[i] = 0;
                     }
                     buf = &mut buf[bytes..];
                 }
@@ -999,9 +1020,17 @@ impl<
                     "offline signature store: shard counts are inconsistent"
                 );
             }
-            // SAFETY: every byte of all `len` elements was initialized by
+            // SAFETY: every byte of all len elements was initialized by
             // read_exact above from previously written BinSafe SigVal records.
             unsafe { shard.set_len(len) };
+            if !self.borrowed {
+                // The whole current shard has been drained; zero its fine-shard
+                // counters so the store's len()/shard_sizes() reflect the removal
+                // even if iteration stops here.
+                store.fine_shard_sizes[base..base + coarsen]
+                    .iter_mut()
+                    .for_each(|c| *c = 0);
+            }
 
             let res = shard;
             self.next_bucket += to_aggr;
@@ -1046,7 +1075,7 @@ impl<
                         "offline signature store: temp-file read failed (disk error or truncation)",
                     );
                     // SAFETY: read_exact initialized every byte of the
-                    // `to_read` BinSafe SigVal records in spare capacity.
+                    // to_read BinSafe SigVal records in spare capacity.
                     unsafe { buffer.set_len(to_read) };
 
                     // We copy each signature/value pair into its shard.
@@ -1061,6 +1090,17 @@ impl<
 
                 if !self.borrowed {
                     let _ = store.buckets[self.next_bucket].get_mut().set_len(0);
+                    // Reading the bucket materialized all of its shards into
+                    // self.shards and truncated the file, so its data is gone
+                    // from the store now; drop the accounting for the whole
+                    // contiguous fine-shard range (an early iterator drop must
+                    // not leave len() counting removed data).
+                    let fine_start = shard_offset * coarsen;
+                    let fine_end = (shard_offset + split_into) * coarsen;
+                    store.buf_sizes[self.next_bucket] = 0;
+                    store.fine_shard_sizes[fine_start..fine_end]
+                        .iter_mut()
+                        .for_each(|c| *c = 0);
                 }
                 self.next_bucket += 1;
             }
@@ -1095,7 +1135,16 @@ impl<
             let res = if self.borrowed {
                 store.buckets[self.next_bucket].clone()
             } else {
-                std::mem::take(&mut store.buckets[self.next_bucket])
+                let taken = std::mem::take(&mut store.buckets[self.next_bucket]);
+                // Draining removes the bucket; drop its accounting so
+                // len()/shard_sizes() stay honest if iteration stops here.
+                let coarsen = 1usize << (store.max_shard_high_bits - store.shard_high_bits);
+                let base = self.next_shard * coarsen;
+                store.buf_sizes[self.next_bucket] = 0;
+                store.fine_shard_sizes[base..base + coarsen]
+                    .iter_mut()
+                    .for_each(|c| *c = 0);
+                taken
             };
 
             self.next_bucket += 1;
@@ -1119,7 +1168,15 @@ impl<
                     shard.extend(store.buckets[i].iter());
                 } else {
                     shard.extend(std::mem::take(&mut store.buckets[i]).iter());
+                    store.buf_sizes[i] = 0;
                 }
+            }
+            if !self.borrowed {
+                // The current shard has been drained; zero its fine-shard
+                // counters so len()/shard_sizes() reflect the removal.
+                store.fine_shard_sizes[base..base + coarsen]
+                    .iter_mut()
+                    .for_each(|c| *c = 0);
             }
 
             let res = shard;
@@ -1153,6 +1210,15 @@ impl<
                 }
                 if !self.borrowed {
                     drop(std::mem::take(&mut store.buckets[self.next_bucket]));
+                    // The whole bucket was materialized into self.shards; drop
+                    // its accounting for the full contiguous fine-shard range so
+                    // an early iterator drop cannot leave len() overcounting.
+                    let fine_start = shard_offset * coarsen;
+                    let fine_end = (shard_offset + split_into) * coarsen;
+                    store.buf_sizes[self.next_bucket] = 0;
+                    store.fine_shard_sizes[fine_start..fine_end]
+                        .iter_mut()
+                        .for_each(|c| *c = 0);
                 }
                 self.next_bucket += 1;
             }
@@ -1262,7 +1328,18 @@ where
     F: Fn(&SigVal<S, V>) -> bool + Send + Sync,
 {
     fn shard_sizes(&self) -> Box<dyn Iterator<Item = usize> + '_> {
-        Box::new(self.shard_sizes.iter().copied())
+        // Report the cached filtered count per shard, but zero for any shard the
+        // inner store has already drained. Draining a bucket in the split case
+        // removes several inner shards at once, so masking by
+        // inner.shard_sizes() (which is zero exactly for drained or empty
+        // shards) keeps len() honest after a partial drain without rescanning.
+        Box::new(
+            self.shard_sizes
+                .iter()
+                .copied()
+                .zip(self.inner.shard_sizes())
+                .map(|(filtered, inner)| if inner == 0 { 0 } else { filtered }),
+        )
     }
 
     fn set_shard_high_bits(&mut self, new_bits: u32) {
@@ -1293,7 +1370,9 @@ where
     fn drain(&mut self) -> Box<dyn Iterator<Item = Arc<Vec<SigVal<S, V>>>> + Send + Sync + '_> {
         let filter = &self.filter;
         // Same filtering as iter, but drains the inner store so each shard's
-        // memory is released as it is consumed.
+        // memory is released as it is consumed. Post-drain counts stay correct
+        // via shard_sizes(), which masks the cached filtered counts by the inner
+        // store's now-drained shard sizes.
         Box::new(
             self.inner.drain().map(move |shard| {
                 Arc::new(shard.iter().filter(|sv| filter(sv)).copied().collect())
@@ -1536,4 +1615,241 @@ mod filtered_lazy_tests {
         assert_eq!(iter_pulls.load(Ordering::Relaxed), 1);
         assert_eq!(rest.len(), 1);
     }
+
+    fn _check_filtered_drain<SS: ShardStore<[u64; 2], u64>>(
+        label: &str,
+        build: impl Fn() -> anyhow::Result<SS>,
+        shard_bits: u32,
+        pred: fn(&SigVal<[u64; 2], u64>) -> bool,
+    ) -> anyhow::Result<()> {
+        // A full drain empties the filtered view.
+        let mut inner = build()?;
+        inner.set_shard_high_bits(shard_bits);
+        let counts: Vec<usize> = inner
+            .iter()
+            .map(|sh| sh.iter().filter(|sv| pred(sv)).count())
+            .collect();
+        let total: usize = counts.iter().sum();
+        let mut fs = FilteredShardStore::new(&mut inner, shard_bits, pred, counts);
+        assert_eq!(fs.len(), total, "{label}: filtered len before drain");
+        let drained: usize = fs.drain().map(|s| s.len()).sum();
+        assert_eq!(drained, total, "{label}: filtered drained count");
+        assert_eq!(
+            fs.len(),
+            0,
+            "{label}: filtered store empty after full drain"
+        );
+        drop(fs);
+
+        // Partial drain then drop: the split path removes a whole inner bucket
+        // (several shards) at once, so the wrapper's reported length must be
+        // reconciled against the inner store's drained shard sizes rather than
+        // its stale cached filtered counts.
+        let mut inner = build()?;
+        inner.set_shard_high_bits(shard_bits);
+        let counts: Vec<usize> = inner
+            .iter()
+            .map(|sh| sh.iter().filter(|sv| pred(sv)).count())
+            .collect();
+        let mut fs = FilteredShardStore::new(&mut inner, shard_bits, pred, counts);
+        {
+            let mut it = fs.drain();
+            let _ = it.next();
+        }
+        let reported = fs.len();
+        let actual: usize = fs.iter().map(|s| s.len()).sum();
+        assert_eq!(
+            reported, actual,
+            "{label}: filtered len must match readable data after partial drain"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_filtered_drain_lifecycle() -> anyhow::Result<()> {
+        // Inner bucket_high_bits (2) < filtered shard_high_bits (4): draining one
+        // wrapped shard removes a whole inner bucket = several shards.
+        let n = 2000usize;
+        let pred: fn(&SigVal<[u64; 2], u64>) -> bool = |sv| sv.val % 2 == 0;
+        let build_online = || -> anyhow::Result<_> {
+            let mut st = new_online::<[u64; 2], u64>(2, 8, None)?;
+            let mut rand = SmallRng::seed_from_u64(1);
+            for _ in 0..n {
+                st.try_push(SigVal {
+                    sig: [rand.random(), rand.random()],
+                    val: rand.random(),
+                })?;
+            }
+            st.into_shard_store(4)
+        };
+        let build_offline = || -> anyhow::Result<_> {
+            let mut st = new_offline::<[u64; 2], u64>(2, 8, None)?;
+            let mut rand = SmallRng::seed_from_u64(1);
+            for _ in 0..n {
+                st.try_push(SigVal {
+                    sig: [rand.random(), rand.random()],
+                    val: rand.random(),
+                })?;
+            }
+            st.into_shard_store(4)
+        };
+        _check_filtered_drain("online", build_online, 4, pred)?;
+        _check_filtered_drain("offline", build_offline, 4, pred)?;
+        Ok(())
+    }
+
+    /// A failed bucket write in offline mode must not inflate the record
+    /// counters (len/bucket_sizes/shard_sizes); otherwise into_shard_store would
+    /// later read more records than were actually written. `/dev/full` fails
+    /// every write with ENOSPC, and a zero-capacity BufWriter forwards writes to
+    /// it without buffering.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_offline_try_push_write_error_keeps_counts_zero() -> anyhow::Result<()> {
+        use std::fs::File;
+        use std::io::BufWriter;
+        let mut store = new_offline::<[u64; 1], u8>(0, 0, None)?;
+        store.buckets[0] =
+            BufWriter::with_capacity(0, File::options().write(true).open("/dev/full")?);
+        let err = store
+            .try_push(SigVal {
+                sig: [1u64],
+                val: 0u8,
+            })
+            .unwrap_err();
+        assert_eq!(
+            err.raw_os_error(),
+            Some(28),
+            "expected ENOSPC from /dev/full"
+        );
+        assert_eq!(store.len, 0, "len must not count an unwritten record");
+        assert_eq!(store.bucket_sizes[0], 0);
+        assert_eq!(store.shard_sizes[0], 0);
+        Ok(())
+    }
+
+    /// Same accounting invariant for the offline merge_from fast path.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_offline_merge_from_write_error_keeps_counts_zero() -> anyhow::Result<()> {
+        use std::fs::File;
+        use std::io::BufWriter;
+        let mut store = new_offline::<[u64; 1], u8>(0, 0, None)?;
+        store.buckets[0] =
+            BufWriter::with_capacity(0, File::options().write(true).open("/dev/full")?);
+        let buckets = vec![vec![SigVal {
+            sig: [1u64],
+            val: 0u8,
+        }]]
+        .into_boxed_slice();
+        let shard_sizes = vec![1usize].into_boxed_slice();
+        // SAFETY: a single bucket and a single shard match the store's layout
+        // (buckets_high_bits == max_shard_high_bits == 0); the write fails before
+        // any counter is applied, which is precisely the invariant asserted below.
+        let err = unsafe { store.merge_from(buckets, shard_sizes) }.unwrap_err();
+        assert_eq!(
+            err.raw_os_error(),
+            Some(28),
+            "expected ENOSPC from /dev/full"
+        );
+        assert_eq!(store.len, 0);
+        assert_eq!(store.bucket_sizes[0], 0);
+        assert_eq!(store.shard_sizes[0], 0);
+        Ok(())
+    }
+
+    fn _check_drain<SS: ShardStore<[u64; 2], u64>>(
+        label: &str,
+        build: impl Fn() -> anyhow::Result<SS>,
+        n: usize,
+    ) -> anyhow::Result<()> {
+        // A full drain must leave the store reporting itself empty and, for an
+        // offline store, must not panic on a later iteration by reading a
+        // now-truncated temp file.
+        let mut ss = build()?;
+        assert_eq!(ss.len(), n, "{label}: len before drain");
+        let drained: usize = ss.drain().map(|s| s.len()).sum();
+        assert_eq!(drained, n, "{label}: total drained");
+        assert_eq!(
+            ss.len(),
+            0,
+            "{label}: store must be empty after a full drain"
+        );
+        assert_eq!(
+            ss.shard_sizes().sum::<usize>(),
+            0,
+            "{label}: shard_sizes after drain"
+        );
+        assert_eq!(
+            ss.iter().map(|s| s.len()).sum::<usize>(),
+            0,
+            "{label}: re-iteration after drain"
+        );
+
+        // A partial drain (consume one shard, drop the iterator) must leave len()
+        // matching the data still readable, even when the split path removed a
+        // whole bucket at once.
+        let mut ss = build()?;
+        {
+            let mut it = ss.drain();
+            let _ = it.next();
+        }
+        let reported = ss.len();
+        let actual: usize = ss.iter().map(|s| s.len()).sum();
+        assert_eq!(
+            reported, actual,
+            "{label}: len must match readable data after partial drain"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_drain_lifecycle_updates_counts() -> anyhow::Result<()> {
+        // (buckets_high_bits, shard_high_bits, max_shard_high_bits)
+        let cases = [
+            (4u32, 4u32, 4u32), // shards == buckets, coarsen 1
+            (4, 4, 8),          // shards == buckets, coarsen > 1
+            (8, 4, 8),          // aggregate buckets into shards
+            (8, 4, 4),          // aggregate, several buckets per fine shard
+            (2, 4, 8),          // split buckets into shards
+            (2, 4, 4),          // split, coarsen 1
+        ];
+        let n = 2000usize;
+        for (b, s, m) in cases {
+            let online = format!("online b={b} s={s} m={m}");
+            _check_drain(
+                &online,
+                || {
+                    let mut st = new_online::<[u64; 2], u64>(b, m, None)?;
+                    let mut rand = SmallRng::seed_from_u64(0);
+                    for _ in 0..n {
+                        st.try_push(SigVal {
+                            sig: [rand.random(), rand.random()],
+                            val: rand.random(),
+                        })?;
+                    }
+                    st.into_shard_store(s)
+                },
+                n,
+            )?;
+            let offline = format!("offline b={b} s={s} m={m}");
+            _check_drain(
+                &offline,
+                || {
+                    let mut st = new_offline::<[u64; 2], u64>(b, m, None)?;
+                    let mut rand = SmallRng::seed_from_u64(0);
+                    for _ in 0..n {
+                        st.try_push(SigVal {
+                            sig: [rand.random(), rand.random()],
+                            val: rand.random(),
+                        })?;
+                    }
+                    st.into_shard_store(s)
+                },
+                n,
+            )?;
+        }
+        Ok(())
+    }
+    use rand::{RngExt, SeedableRng, rngs::SmallRng};
 }

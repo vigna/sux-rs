@@ -1044,7 +1044,7 @@ macro_rules! test_value_ops_word_type {
         {
             for offset in 1..bpw {
                 let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
-                // Prepend `offset` zero bits
+                // Prepend offset zero bits
                 for _ in 0..offset {
                     bv.push(false);
                 }
@@ -1132,7 +1132,7 @@ macro_rules! test_value_ops_word_type {
                         (((1 as $W) << width) - (1 as $W)) & (!(0 as $W) / 7)
                     };
                     let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
-                    // Prepend `offset` bits to misalign
+                    // Prepend offset bits to misalign
                     for _ in 0..offset {
                         bv.push(true);
                     }
@@ -1146,7 +1146,7 @@ macro_rules! test_value_ops_word_type {
             }
         }
 
-        // append_value masks excess bits in `value`
+        // append_value masks excess bits in value
         {
             for width in 1..bpw {
                 let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
@@ -1292,7 +1292,7 @@ fn test_par_count_ones_binds_slice_once() {
     }
 
     // Non-word-aligned length so the residual-word branch runs: a re-fetch
-    // there would read the cleared `rest` slice and miss the single logical
+    // there would read the cleared rest slice and miss the single logical
     // one.
     let bits = usize::BITS as usize;
     let alt = AlternatingBits {

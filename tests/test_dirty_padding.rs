@@ -29,14 +29,14 @@ fn dirty_words() -> Vec<u64> {
 }
 
 fn clean_bit_vec() -> BitVec<Vec<u64>> {
-    // SAFETY: `clean_words` returns exactly `LEN.div_ceil(WORD_BITS)` initialized
-    // 64-bit words, so `LEN` bits fit in the owned backing storage.
+    // SAFETY: clean_words returns exactly LEN.div_ceil(WORD_BITS) initialized
+    // 64-bit words, so LEN bits fit in the owned backing storage.
     unsafe { BitVec::from_raw_parts(clean_words(), LEN) }
 }
 
 fn dirty_bit_vec() -> BitVec<Vec<u64>> {
-    // SAFETY: `dirty_words` preserves the same owned backing length as
-    // `clean_words`; only padding bits after `LEN` are set.
+    // SAFETY: dirty_words preserves the same owned backing length as
+    // clean_words; only padding bits after LEN are set.
     unsafe { BitVec::from_raw_parts(dirty_words(), LEN) }
 }
 
@@ -205,7 +205,7 @@ fn test_select_small_ignores_stale_backing_words() {
 
 #[test]
 fn test_full_word_boundary_ignores_stale_backing_words() {
-    // `len % 64 == 0`: the tail mask is a no-op, so only the logical word
+    // len % 64 == 0: the tail mask is a no-op, so only the logical word
     // bound protects against the stale third backing word.
     assert_stale_rank(&Rank9::new(popped_ones(192, 128)), 128);
 
