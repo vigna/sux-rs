@@ -26,14 +26,14 @@ pub fn read_concat_lines(filename: &str, n: usize) -> anyhow::Result<(String, Ve
     // Cap the initial capacity hint: the default parallel path passes
     // n = usize::MAX (read until EOF), which would abort with a capacity
     // overflow. The Vec grows naturally past the cap.
-    let mut offsets: Vec<usize> = Vec::with_capacity(n.min(1 << 20));
+    let mut offsets: Vec<usize> = Vec::with_capacity(n.saturating_add(1).min(1 << 20));
     offsets.push(0);
     let mut lender = crate::utils::DekoBufLineLender::from_path(filename)?;
     let mut count = 0usize;
-    while let Some(line) = lender.next()? {
-        if count == n {
+    while count < n {
+        let Some(line) = lender.next()? else {
             break;
-        }
+        };
         buffer.push_str(line);
         offsets.push(buffer.len());
         count += 1;
@@ -228,18 +228,26 @@ fn parse_duration(value: &str) -> anyhow::Result<Duration> {
             continue;
         } else {
             let dur: u64 = acc.parse()?;
-            match c {
-                's' => duration += Duration::from_secs(dur),
-                'm' => duration += Duration::from_secs(dur * 60),
-                'h' => duration += Duration::from_secs(dur * 3600),
-                'd' => duration += Duration::from_secs(dur * 86400),
+            let scale = match c {
+                's' => 1,
+                'm' => 60,
+                'h' => 3600,
+                'd' => 86400,
                 _ => anyhow::bail!("invalid duration suffix: {c}"),
-            }
+            };
+            let seconds = dur
+                .checked_mul(scale)
+                .ok_or_else(|| anyhow::anyhow!("duration component overflows u64 seconds"))?;
+            duration = duration
+                .checked_add(Duration::from_secs(seconds))
+                .ok_or_else(|| anyhow::anyhow!("duration exceeds the supported range"))?;
             acc.clear();
         }
     }
     if !acc.is_empty() {
-        duration += Duration::from_millis(acc.parse()?);
+        duration = duration
+            .checked_add(Duration::from_millis(acc.parse()?))
+            .ok_or_else(|| anyhow::anyhow!("duration exceeds the supported range"))?;
     }
     Ok(duration)
 }
@@ -252,4 +260,36 @@ pub struct LogIntervalArg {
     /// interpreted as milliseconds. Examples: "10s", "1m30s", "500".​
     #[arg(long, value_parser = parse_duration, default_value = "10s")]
     pub log_interval: Duration,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn duration_overflow_is_an_error() {
+        assert!(parse_duration(&format!("{}d", u64::MAX)).is_err());
+        assert!(parse_duration(&format!("{}s1s", u64::MAX)).is_err());
+    }
+
+    #[cfg(feature = "deko")]
+    #[test]
+    fn concatenated_reader_does_not_read_past_limit() -> anyhow::Result<()> {
+        use std::io::Write;
+
+        let mut file = tempfile::NamedTempFile::new()?;
+        file.write_all(b"good\n\xff\n")?;
+        let path = file.path().to_str().expect("temporary path is UTF-8");
+        let (buffer, offsets) = read_concat_lines(path, 1)?;
+        assert_eq!(buffer, "good");
+        assert_eq!(offsets, [0, 4]);
+
+        let mut invalid = tempfile::NamedTempFile::new()?;
+        invalid.write_all(b"\xff\n")?;
+        let path = invalid.path().to_str().expect("temporary path is UTF-8");
+        let (buffer, offsets) = read_concat_lines(path, 0)?;
+        assert!(buffer.is_empty());
+        assert_eq!(offsets, [0]);
+        Ok(())
+    }
 }

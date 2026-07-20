@@ -25,7 +25,9 @@ use sux::func::{CompVFunc, VBuilder};
 use sux::init_env_logger;
 use sux::traits::TryIntoUnaligned;
 use sux::utils::lenders::FromSlice;
-use sux::utils::{DekoBufLineLender, FromCloneableIntoIterator, Sig, SigVal, ToSig};
+use sux::utils::{
+    DekoBufLineLender, FromCloneableIntoIterator, FromIntoFallibleLenderFactory, Sig, SigVal, ToSig,
+};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -235,7 +237,9 @@ where
             ensure!(key_count == n, "key count {key_count} != value count {n}");
         }
         if args.sequential {
-            let keys = DekoBufLineLender::from_path(filename)?.take(n);
+            let keys = FromIntoFallibleLenderFactory::new(|| {
+                DekoBufLineLender::from_path(filename).map(|keys| keys.take(n))
+            })?;
             let func = <CompVFunc<str, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                 keys,
                 FromSlice::new(&values),

@@ -21,7 +21,10 @@ use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
 use sux::prelude::VBuilder;
 use sux::traits::TryIntoUnaligned;
-use sux::utils::{DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig};
+use sux::utils::{
+    DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, FromIntoFallibleLenderFactory, Sig,
+    SigVal, ToSig,
+};
 
 #[derive(Parser, Debug)]
 #[command(about = "Creates a (possibly signed) VFunc mapping each input to its rank and serializes it with ε-serde.", long_about = None, next_line_help = true, max_term_width = 100)]
@@ -83,7 +86,9 @@ macro_rules! filename_save_sign_seq(
     ($h: ty, $builder:expr, $filename: expr, $func: expr, $unaligned: expr, $n: expr, $pl: expr) => {{
         let func =
             <SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_new_with_builder(
-                DekoBufLineLender::from_path($filename)?.take($n),
+                FromIntoFallibleLenderFactory::new(|| {
+                    DekoBufLineLender::from_path($filename).map(|keys| keys.take($n))
+                })?,
                 $builder,
                 &mut $pl,
             )?;
@@ -200,7 +205,9 @@ where
             match args.hash_type {
                 None => {
                     let func = <VFunc<str, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
-                        DekoBufLineLender::from_path(filename)?.take(n),
+                        FromIntoFallibleLenderFactory::new(|| {
+                            DekoBufLineLender::from_path(filename).map(|keys| keys.take(n))
+                        })?,
                         FromCloneableIntoIterator::from(0_usize..),
                         builder,
                         &mut pl,

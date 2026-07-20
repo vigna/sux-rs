@@ -10,12 +10,14 @@ use std::io::Cursor;
 use std::io::Write;
 
 use anyhow::{Result, bail, ensure};
-use fallible_iterator::{FallibleIterator, IntoFallibleIterator};
+use fallible_iterator::{
+    FallibleIterator, IntoFallibleIterator, IteratorExt as FallibleIteratorExt,
+};
 #[cfg(feature = "flate2")]
 use flate2::write::GzEncoder;
 use lender::{
-    FallibleIteratorExt, FallibleLender, FallibleLending, IntoFallibleLender, IntoIteratorExt,
-    IteratorExt, Lender, check_covariance_fallible, covar_mut, fallible_lend,
+    FallibleLender, FallibleLending, IntoFallibleLender, IntoIteratorExt, IteratorExt, Lender,
+    check_covariance_fallible, covar_mut, fallible_lend,
 };
 
 use sux::utils::lenders::*;
@@ -97,9 +99,13 @@ fn test_zstd_line_lender() -> Result<()> {
 fn test_gzip_line_lender() -> Result<()> {
     use anyhow::Context;
 
-    let mut encoder = GzEncoder::new(Vec::new(), flate2::Compression::default());
-    encoder.write_all(b"foo\nbar\nbaz\n")?;
-    let mut buf = Cursor::new(encoder.finish().context("Could not encode")?);
+    let mut first = GzEncoder::new(Vec::new(), flate2::Compression::default());
+    first.write_all(b"foo\n")?;
+    let mut encoded = first.finish().context("Could not encode first member")?;
+    let mut second = GzEncoder::new(Vec::new(), flate2::Compression::default());
+    second.write_all(b"bar\nbaz\n")?;
+    encoded.extend(second.finish().context("Could not encode second member")?);
+    let mut buf = Cursor::new(encoded);
 
     test_lender(GzipLineLender::new(&mut buf).context("Could not initialize lender")?)?;
 
@@ -491,16 +497,12 @@ fn test_from_into_lender_factory_new() {
 // Test FromIntoFallibleLenderFactory adapter
 #[test]
 fn test_from_into_fallible_lender_factory_new() {
-    use fallible_iterator::IteratorExt as FallibleIteratorExt;
-    use lender::FromFallibleIter;
-
     let mut count = 0;
     let mut lender = FromIntoFallibleLenderFactory::new(|| {
         count += 1;
-        Ok::<
-            FromFallibleIter<fallible_iterator::IntoFallible<std::ops::Range<i32>>>,
-            core::convert::Infallible,
-        >((0..count).into_fallible().into_fallible_lender())
+        Ok::<_, core::convert::Infallible>(lender::from_into_fallible_iter(
+            (0..count).into_fallible(),
+        ))
     })
     .unwrap();
 
@@ -542,43 +544,6 @@ fn test_fuse_rewind() {
     let mut fused = fused.rewind().unwrap();
 
     assert_eq!(fused.next().unwrap(), Some(&1));
-}
-
-#[test]
-fn test_take_rewind() {
-    let data = vec![1, 2, 3, 4, 5];
-    let lender = FromSlice::new(data.as_slice());
-    let mut taken = lender.take(4);
-
-    // Take first two, leaving take count at 2
-    assert_eq!(taken.next().unwrap(), Some(&1));
-    assert_eq!(taken.next().unwrap(), Some(&2));
-
-    // Rewind - note: into_parts returns remaining count (2), not original (4)
-    let mut taken = taken.rewind().unwrap();
-
-    // After rewind with remaining count=2, we can only take 2 more
-    assert_eq!(taken.next().unwrap(), Some(&1));
-    assert_eq!(taken.next().unwrap(), Some(&2));
-    assert_eq!(taken.next().unwrap(), None);
-}
-
-#[test]
-fn test_skip_rewind() {
-    let data = vec![1, 2, 3, 4, 5];
-    let lender = FromSlice::new(data.as_slice());
-    let mut skipped = lender.skip(2);
-
-    // After skip, we start at element 3
-    assert_eq!(skipped.next().unwrap(), Some(&3));
-    assert_eq!(skipped.next().unwrap(), Some(&4));
-
-    // Rewind - note: into_parts returns remaining skip count (0), not original (2)
-    let mut skipped = skipped.rewind().unwrap();
-
-    // After rewind with skip=0, we start from element 1
-    assert_eq!(skipped.next().unwrap(), Some(&1));
-    assert_eq!(skipped.next().unwrap(), Some(&2));
 }
 
 #[test]

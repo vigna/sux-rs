@@ -71,3 +71,24 @@ fn test_bit_signed_vfunc() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_invalid_hash_width_is_error() {
+    let mut pl = ProgressLogger::default();
+    for hash_width in [0, 65] {
+        let result =
+            MyBitSignedVFunc::try_new(FromCloneableIntoIterator::from(0..1), hash_width, &mut pl);
+        assert!(result.is_err(), "hash width {hash_width} must be rejected");
+    }
+}
+
+#[test]
+fn test_u128_hash_storage_is_queryable() -> Result<()> {
+    type U128Signed = SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, Box<[u128]>>;
+    let mut pl = ProgressLogger::default();
+    let func = U128Signed::try_new(FromCloneableIntoIterator::from(0..10), &mut pl)?;
+    for key in 0..10 {
+        assert_eq!(func.get(key), Some(key));
+    }
+    Ok(())
+}

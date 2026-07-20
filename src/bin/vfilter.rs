@@ -22,7 +22,8 @@ use sux::init_env_logger;
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSliceMut, TryIntoUnaligned, Word};
 use sux::utils::{
-    BinSafe, DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig,
+    BinSafe, DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, FromIntoFallibleLenderFactory,
+    Sig, SigVal, ToSig,
 };
 use value_traits::slices::SliceByValueMut;
 
@@ -135,7 +136,9 @@ where
         }
         if args.sequential {
             let filter = <VFilter<str, Box<[W]>, S, E>>::try_new_with_builder(
-                DekoBufLineLender::from_path(filename)?.take(n),
+                FromIntoFallibleLenderFactory::new(|| {
+                    DekoBufLineLender::from_path(filename).map(|keys| keys.take(n))
+                })?,
                 builder,
                 &mut pl,
             )?;
@@ -219,7 +222,9 @@ where
         }
         if args.sequential {
             let filter = <VFilter<str, BitFieldVec<Box<[W]>>, S, E>>::try_new_with_builder(
-                DekoBufLineLender::from_path(filename)?.take(n),
+                FromIntoFallibleLenderFactory::new(|| {
+                    DekoBufLineLender::from_path(filename).map(|keys| keys.take(n))
+                })?,
                 args.bits,
                 builder,
                 &mut pl,

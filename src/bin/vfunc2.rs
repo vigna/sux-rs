@@ -25,7 +25,10 @@ use sux::func::VFunc2;
 use sux::func::shard_edge::*;
 use sux::init_env_logger;
 use sux::traits::TryIntoUnaligned;
-use sux::utils::{DekoBufLineLender, FromCloneableIntoIterator, FromSlice, Sig, SigVal, ToSig};
+use sux::utils::{
+    DekoBufLineLender, FromCloneableIntoIterator, FromIntoFallibleLenderFactory, FromSlice, Sig,
+    SigVal, ToSig,
+};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -226,7 +229,9 @@ where
             builder = builder.expected_num_keys(n_hint);
         }
         if args.sequential {
-            let keys = DekoBufLineLender::from_path(filename)?.take(n);
+            let keys = FromIntoFallibleLenderFactory::new(|| {
+                DekoBufLineLender::from_path(filename).map(|keys| keys.take(n))
+            })?;
             let func = <VFunc2<str, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                 keys,
                 FromSlice::new(&values),
