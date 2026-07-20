@@ -746,7 +746,7 @@ where
     /// The iterator's first [`next()`] call returns the
     /// predecessor value itself; the first
     /// [`prev()`] call returns the element
-    /// after the predecessor.
+    /// before the predecessor.
     ///
     /// # Safety
     ///

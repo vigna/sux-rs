@@ -399,16 +399,27 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
             B::Word::BITS as usize - 4,
             B::Word::BITS as usize,
         );
-        let base_ptr = self.bits.as_ref().as_ptr() as *const u8;
-        let start_bit = index * self.bit_width;
-        // Check that the read_unaligned of size_of::<W>() bytes starting at
-        // byte offset start_bit / 8 does not exceed the allocation.
-        debug_assert!(
-            start_bit / 8 + size_of::<B::Word>() <= std::mem::size_of_val(self.bits.as_ref())
-        );
-        let ptr = unsafe { base_ptr.add(start_bit / 8) } as *const B::Word;
-        let word = unsafe { core::ptr::read_unaligned(ptr) };
-        (word >> (start_bit % 8)) & self.mask
+        #[cfg(target_endian = "big")]
+        {
+            // On big-endian targets the byte-oriented unaligned read of the
+            // little-endian branch would reassemble bytes in the wrong order,
+            // so we fall back to the endian-independent word-based read.
+            // SAFETY: the caller guarantees that index is in bounds.
+            return unsafe { self.get_value_unchecked(index) };
+        }
+        #[cfg(target_endian = "little")]
+        {
+            let base_ptr = self.bits.as_ref().as_ptr() as *const u8;
+            let start_bit = index * self.bit_width;
+            // Check that the read_unaligned of size_of::<W>() bytes starting at
+            // byte offset start_bit / 8 does not exceed the allocation.
+            debug_assert!(
+                start_bit / 8 + size_of::<B::Word>() <= std::mem::size_of_val(self.bits.as_ref())
+            );
+            let ptr = unsafe { base_ptr.add(start_bit / 8) } as *const B::Word;
+            let word = unsafe { core::ptr::read_unaligned(ptr) };
+            (word >> (start_bit % 8)) & self.mask
+        }
     }
 
     /// Returns the backend of the vector as a slice of words.

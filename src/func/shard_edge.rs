@@ -845,7 +845,7 @@ mod fuse {
     unsafe impl ShardEdge<[u64; 2], 3> for Fuse3NoShards {
         type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
-        type Vertex = u64;
+        type Vertex = usize;
 
         fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 
@@ -1298,7 +1298,7 @@ mod mwhc {
     unsafe impl ShardEdge<[u64; 2], 3> for Mwhc3NoShards {
         type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
-        type Vertex = u64;
+        type Vertex = usize;
 
         fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
 

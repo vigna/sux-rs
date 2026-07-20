@@ -45,7 +45,7 @@ fn parse_density(value: &str) -> Result<f64> {
     let density = value
         .parse::<f64>()
         .with_context(|| format!("invalid density '{value}'"))?;
-    if !density.is_finite() || !(0.0 < density && density <= 1.0) {
+    if !(density.is_finite() && 0.0 < density && density <= 1.0) {
         bail!("density must be finite and in (0, 1]");
     }
     Ok(density)

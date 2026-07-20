@@ -29,8 +29,9 @@
 //! - [`SignedFunc`]: [Functions] verified by hash signatures.
 //! - [`SliceSeq`]: Adapters exposing slice references as indexed sequences.
 //!
-//! Most structures implement the [`TryIntoUnaligned`] trait, allowing them
-//! to be converted into (usually faster) structures using unaligned access.
+//! The [`EliasFano`] and [`VFilter`] structures implement the
+//! [`TryIntoUnaligned`] trait, allowing them to be converted into (usually
+//! faster) structures using unaligned access.
 //!
 //! [integer indices to values]: crate::traits::IndexedSeq
 //! [lookups]: crate::traits::IndexedDict

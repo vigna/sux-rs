@@ -969,16 +969,16 @@ fn test_append_cross_backend() {
 #[test]
 fn test_append_dirty_last_word() {
     // Test appending to a bit vector with a dirty last word
-    let mut a: BitVec = BitVec::new(0);
+    let mut a: BitVec<Vec<u64>> = BitVec::new(0);
     a.append_value(0xFFFFFFFFFFFFFFFF, 64);
     a.resize(50, false); // dirty last word 
     a.append_value(0, 64); // append to dirty last word
     assert!(!a[51]);
 
-    let mut a: BitVec = BitVec::new(0);
+    let mut a: BitVec<Vec<u64>> = BitVec::new(0);
     a.append_value(0xFFFFFFFFFFFFFFFF, 64);
     a.resize(50, false); // dirty last word 
-    a.append(&bit_vec![0, 0, 0, 0, 0]);
+    a.append(&bit_vec![u64: 0, 0, 0, 0, 0]);
     assert!(!a[51]);
 }
 
@@ -1262,6 +1262,46 @@ fn test_bit_vec_chunks_mut_size_hint() {
     assert_eq!(chunks.size_hint(), (4, Some(4)));
     assert_eq!(chunks.len(), 4);
     assert_eq!(chunks.count(), 4);
+}
+
+#[cfg(feature = "rayon")]
+#[test]
+fn test_par_count_ones_binds_slice_once() {
+    use core::cell::Cell;
+
+    /// A backend whose `as_ref()` alternates between two slices, modeling the
+    /// absence of any stability guarantee in `AsRef`.
+    struct AlternatingBits {
+        first: Vec<usize>,
+        rest: Vec<usize>,
+        len_bits: usize,
+        calls: Cell<usize>,
+    }
+
+    impl AsRef<[usize]> for AlternatingBits {
+        fn as_ref(&self) -> &[usize] {
+            let call = self.calls.replace(self.calls.get() + 1);
+            if call == 0 { &self.first } else { &self.rest }
+        }
+    }
+
+    impl BitLength for AlternatingBits {
+        fn len(&self) -> usize {
+            self.len_bits
+        }
+    }
+
+    // Non-word-aligned length so the residual-word branch runs: a re-fetch
+    // there would read the cleared `rest` slice and miss the single logical
+    // one.
+    let bits = usize::BITS as usize;
+    let alt = AlternatingBits {
+        first: vec![0, 1],
+        rest: vec![0, 0],
+        len_bits: bits + 1,
+        calls: Cell::new(0),
+    };
+    assert_eq!(BitVecOps::<usize>::par_count_ones(&alt), 1);
 }
 
 #[test]

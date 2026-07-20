@@ -792,6 +792,7 @@ mod build {
                 use rayon::prelude::*;
                 use sync_cell_slice::SyncSlice;
                 let shards: Vec<_> = store.iter().collect();
+                let num_shards = shards.len();
                 let mut shard_pl = pl.clone();
                 shard_pl.item_name("shard");
                 shard_pl.expected_updates(Some(shards.len()));
@@ -807,7 +808,7 @@ mod build {
                         }
                     }
                 });
-                shard_pl.update_with_count(num_keys);
+                shard_pl.update_with_count(num_shards);
                 shard_pl.done();
             }
             pl.pop_log_target();

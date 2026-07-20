@@ -185,16 +185,41 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
         if width == 0 {
             return W::ZERO;
         }
-        let base_ptr = self.as_ref().as_ptr() as *const u8;
-        debug_assert!(
-            pos / 8 + size_of::<W>() <= std::mem::size_of_val(self.as_ref()),
-            "unaligned read at bit position {} would exceed allocation",
-            pos,
-        );
-        let ptr = unsafe { base_ptr.add(pos / 8) } as *const W;
-        let word = unsafe { core::ptr::read_unaligned(ptr) };
-        let l = W::BITS as usize - width;
-        ((word >> (pos % 8)) << l) >> l
+        #[cfg(target_endian = "big")]
+        {
+            // On big-endian targets the byte-oriented unaligned read of the
+            // little-endian branch would reassemble bytes in the wrong order,
+            // so we fall back to an endian-independent word-based extraction.
+            // The caller's padding-word guarantee keeps the two-word straddle
+            // in bounds.
+            let word_bits = W::BITS as usize;
+            let data = self.as_ref();
+            let word_index = pos / word_bits;
+            let bit_index = pos % word_bits;
+            let low = data[word_index] >> bit_index;
+            let raw = if bit_index + width <= word_bits {
+                low
+            } else {
+                low | (data[word_index + 1] << (word_bits - bit_index))
+            };
+            let l = word_bits - width;
+            return (raw << l) >> l;
+        }
+        #[cfg(target_endian = "little")]
+        {
+            let base_ptr = self.as_ref().as_ptr() as *const u8;
+            debug_assert!(
+                pos / 8 + size_of::<W>() <= std::mem::size_of_val(self.as_ref()),
+                "unaligned read at bit position {} would exceed allocation",
+                pos,
+            );
+            // SAFETY: the caller guarantees the padding word and in-bounds
+            // range; the debug assertion re-checks the derived byte range.
+            let ptr = unsafe { base_ptr.add(pos / 8) } as *const W;
+            let word = unsafe { core::ptr::read_unaligned(ptr) };
+            let l = W::BITS as usize - width;
+            ((word >> (pos % 8)) << l) >> l
+        }
     }
 
     /// Return the result of an unaligned read of a full word starting at bit
@@ -223,14 +248,37 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
     /// must not exceed the allocation.
     #[inline(always)]
     unsafe fn get_unaligned_unchecked(&self, pos: usize) -> W {
-        let base_ptr = self.as_ref().as_ptr() as *const u8;
-        debug_assert!(
-            pos / 8 + size_of::<W>() <= std::mem::size_of_val(self.as_ref()),
-            "unaligned read at bit position {} would exceed allocation",
-            pos,
-        );
-        let ptr = unsafe { base_ptr.add(pos / 8) } as *const W;
-        unsafe { core::ptr::read_unaligned(ptr) >> (pos % 8) }
+        #[cfg(target_endian = "big")]
+        {
+            // On big-endian targets the byte-oriented unaligned read of the
+            // little-endian branch would reassemble bytes in the wrong order,
+            // so we fall back to an endian-independent word-based read. The
+            // caller's padding-word guarantee keeps the two-word straddle in
+            // bounds.
+            let word_bits = W::BITS as usize;
+            let data = self.as_ref();
+            let word_index = pos / word_bits;
+            let bit_index = pos % word_bits;
+            return if bit_index == 0 {
+                data[word_index]
+            } else {
+                (data[word_index] >> bit_index) | (data[word_index + 1] << (word_bits - bit_index))
+            };
+        }
+        #[cfg(target_endian = "little")]
+        {
+            let base_ptr = self.as_ref().as_ptr() as *const u8;
+            debug_assert!(
+                pos / 8 + size_of::<W>() <= std::mem::size_of_val(self.as_ref()),
+                "unaligned read at bit position {} would exceed allocation",
+                pos,
+            );
+            // SAFETY: the caller guarantees the read stays within the
+            // allocation (a padding word is present); read_unaligned handles
+            // the possible misalignment explicitly.
+            let ptr = unsafe { base_ptr.add(pos / 8) } as *const W;
+            unsafe { core::ptr::read_unaligned(ptr) >> (pos % 8) }
+        }
     }
 
     /// Returns an iterator over the bits of this bit vector as booleans.
@@ -292,8 +340,7 @@ pub trait BitVecOps<W: Word>: AsRef<[W]> + BitLength {
             .map(|x| x.count_ones() as usize)
             .sum();
         if residual != 0 {
-            num_ones +=
-                (self.as_ref()[full_words] << (bits_per_word - residual)).count_ones() as usize
+            num_ones += (bits[full_words] << (bits_per_word - residual)).count_ones() as usize
         }
 
         num_ones

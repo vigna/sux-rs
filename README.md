@@ -31,8 +31,9 @@ from [the DSI Utilities] and new structures.
 - [lists] (e.g., [compressed lists of integers]);
 - basic structures for [balanced parentheses].
 
-The focus is on performance (e.g., there are unchecked versions of all methods
-and support for [unaligned access]) and on flexible composability (e.g., you can
+The focus is on performance (e.g., query and access APIs commonly provide
+unchecked variants, and there is support for [unaligned access]) and on flexible
+composability (e.g., you can
 fine-tune your [`EliasFano`] instance by choosing different types of internal
 indices, and whether to index zeros or ones). Whenever possible, there are
 mapping methods that replace an underlying structure with another one, provided
@@ -45,7 +46,7 @@ other libraries.
 
 This crate does not provide high-level genericity on bit vectors: [operations on
 bit vectors] are based on a word type `W`, on the [`BitLength`] trait, which
-provides the bit length, and on the traits [`AsRef<W>`]/[`AsMut<W>`], which
+provides the bit length, and on the traits [`AsRef<[W]>`]/[`AsMut<[W]>`], which
 provide concrete access to the underlying data. This approach makes it possible
 to use any structure that implements these traits as a bit vector, and to
 implement your own bit vector if you need specific features (e.g., support for
@@ -118,10 +119,9 @@ usage and debugging memory-related issues. For example, this is the output of
 
 ## Binaries
 
-A few binaries make it possible to build and serialize structures with ε-serde
-(e.g., `rcl`, `vfunc`, and `vfilter`). Moreover, there are examples benchmarking
-the structures (e.g., `bench_rear_coded_list`, `bench_vfunc`, and
-`bench_vfilter`). You have to use the feature `cli` to build them.
+Several binaries build and serialize structures with ε-serde (for example,
+`rcl`, `vfunc`, and `vfilter`); enable the `cli` feature to build them.
+Benchmarking examples declare their own required features in `Cargo.toml`.
 
 ## Features
 
@@ -217,15 +217,15 @@ Union nor the Italian MUR can be held responsible for them.
 [lists of strings compressed by prefix omission]: https://docs.rs/sux/latest/sux/dict/rear_coded_list/
 [Sux]: https://sux.di.unimi.it/
 [the DSI Utilities]: https://dsiutils.di.unimi.it/
-[`BitLength`]: https://docs.rs/sux/latest/sux/traits/rank_sel/trait.BitLength.html
+[`BitLength`]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/trait.BitLength.html
 [`Rank9`]: https://docs.rs/sux/latest/sux/rank_sel/struct.Rank9.html
 [`SelectSmall`]: https://docs.rs/sux/latest/sux/rank_sel/struct.SelectSmall.html
-[`SelectAdapt`]: https://docs.rs/sux/latest/sux/rank_sel/struct.SelectAdapt.html
+[`SelectAdapt`]: https://docs.rs/sux/latest/sux/rank_sel/select_adapt/struct.SelectAdapt.html
 [static functions]: https://docs.rs/sux/latest/sux/func/vfunc/struct.VFunc.html
 [monotone minimal perfect hash functions]: https://docs.rs/sux/latest/sux/func/lcp_mmphf/index.html
 [static filters]: https://docs.rs/sux/latest/sux/dict/vfilter/struct.VFilter.html
 [partial arrays]: https://docs.rs/sux/latest/sux/array/struct.PartialArray.html
-[opertions on bit vectors]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
+[operations on bit vectors]: https://docs.rs/sux/latest/sux/traits/bit_vec_ops/index.html
 [unaligned access]: https://docs.rs/sux/latest/sux/traits/trait.TryIntoUnaligned.html
 [`value-traits`]: https://crates.io/crates/value-traits
 [serde]: https://crates.io/crates/serde/

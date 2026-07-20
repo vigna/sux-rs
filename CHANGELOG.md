@@ -108,6 +108,13 @@
   implementations, lazy `FilteredShardStore` iteration, and a restored early
   exit in the adaptive select builders.
 
+- `JacobsonBalParen` pioneer construction is linear rather than quadratic on
+  deeply nested parentheses, with 4.30x to 14.75x speedups at 4,096 to 16,384
+  pairs on the benchmark host.
+
+- Signed LCP and two-step LCP queries reuse the key signature for rank lookup
+  and verification instead of hashing byte-sequence keys twice.
+
 ### Changed
 
 - Field naming and logging have been reorganized. Serialized structures

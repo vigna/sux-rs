@@ -47,6 +47,24 @@ impl<O: PartialEq + Copy, A: AsRef<[O]>> IndexedSeq for SliceSeq<O, A> {
         unsafe { *self.0.as_ref().get_unchecked(index) }
     }
 
+    fn get(&self, index: usize) -> Self::Output<'_> {
+        // Snapshot the backing slice once. `AsRef::as_ref` gives no stability
+        // guarantee across calls, so the default `get` (which bounds-checks
+        // `self.len()` and then calls `get_unchecked`, each re-invoking
+        // `as_ref`) could bounds-check one slice and index another. Binding the
+        // slice once makes the checked access sound for any `AsRef` backend.
+        let slice = self.0.as_ref();
+        slice[index]
+    }
+
+    fn first_value(&self) -> Option<Self::Output<'_>> {
+        self.0.as_ref().first().copied()
+    }
+
+    fn last_value(&self) -> Option<Self::Output<'_>> {
+        self.0.as_ref().last().copied()
+    }
+
     fn len(&self) -> usize {
         self.0.as_ref().len()
     }
