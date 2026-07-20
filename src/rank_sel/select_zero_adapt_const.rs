@@ -209,8 +209,9 @@ impl<B, I, const LOG2_ZEROS_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENT
     /// `usize::BITS as usize` is a lossless u32->usize widening.
     const PARAMS_OK: () = assert!(
         LOG2_ZEROS_PER_INVENTORY < usize::BITS as usize
-            && LOG2_WORDS_PER_SUBINVENTORY < usize::BITS as usize,
-        "LOG2_ZEROS_PER_INVENTORY and LOG2_WORDS_PER_SUBINVENTORY must be less than the word width"
+            && LOG2_WORDS_PER_SUBINVENTORY
+                <= super::select_adapt_const::MAX_CONST_LOG2_WORDS_PER_SUBINVENTORY,
+        "LOG2_ZEROS_PER_INVENTORY must be less than the word width and LOG2_WORDS_PER_SUBINVENTORY must not exceed the supported maximum"
     );
 
     // Compute adaptively the number of 32-bit subinventory entries
@@ -294,9 +295,14 @@ impl<
         let mut spilled = 0;
 
         let bits_per_word = B::Word::BITS as usize;
+        let num_words = bits.len().div_ceil(bits_per_word);
+        let tail_mask = super::tail_mask::<B::Word>(bits.len() % bits_per_word);
 
-        // First phase: we build an inventory for each one out of ones_per_inventory.
-        for (i, word) in bits.as_ref().iter().copied().map(|b| !b).enumerate() {
+        // First phase: we build an inventory for each zero out of
+        // zeros_per_inventory. Only logical words are scanned, and the tail
+        // word is masked so that dirty padding bits are not counted as zeros.
+        for (i, word) in bits.as_ref().iter().copied().take(num_words).enumerate() {
+            let word = super::mask_tail_word(!word, i + 1 == num_words, tail_mask);
             let ones_in_word = (word.count_ones() as usize).min(num_ones - past_ones);
 
             while past_ones + ones_in_word > next_quantum {
@@ -674,8 +680,7 @@ impl<
 {
 }
 
-#[cfg(test)]
-#[cfg(target_pointer_width = "64")]
+#[cfg(all(test, feature = "slow_tests", target_pointer_width = "64"))]
 mod tests {
     use std::collections::BTreeSet;
 

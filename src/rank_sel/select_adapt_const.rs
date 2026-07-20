@@ -24,6 +24,11 @@ use crate::{
     },
 };
 
+/// Maximum supported `LOG2_WORDS_PER_SUBINVENTORY`, chosen so that the
+/// inventory position encoding never overflows.
+pub(super) const MAX_CONST_LOG2_WORDS_PER_SUBINVENTORY: usize =
+    if usize::BITS == 64 { 62 } else { 31 };
+
 use crate::ambassador_impl_Index;
 use crate::traits::BitVecOps;
 use crate::traits::ambassador_impl_Backend;
@@ -228,8 +233,8 @@ impl<B, I, const LOG2_ONES_PER_INVENTORY: usize, const LOG2_WORDS_PER_SUBINVENTO
     /// `usize::BITS as usize` is a lossless u32->usize widening.
     const PARAMS_OK: () = assert!(
         LOG2_ONES_PER_INVENTORY < usize::BITS as usize
-            && LOG2_WORDS_PER_SUBINVENTORY < usize::BITS as usize,
-        "LOG2_ONES_PER_INVENTORY and LOG2_WORDS_PER_SUBINVENTORY must be less than the word width"
+            && LOG2_WORDS_PER_SUBINVENTORY <= MAX_CONST_LOG2_WORDS_PER_SUBINVENTORY,
+        "LOG2_ONES_PER_INVENTORY must be less than the word width and LOG2_WORDS_PER_SUBINVENTORY must not exceed the supported maximum"
     );
 
     /// Computes adaptively the number of 32-bit subinventory entries
@@ -696,8 +701,7 @@ impl<
 {
 }
 
-#[cfg(test)]
-#[cfg(target_pointer_width = "64")]
+#[cfg(all(test, feature = "slow_tests", target_pointer_width = "64"))]
 mod tests {
     use std::collections::BTreeSet;
 

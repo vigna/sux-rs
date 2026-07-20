@@ -159,12 +159,13 @@ impl<B, C> Rank9<B, C> {
     ///
     /// # Safety
     ///
-    /// This method is unsafe because it is not possible to guarantee that the
-    /// new backend is identical to the old one as a bit vector.
-    pub unsafe fn map<B1: Backend<Word: Word> + AsRef<[B1::Word]> + BitLength>(
-        self,
-        f: impl FnOnce(B) -> B1,
-    ) -> Rank9<B1, C> {
+    /// `f` must return a backend containing exactly the same logical bits and
+    /// logical length as the old backend.
+    pub unsafe fn map<B1>(self, f: impl FnOnce(B) -> B1) -> Rank9<B1, C>
+    where
+        B: Backend,
+        B1: Backend<Word = B::Word> + AsRef<[B::Word]> + BitLength,
+    {
         Rank9 {
             bits: f(self.bits),
             counts: self.counts,
@@ -282,14 +283,14 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCount
     /// bv.pop();
     /// let rank9 = Rank9::new(bv);
     /// // This is safe as there is at least one unused bit
-    /// assert_eq!(unsafe { rank9.rank_unchecked(8) }, rank9.num_ones());
+    /// assert_eq!(unsafe { rank9.rank_unchecked(rank9.len()) }, rank9.num_ones());
     /// # }
     /// ```
     ///
     /// [the length of the underlying bit vector]: crate::traits::BitLength::len
     #[inline(always)]
     unsafe fn rank_unchecked(&self, pos: usize) -> usize {
-        debug_assert!(pos < self.bits.len().next_multiple_of(64));
+        debug_assert!(pos / 64 < self.bits.as_ref().len());
         unsafe {
             let word_pos = pos / 64;
             let bit_pos = pos % 64;

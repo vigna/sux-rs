@@ -382,6 +382,15 @@ fn test_with_inv_dense_all_ones() {
 }
 
 #[test]
+fn test_with_inv_extreme_span() {
+    let bits = BitVec::<Vec<u64>>::with_value(64, true);
+    let sel = SelectSmall::<2, 9, _>::with_inv(RankSmall::<64, 2, 9, _>::new(bits), usize::MAX);
+    for k in 0..64 {
+        assert_eq!(sel.select(k), Some(k));
+    }
+}
+
+#[test]
 #[should_panic(expected = "blocks_per_inv must be positive")]
 fn test_with_inv_zero_blocks() {
     let bits = BitVec::<Vec<u64>>::with_value(64, true);

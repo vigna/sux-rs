@@ -17,7 +17,26 @@ use rand::{RngExt, SeedableRng};
 use sux::prelude::*;
 use sux::traits::Word;
 
-use value_traits::slices::{SliceByValue, SliceByValueMut};
+use value_traits::iter::{IterateByValue, IterateByValueFrom};
+use value_traits::slices::{
+    SliceByValue, SliceByValueMut, SliceByValueSubsliceRange, SliceByValueSubsliceRangeMut,
+};
+
+#[test]
+fn test_subslice_iterators_respect_range() {
+    let mut bit_fields = BitFieldVec::<Vec<usize>>::new(4, 8);
+    for value in 0..8 {
+        bit_fields.set_value(value, value);
+    }
+
+    let subslice = bit_fields.index_subslice(2..6);
+    assert_eq!(subslice.iter_value().collect::<Vec<_>>(), vec![2, 3, 4, 5]);
+    assert_eq!(subslice.iter_value_from(2).collect::<Vec<_>>(), vec![4, 5]);
+
+    let subslice = bit_fields.index_subslice_mut(3..7);
+    assert_eq!(subslice.iter_value().collect::<Vec<_>>(), vec![3, 4, 5, 6]);
+    assert_eq!(subslice.iter_value_from(3).collect::<Vec<_>>(), vec![6]);
+}
 
 #[test]
 fn test() {

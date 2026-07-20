@@ -201,8 +201,17 @@ pub fn find_near_close(word: usize) -> usize {
 ///
 /// This uses the same `BYTE_MIN_EXCESS` and `BYTE_FIND_CLOSE` tables
 /// as [`find_near_close`].
+///
+/// # Panics
+///
+/// Panics if the requested far close does not exist. A `k` outside
+/// [0 . . `usize::BITS`) is caught by a debug assertion only.
 #[inline]
 pub fn find_far_close(word: usize, k: i64) -> usize {
+    debug_assert!(
+        (0..WORD_BITS as i64).contains(&k),
+        "find_far_close: k={k} is outside 0..{WORD_BITS}"
+    );
     let bytes = word.to_le_bytes();
     let target = -(k + 1) as i32; // target global excess
     let mut excess: i32 = 0; // cumulative excess at byte boundary
@@ -360,25 +369,30 @@ fn build_pioneers(words: impl AsRef<[usize]> + BitLength) -> (EfDict<usize>, Vec
     }
     assert!(depth == 0, "Unbalanced parentheses");
 
-    let mut count = vec![0i32; num_words];
-    let mut residual = vec![0usize; num_words];
+    // Stack of processed blocks that still contain unmatched far closes,
+    // as (block, remaining unmatched far closes, far closes already
+    // consumed). Since blocks are scanned right-to-left, the nearest such
+    // block is always the last element, so matching a far open is
+    // constant-time instead of scanning all blocks to its right; each block
+    // is pushed and popped at most once, making construction linear.
+    let mut live_close_blocks: Vec<(usize, usize, usize)> = Vec::new();
 
     let mut opening_pioneers = Vec::new();
     let mut opening_pioneer_matches = Vec::new();
 
     // Scan words right-to-left to identify far opening parentheses
     // and select pioneers among them.
-    for block in (0..num_words).rev() {
+    for (block, &word) in words.iter().take(num_words).enumerate().rev() {
         let l = std::cmp::min(WORD_BITS, len - block * WORD_BITS);
 
         // The last word has no words to its right, so it cannot
         // contain far opening parentheses.
         if block != num_words - 1 {
             let mut excess = 0i32;
-            let mut count_far_opening = count_far_open(words[block], l) as i32;
+            let mut count_far_opening = count_far_open(word, l);
 
             for j in (0..l).rev() {
-                if words[block] & (1usize << j) == 0 {
+                if word & (1usize << j) == 0 {
                     // Closed parenthesis
                     if excess > 0 {
                         excess = -1;
@@ -389,49 +403,39 @@ fn build_pioneers(words: impl AsRef<[usize]> + BitLength) -> (EfDict<usize>, Vec
                     // Open parenthesis
                     excess += 1;
                     if excess > 0 {
-                        let mut matching_block = block;
-                        loop {
-                            matching_block += 1;
-                            if count[matching_block] != 0 {
-                                break;
-                            }
-                        }
                         count_far_opening -= 1;
 
-                        if {
-                            count[matching_block] -= 1;
-                            count[matching_block]
-                        } == 0
-                            || count_far_opening == 0
-                        {
+                        let (matching_block, remaining, consumed) = live_close_blocks
+                            .last_mut()
+                            .expect("Unbalanced parentheses");
+                        *remaining -= 1;
+                        let (matching_block, matching_residual, exhausted) =
+                            (*matching_block, *consumed, *remaining == 0);
+                        *consumed += 1;
+
+                        if exhausted || count_far_opening == 0 {
                             let pos = block * WORD_BITS + j;
                             let match_pos = matching_block * WORD_BITS
-                                + find_far_close(
-                                    words[matching_block],
-                                    residual[matching_block] as i64,
-                                );
+                                + find_far_close(words[matching_block], matching_residual as i64);
                             opening_pioneers.push(pos);
                             opening_pioneer_matches.push(match_pos - pos);
                         }
-                        residual[matching_block] += 1;
+
+                        if exhausted {
+                            live_close_blocks.pop();
+                        }
                     }
                 }
             }
         }
-        count[block] = count_far_close(words[block], l) as i32;
+
+        let far_closes = count_far_close(word, l);
+        if far_closes != 0 {
+            live_close_blocks.push((block, far_closes, 0));
+        }
     }
 
-    /*let open_parens = words.count_ones();
-    assert_eq!(
-        2 * open_parens,
-        words.len(),
-        "There are {} open parentheses but {} closed parentheses",
-        open_parens,
-        words.len() - open_parens
-    );*/
-    for &c in &count {
-        assert!(c == 0, "Unbalanced parentheses");
-    }
+    assert!(live_close_blocks.is_empty(), "Unbalanced parentheses");
 
     // Reverse to get increasing order.
     opening_pioneers.reverse();
@@ -822,6 +826,13 @@ mod tests {
         assert_eq!(find_far_close(0, 0), 0);
         assert_eq!(find_far_close(0, 1), 1);
         assert_eq!(find_far_close(0, 2), 2);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "outside")]
+    fn test_find_far_close_rejects_large_index() {
+        let _ = find_far_close(0, 1_i64 << 32);
     }
 
     #[cfg(target_pointer_width = "64")]

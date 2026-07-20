@@ -442,8 +442,16 @@ pub struct BitIter<'a, W: Word, B: ?Sized> {
 }
 
 impl<'a, W: Word, B: ?Sized + AsRef<[W]>> BitIter<'a, W, B> {
+    /// Creates an iterator over the first `len` bits in `bits`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the backing slice cannot hold `len` bits.
     pub fn new(bits: &'a B, len: usize) -> Self {
-        debug_assert!(len <= bits.as_ref().len() * W::BITS as usize);
+        assert!(
+            len.div_ceil(W::BITS as usize) <= bits.as_ref().len(),
+            "Bit-vector backing storage is too short for {len} bits"
+        );
         BitIter {
             bits,
             len,
@@ -871,8 +879,16 @@ pub struct AtomicBitIter<'a, A, B: ?Sized> {
 }
 
 impl<'a, A: PrimitiveAtomicUnsigned<Value: Word>, B: ?Sized + AsRef<[A]>> AtomicBitIter<'a, A, B> {
+    /// Creates an iterator over the first `len` atomic bits in `bits`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the backing slice cannot hold `len` bits.
     pub fn new(bits: &'a B, len: usize) -> Self {
-        debug_assert!(len <= bits.as_ref().len() * A::Value::BITS as usize);
+        assert!(
+            len.div_ceil(A::Value::BITS as usize) <= bits.as_ref().len(),
+            "Atomic bit-vector backing storage is too short for {len} bits"
+        );
         AtomicBitIter {
             bits,
             len,

@@ -11,7 +11,8 @@
     feature(stdarch_aarch64_prefetch)
 )]
 #![cfg_attr(feature = "iter_advance_by", feature(iter_advance_by))]
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(unconditional_recursion)]
 #![allow(clippy::duplicated_attributes)]
 #![allow(clippy::len_without_is_empty)]

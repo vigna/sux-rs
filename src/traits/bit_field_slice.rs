@@ -53,7 +53,6 @@ use ambassador::delegatable_trait;
 use atomic_primitive::PrimitiveAtomicUnsigned;
 use core::sync::atomic::Ordering;
 use impl_tools::autoimpl;
-use num_primitive::PrimitiveInteger;
 #[cfg(feature = "rayon")]
 use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
 use value_traits::slices::{SliceByValue, SliceByValueMut};
@@ -109,8 +108,18 @@ pub trait BitFieldSliceMut: BitFieldSlice + SliceByValueMut {
 
 /// Returns the mask to apply to values to ensure they fit in the given bit
 /// width, i.e., the value 2^`bit_width` - 1.
+///
+/// # Panics
+///
+/// Panics if `bit_width` exceeds `W::BITS`.
 #[inline(always)]
 pub fn mask<W: Word>(bit_width: usize) -> W {
+    assert!(
+        bit_width <= W::BITS as usize,
+        "bit_width ({}) exceeds word width ({})",
+        bit_width,
+        W::BITS
+    );
     if bit_width == 0 {
         W::ZERO
     } else {
@@ -210,11 +219,7 @@ pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBi
         panic_if_out_of_bounds!(index, self.len());
         let bw = self.atomic_bit_width();
 
-        let mask = if bw == 0 {
-            A::Value::ZERO
-        } else {
-            A::Value::MAX >> (A::Value::BITS - bw as u32)
-        };
+        let mask = mask::<A::Value>(bw);
         panic_if_value!(value, mask, bw);
         unsafe {
             self.set_atomic_unchecked(index, value, order);

@@ -298,22 +298,12 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
         overhead_percentage: f64,
         max_log2_words_per_subinv: usize,
     ) -> Self {
-        assert!(
-            overhead_percentage > 0.0,
-            "overhead_percentage must be positive"
+        let target_span = super::select_adapt::target_span_from_overhead(
+            overhead_percentage,
+            max_log2_words_per_subinv,
         );
-        assert!(
-            max_log2_words_per_subinv < usize::BITS as usize,
-            "max_log2_words_per_subinv ({max_log2_words_per_subinv}) must be less than {}",
-            usize::BITS
-        );
-        let m = 1usize << max_log2_words_per_subinv;
 
-        let target_span =
-            ((1 + m) as f64 * usize::BITS as f64 * 100.0 / overhead_percentage) as usize;
-        let min_span = m * (usize::BITS as usize * usize::BITS as usize) / 16;
-
-        Self::with_span(bits, target_span.max(min_span), max_log2_words_per_subinv)
+        Self::with_span(bits, target_span, max_log2_words_per_subinv)
     }
 
     fn _new(
@@ -329,9 +319,9 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
             usize::BITS
         );
         assert!(
-            max_log2_words_per_subinventory < usize::BITS as usize,
-            "max_log2_words_per_subinventory ({max_log2_words_per_subinventory}) must be less than {}",
-            usize::BITS
+            max_log2_words_per_subinventory <= super::select_adapt::MAX_LOG2_WORDS_PER_SUBINVENTORY,
+            "max_log2_words_per_subinventory ({max_log2_words_per_subinventory}) exceeds the supported maximum ({})",
+            super::select_adapt::MAX_LOG2_WORDS_PER_SUBINVENTORY
         );
         let num_bits = max(1, bits.len());
         let ones_per_inventory = 1 << log2_ones_per_inventory;

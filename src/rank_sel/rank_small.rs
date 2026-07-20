@@ -189,8 +189,8 @@ impl<
     }
 }
 
-impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, B> Deref
-    for RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B>
+impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, B, C1, C2> Deref
+    for RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B, C1, C2>
 {
     type Target = B;
 
@@ -384,9 +384,16 @@ macro_rules! rank_small {
         }
     };
     // 32-bit only: one more variant than 64-bit
-    (5 ; $bits:expr) => {
-        $crate::prelude::RankSmall::<{ usize::BITS as usize }, 3, 13, _, _, _>::new($bits)
-    };
+    (5 ; $bits:expr) => {{
+        #[cfg(target_pointer_width = "32")]
+        {
+            $crate::prelude::RankSmall::<{ usize::BITS as usize }, 3, 13, _, _, _>::new($bits)
+        }
+        #[cfg(not(target_pointer_width = "32"))]
+        {
+            compile_error!("rank_small selector 5 is only available on 32-bit targets")
+        }
+    }};
     // Explicit usize prefix: forward to the bare-number arms
     (usize : $n:tt ; $bits:expr) => {
         $crate::rank_small![$n ; $bits]
@@ -810,12 +817,16 @@ impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, 
     ///
     /// # Safety
     ///
-    /// This method is unsafe because it is not possible to guarantee that the
-    /// new backend is identical to the old one as a bit vector.
-    pub unsafe fn map<B1: BitLength>(
+    /// `f` must return a backend containing exactly the same logical bits and
+    /// logical length as the old backend.
+    pub unsafe fn map<B1>(
         self,
         f: impl FnOnce(B) -> B1,
-    ) -> RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B1, C1, C2> {
+    ) -> RankSmall<WORD_BITS, NUM_U32S, COUNTER_WIDTH, B1, C1, C2>
+    where
+        B: Backend,
+        B1: Backend<Word = B::Word> + BitLength,
+    {
         RankSmall {
             bits: f(self.bits),
             upper_counts: self.upper_counts,

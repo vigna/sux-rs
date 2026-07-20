@@ -622,6 +622,23 @@ fn test_macro() {
     assert!(!b[5]);
 }
 
+#[test]
+fn test_macro_evaluates_each_item_once() {
+    let mut calls = 0;
+    let b = bit_vec![
+        {
+            calls += 1;
+            false
+        },
+        {
+            calls += 1;
+            1_u8
+        },
+    ];
+    assert_eq!(calls, 2);
+    assert_eq!(b.iter().collect::<Vec<_>>(), [false, true]);
+}
+
 /// Test BitVec with all word types using a macro.
 macro_rules! test_word_type {
     ($W:ty) => {{
@@ -966,6 +983,21 @@ fn test_append_dirty_last_word() {
 }
 
 #[test]
+fn test_append_after_shrink() {
+    let mut aligned = BitVec::<Vec<u64>>::with_value(128, true);
+    aligned.resize(0, false);
+    aligned.append(&bit_vec![u64: 0]);
+    assert_eq!(aligned.iter().collect::<Vec<_>>(), [false]);
+
+    let mut unaligned = BitVec::<Vec<u64>>::with_value(192, true);
+    unaligned.resize(65, false);
+    unaligned.append(&bit_vec![u64: 0, 1]);
+    assert_eq!(unaligned.len(), 67);
+    assert!(!unaligned[65]);
+    assert!(unaligned[66]);
+}
+
+#[test]
 fn test_reserve() {
     let mut b: BitVec = BitVec::new(0);
     b.reserve(100);
@@ -1230,6 +1262,28 @@ fn test_bit_vec_chunks_mut_size_hint() {
     assert_eq!(chunks.size_hint(), (4, Some(4)));
     assert_eq!(chunks.len(), 4);
     assert_eq!(chunks.count(), 4);
+}
+
+#[test]
+fn test_bit_iter_rejects_short_backing() {
+    assert!(std::panic::catch_unwind(|| BitIter::<usize, _>::new(&[] as &[usize], 1)).is_err());
+    assert!(
+        std::panic::catch_unwind(|| AtomicBitIter::<Atomic<usize>, _>::new(
+            &[] as &[Atomic<usize>],
+            1
+        ))
+        .is_err()
+    );
+}
+
+#[test]
+fn test_bit_vec_chunks_mut_rejects_zero_size() {
+    use value_traits::slices::SliceByValueMut;
+
+    for len in [0, 64] {
+        let mut bv = BitVec::<Vec<usize>>::new(len);
+        assert!(bv.try_chunks_mut(0).is_err());
+    }
 }
 
 #[test]

@@ -749,8 +749,8 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> BitFieldSlice
     }
 }
 
-/// Error type returned when [`try_chunks_mut`] does not find sufficient
-/// alignment.
+/// Error type returned when [`try_chunks_mut`] cannot represent the requested
+/// chunk geometry or does not find sufficient alignment.
 ///
 /// [`try_chunks_mut`]: SliceByValueMut::try_chunks_mut
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -764,10 +764,10 @@ impl<W: Word> core::fmt::Display for ChunksMutError<W> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "try_chunks_mut needs that the bit width ({}) times the chunk size ({}) is a multiple of W::BITS ({}) to return more than one chunk",
+            "try_chunks_mut needs a nonzero chunk size whose product with the bit width ({}) fits usize and, when returning more than one chunk, is a multiple of W::BITS ({}); got {}",
             self.bit_width,
+            W::BITS as usize,
             self.chunk_size,
-            W::BITS as usize
         )
     }
 }
@@ -801,6 +801,10 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
         }
     }
 
+    // SAFETY: besides index < self.len, the caller must guarantee
+    // that value fits in bit_width bits (value & !self.mask == 0); in
+    // particular, for a zero-width vector the only valid value is zero, and
+    // the write touches the single backing word that constructors guarantee.
     unsafe fn set_value_unchecked(&mut self, index: usize, value: B::Word) {
         let bits = B::Word::BITS as usize;
         let pos = index * self.bit_width;
@@ -834,6 +838,8 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
         unsafe { self.replace_value_unchecked(index, value) }
     }
 
+    // SAFETY: same as set_value_unchecked: the caller must
+    // guarantee that value fits in bit_width bits.
     unsafe fn replace_value_unchecked(&mut self, index: usize, value: B::Word) -> B::Word {
         let bits = B::Word::BITS as usize;
         let pos = index * self.bit_width;
@@ -1182,11 +1188,12 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
 
     /// # Errors
     ///
-    /// This method will return an error if the chunk size multiplied by
-    /// the [bit width] is not a multiple of `W::BITS` and more than one
-    /// chunk must be returned.
+    /// This method returns an error if `chunk_size` is zero, if
+    /// `chunk_size * bit_width` overflows `usize`, or if that product is not a
+    /// multiple of `W::BITS` when more than one chunk must be returned.
     ///
-    /// [bit width]: BitWidth::bit_width
+    /// Note that a zero-width vector yields no chunks, as chunks of a
+    /// zero-width vector cannot share its backing.
     fn try_chunks_mut(
         &mut self,
         chunk_size: usize,
@@ -1194,25 +1201,26 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
         let len = self.len();
         let bit_width = self.bit_width();
         let bits = B::Word::BITS as usize;
-        if len <= chunk_size || (chunk_size * bit_width) % bits == 0 {
-            // chunks_mut panics with chunk_size 0, so use 1 when the
-            // product is zero (bit_width == 0); the iterator will yield
-            // empty slices anyway.
-            let words_per_chunk = Ord::max(1, (chunk_size * bit_width).div_ceil(bits));
-            Ok(ChunksMut {
-                remaining: len,
-                bit_width: self.bit_width,
-                chunk_size,
-                iter: self.bits.as_mut()[..(len * bit_width).div_ceil(bits)]
-                    .chunks_mut(words_per_chunk),
-            })
-        } else {
-            Err(ChunksMutError {
-                bit_width,
-                chunk_size,
-                _marker: core::marker::PhantomData,
-            })
+        let error = || ChunksMutError {
+            bit_width,
+            chunk_size,
+            _marker: core::marker::PhantomData,
+        };
+        if chunk_size == 0 {
+            return Err(error());
         }
+        let chunk_bits = chunk_size.checked_mul(bit_width).ok_or_else(error)?;
+        if len > chunk_size && chunk_bits % bits != 0 {
+            return Err(error());
+        }
+        let words_per_chunk = Ord::max(1, chunk_bits.div_ceil(bits));
+        let logical_bits = len.checked_mul(bit_width).ok_or_else(error)?;
+        Ok(ChunksMut {
+            remaining: len,
+            bit_width,
+            chunk_size,
+            iter: self.bits.as_mut()[..logical_bits.div_ceil(bits)].chunks_mut(words_per_chunk),
+        })
     }
 }
 
@@ -2056,14 +2064,16 @@ impl<'a, 'b, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::Iter
     for BitFieldVecSubsliceImpl<'b, B>
 {
     type Item = B::Word;
-    type Iter = BitFieldVecIter<'a, B>;
+    type Iter = std::iter::Take<BitFieldVecIter<'a, B>>;
 }
 
 impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateByValue
     for BitFieldVecSubsliceImpl<'a, B>
 {
     fn iter_value(&self) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
-        self.slice.iter_from(0)
+        self.slice
+            .iter_from(self.range.start)
+            .take(self.range.len())
     }
 }
 
@@ -2071,7 +2081,7 @@ impl<'a, 'b, B: Backend<Word: Word> + AsRef<[B::Word]>>
     value_traits::iter::IterateByValueFromGat<'a> for BitFieldVecSubsliceImpl<'b, B>
 {
     type Item = B::Word;
-    type IterFrom = BitFieldVecIter<'a, B>;
+    type IterFrom = std::iter::Take<BitFieldVecIter<'a, B>>;
 }
 
 impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateByValueFrom
@@ -2080,8 +2090,11 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateB
     fn iter_value_from(
         &self,
         from: usize,
-    ) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
-        self.slice.iter_from(from)
+    ) -> <Self as value_traits::iter::IterateByValueFromGat<'_>>::IterFrom {
+        assert!(from <= self.range.len(), "iterator start out of bounds");
+        self.slice
+            .iter_from(self.range.start + from)
+            .take(self.range.len() - from)
     }
 }
 
@@ -2089,14 +2102,16 @@ impl<'a, 'b, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::Iter
     for BitFieldVecSubsliceImplMut<'b, B>
 {
     type Item = B::Word;
-    type Iter = BitFieldVecIter<'a, B>;
+    type Iter = std::iter::Take<BitFieldVecIter<'a, B>>;
 }
 
 impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateByValue
     for BitFieldVecSubsliceImplMut<'a, B>
 {
     fn iter_value(&self) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
-        self.slice.iter_from(0)
+        self.slice
+            .iter_from(self.range.start)
+            .take(self.range.len())
     }
 }
 
@@ -2104,7 +2119,7 @@ impl<'a, 'b, B: Backend<Word: Word> + AsRef<[B::Word]>>
     value_traits::iter::IterateByValueFromGat<'a> for BitFieldVecSubsliceImplMut<'b, B>
 {
     type Item = B::Word;
-    type IterFrom = BitFieldVecIter<'a, B>;
+    type IterFrom = std::iter::Take<BitFieldVecIter<'a, B>>;
 }
 
 impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateByValueFrom
@@ -2113,8 +2128,11 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateB
     fn iter_value_from(
         &self,
         from: usize,
-    ) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
-        self.slice.iter_from(from)
+    ) -> <Self as value_traits::iter::IterateByValueFromGat<'_>>::IterFrom {
+        assert!(from <= self.range.len(), "iterator start out of bounds");
+        self.slice
+            .iter_from(self.range.start + from)
+            .take(self.range.len() - from)
     }
 }
 

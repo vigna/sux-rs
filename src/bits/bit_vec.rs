@@ -176,6 +176,38 @@ pub struct BitVec<B = Vec<usize>> {
     len: usize,
 }
 
+/// Converts a supported [`bit_vec!`] item to a bit.
+///
+/// This trait is public only so exported macro expansions can name it.
+#[doc(hidden)]
+pub trait BitVecValue {
+    fn into_bit(self) -> bool;
+}
+
+impl BitVecValue for bool {
+    #[inline(always)]
+    fn into_bit(self) -> bool {
+        self
+    }
+}
+
+macro_rules! impl_bit_vec_value {
+    ($($t:ty),+ $(,)?) => {
+        $(
+            impl BitVecValue for $t {
+                #[inline(always)]
+                fn into_bit(self) -> bool {
+                    self != 0
+                }
+            }
+        )+
+    };
+}
+
+impl_bit_vec_value!(
+    u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize
+);
+
 /// Convenient, [`vec!`]-like macro to initialize bit vectors.
 ///
 /// By default, the underlying storage is `Vec<usize>`. An explicit word type
@@ -270,8 +302,12 @@ macro_rules! bit_vec {
     };
     ($W:ty: $($x:expr),+ $(,)?) => {
         {
-            let mut b = $crate::bits::BitVec::<Vec<$W>>::with_capacity([$($x),+].len());
-            $( b.push($x != 0); )*
+            let capacity = [$(stringify!($x)),+].len();
+            let mut b = $crate::bits::BitVec::<Vec<$W>>::with_capacity(capacity);
+            $(
+                let value = $x;
+                b.push($crate::bits::BitVecValue::into_bit(value));
+            )*
             b
         }
     };
@@ -297,8 +333,12 @@ macro_rules! bit_vec {
     };
     ($($x:expr),+ $(,)?) => {
         {
-            let mut b = $crate::bits::BitVec::<Vec<usize>>::with_capacity([$($x),+].len());
-            $( b.push($x != 0); )*
+            let capacity = [$(stringify!($x)),+].len();
+            let mut b = $crate::bits::BitVec::<Vec<usize>>::with_capacity(capacity);
+            $(
+                let value = $x;
+                b.push($crate::bits::BitVecValue::into_bit(value));
+            )*
             b
         }
     };
@@ -511,6 +551,10 @@ impl<W: Word> BitVec<Vec<W>> {
         let offset = self.len % bpw;
         let src: &[W] = other.bits.as_ref();
         let src_words = other_len.div_ceil(bpw);
+        // Drop words beyond the logical length (e.g., left behind by pop or
+        // resize), as the code below infers the write position from bits.len().
+        let self_words = self.len.div_ceil(bpw);
+        self.bits.truncate(self_words);
         let new_total = self.len + other_len;
         let new_word_count = new_total.div_ceil(bpw);
 
@@ -813,8 +857,8 @@ impl<'a, W: Word> FusedIterator for BitVecChunksMut<'a, W> where
 {
 }
 
-/// Error returned when [`BitVec::try_chunks_mut`] cannot align the
-/// requested chunk size to word boundaries.
+/// Error returned when [`BitVec::try_chunks_mut`] receives a zero or
+/// insufficiently aligned chunk size.
 ///
 /// [`BitVec::try_chunks_mut`]: SliceByValueMut::try_chunks_mut
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -825,6 +869,9 @@ pub struct BitVecChunksMutError<W: Word> {
 
 impl<W: Word> fmt::Display for BitVecChunksMutError<W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.chunk_size == 0 {
+            return write!(f, "try_chunks_mut needs a nonzero chunk size");
+        }
         write!(
             f,
             "try_chunks_mut needs the chunk size ({}) to be a multiple of W::BITS ({}) to return more than one chunk",
@@ -890,7 +937,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
 
     /// # Errors
     ///
-    /// Returns an error if `chunk_size` is not a multiple of
+    /// Returns an error if `chunk_size` is zero, or if it is not a multiple of
     /// `W::BITS` and more than one chunk must be returned.
     fn try_chunks_mut(
         &mut self,
@@ -898,11 +945,8 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
     ) -> Result<Self::ChunksMut<'_>, BitVecChunksMutError<B::Word>> {
         let len = self.len;
         let bits = B::Word::BITS as usize;
-        if len <= chunk_size || chunk_size % bits == 0 {
-            // std::slice::ChunksMut::new panics on chunk_size 0, so
-            // use 1 when the chunk is empty; the iterator will yield
-            // empty views anyway.
-            let words_per_chunk = Ord::max(1, chunk_size.div_ceil(bits));
+        if chunk_size != 0 && (len <= chunk_size || chunk_size % bits == 0) {
+            let words_per_chunk = chunk_size.div_ceil(bits);
             Ok(BitVecChunksMut {
                 remaining: len,
                 chunk_size,
@@ -1022,16 +1066,16 @@ impl<B> BitLength for AtomicBitVec<B> {
 
 impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>> AtomicBitVec<B> {
     /// Returns the number of ones in the bit vector, reading every backing
-    /// word with a relaxed atomic load (dirty bits past the length are masked).
+    /// word with a relaxed atomic load and masking bits past the logical length.
+    ///
+    /// Concurrent writes may be observed independently, so the result is not a
+    /// linearizable snapshot of the entire vector.
     pub fn count_ones(&self) -> usize {
         let bits_per_word = <B::Word as PrimitiveAtomic>::Value::BITS as usize;
         let full_words = self.len() / bits_per_word;
         let residual = self.len() % bits_per_word;
         let bits: &[B::Word] = self.as_ref();
         let mut num_ones;
-        // Just to be sure, add a fence to ensure that we will see all the final
-        // values
-        core::sync::atomic::fence(Ordering::SeqCst);
         num_ones = bits[..full_words]
             .iter()
             .map(|x| x.load(Ordering::Relaxed).count_ones() as usize)

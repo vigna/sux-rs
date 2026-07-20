@@ -174,12 +174,6 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O> Deref
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
     SelectSmall<NUM_U32S, COUNTER_WIDTH, C, I, O>
 {
-    // On 64-bit, superblocks contain 2^32 bits.
-    // On 32-bit, a single superblock covers the entire address space.
-    #[cfg(target_pointer_width = "64")]
-    const SUPERBLOCK_BIT_SIZE: usize = 1 << 32;
-    #[cfg(not(target_pointer_width = "64"))]
-    const SUPERBLOCK_BIT_SIZE: usize = usize::MAX;
     const BLOCK_BIT_SIZE: usize = 1 << COUNTER_WIDTH;
     const NUM_SUBBLOCKS: usize = match NUM_U32S {
         1 => 4,
@@ -187,6 +181,9 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
         _ => panic!("Unsupported number of u32s"),
     };
     const SUBBLOCK_BIT_SIZE: usize = Self::BLOCK_BIT_SIZE / Self::NUM_SUBBLOCKS;
+    // Superblocks contain 2^32 bits (on 32-bit targets a single superblock
+    // covers the entire address space).
+    const BLOCKS_PER_SUPERBLOCK: usize = 1 << (32 - COUNTER_WIDTH);
     /// Bits in each inventory `u32` used for the block index within the superblock.
     /// The remaining high `COUNTER_WIDTH` bits store the midpoint-block delta.
     const BLOCK_IDX_BITS: usize = 32 - COUNTER_WIDTH;
@@ -237,9 +234,13 @@ macro_rules! impl_rank_small_sel {
                 let num_bits = small_counters.len();
                 let num_ones = small_counters.num_ones();
 
-                let target_inventory_span = blocks_per_inv * Self::BLOCK_BIT_SIZE;
-                let log2_ones_per_inventory = (num_ones as u64 * target_inventory_span as u64)
-                    .div_ceil(num_bits.max(1) as u64)
+                // The span is clamped to the vector size, so the u128 product
+                // below cannot be pushed out of range by extreme arguments.
+                let target_inventory_span = blocks_per_inv
+                    .saturating_mul(Self::BLOCK_BIT_SIZE)
+                    .min(num_bits.max(1));
+                let log2_ones_per_inventory = (num_ones as u128 * target_inventory_span as u128)
+                    .div_ceil(num_bits.max(1) as u128)
                     .max(1)
                     .ilog2() as usize;
 
@@ -251,7 +252,7 @@ macro_rules! impl_rank_small_sel {
                 let num_bits = small_counters.len();
                 let num_words = num_bits.div_ceil(bits_per_word);
                 let tail_mask = super::tail_mask::<C::Word>(num_bits % bits_per_word);
-                let words_per_superblock = Self::SUPERBLOCK_BIT_SIZE / bits_per_word;
+                let words_per_superblock = 1usize << (32 - bits_per_word.ilog2());
                 let ones_per_inventory = 1 << log2_ones_per_inventory;
                 // half_ones is the midpoint within each inventory interval. We advance
                 // next_quantum by half_ones each step, alternating between primary and
@@ -271,11 +272,12 @@ macro_rules! impl_rank_small_sel {
                 let mut past_ones: usize = 0;
                 let mut next_quantum: usize = 0;
 
+                let mut last_primary_superblock = None;
                 for (sb, superblock) in small_counters.as_ref()[..num_words]
                     .chunks(words_per_superblock)
                     .enumerate()
                 {
-                    let mut first = true;
+                    inventory_begin.push(inventory.len());
                     for (i, word) in superblock.iter().copied().enumerate() {
                         let global_word = sb * words_per_superblock + i;
                         let word =
@@ -291,22 +293,20 @@ macro_rules! impl_rank_small_sel {
                                 // Primary quantum: store the block index in the low
                                 // BLOCK_IDX_BITS bits; high COUNTER_WIDTH bits will be
                                 // filled when the midpoint quantum is encountered.
-                                if first {
-                                    inventory_begin.push(inventory.len());
-                                    first = false;
-                                }
                                 inventory.push(block_in_superblock as u32);
-                            } else {
+                                last_primary_superblock = Some(sb);
+                            } else if last_primary_superblock == Some(sb) {
                                 // Midpoint quantum: pack the delta (midpoint block minus
-                                // primary block) into the high COUNTER_WIDTH bits.
+                                // primary block) into the high COUNTER_WIDTH bits, but
+                                // only when the primary lies in the same superblock and
+                                // the delta fits; otherwise the hint stays zero, which
+                                // is correct but entails a longer scan.
                                 let last = inventory.last_mut().unwrap();
                                 let delta =
                                     block_in_superblock - (*last as usize & Self::BLOCK_IDX_MASK);
-                                debug_assert!(
-                                    delta < Self::BLOCK_BIT_SIZE,
-                                    "midpoint delta {delta} overflows COUNTER_WIDTH bits"
-                                );
-                                *last |= (delta as u32) << Self::BLOCK_IDX_BITS;
+                                if delta < Self::BLOCK_BIT_SIZE {
+                                    *last |= (delta as u32) << Self::BLOCK_IDX_BITS;
+                                }
                             }
                             next_quantum += step;
                         }
@@ -318,12 +318,10 @@ macro_rules! impl_rank_small_sel {
 
                 if inventory.is_empty() {
                     inventory.push(0);
-                    inventory_begin.push(0);
-                } else {
-                    // The sentinel bounds an inventory index, so it must be the
-                    // inventory length, not the backing word count.
-                    inventory_begin.push(inventory.len());
                 }
+                // Terminal sentinel. Repeated entries before it represent
+                // superblocks with no primary inventory quantum.
+                inventory_begin.push(inventory.len());
 
                 let inventory = inventory.into_boxed_slice();
                 let inventory_begin = inventory_begin.into_boxed_slice();
@@ -387,8 +385,7 @@ macro_rules! impl_rank_small_sel {
                         // Since we know the rank is in upper block upper_block_idx, start
                         // from the beginning of that superblock.
                         0
-                    } + upper_block_idx
-                        * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE);
+                    } + upper_block_idx * Self::BLOCKS_PER_SUPERBLOCK;
 
                     // Prefetch all subblocks of the approximate target block now,
                     // so the bit-vector DRAM fetch can proceed in parallel with
@@ -419,13 +416,9 @@ macro_rules! impl_rank_small_sel {
                                 & Self::BLOCK_IDX_MASK;
                             // +1 because the next primary may be anywhere within next_base_block,
                             // so we must include that block in the scan range.
-                            next_base_block
-                                + 1
-                                + upper_block_idx
-                                    * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE)
+                            next_base_block + 1 + upper_block_idx * Self::BLOCKS_PER_SUPERBLOCK
                         } else {
-                            (upper_block_idx + 1)
-                                * (Self::SUPERBLOCK_BIT_SIZE / Self::BLOCK_BIT_SIZE)
+                            (upper_block_idx + 1) * Self::BLOCKS_PER_SUPERBLOCK
                         };
                     } else {
                         // Since we use 32-bit inventory entries, we cannot add

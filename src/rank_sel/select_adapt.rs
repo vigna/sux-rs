@@ -320,6 +320,15 @@ impl<B, I> Deref for SelectAdapt<B, I> {
 /// [documentation]: SelectAdapt
 pub const DEFAULT_LOG2_WORDS_PER_SUBINVENTORY: usize = 3;
 
+/// Maximum supported base-2 logarithm of the number of words per subinventory.
+///
+/// The bound keeps the subinventory word count exactly representable as an
+/// `f64` and all span arithmetic free of overflow.
+#[cfg(target_pointer_width = "64")]
+pub(super) const MAX_LOG2_WORDS_PER_SUBINVENTORY: usize = 53;
+#[cfg(target_pointer_width = "32")]
+pub(super) const MAX_LOG2_WORDS_PER_SUBINVENTORY: usize = 23;
+
 /// Returns the default target inventory span for a given
 /// `log2_words_per_subinventory`.
 ///
@@ -333,7 +342,16 @@ pub const DEFAULT_LOG2_WORDS_PER_SUBINVENTORY: usize = 3;
 /// At the end, in the 64-bit case we halve the span to compensate for uneven
 /// density (in the 32-bit case that leads to excessive space occupancy, so we
 /// do not halve the span).
+///
+/// # Panics
+///
+/// Panics if `log2_words_per_subinventory` exceeds the supported maximum
+/// ([`MAX_LOG2_WORDS_PER_SUBINVENTORY`]).
 pub const fn default_target_inventory_span(log2_words_per_subinventory: usize) -> usize {
+    assert!(
+        log2_words_per_subinventory <= MAX_LOG2_WORDS_PER_SUBINVENTORY,
+        "log2_words_per_subinventory is too large"
+    );
     let target = ((usize::BITS as usize * usize::BITS as usize) / 4) << log2_words_per_subinventory;
     #[cfg(target_pointer_width = "64")]
     {
@@ -341,6 +359,39 @@ pub const fn default_target_inventory_span(log2_words_per_subinventory: usize) -
     }
     #[cfg(target_pointer_width = "32")]
     target
+}
+
+/// Computes the target inventory span for a requested overhead percentage.
+///
+/// # Panics
+///
+/// Panics if `overhead_percentage` is not finite and positive, or if
+/// `max_log2_words_per_subinv` exceeds [`MAX_LOG2_WORDS_PER_SUBINVENTORY`].
+pub(super) fn target_span_from_overhead(
+    overhead_percentage: f64,
+    max_log2_words_per_subinv: usize,
+) -> usize {
+    assert!(
+        overhead_percentage.is_finite() && overhead_percentage > 0.0,
+        "overhead_percentage must be finite and positive"
+    );
+    assert!(
+        max_log2_words_per_subinv <= MAX_LOG2_WORDS_PER_SUBINVENTORY,
+        "max_log2_words_per_subinv ({max_log2_words_per_subinv}) exceeds the supported maximum ({MAX_LOG2_WORDS_PER_SUBINVENTORY})"
+    );
+    let m = 1usize << max_log2_words_per_subinv;
+
+    // Target span from overhead: overhead% = (1+M) · usize::BITS / T · 100
+    // ⇒ T = (1+M) · usize::BITS · 100 / overhead%. Since M ≤ 2^53, the
+    // conversion to f64 is exact; the cast back saturates an over-large
+    // target to usize::MAX, which is the desired maximum-span behavior.
+    let target_span = ((1 + m) as f64 * usize::BITS as f64 * 100.0 / overhead_percentage) as usize;
+
+    // Ensure worst-case linear search is at least 1 word:
+    // T / (M · usize::BITS / 16) ≥ usize::BITS  ⇒  T ≥ M · usize::BITS² / 16
+    let min_span = m * (usize::BITS as usize * usize::BITS as usize) / 16;
+
+    target_span.max(min_span)
 }
 
 /// Maximum bit-vector length supported by the inventory encoding.
@@ -671,8 +722,9 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
     /// # Panics
     ///
     /// Panics if the bit vector length exceeds `usize::MAX >> 2`
-    /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit), or if
-    /// `overhead_percentage` is not positive.
+    /// (2⁶² − 1 on 64-bit platforms, 2³¹ − 1 on 32-bit), if
+    /// `overhead_percentage` is not finite and positive, or if
+    /// `max_log2_words_per_subinv` exceeds the supported maximum.
     ///
     /// [*M*]: SelectAdapt
     /// [documentation]: SelectAdapt
@@ -682,27 +734,9 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
         overhead_percentage: f64,
         max_log2_words_per_subinv: usize,
     ) -> Self {
-        assert!(
-            overhead_percentage > 0.0,
-            "overhead_percentage must be positive"
-        );
-        assert!(
-            max_log2_words_per_subinv < usize::BITS as usize,
-            "max_log2_words_per_subinv ({max_log2_words_per_subinv}) must be less than {}",
-            usize::BITS
-        );
-        let m = 1usize << max_log2_words_per_subinv;
+        let target_span = target_span_from_overhead(overhead_percentage, max_log2_words_per_subinv);
 
-        // Target span from overhead: overhead% = (1+M) · usize::BITS / T · 100
-        // ⇒ T = (1+M) · usize::BITS · 100 / overhead%
-        let target_span =
-            ((1 + m) as f64 * usize::BITS as f64 * 100.0 / overhead_percentage) as usize;
-
-        // Ensure worst-case linear search is at least 1 word:
-        // T / (M · usize::BITS / 16) ≥ usize::BITS  ⇒  T ≥ M · usize::BITS² / 16
-        let min_span = m * (usize::BITS as usize * usize::BITS as usize) / 16;
-
-        Self::with_span(bits, target_span.max(min_span), max_log2_words_per_subinv)
+        Self::with_span(bits, target_span, max_log2_words_per_subinv)
     }
 
     fn _new(
@@ -718,9 +752,8 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
             usize::BITS
         );
         assert!(
-            max_log2_words_per_subinventory < usize::BITS as usize,
-            "max_log2_words_per_subinventory ({max_log2_words_per_subinventory}) must be less than {}",
-            usize::BITS
+            max_log2_words_per_subinventory <= MAX_LOG2_WORDS_PER_SUBINVENTORY,
+            "max_log2_words_per_subinventory ({max_log2_words_per_subinventory}) exceeds the supported maximum ({MAX_LOG2_WORDS_PER_SUBINVENTORY})"
         );
         let num_bits = max(1, bits.len());
         let ones_per_inventory = 1 << log2_ones_per_inventory;
