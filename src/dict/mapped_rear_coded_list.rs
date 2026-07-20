@@ -203,6 +203,11 @@ where
     /// Note that [`iter_from`] is more convenient if you need owned
     /// elements.
     ///
+    /// # Panics
+    ///
+    /// Panics if `from > self.len()`. Passing `self.len()` returns an empty
+    /// lender.
+    ///
     /// [`iter_from`]: MappedRearCodedList::iter_from
     #[inline(always)]
     pub fn lender_from(&self, from: usize) -> Lend<'_, I, O, D, P, Q, SORTED> {
@@ -225,6 +230,11 @@ where
     ///
     /// Note that [`lender_from`] is more efficient if you need to
     /// iterate over many elements.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `from > self.len()`. Passing `self.len()` returns an empty
+    /// iterator.
     ///
     /// [`lender_from`]: MappedRearCodedList::lender_from
     #[inline(always)]

@@ -433,7 +433,7 @@ where
     #[inline]
     fn index_of(&self, value: impl Borrow<Self::Input>) -> Option<usize> {
         let value = *value.borrow();
-        if value > self.u {
+        if self.n == 0 || value > self.u {
             return None;
         }
         let zeros_to_skip: usize = (value >> self.l).try_into().unwrap();
@@ -1090,6 +1090,11 @@ impl<
 where
     for<'b> &'b L: IntoUncheckedBackIterator<Item = V>,
 {
+    /// # Safety
+    ///
+    /// Besides the existence of the predecessor, this implementation requires
+    /// that `value` is at most the upper bound `u` provided at construction
+    /// time; larger values make the high-bits selection read out of bounds.
     #[inline]
     unsafe fn pred_unchecked<const STRICT: bool>(
         &self,
@@ -1146,6 +1151,12 @@ where
         }
     }
 
+    /// # Safety
+    ///
+    /// Besides the existence of an element strictly less than `value`, this
+    /// implementation requires that `value` is at most the upper bound `u`
+    /// provided at construction time; larger values make the high-bits
+    /// selection read out of bounds.
     #[inline]
     unsafe fn rank_unchecked(&self, value: impl Borrow<V>) -> usize {
         let value = *value.borrow();
@@ -1198,6 +1209,11 @@ where
     where
         Self: 'a;
 
+    /// # Safety
+    ///
+    /// Besides the existence of the predecessor, this implementation requires
+    /// that `value` is at most the upper bound `u` provided at construction
+    /// time; larger values make the high-bits selection read out of bounds.
     #[inline]
     unsafe fn iter_from_pred_unchecked<const STRICT: bool>(
         &self,
@@ -1287,6 +1303,11 @@ where
     where
         Self: 'a;
 
+    /// # Safety
+    ///
+    /// Besides the existence of the predecessor, this implementation requires
+    /// that `value` is at most the upper bound `u` provided at construction
+    /// time; larger values make the high-bits selection read out of bounds.
     #[inline]
     unsafe fn iter_back_from_pred_unchecked<const STRICT: bool>(
         &self,
@@ -1366,6 +1387,11 @@ where
     where
         Self: 'a;
 
+    /// # Safety
+    ///
+    /// Besides the existence of the predecessor, this implementation requires
+    /// that `value` is at most the upper bound `u` provided at construction
+    /// time; larger values make the high-bits selection read out of bounds.
     #[inline]
     unsafe fn iter_bidi_from_pred_unchecked<const STRICT: bool>(
         &self,
@@ -1457,7 +1483,7 @@ where
 
     #[inline]
     fn pred_strict(&self, value: impl Borrow<V>) -> Option<(usize, V)> {
-        if *value.borrow() <= self.first_val {
+        if self.n == 0 || *value.borrow() <= self.first_val {
             None
         } else if *value.borrow() > self.last_val {
             Some((self.n - 1, self.last_val))
@@ -1508,7 +1534,7 @@ where
         &self,
         value: impl Borrow<V>,
     ) -> Option<(usize, <Self as PredIterUnchecked>::Iter<'_>)> {
-        if *value.borrow() <= self.first_val {
+        if self.n == 0 || *value.borrow() <= self.first_val {
             None
         } else if *value.borrow() > self.last_val {
             // The strict predecessor is the last element; clamp, as
@@ -1549,7 +1575,7 @@ where
         &self,
         value: impl Borrow<V>,
     ) -> Option<(usize, <Self as PredIterBackUnchecked>::BackIter<'_>)> {
-        if *value.borrow() <= self.first_val {
+        if self.n == 0 || *value.borrow() <= self.first_val {
             None
         } else if *value.borrow() > self.last_val {
             // The strict predecessor is the last element; clamp, as
@@ -1590,7 +1616,7 @@ where
         &self,
         value: impl Borrow<V>,
     ) -> Option<(usize, <Self as PredBidiIterUnchecked>::BidiIter<'_>)> {
-        if *value.borrow() <= self.first_val {
+        if self.n == 0 || *value.borrow() <= self.first_val {
             None
         } else if *value.borrow() > self.last_val {
             // The strict predecessor is the last element; clamp, as
@@ -1691,7 +1717,7 @@ where
     for<'c> &'c L: IntoUncheckedIterator<Item = V>,
 {
     type Item = V;
-    type Iter = EliasFanoIter<'a, V, H, L>;
+    type Iter = std::iter::Take<EliasFanoIter<'a, V, H, L>>;
 }
 
 impl<
@@ -1705,7 +1731,9 @@ where
 {
     #[inline(always)]
     fn iter_value(&self) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
-        self.slice.iter_from(0)
+        self.slice
+            .iter_from(self.range.start)
+            .take(self.range.len())
     }
 }
 
@@ -1720,7 +1748,7 @@ where
     for<'c> &'c L: IntoUncheckedIterator<Item = V>,
 {
     type Item = V;
-    type IterFrom = EliasFanoIter<'a, V, H, L>;
+    type IterFrom = std::iter::Take<EliasFanoIter<'a, V, H, L>>;
 }
 
 impl<
@@ -1736,8 +1764,11 @@ where
     fn iter_value_from(
         &self,
         from: usize,
-    ) -> <Self as value_traits::iter::IterateByValueGat<'_>>::Iter {
-        self.slice.iter_from(from)
+    ) -> <Self as value_traits::iter::IterateByValueFromGat<'_>>::IterFrom {
+        assert!(from <= self.range.len(), "iterator start out of bounds");
+        self.slice
+            .iter_from(self.range.start + from)
+            .take(self.range.len() - from)
     }
 }
 
@@ -2264,11 +2295,6 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
     }
 }
 
-impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
-    FusedIterator for EliasFanoBidiIter<'_, V, H, L>
-{
-}
-
 impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Value = V>> BidiIterator
     for EliasFanoBidiIter<'_, V, H, L>
 {
@@ -2357,11 +2383,6 @@ impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Valu
     }
 }
 
-impl<V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<Value = V>>
-    FusedBidiIterator for EliasFanoBidiIter<'_, V, H, L>
-{
-}
-
 /// Convenience constructor that iterates over a slice.
 ///
 /// Note that this implementation requires a first scan to check monotonicity
@@ -2448,7 +2469,13 @@ impl<V: Word + PrimitiveNumberAs<u128>> EliasFanoBuilder<V> {
             0
         };
 
-        let u_high: usize = (u >> l).try_into().unwrap_or(usize::MAX);
+        // With no elements the high bits are never selected, so there is no
+        // reason to allocate space for the u >> l zeros of the upper bound.
+        let u_high: usize = if n == 0 {
+            0
+        } else {
+            (u >> l).try_into().unwrap_or(usize::MAX)
+        };
         let num_high_bits = n
             .checked_add(1)
             .unwrap_or_else(|| panic!("n ({n}) is too large"))
@@ -2650,7 +2677,13 @@ where
             0
         };
 
-        let u_high: usize = (u >> l).try_into().unwrap_or(usize::MAX);
+        // With no elements the high bits are never selected, so there is no
+        // reason to allocate space for the u >> l zeros of the upper bound.
+        let u_high: usize = if n == 0 {
+            0
+        } else {
+            (u >> l).try_into().unwrap_or(usize::MAX)
+        };
         let num_high_bits = n
             .checked_add(1)
             .unwrap_or_else(|| panic!("n ({n}) is too large"))

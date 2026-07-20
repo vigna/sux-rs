@@ -13,6 +13,8 @@ use indexed_dict::*;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::prelude::*;
+use value_traits::iter::{IterateByValue, IterateByValueFrom};
+use value_traits::slices::SliceByValueSubsliceRange;
 
 #[test]
 #[cfg(feature = "rayon")]
@@ -245,9 +247,33 @@ fn test_elias_fano() -> Result<()> {
 
 #[test]
 fn test_empty() {
-    let efb = EliasFanoBuilder::new(0, 10u64);
-    let ef = efb.build_with_seq_and_dict();
+    let ef = EliasFanoBuilder::new(0, u128::MAX).build_with_seq_and_dict();
     assert_eq!(ef.len(), 0);
+    assert_eq!(ef.index_of(0), None);
+    assert_eq!(ef.index_of(u128::MAX), None);
+
+    let concurrent = sux::dict::elias_fano::EliasFanoConcurrentBuilder::new(0, u64::MAX)
+        .build_with_seq_and_dict();
+    assert_eq!(concurrent.len(), 0);
+    assert_eq!(concurrent.index_of(0), None);
+    assert_eq!(concurrent.index_of(u64::MAX), None);
+}
+
+#[test]
+fn test_subslice_iterators_respect_range() {
+    let mut builder = EliasFanoBuilder::new(6, 50u64);
+    builder.extend([0, 10, 20, 30, 40, 50]);
+    let ef = builder.build_with_seq();
+
+    let subslice = ef.index_subslice(1..5);
+    assert_eq!(
+        subslice.iter_value().collect::<Vec<_>>(),
+        vec![10, 20, 30, 40]
+    );
+    assert_eq!(
+        subslice.iter_value_from(2).collect::<Vec<_>>(),
+        vec![30, 40]
+    );
 }
 
 #[test]

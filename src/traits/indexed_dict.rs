@@ -576,7 +576,8 @@ where
     ///
     /// # Safety
     ///
-    /// The predecessor must exist.
+    /// The predecessor must exist. Implementations may pose further
+    /// requirements on the value; see their documentation.
     unsafe fn pred_unchecked<const STRICT: bool>(
         &self,
         value: impl Borrow<Self::Input>,
@@ -592,6 +593,8 @@ where
     /// # Safety
     ///
     /// There must be at least one element strictly less than `value`.
+    /// Implementations may pose further requirements on the value; see
+    /// their documentation.
     ///
     /// [`pred_unchecked`]: PredUnchecked::pred_unchecked
     #[inline(always)]
@@ -642,7 +645,8 @@ where
     ///
     /// # Safety
     ///
-    /// The predecessor must exist.
+    /// The predecessor must exist. Implementations may pose further
+    /// requirements on the value; see their documentation.
     ///
     /// [`next()`]: Iterator::next
     unsafe fn iter_from_pred_unchecked<const STRICT: bool>(
@@ -693,7 +697,8 @@ where
     ///
     /// # Safety
     ///
-    /// The predecessor must exist.
+    /// The predecessor must exist. Implementations may pose further
+    /// requirements on the value; see their documentation.
     ///
     /// [`next()`]: Iterator::next
     unsafe fn iter_back_from_pred_unchecked<const STRICT: bool>(
@@ -745,7 +750,8 @@ where
     ///
     /// # Safety
     ///
-    /// The predecessor must exist.
+    /// The predecessor must exist. Implementations may pose further
+    /// requirements on the value; see their documentation.
     ///
     /// [`next()`]: Iterator::next
     /// [`prev()`]: crate::traits::BidiIterator::prev
