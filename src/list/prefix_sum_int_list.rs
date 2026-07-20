@@ -94,7 +94,9 @@ impl PrefixSumIntList {
     /// nonnegative values.
     ///
     /// The collection is iterated twice: once to compute the total sum, and
-    /// once to build the prefix-sum structure.
+    /// once to build the prefix-sum structure. The two iterations must yield
+    /// the same values; otherwise, construction panics (but never causes
+    /// undefined behavior).
     ///
     /// # Panics
     ///
@@ -126,16 +128,17 @@ impl PrefixSumIntList {
                 .expect("PrefixSumIntList: prefix sum overflow");
         }
 
-        // Second pass: build prefix sums in Elias–Fano
+        // Second pass: build prefix sums in Elias–Fano. The pushes are
+        // checked: an iterator yielding different values on the second pass
+        // panics instead of writing out of bounds.
         let mut efb = EliasFanoBuilder::new(n + 1, total);
         let mut prefix: usize = 0;
-        // SAFETY: prefix = 0 ≤ total and is the first push
-        unsafe { efb.push_unchecked(prefix) };
+        efb.push(prefix);
         for &v in values {
-            // Cannot overflow
-            prefix += v;
-            // SAFETY: prefix is non-decreasing and ≤ total
-            unsafe { efb.push_unchecked(prefix) };
+            prefix = prefix
+                .checked_add(v)
+                .expect("PrefixSumIntList: prefix sum overflow");
+            efb.push(prefix);
         }
         let prefix_sums = efb.build_with_seq();
 

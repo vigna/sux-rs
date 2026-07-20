@@ -168,6 +168,11 @@ where
     #[inline]
     pub fn get(&self, key: K) -> usize {
         let sig = K::to_sig(key, self.lcp_freq_len_offset.seed);
+        self.get_by_sig(key, sig)
+    }
+
+    #[inline]
+    pub(crate) fn get_by_sig(&self, key: K, sig: S0) -> usize {
         let packed = self.lcp_freq_len_offset.get_by_sig(sig);
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
         let frequent_lcp = packed >> self.log2_bucket_size;
@@ -2128,6 +2133,11 @@ where
     #[inline]
     pub fn get(&self, key: &K) -> usize {
         let sig = K::to_sig(key, self.lcp_freq_len_offset.seed);
+        self.get_by_sig(key, sig)
+    }
+
+    #[inline]
+    pub(crate) fn get_by_sig(&self, key: &K, sig: S0) -> usize {
         let packed = self.lcp_freq_len_offset.get_by_sig(sig);
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
         let freq_lcp = packed >> self.log2_bucket_size;

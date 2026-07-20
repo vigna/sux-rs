@@ -140,6 +140,16 @@ fn test_huffman_single_symbol() {
 }
 
 #[test]
+fn test_branchy_decoder_rejects_unmatched_windows() {
+    // The branchy decoder returns None for width-conforming prefixes not
+    // below any block bound; such values do not occur when decoding
+    // well-formed data.
+    let coder = HuffmanConf::new().build_coder(&freqs(&[(42, 100)]));
+    let decoder = coder.into_decoder();
+    assert_eq!(decoder.decode(usize::MAX), None);
+}
+
+#[test]
 fn test_huffman_two_symbols() {
     // Regression: with exactly 2 symbols the Moffat-Katajainen
     // second pass range `0..=size-3` would underflow to

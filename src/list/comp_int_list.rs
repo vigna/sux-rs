@@ -48,7 +48,7 @@
 //! [map_data]: CompIntList::map_data
 
 use crate::bits::bit_vec::{BitVec, BitVecU};
-use crate::bits::test_unaligned_any_pos;
+use crate::bits::test_unaligned_pos;
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EfSeq;
 use crate::traits::iter::{IntoIteratorFrom, UncheckedIterator};
@@ -116,7 +116,8 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
     ///
     /// The collection is iterated twice: once to compute statistics (element
     /// count and total bit length), and once to build the delimiter and data
-    /// structures.
+    /// structures. The two iterations must yield the same values; otherwise,
+    /// construction panics or produces garbage (but never undefined behavior).
     ///
     /// # Panics
     ///
@@ -139,7 +140,7 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
     {
         // First pass: count elements and total bits
         let mut n = 0;
-        let mut total_bits = 0u64;
+        let mut total_bits = 0usize;
         let mut all_widths_unaligned = true;
         for &v in values {
             let offset = v
@@ -152,21 +153,26 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
                     panic!("CompIntList: values must be smaller than the maximum value minus the lower bound ({})", V::MAX - min)
                 });
             let width = (offset.bit_len() - 1) as usize;
-            total_bits += width as u64;
-            if !test_unaligned_any_pos!(V, width) {
+            // Test at the actual bit position: fields that satisfy the
+            // unaligned constraints where they lie do not block conversion.
+            if !test_unaligned_pos!(V, total_bits, width) {
                 all_widths_unaligned = false;
             }
+            total_bits = total_bits
+                .checked_add(width)
+                .expect("CompIntList: total bit length overflow");
             n += 1;
         }
 
-        // Second pass: build delimiters and pack data
-        let mut efb = EliasFanoBuilder::new(n + 1, total_bits);
-        let mut pos = 0;
-        // SAFETY: pos = 0 ≤ total_bits and is the first push
-        unsafe { efb.push_unchecked(0) };
+        // Second pass: build delimiters and pack data. The pushes are
+        // checked: an iterator yielding different values on the second pass
+        // panics instead of writing out of bounds.
+        let mut efb = EliasFanoBuilder::new(n + 1, total_bits as u64);
+        let mut pos = 0u64;
+        efb.push(0);
 
         let mut data: BitVec<Vec<V>> = BitVec::new(0);
-        data.reserve(total_bits as usize);
+        data.reserve(total_bits);
 
         for &v in values {
             let offset = v - min + V::ONE;
@@ -174,8 +180,7 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
             let bits = offset ^ (V::ONE << width);
             data.append_value(bits, width);
             pos += width as u64;
-            // SAFETY: pos is non-decreasing and ≤ total_bits
-            unsafe { efb.push_unchecked(pos) };
+            efb.push(pos);
         }
         let delimiters = efb.build_with_seq();
         let data = data.into_padded();

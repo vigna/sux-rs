@@ -421,10 +421,13 @@ pub trait SigStore<S: Sig + BinSafe, V: BinSafe> {
     /// Merges per-bucket data and shard counts into this store,
     /// updating bucket sizes, shard sizes, and key count.
     ///
-    /// The first argument contains one [`Vec`] per bucket with the
-    /// items to merge. The second contains shard counts indexed by
-    /// the store's `max_shard_high_bits`.
-    fn merge_from(
+    /// # Safety
+    ///
+    /// `buckets` must contain exactly one vector per store bucket.
+    /// `shard_sizes` must contain exactly one count per shard at
+    /// [`max_shard_high_bits`](Self::max_shard_high_bits), and each count must
+    /// equal the number of supplied signatures assigned to that shard.
+    unsafe fn merge_from(
         &mut self,
         buckets: Box<[Vec<SigVal<S, V>>]>,
         shard_sizes: Box<[usize]>,
@@ -610,11 +613,17 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
         self.temp_dir.as_ref()
     }
 
-    fn merge_from(
+    unsafe fn merge_from(
         &mut self,
         buckets: Box<[Vec<SigVal<S, V>>]>,
         shard_sizes: Box<[usize]>,
     ) -> Result<(), Self::Error> {
+        assert_eq!(buckets.len(), self.buckets.len(), "bucket count mismatch");
+        assert_eq!(
+            shard_sizes.len(),
+            self.shard_sizes.len(),
+            "shard count mismatch"
+        );
         for (b, mini_bucket) in buckets.into_vec().into_iter().enumerate() {
             self.len += mini_bucket.len();
             self.bucket_sizes[b] += mini_bucket.len();
@@ -691,11 +700,17 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
         }
     }
 
-    fn merge_from(
+    unsafe fn merge_from(
         &mut self,
         buckets: Box<[Vec<SigVal<S, V>>]>,
         shard_sizes: Box<[usize]>,
     ) -> Result<(), Self::Error> {
+        assert_eq!(buckets.len(), self.buckets.len(), "bucket count mismatch");
+        assert_eq!(
+            shard_sizes.len(),
+            self.shard_sizes.len(),
+            "shard count mismatch"
+        );
         for (b, mini_bucket) in buckets.into_vec().into_iter().enumerate() {
             self.len += mini_bucket.len();
             self.bucket_sizes[b] += mini_bucket.len();
@@ -773,7 +788,9 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
         let mut max_val = V::default();
         for (buckets, shard_sizes, local_max) in mini_stores {
             max_val = Ord::max(max_val, local_max);
-            self.merge_from(buckets, shard_sizes).unwrap();
+            // SAFETY: each mini-store uses the same bucket/shard geometry as
+            // self, and increments shard_sizes for every value put in buckets.
+            unsafe { self.merge_from(buckets, shard_sizes).unwrap() };
         }
 
         Ok(max_val)
@@ -952,23 +969,24 @@ impl<
             let len: usize = store.fine_shard_sizes[base..base + coarsen].iter().sum();
             let mut shard = Vec::<SigVal<S, V>>::with_capacity(len);
 
-            // SAFETY: we just allocated this vector so it is safe to set the length,
-            // and read_exact guarantees that the vector will be filled with data
-            #[allow(clippy::uninit_vec)]
-            unsafe {
-                shard.set_len(len);
-            }
-
             {
-                let (pre, mut buf, post) = unsafe { shard.align_to_mut::<u8>() };
+                let spare = &mut shard.spare_capacity_mut()[..len];
+                // SAFETY: MaybeUninit<SigVal<S, V>> may be viewed as bytes;
+                // u8 has alignment one and every byte pattern is valid.
+                let (pre, mut buf, post) = unsafe { spare.align_to_mut::<u8>() };
                 assert!(pre.is_empty());
                 assert!(post.is_empty());
                 for i in self.next_bucket..self.next_bucket + to_aggr {
-                    let bytes = store.buf_sizes[i] * core::mem::size_of::<SigVal<S, V>>();
+                    let bytes = store.buf_sizes[i]
+                        .checked_mul(core::mem::size_of::<SigVal<S, V>>())
+                        .expect("offline signature store: bucket byte size overflow");
                     store.buckets[i]
                         .seek(SeekFrom::Start(0))
                         .expect("offline signature store: temp-file seek failed");
-                    store.buckets[i].read_exact(&mut buf[..bytes]).expect(
+                    let target = buf
+                        .get_mut(..bytes)
+                        .expect("offline signature store: shard counts are inconsistent");
+                    store.buckets[i].read_exact(target).expect(
                         "offline signature store: temp-file read failed (disk error or truncation)",
                     );
                     if !self.borrowed {
@@ -976,7 +994,14 @@ impl<
                     }
                     buf = &mut buf[bytes..];
                 }
+                assert!(
+                    buf.is_empty(),
+                    "offline signature store: shard counts are inconsistent"
+                );
             }
+            // SAFETY: every byte of all `len` elements was initialized by
+            // read_exact above from previously written BinSafe SigVal records.
+            unsafe { shard.set_len(len) };
 
             let res = shard;
             self.next_bucket += to_aggr;
@@ -1003,10 +1028,6 @@ impl<
                 let mut len = store.buf_sizes[self.next_bucket];
                 let buf_size = 1024;
                 let mut buffer = Vec::<SigVal<S, V>>::with_capacity(buf_size);
-                #[allow(clippy::uninit_vec)]
-                unsafe {
-                    buffer.set_len(buf_size);
-                }
                 let shard_mask = (1 << store.shard_high_bits) - 1;
                 store.buckets[self.next_bucket]
                     .seek(SeekFrom::Start(0))
@@ -1014,26 +1035,33 @@ impl<
 
                 while len > 0 {
                     let to_read = buf_size.min(len);
-                    unsafe {
-                        buffer.set_len(to_read);
-                    }
-                    let (pre, buf, after) = unsafe { buffer.align_to_mut::<u8>() };
+                    let spare = &mut buffer.spare_capacity_mut()[..to_read];
+                    // SAFETY: MaybeUninit<SigVal<S, V>> may be viewed as
+                    // bytes; u8 has alignment one and every byte pattern is valid.
+                    let (pre, buf, after) = unsafe { spare.align_to_mut::<u8>() };
                     debug_assert!(pre.is_empty());
                     debug_assert!(after.is_empty());
 
                     store.buckets[self.next_bucket].read_exact(buf).expect(
                         "offline signature store: temp-file read failed (disk error or truncation)",
                     );
+                    // SAFETY: read_exact initialized every byte of the
+                    // `to_read` BinSafe SigVal records in spare capacity.
+                    unsafe { buffer.set_len(to_read) };
 
-                    // We move each signature/value pair into its shard
-                    for &v in &buffer {
-                        let shard = v.sig.high_bits(store.shard_high_bits, shard_mask) as usize
+                    // We copy each signature/value pair into its shard.
+                    for &value in &buffer {
+                        let shard = value.sig.high_bits(store.shard_high_bits, shard_mask) as usize
                             - shard_offset;
-                        self.shards[shard].push(v);
+                        self.shards[shard].push(value);
                     }
+                    buffer.clear();
                     len -= to_read;
                 }
 
+                if !self.borrowed {
+                    let _ = store.buckets[self.next_bucket].get_mut().set_len(0);
+                }
                 self.next_bucket += 1;
             }
 

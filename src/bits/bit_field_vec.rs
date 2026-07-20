@@ -774,107 +774,14 @@ impl<W: Word> core::fmt::Display for ChunksMutError<W> {
 
 impl<W: Word> std::error::Error for ChunksMutError<W> {}
 
-impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueMut
-    for BitFieldVec<B>
-{
-    #[inline(always)]
-    fn set_value(&mut self, index: usize, value: B::Word) {
-        panic_if_out_of_bounds!(index, self.len);
-        panic_if_value!(value, self.mask, self.bit_width);
-        unsafe {
-            self.set_value_unchecked(index, value);
-        }
-    }
-
-    fn apply_in_place<F>(&mut self, mut f: F)
-    where
-        F: FnMut(Self::Value) -> Self::Value,
-    {
-        for idx in 0..self.len {
-            // SAFETY: idx < self.len.
-            let value = unsafe { self.get_value_unchecked(idx) };
-            let new_value = f(value);
-            panic_if_value!(new_value, self.mask, self.bit_width);
-            // SAFETY: idx < self.len and new_value fits the bit width
-            // (checked just above).
-            unsafe { self.set_value_unchecked(idx, new_value) };
-        }
-    }
-
-    // SAFETY: besides index < self.len, the caller must guarantee
-    // that value fits in bit_width bits (value & !self.mask == 0); in
-    // particular, for a zero-width vector the only valid value is zero, and
-    // the write touches the single backing word that constructors guarantee.
-    unsafe fn set_value_unchecked(&mut self, index: usize, value: B::Word) {
-        let bits = B::Word::BITS as usize;
-        let pos = index * self.bit_width;
-        let word_index = pos / bits;
-        let bit_index = pos % bits;
-        let data = self.bits.as_mut();
-
-        unsafe {
-            if bit_index + self.bit_width <= bits {
-                let mut word = *data.get_unchecked_mut(word_index);
-                word &= !(self.mask << bit_index);
-                word |= value << bit_index;
-                *data.get_unchecked_mut(word_index) = word;
-            } else {
-                let mut word = *data.get_unchecked_mut(word_index);
-                word &= (B::Word::ONE << bit_index) - B::Word::ONE;
-                word |= value << bit_index;
-                *data.get_unchecked_mut(word_index) = word;
-
-                let mut word = *data.get_unchecked_mut(word_index + 1);
-                word &= !(self.mask >> (bits - bit_index));
-                word |= value >> (bits - bit_index);
-                *data.get_unchecked_mut(word_index + 1) = word;
-            }
-        }
-    }
-
-    fn replace_value(&mut self, index: usize, value: B::Word) -> B::Word {
-        panic_if_out_of_bounds!(index, self.len);
-        panic_if_value!(value, self.mask, self.bit_width);
-        unsafe { self.replace_value_unchecked(index, value) }
-    }
-
-    // SAFETY: same as set_value_unchecked: the caller must
-    // guarantee that value fits in bit_width bits.
-    unsafe fn replace_value_unchecked(&mut self, index: usize, value: B::Word) -> B::Word {
-        let bits = B::Word::BITS as usize;
-        let pos = index * self.bit_width;
-        let word_index = pos / bits;
-        let bit_index = pos % bits;
-        let data = self.bits.as_mut();
-
-        unsafe {
-            if bit_index + self.bit_width <= bits {
-                let mut word = *data.get_unchecked_mut(word_index);
-                let old_value = (word >> bit_index) & self.mask;
-                word &= !(self.mask << bit_index);
-                word |= value << bit_index;
-                *data.get_unchecked_mut(word_index) = word;
-                old_value
-            } else {
-                let mut word = *data.get_unchecked_mut(word_index);
-                let mut old_value = word >> bit_index;
-                word &= (B::Word::ONE << bit_index) - B::Word::ONE;
-                word |= value << bit_index;
-                *data.get_unchecked_mut(word_index) = word;
-
-                let mut word = *data.get_unchecked_mut(word_index + 1);
-                old_value |= word << (bits - bit_index);
-                word &= !(self.mask >> (bits - bit_index));
-                word |= value >> (bits - bit_index);
-                *data.get_unchecked_mut(word_index + 1) = word;
-                old_value & self.mask
-            }
-        }
-    }
-
-    /// This implementation performs the copy word by word, which is
-    /// significantly faster than the default implementation.
-    fn copy(&self, from: usize, dst: &mut Self, to: usize, len: usize) {
+impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> BitFieldVec<B> {
+    /// Copies part of the content of this vector to another vector of the
+    /// same type, word by word.
+    ///
+    /// This inherent method takes precedence over [`SliceByValueMut::copy`]
+    /// for same-type copies and is significantly faster than the element-wise
+    /// generic implementation.
+    pub fn copy(&self, from: usize, dst: &mut Self, to: usize, len: usize) {
         assert_eq!(
             self.bit_width, dst.bit_width,
             "Bit widths must be equal (self: {}, dest: {})",
@@ -983,6 +890,105 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
             let mask = B::Word::MAX >> (bits - residual);
             dest[dst_last_word] &= !mask;
             dest[dst_last_word] |= word & mask;
+        }
+    }
+}
+
+impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueMut
+    for BitFieldVec<B>
+{
+    #[inline(always)]
+    fn set_value(&mut self, index: usize, value: B::Word) {
+        panic_if_out_of_bounds!(index, self.len);
+        panic_if_value!(value, self.mask, self.bit_width);
+        unsafe {
+            self.set_value_unchecked(index, value);
+        }
+    }
+
+    fn apply_in_place<F>(&mut self, mut f: F)
+    where
+        F: FnMut(Self::Value) -> Self::Value,
+    {
+        for idx in 0..self.len {
+            // SAFETY: idx < self.len.
+            let value = unsafe { self.get_value_unchecked(idx) };
+            let new_value = f(value);
+            panic_if_value!(new_value, self.mask, self.bit_width);
+            // SAFETY: idx < self.len and new_value fits the bit width
+            // (checked just above).
+            unsafe { self.set_value_unchecked(idx, new_value) };
+        }
+    }
+
+    // SAFETY: besides index < self.len, the caller must guarantee
+    // that value fits in bit_width bits (value & !self.mask == 0); in
+    // particular, for a zero-width vector the only valid value is zero, and
+    // the write touches the single backing word that constructors guarantee.
+    unsafe fn set_value_unchecked(&mut self, index: usize, value: B::Word) {
+        let bits = B::Word::BITS as usize;
+        let pos = index * self.bit_width;
+        let word_index = pos / bits;
+        let bit_index = pos % bits;
+        let data = self.bits.as_mut();
+
+        unsafe {
+            if bit_index + self.bit_width <= bits {
+                let mut word = *data.get_unchecked_mut(word_index);
+                word &= !(self.mask << bit_index);
+                word |= value << bit_index;
+                *data.get_unchecked_mut(word_index) = word;
+            } else {
+                let mut word = *data.get_unchecked_mut(word_index);
+                word &= (B::Word::ONE << bit_index) - B::Word::ONE;
+                word |= value << bit_index;
+                *data.get_unchecked_mut(word_index) = word;
+
+                let mut word = *data.get_unchecked_mut(word_index + 1);
+                word &= !(self.mask >> (bits - bit_index));
+                word |= value >> (bits - bit_index);
+                *data.get_unchecked_mut(word_index + 1) = word;
+            }
+        }
+    }
+
+    fn replace_value(&mut self, index: usize, value: B::Word) -> B::Word {
+        panic_if_out_of_bounds!(index, self.len);
+        panic_if_value!(value, self.mask, self.bit_width);
+        unsafe { self.replace_value_unchecked(index, value) }
+    }
+
+    // SAFETY: same as set_value_unchecked: the caller must
+    // guarantee that value fits in bit_width bits.
+    unsafe fn replace_value_unchecked(&mut self, index: usize, value: B::Word) -> B::Word {
+        let bits = B::Word::BITS as usize;
+        let pos = index * self.bit_width;
+        let word_index = pos / bits;
+        let bit_index = pos % bits;
+        let data = self.bits.as_mut();
+
+        unsafe {
+            if bit_index + self.bit_width <= bits {
+                let mut word = *data.get_unchecked_mut(word_index);
+                let old_value = (word >> bit_index) & self.mask;
+                word &= !(self.mask << bit_index);
+                word |= value << bit_index;
+                *data.get_unchecked_mut(word_index) = word;
+                old_value
+            } else {
+                let mut word = *data.get_unchecked_mut(word_index);
+                let mut old_value = word >> bit_index;
+                word &= (B::Word::ONE << bit_index) - B::Word::ONE;
+                word |= value << bit_index;
+                *data.get_unchecked_mut(word_index) = word;
+
+                let mut word = *data.get_unchecked_mut(word_index + 1);
+                old_value |= word << (bits - bit_index);
+                word &= !(self.mask >> (bits - bit_index));
+                word |= value >> (bits - bit_index);
+                *data.get_unchecked_mut(word_index + 1) = word;
+                old_value & self.mask
+            }
         }
     }
 

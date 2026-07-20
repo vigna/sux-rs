@@ -1306,7 +1306,13 @@ where
     /// (same contract as [`VFunc::get`]).
     #[inline]
     pub fn get(&self, key: K) -> usize {
-        let packed = self.lcp_len_offset.get(key);
+        let sig = K::to_sig(key, self.lcp_len_offset.seed);
+        self.get_by_sig(key, sig)
+    }
+
+    #[inline]
+    pub(crate) fn get_by_sig(&self, key: K, sig: S0) -> usize {
+        let packed = self.lcp_len_offset.get_by_sig(sig);
         // Absent keys yield an arbitrary packed value; clamp the decoded LCP
         // length to the key width so IntBitPrefix::new cannot overflow. Present
         // keys always have lcp_bit_len <= K::BITS, so this is a no-op for them.
@@ -1566,7 +1572,13 @@ where
     /// (same contract as [`VFunc::get`]).
     #[inline]
     pub fn get(&self, key: &K) -> usize {
-        let packed = self.lcp_len_offset.get(key);
+        let sig = K::to_sig(key, self.lcp_len_offset.seed);
+        self.get_by_sig(key, sig)
+    }
+
+    #[inline]
+    pub(crate) fn get_by_sig(&self, key: &K, sig: S0) -> usize {
+        let packed = self.lcp_len_offset.get_by_sig(sig);
         let lcp_bit_len = packed >> self.log2_bucket_size;
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
         // Compute the lcp_to_bucket signature directly from the key bytes

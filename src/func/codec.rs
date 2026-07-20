@@ -159,8 +159,10 @@ pub trait Decoder<W> {
 /// [`escaped_symbols_len`]: Decoder::escaped_symbols_len
 #[derive(Debug, Clone, Copy)]
 pub struct HuffmanConf {
-    /// Hard cap on the number of blocks in the canonical decoding table,
-    /// *including* the escape block when escaping occurs: at most
+    /// Target cap on the number of blocks in the canonical decoding table,
+    /// *including* the escape block when escaping occurs. Values below two are
+    /// normalized to two so a nonempty alphabet can retain one length class and
+    /// one escape block. For larger values, at most
     /// `max_decoding_table_len - 1` distinct codeword lengths are kept, and
     /// symbols beyond the cut are encoded via the escape codeword followed
     /// by a literal. Default: 20.
@@ -208,10 +210,10 @@ impl HuffmanConf {
     ///
     /// # Arguments
     ///
-    /// * `max_decoding_table_len` - caps the number of blocks in the
+    /// * `max_decoding_table_len` - targets the number of blocks in the
     ///   canonical decoding table, including the escape block when escaping
-    ///   occurs (i.e., at most `max_decoding_table_len - 1` distinct
-    ///   codeword lengths are kept).
+    ///   occurs. Values below two are normalized to two; otherwise at most
+    ///   `max_decoding_table_len - 1` distinct codeword lengths are kept.
     ///
     /// * `entropy_threshold` - the cumulative-entropy fraction
     ///   beyond which infrequent symbols are diverted to the escape
@@ -253,7 +255,7 @@ impl<W: PrimitiveInteger + Hash> Codec<W> for HuffmanConf {
     fn build_coder(&self, frequencies: &HashMap<W, usize>) -> HuffmanCoder<W> {
         build_huffman_coder(
             frequencies,
-            self.max_decoding_table_len,
+            self.max_decoding_table_len.max(2),
             self.entropy_threshold,
         )
     }
@@ -537,7 +539,9 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
                 }
             }
         }
-        unreachable!("decoder fell through all blocks")
+        // A width-conforming prefix not below any block bound is not assigned
+        // to any symbol; this does not happen when decoding well-formed data.
+        None
     }
 
     /// Branchless decode: counts blocks whose upper bound is `<=

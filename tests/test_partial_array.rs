@@ -112,6 +112,12 @@ fn test_sparse_builder_exact_capacity() {
 }
 
 #[test]
+#[should_panic(expected = "must not exceed array length")]
+fn sparse_builder_rejects_impossible_capacity() {
+    let _ = partial_array::new_sparse::<u8>(0, 1);
+}
+
+#[test]
 #[should_panic(expected = "Index out of bounds: 10 >= 10")]
 fn test_builder_bounds_check_sparse() {
     let mut builder = partial_array::new_sparse::<&str>(10, 1);

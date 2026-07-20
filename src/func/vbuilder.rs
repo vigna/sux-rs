@@ -13,7 +13,6 @@ use crate::traits::bit_field_slice::{BitFieldSlice, BitFieldSliceMut};
 use crate::traits::{BitVecOpsMut, Word};
 use crate::utils::*;
 use core::error::Error;
-use derivative::Derivative;
 use derive_setters::*;
 use dsi_progress_logger::*;
 use lender::FallibleLending;
@@ -79,8 +78,7 @@ fn default_max_num_threads() -> usize {
 /// [offline]: VBuilder::offline
 /// [set the maximum number of threads]: VBuilder::max_num_threads
 /// [`VFilter`]: crate::dict::VFilter
-#[derive(Setters, Debug, Derivative)]
-#[derivative(Default)]
+#[derive(Setters, Debug)]
 #[setters(generate = false)]
 pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// The expected number of keys.
@@ -89,7 +87,6 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// on the actual number of keys will significantly speed up the
     /// construction.
     #[setters(generate = true, strip_option)]
-    #[derivative(Default(value = "None"))]
     expected_num_keys: Option<usize>,
 
     /// Override the value used to size the sharding step.
@@ -109,13 +106,11 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// runtime key count. CompVFunc sets this to the total edge
     /// count after building the Huffman coder.
     #[setters(generate = true, strip_option)]
-    #[derivative(Default(value = "None"))]
     pub(crate) shard_size_hint: Option<usize>,
 
     /// The maximum number of parallel threads to use for both the population
     /// and solve phases. The default is `min(16, available_parallelism)`.
     #[setters(generate = true)]
-    #[derivative(Default(value = "default_max_num_threads()"))]
     pub(crate) max_num_threads: usize,
 
     /// Use disk-based buckets to reduce core memory usage at construction time.
@@ -136,7 +131,6 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// high-mem and switches to low-mem if there are more
     /// than three threads and more than two shards.
     #[setters(generate = true, strip_option)]
-    #[derivative(Default(value = "None"))]
     pub(crate) low_mem: Option<bool>,
 
     /// The seed for the random number generator.
@@ -149,7 +143,6 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     ///
     /// [expected number of keys]: VBuilder::expected_num_keys
     #[setters(generate = true, strip_option)]
-    #[derivative(Default(value = "8"))]
     log2_buckets: u32,
 
     /// The target relative space loss due to [ε-cost sharding].
@@ -170,7 +163,6 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     ///
     /// [ε-cost sharding]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
     #[setters(generate = true, strip_option)]
-    #[derivative(Default(value = "0.001"))]
     pub(crate) eps: f64,
 
     /// The bit width of the maximum value.
@@ -192,6 +184,30 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) failed: AtomicBool,
     #[doc(hidden)]
     _marker: PhantomData<(D, S)>,
+}
+
+impl<D, S, E: Default> Default for VBuilder<D, S, E> {
+    fn default() -> Self {
+        Self {
+            expected_num_keys: None,
+            shard_size_hint: None,
+            max_num_threads: default_max_num_threads(),
+            offline: false,
+            check_dups: false,
+            low_mem: None,
+            seed: 0,
+            log2_buckets: 8,
+            eps: 0.001,
+            bit_width: 0,
+            shard_edge: E::default(),
+            num_keys: 0,
+            c: 0.0,
+            lge: false,
+            num_threads: 0,
+            failed: AtomicBool::new(false),
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync, S: Sig, E: ShardEdge<S, 3>>
@@ -1278,7 +1294,7 @@ impl<
         }
 
         let shard_edge = &self.shard_edge;
-        self.num_threads = shard_edge.num_shards().min(self.max_num_threads);
+        self.num_threads = shard_edge.num_shards().min(self.max_num_threads).max(1);
 
         pl.info(format_args!(
             "Number of keys: {}; bit width: {}",
@@ -1559,7 +1575,7 @@ impl<
                                         };
 
                                         let builder = shard.radix_sort_builder();
-                                        if self.max_num_threads == 1 {
+                                        if self.num_threads == 1 {
                                             builder
                                                 .with_single_threaded_tuner()
                                                 .with_parallel(false)
