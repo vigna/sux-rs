@@ -3,7 +3,7 @@
  * SPDX-FileCopyrightText: 2024 Michele Andreata
  * SPDX-FileCopyrightText: 2024 Sebastiano Vigna
  *
- * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 use super::{Inventory, LOG2_U16_PER_USIZE, SpanType, U32_PER_USIZE, assert_inventory_length};

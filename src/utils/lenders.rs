@@ -3,7 +3,7 @@
  * SPDX-FileCopyrightText: 2023 Sebastiano Vigna
  * SPDX-FileCopyrightText: 2025 Inria
  *
- * SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
 //! Support for [rewindable fallible lenders].
