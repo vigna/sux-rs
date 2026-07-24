@@ -89,6 +89,15 @@ pub struct VFunc<K: ?Sized, D, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) _marker: std::marker::PhantomData<(*const K, S)>,
 }
 
+// SAFETY: K and S occur only inside _marker, so no value of either type is
+// ever stored: the auto traits depend just on the remaining fields. The
+// *const K in the marker is a Sized placeholder standing in for a possibly
+// unsized K (only the last element of a tuple may be unsized), not a pointer
+// we own; without these impls its !Send/!Sync-ness would propagate to VFunc
+// and to everything containing it.
+unsafe impl<K: ?Sized, D: Send, S, E: Send> Send for VFunc<K, D, S, E> {}
+unsafe impl<K: ?Sized, D: Sync, S, E: Sync> Sync for VFunc<K, D, S, E> {}
+
 impl<K: ?Sized, D, S, E> VFunc<K, D, S, E> {
     /// Returns the number of keys in the function.
     pub const fn len(&self) -> usize {

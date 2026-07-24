@@ -160,6 +160,16 @@ pub struct CompVFunc<K: ?Sized, D: Backend = BitVec<Box<[usize]>>, S = [u64; 2],
     pub(crate) _marker: PhantomData<(*const K, S)>,
 }
 
+// SAFETY: K and S occur only inside _marker, so no value of either type is
+// ever stored: the auto traits depend just on the remaining fields, whence the
+// bounds on D, D::Word (which is also the word type of decoder) and E. The
+// *const K in the marker is a Sized placeholder standing in for a possibly
+// unsized K (only the last element of a tuple may be unsized), not a pointer
+// we own; without these impls its !Send/!Sync-ness would propagate to
+// CompVFunc.
+unsafe impl<K: ?Sized, D: Backend<Word: Send> + Send, S, E: Send> Send for CompVFunc<K, D, S, E> {}
+unsafe impl<K: ?Sized, D: Backend<Word: Sync> + Sync, S, E: Sync> Sync for CompVFunc<K, D, S, E> {}
+
 // ── Query path ──────────────────────────────────────────────────────
 
 impl<
