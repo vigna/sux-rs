@@ -1200,6 +1200,12 @@ impl<'a, W: AtomicPrimitive> TryFrom<BitVec<&'a mut [W]>> for AtomicBitVec<&'a m
             return Err(InsufficientAlignmentError::new::<W, W::Atomic>());
         }
         Ok(AtomicBitVec {
+            // SAFETY: an atomic type has the same size and in-memory
+            // representation as its value type, and the alignment of the
+            // target type is not stricter than that of the source type (just
+            // checked), which the buffer is known to satisfy. No deallocation
+            // happens through this reference, so the alignments need not be
+            // equal.
             bits: unsafe { core::mem::transmute::<&'a mut [W], &'a mut [W::Atomic]>(value.bits) },
             len: value.len,
         })
@@ -1254,9 +1260,20 @@ impl<W: AtomicPrimitive> TryFrom<BitVec<Box<[W]>>> for AtomicBitVec<Box<[W::Atom
     }
 }
 
+/// This conversion is infallible, contrarily to the [opposite one], because
+/// the alignment of an atomic type is never less strict than the alignment of
+/// its value type.
+///
+/// [opposite one]: #impl-TryFrom%3CBitVec%3C%26mut+%5BW%5D%3E%3E-for-AtomicBitVec%3C%26mut+%5B%3CW+as+AtomicPrimitive%3E%3A%3AAtomic%5D%3E
 impl<'a, W: AtomicPrimitive> From<AtomicBitVec<&'a mut [W::Atomic]>> for BitVec<&'a mut [W]> {
     fn from(value: AtomicBitVec<&'a mut [W::Atomic]>) -> Self {
         BitVec {
+            // SAFETY: an atomic type has the same size and in-memory
+            // representation as its value type. Moreover, all atomic types
+            // have an alignment at least as strict as that of their value
+            // type, so the buffer, which is aligned for W::Atomic, is aligned
+            // for W, too. No deallocation happens through this reference, so
+            // the alignments need not be equal.
             bits: unsafe { core::mem::transmute::<&'a mut [W::Atomic], &'a mut [W]>(value.bits) },
             len: value.len,
         }

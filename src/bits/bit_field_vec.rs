@@ -1978,12 +1978,23 @@ impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>>
     }
 }
 
+/// This conversion is infallible, contrarily to the [opposite one], because
+/// the alignment of an atomic type is never less strict than the alignment of
+/// its value type.
+///
+/// [opposite one]: #impl-TryFrom%3CBitFieldVec%3C%26mut+%5BW%5D%3E%3E-for-AtomicBitFieldVec%3C%26mut+%5B%3CW+as+AtomicPrimitive%3E%3A%3AAtomic%5D%3E
 impl<'a, W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>>
     From<AtomicBitFieldVec<&'a mut [W::Atomic]>> for BitFieldVec<&'a mut [W]>
 {
     #[inline]
     fn from(value: AtomicBitFieldVec<&'a mut [W::Atomic]>) -> Self {
         BitFieldVec {
+            // SAFETY: an atomic type has the same size and in-memory
+            // representation as its value type. Moreover, all atomic types
+            // have an alignment at least as strict as that of their value
+            // type, so the buffer, which is aligned for W::Atomic, is aligned
+            // for W, too. No deallocation happens through this reference, so
+            // the alignments need not be equal.
             bits: unsafe { core::mem::transmute::<&'a mut [W::Atomic], &'a mut [W]>(value.bits) },
             len: value.len,
             bit_width: value.bit_width,
@@ -2041,6 +2052,12 @@ impl<'a, W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>>
             return Err(InsufficientAlignmentError::new::<W, W::Atomic>());
         }
         Ok(AtomicBitFieldVec {
+            // SAFETY: an atomic type has the same size and in-memory
+            // representation as its value type, and the alignment of the
+            // target type is not stricter than that of the source type (just
+            // checked), which the buffer is known to satisfy. No deallocation
+            // happens through this reference, so the alignments need not be
+            // equal.
             bits: unsafe { core::mem::transmute::<&'a mut [W], &'a mut [W::Atomic]>(value.bits) },
             len: value.len,
             bit_width: value.bit_width,

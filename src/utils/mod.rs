@@ -196,7 +196,7 @@ pub fn transmute_vec_from_atomic<A: PrimitiveAtomic>(
 /// of elements of the associated atomic type.
 ///
 /// See [`transmute_vec_into_atomic`] for details.
-pub fn transmute_boxed_slice_into_atomic<W: AtomicPrimitive + Copy>(
+pub fn transmute_boxed_slice_into_atomic<W: AtomicPrimitive>(
     b: Box<[W]>,
 ) -> Result<Box<[Atomic<W>]>, DifferentAlignmentError> {
     if core::mem::align_of::<Atomic<W>>() != core::mem::align_of::<W>() {
