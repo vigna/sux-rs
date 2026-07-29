@@ -1982,7 +1982,7 @@ impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>>
 /// the alignment of an atomic type is never less strict than the alignment of
 /// its value type.
 ///
-/// [opposite one]: #impl-TryFrom%3CBitFieldVec%3C%26mut+%5BW%5D%3E%3E-for-AtomicBitFieldVec%3C%26mut+%5B%3CW+as+AtomicPrimitive%3E%3A%3AAtomic%5D%3E
+/// [opposite one]: #impl-TryFrom%3CBitFieldVec%3C%26mut+%5BW%5D%3E%3E-for-AtomicBitFieldVec%3C%26mut+%5B%3CW+as+AtomicPrimitive%3E::Atomic%5D%3E
 impl<'a, W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>>
     From<AtomicBitFieldVec<&'a mut [W::Atomic]>> for BitFieldVec<&'a mut [W]>
 {

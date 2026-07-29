@@ -225,18 +225,25 @@ where
             }
         }
 
-        let w: BitFieldVec<Vec<W>> = v.try_into().unwrap();
-        let x = w.clone();
-        let y: AtomicBitFieldVec<Vec<W::Atomic>> = x.try_into().unwrap();
-        let z: AtomicBitFieldVec<Vec<W::Atomic>> = w.try_into().unwrap();
+        // An atomic type can be more strictly aligned than its value type (e.g.,
+        // u64 on 32-bit platforms), in which case conversion cannot reuse the
+        // allocation and must fail
+        if align_of::<W::Atomic>() == align_of::<W>() {
+            let w: BitFieldVec<Vec<W>> = v.try_into().unwrap();
+            let x = w.clone();
+            let y: AtomicBitFieldVec<Vec<W::Atomic>> = x.try_into().unwrap();
+            let z: AtomicBitFieldVec<Vec<W::Atomic>> = w.try_into().unwrap();
 
-        let (b, w, l) = z.into_raw_parts();
-        let z = unsafe { AtomicBitFieldVec::<Vec<W::Atomic>>::from_raw_parts(b, w, l) };
-        for i in 0..n {
-            assert_eq!(
-                z.get_atomic(i, Ordering::Relaxed),
-                y.get_atomic(i, Ordering::Relaxed),
-            );
+            let (b, w, l) = z.into_raw_parts();
+            let z = unsafe { AtomicBitFieldVec::<Vec<W::Atomic>>::from_raw_parts(b, w, l) };
+            for i in 0..n {
+                assert_eq!(
+                    z.get_atomic(i, Ordering::Relaxed),
+                    y.get_atomic(i, Ordering::Relaxed),
+                );
+            }
+        } else {
+            assert!(BitFieldVec::<Vec<W>>::try_from(v).is_err());
         }
     }
 }

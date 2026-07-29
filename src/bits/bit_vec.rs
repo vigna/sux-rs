@@ -131,7 +131,7 @@
 //! assert_eq!(unsafe { BitVec::from_raw_parts(ones.as_slice(), 1) }.count_ones(), 1);
 //! ```
 //!
-//! [an atomic backend is involved]: BitVec#impl-TryFrom%3CBitVec%3C%26%5BW%5D%3E%3E-for-AtomicBitVec%3C%26%5B%3CW+as+AtomicPrimitive%3E%3A%3AAtomic%5D%3E
+//! [an atomic backend is involved]: BitVec#impl-TryFrom%3CBitVec%3C%26mut+%5BW%5D%3E%3E-for-AtomicBitVec%3C%26mut+%5B%3CW+as+AtomicPrimitive%3E::Atomic%5D%3E
 //! [ε-serde]: https://crates.io/crates/epserde
 //! [`push`]: BitVec::push
 //! [`bit_vec!`]: macro@crate::bits::bit_vec
@@ -1264,7 +1264,7 @@ impl<W: AtomicPrimitive> TryFrom<BitVec<Box<[W]>>> for AtomicBitVec<Box<[W::Atom
 /// the alignment of an atomic type is never less strict than the alignment of
 /// its value type.
 ///
-/// [opposite one]: #impl-TryFrom%3CBitVec%3C%26mut+%5BW%5D%3E%3E-for-AtomicBitVec%3C%26mut+%5B%3CW+as+AtomicPrimitive%3E%3A%3AAtomic%5D%3E
+/// [opposite one]: #impl-TryFrom%3CBitVec%3C%26mut+%5BW%5D%3E%3E-for-AtomicBitVec%3C%26mut+%5B%3CW+as+AtomicPrimitive%3E::Atomic%5D%3E
 impl<'a, W: AtomicPrimitive> From<AtomicBitVec<&'a mut [W::Atomic]>> for BitVec<&'a mut [W]> {
     fn from(value: AtomicBitVec<&'a mut [W::Atomic]>) -> Self {
         BitVec {
