@@ -58,10 +58,19 @@
 //!
 //! A wide range of conversion is available between the different flavors of
 //! bit-field vectors, using [`From`]/[`Into`] and [`TryFrom`]/[`TryInto`] as
-//! needed. For example, you can convert from a non-atomic to an atomic bit-field
-//! vector if the alignment requirements are satisfied, and you can convert from
-//! a growable bit-field vector to a fixed-size one by converting the backend to a
-//! boxed slice.
+//! needed. For example, you can convert from a growable bit-field vector to a
+//! fixed-size one by converting the backend to a boxed slice, and this
+//! conversion is infallible.
+//!
+//! Conversions between an atomic backend and a non-atomic one, on the other
+//! hand, reinterpret the same memory buffer, and are thus fallible: they use
+//! [`TryFrom`]/[`TryInto`]. For an *owned* backend the alignment of the atomic
+//! type must be equal to that of the value type, as the buffer must be
+//! deallocated with the alignment it was allocated with; failure returns a
+//! [`DifferentAlignmentError`]. For a *mutable reference* there is no
+//! deallocation, so it is sufficient that the target type has an alignment no
+//! stricter than that of the source type; failure returns an
+//! [`InsufficientAlignmentError`].
 //!
 //! # Low-level support
 //!
@@ -122,8 +131,8 @@ use crate::traits::ambassador_impl_Backend;
 use crate::traits::{Backend, Word};
 use crate::utils::PrimitiveUnsignedExt;
 use crate::utils::{
-    CannotCastToAtomicError, transmute_boxed_slice_from_atomic, transmute_boxed_slice_into_atomic,
-    transmute_vec_from_atomic, transmute_vec_into_atomic,
+    DifferentAlignmentError, InsufficientAlignmentError, transmute_boxed_slice_from_atomic,
+    transmute_boxed_slice_into_atomic, transmute_vec_from_atomic, transmute_vec_into_atomic,
 };
 use crate::{panic_if_out_of_bounds, panic_if_value};
 use ambassador::Delegate;
@@ -1933,32 +1942,39 @@ impl<'a, B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsMut<[B::Word
     }
 }
 
+/// This conversion may fail if the alignment of `W` is not the same as
+/// that of `W::Atomic`.
 impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>>
-    From<AtomicBitFieldVec<Vec<W::Atomic>>> for BitFieldVec<Vec<W>>
+    TryFrom<AtomicBitFieldVec<Vec<W::Atomic>>> for BitFieldVec<Vec<W>>
 {
+    type Error = DifferentAlignmentError;
+
     #[inline]
-    fn from(value: AtomicBitFieldVec<Vec<W::Atomic>>) -> Self {
-        BitFieldVec {
-            bits: transmute_vec_from_atomic(value.bits),
+    fn try_from(value: AtomicBitFieldVec<Vec<W::Atomic>>) -> Result<Self, Self::Error> {
+        Ok(BitFieldVec {
+            bits: transmute_vec_from_atomic(value.bits)?,
             len: value.len,
             bit_width: value.bit_width,
             mask: value.mask,
-        }
+        })
     }
 }
 
+/// This conversion may fail if the alignment of `W` is not the same as
+/// that of `W::Atomic`.
 impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>>
-    From<AtomicBitFieldVec<Box<[W::Atomic]>>> for BitFieldVec<Box<[W]>>
+    TryFrom<AtomicBitFieldVec<Box<[W::Atomic]>>> for BitFieldVec<Box<[W]>>
 {
-    #[inline]
-    fn from(value: AtomicBitFieldVec<Box<[W::Atomic]>>) -> Self {
-        BitFieldVec {
-            bits: transmute_boxed_slice_from_atomic(value.bits),
+    type Error = DifferentAlignmentError;
 
+    #[inline]
+    fn try_from(value: AtomicBitFieldVec<Box<[W::Atomic]>>) -> Result<Self, Self::Error> {
+        Ok(BitFieldVec {
+            bits: transmute_boxed_slice_from_atomic(value.bits)?,
             len: value.len,
             bit_width: value.bit_width,
             mask: value.mask,
-        }
+        })
     }
 }
 
@@ -1976,44 +1992,53 @@ impl<'a, W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>>
     }
 }
 
-impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>> From<BitFieldVec<Vec<W>>>
+/// This conversion may fail if the alignment of `W` is not the same as
+/// that of `W::Atomic`.
+impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>> TryFrom<BitFieldVec<Vec<W>>>
     for AtomicBitFieldVec<Vec<W::Atomic>>
 {
-    #[inline]
-    fn from(value: BitFieldVec<Vec<W>>) -> Self {
-        AtomicBitFieldVec {
-            bits: transmute_vec_into_atomic(value.bits),
+    type Error = DifferentAlignmentError;
 
+    #[inline]
+    fn try_from(value: BitFieldVec<Vec<W>>) -> Result<Self, Self::Error> {
+        Ok(AtomicBitFieldVec {
+            bits: transmute_vec_into_atomic(value.bits)?,
             len: value.len,
             bit_width: value.bit_width,
             mask: value.mask,
-        }
+        })
     }
 }
 
-impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>> From<BitFieldVec<Box<[W]>>>
+/// This conversion may fail if the alignment of `W` is not the same as
+/// that of `W::Atomic`.
+impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>> TryFrom<BitFieldVec<Box<[W]>>>
     for AtomicBitFieldVec<Box<[W::Atomic]>>
 {
+    type Error = DifferentAlignmentError;
+
     #[inline]
-    fn from(value: BitFieldVec<Box<[W]>>) -> Self {
-        AtomicBitFieldVec {
-            bits: transmute_boxed_slice_into_atomic(value.bits),
+    fn try_from(value: BitFieldVec<Box<[W]>>) -> Result<Self, Self::Error> {
+        Ok(AtomicBitFieldVec {
+            bits: transmute_boxed_slice_into_atomic(value.bits)?,
             len: value.len,
             bit_width: value.bit_width,
             mask: value.mask,
-        }
+        })
     }
 }
 
+/// This conversion may fail if the alignment of `W::Atomic` is stricter than
+/// that of `W`.
 impl<'a, W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>>
     TryFrom<BitFieldVec<&'a mut [W]>> for AtomicBitFieldVec<&'a mut [W::Atomic]>
 {
-    type Error = CannotCastToAtomicError<W>;
+    type Error = InsufficientAlignmentError;
 
     #[inline]
     fn try_from(value: BitFieldVec<&'a mut [W]>) -> Result<Self, Self::Error> {
-        if core::mem::align_of::<W::Atomic>() != core::mem::align_of::<W>() {
-            return Err(CannotCastToAtomicError::default());
+        if core::mem::align_of::<W::Atomic>() > core::mem::align_of::<W>() {
+            return Err(InsufficientAlignmentError::new::<W, W::Atomic>());
         }
         Ok(AtomicBitFieldVec {
             bits: unsafe { core::mem::transmute::<&'a mut [W], &'a mut [W::Atomic]>(value.bits) },

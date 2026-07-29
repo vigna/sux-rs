@@ -41,31 +41,106 @@ pub use mod2_sys::*;
 pub mod select_in_word;
 pub use select_in_word::*;
 
-/// An error type raised when attempting to cast a non-atomic type to an atomic
-/// type with incompatible alignments.
+/// The types involved in a failed reinterpretation of a memory buffer, and
+/// their alignments.
+///
+/// This is the payload of [`DifferentAlignmentError`] and of
+/// [`InsufficientAlignmentError`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CannotCastToAtomicError<T: AtomicPrimitive>(core::marker::PhantomData<T>);
+pub struct AlignmentInfo {
+    from: &'static str,
+    from_align: usize,
+    to: &'static str,
+    to_align: usize,
+}
 
-impl<T: AtomicPrimitive> Default for CannotCastToAtomicError<T> {
-    fn default() -> Self {
-        CannotCastToAtomicError(core::marker::PhantomData)
+impl AlignmentInfo {
+    /// Returns the information about a conversion from a buffer of elements of
+    /// type `F` to a buffer of elements of type `T`.
+    pub fn new<F, T>() -> Self {
+        Self {
+            from: core::any::type_name::<F>(),
+            from_align: core::mem::align_of::<F>(),
+            to: core::any::type_name::<T>(),
+            to_align: core::mem::align_of::<T>(),
+        }
+    }
+
+    /// Returns the name of the type the conversion started from, and its
+    /// alignment.
+    pub fn from_type(&self) -> (&'static str, usize) {
+        (self.from, self.from_align)
+    }
+
+    /// Returns the name of the type the conversion was directed to, and its
+    /// alignment.
+    pub fn to_type(&self) -> (&'static str, usize) {
+        (self.to, self.to_align)
     }
 }
 
-impl<T: AtomicPrimitive> core::fmt::Display for CannotCastToAtomicError<T> {
+/// An error raised when an owned memory buffer cannot be reinterpreted as a
+/// buffer of a different type because the two types have different alignments.
+///
+/// Reinterpreting the buffer of a [`Vec`] or of a boxed slice is possible only
+/// if the two element types have the *same* alignment, as deallocating a buffer
+/// with an alignment different from the one it was allocated with is undefined
+/// behavior. When only a reference to the buffer is reinterpreted there is no
+/// deallocation involved, and the weaker condition of
+/// [`InsufficientAlignmentError`] applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DifferentAlignmentError(pub AlignmentInfo);
+
+impl DifferentAlignmentError {
+    /// Returns the error for a conversion from a buffer of elements of type `F`
+    /// to a buffer of elements of type `T`.
+    pub fn new<F, T>() -> Self {
+        Self(AlignmentInfo::new::<F, T>())
+    }
+}
+
+impl core::fmt::Display for DifferentAlignmentError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "Cannot cast {} (align_of: {}) to atomic type {} (align_of: {}) because they have incompatible alignments",
-            core::any::type_name::<T>(),
-            core::mem::align_of::<T>(),
-            core::any::type_name::<Atomic<T>>(),
-            core::mem::align_of::<Atomic<T>>()
+            "cannot reinterpret an owned buffer of `{}` (alignment {}) as a buffer of `{}` (alignment {}): an owned buffer must be deallocated with the same alignment it was allocated with, so the two alignments must be equal",
+            self.0.from, self.0.from_align, self.0.to, self.0.to_align
         )
     }
 }
 
-impl<T: AtomicPrimitive + core::fmt::Debug> core::error::Error for CannotCastToAtomicError<T> {}
+impl core::error::Error for DifferentAlignmentError {}
+
+/// An error raised when a memory buffer cannot be reinterpreted as a buffer of
+/// a different type because the latter has a stricter alignment.
+///
+/// This is the condition for reinterpreting a *reference* to a buffer: since no
+/// deallocation is involved, the alignment of the target type just has to be
+/// less than or equal to that of the source type, whose alignment the buffer is
+/// known to satisfy. For an owned buffer the stronger condition of
+/// [`DifferentAlignmentError`] applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct InsufficientAlignmentError(pub AlignmentInfo);
+
+impl InsufficientAlignmentError {
+    /// Returns the error for a conversion from a buffer of elements of type `F`
+    /// to a buffer of elements of type `T`.
+    pub fn new<F, T>() -> Self {
+        Self(AlignmentInfo::new::<F, T>())
+    }
+}
+
+impl core::fmt::Display for InsufficientAlignmentError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "cannot reinterpret a buffer of `{}` (alignment {}) as a buffer of `{}` (alignment {}): the target type requires a stricter alignment",
+            self.0.from, self.0.from_align, self.0.to, self.0.to_align
+        )
+    }
+}
+
+impl core::error::Error for InsufficientAlignmentError {}
 
 /// Transmutes a vector of elements of non-atomic type into a vector of elements
 /// of the associated atomic type.
@@ -73,23 +148,23 @@ impl<T: AtomicPrimitive + core::fmt::Debug> core::error::Error for CannotCastToA
 /// [It is not safe to transmute a vector]. This method implements a correct
 /// transmutation of the vector content.
 ///
-/// Since the alignment of the atomic type might be greater than that of the
-/// non-atomic type, we can only perform a direct transmutation when the
-/// alignment of the atomic type is greater than or equal to that of the
-/// non-atomic type. In this case, we simply reinterpret the vector's pointer.
-///
-/// Otherwise, we fall back to a safe but less efficient method that allocates a
-/// new vector and copies the elements one by one. The compiler might be able
-/// to optimize this case away in some situations.
+/// The transmutation is possible only if the alignment of the atomic type is
+/// equal to that of the non-atomic type: deallocating the buffer with an
+/// alignment different from the one it was allocated with would be undefined
+/// behavior. In this case, we simply reinterpret the vector's pointer.
+/// Otherwise, the method returns a [`DifferentAlignmentError`].
 ///
 /// [It is not safe to transmute a vector]: https://doc.rust-lang.org/std/mem/fn.transmute.html
-pub fn transmute_vec_into_atomic<W: AtomicPrimitive>(v: Vec<W>) -> Vec<Atomic<W>> {
-    if core::mem::align_of::<Atomic<W>>() == core::mem::align_of::<W>() {
-        let mut v = std::mem::ManuallyDrop::new(v);
-        unsafe { Vec::from_raw_parts(v.as_mut_ptr() as *mut Atomic<W>, v.len(), v.capacity()) }
-    } else {
-        v.into_iter().map(W::to_atomic).collect()
+pub fn transmute_vec_into_atomic<W: AtomicPrimitive>(
+    v: Vec<W>,
+) -> Result<Vec<Atomic<W>>, DifferentAlignmentError> {
+    if core::mem::align_of::<Atomic<W>>() != core::mem::align_of::<W>() {
+        return Err(DifferentAlignmentError::new::<W, Atomic<W>>());
     }
+    let mut v = std::mem::ManuallyDrop::new(v);
+    // SAFETY: atomic types have the same in-memory representation as their
+    // value type, and the alignments are equal (just checked)
+    Ok(unsafe { Vec::from_raw_parts(v.as_mut_ptr() as *mut Atomic<W>, v.len(), v.capacity()) })
 }
 
 /// Transmutes a vector of elements of atomic type into a vector of elements of
@@ -98,26 +173,23 @@ pub fn transmute_vec_into_atomic<W: AtomicPrimitive>(v: Vec<W>) -> Vec<Atomic<W>
 /// [It is not safe to transmute a vector]. This method implements a correct
 /// transmutation of the vector content.
 ///
-/// Since the alignment of the atomic type might be greater than that of the
-/// non-atomic type, we can only perform a direct transmutation when the two
-/// alignments are equal: deallocating the buffer with an alignment different
-/// from that it was allocated with would be undefined behavior. In this case,
-/// we simply reinterpret the vector's pointer.
-///
-/// Otherwise, we fall back to a safe but less efficient method that allocates a
-/// new vector and copies the elements one by one. The compiler might be able
-/// to optimize this case away in some situations.
+/// The transmutation is possible only if the alignment of the atomic type is
+/// equal to that of the non-atomic type: deallocating the buffer with an
+/// alignment different from the one it was allocated with would be undefined
+/// behavior. In this case, we simply reinterpret the vector's pointer.
+/// Otherwise, the method returns a [`DifferentAlignmentError`].
 ///
 /// [It is not safe to transmute a vector]: https://doc.rust-lang.org/std/mem/fn.transmute.html
-pub fn transmute_vec_from_atomic<A: PrimitiveAtomic>(v: Vec<A>) -> Vec<A::Value> {
-    if core::mem::align_of::<A>() == core::mem::align_of::<A::Value>() {
-        let mut v = std::mem::ManuallyDrop::new(v);
-        // SAFETY: atomic types have the same in-memory representation as
-        // their value type, and the alignments are equal (just checked)
-        unsafe { Vec::from_raw_parts(v.as_mut_ptr() as *mut A::Value, v.len(), v.capacity()) }
-    } else {
-        v.into_iter().map(A::into_inner).collect()
+pub fn transmute_vec_from_atomic<A: PrimitiveAtomic>(
+    v: Vec<A>,
+) -> Result<Vec<A::Value>, DifferentAlignmentError> {
+    if core::mem::align_of::<A>() != core::mem::align_of::<A::Value>() {
+        return Err(DifferentAlignmentError::new::<A, A::Value>());
     }
+    let mut v = std::mem::ManuallyDrop::new(v);
+    // SAFETY: atomic types have the same in-memory representation as
+    // their value type, and the alignments are equal (just checked)
+    Ok(unsafe { Vec::from_raw_parts(v.as_mut_ptr() as *mut A::Value, v.len(), v.capacity()) })
 }
 
 /// Transmutes a boxed slice of elements of non-atomic type into a boxed slice
@@ -126,28 +198,30 @@ pub fn transmute_vec_from_atomic<A: PrimitiveAtomic>(v: Vec<A>) -> Vec<A::Value>
 /// See [`transmute_vec_into_atomic`] for details.
 pub fn transmute_boxed_slice_into_atomic<W: AtomicPrimitive + Copy>(
     b: Box<[W]>,
-) -> Box<[Atomic<W>]> {
-    if core::mem::align_of::<Atomic<W>>() == core::mem::align_of::<W>() {
-        let mut b = std::mem::ManuallyDrop::new(b);
-        unsafe { Box::from_raw(b.as_mut() as *mut [W] as *mut [Atomic<W>]) }
-    } else {
-        IntoIterator::into_iter(b).map(W::to_atomic).collect()
+) -> Result<Box<[Atomic<W>]>, DifferentAlignmentError> {
+    if core::mem::align_of::<Atomic<W>>() != core::mem::align_of::<W>() {
+        return Err(DifferentAlignmentError::new::<W, Atomic<W>>());
     }
+    let mut b = std::mem::ManuallyDrop::new(b);
+    // SAFETY: atomic types have the same in-memory representation as their
+    // value type, and the alignments are equal (just checked)
+    Ok(unsafe { Box::from_raw(b.as_mut() as *mut [W] as *mut [Atomic<W>]) })
 }
 
 /// Transmutes a boxed slice of values of atomic type into a boxed slice of
 /// values of the associated non-atomic type.
 ///
 /// See [`transmute_vec_from_atomic`] for details.
-pub fn transmute_boxed_slice_from_atomic<A: PrimitiveAtomic>(b: Box<[A]>) -> Box<[A::Value]> {
-    if core::mem::align_of::<A>() == core::mem::align_of::<A::Value>() {
-        let mut b = std::mem::ManuallyDrop::new(b);
-        // SAFETY: atomic types have the same in-memory representation as
-        // their value type, and the alignments are equal (just checked)
-        unsafe { Box::from_raw(b.as_mut() as *mut [A] as *mut [A::Value]) }
-    } else {
-        IntoIterator::into_iter(b).map(A::into_inner).collect()
+pub fn transmute_boxed_slice_from_atomic<A: PrimitiveAtomic>(
+    b: Box<[A]>,
+) -> Result<Box<[A::Value]>, DifferentAlignmentError> {
+    if core::mem::align_of::<A>() != core::mem::align_of::<A::Value>() {
+        return Err(DifferentAlignmentError::new::<A, A::Value>());
     }
+    let mut b = std::mem::ManuallyDrop::new(b);
+    // SAFETY: atomic types have the same in-memory representation as
+    // their value type, and the alignments are equal (just checked)
+    Ok(unsafe { Box::from_raw(b.as_mut() as *mut [A] as *mut [A::Value]) })
 }
 
 /// A multiply-with-carry pseudo-random number generator with 192 bits of

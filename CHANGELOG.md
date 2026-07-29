@@ -381,9 +381,10 @@ bit_field_slice::*` to use the traits.
   been replaced by four specific, safe functions
   `transmute_(vec|boxed_slice)_(from|into)_atomic` that take care of the case of
   a transmute from a non-atomic type into an atomic type with strictly greater
-  alignment requirements. In this case, we create a correctly aligned copy. We
-  cannot do the same for references, so in that case what was previously a
-  `From` implementation has been replaced by a `TryFrom` implementation.
+  alignment requirements. The functions return a `Result`, and an error is
+  returned when alignment requirements cannot be satisfied. Correspondingly,
+  most conversion methods on bit(-field) vectors are now fallible (e.g.,
+  `TryFrom`).
 
 - The iterator on atomic bit vectors no longer takes an exclusive reference.
 

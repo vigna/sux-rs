@@ -86,7 +86,7 @@ fn test() {
         }
     }
 
-    let bm: AtomicBitVec = bm.into();
+    let bm: AtomicBitVec = bm.try_into().unwrap();
 
     // Dirty vector
     let ones = [
@@ -488,8 +488,8 @@ fn test_from() {
     for i in 0..10 {
         b.set(i, i % 2 == 0);
     }
-    let b: AtomicBitVec<Box<[Atomic<usize>]>> = b.into();
-    let b: BitVec<Vec<usize>> = b.into();
+    let b: AtomicBitVec<Box<[Atomic<usize>]>> = b.try_into().unwrap();
+    let b: BitVec<Vec<usize>> = b.try_into().unwrap();
     for i in 0..10 {
         assert_eq!(b.get(i), i % 2 == 0);
         assert_eq!(b[i], i % 2 == 0);
@@ -500,8 +500,8 @@ fn test_from() {
     for i in 0..10 {
         b.set(i, i % 2 == 0);
     }
-    let b: AtomicBitVec<Box<[Atomic<usize>]>> = b.into();
-    let b: BitVec<Box<[usize]>> = b.into();
+    let b: AtomicBitVec<Box<[Atomic<usize>]>> = b.try_into().unwrap();
+    let b: BitVec<Box<[usize]>> = b.try_into().unwrap();
     for i in 0..10 {
         assert_eq!(b.get(i), i % 2 == 0);
     }

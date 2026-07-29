@@ -2709,8 +2709,11 @@ where
     /// [`build_with_seq`]: EliasFanoConcurrentBuilder::build_with_seq
     #[must_use]
     pub fn build(self) -> EliasFano<V> {
-        let high_bits: BitVec<Box<[usize]>> = self.high_bits.into();
-        let low_bits: BitFieldVec<Vec<V>> = self.low_bits.into();
+        // The conversions from atomic to non-atomic backends fail only if the
+        // alignment of the atomic type differs from that of the value type,
+        // which happens on no supported target.
+        let high_bits: BitVec<Box<[usize]>> = self.high_bits.try_into().unwrap();
+        let low_bits: BitFieldVec<Vec<V>> = self.low_bits.try_into().unwrap();
         let low_bits: BitFieldVec<Box<[V]>> = low_bits.into();
 
         // set is documented to be called exactly n times with distinct

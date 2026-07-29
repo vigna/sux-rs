@@ -225,10 +225,10 @@ where
             }
         }
 
-        let w: BitFieldVec<Vec<W>> = v.into();
+        let w: BitFieldVec<Vec<W>> = v.try_into().unwrap();
         let x = w.clone();
-        let y: AtomicBitFieldVec<Vec<W::Atomic>> = x.into();
-        let z: AtomicBitFieldVec<Vec<W::Atomic>> = w.into();
+        let y: AtomicBitFieldVec<Vec<W::Atomic>> = x.try_into().unwrap();
+        let z: AtomicBitFieldVec<Vec<W::Atomic>> = w.try_into().unwrap();
 
         let (b, w, l) = z.into_raw_parts();
         let z = unsafe { AtomicBitFieldVec::<Vec<W::Atomic>>::from_raw_parts(b, w, l) };
@@ -593,8 +593,8 @@ fn test_from() {
     for i in 0..10 {
         b.set_value(i, i);
     }
-    let b: AtomicBitFieldVec<Vec<AtomicUsize>> = b.into();
-    let b: BitFieldVec<Vec<usize>> = b.into();
+    let b: AtomicBitFieldVec<Vec<AtomicUsize>> = b.try_into().unwrap();
+    let b: BitFieldVec<Vec<usize>> = b.try_into().unwrap();
     for i in 0..10 {
         assert_eq!(b.index_value(i), i);
     }
@@ -604,8 +604,8 @@ fn test_from() {
     for i in 0..10 {
         b.set_value(i, i);
     }
-    let b: AtomicBitFieldVec<Box<[AtomicUsize]>> = b.into();
-    let b: BitFieldVec<Box<[usize]>> = b.into();
+    let b: AtomicBitFieldVec<Box<[AtomicUsize]>> = b.try_into().unwrap();
+    let b: BitFieldVec<Box<[usize]>> = b.try_into().unwrap();
     for i in 0..10 {
         assert_eq!(b.index_value(i), i);
     }
