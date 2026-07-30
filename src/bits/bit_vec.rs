@@ -74,7 +74,8 @@
 //! [`TryFrom`]/[`TryInto`]. For an *owned* backend the alignment of the atomic
 //! type must be equal to that of the value type, as the buffer must be
 //! deallocated with the alignment it was allocated with; failure returns a
-//! [`DifferentAlignmentError`]. For a *mutable reference* there is no
+//! [`DifferentAlignmentError`] containing the original bit vector, so that its
+//! content can be copied instead. For a *mutable reference* there is no
 //! deallocation, so it is sufficient that the target type has an alignment no
 //! stricter than that of the source type; failure returns an
 //! [`InsufficientAlignmentError`].
@@ -1213,50 +1214,78 @@ impl<'a, W: AtomicPrimitive> TryFrom<BitVec<&'a mut [W]>> for AtomicBitVec<&'a m
 }
 
 /// This conversion may fail if the alignment of `W` is not the same as
-/// that of `W::Atomic`.
+/// that of `W::Atomic`; in that case, the error contains the original bit
+/// vector.
 impl<W: AtomicPrimitive> TryFrom<AtomicBitVec<Box<[W::Atomic]>>> for BitVec<Vec<W>> {
-    type Error = DifferentAlignmentError;
+    type Error = DifferentAlignmentError<AtomicBitVec<Box<[W::Atomic]>>>;
     fn try_from(value: AtomicBitVec<Box<[W::Atomic]>>) -> Result<Self, Self::Error> {
-        Ok(BitVec {
-            bits: transmute_vec_from_atomic::<W::Atomic>(value.bits.into_vec())?,
-            len: value.len,
-        })
+        let AtomicBitVec { bits, len } = value;
+        match transmute_vec_from_atomic::<W::Atomic>(bits.into_vec()) {
+            Ok(bits) => Ok(BitVec { bits, len }),
+            Err(error) => Err(DifferentAlignmentError(
+                error.0,
+                AtomicBitVec {
+                    // The vector comes from a boxed slice, so its capacity is
+                    // equal to its length and no reallocation happens here.
+                    bits: error.1.into_boxed_slice(),
+                    len,
+                },
+            )),
+        }
     }
 }
 
 /// This conversion may fail if the alignment of `W` is not the same as
-/// that of `W::Atomic`.
+/// that of `W::Atomic`; in that case, the error contains the original bit
+/// vector.
 impl<W: AtomicPrimitive> TryFrom<BitVec<Vec<W>>> for AtomicBitVec<Box<[W::Atomic]>> {
-    type Error = DifferentAlignmentError;
+    type Error = DifferentAlignmentError<BitVec<Vec<W>>>;
     fn try_from(value: BitVec<Vec<W>>) -> Result<Self, Self::Error> {
-        Ok(AtomicBitVec {
-            bits: transmute_vec_into_atomic(value.bits)?.into_boxed_slice(),
-            len: value.len,
-        })
+        let BitVec { bits, len } = value;
+        match transmute_vec_into_atomic(bits) {
+            Ok(bits) => Ok(AtomicBitVec {
+                bits: bits.into_boxed_slice(),
+                len,
+            }),
+            Err(error) => Err(DifferentAlignmentError(
+                error.0,
+                BitVec { bits: error.1, len },
+            )),
+        }
     }
 }
 
 /// This conversion may fail if the alignment of `W` is not the same as
-/// that of `W::Atomic`.
+/// that of `W::Atomic`; in that case, the error contains the original bit
+/// vector.
 impl<W: AtomicPrimitive> TryFrom<AtomicBitVec<Box<[W::Atomic]>>> for BitVec<Box<[W]>> {
-    type Error = DifferentAlignmentError;
+    type Error = DifferentAlignmentError<AtomicBitVec<Box<[W::Atomic]>>>;
     fn try_from(value: AtomicBitVec<Box<[W::Atomic]>>) -> Result<Self, Self::Error> {
-        Ok(BitVec {
-            bits: transmute_boxed_slice_from_atomic::<W::Atomic>(value.bits)?,
-            len: value.len,
-        })
+        let AtomicBitVec { bits, len } = value;
+        match transmute_boxed_slice_from_atomic::<W::Atomic>(bits) {
+            Ok(bits) => Ok(BitVec { bits, len }),
+            Err(error) => Err(DifferentAlignmentError(
+                error.0,
+                AtomicBitVec { bits: error.1, len },
+            )),
+        }
     }
 }
 
 /// This conversion may fail if the alignment of `W` is not the same as
-/// that of `W::Atomic`.
+/// that of `W::Atomic`; in that case, the error contains the original bit
+/// vector.
 impl<W: AtomicPrimitive> TryFrom<BitVec<Box<[W]>>> for AtomicBitVec<Box<[W::Atomic]>> {
-    type Error = DifferentAlignmentError;
+    type Error = DifferentAlignmentError<BitVec<Box<[W]>>>;
     fn try_from(value: BitVec<Box<[W]>>) -> Result<Self, Self::Error> {
-        Ok(AtomicBitVec {
-            bits: transmute_boxed_slice_into_atomic::<W>(value.bits)?,
-            len: value.len,
-        })
+        let BitVec { bits, len } = value;
+        match transmute_boxed_slice_into_atomic::<W>(bits) {
+            Ok(bits) => Ok(AtomicBitVec { bits, len }),
+            Err(error) => Err(DifferentAlignmentError(
+                error.0,
+                BitVec { bits: error.1, len },
+            )),
+        }
     }
 }
 

@@ -55,12 +55,17 @@
   the upper bound: they now return the last element, like `pred_strict`
   already did.
 
-- `transmute_vec_from_atomic` and `transmute_boxed_slice_from_atomic` now
-  fall back to copying when the alignment of the atomic type differs from
+- The conversions between owned atomic and non-atomic backends no longer
+  reuse the allocation when the alignment of the atomic type differs from
   that of its value type (e.g., `AtomicU64` vs. `u64` on 32-bit x86), as
-  deallocating with a different alignment would be undefined behavior. The
-  check is resolved at compile time, so on targets with equal alignments
-  the code is unchanged.
+  deallocating with a different alignment would be undefined behavior: they
+  return an error containing the input instead. The check is resolved at
+  compile time, so on targets with equal alignments the code is unchanged.
+
+- `EliasFanoConcurrentBuilder::build` no longer panics on targets where the
+  alignment of `Atomic<V>` differs from that of `V`, such as 32-bit x86 with
+  `V` = `u64`: as the allocation of the low bits cannot be reused, it is now
+  copied word by word.
 
 - The temporary directory of an offline `SigStore` is now moved into the
   shard store and removed when the latter is dropped, after the bucket
@@ -384,7 +389,10 @@ bit_field_slice::*` to use the traits.
   alignment requirements. The functions return a `Result`, and an error is
   returned when alignment requirements cannot be satisfied. Correspondingly,
   most conversion methods on bit(-field) vectors are now fallible (e.g.,
-  `TryFrom`).
+  `TryFrom`). Since these conversions consume their input, on failure the
+  error returns it in its second field, so no data is lost and the caller can
+  fall back to copying the content: `DifferentAlignmentError` is now generic
+  over the type of the returned input (with default `()`).
 
 - The iterator on atomic bit vectors no longer takes an exclusive reference.
 

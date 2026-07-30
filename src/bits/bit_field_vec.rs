@@ -67,7 +67,9 @@
 //! [`TryFrom`]/[`TryInto`]. For an *owned* backend the alignment of the atomic
 //! type must be equal to that of the value type, as the buffer must be
 //! deallocated with the alignment it was allocated with; failure returns a
-//! [`DifferentAlignmentError`]. For a *mutable reference* there is no
+//! [`DifferentAlignmentError`] containing the original bit-field vector, so
+//! that its content can be copied instead. For a *mutable reference* there is
+//! no
 //! deallocation, so it is sufficient that the target type has an alignment no
 //! stricter than that of the source type; failure returns an
 //! [`InsufficientAlignmentError`].
@@ -1943,38 +1945,72 @@ impl<'a, B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsMut<[B::Word
 }
 
 /// This conversion may fail if the alignment of `W` is not the same as
-/// that of `W::Atomic`.
+/// that of `W::Atomic`; in that case, the error contains the original vector.
 impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>>
     TryFrom<AtomicBitFieldVec<Vec<W::Atomic>>> for BitFieldVec<Vec<W>>
 {
-    type Error = DifferentAlignmentError;
+    type Error = DifferentAlignmentError<AtomicBitFieldVec<Vec<W::Atomic>>>;
 
     #[inline]
     fn try_from(value: AtomicBitFieldVec<Vec<W::Atomic>>) -> Result<Self, Self::Error> {
-        Ok(BitFieldVec {
-            bits: transmute_vec_from_atomic(value.bits)?,
-            len: value.len,
-            bit_width: value.bit_width,
-            mask: value.mask,
-        })
+        let AtomicBitFieldVec {
+            bits,
+            len,
+            bit_width,
+            mask,
+        } = value;
+        match transmute_vec_from_atomic(bits) {
+            Ok(bits) => Ok(BitFieldVec {
+                bits,
+                len,
+                bit_width,
+                mask,
+            }),
+            Err(error) => Err(DifferentAlignmentError(
+                error.0,
+                AtomicBitFieldVec {
+                    bits: error.1,
+                    len,
+                    bit_width,
+                    mask,
+                },
+            )),
+        }
     }
 }
 
 /// This conversion may fail if the alignment of `W` is not the same as
-/// that of `W::Atomic`.
+/// that of `W::Atomic`; in that case, the error contains the original vector.
 impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>>
     TryFrom<AtomicBitFieldVec<Box<[W::Atomic]>>> for BitFieldVec<Box<[W]>>
 {
-    type Error = DifferentAlignmentError;
+    type Error = DifferentAlignmentError<AtomicBitFieldVec<Box<[W::Atomic]>>>;
 
     #[inline]
     fn try_from(value: AtomicBitFieldVec<Box<[W::Atomic]>>) -> Result<Self, Self::Error> {
-        Ok(BitFieldVec {
-            bits: transmute_boxed_slice_from_atomic(value.bits)?,
-            len: value.len,
-            bit_width: value.bit_width,
-            mask: value.mask,
-        })
+        let AtomicBitFieldVec {
+            bits,
+            len,
+            bit_width,
+            mask,
+        } = value;
+        match transmute_boxed_slice_from_atomic(bits) {
+            Ok(bits) => Ok(BitFieldVec {
+                bits,
+                len,
+                bit_width,
+                mask,
+            }),
+            Err(error) => Err(DifferentAlignmentError(
+                error.0,
+                AtomicBitFieldVec {
+                    bits: error.1,
+                    len,
+                    bit_width,
+                    mask,
+                },
+            )),
+        }
     }
 }
 
@@ -2004,38 +2040,72 @@ impl<'a, W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>>
 }
 
 /// This conversion may fail if the alignment of `W` is not the same as
-/// that of `W::Atomic`.
+/// that of `W::Atomic`; in that case, the error contains the original vector.
 impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>> TryFrom<BitFieldVec<Vec<W>>>
     for AtomicBitFieldVec<Vec<W::Atomic>>
 {
-    type Error = DifferentAlignmentError;
+    type Error = DifferentAlignmentError<BitFieldVec<Vec<W>>>;
 
     #[inline]
     fn try_from(value: BitFieldVec<Vec<W>>) -> Result<Self, Self::Error> {
-        Ok(AtomicBitFieldVec {
-            bits: transmute_vec_into_atomic(value.bits)?,
-            len: value.len,
-            bit_width: value.bit_width,
-            mask: value.mask,
-        })
+        let BitFieldVec {
+            bits,
+            len,
+            bit_width,
+            mask,
+        } = value;
+        match transmute_vec_into_atomic(bits) {
+            Ok(bits) => Ok(AtomicBitFieldVec {
+                bits,
+                len,
+                bit_width,
+                mask,
+            }),
+            Err(error) => Err(DifferentAlignmentError(
+                error.0,
+                BitFieldVec {
+                    bits: error.1,
+                    len,
+                    bit_width,
+                    mask,
+                },
+            )),
+        }
     }
 }
 
 /// This conversion may fail if the alignment of `W` is not the same as
-/// that of `W::Atomic`.
+/// that of `W::Atomic`; in that case, the error contains the original vector.
 impl<W: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned>> TryFrom<BitFieldVec<Box<[W]>>>
     for AtomicBitFieldVec<Box<[W::Atomic]>>
 {
-    type Error = DifferentAlignmentError;
+    type Error = DifferentAlignmentError<BitFieldVec<Box<[W]>>>;
 
     #[inline]
     fn try_from(value: BitFieldVec<Box<[W]>>) -> Result<Self, Self::Error> {
-        Ok(AtomicBitFieldVec {
-            bits: transmute_boxed_slice_into_atomic(value.bits)?,
-            len: value.len,
-            bit_width: value.bit_width,
-            mask: value.mask,
-        })
+        let BitFieldVec {
+            bits,
+            len,
+            bit_width,
+            mask,
+        } = value;
+        match transmute_boxed_slice_into_atomic(bits) {
+            Ok(bits) => Ok(AtomicBitFieldVec {
+                bits,
+                len,
+                bit_width,
+                mask,
+            }),
+            Err(error) => Err(DifferentAlignmentError(
+                error.0,
+                BitFieldVec {
+                    bits: error.1,
+                    len,
+                    bit_width,
+                    mask,
+                },
+            )),
+        }
     }
 }
 

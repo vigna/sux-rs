@@ -55,7 +55,7 @@ use crate::traits::{
     AtomicBitVecOps, BitVecOps, BitVecOpsMut, TryIntoUnaligned, Word, bit_field_slice::*,
 };
 use crate::utils::SelectInWord;
-use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomicUnsigned};
+use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic, PrimitiveAtomicUnsigned};
 use core::sync::atomic::Ordering;
 use mem_dbg::*;
 use num_primitive::PrimitiveNumberAs;
@@ -2709,12 +2709,27 @@ where
     /// [`build_with_seq`]: EliasFanoConcurrentBuilder::build_with_seq
     #[must_use]
     pub fn build(self) -> EliasFano<V> {
-        // The conversions from atomic to non-atomic backends fail only if the
-        // alignment of the atomic type differs from that of the value type,
-        // which happens on no supported target.
+        // The conversion of the high bits cannot fail because Atomic<usize>
+        // and usize have the same alignment on all supported targets.
         let high_bits: BitVec<Box<[usize]>> = self.high_bits.try_into().unwrap();
-        let low_bits: BitFieldVec<Vec<V>> = self.low_bits.try_into().unwrap();
-        let low_bits: BitFieldVec<Box<[V]>> = low_bits.into();
+
+        // The same is not true of the low bits: for example, on 32-bit x86
+        // Atomic<u64> has alignment 8, whereas u64 has alignment 4. When the
+        // alignments differ the allocation cannot be reused, as it would be
+        // deallocated with an alignment different from the one it was
+        // allocated with; in that case the error gives us the low bits back,
+        // and we copy them word by word.
+        let low_bits: BitFieldVec<Box<[V]>> = match BitFieldVec::<Vec<V>>::try_from(self.low_bits) {
+            Ok(low_bits) => low_bits.into(),
+            Err(error) => {
+                let (bits, bit_width, len) = error.1.into_raw_parts();
+                let bits: Box<[V]> = bits.into_iter().map(|w| w.into_inner()).collect();
+                // SAFETY: the bit width, the length, and the number of words
+                // are those of a valid AtomicBitFieldVec, as the words have
+                // been copied one by one.
+                unsafe { BitFieldVec::from_raw_parts(bits, bit_width, len) }
+            }
+        };
 
         // set is documented to be called exactly n times with distinct
         // indices and nondecreasing values; a valid fill then sets exactly n

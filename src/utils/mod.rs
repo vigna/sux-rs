@@ -88,18 +88,45 @@ impl AlignmentInfo {
 /// behavior. When only a reference to the buffer is reinterpreted there is no
 /// deallocation involved, and the weaker condition of
 /// [`InsufficientAlignmentError`] applies.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DifferentAlignmentError(pub AlignmentInfo);
+///
+/// Since the conversions that raise this error consume their input, the error
+/// gives it back in its second field: no data is lost, and the caller can fall
+/// back to copying the content. For example,
+/// ```
+/// # use sux::utils::transmute_vec_from_atomic;
+/// # use core::sync::atomic::AtomicUsize;
+/// let atomic: Vec<AtomicUsize> = (0..10).map(AtomicUsize::new).collect();
+/// let v: Vec<usize> = match transmute_vec_from_atomic(atomic) {
+///     // The allocation has been reused.
+///     Ok(v) => v,
+///     // The alignments differ: we get the vector back and copy its content.
+///     Err(error) => error.1.into_iter().map(AtomicUsize::into_inner).collect(),
+/// };
+/// assert_eq!(v, (0..10).collect::<Vec<_>>());
+/// ```
+///
+/// Note that the [`Debug`](core::fmt::Debug) implementation displays the
+/// alignment information only, as the returned input might be very large.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DifferentAlignmentError<V = ()>(pub AlignmentInfo, pub V);
 
-impl DifferentAlignmentError {
+impl<V> DifferentAlignmentError<V> {
     /// Returns the error for a conversion from a buffer of elements of type `F`
-    /// to a buffer of elements of type `T`.
-    pub fn new<F, T>() -> Self {
-        Self(AlignmentInfo::new::<F, T>())
+    /// to a buffer of elements of type `T`, returning `value` to the caller.
+    pub fn new<F, T>(value: V) -> Self {
+        Self(AlignmentInfo::new::<F, T>(), value)
     }
 }
 
-impl core::fmt::Display for DifferentAlignmentError {
+impl<V> core::fmt::Debug for DifferentAlignmentError<V> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("DifferentAlignmentError")
+            .field(&self.0)
+            .finish()
+    }
+}
+
+impl<V> core::fmt::Display for DifferentAlignmentError<V> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
@@ -109,7 +136,7 @@ impl core::fmt::Display for DifferentAlignmentError {
     }
 }
 
-impl core::error::Error for DifferentAlignmentError {}
+impl<V> core::error::Error for DifferentAlignmentError<V> {}
 
 /// An error raised when a memory buffer cannot be reinterpreted as a buffer of
 /// a different type because the latter has a stricter alignment.
@@ -152,14 +179,15 @@ impl core::error::Error for InsufficientAlignmentError {}
 /// equal to that of the non-atomic type: deallocating the buffer with an
 /// alignment different from the one it was allocated with would be undefined
 /// behavior. In this case, we simply reinterpret the vector's pointer.
-/// Otherwise, the method returns a [`DifferentAlignmentError`].
+/// Otherwise, the method returns a [`DifferentAlignmentError`] containing the
+/// vector, so that the caller can fall back to copying its content.
 ///
 /// [It is not safe to transmute a vector]: https://doc.rust-lang.org/std/mem/fn.transmute.html
 pub fn transmute_vec_into_atomic<W: AtomicPrimitive>(
     v: Vec<W>,
-) -> Result<Vec<Atomic<W>>, DifferentAlignmentError> {
+) -> Result<Vec<Atomic<W>>, DifferentAlignmentError<Vec<W>>> {
     if core::mem::align_of::<Atomic<W>>() != core::mem::align_of::<W>() {
-        return Err(DifferentAlignmentError::new::<W, Atomic<W>>());
+        return Err(DifferentAlignmentError::new::<W, Atomic<W>>(v));
     }
     let mut v = std::mem::ManuallyDrop::new(v);
     // SAFETY: atomic types have the same in-memory representation as their
@@ -177,14 +205,15 @@ pub fn transmute_vec_into_atomic<W: AtomicPrimitive>(
 /// equal to that of the non-atomic type: deallocating the buffer with an
 /// alignment different from the one it was allocated with would be undefined
 /// behavior. In this case, we simply reinterpret the vector's pointer.
-/// Otherwise, the method returns a [`DifferentAlignmentError`].
+/// Otherwise, the method returns a [`DifferentAlignmentError`] containing the
+/// vector, so that the caller can fall back to copying its content.
 ///
 /// [It is not safe to transmute a vector]: https://doc.rust-lang.org/std/mem/fn.transmute.html
 pub fn transmute_vec_from_atomic<A: PrimitiveAtomic>(
     v: Vec<A>,
-) -> Result<Vec<A::Value>, DifferentAlignmentError> {
+) -> Result<Vec<A::Value>, DifferentAlignmentError<Vec<A>>> {
     if core::mem::align_of::<A>() != core::mem::align_of::<A::Value>() {
-        return Err(DifferentAlignmentError::new::<A, A::Value>());
+        return Err(DifferentAlignmentError::new::<A, A::Value>(v));
     }
     let mut v = std::mem::ManuallyDrop::new(v);
     // SAFETY: atomic types have the same in-memory representation as
@@ -198,9 +227,9 @@ pub fn transmute_vec_from_atomic<A: PrimitiveAtomic>(
 /// See [`transmute_vec_into_atomic`] for details.
 pub fn transmute_boxed_slice_into_atomic<W: AtomicPrimitive>(
     b: Box<[W]>,
-) -> Result<Box<[Atomic<W>]>, DifferentAlignmentError> {
+) -> Result<Box<[Atomic<W>]>, DifferentAlignmentError<Box<[W]>>> {
     if core::mem::align_of::<Atomic<W>>() != core::mem::align_of::<W>() {
-        return Err(DifferentAlignmentError::new::<W, Atomic<W>>());
+        return Err(DifferentAlignmentError::new::<W, Atomic<W>>(b));
     }
     let mut b = std::mem::ManuallyDrop::new(b);
     // SAFETY: atomic types have the same in-memory representation as their
@@ -214,9 +243,9 @@ pub fn transmute_boxed_slice_into_atomic<W: AtomicPrimitive>(
 /// See [`transmute_vec_from_atomic`] for details.
 pub fn transmute_boxed_slice_from_atomic<A: PrimitiveAtomic>(
     b: Box<[A]>,
-) -> Result<Box<[A::Value]>, DifferentAlignmentError> {
+) -> Result<Box<[A::Value]>, DifferentAlignmentError<Box<[A]>>> {
     if core::mem::align_of::<A>() != core::mem::align_of::<A::Value>() {
-        return Err(DifferentAlignmentError::new::<A, A::Value>());
+        return Err(DifferentAlignmentError::new::<A, A::Value>(b));
     }
     let mut b = std::mem::ManuallyDrop::new(b);
     // SAFETY: atomic types have the same in-memory representation as

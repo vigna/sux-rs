@@ -37,7 +37,7 @@ mem_dbg = "0.4.1"
 rayon = { version = "1.8.1", optional = true }
 env_logger = { version = "0.11.0", optional = true }
 ambassador = "0.5.1"
-impl-tools = "0.12.0"
+impl-tools = "0.13.0"
 clap = { version = "4.4.18", features = ["derive", "wrap_help"], optional = true }
 crossbeam-channel = "0.5.14"
 arbitrary-chunks = "0.4.1"
