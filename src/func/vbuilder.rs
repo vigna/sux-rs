@@ -296,13 +296,19 @@ pub enum SolveError {
 }
 
 /// Returns `true` when the largest shard deviates pathologically from the
-/// target ε-cost, i.e. exceeds `(1 + 5·eps)` times the average shard size. Both
-/// the sequential and parallel build paths use this predicate so their
-/// acceptance thresholds cannot drift apart.
+/// target ε-cost. Both the sequential and parallel build paths use this
+/// predicate so their acceptance thresholds cannot drift apart.
+///
+/// The tolerance is the maximum of the ε-cost term `5·eps` times the
+/// average shard size and the statistical term `2.5·√(avg·ln S)`, which
+/// covers the natural fluctuation of the maximum of `S` multinomial
+/// shard sizes (about `√(2·avg·ln S)` above the average).
 fn max_shard_too_big(max_shard: usize, num_keys: usize, num_shards: usize, eps: f64) -> bool {
-    // f64 ratio comparison; the usize->f64 precision loss is irrelevant at
+    // f64 comparison; the usize->f64 precision loss is irrelevant at
     // these magnitudes and matches the surrounding cost model.
-    max_shard as f64 > (1.0 + 5.0 * eps) * num_keys as f64 / num_shards as f64
+    let avg = num_keys as f64 / num_shards as f64;
+    let tolerance = (5.0 * eps * avg).max(2.5 * (avg * (num_shards as f64).ln().max(1.0)).sqrt());
+    max_shard as f64 > avg + tolerance
 }
 
 /// The result of a peeling procedure.
@@ -1532,6 +1538,10 @@ impl<
                                     continue;
                                 }
 
+                                if self.failed.load(Ordering::Relaxed) {
+                                    return;
+                                }
+
                                 main_pl.debug(format_args!(
                                     "Analyzing shard {}/{}...",
                                     shard_index + 1,
@@ -2336,17 +2346,21 @@ mod retry_state_tests {
         assert!(r.is_err(), "the 100th MaxShardTooBig must be fatal");
     }
 
-    /// The shard-size acceptance threshold scales with `eps` and is shared by
-    /// the sequential and parallel paths. With `eps = 0.1` the limit is
-    /// `(1 + 5*0.1) = 1.5` times the average, so a shard 10% over average is
-    /// accepted (the old fixed `1.01` rule rejected it), while one 60% over is
-    /// rejected. At a tiny `eps` the threshold stays tight.
+    /// The shard-size acceptance threshold is the maximum of the ε-cost
+    /// term and a statistical term covering the natural fluctuation of
+    /// the maximum shard size.
     #[test]
     fn max_shard_too_big_scales_with_eps() {
-        // average shard = 100 / 10 = 10; limit at eps=0.1 is 1.5 * 10 = 15.
-        assert!(!max_shard_too_big(11, 100, 10, 0.1));
-        assert!(max_shard_too_big(16, 100, 10, 0.1));
-        // At eps=0.001 the limit is 1.005 * 10 = 10.05, so 11 is rejected.
-        assert!(max_shard_too_big(11, 100, 10, 0.001));
+        // Fuse-like regime: 10⁹ keys in 100 shards, average 10⁷. The
+        // ε-cost term dominates: tolerance = 5·0.001·10⁷ = 50000.
+        assert!(!max_shard_too_big(10_050_000, 1_000_000_000, 100, 0.001));
+        assert!(max_shard_too_big(10_060_000, 1_000_000_000, 100, 0.001));
+        // Linear regime: 800000 keys in 16 shards, average 50000. The
+        // statistical term dominates: tolerance = 2.5·√(50000·ln 16) ≈
+        // 930, so a typical maximum (≈ average + 400) is accepted—the
+        // old 0.5% rule rejected it about 60 times per build—while a
+        // pathological 4% imbalance is still rejected.
+        assert!(!max_shard_too_big(50_500, 800_000, 16, 0.001));
+        assert!(max_shard_too_big(52_000, 800_000, 16, 0.001));
     }
 }

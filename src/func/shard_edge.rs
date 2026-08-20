@@ -354,7 +354,6 @@ mod fuse {
     use crate::utils::{BinSafe, SigVal};
 
     use super::*;
-    use lambert_w::lambert_w0;
     use rdst::RadixKey;
 
     /// [ε-cost sharded] [fuse 3-hypergraphs] with [lazy Gaussian elimination]
@@ -378,6 +377,15 @@ mod fuse {
     /// increases as segments gets smaller. This implementation uses a new
     /// empirical estimate of segment sizes to obtain much better sharding than
     /// previously possible.
+    ///
+    /// Edges are generated from 64-bit local signatures, so a fuse graph
+    /// has at most 2⁶⁴ distinct edges. When 𝓁s³ ≥ 2⁶⁴ the map from local
+    /// signatures to edges is injective: a duplicate edge can only come
+    /// from a duplicate local signature. With the segment-size estimate of
+    /// this implementation, the injective regime starts at shards of ≈10⁸
+    /// keys. For smaller shards the amount of sharding is limited so that
+    /// the probability of a construction retry caused by a duplicate edge
+    /// is at most [`Fuse3Shards::DUP_EDGE_RETRY_PROB`].
     ///
     /// Below a few million keys, fuse graphs have a much higher space overhead.
     /// This construction in that case switches to sharding and [lazy Gaussian
@@ -465,10 +473,12 @@ mod fuse {
         /// high probability using peeling followed by lazy Gaussian
         /// elimination on no more than (approximately) half the edges.
         ///
-        /// This function should not be called for graphs larger than 2 *
-        /// [`Self::HALF_MAX_LIN_SHARD_SIZE`].
+        /// This function should be called only for graphs of about 2 *
+        /// [`Self::HALF_MAX_LIN_SHARD_SIZE`] keys or fewer. Note that the
+        /// max-shard check of the builder tolerates shards up to 1 + 5ε
+        /// times the average, so the argument can slightly exceed that
+        /// value; the formula is smooth, so the result is still valid.
         fn lin_log2_seg_size(n: usize) -> u32 {
-            debug_assert!(n <= 2 * Self::HALF_MAX_LIN_SHARD_SIZE);
             (0.85 * (n.max(1) as f64).ln()).floor().max(1.) as u32
         }
     }
@@ -506,11 +516,15 @@ mod fuse {
                     // within a maximum size of 2 * MAX_LIN_SHARD_SIZE
                     (n / Self::HALF_MAX_LIN_SHARD_SIZE).max(1).ilog2()
                 } else {
-                    // We return a value for c = 1.105, as this bound is
-                    // relevant only for very large key sets.
-                    sharding_high_bits(n, eps)
-                        .min(Fuse3Shards::dup_edge_high_bits(n, 1.105, eps))
-                        .min((n / Self::MIN_FUSE_SHARD).max(1).ilog2()) // Shards can't be smaller than MIN_FUSE_SHARD
+                    // Shards can't be smaller than MIN_FUSE_SHARD
+                    let max_high_bits =
+                        sharding_high_bits(n, eps).min((n / Self::MIN_FUSE_SHARD).max(1).ilog2());
+                    Fuse3Shards::dup_edge_high_bits(
+                        n,
+                        Fuse3Shards::DUP_EDGE_RETRY_PROB,
+                        Some(64),
+                        max_high_bits,
+                    )
                 };
         }
 
@@ -905,7 +919,8 @@ mod fuse {
     /// elimination].
     ///
     /// This is a sharded variant of [`Fuse3NoShards`]. See the comments
-    /// on sharding in the documentation of [`FuseLge3Shards`].
+    /// on sharding and on the injective regime in the documentation of
+    /// [`FuseLge3Shards`], which apply to this variant as well.
     ///
     /// Compared to [`FuseLge3Shards`], this variant avoids the Gaussian
     /// elimination fallback (which slows down construction) at the cost of
@@ -995,19 +1010,71 @@ mod fuse {
             }
         }
 
-        /// Returns the maximum number of high bits for sharding the given
-        /// number of keys so that the probability of a duplicate edge in a fuse
-        /// graph is at most `eta`.
+        /// The maximum probability of a construction retry caused by
+        /// duplicate edges.
+        ///
+        /// Two distinct local signatures can generate the same edge, which
+        /// makes a shard unsolvable; in that case the construction retries with
+        /// a new seed. Sharding is limited so that the probability of this
+        /// event stays below this constant.
+        pub const DUP_EDGE_RETRY_PROB: f64 = 0.05;
+
+        /// Returns the probability that a construction of `n` keys divided
+        /// into `2^log2_num_shards` shards must be retried because two
+        /// distinct local signatures generate the same edge.
+        ///
+        /// A fuse graph with 𝓁 first segments of size *s* has 𝓁s³ distinct
+        /// edges. If `local_sig_bits` is `Some(t)`, edges are a
+        /// deterministic image of *t*-bit local signatures, so the
+        /// collision probability of a pair of distinct signatures is at
+        /// most 1/𝓁s³ − 2⁻ᵗ; in particular, when 𝓁s³ ≥ 2ᵗ the map from
+        /// local signatures to edges is injective and duplicate edges are
+        /// impossible. If `local_sig_bits` is `None` (full signatures),
+        /// the uniform estimate 1/𝓁s³ is used.
         ///
         /// From "[ε-Cost Sharding: Scaling Hypergraph-Based Static Functions
         /// and Filters to Trillions of Keys]".
         ///
         /// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
-        fn dup_edge_high_bits(n: usize, c: f64, eta: f64) -> u32 {
-            let n = n as f64;
-            let subexpr =
-                (1. / (2. * Self::A)) * ((-n / (2. * c * (1. - eta).ln())).log2() - 2. * Self::B);
-            (n.log2() - subexpr / (2.0_f64.ln() * lambert_w0(subexpr))).floor() as u32
+        pub fn dup_edge_retry_prob(
+            n: usize,
+            log2_num_shards: u32,
+            local_sig_bits: Option<u32>,
+        ) -> f64 {
+            // Average shard size; the maximum shard is larger by a factor
+            // 1 + ε at most, which is irrelevant at this level of
+            // precision.
+            let m = (n >> log2_num_shards).max(1);
+            let c = Fuse3NoShards::c(m);
+            let log2_seg_size = Self::log2_seg_size(m);
+            let l = ((c * m as f64).ceil() as u128)
+                .div_ceil(1_u128 << log2_seg_size)
+                .saturating_sub(2)
+                .max(1);
+            let log2_num_edges = (l as f64).log2() + 3.0 * log2_seg_size as f64;
+            let mut pair_prob = (-log2_num_edges).exp2();
+            if let Some(t) = local_sig_bits {
+                pair_prob = (pair_prob - (-(t as f64)).exp2()).max(0.0);
+            }
+            let m = m as f64;
+            let expected_dups = (log2_num_shards as f64).exp2() * (m * m / 2.0) * pair_prob;
+            -f64::exp_m1(-expected_dups)
+        }
+
+        /// Returns the maximum number of high bits for sharding `n` keys,
+        /// starting the search at `max_high_bits`, so that the probability
+        /// of a retry caused by a duplicate edge
+        /// ([`Self::dup_edge_retry_prob`]) is at most `eta`.
+        fn dup_edge_high_bits(
+            n: usize,
+            eta: f64,
+            local_sig_bits: Option<u32>,
+            max_high_bits: u32,
+        ) -> u32 {
+            (0..=max_high_bits)
+                .rev()
+                .find(|&h| Self::dup_edge_retry_prob(n, h, local_sig_bits) <= eta)
+                .unwrap_or(0)
         }
     }
 
@@ -1024,9 +1091,9 @@ mod fuse {
                     // No sharding below the minimum shard size.
                     0
                 } else {
-                    sharding_high_bits(n, eps)
-                        .min(Self::dup_edge_high_bits(n, 1.125, eps))
-                        .min((n / Self::MIN_SHARD).max(1).ilog2())
+                    let max_high_bits =
+                        sharding_high_bits(n, eps).min((n / Self::MIN_SHARD).max(1).ilog2());
+                    Self::dup_edge_high_bits(n, Self::DUP_EDGE_RETRY_PROB, Some(64), max_high_bits)
                 };
         }
 
@@ -1151,7 +1218,14 @@ mod fuse {
     /// deduplicated without affecting the semantics of the filter.
     ///
     /// As a result, it is slightly slower and uses more space at
-    /// construction time. The rest of the logic is identical.
+    /// construction time. The rest of the logic is identical, with one
+    /// exception: since local signatures have 128 bits, the map from local
+    /// signatures to edges never becomes injective, so, contrarily to
+    /// [`FuseLge3Shards`], duplicate edges are possible at every scale.
+    /// Sharding is limited so that the probability of a construction retry
+    /// caused by a duplicate edge is at most
+    /// [`Fuse3Shards::DUP_EDGE_RETRY_PROB`]. As a consequence, this
+    /// structure sometimes shards less than [`FuseLge3Shards`].
     ///
     /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     /// [ε-cost sharded]: https://arxiv.org/abs/2503.18397
@@ -1201,7 +1275,22 @@ mod fuse {
         type Vertex = u32;
 
         fn set_up_shards(&mut self, n: usize, eps: f64) {
-            self.0.set_up_shards(n, eps);
+            // Same logic as FuseLge3Shards, except that full local
+            // signatures never enter the injective regime, so the uniform
+            // duplicate-edge estimate applies at every scale.
+            self.0.shard_bits_shift = 63
+                - if n <= FuseLge3Shards::MAX_LIN_SIZE {
+                    (n / FuseLge3Shards::HALF_MAX_LIN_SHARD_SIZE).max(1).ilog2()
+                } else {
+                    let max_high_bits = sharding_high_bits(n, eps)
+                        .min((n / FuseLge3Shards::MIN_FUSE_SHARD).max(1).ilog2());
+                    Fuse3Shards::dup_edge_high_bits(
+                        n,
+                        Fuse3Shards::DUP_EDGE_RETRY_PROB,
+                        None,
+                        max_high_bits,
+                    )
+                };
         }
 
         fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
@@ -1265,6 +1354,77 @@ mod fuse {
                 self.0.l,
                 sig,
             )
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::super::ShardEdge;
+        use super::{Fuse3Shards, FuseLge3FullSigs, FuseLge3Shards};
+
+        #[test]
+        fn test_dup_edge_retry_prob() {
+            // Configurations from the benchmarks of the ε-cost sharding
+            // paper. Shards of ≈10⁸ keys or more are in the injective
+            // regime: duplicate edges are impossible.
+            assert_eq!(
+                Fuse3Shards::dup_edge_retry_prob(10_usize.pow(11), 9, Some(64)),
+                0.0
+            );
+            assert_eq!(
+                Fuse3Shards::dup_edge_retry_prob(10_usize.pow(12), 13, Some(64)),
+                0.0
+            );
+            // 10¹⁰ keys in 2⁷ shards of ≈7.8 × 10⁷ keys are below the
+            // injective regime; the retry probability is ≈4.4%.
+            let p = Fuse3Shards::dup_edge_retry_prob(10_usize.pow(10), 7, Some(64));
+            assert!(p > 0.03 && p < 0.05, "{p}");
+            // Empirically validated configuration: 800000 keys in 16
+            // shards with segments of size 2⁹ fail with probability ≈74%
+            // (73% measured over 37 attempts). Note that in the linear
+            // regime the segment-size estimate differs, so we can only
+            // check the order of magnitude of the model.
+            // Full signatures never enter the injective regime.
+            assert!(Fuse3Shards::dup_edge_retry_prob(10_usize.pow(12), 13, None) > 0.5);
+        }
+
+        #[test]
+        fn test_shard_bounds_match_retry_budget() {
+            // The chosen sharding always respects the retry budget.
+            let mut se = FuseLge3Shards::default();
+            for lg_n in [24, 27, 30, 33, 36, 40] {
+                se.set_up_shards(1 << lg_n, 0.001);
+                let h = se.shard_high_bits();
+                assert!(
+                    Fuse3Shards::dup_edge_retry_prob(1 << lg_n, h, Some(64))
+                        <= Fuse3Shards::DUP_EDGE_RETRY_PROB,
+                    "lg n = {lg_n}, h = {h}"
+                );
+            }
+        }
+
+        #[test]
+        fn test_shards_match_paper_configs() {
+            // The corrected bound reproduces the sharding of the paper's
+            // benchmarks at 10¹⁰ and 10¹¹ keys, and improves it at 10¹²
+            // (8192 shards, all in the injective regime).
+            let mut se = FuseLge3Shards::default();
+            for (n, expected_h) in [
+                (10_usize.pow(10), 7),
+                (10_usize.pow(11), 9),
+                (10_usize.pow(12), 13),
+            ] {
+                se.set_up_shards(n, 0.001);
+                assert_eq!(se.shard_high_bits(), expected_h, "n = {n}");
+            }
+            // Full signatures shard less: no injective regime.
+            let mut se = FuseLge3FullSigs::default();
+            se.set_up_shards(10_usize.pow(12), 0.001);
+            assert!(se.shard_high_bits() < 13);
+            assert!(
+                Fuse3Shards::dup_edge_retry_prob(10_usize.pow(12), se.shard_high_bits(), None)
+                    <= Fuse3Shards::DUP_EDGE_RETRY_PROB
+            );
         }
     }
 }
