@@ -119,6 +119,14 @@ impl<K: ?Sized, D: SliceByValue, S, E> VFilter<K, D, S, E> {
     /// This is a low-level constructor; prefer
     /// [`try_new`]/[`try_new_with_builder`] when possible.
     ///
+    /// It is your responsibility to ensure that `filter_mask` is a mask for
+    /// the lowest *k* bits, where *k* is the number of hash bits used to
+    /// build `func`: [`contains`](VFilter::contains) compares values stored
+    /// in `func` with hashes truncated with this mask, and
+    /// [`hash_bits`](VFilter::hash_bits) derives the hash width from it, so
+    /// a mismatched or non-contiguous mask yields false negatives and a
+    /// wrong bit count.
+    ///
     /// [`try_new`]: VFilter::try_new
     /// [`try_new_with_builder`]: VFilter::try_new_with_builder
     pub fn from_parts(func: VFunc<K, D, S, E>, filter_mask: D::Value) -> Self {

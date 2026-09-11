@@ -320,7 +320,8 @@ impl<V, H, L> EliasFano<V, H, L> {
         )
     }
 
-    /// Estimate the size of an instance.
+    /// Estimates the size in bits of an instance with the given upper bound
+    /// and number of elements.
     pub fn estimate_size(u: u64, n: usize) -> usize {
         if n == 0 {
             0
@@ -1015,7 +1016,7 @@ where
         &self,
         value: impl Borrow<V>,
     ) -> Option<(usize, <Self as SuccIterUnchecked>::Iter<'_>)> {
-        if *value.borrow() >= self.last_val {
+        if self.n == 0 || *value.borrow() >= self.last_val {
             None
         } else {
             Some(unsafe { self.iter_from_succ_unchecked::<true>(value) })
@@ -1048,7 +1049,7 @@ where
         &self,
         value: impl Borrow<V>,
     ) -> Option<(usize, <Self as SuccBidiIterUnchecked>::BidiIter<'_>)> {
-        if *value.borrow() >= self.last_val {
+        if self.n == 0 || *value.borrow() >= self.last_val {
             None
         } else {
             Some(unsafe { self.iter_bidi_from_succ_unchecked::<true>(value) })
@@ -1082,7 +1083,7 @@ where
         &self,
         value: impl Borrow<V>,
     ) -> Option<(usize, <Self as SuccIterBackUnchecked>::BackIter<'_>)> {
-        if *value.borrow() >= self.last_val {
+        if self.n == 0 || *value.borrow() >= self.last_val {
             None
         } else {
             Some(unsafe { self.iter_back_from_succ_unchecked::<true>(value) })

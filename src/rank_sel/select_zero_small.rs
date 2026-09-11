@@ -144,6 +144,25 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
     pub fn into_inner(self) -> C {
         self.small_counters
     }
+
+    /// Replaces the backend with a new one implementing [`SmallCounters`]
+    /// and [`SelectZeroHinted`].
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe because it is not possible to guarantee that the
+    /// new backend is identical to the old one as a bit vector.
+    pub unsafe fn map<D: SmallCounters<NUM_U32S, COUNTER_WIDTH> + SelectZeroHinted>(
+        self,
+        f: impl FnOnce(C) -> D,
+    ) -> SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, D, I, O> {
+        SelectZeroSmall {
+            small_counters: f(self.small_counters),
+            inventory: self.inventory,
+            inventory_begin: self.inventory_begin,
+            log2_ones_per_inventory: self.log2_ones_per_inventory,
+        }
+    }
 }
 
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C: BitLength, I, O>
@@ -155,7 +174,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C: BitLength, I, O>
     /// reduce ambiguity in method resolution.
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.small_counters.len()
+        BitLength::len(self)
     }
 }
 
@@ -232,7 +251,9 @@ macro_rules! impl_select_zero_small {
                         let global_word = sb * words_per_superblock + i;
                         let word =
                             super::mask_tail_word(!word, global_word + 1 == num_words, tail_mask);
-                        let ones_in_word = (word.count_ones() as usize).min(num_ones - past_ones);
+                        // The masking above removes phantom zeros, so no clamp
+                        // is needed (this mirrors the ones-based twin).
+                        let ones_in_word = word.count_ones() as usize;
 
                         while past_ones + ones_in_word > next_quantum {
                             let in_word_index = word.select_in_word(next_quantum - past_ones);
@@ -370,8 +391,16 @@ macro_rules! impl_select_zero_small {
                     // Since we use 32-bit inventory entries, we cannot add
                     // a sentinel with value equal to the number of bits
                     // (which may exceed 2^32). Thus, we handle the last
-                    // inventory entry as a special case.
-                    last_block_idx = self.len().div_ceil(Self::BLOCK_BIT_SIZE);
+                    // inventory entry as a special case. Note that we clip
+                    // the scan to the end of the current superblock, as in
+                    // the other branches: the scan predicate happens to stop
+                    // at the superblock boundary anyway thanks to its global
+                    // position term, but clipping keeps the bound structural
+                    // and this code identical to the ones-based twin.
+                    last_block_idx = self
+                        .len()
+                        .div_ceil(Self::BLOCK_BIT_SIZE)
+                        .min((upper_block_idx + 1) * Self::BLOCKS_PER_SUPERBLOCK);
                 }
 
                 debug_assert!(block_idx < counts.len());

@@ -26,8 +26,10 @@
 //!
 //! Use concrete types directly, like `SignedFunc<LcpMmphfStr, Box<[u64]>>` or
 //! `SignedFunc<LcpMmphfInt<u64>, BitFieldVec<Box<[usize]>>>`. For each such
-//! concrete type, this module provides `try_new`, `try_new_with_builder`, and
-//! `get` methods.
+//! concrete type, this module provides `try_new`/`try_par_new` constructors
+//! (and their `_with_builder` variants), plus `get` and `get_by_sig` methods;
+//! [`SignedFunc::from_parts`] assembles an instance from an inner function
+//! and a hash store. All `try_*` constructors require the `rayon` feature.
 
 use std::borrow::Borrow;
 
@@ -63,7 +65,10 @@ pub trait TruncateHash<W> {
     fn truncate_hash(&self, hash: u64) -> W;
 }
 
-impl<W: PrimitiveNumber> TruncateHash<W> for Box<[W]>
+// The bound is Word, not PrimitiveNumber: an as-style conversion to a
+// float or signed word type would silently collapse distinct hashes,
+// degrading the documented false-positive rate.
+impl<W: Word> TruncateHash<W> for Box<[W]>
 where
     u64: PrimitiveNumberAs<W>,
 {
@@ -76,7 +81,7 @@ where
 // epserde's zero-copy deserialization turns a Box<[W]> hash store into a
 // borrowed &[W]; provide the same full-width truncation so mapped signed
 // functions remain queryable.
-impl<W: PrimitiveNumber> TruncateHash<W> for &[W]
+impl<W: Word> TruncateHash<W> for &[W]
 where
     u64: PrimitiveNumberAs<W>,
 {
@@ -390,7 +395,9 @@ where
     IntBitPrefix<K>: ToSig<S1>,
 {
     /// Returns the rank of the given key if it was in the original set,
-    /// or `None` if the verification hash does not match.
+    /// or `None` if the verification hash does not match. As for all signed
+    /// functions, a key outside the original set returns `Some` (a false
+    /// positive) with the probability defined at construction time.
     #[inline]
     pub fn get(&self, key: K) -> Option<usize> {
         let sig = K::to_sig(key, self.func.seed());
@@ -413,7 +420,9 @@ where
     BitPrefix: ToSig<S1>,
 {
     /// Returns the rank of the given key if it was in the original set,
-    /// or `None` if the verification hash does not match.
+    /// or `None` if the verification hash does not match. As for all signed
+    /// functions, a key outside the original set returns `Some` (a false
+    /// positive) with the probability defined at construction time.
     #[inline]
     pub fn get(&self, key: &K) -> Option<usize> {
         let sig = K::to_sig(key, self.func.seed());
@@ -437,7 +446,9 @@ where
     IntBitPrefix<K>: ToSig<S1>,
 {
     /// Returns the rank of the given key if it was in the original set,
-    /// or `None` if the verification hash does not match.
+    /// or `None` if the verification hash does not match. As for all signed
+    /// functions, a key outside the original set returns `Some` (a false
+    /// positive) with the probability defined at construction time.
     #[inline]
     pub fn get(&self, key: K) -> Option<usize> {
         let sig = K::to_sig(key, self.func.seed());
@@ -461,7 +472,9 @@ where
     BitPrefix: ToSig<S1>,
 {
     /// Returns the rank of the given key if it was in the original set,
-    /// or `None` if the verification hash does not match.
+    /// or `None` if the verification hash does not match. As for all signed
+    /// functions, a key outside the original set returns `Some` (a false
+    /// positive) with the probability defined at construction time.
     #[inline]
     pub fn get(&self, key: &K) -> Option<usize> {
         let sig = K::to_sig(key, self.func.seed());
@@ -659,7 +672,7 @@ mod build {
         pl.log_level(log::Level::Info);
         pl.start("Signing keys...");
         let mut hashes = BitFieldVec::<Box<[H]>>::new_padded(hash_width, n);
-        for (i, key) in keys.iter().enumerate().take(n) {
+        for (i, key) in keys[..n].iter().enumerate() {
             let h = hashes.truncate_hash(shard_edge.remixed_hash(K::to_sig(key.borrow(), seed)));
             hashes.set_value(i, h);
             pl.light_update();
@@ -1256,6 +1269,9 @@ mod build {
     {
         /// Creates a new signed LCP-based MMPHF for integers.
         ///
+        /// Full-word hashes are stored for verification, giving a
+        /// false-positive rate of 2<sup>−min(`W::BITS`, 64)</sup>.
+        ///
         /// The keys must be in strictly increasing order.
         ///
         /// Keys must be provided as a [`FallibleRewindableLender`]. The [`lenders`]
@@ -1446,6 +1462,9 @@ mod build {
         u64: PrimitiveNumberAs<W>,
     {
         /// Creates a new signed LCP-based MMPHF for byte-sequence keys.
+        ///
+        /// Full-word hashes are stored for verification, giving a
+        /// false-positive rate of 2<sup>−min(`W::BITS`, 64)</sup>.
         ///
         /// The keys must be in strictly increasing lexicographic order
         /// (byte-level comparison), and must either contain no zero bytes or be
@@ -1654,6 +1673,11 @@ mod build {
     {
         /// Creates a new signed two-step LCP-based MMPHF for integers.
         ///
+        /// Full-word hashes are stored for verification, giving a
+        /// false-positive rate of 2<sup>−min(`W::BITS`, 64)</sup>.
+        ///
+        /// The keys must be in strictly increasing order.
+        ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
@@ -1848,6 +1872,9 @@ mod build {
         u64: PrimitiveNumberAs<W>,
     {
         /// Creates a new signed two-step LCP-based MMPHF for byte-sequence keys.
+        ///
+        /// Full-word hashes are stored for verification, giving a
+        /// false-positive rate of 2<sup>−min(`W::BITS`, 64)</sup>.
         ///
         /// The keys must be in strictly increasing lexicographic order, and must
         /// either contain no zero bytes or be prefix-free (a virtual zero byte is
@@ -2500,6 +2527,10 @@ mod build {
         /// Creates a new signed two-step LCP-based MMPHF for integers with
         /// sub-word-width hashes.
         ///
+        /// `hash_width` is the number of hash bits stored per key (must be in
+        /// `1..=min(H::BITS, 64)`). False-positive probability is
+        /// 2<sup>−`hash_width`</sup>.
+        ///
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
@@ -2706,6 +2737,10 @@ mod build {
     {
         /// Creates a new signed two-step LCP-based MMPHF for byte-sequence keys
         /// with sub-word-width hashes.
+        ///
+        /// `hash_width` is the number of hash bits stored per key (must be in
+        /// `1..=min(H::BITS, 64)`). False-positive probability is
+        /// 2<sup>−`hash_width`</sup>.
         ///
         /// The keys must be in strictly increasing lexicographic order, and must
         /// either contain no zero bytes or be prefix-free (a virtual zero byte is

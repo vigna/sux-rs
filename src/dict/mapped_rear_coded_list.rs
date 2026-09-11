@@ -136,7 +136,9 @@ impl<
     ///
     /// It is your responsibility to ensure that the mapping is valid,
     /// that is, that its length matches the length of the rear-coded list,
-    /// and that all indices are in range.
+    /// and that all indices are in range. This method is safe, so an
+    /// invalid mapping cannot cause memory unsafety, but accessor methods
+    /// will panic or return unspecified results.
     ///
     /// # Panics
     ///
@@ -280,7 +282,9 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SO
     /// its bytes into the provided vector.
     pub fn get_in_place(&self, index: usize, result: &mut Vec<u8>) {
         let index = self.map.index_value(index);
-        self.rcl.get_in_place_impl(index, result);
+        // The checked accessor turns an out-of-range mapped value into a
+        // clean bounds panic, as in the str variant.
+        self.rcl.get_in_place(index, result);
     }
 }
 
@@ -331,7 +335,9 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SO
     #[inline(always)]
     pub fn get_bytes_in_place(&self, index: usize, result: &mut Vec<u8>) {
         let index = self.map.index_value(index);
-        self.rcl.get_in_place_impl(index, result);
+        // The checked accessor turns an out-of-range mapped value into a
+        // clean bounds panic, as in get_bytes.
+        self.rcl.get_bytes_in_place(index, result);
     }
 }
 

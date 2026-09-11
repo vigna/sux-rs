@@ -138,6 +138,10 @@ pub struct BuilderArgs {
     /// The target relative space overhead due to sharding.​
     #[arg(long, default_value_t = 0.001)]
     pub eps: f64,
+    /// The maximum probability of a construction retry caused by duplicate
+    /// hyperedges.​
+    #[arg(long, default_value_t = 0.05)]
+    pub retry_prob: f64,
     /// Always use the low-mem peel-by-signature algorithm (slightly slower).​
     #[arg(long)]
     pub low_mem: bool,
@@ -155,7 +159,8 @@ impl BuilderArgs {
         let mut builder = builder
             .offline(self.offline)
             .check_dups(self.check_dups)
-            .eps(self.eps);
+            .eps(self.eps)
+            .retry_prob(self.retry_prob);
         if let Some(seed) = self.seed {
             builder = builder.seed(seed);
         }

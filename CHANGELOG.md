@@ -8,8 +8,13 @@
   but performing compression by storing frequent values using less bits.
 
 - New `CompVFunc` compressed static function, using the algorithmic
-  ideas of `VFunc` but representing data using the the zero-th order entropy
+  ideas of `VFunc` but representing data using the zero-th order entropy
   (i.e., values are represented by a Huffman code).
+
+- New `VBuilder::retry_prob` setter (and `--retry-prob` CLI option) bounding
+  the probability that a construction attempt must be retried because of
+  duplicate hyperedges; the amount of sharding is limited accordingly. The
+  default is 0.05, the previously hardwired value.
 
 - New data-access parallel constructors starting from a slice, which are
   used by default by all CLI utilities; a switch reverts to the classical
@@ -153,6 +158,13 @@
   `count_zeros` are now provided by `BitVecOps`.
 
 - The `cli` feature now implies `rayon`.
+
+- The license is now `Apache-2.0 OR MIT` (it was `Apache-2.0 OR
+  LGPL-2.1-or-later`).
+
+- `ShardEdge::set_up_shards` takes an additional `retry_prob` parameter, and
+  implementations must not select more than `LOG2_MAX_SHARDS` shard high
+  bits.
 
 ## [0.14.0] - 2026-04-11
 

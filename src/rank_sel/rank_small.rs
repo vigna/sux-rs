@@ -89,8 +89,8 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// The first const generic parameter `WORD_BITS` (32 or 64) specifies the
 /// word size; the remaining parameters `NUM_U32S` and `COUNTER_WIDTH` define
 /// the counter layout. The same `(NUM_U32S, COUNTER_WIDTH)` pair can be used
-/// with both word sizes (with the exception of `(2, 8)` and `(2, 9)`, which
-/// are word-size-specific).
+/// with both word sizes (with the exception of `(2, 8)`, `(1, 8)`, and
+/// `(2, 9)`, which are word-size-specific).
 ///
 /// The type parameter `B` is a bit-based [backend]; the remaining
 /// type parameter are internal and should always have their default values.
@@ -694,6 +694,13 @@ macro_rules! impl_rank_small {
             C2: AsRef<[Block32Counters<$NUM_U32S, $COUNTER_WIDTH>]>,
         > RankUnchecked for RankSmall<$WORD_BITS, $NUM_U32S, $COUNTER_WIDTH, B, C1, C2>
         {
+            /// # Safety
+            ///
+            /// `pos` must be between 0 (included) and the [length of the
+            /// underlying bit vector](crate::traits::BitLength::len)
+            /// (excluded). Contrarily to [`Rank9`](crate::rank_sel::Rank9),
+            /// this implementation does *not* accept the length as a valid
+            /// argument, even when unused bits are present.
             #[inline(always)]
             unsafe fn rank_unchecked(&self, pos: usize) -> usize {
                 let bits_per_word = B::Word::BITS as usize;

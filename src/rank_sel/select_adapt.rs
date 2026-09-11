@@ -86,10 +86,10 @@ use std::ops::Index;
 /// respect to the target space occupancy.
 ///
 /// For example, using [the default value of *L*] and [the default value of
-/// *M*], the space occupancy is between 7% and 14% on 64-bit platforms and
-/// twice that on 32-bit platforms. The space might be smaller for very
-/// sparse vectors as less than *M* subinventory words per inventory might
-/// be used.
+/// *M*], the space occupancy is between 14% and 28% (the defaults are chosen
+/// so that this holds on both 64-bit and 32-bit platforms). The space might
+/// be smaller for very sparse vectors as less than *M* subinventory words
+/// per inventory might be used.
 ///
 /// Given a specific indexed one in the inventory, if the distance to the next
 /// indexed one is at most 2¹⁶ we use the *M* words associated to the
@@ -346,7 +346,7 @@ pub(super) const MAX_LOG2_WORDS_PER_SUBINVENTORY: usize = 23;
 /// # Panics
 ///
 /// Panics if `log2_words_per_subinventory` exceeds the supported maximum
-/// ([`MAX_LOG2_WORDS_PER_SUBINVENTORY`]).
+/// (53 on 64-bit targets, 23 on 32-bit targets).
 pub const fn default_target_inventory_span(log2_words_per_subinventory: usize) -> usize {
     assert!(
         log2_words_per_subinventory <= MAX_LOG2_WORDS_PER_SUBINVENTORY,

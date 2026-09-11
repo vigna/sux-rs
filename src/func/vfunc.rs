@@ -44,11 +44,10 @@ use std::borrow::Borrow;
 ///
 /// * `K` - the type of the keys.
 ///
-/// * `W` - the word used to store the data, which is also the output type. It
-///   can be any unsigned type.
-///
-/// * `D` - the backend storing the function data. It can be a
-///   [`BitFieldVec<Box<[W]>>`](crate::bits::BitFieldVec) or a `Box<[W]>`. In the first case, the data
+/// * `D` - the backend storing the function data; the output type is its
+///   value type `D::Value`, which can be any unsigned type. The backend can
+///   be a [`BitFieldVec<Box<[W]>>`](crate::bits::BitFieldVec) or a
+///   `Box<[W]>`, where `W` is the value type. In the first case, the data
 ///   is stored using exactly the number of bits needed, but access is slightly
 ///   slower, while in the second case the data is stored in a boxed slice of
 ///   `W`, thus forcing the number of bits to the number of bits of `W`, but

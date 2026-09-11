@@ -474,6 +474,9 @@ pub struct SigStoreImpl<S, V, B> {
 /// [temporary directory], and the files will be deleted when the shard store
 /// returned by [`into_shard_store`] is dropped.
 ///
+/// Contrarily to [`new_online`], the expected number of keys is ignored: it
+/// is accepted only so the two constructors have the same signature.
+///
 /// [temporary directory]: https://doc.rust-lang.org/std/env/fn.temp_dir.html
 /// [`into_shard_store`]: SigStore::into_shard_store
 pub fn new_offline<S: BinSafe + Sig, V: BinSafe>(
@@ -1304,6 +1307,11 @@ where
     /// `shard_sizes` must have one entry per shard (after
     /// re-aggregation to `shard_high_bits`), where each entry is the
     /// number of entries in that shard that pass `filter`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the number of entries of `shard_sizes` is not the number
+    /// of shards of the store after re-aggregation to `shard_high_bits`.
     pub fn new(
         inner: &'a mut SS,
         shard_high_bits: u32,
@@ -1311,6 +1319,13 @@ where
         shard_sizes: Vec<usize>,
     ) -> Self {
         inner.set_shard_high_bits(shard_high_bits);
+        // Without this check a wrong number of entries would silently
+        // truncate the zip in shard_sizes(), undercounting len().
+        assert_eq!(
+            shard_sizes.len(),
+            inner.shard_sizes().count(),
+            "shard_sizes must have one entry per shard"
+        );
         Self {
             inner,
             filter,

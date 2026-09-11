@@ -106,7 +106,8 @@ pub struct VFunc2<
     pub(crate) first: VFunc<K, D, S, E>,
     /// Second function: maps escaped keys to their full value.
     pub(crate) second: VFunc<K, D, S, F>,
-    /// Maps indices [0 . . `escape` − 1) back to actual frequent values.
+    /// Maps indices [0 . . `escape`) back to actual frequent values.
+    /// entries beyond the frequent prefix are zero padding.
     pub(crate) remap: Box<[D::Value]>,
     /// The escape value (2*ʳ* − 1). When *r* = 0, this value is zero and the
     /// first function always returns zero.
@@ -178,10 +179,14 @@ impl<
     #[inline]
     pub fn get_by_sig(&self, sig: S) -> D::Value {
         let idx = self.first.get_by_sig(sig);
-        if idx != self.escape {
-            self.remap[idx.as_to::<usize>()]
-        } else {
-            self.second.get_by_sig(sig)
+        // remap has exactly escape entries, so this is equivalent to
+        // comparing idx with the escape sentinel, at the same cost; it
+        // additionally covers the degenerate r = 0 regime, in which the
+        // one-bit-wide first function could in principle return an index
+        // beyond the (empty) remapping array.
+        match self.remap.get(idx.as_to::<usize>()) {
+            Some(&value) => value,
+            None => self.second.get_by_sig(sig),
         }
     }
 
@@ -730,8 +735,13 @@ mod build {
             );
 
             // Shift in u128 so best_r >= 32 cannot overflow a 32-bit usize.
-            let escape_usize =
-                usize::try_from((1u128 << best_r) - 1).expect("escape range exceeds usize");
+            let escape_usize = usize::try_from(
+                1u128
+                    .checked_shl(best_r as u32)
+                    .map(|v| v - 1)
+                    .unwrap_or(u128::MAX),
+            )
+            .expect("escape range exceeds usize");
             let escape = W::try_from(escape_usize).ok().unwrap();
             let num_frequent = escape_usize.min(m);
 
@@ -771,6 +781,7 @@ mod build {
             // Save builder settings before the first VFunc consumes it.
             let saved_max_num_threads = builder.max_num_threads;
             let saved_eps = builder.eps;
+            let saved_retry_prob = builder.retry_prob;
 
             pl.push_log_target(" ▸ first");
             let first = builder.try_build_func_with_store_and_inspect::<K, V>(
@@ -811,7 +822,7 @@ mod build {
             );
 
             let mut second_shard_edge = F::default();
-            second_shard_edge.set_up_shards(n_escaped, saved_eps);
+            second_shard_edge.set_up_shards(n_escaped, saved_eps, saved_retry_prob);
             let second_shard_high_bits = second_shard_edge.shard_high_bits();
 
             // Aggregate escaped_counts to the second function's shard granularity.

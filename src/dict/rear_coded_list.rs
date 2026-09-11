@@ -1144,7 +1144,14 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
         };
         // Write the data to the buffer
         self.data.extend_from_slice(to_encode);
-        self.written_bytes += self.data.len() - length_before;
+        // A checked addition: during streaming serialization the data buffer
+        // is cleared after each push, so the total number of written bytes is
+        // not bounded by memory and could wrap on 32-bit targets, silently
+        // storing wrong block pointers.
+        self.written_bytes = self
+            .written_bytes
+            .checked_add(self.data.len() - length_before)
+            .expect("total number of encoded bytes overflows usize");
         self.stats.suffixes_bytes += to_encode.len();
 
         // put the string as last_str for the next iteration
@@ -1521,23 +1528,33 @@ mod epserde_impl {
 
         #[inline(always)]
         fn next(&mut self) -> Option<Self::Item> {
+            // The consistency checks on byte_len catch lenders that violate
+            // the rewind-reproducibility contract by yielding different
+            // content on the second pass: without them, the mismatch with
+            // the length reported by ExactSizeIterator would make ε-serde
+            // silently write a corrupt structure.
+            const LENDER_CHANGED: &str = "the rewound lender yielded different content \
+                 during RearCodedList serialization";
             let mut builder = self.builder.borrow_mut();
             if self.pos < builder.data.len() {
                 // There's still data in the builder--just return the next byte
                 let byte = builder.data[self.pos];
                 self.pos += 1;
-                self.byte_len -= 1;
+                self.byte_len = self.byte_len.checked_sub(1).expect(LENDER_CHANGED);
                 Some(byte)
             } else {
                 match self.lender.next() {
-                    Ok(None) => None,
+                    Ok(None) => {
+                        assert!(self.byte_len == 0, "{}", LENDER_CHANGED);
+                        None
+                    }
                     Ok(Some(s)) => {
                         // Empty the builder data and refill it
                         builder.data.clear();
                         builder.push(s.borrow());
                         let byte = builder.data[0];
                         self.pos = 1;
-                        self.byte_len -= 1;
+                        self.byte_len = self.byte_len.checked_sub(1).expect(LENDER_CHANGED);
                         Some(byte)
                     }
 

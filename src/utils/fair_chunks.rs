@@ -168,11 +168,11 @@ impl<I: for<'a> SuccUnchecked<Input = u64, Output<'a> = u64> + IndexedSeq> FairC
     ///
     /// # Arguments
     ///
-    /// * `target_weight` - The target weight of the chunks.
+    /// * `target_weight` - The target weight of the chunks. A zero target
+    ///   weight yields an immediately exhausted iterator.
     ///
     /// * `cwf` - The cumulative weight function.
     ///
-    /// [`iter`]: crate::traits::IndexedSeq
     /// [`SuccUnchecked`]: crate::traits::SuccUnchecked
     /// [`new_with`]: Self::new_with
     /// [`EliasFano`]: crate::dict::EliasFano

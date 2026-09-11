@@ -98,6 +98,17 @@ fn test_sparse_builder_too_many_values() {
 }
 
 #[test]
+#[should_panic]
+fn test_sparse_builder_too_few_values() {
+    // The documented panic on building with fewer values than declared is
+    // enforced indirectly by the Elias-Fano builder.
+    let mut builder = partial_array::new_sparse(10, 2);
+
+    builder.set(2, "only");
+    let _ = builder.build();
+}
+
+#[test]
 fn test_sparse_builder_exact_capacity() {
     let mut builder = partial_array::new_sparse(10, 1);
 

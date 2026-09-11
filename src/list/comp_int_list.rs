@@ -123,7 +123,9 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
     ///
     /// Panics if any value is less than `min`, if any offset `v - min` equals
     /// the maximum value of the word type (so it cannot be incremented by one),
-    /// or if the total encoded bit length exceeds `usize::MAX`.
+    /// if the total encoded bit length exceeds `usize::MAX`, or if the number
+    /// of values is `usize::MAX` (as one delimiter more than the number of
+    /// values is stored).
     ///
     /// # Examples
     ///
@@ -141,18 +143,18 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
         for<'a> &'a I: IntoIterator<Item = &'a V>,
     {
         // First pass: count elements and total bits
-        let mut n = 0;
+        let mut n = 0usize;
         let mut total_bits = 0usize;
         let mut all_widths_unaligned = true;
         for &v in values {
             let offset = v
                 .checked_sub(min)
                 .unwrap_or_else(|| {
-                    panic!("values must be greater than or equal to the lower bound {}", min)
+                    panic!("CompIntList: values must be greater than or equal to the lower bound {}", min)
                 })
                 .checked_add(V::ONE)
                 .unwrap_or_else(|| {
-                    panic!("CompIntList: values must be smaller than the maximum value minus the lower bound ({})", V::MAX - min)
+                    panic!("CompIntList: the offset of a value from the lower bound {} must be smaller than the maximum value of the word type", min)
                 });
             let width = (offset.bit_len() - 1) as usize;
             // Test at the actual bit position: fields that satisfy the
@@ -169,7 +171,11 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
         // Second pass: build delimiters and pack data. The pushes are
         // checked: an iterator yielding different values on the second pass
         // panics instead of writing out of bounds.
-        let mut efb = EliasFanoBuilder::new(n + 1, total_bits as u64);
+        let mut efb = EliasFanoBuilder::new(
+            n.checked_add(1)
+                .expect("CompIntList: the number of values must be smaller than usize::MAX"),
+            total_bits as u64,
+        );
         let mut pos = 0u64;
         efb.push(0);
 
@@ -240,9 +246,9 @@ impl<B: Backend<Word: Word> + BitVecValueOps<B::Word>, D: SliceByValue<Value = u
         }
     }
 
-    /// Returns the underlying delimiter structure.
-    pub fn into_inner(self) -> D {
-        self.delimiters
+    /// Returns the underlying data backend and delimiter structure.
+    pub fn into_inner(self) -> (B, D) {
+        (self.data, self.delimiters)
     }
 }
 

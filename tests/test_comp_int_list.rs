@@ -121,6 +121,15 @@ fn test_value_below_min_panics() {
 }
 
 #[test]
+#[should_panic(expected = "maximum value of the word type")]
+fn test_offset_overflow_panics() {
+    // Regression test: v == MAX with min == 0 makes the stored offset
+    // v - min + 1 overflow; this used to wrap silently in release builds.
+    let values = vec![u64::MAX];
+    let _ = CompIntList::new(0u64, &values);
+}
+
+#[test]
 fn unaligned_conversion_accepts_wide_aligned_value() {
     let value = (1u64 << 58) - 1;
     let values = [value];

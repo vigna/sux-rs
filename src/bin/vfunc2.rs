@@ -158,7 +158,9 @@ fn zipf_cdf(s: f64, n: usize) -> Vec<f64> {
 
 fn sample_zipf(cdf: &[f64], rng: &mut SmallRng) -> usize {
     let u: f64 = (rng.random::<u64>() >> 11) as f64 / ((1u64 << 53) as f64);
-    cdf.partition_point(|&p| p < u)
+    // The clamp keeps the sample in range when accumulated floating-point
+    // error leaves the last CDF entry slightly below one and u falls above it.
+    cdf.partition_point(|&p| p < u).min(cdf.len() - 1)
 }
 
 fn generate_synthetic_values(args: &Args, n: usize) -> Result<Vec<usize>> {

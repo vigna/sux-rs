@@ -202,15 +202,11 @@ fn test_non_uniform() {
             let density0 = density * 0.01;
             let density1 = density * 0.99;
 
-            let len1;
-            let len2;
-            if len % 2 != 0 {
-                len1 = len / 2 + 1;
-                len2 = len / 2;
+            let (len1, len2) = if len % 2 != 0 {
+                (len / 2 + 1, len / 2)
             } else {
-                len1 = len / 2;
-                len2 = len / 2;
-            }
+                (len / 2, len / 2)
+            };
 
             let first_half = loop {
                 let b = (0..len1)
@@ -306,6 +302,29 @@ mod test_large {
         assert_eq!(select.select(1), Some((1 << 32) - 1));
         assert_eq!(select.select(2), Some(3 * (1 << 32)));
         assert_eq!(select.select(3), None);
+    }
+
+    #[test]
+    fn test_last_inventory_superblock_boundary() {
+        // Regression test: a single one in the last block of the first
+        // superblock, with the bit vector extending past the superblock
+        // boundary. All queries use the last-inventory-entry branch, whose
+        // block scan must be clipped to the end of the current superblock:
+        // without clipping, the superblock-relative absolute counters reset
+        // to zero past the boundary, the scan overshoots, and select returns
+        // a position in the wrong superblock.
+        let num_words = (1 << 26) + 8;
+        let len = num_words * 64;
+        let mut data: Vec<usize> = vec![0; num_words];
+        data[(1 << 26) - 1] = 1 << 63;
+
+        let bits = unsafe { BitVec::from_raw_parts(data, len) };
+        let rank_small = RankSmall::<64, 2, 9, _>::new(bits);
+        let select = SelectSmall::<2, 9, _>::new(rank_small);
+
+        assert_eq!(select.count_ones(), 1);
+        assert_eq!(select.select(0), Some((1 << 32) - 1));
+        assert_eq!(select.select(1), None);
     }
 
     macro_rules! test_large {

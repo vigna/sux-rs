@@ -24,10 +24,12 @@
 //! explicit representation of sequences (an alternative approach is provided by
 //! the [`value-traits`] crate, which is used by bit-field slices).
 //!
-//! All traits provided in this module are extension traits. They have no
+//! Most traits provided in this module are extension traits with no
 //! unimplemented methods: just pulling them into scope will provide anything
 //! that is `AsRef<[W]>` and implements [`BitLength`] with the operations of
-//! a bit vector.
+//! a bit vector. The exceptions are [`BitLength`] itself, whose `len` method
+//! must be implemented, and [`BitVecValueOps`], which has no blanket
+//! implementation.
 //!
 //! Iteration on the bits of the vector, or on the positions of the ones or of the
 //! zeros, is provided by means of structures that can be reused.

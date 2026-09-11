@@ -58,8 +58,8 @@ use xxhash_rust::xxh3;
 /// A bit-level prefix of an integer, used as key for the LCP-to-bucket
 /// mapping.
 ///
-/// This type is public only because it appears in the signature of
-/// [`LcpMmphfInt`].
+/// This type is public only because it appears in the signatures of
+/// [`LcpMmphfInt`] and [`Lcp2MmphfInt`](crate::func::Lcp2MmphfInt).
 ///
 /// Stores the original integer value and a bit length. The [`ToSig`]
 /// implementation hashes only the top `bit_len` bits (by masking out
@@ -404,7 +404,13 @@ mod build {
                 builder.expected_num_keys(n).try_build_func::<K, K, _, _>(
                     keys,
                     FromCloneableIntoIterator::new((0..n).map(|idx| {
-                        (lcp_bit_lens[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
+                        // A checked multiplication: a very long common prefix
+                        // could make the shift wrap, in particular on 32-bit
+                        // targets, silently corrupting the packed value.
+                        lcp_bit_lens[idx >> log2_bs]
+                            .checked_mul(1 << log2_bs)
+                            .expect("LCP bit length overflows usize when packed with the offset")
+                            | (idx & bucket_mask)
                     })),
                     BitFieldVec::<Box<[usize]>>::new_padded,
                     pl,
@@ -601,7 +607,13 @@ mod build {
             pl.info(format_args!("Building key → lcp_len | offset function..."));
             let lcp_len_offset = builder.expected_num_keys(n).try_par_populate_and_build(
                 keys,
-                &|i| (lcp_bit_lens[i >> log2_bs] << log2_bs) | (i & bucket_mask),
+                &|i| {
+                    // See the sequential builder for the checked multiplication.
+                    lcp_bit_lens[i >> log2_bs]
+                        .checked_mul(1 << log2_bs)
+                        .expect("LCP bit length overflows usize when packed with the offset")
+                        | (i & bucket_mask)
+                },
                 &mut |builder, seed, mut store, max_value, _num_keys, pl, _state: &mut ()| {
                     builder.bit_width = max_value.bit_len() as usize;
                     let data = BitFieldVec::<Box<[usize]>>::new_padded(
@@ -669,8 +681,8 @@ mod build {
     ///
     /// If `DISTINCT` is `true`, the two strings are assumed to be distinct
     /// and the identical-string case is skipped (calling with identical
-    /// strings is undefined behavior in debug builds and an out-of-bounds
-    /// access in release builds). If `DISTINCT` is `false`, identical
+    /// strings panics: a debug assertion in debug builds, a bounds-check
+    /// panic in release builds). If `DISTINCT` is `false`, identical
     /// strings return `len * 8 + 8` (all bits match, including the
     /// virtual NUL).
     pub(crate) fn lcp_bits_nul<const DISTINCT: bool>(a: &[u8], b: &[u8]) -> usize {
@@ -922,7 +934,13 @@ mod build {
                 builder.expected_num_keys(n).try_build_func::<K, B, _, _>(
                     keys,
                     FromCloneableIntoIterator::new((0..n).map(|idx| {
-                        (lcp_bit_lens[idx >> log2_bs] << log2_bs) | (idx & bucket_mask)
+                        // A checked multiplication: a very long common prefix
+                        // could make the shift wrap, in particular on 32-bit
+                        // targets, silently corrupting the packed value.
+                        lcp_bit_lens[idx >> log2_bs]
+                            .checked_mul(1 << log2_bs)
+                            .expect("LCP bit length overflows usize when packed with the offset")
+                            | (idx & bucket_mask)
                     })),
                     BitFieldVec::<Box<[usize]>>::new_padded,
                     pl,
@@ -1151,7 +1169,13 @@ mod build {
             pl.info(format_args!("Building key → lcp_len | offset function..."));
             let lcp_len_offset = builder.expected_num_keys(n).try_par_populate_and_build(
                 keys,
-                &|i| (lcp_bit_lens[i >> log2_bs] << log2_bs) | (i & bucket_mask),
+                &|i| {
+                    // See the sequential builder for the checked multiplication.
+                    lcp_bit_lens[i >> log2_bs]
+                        .checked_mul(1 << log2_bs)
+                        .expect("LCP bit length overflows usize when packed with the offset")
+                        | (i & bucket_mask)
+                },
                 &mut |builder, seed, mut store, max_value, _num_keys, pl, _state: &mut ()| {
                     builder.bit_width = max_value.bit_len() as usize;
                     let data = BitFieldVec::<Box<[usize]>>::new_padded(
@@ -1240,7 +1264,7 @@ pub(crate) use build::{lcp_bits, lcp_bits_nul, log2_bucket_size};
 /// - `S0`: the [signature type] for the key map
 ///   (`lcp_len_offset`).
 /// - `E0`: the [`ShardEdge`] for the key map.
-/// - `S1`: the  [signature type] for the prefix-to-bucket map
+/// - `S1`: the [signature type] for the prefix-to-bucket map
 ///   (`lcp_to_bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
 ///
@@ -1332,8 +1356,8 @@ where
 /// A bit-level prefix of a byte slice, used as key for the LCP-to-bucket
 /// mapping during construction.
 ///
-/// This type is public only because it appears in the signature of
-/// [`LcpMmphf`].
+/// This type is public only because it appears in the signatures of
+/// [`LcpMmphf`] and [`Lcp2Mmphf`](crate::func::Lcp2Mmphf).
 ///
 /// Holds an owned copy of the relevant bytes and a bit length. The
 /// [`ToSig`] implementation hashes only the first `bit_len` bits,
@@ -1422,7 +1446,7 @@ impl ToSig<[u64; 1]> for BitPrefix {
 /// - `S0`: the [signature type] for the key map
 ///   (`lcp_len_offset`).
 /// - `E0`: the [`ShardEdge`] for the key map.
-/// - `S1`: the  [signature type] for the prefix-to-bucket map
+/// - `S1`: the [signature type] for the prefix-to-bucket map
 ///   (`lcp_to_bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
 ///

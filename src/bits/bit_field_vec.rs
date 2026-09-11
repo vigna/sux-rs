@@ -494,8 +494,11 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
     /// nonzero while the backend is empty (a nonzero length always requires at
     /// least one backing word, even at bit width zero).
     pub fn wrap(backend: B, bit_width: usize, len: usize) -> BitFieldVec<B> {
+        // Comparing word counts avoids overflowing the product
+        // backend.len() * BITS for backends close to the address-space size.
         assert!(
-            checked_bit_len(len, bit_width) <= backend.as_ref().len() * B::Word::BITS as usize,
+            checked_bit_len(len, bit_width).div_ceil(B::Word::BITS as usize)
+                <= backend.as_ref().len(),
             "len * bit_width must be at most the number of bits in the backend"
         );
         assert!(
@@ -610,8 +613,11 @@ impl<W: Word> BitFieldVec<Vec<W>> {
             .len
             .checked_add(1)
             .expect("BitFieldVec length overflows usize");
+        // Comparing word counts avoids overflowing the product
+        // bits.len() * BITS for backends close to the address-space size.
         if self.bits.is_empty()
-            || checked_bit_len(next_len, self.bit_width) > self.bits.len() * W::BITS as usize
+            || checked_bit_len(next_len, self.bit_width).div_ceil(W::BITS as usize)
+                > self.bits.len()
         {
             self.bits.push(W::ZERO);
         }
@@ -628,10 +634,9 @@ impl<W: Word> BitFieldVec<Vec<W>> {
     pub fn resize(&mut self, new_len: usize, value: W) {
         panic_if_value!(value, self.mask, self.bit_width);
         if new_len > self.len {
-            let bit_len = checked_bit_len(new_len, self.bit_width);
-            if bit_len > self.bits.len() * W::BITS as usize {
-                self.bits
-                    .resize(bit_len.div_ceil(W::BITS as usize), W::ZERO);
+            let word_len = checked_bit_len(new_len, self.bit_width).div_ceil(W::BITS as usize);
+            if word_len > self.bits.len() {
+                self.bits.resize(word_len, W::ZERO);
             }
             if self.bits.is_empty() {
                 // Zero-width vector: still needs one backing word.
@@ -1742,10 +1747,12 @@ impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>>
 
     /// Sets the element of the slice at the specified index.
     ///
+    /// # Panics
     /// May panic if the index is not in [0..[len]) or the value does not
-    /// fit in [`BitWidth::bit_width`] bits.
+    /// fit in [`AtomicBitWidth::atomic_bit_width`] bits.
     ///
-    /// [len]: SliceByValue::len
+    /// [len]: crate::traits::bit_field_slice::AtomicBitFieldSlice::len
+    /// [`AtomicBitWidth::atomic_bit_width`]: crate::traits::bit_field_slice::AtomicBitWidth::atomic_bit_width
     #[inline(always)]
     fn set_atomic(
         &self,

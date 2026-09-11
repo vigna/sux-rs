@@ -140,8 +140,10 @@ pub trait RankUnchecked {
     /// }
     /// ```
     ///
-    /// For [`Rank9`] and [`RankSmall`], this gives around 10% to 30%
-    /// speedup when there are 16 billion keys.
+    /// For [`Rank9`], which overrides this method, this gives around 10% to
+    /// 30% speedup when there are 16 billion keys. Note that
+    /// [`RankSmall`] does not override this method (it prefetches
+    /// internally during [`rank_unchecked(pos)`] instead).
     ///
     /// Prefetching out-of-bounds is never unsafe, and neither is this method.
     ///
@@ -217,6 +219,10 @@ pub trait RankHinted {
     /// cover every word from `hint_pos` through the word containing `pos`.
     ///
     /// Some implementation might accept the length as a valid argument.
+    ///
+    /// Implementations may assume that the scan arithmetic does not
+    /// overflow; in particular, on bit vectors whose length is within one
+    /// word of `usize::MAX` bits the behavior is undefined.
     ///
     /// [length of the underlying bit vector]: BitLength::len
     unsafe fn rank_hinted<const WORDS_PER_SUBBLOCK: usize>(

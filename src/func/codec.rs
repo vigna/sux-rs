@@ -49,8 +49,9 @@ pub trait Codec<W> {
     /// All frequencies must be strictly positive, and the map must be
     /// non-empty: the empty map is not supported. A coder built from an empty
     /// map is degenerate: every symbol is escaped and its decoder matches no
-    /// window value, so decoding is unspecified (the [Huffman](HuffmanConf)
-    /// decoder panics).
+    /// window value, so decoding is unspecified (the branchy
+    /// [Huffman](HuffmanConf) decoder returns `None` for every window;
+    /// the branchless one has a debug assertion).
     fn build_coder(&self, frequencies: &HashMap<W, usize>) -> Self::Coder;
 }
 
@@ -236,7 +237,8 @@ pub struct HuffmanCoder<W> {
     /// the escape length.
     codeword_len: Box<[u32]>,
     /// The symbols, in order of decreasing frequency, kept up to the
-    /// cutpoint. The last entry is the escape sentinel (`W::MAX`).
+    /// cutpoint. The last entry is a placeholder sentinel (not a real
+    /// symbol) when the code has an escape.
     symbol: Box<[W]>,
     /// Inverse map: symbol → rank position in [`Self::symbol`]. Symbols
     /// not in the map are escaped.
@@ -466,8 +468,8 @@ pub struct HuffmanDecoder<W> {
     /// If the code has an escape, the last entry is a placeholder
     /// sentinel (not a real symbol).
     symbol: Box<[W]>,
-    /// Number of non-escape symbols. An index `≥ num_real_symbols`
-    /// from the canonical decoder means the escape codeword was hit.
+    /// Number of non-escape symbols. An index greater than or equal to this
+    /// value from the canonical decoder means the escape codeword was hit.
     num_coded_symbols: u32,
     /// The maximum codeword length in bits. This is the width of the read
     /// window expected by [`Decoder::decode`].
@@ -574,7 +576,10 @@ impl<W: PrimitiveInteger> HuffmanDecoder<W> {
 }
 
 fn entropy<W: PrimitiveInteger>(frequencies: &HashMap<W, usize>) -> f64 {
-    let total: u64 = frequencies.values().map(|&x| x as u64).sum();
+    // The Coder contract bounds only the positivity of frequencies, not
+    // their sum, so accumulate in u128 like the weighted-length
+    // accumulators: two usize::MAX frequencies would overflow u64.
+    let total: u128 = frequencies.values().map(|&x| x as u128).sum();
 
     // Entropy of an empty set or a single category is 0
     if total <= 1 {

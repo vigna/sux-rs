@@ -184,7 +184,7 @@ pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBi
     /// `index` must be in [0..[len]).
     /// No bound or bit-width check is performed.
     ///
-    /// [len]: SliceByValue::len
+    /// [len]: AtomicBitFieldSlice::len
     unsafe fn get_atomic_unchecked(&self, index: usize, order: Ordering) -> A::Value;
 
     /// Returns the value at the specified index.
@@ -192,7 +192,7 @@ pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBi
     /// # Panics
     /// May panic if the index is not in [0..[len])
     ///
-    /// [len]: SliceByValue::len
+    /// [len]: AtomicBitFieldSlice::len
     fn get_atomic(&self, index: usize, order: Ordering) -> A::Value {
         panic_if_out_of_bounds!(index, self.len());
         unsafe { self.get_atomic_unchecked(index, order) }
@@ -202,19 +202,20 @@ pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBi
     ///
     /// # Safety
     /// - `index` must be in [0..[len]);
-    /// - `value` must fit within [`BitWidth::bit_width`] bits.
+    /// - `value` must fit within [`AtomicBitWidth::atomic_bit_width`] bits.
     ///
     /// No bound or bit-width check is performed.
     ///
-    /// [len]: SliceByValue::len
+    /// [len]: AtomicBitFieldSlice::len
     unsafe fn set_atomic_unchecked(&self, index: usize, value: A::Value, order: Ordering);
 
     /// Sets the element of the slice at the specified index.
     ///
+    /// # Panics
     /// May panic if the index is not in [0..[len])
     /// or the value does not fit in [`AtomicBitWidth::atomic_bit_width`] bits.
     ///
-    /// [len]: SliceByValue::len
+    /// [len]: AtomicBitFieldSlice::len
     fn set_atomic(&self, index: usize, value: A::Value, order: Ordering) {
         panic_if_out_of_bounds!(index, self.len());
         let bw = self.atomic_bit_width();

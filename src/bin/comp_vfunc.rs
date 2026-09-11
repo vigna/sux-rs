@@ -169,7 +169,9 @@ fn main() -> Result<()> {
         ShardEdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
         ShardEdgeType::Fuse3Shards => main_with_types::<[u64; 2], Fuse3Shards>(args),
         _ => {
-            bail!("comp_vfunc only supports --edge fuse, fuse-no-shards-64, and fuse-no-shards-128")
+            bail!(
+                "comp_vfunc only supports --shard-edge fuse3-shards, fuse3-no-shards64, and fuse3-no-shards128"
+            )
         }
     }
 }
@@ -187,7 +189,9 @@ fn zipf_cdf(s: f64, n: usize) -> Vec<f64> {
 
 fn sample_zipf(cdf: &[f64], rng: &mut SmallRng) -> usize {
     let u: f64 = (rng.random::<u64>() >> 11) as f64 / ((1u64 << 53) as f64);
-    cdf.partition_point(|&p| p < u)
+    // The clamp keeps the sample in range when accumulated floating-point
+    // error leaves the last CDF entry slightly below one and u falls above it.
+    cdf.partition_point(|&p| p < u).min(cdf.len() - 1)
 }
 
 fn generate_synthetic_values(args: &Args, n: usize) -> Result<Vec<usize>> {

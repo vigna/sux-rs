@@ -164,15 +164,11 @@ fn test_non_uniform() {
             let density0 = density * 0.01;
             let density1 = density * 0.99;
 
-            let len1;
-            let len2;
-            if len % 2 != 0 {
-                len1 = len / 2 + 1;
-                len2 = len / 2;
+            let (len1, len2) = if len % 2 != 0 {
+                (len / 2 + 1, len / 2)
             } else {
-                len1 = len / 2;
-                len2 = len / 2;
-            }
+                (len / 2, len / 2)
+            };
 
             let first_half = loop {
                 let b = (0..len1)

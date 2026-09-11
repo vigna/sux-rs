@@ -34,9 +34,7 @@ use std::time::Instant;
 use thread_priority::ThreadPriority;
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
-use super::shard_edge::FuseLge3Shards;
-
-const LOG2_MAX_SHARDS: u32 = 16;
+use super::shard_edge::{Fuse3Shards, FuseLge3Shards, LOG2_MAX_SHARDS};
 
 /// Returns the default maximum number of threads: `min(16, available_parallelism)`.
 fn default_max_num_threads() -> usize {
@@ -147,7 +145,7 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
 
     /// The target relative space loss due to [ε-cost sharding].
     ///
-    /// The value must lie in the open interval (0, 1); constructors return an
+    /// The value must lie in the open interval (0 . . 1); constructors return an
     /// error otherwise.
     ///
     /// The default is 0.001. Setting a larger target, for example, 0.01, will
@@ -164,6 +162,22 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// [ε-cost sharding]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
     #[setters(generate = true, strip_option)]
     pub(crate) eps: f64,
+
+    /// The maximum probability of a construction retry caused by duplicate
+    /// hyperedges.
+    ///
+    /// Sharding is limited so that the probability that a shard contains two
+    /// identical hyperedges, which forces a new construction attempt with a
+    /// different seed, is at most this value; in the injective regime of
+    /// [`FuseLge3Shards`] the same bound limits the probability of a
+    /// duplicate local signature. The value must lie in the half-open
+    /// interval (0 . . 1]; constructors return an error otherwise.
+    ///
+    /// The default is 0.05. Setting a larger bound will in general provide
+    /// finer shards at the price of a higher probability of retrying the
+    /// construction with a new seed.
+    #[setters(generate = true)]
+    pub(crate) retry_prob: f64,
 
     /// The bit width of the maximum value.
     pub(crate) bit_width: usize,
@@ -198,6 +212,7 @@ impl<D, S, E: Default> Default for VBuilder<D, S, E> {
             seed: 0,
             log2_buckets: 8,
             eps: 0.001,
+            retry_prob: Fuse3Shards::DUP_EDGE_RETRY_PROB,
             bit_width: 0,
             shard_edge: E::default(),
             num_keys: 0,
@@ -221,7 +236,8 @@ impl<D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync, S: Sig, E: ShardEdge
     /// [`try_populate_and_build`]: Self::try_populate_and_build
     pub(crate) fn init_shards_and_seed(&mut self) -> u64 {
         if let Some(expected_num_keys) = self.expected_num_keys {
-            self.shard_edge.set_up_shards(expected_num_keys, self.eps);
+            self.shard_edge
+                .set_up_shards(expected_num_keys, self.eps, self.retry_prob);
             self.log2_buckets = self.shard_edge.shard_high_bits();
         }
         self.seed
@@ -231,7 +247,8 @@ impl<D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync, S: Sig, E: ShardEdge
     /// regardless of the other builder's type parameters.
     ///
     /// The copied fields are: [`max_num_threads`], [`offline`],
-    /// [`check_dups`], [`low_mem`], and [`eps`]. Data-dependent fields
+    /// [`check_dups`], [`low_mem`], [`eps`], and [`retry_prob`].
+    /// Data-dependent fields
     /// ([`expected_num_keys`], [`seed`], [`log2_buckets`]) and internal
     /// construction state are left at their defaults.
     ///
@@ -240,6 +257,7 @@ impl<D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync, S: Sig, E: ShardEdge
     /// [`check_dups`]: Self::check_dups
     /// [`low_mem`]: Self::low_mem
     /// [`eps`]: Self::eps
+    /// [`retry_prob`]: Self::retry_prob
     /// [`expected_num_keys`]: Self::expected_num_keys
     /// [`seed`]: Self::seed
     /// [`log2_buckets`]: Self::log2_buckets
@@ -249,6 +267,7 @@ impl<D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync, S: Sig, E: ShardEdge
         self.check_dups = other.check_dups;
         self.low_mem = other.low_mem;
         self.eps = other.eps;
+        self.retry_prob = other.retry_prob;
         self
     }
 }
@@ -272,8 +291,12 @@ pub enum BuildError {
     UnsolvableShard,
     /// The number of values is different from the number of keys.
     ///
-    /// When construction is lender-based the mismatch is detected lazily,
-    /// so the reported counts might be lower bounds.
+    /// Slice-based constructors compare the lengths exactly. Lender-based
+    /// constructors detect the mismatch lazily, so the reported counts might
+    /// be lower bounds; moreover, they detect only a values lender that is
+    /// exhausted before the keys: by contract, a values lender may return
+    /// more values than keys (in particular, it may be infinite), and the
+    /// extra values are ignored.
     #[error("Mismatch between number of keys ({num_keys}) and number of values ({num_values})")]
     MismatchedKeysAndValues { num_keys: usize, num_values: usize },
 }
@@ -809,8 +832,16 @@ impl<
         // meaningful. The range check also rejects NaN and ±∞.
         anyhow::ensure!(
             self.eps > 0.0 && self.eps < 1.0,
-            "eps must be in the open interval (0, 1), got {}",
+            "eps must be in the open interval (0..1), got {}",
             self.eps
+        );
+        // A retry probability of one is meaningful (accept any amount of
+        // duplicate-edge risk), but zero would forbid sharding entirely and
+        // the comparisons below would reject NaN silently.
+        anyhow::ensure!(
+            self.retry_prob > 0.0 && self.retry_prob <= 1.0,
+            "retry_prob must be in the half-open interval (0..1], got {}",
+            self.retry_prob
         );
         self.init_shards_and_seed();
         pl.info(format_args!(
@@ -836,9 +867,9 @@ impl<
     ///
     /// On each retry the lenders are rewound. Retries continue for
     /// [`SolveError::UnsolvableShard`] and
-    /// [`SolveError::MaxShardTooBig`]; after 3 duplicate-signature
-    /// retries [`BuildError::DuplicateKey`] is returned, and after 3
-    /// duplicate-local-signature retries
+    /// [`SolveError::MaxShardTooBig`]; if the third attempt still finds a
+    /// duplicate signature, [`BuildError::DuplicateKey`] is returned, and
+    /// if it still finds a duplicate local signature,
     /// [`BuildError::DuplicateLocalSignatures`] is returned. Any other
     /// error is propagated immediately.
     ///
@@ -1017,7 +1048,7 @@ impl<
                 // [VBuilder::shard_size_hint].
                 let shard_n = self.shard_size_hint.unwrap_or(num_keys);
                 let shard_edge = &mut self.shard_edge;
-                shard_edge.set_up_shards(shard_n, self.eps);
+                shard_edge.set_up_shards(shard_n, self.eps, self.retry_prob);
 
                 let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
                 let max_shard = shard_store.shard_sizes().max().unwrap_or(0);
@@ -1207,7 +1238,7 @@ impl<
         // edge count (≈ entropy × num_keys).
         let shard_n = self.shard_size_hint.unwrap_or(num_keys);
         let shard_edge = &mut self.shard_edge;
-        shard_edge.set_up_shards(shard_n, self.eps);
+        shard_edge.set_up_shards(shard_n, self.eps, self.retry_prob);
 
         let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
         let max_shard = shard_store.shard_sizes().max().unwrap_or(0);
@@ -1334,12 +1365,16 @@ impl<
                 - 1.),
         ));
 
-        // main_pl (shard counter) stays at info; per-shard detail at trace
+        // main_pl (shard counter) stays at info; per-shard detail at trace.
+        // The info level must be restored on the error path too, or a retry
+        // after an unsolvable shard would log the following attempts at
+        // trace level, making them invisible.
         let mut main_pl = pl.concurrent();
         pl.log_level(log::Level::Trace);
 
-        if self.lge {
+        let solve_result = if self.lge {
             self.par_solve(
+                seed,
                 shard_iter,
                 &mut data,
                 0,
@@ -1348,11 +1383,12 @@ impl<
                 },
                 &mut main_pl,
                 pl,
-            )?;
+            )
         } else if self.low_mem == Some(true)
             || self.low_mem.is_none() && self.num_threads > 3 && shard_edge.num_shards() > 2
         {
             self.par_solve(
+                seed,
                 shard_iter,
                 &mut data,
                 0,
@@ -1361,9 +1397,10 @@ impl<
                 },
                 &mut main_pl,
                 pl,
-            )?;
+            )
         } else {
             self.par_solve(
+                seed,
                 shard_iter,
                 &mut data,
                 0,
@@ -1372,10 +1409,11 @@ impl<
                 },
                 &mut main_pl,
                 pl,
-            )?;
-        }
+            )
+        };
 
         pl.log_level(log::Level::Info);
+        solve_result?;
 
         let num_keys = self.num_keys;
         Ok(VFunc {
@@ -1479,6 +1517,7 @@ impl<
         P: ProgressLog + Clone + Send + Sync,
     >(
         &self,
+        seed: u64,
         shard_iter: I,
         data: &'b mut D,
         shard_stride_padding: usize,
@@ -1534,6 +1573,25 @@ impl<
                         match data_recv.recv() {
                             Err(_) => return,
                             Ok((shard_index, (shard, mut data))) => {
+                                if TypeId::of::<V>() == TypeId::of::<EmptyVal>() {
+                                    // For filters, we fill the array with random data,
+                                    // otherwise elements with signature 0 would have a
+                                    // significantly higher probability of being false
+                                    // positives. The fill must happen for empty shards,
+                                    // too, or their backing would stay all zero, which
+                                    // is exactly the degeneracy we are avoiding; the
+                                    // seed is mixed with the shard index so different
+                                    // shards get different backgrounds, and it is the
+                                    // attempt seed, so retries are not repeatable.
+                                    //
+                                    // SAFETY: We work around the fact that [usize] does
+                                    // not implement Fill.
+                                    Mwc192::seed_from_u64(seed ^ mix64(shard_index as u64))
+                                        .fill_bytes(unsafe {
+                                            data.as_mut_slice().align_to_mut::<u8>().1
+                                        });
+                                }
+
                                 if shard.is_empty() {
                                     continue;
                                 }
@@ -1569,7 +1627,8 @@ impl<
                                         }
                                     }
 
-                                    // The second conjunct is always true on 32-bit platforms
+                                    // The second conjunct is always false on 32-bit
+                                    // platforms, disabling the check
                                     #[allow(clippy::absurd_extreme_comparisons)]
                                     if TypeId::of::<E::LocalSig>() != TypeId::of::<S>()
                                         && self.num_keys > Self::MAX_NO_LOCAL_SIG_CHECK
@@ -1645,17 +1704,6 @@ impl<
 
                                 if self.failed.load(Ordering::Relaxed) {
                                     return;
-                                }
-
-                                if TypeId::of::<V>() == TypeId::of::<EmptyVal>() {
-                                    // For filters, we fill the array with random data, otherwise
-                                    // elements with signature 0 would have a significantly higher
-                                    // probability of being false positives.
-                                    //
-                                    // SAFETY: We work around the fact that [usize] does not implement Fill
-                                    Mwc192::seed_from_u64(self.seed).fill_bytes(unsafe {
-                                        data.as_mut_slice().align_to_mut::<u8>().1
-                                    });
                                 }
 
                                 if solve_shard(self, shard_index, shard, data, &mut pl).is_err() {

@@ -166,18 +166,27 @@ pub unsafe trait ShardEdge<S, const K: usize>:
     /// Scaling Hypergraph-Based Static Functions and Filters to Trillions of
     /// Keys]” for more information.
     ///
+    /// `retry_prob` is the maximum acceptable probability that a construction
+    /// attempt has to be retried because a shard contains duplicate edges
+    /// (or, in an injective regime, duplicate local signatures). Sharded
+    /// implementations should limit sharding so that this bound is
+    /// satisfied; implementations that do not shard can ignore it.
+    ///
     /// This method can be called multiple times. For example, it can be used to
     /// precompute the number of shards so to optimize a [`SigStore`] by using
     /// the same number of buckets.
     ///
     /// After this call, [`shard_high_bits`] and [`num_shards`] will contain
-    /// sharding information.
+    /// sharding information. Implementations must never select more than
+    /// [`LOG2_MAX_SHARDS`] shard high bits, as this is the maximum supported
+    /// by the [`SigStore`] implementations used by
+    /// [`VBuilder`](crate::func::VBuilder).
     ///
     /// [`num_shards`]: ShardEdge::num_shards
     /// [`shard_high_bits`]: ShardEdge::shard_high_bits
     /// [`SigStore`]: crate::utils::SigStore
     /// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
-    fn set_up_shards(&mut self, n: usize, eps: f64);
+    fn set_up_shards(&mut self, n: usize, eps: f64, retry_prob: f64);
 
     /// Sets up the edge logic for the given number of keys and maximum shard
     /// size.
@@ -336,6 +345,15 @@ macro_rules! fixed_point_inv_128 {
     };
 }
 
+/// The maximum number of shard high bits supported by the [`SigStore`]
+/// implementations used by [`VBuilder`](crate::func::VBuilder).
+///
+/// Implementations of [`ShardEdge::set_up_shards`] must never select more
+/// shard high bits than this value.
+///
+/// [`SigStore`]: crate::utils::SigStore
+pub const LOG2_MAX_SHARDS: u32 = 16;
+
 /// Returns the maximum number of high bits for sharding the given number of
 /// keys so that the overhead of the maximum shard size with respect to the
 /// average shard size is with high probability `eps`.
@@ -367,8 +385,12 @@ mod fuse {
     /// Duplicate edges are possible, which limits the amount of possible
     /// sharding.
     ///
-    /// To keep the expansion factor close to the minimums (1.105), shards are
-    /// never smaller than 10⁷ keys.
+    /// To keep the expansion factor close to the minimums (1.105), in the
+    /// fuse regime shards are never smaller than 10⁷ keys. In the linear
+    /// regime (below 800000 keys) shards are much smaller, and the
+    /// probability of a construction retry caused by a duplicate edge can be
+    /// significantly larger than the configured bound; retries at such sizes
+    /// are however very cheap.
     ///
     /// In a fuse graph there are 𝓁 + 2 *segments* of size *s*. A random edge is
     /// chosen by selecting a first segment *f* uniformly at random among the
@@ -385,7 +407,8 @@ mod fuse {
     /// this implementation, the injective regime starts at shards of ≈10⁸
     /// keys. For smaller shards the amount of sharding is limited so that
     /// the probability of a construction retry caused by a duplicate edge
-    /// is at most [`Fuse3Shards::DUP_EDGE_RETRY_PROB`].
+    /// is at most [`Fuse3Shards::DUP_EDGE_RETRY_PROB`] (or the bound set with
+    /// [`VBuilder::retry_prob`](crate::func::VBuilder::retry_prob)).
     ///
     /// Below a few million keys, fuse graphs have a much higher space overhead.
     /// This construction in that case switches to sharding and [lazy Gaussian
@@ -509,22 +532,19 @@ mod fuse {
         type LocalSig = [u64; 1];
         type Vertex = u32;
 
-        fn set_up_shards(&mut self, n: usize, eps: f64) {
+        fn set_up_shards(&mut self, n: usize, eps: f64, retry_prob: f64) {
             self.shard_bits_shift = 63
                 - if n <= Self::MAX_LIN_SIZE {
                     // We just try to make shards as big as possible,
                     // within a maximum size of 2 * MAX_LIN_SHARD_SIZE
                     (n / Self::HALF_MAX_LIN_SHARD_SIZE).max(1).ilog2()
                 } else {
-                    // Shards can't be smaller than MIN_FUSE_SHARD
-                    let max_high_bits =
-                        sharding_high_bits(n, eps).min((n / Self::MIN_FUSE_SHARD).max(1).ilog2());
-                    Fuse3Shards::dup_edge_high_bits(
-                        n,
-                        Fuse3Shards::DUP_EDGE_RETRY_PROB,
-                        Some(64),
-                        max_high_bits,
-                    )
+                    // Shards can't be smaller than MIN_FUSE_SHARD, and we
+                    // cannot use more than LOG2_MAX_SHARDS shard bits
+                    let max_high_bits = sharding_high_bits(n, eps)
+                        .min((n / Self::MIN_FUSE_SHARD).max(1).ilog2())
+                        .min(LOG2_MAX_SHARDS);
+                    Fuse3Shards::dup_edge_high_bits(n, retry_prob, Some(64), max_high_bits)
                 };
         }
 
@@ -703,7 +723,8 @@ mod fuse {
         }
 
         fn edge_128(log2_seg_size: u32, l: u32, sig: [u64; 2]) -> [usize; 3] {
-            // This strategy will work up to 10^16 keys
+            // This strategy will work up to about 10^15 keys (l is a u32
+            // and the segment-size clamp caps segments at 2^18 vertices)
             let v0 = fixed_point_inv_128!(sig[0], (l as u64) << log2_seg_size);
             let segment_size = 1 << log2_seg_size;
             let segment_mask = segment_size - 1;
@@ -776,7 +797,7 @@ mod fuse {
         type LocalSig = [u64; 1];
         type Vertex = u32;
 
-        fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
+        fn set_up_shards(&mut self, _n: usize, _eps: f64, _retry_prob: f64) {}
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
             Fuse3NoShards::set_up_graphs(self, n, Self::Vertex::MAX as u128)
@@ -849,7 +870,7 @@ mod fuse {
         type LocalSig = [u64; 2];
         type Vertex = usize;
 
-        fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
+        fn set_up_shards(&mut self, _n: usize, _eps: f64, _retry_prob: f64) {}
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
             Fuse3NoShards::set_up_graphs(self, n, Self::Vertex::MAX as u128)
@@ -1016,7 +1037,10 @@ mod fuse {
         /// Two distinct local signatures can generate the same edge, which
         /// makes a shard unsolvable; in that case the construction retries with
         /// a new seed. Sharding is limited so that the probability of this
-        /// event stays below this constant.
+        /// event stays below this bound.
+        ///
+        /// This is the default value of the bound; it can be changed using
+        /// [`VBuilder::retry_prob`](crate::func::VBuilder::retry_prob).
         pub const DUP_EDGE_RETRY_PROB: f64 = 0.05;
 
         /// Returns the probability that a construction of `n` keys divided
@@ -1085,15 +1109,16 @@ mod fuse {
         type LocalSig = [u64; 1];
         type Vertex = u32;
 
-        fn set_up_shards(&mut self, n: usize, eps: f64) {
+        fn set_up_shards(&mut self, n: usize, eps: f64, retry_prob: f64) {
             self.shard_bits_shift = 63
                 - if n <= Self::MIN_SHARD {
                     // No sharding below the minimum shard size.
                     0
                 } else {
-                    let max_high_bits =
-                        sharding_high_bits(n, eps).min((n / Self::MIN_SHARD).max(1).ilog2());
-                    Self::dup_edge_high_bits(n, Self::DUP_EDGE_RETRY_PROB, Some(64), max_high_bits)
+                    let max_high_bits = sharding_high_bits(n, eps)
+                        .min((n / Self::MIN_SHARD).max(1).ilog2())
+                        .min(LOG2_MAX_SHARDS);
+                    Self::dup_edge_high_bits(n, retry_prob, Some(64), max_high_bits)
                 };
         }
 
@@ -1224,8 +1249,10 @@ mod fuse {
     /// [`FuseLge3Shards`], duplicate edges are possible at every scale.
     /// Sharding is limited so that the probability of a construction retry
     /// caused by a duplicate edge is at most
-    /// [`Fuse3Shards::DUP_EDGE_RETRY_PROB`]. As a consequence, this
-    /// structure sometimes shards less than [`FuseLge3Shards`].
+    /// [`Fuse3Shards::DUP_EDGE_RETRY_PROB`] (or the bound set with
+    /// [`VBuilder::retry_prob`](crate::func::VBuilder::retry_prob)). As a
+    /// consequence, this structure sometimes shards less than
+    /// [`FuseLge3Shards`].
     ///
     /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     /// [ε-cost sharded]: https://arxiv.org/abs/2503.18397
@@ -1274,7 +1301,7 @@ mod fuse {
         type LocalSig = [u64; 2];
         type Vertex = u32;
 
-        fn set_up_shards(&mut self, n: usize, eps: f64) {
+        fn set_up_shards(&mut self, n: usize, eps: f64, retry_prob: f64) {
             // Same logic as FuseLge3Shards, except that full local
             // signatures never enter the injective regime, so the uniform
             // duplicate-edge estimate applies at every scale.
@@ -1283,13 +1310,9 @@ mod fuse {
                     (n / FuseLge3Shards::HALF_MAX_LIN_SHARD_SIZE).max(1).ilog2()
                 } else {
                     let max_high_bits = sharding_high_bits(n, eps)
-                        .min((n / FuseLge3Shards::MIN_FUSE_SHARD).max(1).ilog2());
-                    Fuse3Shards::dup_edge_high_bits(
-                        n,
-                        Fuse3Shards::DUP_EDGE_RETRY_PROB,
-                        None,
-                        max_high_bits,
-                    )
+                        .min((n / FuseLge3Shards::MIN_FUSE_SHARD).max(1).ilog2())
+                        .min(LOG2_MAX_SHARDS);
+                    Fuse3Shards::dup_edge_high_bits(n, retry_prob, None, max_high_bits)
                 };
         }
 
@@ -1380,12 +1403,15 @@ mod fuse {
             // injective regime; the retry probability is ≈4.4%.
             let p = Fuse3Shards::dup_edge_retry_prob(10_usize.pow(10), 7, Some(64));
             assert!(p > 0.03 && p < 0.05, "{p}");
-            // Empirically validated configuration: 800000 keys in 16
-            // shards with segments of size 2⁹ fail with probability ≈74%
-            // (73% measured over 37 attempts). Note that in the linear
-            // regime the segment-size estimate differs, so we can only
-            // check the order of magnitude of the model.
-            // Full signatures never enter the injective regime.
+            // For reference, the model matches measurements: 800000 keys
+            // in 16 shards with segments of size 2⁹ fail with probability
+            // ≈74% (73% measured over 37 attempts), although in the linear
+            // regime the segment-size estimate differs, so the model is
+            // only accurate in order of magnitude there.
+            //
+            // Full signatures (None) never enter the injective regime, so
+            // even at 10¹² keys heavy sharding keeps a high retry
+            // probability.
             assert!(Fuse3Shards::dup_edge_retry_prob(10_usize.pow(12), 13, None) > 0.5);
         }
 
@@ -1395,7 +1421,7 @@ mod fuse {
             // The chosen sharding always respects the retry budget.
             let mut se = FuseLge3Shards::default();
             for lg_n in [24, 27, 30, 33, 36, 40] {
-                se.set_up_shards(1 << lg_n, 0.001);
+                se.set_up_shards(1 << lg_n, 0.001, Fuse3Shards::DUP_EDGE_RETRY_PROB);
                 let h = se.shard_high_bits();
                 assert!(
                     Fuse3Shards::dup_edge_retry_prob(1 << lg_n, h, Some(64))
@@ -1417,12 +1443,12 @@ mod fuse {
                 (10_usize.pow(11), 9),
                 (10_usize.pow(12), 13),
             ] {
-                se.set_up_shards(n, 0.001);
+                se.set_up_shards(n, 0.001, Fuse3Shards::DUP_EDGE_RETRY_PROB);
                 assert_eq!(se.shard_high_bits(), expected_h, "n = {n}");
             }
             // Full signatures shard less: no injective regime.
             let mut se = FuseLge3FullSigs::default();
-            se.set_up_shards(10_usize.pow(12), 0.001);
+            se.set_up_shards(10_usize.pow(12), 0.001, Fuse3Shards::DUP_EDGE_RETRY_PROB);
             assert!(se.shard_high_bits() < 13);
             assert!(
                 Fuse3Shards::dup_edge_retry_prob(10_usize.pow(12), se.shard_high_bits(), None)
@@ -1467,10 +1493,14 @@ mod mwhc {
         type LocalSig = [u64; 2];
         type Vertex = usize;
 
-        fn set_up_shards(&mut self, _n: usize, _eps: f64) {}
+        fn set_up_shards(&mut self, _n: usize, _eps: f64, _retry_prob: f64) {}
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
-            self.seg_size = ((n as f64 * 1.23) / 3.).ceil() as usize;
+            // The lower bound of one guarantees a nonzero number of vertices
+            // even for an empty key set, mirroring the fuse implementations:
+            // a zero vertex count would make the builder chunk the backing
+            // array with chunk size zero, which panics.
+            self.seg_size = (((n as f64 * 1.23) / 3.).ceil() as usize).max(1);
             // num_vertices = seg_size * 3 is used directly as the vertex-index bound
             // and must fit usize; the check promotes to u128 (lossless widening) so
             // the multiply cannot overflow, e.g. on 32-bit targets.
@@ -1626,13 +1656,16 @@ mod mwhc {
         type LocalSig = [u64; 2];
         type Vertex = u32;
 
-        fn set_up_shards(&mut self, n: usize, eps: f64) {
-            self.shard_bits_shift =
-                63 - sharding_high_bits(n, eps).min(dup_edge_high_bits(3, n, 1.23, eps));
+        fn set_up_shards(&mut self, n: usize, eps: f64, retry_prob: f64) {
+            self.shard_bits_shift = 63
+                - sharding_high_bits(n, eps)
+                    .min(dup_edge_high_bits(3, n, 1.23, retry_prob))
+                    .min(LOG2_MAX_SHARDS);
         }
 
         fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> (f64, bool) {
-            self.seg_size = ((max_shard as f64 * 1.23) / 3.).ceil() as usize;
+            // See Mwhc3NoShards::set_up_graphs for the lower bound of one.
+            self.seg_size = (((max_shard as f64 * 1.23) / 3.).ceil() as usize).max(1);
             if self.shard_high_bits() != 0 {
                 // Round up to a multiple of 128 without checked_next_multiple_of
                 // (Rust 1.87; crate MSRV is 1.85): (n + 127) / 128 * 128, with the
@@ -1725,15 +1758,18 @@ mod mwhc {
 
         #[test]
         fn empty_input_does_not_underflow() {
-            // max_shard == 0 (empty input) makes seg_size == 0; the old
-            // seg_size * 3 - 1 bound underflowed usize here.
+            // max_shard == 0 (empty input) makes the raw segment size zero;
+            // the old seg_size * 3 - 1 bound underflowed usize here, and a
+            // zero vertex count would later panic in the builder, which
+            // chunks the backing array by the number of vertices. As in the
+            // fuse implementations, empty input now gets a minimum segment.
             let mut shards = Mwhc3Shards::default();
             shards.set_up_graphs(0, 0);
-            assert_eq!(shards.num_vertices(), 0);
+            assert_eq!(shards.num_vertices(), 3);
 
             let mut no_shards = Mwhc3NoShards { seg_size: 0 };
             no_shards.set_up_graphs(0, 0);
-            assert_eq!(no_shards.num_vertices(), 0);
+            assert_eq!(no_shards.num_vertices(), 3);
         }
 
         #[test]

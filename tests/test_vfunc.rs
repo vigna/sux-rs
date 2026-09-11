@@ -71,6 +71,17 @@ fn test_vfunc_lge() -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "mwhc")]
+#[test]
+fn test_vfunc_mwhc() -> Result<()> {
+    use sux::func::shard_edge::{Mwhc3NoShards, Mwhc3Shards};
+    // The empty key set is included: it used to panic because the MWHC
+    // segment size was zero for zero keys.
+    _test_vfunc::<[u64; 2], Mwhc3NoShards>(&[0, 10, 1000], false, false)?;
+    _test_vfunc::<[u64; 2], Mwhc3Shards>(&[0, 10, 1000], false, false)?;
+    Ok(())
+}
+
 #[test]
 fn test_vfunc_peeling_by_sig_vals() -> Result<()> {
     _test_vfunc::<[u64; 2], FuseLge3Shards>(&[1_000_000], false, false)?;
@@ -251,7 +262,7 @@ fn test_par_builder_rejects_offline() {
     );
 }
 
-/// An `eps` outside the open interval (0, 1), including NaN and ±∞, is
+/// An `eps` outside the open interval (0 . . 1), including NaN and ±∞, is
 /// rejected up front rather than producing NaN shard sizing or an unbounded
 /// shard-resizing retry loop.
 #[test]

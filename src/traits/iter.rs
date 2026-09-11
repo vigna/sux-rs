@@ -56,6 +56,11 @@ pub trait IntoIteratorFrom: IntoIterator {
     type IntoIterFrom: Iterator<Item = <Self as IntoIterator>::Item>;
 
     /// Creates an iterator from a starting position.
+    ///
+    /// The behavior when `from` is greater than the number of elements is
+    /// implementation-defined: the slice-based implementations return an
+    /// empty iterator, whereas succinct structures (e.g.,
+    /// [`EliasFano`](crate::dict::EliasFano)) may panic.
     fn into_iter_from(self, from: usize) -> Self::IntoIterFrom;
 }
 

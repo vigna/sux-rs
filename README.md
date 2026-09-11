@@ -46,7 +46,7 @@ other libraries.
 
 This crate does not provide high-level genericity on bit vectors: [operations on
 bit vectors] are based on a word type `W`, on the [`BitLength`] trait, which
-provides the bit length, and on the traits [`AsRef<[W]>`]/[`AsMut<[W]>`], which
+provides the bit length, and on the traits `AsRef<[W]>`/`AsMut<[W]>`, which
 provide concrete access to the underlying data. This approach makes it possible
 to use any structure that implements these traits as a bit vector, and to
 implement your own bit vector if you need specific features (e.g., support for
@@ -140,7 +140,10 @@ The crate has the following features:
 - `clap`: enables the `clap` crate for command-line argument parsing;
 - `cli`: builds the binaries (implies `clap`, `epserde`, `deko`);
 - `mmap`: enables support for memory mapping in ε-serde (implies `epserde`);
-- `aarch64_prefetch`: enables prefetch support on aarch64 (requires nightly).
+- `fuzz`: enables fuzzing support using the `arbitrary` crate;
+- `mwhc`: compiles the MWHC shard/edge logic (mainly for benchmarking);
+- `slow_tests`: enables slow tests (use with `--release`);
+- `aarch64_prefetch`: enables prefetch support on aarch64 (requires nightly);
 - `iter_advance_by`: enables support for the `advance_by` method on iterators
   (requires nightly).
 
@@ -156,7 +159,7 @@ A few benchmarks are available in the `benches` directory. The ones starting wit
 cargo bench --bench bench_vfunc
 ```
 
-The `sux` benchmark, which tests rank and select structures, is instead a CLI
+The `rank_sel` benchmark, which tests rank and select structures, is instead a CLI
 command with options. Try
 
 ```bash
@@ -221,7 +224,7 @@ Union nor the Italian MUR can be held responsible for them.
 [`Rank9`]: https://docs.rs/sux/latest/sux/rank_sel/struct.Rank9.html
 [`SelectSmall`]: https://docs.rs/sux/latest/sux/rank_sel/struct.SelectSmall.html
 [`SelectAdapt`]: https://docs.rs/sux/latest/sux/rank_sel/select_adapt/struct.SelectAdapt.html
-[static functions]: https://docs.rs/sux/latest/sux/func/vfunc/struct.VFunc.html
+[static functions]: https://docs.rs/sux/latest/sux/func/struct.VFunc.html
 [monotone minimal perfect hash functions]: https://docs.rs/sux/latest/sux/func/lcp_mmphf/index.html
 [static filters]: https://docs.rs/sux/latest/sux/dict/vfilter/struct.VFilter.html
 [partial arrays]: https://docs.rs/sux/latest/sux/array/struct.PartialArray.html
@@ -234,8 +237,6 @@ Union nor the Italian MUR can be held responsible for them.
 [signed minimal perfect hash functions]: https://docs.rs/sux/latest/sux/func/signed/struct.SignedFunc.html
 [lists]: https://docs.rs/sux/latest/sux/list/index.html
 [compressed lists of integers]: https://docs.rs/sux/latest/sux/list/comp_int_list/struct.CompIntList.html
-[`AsRef<[W]>`]: https://doc.rust-lang.org/core/convert/trait.AsRef.html
-[`AsMut<[W]>`]: https://doc.rust-lang.org/core/convert/trait.AsMut.html
 [`Word`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html#associatedtype.Word
 [`Backend`]: https://docs.rs/sux/latest/sux/traits/trait.Backend.html
 [balanced parentheses]: https://docs.rs/sux/latest/sux/bal_paren/index.html

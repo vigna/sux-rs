@@ -87,7 +87,11 @@ use std::hash::Hash;
 /// * `K` - the key type.
 ///
 /// * `D` - the data backend: the output value type is [`D::Word`]; defaults to
-///   [`BitVec<Box<[usize]>>`](crate::bits::BitVec).
+///   [`BitVec<Box<[usize]>>`](crate::bits::BitVec). Note that codeword
+///   lengths are limited to min(`D::Word::BITS` − 7, `usize::BITS` − 2)
+///   bits, so a narrow word type limits the number of distinct values that
+///   can be represented (with `u8` words, at most two distinct values plus
+///   escapes); construction returns an error when the limit is exceeded.
 ///
 /// * `S` - the signature type; defaults to `[u64; 2]` (see [`VFunc`] for
 ///   details).
@@ -296,6 +300,14 @@ where
     /// synthetic ranges. Neither the key set nor the value set needs to live in
     /// memory at once: the values lender is rewound at least once during
     /// construction.
+    ///
+    /// Note that, contrarily to [`VFunc`](crate::func::VFunc) and
+    /// [`VFunc2`](crate::func::VFunc2), the values lender is drained
+    /// completely to count value frequencies, so it must be finite, and a
+    /// values lender returning more values than keys is reported as a
+    /// [`MismatchedKeysAndValues`] error rather than being ignored.
+    ///
+    /// [`MismatchedKeysAndValues`]: crate::func::BuildError::MismatchedKeysAndValues
     ///
     /// This is a convenience wrapper around [`try_new_with_builder`] with
     /// `VBuilder::default()`.
@@ -725,16 +737,19 @@ where
 
         let mut main_pl = pl.concurrent();
         pl.log_level(log::Level::Trace);
-        vb.par_solve(
+        let solve_result = vb.par_solve(
+            attempt_seed,
             store.drain(),
             &mut data,
             padding,
             solve_shard,
             &mut main_pl,
             pl,
-        )
-        .map_err(anyhow::Error::from)?;
+        );
+        // Restore the log level on the error path, too, or retries would
+        // log at trace level.
         pl.log_level(log::Level::Info);
+        solve_result.map_err(anyhow::Error::from)?;
 
         Ok((data, attempt_seed, stride))
     }
@@ -814,7 +829,7 @@ where
         W::MAX >> (W::BITS - w)
     };
     let mut shard_edge = E::default();
-    shard_edge.set_up_shards(0, 1.0);
+    shard_edge.set_up_shards(0, 1.0, 1.0);
     shard_edge.set_up_graphs(0, 1);
     let shard_size = shard_edge.num_vertices();
     CompVFunc {

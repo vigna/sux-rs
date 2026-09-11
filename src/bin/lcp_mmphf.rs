@@ -172,6 +172,14 @@ fn build_single(
                 } else {
                     let (buffer, offsets) = read_concat_lines(filename, n)?;
                     let keys = str_slice_from_offsets(&buffer, &offsets);
+                    if let Some(n_hint) = args.n {
+                        if keys.len() != n_hint {
+                            bail!(
+                                "key count mismatch: read {} keys, expected {n_hint}",
+                                keys.len()
+                            );
+                        }
+                    }
                     macro_rules! build_par {
                         ($h:ty) => {{
                             let mmphf: SignedFunc<LcpMmphfStr, Box<[$h]>> =
@@ -299,6 +307,14 @@ fn build_two_step(
                 } else {
                     let (buffer, offsets) = read_concat_lines(filename, n)?;
                     let keys = str_slice_from_offsets(&buffer, &offsets);
+                    if let Some(n_hint) = args.n {
+                        if keys.len() != n_hint {
+                            bail!(
+                                "key count mismatch: read {} keys, expected {n_hint}",
+                                keys.len()
+                            );
+                        }
+                    }
                     macro_rules! build_par {
                         ($h:ty) => {{
                             let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =

@@ -362,9 +362,9 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
         // SelectZeroAdaptConst).
         for (i, word) in bits.as_ref().iter().copied().take(num_words).enumerate() {
             let word = super::mask_tail_word(!word, i + 1 == num_words, tail_mask);
-            let ones_in_word = usize::try_from(word.count_ones())
-                .expect("a word popcount always fits in usize")
-                .min(num_ones - past_ones);
+            // The masking above removes phantom zeros, so no clamp is needed
+            // (this mirrors the ones-based twin).
+            let ones_in_word = word.count_ones() as usize;
 
             while past_ones + ones_in_word > next_quantum {
                 let in_word_index = word.select_in_word(next_quantum - past_ones);
@@ -483,6 +483,8 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
             let mut word = (!bits.as_ref()[word_idx] >> bit_idx) << bit_idx;
 
             'outer: loop {
+                // Here the complement is not tail-masked, so the clamp is
+                // necessary to exclude phantom zeros beyond the logical end.
                 let ones_in_word = (word.count_ones() as usize).min(num_ones - past_ones);
 
                 // If the quantum is in this word, write it in the subinventory.

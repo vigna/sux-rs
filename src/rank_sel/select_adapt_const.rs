@@ -24,10 +24,13 @@ use crate::{
     },
 };
 
-/// Maximum supported `LOG2_WORDS_PER_SUBINVENTORY`, chosen so that the
-/// inventory position encoding never overflows.
+/// Maximum supported `LOG2_WORDS_PER_SUBINVENTORY`, chosen so that all
+/// inventory arithmetic stays free of overflow. The values match those of
+/// the non-const twin ([`MAX_LOG2_WORDS_PER_SUBINVENTORY`]).
+///
+/// [`MAX_LOG2_WORDS_PER_SUBINVENTORY`]: super::select_adapt::MAX_LOG2_WORDS_PER_SUBINVENTORY
 pub(super) const MAX_CONST_LOG2_WORDS_PER_SUBINVENTORY: usize =
-    if usize::BITS == 64 { 62 } else { 31 };
+    super::select_adapt::MAX_LOG2_WORDS_PER_SUBINVENTORY;
 
 use crate::ambassador_impl_Index;
 use crate::traits::BitVecOps;

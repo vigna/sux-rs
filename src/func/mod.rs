@@ -20,6 +20,10 @@
 //! - [`VFunc2`] is a two-step static function that has better space usage
 //!   in case the distribution of the output values is skewed.
 //!
+//! - [`CompVFunc`] is a compressed static function that stores values in
+//!   space close to the zero-order entropy of their distribution using a
+//!   Huffman code.
+//!
 //! - [`LcpMmphfInt`]/[`LcpMmphf`] are *monotone minimal perfect hash
 //!   functions*, specialized static functions mapping keys in lexicographical
 //!   order to their lexicographical rank. See [`LcpMmphfStr`] and

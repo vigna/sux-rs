@@ -585,10 +585,10 @@ where
 
     /// Returns the number of elements strictly less than the given value.
     ///
-    /// The default implementation just calls [`pred_unchecked`] and returns the
-    /// index of the predecessor plus one if it exists, or 0 otherwise, but
-    /// implementations can provide a faster, specialized version exploiting the
-    /// fact that the predecessor is not returned.
+    /// The default implementation just calls [`pred_unchecked`] and returns
+    /// the index of the predecessor plus one, but implementations can provide
+    /// a faster, specialized version exploiting the fact that the predecessor
+    /// is not returned.
     ///
     /// # Safety
     ///

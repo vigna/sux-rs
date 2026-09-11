@@ -9,7 +9,7 @@
 //! Two-step LCP-based monotone minimal perfect hash functions.
 //!
 //! This module contains structures analogous to those in
-//! [`lcp_mmphf`] however, they use a secondary [`VFunc`] for
+//! [`lcp_mmphf`]; however, they use a secondary [`VFunc`] for
 //! infrequent prefix lengths, similarly to a [`VFunc2`], providing
 //! some space savings at the cost of slightly slower queries.
 //!
@@ -62,10 +62,10 @@ use xxhash_rust::xxh3;
 ///   [`BitFieldVec`]).
 /// - `S0`: the [signature type] for the key maps (`lcp_freq_len_offset`
 ///   and `lcp_infreq_len`).
-/// - `E0`: the [`ShardEdge`] for the key maps (`lcp_freq_len_offset`).
+/// - `E0`: the [`ShardEdge`] for the key map `lcp_freq_len_offset`.
 /// - `F0`: the [`ShardEdge`] for `lcp_infreq_len`. Defaults to
 ///   [`Fuse3Shards`].
-/// - `S1`: the  [signature type] for the prefix-to-bucket map
+/// - `S1`: the [signature type] for the prefix-to-bucket map
 ///   (`lcp_to_bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
 ///
@@ -555,7 +555,10 @@ mod build {
                                 usize::BITS as usize,
                             );
 
-                            let escape_usize = (1usize << best_r).wrapping_sub(1);
+                            // Shift in u128 so best_r == usize::BITS (possible
+                            // only on 32-bit targets) cannot overflow the shift.
+                            let escape_usize = usize::try_from((1u128 << best_r) - 1)
+                                .expect("escape range exceeds usize");
                             let num_freq = escape_usize.min(m);
 
                             let (remap, inv_map) = build_remap_and_inv(
@@ -620,7 +623,7 @@ mod build {
                             // -- Build lcp_infreq_len (escaped keys only) --
                             let lcp_infreq_len = if num_infreq > 0 {
                                 let mut long_shard_edge = F0::default();
-                                long_shard_edge.set_up_shards(num_infreq, builder.eps);
+                                long_shard_edge.set_up_shards(num_infreq, builder.eps, builder.retry_prob);
                                 let long_shb = long_shard_edge.shard_high_bits();
 
                                 let long_num_shards = 1usize << long_shb;
@@ -891,7 +894,10 @@ mod build {
                 usize::BITS as usize,
             );
 
-            let escape_usize = (1usize << best_r).wrapping_sub(1);
+            // Shift in u128 so best_r == usize::BITS (possible only on
+            // 32-bit targets) cannot overflow the shift.
+            let escape_usize =
+                usize::try_from((1u128 << best_r) - 1).expect("escape range exceeds usize");
             let num_freq = escape_usize.min(m);
 
             let (remap, inv_map) =
@@ -966,7 +972,7 @@ mod build {
                     // -- Build lcp_infreq_len (escaped keys only) --
                     let lcp_infreq_len = if num_infreq > 0 {
                         let mut long_shard_edge = F0::default();
-                        long_shard_edge.set_up_shards(num_infreq, builder.eps);
+                        long_shard_edge.set_up_shards(num_infreq, builder.eps, builder.retry_prob);
                         let long_shb = long_shard_edge.shard_high_bits();
 
                         let long_num_shards = 1usize << long_shb;
@@ -1364,7 +1370,10 @@ mod build {
                                 usize::BITS as usize,
                             );
 
-                            let escape_usize = (1usize << best_r).wrapping_sub(1);
+                            // Shift in u128 so best_r == usize::BITS (possible
+                            // only on 32-bit targets) cannot overflow the shift.
+                            let escape_usize = usize::try_from((1u128 << best_r) - 1)
+                                .expect("escape range exceeds usize");
                             let num_freq = escape_usize.min(m);
 
                             let (remap, inv_map) = build_remap_and_inv(
@@ -1429,7 +1438,7 @@ mod build {
                             // -- Build lcp_infreq_len (escaped keys only) --
                             let lcp_infreq_len = if num_infreq > 0 {
                                 let mut long_shard_edge = F0::default();
-                                long_shard_edge.set_up_shards(num_infreq, builder.eps);
+                                long_shard_edge.set_up_shards(num_infreq, builder.eps, builder.retry_prob);
                                 let long_shb = long_shard_edge.shard_high_bits();
 
                                 let long_num_shards = 1usize << long_shb;
@@ -1736,7 +1745,10 @@ mod build {
                 usize::BITS as usize,
             );
 
-            let escape_usize = (1usize << best_r).wrapping_sub(1);
+            // Shift in u128 so best_r == usize::BITS (possible only on
+            // 32-bit targets) cannot overflow the shift.
+            let escape_usize =
+                usize::try_from((1u128 << best_r) - 1).expect("escape range exceeds usize");
             let num_freq = escape_usize.min(m);
 
             let (remap, inv_map) =
@@ -1811,7 +1823,7 @@ mod build {
                     // -- Build lcp_infreq_len (escaped keys only) --
                     let lcp_infreq_len = if num_infreq > 0 {
                         let mut long_shard_edge = F0::default();
-                        long_shard_edge.set_up_shards(num_infreq, builder.eps);
+                        long_shard_edge.set_up_shards(num_infreq, builder.eps, builder.retry_prob);
                         let long_shb = long_shard_edge.shard_high_bits();
 
                         let long_num_shards = 1usize << long_shb;
@@ -1958,10 +1970,10 @@ mod build {
 ///   [`BitFieldVec`]).
 /// - `S0`: the [signature type] for the key maps (`lcp_freq_len_offset`
 ///   and `lcp_infreq_len`).
-/// - `E0`: the [`ShardEdge`] for the key maps (`lcp_freq_len_offset`).
+/// - `E0`: the [`ShardEdge`] for the key map `lcp_freq_len_offset`.
 /// - `F0`: the [`ShardEdge`] for `lcp_infreq_len`. Defaults to
 ///   [`Fuse3Shards`].
-/// - `S1`: the  [signature type] for the prefix-to-bucket map
+/// - `S1`: the [signature type] for the prefix-to-bucket map
 ///   (`lcp_to_bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
 ///
@@ -1998,12 +2010,19 @@ pub struct Lcp2Mmphf<
     S1 = [u64; 1],
     E1 = Fuse3NoShards,
 > {
+    /// The number of keys.
     pub(crate) n: usize,
+    /// The base-2 logarithm of the bucket size.
     pub(crate) log2_bucket_size: usize,
+    /// Maps key → lcp_freq_len | offset.
     pub(crate) lcp_freq_len_offset: VFunc<K, D, S0, E0>,
+    /// Maps escaped keys to their full LCP bit length.
     pub(crate) lcp_infreq_len: VFunc<K, D, S0, F0>,
+    /// Maps frequent LCP indices back to actual LCP bit lengths.
     pub(crate) remap: Box<[usize]>,
+    /// Escape sentinel for the frequent LCP part (2^r − 1).
     pub(crate) escape: usize,
+    /// Maps each LCP bit-prefix to its bucket index.
     pub(crate) lcp_to_bucket: VFunc<BitPrefix, D, S1, E1>,
 }
 
@@ -2138,40 +2157,33 @@ where
     pub(crate) fn get_by_sig(&self, key: &K, sig: S0) -> usize {
         let packed = self.lcp_freq_len_offset.get_by_sig(sig);
         let offset = packed & ((1 << self.log2_bucket_size) - 1);
-        let freq_lcp = packed >> self.log2_bucket_size;
-        let lcp_bit_len = if freq_lcp != self.escape {
-            self.remap[freq_lcp]
+        let frequent_lcp = packed >> self.log2_bucket_size;
+        let lcp_bit_len = if frequent_lcp != self.escape {
+            self.remap[frequent_lcp]
         } else {
             self.lcp_infreq_len.get_by_sig(sig)
         };
 
         let key_bytes: &[u8] = key.as_ref();
-        let lcp2b_seed = self.lcp_to_bucket.seed;
-        let lcp2b_sig: S1 = if lcp_bit_len <= key_bytes.len().saturating_mul(8) {
-            bit_prefix_sig(key_bytes, lcp_bit_len, lcp2b_seed)
+        let seed = self.lcp_to_bucket.seed;
+        let sig: S1 = if lcp_bit_len <= key_bytes.len().saturating_mul(8) {
+            bit_prefix_sig(key_bytes, lcp_bit_len, seed)
         } else {
             // Rare: LCP extends into the virtual NUL (at most 8 extra bits).
-            let mut hasher = xxh3::Xxh3::with_seed(lcp2b_seed);
+            // Since the NUL byte is 0x00, masking is a no-op, so we can
+            // just hash all key bytes + the NUL + the bit length.
+            let mut hasher = xxh3::Xxh3::with_seed(seed);
             hasher.update(key_bytes);
             hasher.update(&[0u8]);
             hasher.update(&lcp_bit_len.to_ne_bytes());
             S1::from_hasher(&hasher)
         };
-        let bucket = self.lcp_to_bucket.get_by_sig(lcp2b_sig);
+        let bucket = self.lcp_to_bucket.get_by_sig(sig);
         (bucket << self.log2_bucket_size) + offset
     }
 }
 
-impl<
-    K: ?Sized,
-    D: SliceByValue,
-    S0: Sig,
-    E0: ShardEdge<S0, 3>,
-    F0: ShardEdge<S0, 3>,
-    S1: Sig,
-    E1: ShardEdge<S1, 3>,
-> Lcp2Mmphf<K, D, S0, E0, F0, S1, E1>
-{
+impl<K: ?Sized, D: SliceByValue, S0, E0, F0, S1, E1> Lcp2Mmphf<K, D, S0, E0, F0, S1, E1> {
     /// Returns the number of keys.
     pub const fn len(&self) -> usize {
         self.n
@@ -2185,15 +2197,14 @@ impl<
 // ── Aligned ↔ Unaligned conversions ──────────────────────────────────
 
 use crate::traits::{TryIntoUnaligned, Unaligned};
-type Ubfv = Unaligned<BitFieldVec<Box<[usize]>>>;
 
 // -- Lcp2MmphfInt --
 
 impl<K, S0: Sig, E0: ShardEdge<S0, 3>, F0: ShardEdge<S0, 3>, S1: Sig, E1: ShardEdge<S1, 3>>
-    From<Lcp2MmphfInt<K, Ubfv, S0, E0, F0, S1, E1>>
+    From<Unaligned<Lcp2MmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>>>
     for Lcp2MmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>
 {
-    fn from(f: Lcp2MmphfInt<K, Ubfv, S0, E0, F0, S1, E1>) -> Self {
+    fn from(f: Unaligned<Lcp2MmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>>) -> Self {
         Lcp2MmphfInt {
             n: f.n,
             log2_bucket_size: f.log2_bucket_size,
@@ -2209,7 +2220,7 @@ impl<K, S0: Sig, E0: ShardEdge<S0, 3>, F0: ShardEdge<S0, 3>, S1: Sig, E1: ShardE
 impl<K, S0: Sig, E0: ShardEdge<S0, 3>, F0: ShardEdge<S0, 3>, S1: Sig, E1: ShardEdge<S1, 3>>
     TryIntoUnaligned for Lcp2MmphfInt<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>
 {
-    type Unaligned = Lcp2MmphfInt<K, Ubfv, S0, E0, F0, S1, E1>;
+    type Unaligned = Lcp2MmphfInt<K, Unaligned<BitFieldVec<Box<[usize]>>>, S0, E0, F0, S1, E1>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
@@ -2228,10 +2239,10 @@ impl<K, S0: Sig, E0: ShardEdge<S0, 3>, F0: ShardEdge<S0, 3>, S1: Sig, E1: ShardE
 // -- Lcp2Mmphf --
 
 impl<K: ?Sized, S0: Sig, E0: ShardEdge<S0, 3>, F0: ShardEdge<S0, 3>, S1: Sig, E1: ShardEdge<S1, 3>>
-    From<Lcp2Mmphf<K, Ubfv, S0, E0, F0, S1, E1>>
+    From<Unaligned<Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>>>
     for Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>
 {
-    fn from(f: Lcp2Mmphf<K, Ubfv, S0, E0, F0, S1, E1>) -> Self {
+    fn from(f: Unaligned<Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>>) -> Self {
         Lcp2Mmphf {
             n: f.n,
             log2_bucket_size: f.log2_bucket_size,
@@ -2247,7 +2258,7 @@ impl<K: ?Sized, S0: Sig, E0: ShardEdge<S0, 3>, F0: ShardEdge<S0, 3>, S1: Sig, E1
 impl<K: ?Sized, S0: Sig, E0: ShardEdge<S0, 3>, F0: ShardEdge<S0, 3>, S1: Sig, E1: ShardEdge<S1, 3>>
     TryIntoUnaligned for Lcp2Mmphf<K, BitFieldVec<Box<[usize]>>, S0, E0, F0, S1, E1>
 {
-    type Unaligned = Lcp2Mmphf<K, Ubfv, S0, E0, F0, S1, E1>;
+    type Unaligned = Lcp2Mmphf<K, Unaligned<BitFieldVec<Box<[usize]>>>, S0, E0, F0, S1, E1>;
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {

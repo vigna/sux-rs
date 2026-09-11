@@ -155,6 +155,13 @@ fn test_from_valid_elias_fano_prefix_sums() {
 // ────────────────────── prefix_sum boundary ──────────────────────
 
 #[test]
+#[should_panic(expected = "prefix sum overflow")]
+fn test_prefix_sum_overflow_panics() {
+    let values = vec![usize::MAX, 1];
+    let _ = PrefixSumIntList::new(&values);
+}
+
+#[test]
 #[should_panic(expected = "index out of bounds")]
 fn test_prefix_sum_out_of_bounds() {
     let values = vec![1usize, 2, 3];

@@ -339,6 +339,10 @@ pub fn lcp_len(xs: &[u8], ys: &[u8]) -> usize {
 
 /// Prefetches the cache line containing (the first byte of) `data[index]` into
 /// all levels of the cache.
+///
+/// On x86-64 this uses SSE prefetching; on aarch64 it requires the
+/// `aarch64_prefetch` feature (and nightly). On other targets, or on
+/// aarch64 without the feature, this function is a no-op.
 #[inline(always)]
 pub fn prefetch_index<T>(data: impl AsRef<[T]>, index: usize) {
     let ptr = data.as_ref().as_ptr().wrapping_add(index) as *const i8;

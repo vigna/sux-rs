@@ -149,6 +149,7 @@ use crate::traits::{
 };
 use crate::utils::SelectInWord;
 use crate::{
+    panic_if_out_of_bounds, panic_if_value,
     traits::{bit_vec_ops::BitLength, rank_sel::*},
     utils::{
         DifferentAlignmentError, InsufficientAlignmentError, transmute_boxed_slice_from_atomic,
@@ -959,6 +960,16 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldSlice for BitVec<B> {
 
 impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueMut for BitVec<B> {
     #[inline(always)]
+    fn set_value(&mut self, index: usize, value: B::Word) {
+        // The default implementation would silently map any nonzero value
+        // to a set bit; a width-one BitFieldVec panics instead, and the two
+        // implementations must behave identically.
+        panic_if_out_of_bounds!(index, self.len);
+        panic_if_value!(value, B::Word::ONE, 1);
+        unsafe { self.set_value_unchecked(index, value) }
+    }
+
+    #[inline(always)]
     unsafe fn set_value_unchecked(&mut self, index: usize, value: B::Word) {
         // Delegate to BitVecOpsMut::set_unchecked: its if value
         // form dead-code-eliminates to a single RMW when the caller
@@ -1472,10 +1483,17 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 /// which adds a padding word if one is not already present. You can recover
 /// the original [`BitVec`] using a [`From` implementation]
 ///
-/// Note that unaligned reads give correct results only when the bit width
-/// satisfies the unaligned constraints (at most `W::BITS - 6`, or exactly
-/// `W::BITS - 4`, or exactly `W::BITS`). Using other widths will not
-/// cause undefined behavior, but may return incorrect values.
+/// Note that since positions are arbitrary, unaligned reads are subject to
+/// a *position-dependent* width constraint: a read of `width` bits at
+/// position `pos` is possible only if `width + (pos % 8) <= W::BITS`, so
+/// only widths up to `W::BITS - 7` are unconditionally available (see
+/// [`BitVecOps::get_value_unaligned`]). [`get_bits`] panics if the
+/// constraint is violated; [`get_bits_unchecked`] checks it only with a
+/// debug assertion.
+///
+/// [`get_bits`]: BitVecValueOps::get_bits
+/// [`get_bits_unchecked`]: BitVecValueOps::get_bits_unchecked
+/// [`BitVecOps::get_value_unaligned`]: crate::traits::bit_vec_ops::BitVecOps::get_value_unaligned
 ///
 /// We delegate [`Backend`], [`BitLength`], and
 /// [`AsRef<[Backend::Word]>`](core::convert::AsRef) to make [`BitVecOps`]

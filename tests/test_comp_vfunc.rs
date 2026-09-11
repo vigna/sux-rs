@@ -538,8 +538,13 @@ mod corr_graph_regime {
         type LocalSig = <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::LocalSig;
         type Vertex = <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::Vertex;
 
-        fn set_up_shards(&mut self, n: usize, eps: f64) {
-            <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::set_up_shards(&mut self.0, n, eps)
+        fn set_up_shards(&mut self, n: usize, eps: f64, retry_prob: f64) {
+            <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::set_up_shards(
+                &mut self.0,
+                n,
+                eps,
+                retry_prob,
+            )
         }
         fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
             <Fuse3NoShards as ShardEdge<[u64; 2], 3>>::set_up_graphs(&mut self.0, n, max_shard)

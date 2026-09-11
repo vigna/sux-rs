@@ -193,6 +193,25 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C, I, O>
     pub fn into_inner(self) -> C {
         self.small_counters
     }
+
+    /// Replaces the backend with a new one implementing [`SmallCounters`]
+    /// and [`SelectHinted`].
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe because it is not possible to guarantee that the
+    /// new backend is identical to the old one as a bit vector.
+    pub unsafe fn map<D: SmallCounters<NUM_U32S, COUNTER_WIDTH> + SelectHinted>(
+        self,
+        f: impl FnOnce(C) -> D,
+    ) -> SelectSmall<NUM_U32S, COUNTER_WIDTH, D, I, O> {
+        SelectSmall {
+            small_counters: f(self.small_counters),
+            inventory: self.inventory,
+            inventory_begin: self.inventory_begin,
+            log2_ones_per_inventory: self.log2_ones_per_inventory,
+        }
+    }
 }
 
 impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C: BitLength, I, O>
@@ -209,7 +228,7 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C: BitLength, I, O>
 }
 
 macro_rules! impl_rank_small_sel {
-    ($NUM_U32S: tt; $COUNTER_WIDTH: literal) => {
+    ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
                 + Backend<Word: Word + SelectInWord>
@@ -346,6 +365,10 @@ macro_rules! impl_rank_small_sel {
             O: AsRef<[usize]>,
         > SelectUnchecked for SelectSmall<$NUM_U32S, $COUNTER_WIDTH, C, I, O>
         {
+            /// # Safety
+            ///
+            /// `rank` must be between zero (included) and the number of ones in the
+            /// underlying bit vector (excluded).
             unsafe fn select_unchecked(&self, rank: usize) -> usize {
                 unsafe {
                     let upper_counts = self.small_counters.upper_counts();
@@ -426,8 +449,16 @@ macro_rules! impl_rank_small_sel {
                         // Since we use 32-bit inventory entries, we cannot add
                         // a sentinel with value equal to the number of bits
                         // (which may exceed 2^32). Thus, we handle the last
-                        // inventory entry as a special case.
-                        last_block_idx = self.len().div_ceil(Self::BLOCK_BIT_SIZE);
+                        // inventory entry as a special case. Note that we must
+                        // clip the scan to the end of the current superblock,
+                        // as in the other branches: the absolute counters are
+                        // superblock-relative, so letting the scan cross a
+                        // superblock boundary would make the predicate true
+                        // again on the reset counters of the next superblock.
+                        last_block_idx = self
+                            .len()
+                            .div_ceil(Self::BLOCK_BIT_SIZE)
+                            .min((upper_block_idx + 1) * Self::BLOCKS_PER_SUPERBLOCK);
                     }
 
                     debug_assert!(block_idx < counts.len());
