@@ -11,17 +11,95 @@ use sux::traits::{IndexedSeq, Pred, PredUnchecked, Succ, SuccUnchecked, TryIntoU
 const NUM_QUERIES: usize = 1 << 20;
 const QUERY_MASK: usize = NUM_QUERIES - 1;
 
-/// (n, l) pairs: element count (power of 2) and desired number of lower bits.
-/// The upper bound u = 2^l * n is chosen so that l = floor(log₂(u/n)).
-const CONFIGS: &[(usize, usize)] = &[
+/// The environment variable overriding [`DEFAULT_CONFIGS`].
+const CONFIGS_VAR: &str = "EF_BENCH_CONFIGS";
+
+/// The default (n, l) pairs: element count (power of 2) and desired number of
+/// lower bits. The upper bound u = 2^l * n is chosen so that
+/// l = floor(log₂(u/n)).
+const DEFAULT_CONFIGS: &[(usize, usize)] = &[
     (1 << 20, 2),
     (1 << 20, 4),
     (1 << 20, 8),
     (1 << 20, 16),
+    (1 << 30, 2),
+    (1 << 30, 4),
+    (1 << 30, 8),
+    (1 << 30, 16),
 ];
 
-fn n_label(n: usize) -> &'static str {
-    if n == 1 << 20 { "1M" } else { "1G" }
+/// The numbers of lower bits used for a term of [`CONFIGS_VAR`] that specifies
+/// an element count only.
+const DEFAULT_LS: &[usize] = &[2, 4, 8, 16];
+
+/// Returns the configurations to benchmark.
+///
+/// These are [`DEFAULT_CONFIGS`], unless the environment variable
+/// [`EF_BENCH_CONFIGS`](CONFIGS_VAR) is set, in which case it is parsed as a
+/// comma-separated list of terms, each either an element count, which is
+/// expanded over [`DEFAULT_LS`], or an element count and a number of lower
+/// bits separated by a slash. Element counts must be powers of two, and can be
+/// written as a plain number or with a `K`, `M` or `G` suffix. For example,
+/// `1M` selects the four small configurations, and `1M/8,1G/8` selects one
+/// small and one large configuration.
+///
+/// The whole run uses a single list, so the variable is parsed once.
+fn configs() -> &'static [(usize, usize)] {
+    static CONFIGS: std::sync::OnceLock<Vec<(usize, usize)>> = std::sync::OnceLock::new();
+    CONFIGS.get_or_init(|| match std::env::var(CONFIGS_VAR) {
+        Err(_) => DEFAULT_CONFIGS.to_vec(),
+        Ok(spec) => {
+            let mut configs = vec![];
+            for term in spec.split(',').map(str::trim).filter(|t| !t.is_empty()) {
+                match term.split_once('/') {
+                    None => configs.extend(DEFAULT_LS.iter().map(|&l| (parse_n(term), l))),
+                    Some((n, l)) => configs.push((
+                        parse_n(n),
+                        l.trim()
+                            .parse()
+                            .unwrap_or_else(|_| panic!("{CONFIGS_VAR}: invalid lower bits `{l}`")),
+                    )),
+                }
+            }
+            assert!(
+                !configs.is_empty(),
+                "{CONFIGS_VAR} selects no configuration"
+            );
+            configs
+        }
+    })
+}
+
+/// Parses an element count, which must be a power of two, possibly written
+/// with a `K`, `M` or `G` suffix.
+fn parse_n(s: &str) -> usize {
+    let s = s.trim();
+    let (digits, unit) = match s.chars().last() {
+        Some('K' | 'k') => (&s[..s.len() - 1], 1 << 10),
+        Some('M' | 'm') => (&s[..s.len() - 1], 1 << 20),
+        Some('G' | 'g') => (&s[..s.len() - 1], 1 << 30),
+        _ => (s, 1),
+    };
+    let n = digits
+        .trim()
+        .parse::<usize>()
+        .unwrap_or_else(|_| panic!("{CONFIGS_VAR}: invalid element count `{s}`"))
+        * unit;
+    assert!(
+        n.is_power_of_two(),
+        "{CONFIGS_VAR}: element count `{s}` is not a power of two"
+    );
+    n
+}
+
+/// Returns a compact label for an element count, such as `1M` or `1G`.
+fn n_label(n: usize) -> String {
+    for (suffix, unit) in [("G", 1usize << 30), ("M", 1 << 20), ("K", 1 << 10)] {
+        if n >= unit && n.is_multiple_of(unit) {
+            return format!("{}{}", n / unit, suffix);
+        }
+    }
+    n.to_string()
 }
 
 /// The high bits of the structure under test.
@@ -36,7 +114,8 @@ type EfAligned = EliasFano<u64, High>;
 
 /// The rkyv-archived counterpart of [`EfAligned`].
 #[cfg(feature = "rkyv")]
-type ArchivedEfAligned = sux::dict::elias_fano::ArchivedEliasFano<u64, High, BitFieldVec<Box<[u64]>>>;
+type ArchivedEfAligned =
+    sux::dict::elias_fano::ArchivedEliasFano<u64, High, BitFieldVec<Box<[u64]>>>;
 
 /// Build an Elias–Fano structure with `n` elements and `l` lower bits.
 /// Returns the structure and the first/last values in the monotone sequence.
@@ -210,7 +289,7 @@ macro_rules! bench_ef {
     ($queries:ident, $fn_name:ident, $group_name:expr, |$ef:ident, $q:ident| $op:expr) => {
         fn $fn_name(c: &mut Criterion) {
             let mut group = c.benchmark_group($group_name);
-            for &(n, l) in CONFIGS {
+            for &(n, l) in configs() {
                 let (ef, first, _) = build_ef(n, l);
                 let queries = $queries(n, l, first);
                 let param = format!("{}/l={}", n_label(n), l);
@@ -245,18 +324,15 @@ macro_rules! bench_ef {
                     let map = mmap_file(&images.rkyv);
                     // SAFETY: the image was written by serializing an `EfAligned`.
                     let archived = unsafe { rkyv::access_unchecked::<ArchivedEfAligned>(&map) };
-                    bench_arm(&mut group, "rkyv", &param, &queries, archived, |$ef, $q| $op);
+                    bench_arm(&mut group, "rkyv", &param, &queries, archived, |$ef, $q| {
+                        $op
+                    });
                 }
 
                 let ef = ef.try_into_unaligned().unwrap();
-                bench_arm(
-                    &mut group,
-                    "unaligned",
-                    &param,
-                    &queries,
-                    &ef,
-                    |$ef, $q| $op,
-                );
+                bench_arm(&mut group, "unaligned", &param, &queries, &ef, |$ef, $q| {
+                    $op
+                });
             }
             group.finish();
         }
@@ -311,7 +387,7 @@ bench_ef!(values, bench_rank, "ef_rank", |ef, v| Pred::rank(ef, v));
 
 fn bench_build_sequential(c: &mut Criterion) {
     let mut group = c.benchmark_group("ef_build_seq");
-    for &(n, l) in CONFIGS {
+    for &(n, l) in configs() {
         let u = (1u64 << l) * n as u64;
         let mut rng = SmallRng::seed_from_u64(0);
         let mut values: Vec<u64> = (0..n).map(|_| rng.random_range(0..u)).collect();
@@ -334,7 +410,7 @@ fn bench_build_sequential(c: &mut Criterion) {
 fn bench_build_concurrent(c: &mut Criterion) {
     let thread_counts = [4, 8, 16];
     let mut group = c.benchmark_group("ef_build_conc");
-    for &(n, l) in CONFIGS {
+    for &(n, l) in configs() {
         let u = (1u64 << l) * n as u64;
         let mut rng = SmallRng::seed_from_u64(0);
         let mut values: Vec<u64> = (0..n).map(|_| rng.random_range(0..u)).collect();

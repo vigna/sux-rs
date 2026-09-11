@@ -762,12 +762,7 @@ impl<
     const LOG2_ONES_PER_INVENTORY: usize,
     const LOG2_WORDS_PER_SUBINVENTORY: usize,
 > crate::rkyv_view::ToNative
-    for ArchivedSelectAdaptConst<
-        B,
-        Box<[W]>,
-        LOG2_ONES_PER_INVENTORY,
-        LOG2_WORDS_PER_SUBINVENTORY,
-    >
+    for ArchivedSelectAdaptConst<B, Box<[W]>, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
 where
     B::Archived: crate::rkyv_view::ToNative,
 {

@@ -2466,6 +2466,42 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> IntoUncheckedBackIterator
     }
 }
 
+#[cfg(feature = "rkyv")]
+impl<W: crate::rkyv_view::ArchivedWord> crate::rkyv_view::ToNative
+    for ArchivedBitFieldVec<Box<[W]>>
+{
+    type Native<'a>
+        = BitFieldVec<&'a [W]>
+    where
+        Self: 'a;
+
+    #[inline(always)]
+    fn to_native(&self) -> Self::Native<'_> {
+        BitFieldVec {
+            // SAFETY: see the documentation of `native_words`.
+            bits: unsafe { crate::rkyv_view::native_words(&self.bits) },
+            bit_width: crate::rkyv_view::native_usize(self.bit_width),
+            mask: W::from_archived(self.mask),
+            len: crate::rkyv_view::native_usize(self.len),
+        }
+    }
+}
+
+#[cfg(feature = "rkyv")]
+impl<W: crate::rkyv_view::ArchivedWord> crate::rkyv_view::ToNative
+    for ArchivedBitFieldVecU<Box<[W]>>
+{
+    type Native<'a>
+        = BitFieldVecU<&'a [W]>
+    where
+        Self: 'a;
+
+    #[inline(always)]
+    fn to_native(&self) -> Self::Native<'_> {
+        BitFieldVecU(self.0.to_native())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2565,41 +2601,5 @@ mod tests {
                 assert_eq!(dest_actual, dest_expected);
             }
         }
-    }
-}
-
-#[cfg(feature = "rkyv")]
-impl<W: crate::rkyv_view::ArchivedWord> crate::rkyv_view::ToNative
-    for ArchivedBitFieldVec<Box<[W]>>
-{
-    type Native<'a>
-        = BitFieldVec<&'a [W]>
-    where
-        Self: 'a;
-
-    #[inline(always)]
-    fn to_native(&self) -> Self::Native<'_> {
-        BitFieldVec {
-            // SAFETY: see the documentation of `native_words`.
-            bits: unsafe { crate::rkyv_view::native_words(&self.bits) },
-            bit_width: crate::rkyv_view::native_usize(self.bit_width),
-            mask: W::from_archived(self.mask),
-            len: crate::rkyv_view::native_usize(self.len),
-        }
-    }
-}
-
-#[cfg(feature = "rkyv")]
-impl<W: crate::rkyv_view::ArchivedWord> crate::rkyv_view::ToNative
-    for ArchivedBitFieldVecU<Box<[W]>>
-{
-    type Native<'a>
-        = BitFieldVecU<&'a [W]>
-    where
-        Self: 'a;
-
-    #[inline(always)]
-    fn to_native(&self) -> Self::Native<'_> {
-        BitFieldVecU(self.0.to_native())
     }
 }
