@@ -6,7 +6,7 @@
  */
 
 //! Tests that accessing an [rkyv]-archived Elias–Fano structure through
-//! [`ToNative`] gives the same results as accessing the in-memory structure.
+//! the lazy view gives the same results as accessing the in-memory structure.
 //!
 //! [rkyv]: https://crates.io/crates/rkyv
 
@@ -16,7 +16,6 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::dict::elias_fano::ArchivedEliasFano;
 use sux::prelude::*;
-use sux::rkyv_view::ToNative;
 use sux::traits::{IndexedSeq, Pred, PredUnchecked, Succ, SuccUnchecked, TryIntoUnaligned};
 
 /// The high bits of the structures under test, with the same const parameters
@@ -153,7 +152,7 @@ fn test_view_borrows_archive() {
     let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&ef).unwrap();
     // SAFETY: the bytes were just produced by serializing an `EfAligned`.
     let archived = unsafe { rkyv::access_unchecked::<ArchivedEfAligned>(&bytes) };
-    let native = archived.to_native();
+    let native = archived.lazy();
 
     let start = bytes.as_ptr() as usize;
     let end = start + bytes.len();

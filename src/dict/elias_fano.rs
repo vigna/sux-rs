@@ -2863,43 +2863,39 @@ impl<V: Word, H> From<Unaligned<EliasFano<V, H, BitFieldVec<Box<[V]>>>>>
     }
 }
 
-/// The high bits are viewed [lazily](crate::rkyv_view::Lazy): every query
-/// needs a different subset of their pointers, and resolving all of them here
-/// would make each query pay for the ones it does not read. The low bits, on
-/// the other hand, own a single pointer that every query reads, and they are
-/// borrowed by the iterators of [`succ_unchecked`](SuccUnchecked) and
-/// [`pred_unchecked`](PredUnchecked), so they are converted eagerly.
+/// A lazy view of an archived Elias-Fano structure.
 #[cfg(feature = "rkyv")]
 impl<V: crate::rkyv_view::ArchivedWord, H: rkyv::Archive, L: rkyv::Archive>
-    crate::rkyv_view::ToNative for ArchivedEliasFano<V, H, L>
-where
-    L::Archived: crate::rkyv_view::ToNative,
+    ArchivedEliasFano<V, H, L>
 {
-    type Native<'a>
-        = EliasFano<
-        V,
-        crate::rkyv_view::Lazy<'a, H::Archived>,
-        <L::Archived as crate::rkyv_view::ToNative>::Native<'a>,
-    >
-    where
-        Self: 'a;
-
+    /// Returns a view of this archive as an [`EliasFano`].
+    ///
+    /// The scalar fields are converted, which is all they need; the high and
+    /// the low bits are merely [borrowed](crate::rkyv_view::Lazy), so that
+    /// each method resolves just the relative pointers it reads. Building the
+    /// view costs no pointer dereference at all.
     #[inline(always)]
-    fn to_native(&self) -> Self::Native<'_> {
+    pub fn lazy(
+        &self,
+    ) -> EliasFano<
+        V,
+        crate::rkyv_view::Lazy<'_, H::Archived>,
+        crate::rkyv_view::Lazy<'_, L::Archived>,
+    > {
         EliasFano {
             n: crate::rkyv_view::native_usize(self.n),
             u: V::from_archived(self.u),
             l: crate::rkyv_view::native_usize(self.l),
             first_val: V::from_archived(self.first_val),
             last_val: V::from_archived(self.last_val),
-            low_bits: self.low_bits.to_native(),
+            low_bits: crate::rkyv_view::Lazy(&self.low_bits),
             high_bits: crate::rkyv_view::Lazy(&self.high_bits),
         }
     }
 }
 
-/// Implements a trait for [`ArchivedEliasFano`] by delegating to the native
-/// view returned by [`to_native`](crate::rkyv_view::ToNative::to_native).
+/// Implements a trait for [`ArchivedEliasFano`] by delegating to the lazy view
+/// returned by [`lazy`](ArchivedEliasFano::lazy).
 ///
 /// After the trait comes the bound the native high bits must satisfy, and
 /// optionally the unchecked-iteration bound the native low bits must satisfy;
@@ -2913,13 +2909,12 @@ macro_rules! impl_archived_ef {
             V: crate::rkyv_view::ArchivedWord + PrimitiveNumberAs<usize>,
             H: rkyv::Archive,
             L: rkyv::Archive,
-            L::Archived: crate::rkyv_view::ToNative,
             for<'a> crate::rkyv_view::Lazy<'a, H::Archived>:
                 AsRef<[usize]> + $high_bound,
-            for<'a> <L::Archived as crate::rkyv_view::ToNative>::Native<'a>:
+            for<'a> crate::rkyv_view::Lazy<'a, L::Archived>:
                 SliceByValue<Value = V>,
             $(
-                for<'a, 'b> &'b <L::Archived as crate::rkyv_view::ToNative>::Native<'a>:
+                for<'a, 'b> &'b crate::rkyv_view::Lazy<'a, L::Archived>:
                     $low_bound<Item = V>,
             )?
         {
@@ -2943,14 +2938,12 @@ impl<
 impl_archived_ef!(IndexedSeq: SelectUnchecked {
     #[inline(always)]
     fn get(&self, index: usize) -> V {
-        use crate::rkyv_view::ToNative as _;
-        IndexedSeq::get(&self.to_native(), index)
+        IndexedSeq::get(&self.lazy(), index)
     }
 
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> V {
-        use crate::rkyv_view::ToNative as _;
-        unsafe { IndexedSeq::get_unchecked(&self.to_native(), index) }
+        unsafe { IndexedSeq::get_unchecked(&self.lazy(), index) }
     }
 
     #[inline(always)]
@@ -2963,8 +2956,7 @@ impl_archived_ef!(IndexedSeq: SelectUnchecked {
 impl_archived_ef!(SuccUnchecked: SelectZeroUnchecked, IntoUncheckedIterator {
     #[inline(always)]
     unsafe fn succ_unchecked<const STRICT: bool>(&self, value: impl Borrow<V>) -> (usize, V) {
-        use crate::rkyv_view::ToNative as _;
-        unsafe { SuccUnchecked::succ_unchecked::<STRICT>(&self.to_native(), value) }
+        unsafe { SuccUnchecked::succ_unchecked::<STRICT>(&self.lazy(), value) }
     }
 });
 
@@ -2972,14 +2964,12 @@ impl_archived_ef!(SuccUnchecked: SelectZeroUnchecked, IntoUncheckedIterator {
 impl_archived_ef!(Succ: SelectZeroUnchecked, IntoUncheckedIterator {
     #[inline(always)]
     fn succ(&self, value: impl Borrow<V>) -> Option<(usize, V)> {
-        use crate::rkyv_view::ToNative as _;
-        Succ::succ(&self.to_native(), value)
+        Succ::succ(&self.lazy(), value)
     }
 
     #[inline(always)]
     fn succ_strict(&self, value: impl Borrow<V>) -> Option<(usize, V)> {
-        use crate::rkyv_view::ToNative as _;
-        Succ::succ_strict(&self.to_native(), value)
+        Succ::succ_strict(&self.lazy(), value)
     }
 });
 
@@ -2987,14 +2977,12 @@ impl_archived_ef!(Succ: SelectZeroUnchecked, IntoUncheckedIterator {
 impl_archived_ef!(PredUnchecked: SelectZeroUnchecked, IntoUncheckedBackIterator {
     #[inline(always)]
     unsafe fn pred_unchecked<const STRICT: bool>(&self, value: impl Borrow<V>) -> (usize, V) {
-        use crate::rkyv_view::ToNative as _;
-        unsafe { PredUnchecked::pred_unchecked::<STRICT>(&self.to_native(), value) }
+        unsafe { PredUnchecked::pred_unchecked::<STRICT>(&self.lazy(), value) }
     }
 
     #[inline(always)]
     unsafe fn rank_unchecked(&self, value: impl Borrow<V>) -> usize {
-        use crate::rkyv_view::ToNative as _;
-        unsafe { PredUnchecked::rank_unchecked(&self.to_native(), value) }
+        unsafe { PredUnchecked::rank_unchecked(&self.lazy(), value) }
     }
 });
 
@@ -3002,19 +2990,16 @@ impl_archived_ef!(PredUnchecked: SelectZeroUnchecked, IntoUncheckedBackIterator 
 impl_archived_ef!(Pred: SelectZeroUnchecked, IntoUncheckedBackIterator {
     #[inline(always)]
     fn pred(&self, value: impl Borrow<V>) -> Option<(usize, V)> {
-        use crate::rkyv_view::ToNative as _;
-        Pred::pred(&self.to_native(), value)
+        Pred::pred(&self.lazy(), value)
     }
 
     #[inline(always)]
     fn pred_strict(&self, value: impl Borrow<V>) -> Option<(usize, V)> {
-        use crate::rkyv_view::ToNative as _;
-        Pred::pred_strict(&self.to_native(), value)
+        Pred::pred_strict(&self.lazy(), value)
     }
 
     #[inline(always)]
     fn rank(&self, value: impl Borrow<V>) -> usize {
-        use crate::rkyv_view::ToNative as _;
-        Pred::rank(&self.to_native(), value)
+        Pred::rank(&self.lazy(), value)
     }
 });

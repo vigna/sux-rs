@@ -1563,66 +1563,13 @@ impl<B: Backend + AsRef<[B::Word]>> AsRef<[B::Word]> for BitVecU<B> {
     }
 }
 
-#[cfg(feature = "rkyv")]
-impl<W: crate::rkyv_view::ArchivedWord> crate::rkyv_view::ToNative for ArchivedBitVec<Box<[W]>> {
-    type Native<'a>
-        = BitVec<&'a [W]>
-    where
-        Self: 'a;
-
-    #[inline(always)]
-    fn to_native(&self) -> Self::Native<'_> {
-        BitVec {
-            // SAFETY: see the documentation of `native_words`.
-            bits: unsafe { crate::rkyv_view::native_words(&self.bits) },
-            len: crate::rkyv_view::native_usize(self.len),
-        }
-    }
-}
-
-#[cfg(test)]
-mod padding_tests {
-    use super::padding_bits;
-
-    #[test]
-    fn padding_bits_is_overflow_safe() {
-        // Ordinary cases: pad up to the next word boundary.
-        assert_eq!(padding_bits(0, 64), 0);
-        assert_eq!(padding_bits(64, 64), 0);
-        assert_eq!(padding_bits(1, 64), 63);
-        assert_eq!(padding_bits(65, 64), 63);
-        assert_eq!(padding_bits(63, 64), 1);
-        // usize::MAX is not a multiple of 64 (2^64 is), so one padding bit is
-        // needed; the old n_of_words * bits_per_word - len form overflows here.
-        assert_eq!(padding_bits(usize::MAX, 64), 1);
-        assert_eq!(padding_bits(usize::MAX, 32), 1);
-    }
-}
-
-#[cfg(feature = "rkyv")]
-impl<W: crate::rkyv_view::ArchivedWord> crate::rkyv_view::ToNative for ArchivedBitVec<Box<[W]>> {
-    type Native<'a>
-        = BitVec<&'a [W]>
-    where
-        Self: 'a;
-
-    #[inline(always)]
-    fn to_native(&self) -> Self::Native<'_> {
-        BitVec {
-            // SAFETY: see the documentation of `native_words`.
-            bits: unsafe { crate::rkyv_view::native_words(&self.bits) },
-            len: crate::rkyv_view::native_usize(self.len),
-        }
-    }
-}
-
 /// Lazy views of an archived bit vector.
 ///
 /// A bit vector is the bottom of every stack, and owns a single relative
 /// pointer; a view resolves it only when the words are actually read.
 #[cfg(feature = "rkyv")]
 const _: () = {
-    use crate::rkyv_view::{ArchivedWord, Lazy, ToNative, Words, native_usize, native_words};
+    use crate::rkyv_view::{ArchivedWord, Lazy, Words, native_usize, native_words};
 
     impl<'a, W: ArchivedWord> Words<'a> for Lazy<'a, ArchivedBitVec<Box<[W]>>> {
         type Word = W;
@@ -1660,11 +1607,13 @@ const _: () = {
             hint_pos: usize,
             hint_rank: usize,
         ) -> usize {
-            unsafe {
-                self.0
-                    .to_native()
-                    .select_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank)
-            }
+            // Only the words and the length are read, and both are the
+            // fields of a bit vector: the view is the whole structure.
+            let view = BitVec {
+                bits: (*self).words(),
+                len: self.len(),
+            };
+            unsafe { view.select_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank) }
         }
     }
 
@@ -1676,11 +1625,32 @@ const _: () = {
             hint_pos: usize,
             hint_rank: usize,
         ) -> usize {
-            unsafe {
-                self.0
-                    .to_native()
-                    .select_zero_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank)
-            }
+            // Only the words and the length are read, and both are the
+            // fields of a bit vector: the view is the whole structure.
+            let view = BitVec {
+                bits: (*self).words(),
+                len: self.len(),
+            };
+            unsafe { view.select_zero_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank) }
         }
     }
 };
+
+#[cfg(test)]
+mod padding_tests {
+    use super::padding_bits;
+
+    #[test]
+    fn padding_bits_is_overflow_safe() {
+        // Ordinary cases: pad up to the next word boundary.
+        assert_eq!(padding_bits(0, 64), 0);
+        assert_eq!(padding_bits(64, 64), 0);
+        assert_eq!(padding_bits(1, 64), 63);
+        assert_eq!(padding_bits(65, 64), 63);
+        assert_eq!(padding_bits(63, 64), 1);
+        // usize::MAX is not a multiple of 64 (2^64 is), so one padding bit is
+        // needed; the old n_of_words * bits_per_word - len form overflows here.
+        assert_eq!(padding_bits(usize::MAX, 64), 1);
+        assert_eq!(padding_bits(usize::MAX, 32), 1);
+    }
+}

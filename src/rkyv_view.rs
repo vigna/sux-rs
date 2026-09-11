@@ -16,19 +16,26 @@
 //! wrappers and whose backends are reached through relative pointers, and that
 //! type implements none of the traits of this crate.
 //!
-//! This module bridges the gap. Every archived structure of the Elias–Fano
-//! stack gets a `to_native` method that dereferences the relative pointers and
-//! converts the scalar fields, yielding the ordinary structure of this crate
-//! with borrowed backends; the traits are then implemented on the archived
-//! structure by delegation. No algorithm is duplicated, so a benchmark
-//! comparing the two formats measures the representation, not two different
-//! implementations.
+//! This module bridges the gap with [`Lazy`], a plain reference into the
+//! archive. The traits of this crate are implemented on it by converting, at
+//! each call, just the fields the method reads, and delegating to the `Lazy`
+//! view of the substructures; the structures of this crate are then built out
+//! of `Lazy` backends, so no algorithm is duplicated and a benchmark comparing
+//! the two formats measures the representation, not two implementations.
+//!
+//! The conversion is not cached: it is paid at every call, as it must be for a
+//! format that is accessed in place. What a method does not pay for is the
+//! pointers it does not read — for a structure as layered as
+//! [`EliasFano`](crate::dict::EliasFano) those are most of them, as
+//! [`get`](crate::traits::IndexedSeq::get) needs the inventory of the ones and
+//! the low bits, and [`succ`](crate::traits::Succ) the inventory of the zeros
+//! and the high bits.
 //!
 //! # Target Restrictions
 //!
-//! `to_native` reinterprets archived word slices as native word slices, which
-//! is correct only if archived words have the same size and byte order as
-//! native ones. This holds when [rkyv] is compiled with the `pointer_width_64`
+//! The views reinterpret archived word slices as native word slices, which is
+//! correct only if archived words have the same size and byte order as native
+//! ones. This holds when [rkyv] is compiled with the `pointer_width_64`
 //! feature (which this crate enables) and the target is little-endian and
 //! 64-bit; the feature is not available on other targets.
 //!
@@ -67,25 +74,6 @@ impl ArchivedWord for usize {
     }
 }
 
-/// An archived structure that can be viewed as the corresponding structure of
-/// this crate, borrowing its backends from the archive.
-///
-/// The conversion dereferences the relative pointers of the archive and
-/// converts the scalar fields; it performs no allocation and copies no array.
-/// The result implements all the traits of the original structure, with the
-/// same code, so accessing it differs from accessing an in-memory structure
-/// only by the cost of the conversion.
-pub trait ToNative {
-    /// The corresponding structure of this crate, borrowing from `self`.
-    type Native<'a>
-    where
-        Self: 'a;
-
-    /// Returns a view of this archived structure as the corresponding
-    /// structure of this crate.
-    fn to_native(&self) -> Self::Native<'_>;
-}
-
 /// Reinterprets a slice of archived words as a slice of native words.
 ///
 /// On a little-endian 64-bit target [`ArchivedU64`] is `u64_le`, which is
@@ -113,13 +101,10 @@ pub(crate) fn native_usize(archived: ArchivedUsize) -> usize {
 
 /// A lazy view of an archived structure.
 ///
-/// [`to_native`](ToNative::to_native) converts an archived structure
-/// *eagerly*: it dereferences every relative pointer of the archive, including
-/// those of the substructures that a given method never reads. In a stack as
-/// layered as that of [`EliasFano`](crate::dict::EliasFano) this dominates the
-/// cost of a query — [`get`](crate::traits::IndexedSeq::get) needs the
-/// inventory of the ones and the low bits, but an eager conversion makes it
-/// pay for the inventory and the spill of the zeros, too.
+/// Converting an archived structure *eagerly* — dereferencing every relative
+/// pointer of the archive and rebuilding the whole structure — makes a query
+/// pay for the substructures it never reads, which in a layered stack is most
+/// of them.
 ///
 /// `Lazy` defers the conversion. It is a plain reference into the archive, and
 /// the traits of this crate are implemented on it by converting, at each call,

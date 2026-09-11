@@ -711,6 +711,23 @@ impl<B: Backend<Word: Word>> BitWidth for BitFieldVec<B> {
     }
 }
 
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
+    /// Returns a view of this vector borrowing its backend.
+    ///
+    /// The unchecked iterators store a view rather than a reference to the
+    /// vector, so that they can also be built from a vector that is itself a
+    /// temporary, as happens when the parts come from an archive.
+    #[inline(always)]
+    pub(crate) fn view(&self) -> BitFieldVec<&[B::Word]> {
+        BitFieldVec {
+            bits: self.bits.as_ref(),
+            bit_width: self.bit_width,
+            mask: self.mask,
+            len: self.len,
+        }
+    }
+}
+
 impl<B: Backend<Word: Word> + AsRef<[B::Word]>> SliceByValue for BitFieldVec<B> {
     type Value = B::Word;
     #[inline(always)]
@@ -1265,14 +1282,14 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
 /// An [`UncheckedIterator`] over the values of a [`BitFieldVec`].
 #[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct BitFieldVecUncheckedIter<'a, B: Backend<Word: Word>> {
-    vec: &'a BitFieldVec<B>,
+    vec: BitFieldVec<&'a [B::Word]>,
     word_index: usize,
     window: B::Word,
     fill: usize,
 }
 
 impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVecUncheckedIter<'a, B> {
-    fn new(vec: &'a BitFieldVec<B>, index: usize) -> Self {
+    fn new(vec: BitFieldVec<&'a [B::Word]>, index: usize) -> Self {
         if index > vec.len() {
             panic!("Start index out of bounds: {} > {}", index, vec.len());
         }
@@ -1342,21 +1359,21 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> IntoUncheckedIterator for &'
     type Item = B::Word;
     type IntoUncheckedIter = BitFieldVecUncheckedIter<'a, B>;
     fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter {
-        BitFieldVecUncheckedIter::new(self, from)
+        BitFieldVecUncheckedIter::new(self.view(), from)
     }
 }
 
 /// An [`UncheckedIterator`] moving backwards over the values of a [`BitFieldVec`].
 #[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct BitFieldVecUncheckedBackIter<'a, B: Backend<Word: Word>> {
-    vec: &'a BitFieldVec<B>,
+    vec: BitFieldVec<&'a [B::Word]>,
     word_index: usize,
     window: B::Word,
     fill: usize,
 }
 
 impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVecUncheckedBackIter<'a, B> {
-    fn new(vec: &'a BitFieldVec<B>, index: usize) -> Self {
+    fn new(vec: BitFieldVec<&'a [B::Word]>, index: usize) -> Self {
         if index > vec.len() {
             panic!("Start index out of bounds: {} > {}", index, vec.len());
         }
@@ -1429,11 +1446,11 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> IntoUncheckedBackIterator
     type IntoUncheckedIterBack = BitFieldVecUncheckedBackIter<'a, B>;
 
     fn into_unchecked_iter_back(self) -> Self::IntoUncheckedIterBack {
-        BitFieldVecUncheckedBackIter::new(self, self.len())
+        BitFieldVecUncheckedBackIter::new(self.view(), self.len())
     }
 
     fn into_unchecked_iter_back_from(self, from: usize) -> Self::IntoUncheckedIterBack {
-        BitFieldVecUncheckedBackIter::new(self, from)
+        BitFieldVecUncheckedBackIter::new(self.view(), from)
     }
 }
 
@@ -1451,7 +1468,7 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVecIter<'a, B> {
             panic!("Start index out of bounds: {} > {}", from, len);
         }
         Self {
-            unchecked: BitFieldVecUncheckedIter::new(vec, from),
+            unchecked: BitFieldVecUncheckedIter::new(vec.view(), from),
             range: from..len,
         }
     }
@@ -2447,7 +2464,7 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> IntoUncheckedIterator for &'
     type Item = B::Word;
     type IntoUncheckedIter = BitFieldVecUncheckedIter<'a, B>;
     fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter {
-        BitFieldVecUncheckedIter::new(&self.0, from)
+        BitFieldVecUncheckedIter::new(self.0.view(), from)
     }
 }
 
@@ -2458,49 +2475,143 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> IntoUncheckedBackIterator
     type IntoUncheckedIterBack = BitFieldVecUncheckedBackIter<'a, B>;
 
     fn into_unchecked_iter_back(self) -> Self::IntoUncheckedIterBack {
-        BitFieldVecUncheckedBackIter::new(&self.0, SliceByValue::len(&self.0))
+        BitFieldVecUncheckedBackIter::new(self.0.view(), SliceByValue::len(&self.0))
     }
 
     fn into_unchecked_iter_back_from(self, from: usize) -> Self::IntoUncheckedIterBack {
-        BitFieldVecUncheckedBackIter::new(&self.0, from)
+        BitFieldVecUncheckedBackIter::new(self.0.view(), from)
     }
 }
 
+/// Lazy views of an archived bit-field vector.
+///
+/// A bit-field vector is a leaf of every stack and owns a single relative
+/// pointer, which all of its accessors read; a view therefore resolves it as
+/// soon as any value is read, but never before.
 #[cfg(feature = "rkyv")]
-impl<W: crate::rkyv_view::ArchivedWord> crate::rkyv_view::ToNative
-    for ArchivedBitFieldVec<Box<[W]>>
-{
-    type Native<'a>
-        = BitFieldVec<&'a [W]>
-    where
-        Self: 'a;
+const _: () = {
+    use crate::rkyv_view::{ArchivedWord, Lazy, Words, native_usize, native_words};
+    use crate::traits::{IntoUncheckedBackIterator, IntoUncheckedIterator};
 
-    #[inline(always)]
-    fn to_native(&self) -> Self::Native<'_> {
-        BitFieldVec {
+    impl<'a, W: ArchivedWord> Words<'a> for Lazy<'a, ArchivedBitFieldVec<Box<[W]>>> {
+        type Word = W;
+
+        #[inline(always)]
+        fn words(self) -> &'a [W] {
             // SAFETY: see the documentation of `native_words`.
-            bits: unsafe { crate::rkyv_view::native_words(&self.bits) },
-            bit_width: crate::rkyv_view::native_usize(self.bit_width),
-            mask: W::from_archived(self.mask),
-            len: crate::rkyv_view::native_usize(self.len),
+            unsafe { native_words(&self.0.bits) }
         }
     }
-}
 
-#[cfg(feature = "rkyv")]
-impl<W: crate::rkyv_view::ArchivedWord> crate::rkyv_view::ToNative
-    for ArchivedBitFieldVecU<Box<[W]>>
-{
-    type Native<'a>
-        = BitFieldVecU<&'a [W]>
-    where
-        Self: 'a;
-
-    #[inline(always)]
-    fn to_native(&self) -> Self::Native<'_> {
-        BitFieldVecU(self.0.to_native())
+    impl<'a, W: ArchivedWord> Lazy<'a, ArchivedBitFieldVec<Box<[W]>>> {
+        /// Returns the view of the whole vector.
+        ///
+        /// Every accessor reads the words, the bit width and the mask, and the
+        /// length is a scalar in the same words as the others, so there is
+        /// nothing to defer below this point.
+        #[inline(always)]
+        fn view(self) -> BitFieldVec<&'a [W]> {
+            BitFieldVec {
+                bits: self.words(),
+                bit_width: native_usize(self.0.bit_width),
+                mask: W::from_archived(self.0.mask),
+                len: native_usize(self.0.len),
+            }
+        }
     }
-}
+
+    impl<W: ArchivedWord> SliceByValue for Lazy<'_, ArchivedBitFieldVec<Box<[W]>>> {
+        type Value = W;
+
+        #[inline(always)]
+        fn len(&self) -> usize {
+            native_usize(self.0.len)
+        }
+
+        #[inline(always)]
+        unsafe fn get_value_unchecked(&self, index: usize) -> W {
+            unsafe { (*self).view().get_value_unchecked(index) }
+        }
+    }
+
+    impl<'a, W: ArchivedWord> IntoUncheckedIterator for &Lazy<'a, ArchivedBitFieldVec<Box<[W]>>> {
+        type Item = W;
+        type IntoUncheckedIter = BitFieldVecUncheckedIter<'a, &'a [W]>;
+
+        #[inline(always)]
+        fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter {
+            BitFieldVecUncheckedIter::new((*self).view(), from)
+        }
+    }
+
+    impl<'a, W: ArchivedWord> IntoUncheckedBackIterator for &Lazy<'a, ArchivedBitFieldVec<Box<[W]>>> {
+        type Item = W;
+        type IntoUncheckedIterBack = BitFieldVecUncheckedBackIter<'a, &'a [W]>;
+
+        #[inline(always)]
+        fn into_unchecked_iter_back(self) -> Self::IntoUncheckedIterBack {
+            let view = (*self).view();
+            let len = view.len;
+            BitFieldVecUncheckedBackIter::new(view, len)
+        }
+
+        #[inline(always)]
+        fn into_unchecked_iter_back_from(self, from: usize) -> Self::IntoUncheckedIterBack {
+            BitFieldVecUncheckedBackIter::new((*self).view(), from)
+        }
+    }
+
+    // The unaligned flavor is a newtype, so its view just wraps the view of
+    // the vector it holds.
+
+    impl<'a, W: ArchivedWord> Lazy<'a, ArchivedBitFieldVecU<Box<[W]>>> {
+        #[inline(always)]
+        fn view(self) -> BitFieldVecU<&'a [W]> {
+            BitFieldVecU(Lazy(&self.0.0).view())
+        }
+    }
+
+    impl<W: ArchivedWord> SliceByValue for Lazy<'_, ArchivedBitFieldVecU<Box<[W]>>> {
+        type Value = W;
+
+        #[inline(always)]
+        fn len(&self) -> usize {
+            native_usize(self.0.0.len)
+        }
+
+        #[inline(always)]
+        unsafe fn get_value_unchecked(&self, index: usize) -> W {
+            unsafe { (*self).view().get_value_unchecked(index) }
+        }
+    }
+
+    impl<'a, W: ArchivedWord> IntoUncheckedIterator for &Lazy<'a, ArchivedBitFieldVecU<Box<[W]>>> {
+        type Item = W;
+        type IntoUncheckedIter = BitFieldVecUncheckedIter<'a, &'a [W]>;
+
+        #[inline(always)]
+        fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter {
+            BitFieldVecUncheckedIter::new(Lazy(&self.0.0).view(), from)
+        }
+    }
+
+    impl<'a, W: ArchivedWord> IntoUncheckedBackIterator for &Lazy<'a, ArchivedBitFieldVecU<Box<[W]>>> {
+        type Item = W;
+        type IntoUncheckedIterBack = BitFieldVecUncheckedBackIter<'a, &'a [W]>;
+
+        #[inline(always)]
+        fn into_unchecked_iter_back(self) -> Self::IntoUncheckedIterBack {
+            let view = Lazy(&self.0.0).view();
+            let len = view.len;
+            BitFieldVecUncheckedBackIter::new(view, len)
+        }
+
+        #[inline(always)]
+        fn into_unchecked_iter_back_from(self, from: usize) -> Self::IntoUncheckedIterBack {
+            BitFieldVecUncheckedBackIter::new(Lazy(&self.0.0).view(), from)
+        }
+    }
+};
 
 #[cfg(test)]
 mod tests {

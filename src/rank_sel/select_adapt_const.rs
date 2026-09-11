@@ -755,39 +755,6 @@ mod tests {
     }
 }
 
-#[cfg(feature = "rkyv")]
-impl<
-    B: rkyv::Archive,
-    W: crate::rkyv_view::ArchivedWord,
-    const LOG2_ONES_PER_INVENTORY: usize,
-    const LOG2_WORDS_PER_SUBINVENTORY: usize,
-> crate::rkyv_view::ToNative
-    for ArchivedSelectAdaptConst<B, Box<[W]>, LOG2_ONES_PER_INVENTORY, LOG2_WORDS_PER_SUBINVENTORY>
-where
-    B::Archived: crate::rkyv_view::ToNative,
-{
-    type Native<'a>
-        = SelectAdaptConst<
-        <B::Archived as crate::rkyv_view::ToNative>::Native<'a>,
-        &'a [W],
-        LOG2_ONES_PER_INVENTORY,
-        LOG2_WORDS_PER_SUBINVENTORY,
-    >
-    where
-        Self: 'a;
-
-    #[inline(always)]
-    fn to_native(&self) -> Self::Native<'_> {
-        SelectAdaptConst {
-            bits: self.bits.to_native(),
-            // SAFETY: see the documentation of `native_words`.
-            inventory: unsafe { crate::rkyv_view::native_words(&self.inventory) },
-            // SAFETY: see the documentation of `native_words`.
-            spill: unsafe { crate::rkyv_view::native_words(&self.spill) },
-        }
-    }
-}
-
 /// Lazy views of an archived selection structure for ones.
 ///
 /// Only [`select_unchecked`](SelectUnchecked::select_unchecked) reads the inventory and the spill;
