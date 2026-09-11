@@ -153,6 +153,7 @@ use std::ops::Index;
 #[delegate(crate::traits::rank_sel::SelectUnchecked, target = "bits")]
 #[delegate(crate::traits::rank_sel::SelectZeroHinted, target = "bits")]
 #[delegate(crate::bal_paren::BalParen, target = "bits")]
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize))]
 pub struct SelectZeroAdaptConst<
     B,
     I = Box<[usize]>,
@@ -732,5 +733,43 @@ mod tests {
             assert_eq!(simple.select_zero(i), Some(p));
         }
         assert_eq!(simple.select_zero(pos.len()), None);
+    }
+}
+
+#[cfg(feature = "rkyv")]
+impl<
+    B: rkyv::Archive,
+    W: crate::rkyv_view::ArchivedWord,
+    const LOG2_ZEROS_PER_INVENTORY: usize,
+    const LOG2_WORDS_PER_SUBINVENTORY: usize,
+> crate::rkyv_view::ToNative
+    for ArchivedSelectZeroAdaptConst<
+        B,
+        Box<[W]>,
+        LOG2_ZEROS_PER_INVENTORY,
+        LOG2_WORDS_PER_SUBINVENTORY,
+    >
+where
+    B::Archived: crate::rkyv_view::ToNative,
+{
+    type Native<'a>
+        = SelectZeroAdaptConst<
+        <B::Archived as crate::rkyv_view::ToNative>::Native<'a>,
+        &'a [W],
+        LOG2_ZEROS_PER_INVENTORY,
+        LOG2_WORDS_PER_SUBINVENTORY,
+    >
+    where
+        Self: 'a;
+
+    #[inline(always)]
+    fn to_native(&self) -> Self::Native<'_> {
+        SelectZeroAdaptConst {
+            bits: self.bits.to_native(),
+            // SAFETY: see the documentation of `native_words`.
+            inventory: unsafe { crate::rkyv_view::native_words(&self.inventory) },
+            // SAFETY: see the documentation of `native_words`.
+            spill: unsafe { crate::rkyv_view::native_words(&self.spill) },
+        }
     }
 }

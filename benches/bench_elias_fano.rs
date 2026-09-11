@@ -1,4 +1,5 @@
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::measurement::WallTime;
+use criterion::{BenchmarkGroup, BenchmarkId, Criterion, criterion_group, criterion_main};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::hint::black_box;
@@ -17,25 +18,25 @@ const CONFIGS: &[(usize, usize)] = &[
     (1 << 20, 4),
     (1 << 20, 8),
     (1 << 20, 16),
-    (1 << 30, 2),
-    (1 << 30, 4),
-    (1 << 30, 8),
-    (1 << 30, 16),
 ];
 
 fn n_label(n: usize) -> &'static str {
     if n == 1 << 20 { "1M" } else { "1G" }
 }
 
-type EfAligned = EliasFano<
-    u64,
-    SelectZeroAdaptConst<
-        SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>,
-        Box<[usize]>,
-        12,
-        3,
-    >,
+/// The high bits of the structure under test.
+type High = SelectZeroAdaptConst<
+    SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>,
+    Box<[usize]>,
+    12,
+    3,
 >;
+
+type EfAligned = EliasFano<u64, High>;
+
+/// The rkyv-archived counterpart of [`EfAligned`].
+#[cfg(feature = "rkyv")]
+type ArchivedEfAligned = sux::dict::elias_fano::ArchivedEliasFano<u64, High, BitFieldVec<Box<[u64]>>>;
 
 /// Build an Elias–Fano structure with `n` elements and `l` lower bits.
 /// Returns the structure and the first/last values in the monotone sequence.
@@ -82,112 +83,231 @@ fn gen_values(n: usize, l: usize, first: u64) -> Vec<u64> {
         .collect()
 }
 
-/// Each benchmark iteration performs a single operation, cycling through
-/// the pregenerated query array using a counter and masking.
-macro_rules! bench_ef {
-    (index, $fn_name:ident, $group_name:expr, |$ef:ident, $q:ident| $op:expr) => {
-        fn $fn_name(c: &mut Criterion) {
-            let mut group = c.benchmark_group($group_name);
-            for &(n, l) in CONFIGS {
-                let (ef, _, _) = build_ef(n, l);
-                let queries = gen_indices(n);
-                let param = format!("{}/l={}", n_label(n), l);
+/// Benchmarks a single operation on a single representation of the structure.
+///
+/// Each iteration performs one operation, cycling through the pregenerated
+/// query array using a counter and masking.
+fn bench_arm<E, Q: Copy, R>(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+    name: &str,
+    param: &str,
+    queries: &[Q],
+    ef: &E,
+    op: impl Fn(&E, Q) -> R,
+) {
+    group.bench_function(BenchmarkId::new(name, param), |b| {
+        let mut ctr = 0usize;
+        b.iter(|| {
+            let q = queries[ctr & QUERY_MASK];
+            ctr = ctr.wrapping_add(1);
+            black_box(op(ef, q))
+        })
+    });
+}
 
-                group.bench_function(BenchmarkId::new("aligned", &param), |b| {
-                    let mut ctr = 0usize;
-                    b.iter(|| {
-                        let $q = queries[ctr & QUERY_MASK];
-                        ctr = ctr.wrapping_add(1);
-                        let $ef = &ef;
-                        black_box($op)
-                    })
-                });
+// Serialized images of the structures under test.
+//
+// Building a configuration is expensive (the largest one sorts eight gigabytes
+// of values), and so is writing it out, so each configuration is serialized
+// once and the images are reused by every benchmark. The native structure is
+// still rebuilt by each benchmark, so at most one configuration is resident at
+// a time.
 
-                let ef = ef.try_into_unaligned().unwrap();
+#[cfg(any(all(feature = "epserde", feature = "mmap"), feature = "rkyv"))]
+mod images {
+    use super::EfAligned;
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+    use std::sync::{Mutex, OnceLock};
 
-                group.bench_function(BenchmarkId::new("unaligned", &param), |b| {
-                    let mut ctr = 0usize;
-                    b.iter(|| {
-                        let $q = queries[ctr & QUERY_MASK];
-                        ctr = ctr.wrapping_add(1);
-                        let $ef = &ef;
-                        black_box($op)
-                    })
-                });
-            }
-            group.finish();
+    /// The paths of the serialized images of one configuration.
+    pub struct Images {
+        /// The ε-serde image.
+        #[cfg(all(feature = "epserde", feature = "mmap"))]
+        pub eps: PathBuf,
+        /// The rkyv image.
+        #[cfg(feature = "rkyv")]
+        pub rkyv: PathBuf,
+    }
+
+    /// Returns the images of the given configuration, writing them out on the
+    /// first call.
+    ///
+    /// The images are leaked so that they can be borrowed by every benchmark;
+    /// they are just paths, and the temporary directory containing the files
+    /// is deleted when the process exits.
+    pub fn images(n: usize, l: usize, ef: &EfAligned) -> &'static Images {
+        static DIR: OnceLock<tempfile::TempDir> = OnceLock::new();
+        static CACHE: OnceLock<Mutex<BTreeMap<(usize, usize), &'static Images>>> = OnceLock::new();
+
+        let cache = CACHE.get_or_init(|| Mutex::new(BTreeMap::new()));
+        let mut cache = cache.lock().unwrap();
+        if let Some(images) = cache.get(&(n, l)) {
+            return images;
         }
-    };
-    (value, $fn_name:ident, $group_name:expr, |$ef:ident, $q:ident| $op:expr) => {
+
+        let dir = DIR.get_or_init(|| tempfile::tempdir().expect("cannot create a temporary dir"));
+        let images = Box::leak(Box::new(Images {
+            #[cfg(all(feature = "epserde", feature = "mmap"))]
+            eps: {
+                let path = dir.path().join(format!("ef-{n}-{l}.eps"));
+                unsafe { epserde::ser::Serialize::store(ef, &path) }
+                    .expect("cannot write the ε-serde image");
+                path
+            },
+            #[cfg(feature = "rkyv")]
+            rkyv: {
+                use std::io::Write;
+                let path = dir.path().join(format!("ef-{n}-{l}.rkyv"));
+                let file = std::fs::File::create(&path).expect("cannot create the rkyv image");
+                let writer = rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(
+                    ef,
+                    rkyv::ser::writer::IoWriter::new(std::io::BufWriter::new(file)),
+                )
+                .expect("cannot write the rkyv image");
+                writer
+                    .into_inner()
+                    .flush()
+                    .expect("cannot flush the rkyv image");
+                path
+            },
+        }));
+
+        // `ef` is unused if neither format is enabled, which cannot happen
+        // here, but silences the compiler in exotic feature combinations.
+        let _ = ef;
+
+        cache.insert((n, l), images);
+        images
+    }
+}
+
+/// Memory-maps a file for rkyv zero-copy access.
+///
+/// The mapping is page-aligned, which satisfies the alignment required by the
+/// archived structure.
+#[cfg(feature = "rkyv")]
+fn mmap_file(path: &std::path::Path) -> mmap_rs::Mmap {
+    let file = std::fs::File::open(path).expect("cannot open the rkyv image");
+    let len = file.metadata().expect("cannot stat the rkyv image").len() as usize;
+    unsafe {
+        mmap_rs::MmapOptions::new(len)
+            .expect("cannot set up the mapping")
+            .with_file(&file, 0)
+            .map()
+            .expect("cannot map the rkyv image")
+    }
+}
+
+/// Benchmarks one operation on all available representations of the structure.
+///
+/// The `index` variant generates index queries, the `value` variant generates
+/// value queries. The four representations are the in-memory structure
+/// (`aligned`), its unaligned variant (`unaligned`), the ε-copy deserialized
+/// ε-serde image (`eps`), and the zero-copy rkyv archive (`rkyv`), the last
+/// two being read from a memory-mapped file.
+macro_rules! bench_ef {
+    ($queries:ident, $fn_name:ident, $group_name:expr, |$ef:ident, $q:ident| $op:expr) => {
         fn $fn_name(c: &mut Criterion) {
             let mut group = c.benchmark_group($group_name);
             for &(n, l) in CONFIGS {
                 let (ef, first, _) = build_ef(n, l);
-                let queries = gen_values(n, l, first);
+                let queries = $queries(n, l, first);
                 let param = format!("{}/l={}", n_label(n), l);
+                let _ = first;
 
-                group.bench_function(BenchmarkId::new("aligned", &param), |b| {
-                    let mut ctr = 0usize;
-                    b.iter(|| {
-                        let $q = queries[ctr & QUERY_MASK];
-                        ctr = ctr.wrapping_add(1);
-                        let $ef = &ef;
-                        black_box($op)
-                    })
-                });
+                bench_arm(&mut group, "aligned", &param, &queries, &ef, |$ef, $q| $op);
+
+                #[cfg(any(all(feature = "epserde", feature = "mmap"), feature = "rkyv"))]
+                let images = images::images(n, l, &ef);
+
+                #[cfg(all(feature = "epserde", feature = "mmap"))]
+                {
+                    let case = unsafe {
+                        <EfAligned as epserde::deser::Deserialize>::load_mmap(
+                            &images.eps,
+                            epserde::deser::Flags::empty(),
+                        )
+                    }
+                    .expect("cannot map the ε-serde image");
+                    bench_arm(
+                        &mut group,
+                        "eps",
+                        &param,
+                        &queries,
+                        case.uncase(),
+                        |$ef, $q| $op,
+                    );
+                }
+
+                #[cfg(feature = "rkyv")]
+                {
+                    let map = mmap_file(&images.rkyv);
+                    // SAFETY: the image was written by serializing an `EfAligned`.
+                    let archived = unsafe { rkyv::access_unchecked::<ArchivedEfAligned>(&map) };
+                    bench_arm(&mut group, "rkyv", &param, &queries, archived, |$ef, $q| $op);
+                }
 
                 let ef = ef.try_into_unaligned().unwrap();
-
-                group.bench_function(BenchmarkId::new("unaligned", &param), |b| {
-                    let mut ctr = 0usize;
-                    b.iter(|| {
-                        let $q = queries[ctr & QUERY_MASK];
-                        ctr = ctr.wrapping_add(1);
-                        let $ef = &ef;
-                        black_box($op)
-                    })
-                });
+                bench_arm(
+                    &mut group,
+                    "unaligned",
+                    &param,
+                    &queries,
+                    &ef,
+                    |$ef, $q| $op,
+                );
             }
             group.finish();
         }
     };
 }
 
+/// Adapts [`gen_indices`] to the signature expected by [`bench_ef`].
+fn indices(n: usize, _l: usize, _first: u64) -> Vec<usize> {
+    gen_indices(n)
+}
+
+/// Adapts [`gen_values`] to the signature expected by [`bench_ef`].
+fn values(n: usize, l: usize, first: u64) -> Vec<u64> {
+    gen_values(n, l, first)
+}
+
 bench_ef!(
-    index,
+    indices,
     bench_get_unchecked,
     "ef_get_unchecked",
     |ef, i| unsafe { IndexedSeq::get_unchecked(ef, i) }
 );
 
-bench_ef!(index, bench_get, "ef_get", |ef, i| IndexedSeq::get(ef, i));
+bench_ef!(indices, bench_get, "ef_get", |ef, i| IndexedSeq::get(ef, i));
 
 bench_ef!(
-    value,
+    values,
     bench_succ_unchecked,
     "ef_succ_unchecked",
     |ef, v| unsafe { SuccUnchecked::succ_unchecked::<false>(ef, v) }
 );
 
-bench_ef!(value, bench_succ, "ef_succ", |ef, v| Succ::succ(ef, v));
+bench_ef!(values, bench_succ, "ef_succ", |ef, v| Succ::succ(ef, v));
 
 bench_ef!(
-    value,
+    values,
     bench_pred_unchecked,
     "ef_pred_unchecked",
     |ef, v| unsafe { PredUnchecked::pred_unchecked::<false>(ef, v) }
 );
 
-bench_ef!(value, bench_pred, "ef_pred", |ef, v| Pred::pred(ef, v));
+bench_ef!(values, bench_pred, "ef_pred", |ef, v| Pred::pred(ef, v));
 
 bench_ef!(
-    value,
+    values,
     bench_rank_unchecked,
     "ef_rank_unchecked",
     |ef, v| unsafe { PredUnchecked::rank_unchecked(ef, v) }
 );
 
-bench_ef!(value, bench_rank, "ef_rank", |ef, v| Pred::rank(ef, v));
+bench_ef!(values, bench_rank, "ef_rank", |ef, v| Pred::rank(ef, v));
 
 fn bench_build_sequential(c: &mut Criterion) {
     let mut group = c.benchmark_group("ef_build_seq");

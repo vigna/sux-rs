@@ -35,6 +35,9 @@ pub mod cli;
 #[cfg(feature = "fuzz")]
 pub mod fuzz;
 
+#[cfg(feature = "rkyv")]
+pub mod rkyv_view;
+
 /// Imports the most common items.
 ///
 /// The [`bit_field_slice`] and [`indexed_dict`] module names are re-exported so

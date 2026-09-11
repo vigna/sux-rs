@@ -240,6 +240,7 @@ macro_rules! bit_field_vec {
 )]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[delegate(crate::traits::Backend, target = "bits")]
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize))]
 pub struct BitFieldVec<B: Backend = Vec<usize>> {
     /// The underlying storage.
     bits: B,
@@ -2315,6 +2316,7 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateB
         deserialize = "B: Backend + serde::Deserialize<'de>, B::Word: serde::Deserialize<'de>"
     ))
 )]
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize))]
 pub struct BitFieldVecU<B: Backend<Word: Word> = Vec<usize>>(BitFieldVec<B>);
 
 impl<B: Backend<Word: Word>> BitFieldVecU<B> {
@@ -2563,5 +2565,41 @@ mod tests {
                 assert_eq!(dest_actual, dest_expected);
             }
         }
+    }
+}
+
+#[cfg(feature = "rkyv")]
+impl<W: crate::rkyv_view::ArchivedWord> crate::rkyv_view::ToNative
+    for ArchivedBitFieldVec<Box<[W]>>
+{
+    type Native<'a>
+        = BitFieldVec<&'a [W]>
+    where
+        Self: 'a;
+
+    #[inline(always)]
+    fn to_native(&self) -> Self::Native<'_> {
+        BitFieldVec {
+            // SAFETY: see the documentation of `native_words`.
+            bits: unsafe { crate::rkyv_view::native_words(&self.bits) },
+            bit_width: crate::rkyv_view::native_usize(self.bit_width),
+            mask: W::from_archived(self.mask),
+            len: crate::rkyv_view::native_usize(self.len),
+        }
+    }
+}
+
+#[cfg(feature = "rkyv")]
+impl<W: crate::rkyv_view::ArchivedWord> crate::rkyv_view::ToNative
+    for ArchivedBitFieldVecU<Box<[W]>>
+{
+    type Native<'a>
+        = BitFieldVecU<&'a [W]>
+    where
+        Self: 'a;
+
+    #[inline(always)]
+    fn to_native(&self) -> Self::Native<'_> {
+        BitFieldVecU(self.0.to_native())
     }
 }

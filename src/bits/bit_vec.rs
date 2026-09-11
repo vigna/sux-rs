@@ -193,6 +193,7 @@ fn padding_bits(len: usize, bits_per_word: usize) -> usize {
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize))]
 #[delegate(crate::traits::Backend, target = "bits")]
 pub struct BitVec<B = Vec<usize>> {
     bits: B,
@@ -1578,5 +1579,22 @@ mod padding_tests {
         // needed; the old n_of_words * bits_per_word - len form overflows here.
         assert_eq!(padding_bits(usize::MAX, 64), 1);
         assert_eq!(padding_bits(usize::MAX, 32), 1);
+    }
+}
+
+#[cfg(feature = "rkyv")]
+impl<W: crate::rkyv_view::ArchivedWord> crate::rkyv_view::ToNative for ArchivedBitVec<Box<[W]>> {
+    type Native<'a>
+        = BitVec<&'a [W]>
+    where
+        Self: 'a;
+
+    #[inline(always)]
+    fn to_native(&self) -> Self::Native<'_> {
+        BitVec {
+            // SAFETY: see the documentation of `native_words`.
+            bits: unsafe { crate::rkyv_view::native_words(&self.bits) },
+            len: crate::rkyv_view::native_usize(self.len),
+        }
     }
 }

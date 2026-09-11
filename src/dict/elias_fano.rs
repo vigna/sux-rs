@@ -286,6 +286,7 @@ pub type EfSeqDict<V = usize> = EliasFano<
 #[value_traits_subslices(bound = "V: Word + PrimitiveNumberAs<usize>")]
 #[value_traits_subslices(bound = "H: AsRef<[usize]> + SelectUnchecked")]
 #[value_traits_subslices(bound = "L: SliceByValue<Value = V>")]
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize))]
 pub struct EliasFano<V = usize, H = BitVec<Box<[usize]>>, L = BitFieldVec<Box<[V]>>> {
     /// The number of values.
     n: usize,
@@ -2861,3 +2862,155 @@ impl<V: Word, H> From<Unaligned<EliasFano<V, H, BitFieldVec<Box<[V]>>>>>
         }
     }
 }
+
+#[cfg(feature = "rkyv")]
+impl<V: crate::rkyv_view::ArchivedWord, H: rkyv::Archive, L: rkyv::Archive>
+    crate::rkyv_view::ToNative for ArchivedEliasFano<V, H, L>
+where
+    H::Archived: crate::rkyv_view::ToNative,
+    L::Archived: crate::rkyv_view::ToNative,
+{
+    type Native<'a>
+        = EliasFano<
+        V,
+        <H::Archived as crate::rkyv_view::ToNative>::Native<'a>,
+        <L::Archived as crate::rkyv_view::ToNative>::Native<'a>,
+    >
+    where
+        Self: 'a;
+
+    #[inline(always)]
+    fn to_native(&self) -> Self::Native<'_> {
+        EliasFano {
+            n: crate::rkyv_view::native_usize(self.n),
+            u: V::from_archived(self.u),
+            l: crate::rkyv_view::native_usize(self.l),
+            first_val: V::from_archived(self.first_val),
+            last_val: V::from_archived(self.last_val),
+            low_bits: self.low_bits.to_native(),
+            high_bits: self.high_bits.to_native(),
+        }
+    }
+}
+
+/// Implements a trait for [`ArchivedEliasFano`] by delegating to the native
+/// view returned by [`to_native`](crate::rkyv_view::ToNative::to_native).
+///
+/// After the trait comes the bound the native high bits must satisfy, and
+/// optionally the unchecked-iteration bound the native low bits must satisfy;
+/// together they are exactly the bounds of the corresponding implementation
+/// for [`EliasFano`].
+#[cfg(feature = "rkyv")]
+macro_rules! impl_archived_ef {
+    ($trait_name:ident : $high_bound:ident $(, $low_bound:ident)? { $($body:tt)* }) => {
+        impl<V, H, L> $trait_name for ArchivedEliasFano<V, H, L>
+        where
+            V: crate::rkyv_view::ArchivedWord + PrimitiveNumberAs<usize>,
+            H: rkyv::Archive,
+            L: rkyv::Archive,
+            H::Archived: crate::rkyv_view::ToNative,
+            L::Archived: crate::rkyv_view::ToNative,
+            for<'a> <H::Archived as crate::rkyv_view::ToNative>::Native<'a>:
+                AsRef<[usize]> + $high_bound,
+            for<'a> <L::Archived as crate::rkyv_view::ToNative>::Native<'a>:
+                SliceByValue<Value = V>,
+            $(
+                for<'a, 'b> &'b <L::Archived as crate::rkyv_view::ToNative>::Native<'a>:
+                    $low_bound<Item = V>,
+            )?
+        {
+            $($body)*
+        }
+    };
+}
+
+#[cfg(feature = "rkyv")]
+impl<
+    V: crate::rkyv_view::ArchivedWord + PrimitiveNumberAs<usize>,
+    H: rkyv::Archive,
+    L: rkyv::Archive,
+> Types for ArchivedEliasFano<V, H, L>
+{
+    type Output<'a> = V;
+    type Input = V;
+}
+
+#[cfg(feature = "rkyv")]
+impl_archived_ef!(IndexedSeq: SelectUnchecked {
+    #[inline(always)]
+    fn get(&self, index: usize) -> V {
+        use crate::rkyv_view::ToNative as _;
+        IndexedSeq::get(&self.to_native(), index)
+    }
+
+    #[inline(always)]
+    unsafe fn get_unchecked(&self, index: usize) -> V {
+        use crate::rkyv_view::ToNative as _;
+        unsafe { IndexedSeq::get_unchecked(&self.to_native(), index) }
+    }
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        crate::rkyv_view::native_usize(self.n)
+    }
+});
+
+#[cfg(feature = "rkyv")]
+impl_archived_ef!(SuccUnchecked: SelectZeroUnchecked, IntoUncheckedIterator {
+    #[inline(always)]
+    unsafe fn succ_unchecked<const STRICT: bool>(&self, value: impl Borrow<V>) -> (usize, V) {
+        use crate::rkyv_view::ToNative as _;
+        unsafe { SuccUnchecked::succ_unchecked::<STRICT>(&self.to_native(), value) }
+    }
+});
+
+#[cfg(feature = "rkyv")]
+impl_archived_ef!(Succ: SelectZeroUnchecked, IntoUncheckedIterator {
+    #[inline(always)]
+    fn succ(&self, value: impl Borrow<V>) -> Option<(usize, V)> {
+        use crate::rkyv_view::ToNative as _;
+        Succ::succ(&self.to_native(), value)
+    }
+
+    #[inline(always)]
+    fn succ_strict(&self, value: impl Borrow<V>) -> Option<(usize, V)> {
+        use crate::rkyv_view::ToNative as _;
+        Succ::succ_strict(&self.to_native(), value)
+    }
+});
+
+#[cfg(feature = "rkyv")]
+impl_archived_ef!(PredUnchecked: SelectZeroUnchecked, IntoUncheckedBackIterator {
+    #[inline(always)]
+    unsafe fn pred_unchecked<const STRICT: bool>(&self, value: impl Borrow<V>) -> (usize, V) {
+        use crate::rkyv_view::ToNative as _;
+        unsafe { PredUnchecked::pred_unchecked::<STRICT>(&self.to_native(), value) }
+    }
+
+    #[inline(always)]
+    unsafe fn rank_unchecked(&self, value: impl Borrow<V>) -> usize {
+        use crate::rkyv_view::ToNative as _;
+        unsafe { PredUnchecked::rank_unchecked(&self.to_native(), value) }
+    }
+});
+
+#[cfg(feature = "rkyv")]
+impl_archived_ef!(Pred: SelectZeroUnchecked, IntoUncheckedBackIterator {
+    #[inline(always)]
+    fn pred(&self, value: impl Borrow<V>) -> Option<(usize, V)> {
+        use crate::rkyv_view::ToNative as _;
+        Pred::pred(&self.to_native(), value)
+    }
+
+    #[inline(always)]
+    fn pred_strict(&self, value: impl Borrow<V>) -> Option<(usize, V)> {
+        use crate::rkyv_view::ToNative as _;
+        Pred::pred_strict(&self.to_native(), value)
+    }
+
+    #[inline(always)]
+    fn rank(&self, value: impl Borrow<V>) -> usize {
+        use crate::rkyv_view::ToNative as _;
+        Pred::rank(&self.to_native(), value)
+    }
+});
