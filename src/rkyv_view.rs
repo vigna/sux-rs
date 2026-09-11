@@ -110,3 +110,47 @@ pub(crate) unsafe fn native_words<W: ArchivedWord>(archived: &[ArchivedU64]) -> 
 pub(crate) fn native_usize(archived: ArchivedUsize) -> usize {
     archived.to_native() as usize
 }
+
+/// A lazy view of an archived structure.
+///
+/// [`to_native`](ToNative::to_native) converts an archived structure
+/// *eagerly*: it dereferences every relative pointer of the archive, including
+/// those of the substructures that a given method never reads. In a stack as
+/// layered as that of [`EliasFano`](crate::dict::EliasFano) this dominates the
+/// cost of a query — [`get`](crate::traits::IndexedSeq::get) needs the
+/// inventory of the ones and the low bits, but an eager conversion makes it
+/// pay for the inventory and the spill of the zeros, too.
+///
+/// `Lazy` defers the conversion. It is a plain reference into the archive, and
+/// the traits of this crate are implemented on it by converting, at each call,
+/// only the fields that the method reads, delegating to the `Lazy` view of the
+/// substructures. Nothing is cached: the conversion is still paid at every
+/// call, as it must be for a format that is accessed in place, but a method
+/// pays just for the pointers it needs.
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct Lazy<'a, A: ?Sized>(pub &'a A);
+
+impl<A: ?Sized> Clone for Lazy<'_, A> {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<A: ?Sized> Copy for Lazy<'_, A> {}
+
+/// Borrows from the archive the words underlying a [lazy view](Lazy).
+///
+/// [`AsRef`] cannot express this: it ties the returned slice to the borrow of
+/// the view, whereas a view is just a reference into the archive, and the
+/// words live as long as the archive does. Delegating from one view to the
+/// view of a substructure therefore needs this trait, as the intermediate view
+/// is a temporary.
+pub trait Words<'a> {
+    /// The type of the underlying words.
+    type Word;
+
+    /// Returns the underlying words, borrowed from the archive.
+    fn words(self) -> &'a [Self::Word];
+}

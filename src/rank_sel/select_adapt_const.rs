@@ -787,3 +787,115 @@ where
         }
     }
 }
+
+/// Lazy views of an archived selection structure for ones.
+///
+/// Only [`select_unchecked`](SelectUnchecked::select_unchecked) reads the inventory and the spill;
+/// every other method forwards to the view of the underlying structure, and so
+/// never dereferences them.
+///
+/// The inventory of these structures is made of `usize`, and so, through
+/// [`AsRef`], are the bits they index; the views are therefore written for
+/// `usize` words, exactly like the bounds of the implementations they call.
+#[cfg(feature = "rkyv")]
+const _: () = {
+    use crate::rkyv_view::{Lazy, Words, native_words};
+
+    impl<'a, B: rkyv::Archive, const A: usize, const C: usize> Words<'a>
+        for Lazy<'a, ArchivedSelectAdaptConst<B, Box<[usize]>, A, C>>
+    where
+        Lazy<'a, B::Archived>: Words<'a, Word = usize>,
+    {
+        type Word = usize;
+
+        #[inline(always)]
+        fn words(self) -> &'a [usize] {
+            Lazy(&self.0.bits).words()
+        }
+    }
+
+    impl<B: rkyv::Archive, const A: usize, const C: usize> Backend
+        for Lazy<'_, ArchivedSelectAdaptConst<B, Box<[usize]>, A, C>>
+    {
+        type Word = usize;
+    }
+
+    impl<'a, B: rkyv::Archive, const A: usize, const C: usize> AsRef<[usize]>
+        for Lazy<'a, ArchivedSelectAdaptConst<B, Box<[usize]>, A, C>>
+    where
+        Lazy<'a, B::Archived>: Words<'a, Word = usize>,
+    {
+        #[inline(always)]
+        fn as_ref(&self) -> &[usize] {
+            (*self).words()
+        }
+    }
+
+    impl<'a, B: rkyv::Archive, const A: usize, const C: usize> BitLength
+        for Lazy<'a, ArchivedSelectAdaptConst<B, Box<[usize]>, A, C>>
+    where
+        Lazy<'a, B::Archived>: BitLength,
+    {
+        #[inline(always)]
+        fn len(&self) -> usize {
+            Lazy(&self.0.bits).len()
+        }
+    }
+
+    impl<'a, B: rkyv::Archive, const A: usize, const C: usize> SelectHinted
+        for Lazy<'a, ArchivedSelectAdaptConst<B, Box<[usize]>, A, C>>
+    where
+        Lazy<'a, B::Archived>: SelectHinted,
+    {
+        #[inline(always)]
+        unsafe fn select_hinted<const WORDS_PER_SUBBLOCK: usize>(
+            &self,
+            rank: usize,
+            hint_pos: usize,
+            hint_rank: usize,
+        ) -> usize {
+            unsafe {
+                Lazy(&self.0.bits).select_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank)
+            }
+        }
+    }
+
+    impl<'a, B: rkyv::Archive, const A: usize, const C: usize> SelectZeroHinted
+        for Lazy<'a, ArchivedSelectAdaptConst<B, Box<[usize]>, A, C>>
+    where
+        Lazy<'a, B::Archived>: SelectZeroHinted,
+    {
+        #[inline(always)]
+        unsafe fn select_zero_hinted<const WORDS_PER_SUBBLOCK: usize>(
+            &self,
+            rank: usize,
+            hint_pos: usize,
+            hint_rank: usize,
+        ) -> usize {
+            unsafe {
+                Lazy(&self.0.bits)
+                    .select_zero_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank)
+            }
+        }
+    }
+
+    impl<'a, B: rkyv::Archive, const A: usize, const C: usize> SelectUnchecked
+        for Lazy<'a, ArchivedSelectAdaptConst<B, Box<[usize]>, A, C>>
+    where
+        Lazy<'a, B::Archived>: Backend<Word = usize> + AsRef<[usize]> + BitLength + SelectHinted,
+    {
+        #[inline(always)]
+        unsafe fn select_unchecked(&self, rank: usize) -> usize {
+            // The inventory and the spill are the only pointers this method
+            // needs: the bits stay lazy, and `select_hinted` resolves them.
+            let view = SelectAdaptConst::<Lazy<'a, B::Archived>, &'a [usize], A, C> {
+                bits: Lazy(&self.0.bits),
+                // SAFETY: see the documentation of `native_words`.
+                inventory: unsafe { native_words(&self.0.inventory) },
+                // SAFETY: see the documentation of `native_words`.
+                spill: unsafe { native_words(&self.0.spill) },
+            };
+            unsafe { view.select_unchecked(rank) }
+        }
+    }
+};

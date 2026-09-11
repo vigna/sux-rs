@@ -2863,17 +2863,22 @@ impl<V: Word, H> From<Unaligned<EliasFano<V, H, BitFieldVec<Box<[V]>>>>>
     }
 }
 
+/// The high bits are viewed [lazily](crate::rkyv_view::Lazy): every query
+/// needs a different subset of their pointers, and resolving all of them here
+/// would make each query pay for the ones it does not read. The low bits, on
+/// the other hand, own a single pointer that every query reads, and they are
+/// borrowed by the iterators of [`succ_unchecked`](SuccUnchecked) and
+/// [`pred_unchecked`](PredUnchecked), so they are converted eagerly.
 #[cfg(feature = "rkyv")]
 impl<V: crate::rkyv_view::ArchivedWord, H: rkyv::Archive, L: rkyv::Archive>
     crate::rkyv_view::ToNative for ArchivedEliasFano<V, H, L>
 where
-    H::Archived: crate::rkyv_view::ToNative,
     L::Archived: crate::rkyv_view::ToNative,
 {
     type Native<'a>
         = EliasFano<
         V,
-        <H::Archived as crate::rkyv_view::ToNative>::Native<'a>,
+        crate::rkyv_view::Lazy<'a, H::Archived>,
         <L::Archived as crate::rkyv_view::ToNative>::Native<'a>,
     >
     where
@@ -2888,7 +2893,7 @@ where
             first_val: V::from_archived(self.first_val),
             last_val: V::from_archived(self.last_val),
             low_bits: self.low_bits.to_native(),
-            high_bits: self.high_bits.to_native(),
+            high_bits: crate::rkyv_view::Lazy(&self.high_bits),
         }
     }
 }
@@ -2908,9 +2913,8 @@ macro_rules! impl_archived_ef {
             V: crate::rkyv_view::ArchivedWord + PrimitiveNumberAs<usize>,
             H: rkyv::Archive,
             L: rkyv::Archive,
-            H::Archived: crate::rkyv_view::ToNative,
             L::Archived: crate::rkyv_view::ToNative,
-            for<'a> <H::Archived as crate::rkyv_view::ToNative>::Native<'a>:
+            for<'a> crate::rkyv_view::Lazy<'a, H::Archived>:
                 AsRef<[usize]> + $high_bound,
             for<'a> <L::Archived as crate::rkyv_view::ToNative>::Native<'a>:
                 SliceByValue<Value = V>,

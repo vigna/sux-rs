@@ -1598,3 +1598,89 @@ mod padding_tests {
         assert_eq!(padding_bits(usize::MAX, 32), 1);
     }
 }
+
+#[cfg(feature = "rkyv")]
+impl<W: crate::rkyv_view::ArchivedWord> crate::rkyv_view::ToNative for ArchivedBitVec<Box<[W]>> {
+    type Native<'a>
+        = BitVec<&'a [W]>
+    where
+        Self: 'a;
+
+    #[inline(always)]
+    fn to_native(&self) -> Self::Native<'_> {
+        BitVec {
+            // SAFETY: see the documentation of `native_words`.
+            bits: unsafe { crate::rkyv_view::native_words(&self.bits) },
+            len: crate::rkyv_view::native_usize(self.len),
+        }
+    }
+}
+
+/// Lazy views of an archived bit vector.
+///
+/// A bit vector is the bottom of every stack, and owns a single relative
+/// pointer; a view resolves it only when the words are actually read.
+#[cfg(feature = "rkyv")]
+const _: () = {
+    use crate::rkyv_view::{ArchivedWord, Lazy, ToNative, Words, native_usize, native_words};
+
+    impl<'a, W: ArchivedWord> Words<'a> for Lazy<'a, ArchivedBitVec<Box<[W]>>> {
+        type Word = W;
+
+        #[inline(always)]
+        fn words(self) -> &'a [W] {
+            // SAFETY: see the documentation of `native_words`.
+            unsafe { native_words(&self.0.bits) }
+        }
+    }
+
+    impl<W: ArchivedWord> Backend for Lazy<'_, ArchivedBitVec<Box<[W]>>> {
+        type Word = W;
+    }
+
+    impl<W: ArchivedWord> AsRef<[W]> for Lazy<'_, ArchivedBitVec<Box<[W]>>> {
+        #[inline(always)]
+        fn as_ref(&self) -> &[W] {
+            (*self).words()
+        }
+    }
+
+    impl<W: ArchivedWord> BitLength for Lazy<'_, ArchivedBitVec<Box<[W]>>> {
+        #[inline(always)]
+        fn len(&self) -> usize {
+            native_usize(self.0.len)
+        }
+    }
+
+    impl<W: ArchivedWord + SelectInWord> SelectHinted for Lazy<'_, ArchivedBitVec<Box<[W]>>> {
+        #[inline(always)]
+        unsafe fn select_hinted<const WORDS_PER_SUBBLOCK: usize>(
+            &self,
+            rank: usize,
+            hint_pos: usize,
+            hint_rank: usize,
+        ) -> usize {
+            unsafe {
+                self.0
+                    .to_native()
+                    .select_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank)
+            }
+        }
+    }
+
+    impl<W: ArchivedWord + SelectInWord> SelectZeroHinted for Lazy<'_, ArchivedBitVec<Box<[W]>>> {
+        #[inline(always)]
+        unsafe fn select_zero_hinted<const WORDS_PER_SUBBLOCK: usize>(
+            &self,
+            rank: usize,
+            hint_pos: usize,
+            hint_rank: usize,
+        ) -> usize {
+            unsafe {
+                self.0
+                    .to_native()
+                    .select_zero_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank)
+            }
+        }
+    }
+};
