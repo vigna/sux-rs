@@ -95,7 +95,7 @@ fn parse_n(s: &str) -> usize {
 /// Returns a compact label for an element count, such as `1M` or `1G`.
 fn n_label(n: usize) -> String {
     for (suffix, unit) in [("G", 1usize << 30), ("M", 1 << 20), ("K", 1 << 10)] {
-        if n >= unit && n.is_multiple_of(unit) {
+        if n >= unit && n % unit == 0 {
             return format!("{}{}", n / unit, suffix);
         }
     }
