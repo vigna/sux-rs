@@ -112,10 +112,17 @@ type High = SelectZeroAdaptConst<
 
 type EfAligned = EliasFano<u64, High>;
 
-/// The rkyv-archived counterpart of [`EfAligned`].
+/// The unaligned counterpart of [`EfAligned`], which is what the serialized
+/// images hold: an image is written once and read back many times, so the
+/// faster [unaligned access] is what one would store.
+///
+/// [unaligned access]: BitFieldVec::get_unaligned
+type EfUnaligned = EliasFano<u64, High, BitFieldVecU<Box<[u64]>>>;
+
+/// The rkyv-archived counterpart of [`EfUnaligned`].
 #[cfg(feature = "rkyv")]
-type ArchivedEfAligned =
-    sux::dict::elias_fano::ArchivedEliasFano<u64, High, BitFieldVec<Box<[u64]>>>;
+type ArchivedEfUnaligned =
+    sux::dict::elias_fano::ArchivedEliasFano<u64, High, BitFieldVecU<Box<[u64]>>>;
 
 /// Build an Elias–Fano structure with `n` elements and `l` lower bits.
 /// Returns the structure and the first/last values in the monotone sequence.
@@ -194,7 +201,7 @@ fn bench_arm<E, Q: Copy, R>(
 
 #[cfg(any(all(feature = "epserde", feature = "mmap"), feature = "rkyv"))]
 mod images {
-    use super::EfAligned;
+    use super::EfUnaligned;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
     use std::sync::{Mutex, OnceLock};
@@ -215,7 +222,7 @@ mod images {
     /// The images are leaked so that they can be borrowed by every benchmark;
     /// they are just paths, and the temporary directory containing the files
     /// is deleted when the process exits.
-    pub fn images(n: usize, l: usize, ef: &EfAligned) -> &'static Images {
+    pub fn images(n: usize, l: usize, ef: &EfUnaligned) -> &'static Images {
         static DIR: OnceLock<tempfile::TempDir> = OnceLock::new();
         static CACHE: OnceLock<Mutex<BTreeMap<(usize, usize), &'static Images>>> = OnceLock::new();
 
@@ -284,7 +291,8 @@ fn mmap_file(path: &std::path::Path) -> mmap_rs::Mmap {
 /// value queries. The four representations are the in-memory structure
 /// (`aligned`), its unaligned variant (`unaligned`), the ε-copy deserialized
 /// ε-serde image (`eps`), and the zero-copy rkyv archive (`rkyv`), the last
-/// two being read from a memory-mapped file.
+/// two being read from a memory-mapped file. Both images hold the unaligned
+/// structure, so `unaligned` is their in-memory term of comparison.
 macro_rules! bench_ef {
     ($queries:ident, $fn_name:ident, $group_name:expr, |$ef:ident, $q:ident| $op:expr) => {
         fn $fn_name(c: &mut Criterion) {
@@ -297,13 +305,21 @@ macro_rules! bench_ef {
 
                 bench_arm(&mut group, "aligned", &param, &queries, &ef, |$ef, $q| $op);
 
+                // The serialized images, and so the `eps` and `rkyv` arms,
+                // hold the unaligned structure.
+                let ef = ef.try_into_unaligned().unwrap();
+
+                bench_arm(&mut group, "unaligned", &param, &queries, &ef, |$ef, $q| {
+                    $op
+                });
+
                 #[cfg(any(all(feature = "epserde", feature = "mmap"), feature = "rkyv"))]
                 let images = images::images(n, l, &ef);
 
                 #[cfg(all(feature = "epserde", feature = "mmap"))]
                 {
                     let case = unsafe {
-                        <EfAligned as epserde::deser::Deserialize>::load_mmap(
+                        <EfUnaligned as epserde::deser::Deserialize>::load_mmap(
                             &images.eps,
                             epserde::deser::Flags::empty(),
                         )
@@ -322,17 +338,12 @@ macro_rules! bench_ef {
                 #[cfg(feature = "rkyv")]
                 {
                     let map = mmap_file(&images.rkyv);
-                    // SAFETY: the image was written by serializing an `EfAligned`.
-                    let archived = unsafe { rkyv::access_unchecked::<ArchivedEfAligned>(&map) };
+                    // SAFETY: the image was written by serializing an `EfUnaligned`.
+                    let archived = unsafe { rkyv::access_unchecked::<ArchivedEfUnaligned>(&map) };
                     bench_arm(&mut group, "rkyv", &param, &queries, archived, |$ef, $q| {
                         $op
                     });
                 }
-
-                let ef = ef.try_into_unaligned().unwrap();
-                bench_arm(&mut group, "unaligned", &param, &queries, &ef, |$ef, $q| {
-                    $op
-                });
             }
             group.finish();
         }
