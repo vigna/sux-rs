@@ -39,13 +39,16 @@ epserde/plot_rkyv_overhead.py epserde/samples.json -o epserde/rkyv_overhead
 Writes `rkyv_overhead.pdf` and `.png`. Run it as often as you like — it only
 reads.
 
-`--help` lists the options: `--width`, `--font-size`, `--color`, `--op`, and
-`--subject`/`--baseline-arm` to compare a different pair of representations.
+`--help` lists the options: `--width`, `--height`, `--bar-width`,
+`--font-size`, `--color`, `--op`, and `--subject`/`--baseline-arm` to compare a
+different pair of representations.
 
-Drawing needs Linux Libertine, the paper's text face (Fedora:
-`linux-libertine-fonts`, Debian: `fonts-linuxlibertine`). Only the machine that
-draws needs it, not the one that measures. If it is missing the script says so
-and names the package rather than silently substituting a face.
+Drawing needs Linux Libertine or Libertinus Serif, the paper's text face,
+either installed (Fedora: `linux-libertine-fonts`, Debian:
+`fonts-linuxlibertine`) or from TeX Live, where the script finds it with
+`kpsewhich`. Only the machine that draws needs it, not the one that measures.
+If it is missing the script says so and names the package rather than silently
+substituting a face.
 
 ### Other hardware
 
@@ -78,8 +81,10 @@ scaling changes the type size and breaks the match.
 \end{figure}
 ```
 
-`acmsmall`'s `\textwidth` is 5.478 in, so `--width 5.478` gives a full-width
-figure. Operation names are set in the text face because Inconsolata, the
+The default size, 2.638 × 1.8 in, is half of `acmsmall`'s 5.478 in
+`\textwidth` less a 0.2 in gap, so that it sits on a line next to the
+companion figure of `epserde-rs/rkyv-bench`; `--width 5.478` gives a
+full-width figure. Operation names are set in the text face because Inconsolata, the
 document's typewriter face, is not installed here; install it and redraw and
 they will be set in it.
 

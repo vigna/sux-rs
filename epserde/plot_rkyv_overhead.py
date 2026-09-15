@@ -12,7 +12,9 @@ USAGE.  It draws from a `samples.json` produced by `extract_samples.py`:
 
 Options:
 
-    --width 5.478             full acmsmall \\textwidth (default 3.5)
+    --width 5.478             full acmsmall \\textwidth (default 2.638, half
+                              of it less a 0.2in gap, for two on a line)
+    --bar-width 0.4           thinner bars (default 0.6)
     --color                   colour instead of grayscale
     --op rank --op succ       a subset of the operations
     --baseline-arm unaligned  measure against memory instead of ε-serde
@@ -29,15 +31,19 @@ result at natural size -- ``\\includegraphics{rkyv_overhead}`` with no scaling
 Glyphs are embedded as TrueType (``pdf.fonttype = 42``) rather than Type 3,
 which some publishers reject.
 
-Linux Libertine must be installed (Fedora: ``linux-libertine-fonts``; Debian:
-``fonts-linuxlibertine``; MacPorts: ``texlive-fonts-extra``).  If matplotlib
-still cannot see it, clear the font cache: ``rm ~/.cache/matplotlib/fontlist-*.json``.
+Linux Libertine (or Libertinus Serif) must be available, either installed
+system-wide (Fedora: ``linux-libertine-fonts``; Debian:
+``fonts-linuxlibertine``) or as part of TeX Live, whose OpenType files the
+script finds with ``kpsewhich`` when the face is not installed.  If matplotlib
+does not see a newly installed face, clear the font cache:
+``rm ~/.cache/matplotlib/fontlist-*.json``.
 """
 
 import argparse
 import json
 import re
 import statistics as st
+import subprocess
 import sys
 from pathlib import Path
 
@@ -63,8 +69,27 @@ SERIF = ["Linux Libertine O", "Linux Libertine", "Libertinus Serif"]
 #: otherwise the tick labels stay in the text face.
 MONO = ["Inconsolata", "Inconsolata LGC"]
 
+#: OpenType files of those faces as TeX Live names them, used when the faces
+#: are not installed system-wide but come with TeX (e.g., MacPorts, MacTeX).
+TEX_FONTS = [
+    "LinLibertine_R.otf", "LinLibertine_RI.otf",
+    "LinLibertine_RB.otf", "LinLibertine_RBI.otf",
+    "LibertinusSerif-Regular.otf", "LibertinusSerif-Italic.otf",
+    "LibertinusSerif-Bold.otf", "LibertinusSerif-BoldItalic.otf",
+]
+
 #: acmsmall \textwidth: 6.75in paper less 46pt inner and 46pt outer margins.
 ACMSMALL_TEXTWIDTH = 6.75 - 92 / 72.27
+
+#: Default width: two figures side by side on a line, 0.2in apart.
+HALF_WIDTH = (ACMSMALL_TEXTWIDTH - 0.2) / 2
+
+#: Default width of the bars of an operation together, as a fraction of the
+#: distance between operations.
+BAR_WIDTH = 0.6
+
+#: Fraction of its slot a bar fills; the rest separates it from its neighbour.
+BAR_FILL = 0.8
 
 #: criterion parameter labels, e.g. `1M_l=8` or `1G_l=8_t=4`.
 PARAM_RE = re.compile(r"^(\d+[KMG]?)_l=(\d+)(?:_t=(\d+))?$")
@@ -128,14 +153,31 @@ def overhead(index, op, n, l, subject, baseline):
 
 
 # ---------------------------------------------------------------- style
+def tex_fonts():
+    """Registers with matplotlib the files of TEX_FONTS that the TeX
+    installation provides, as located by kpsewhich."""
+    try:
+        out = subprocess.run(["kpsewhich", *TEX_FONTS],
+                             capture_output=True, text=True).stdout
+    except OSError:  # no TeX installation
+        return
+    for path in out.splitlines():
+        fm.fontManager.addfont(path)
+
+
 def pick_serif(override):
-    available = {f.name for f in fm.fontManager.ttflist}
-    for name in ([override] if override else SERIF):
-        if name in available:
-            return name
+    candidates = [override] if override else SERIF
+    # Faces installed system-wide first, then those that come with TeX.
+    for from_tex in (False, True):
+        if from_tex:
+            tex_fonts()
+        available = {f.name for f in fm.fontManager.ttflist}
+        for name in candidates:
+            if name in available:
+                return name
     sys.exit(
-        f"error: none of {[override] if override else SERIF} is available to "
-        f"matplotlib, so the figure would not match the paper.\n"
+        f"error: none of {candidates} is available to matplotlib, either "
+        f"installed or from TeX, so the figure would not match the paper.\n"
         f"  Fedora: sudo dnf install linux-libertine-fonts\n"
         f"  Debian: sudo apt install fonts-linuxlibertine\n"
         f"  then:   rm ~/.cache/matplotlib/fontlist-*.json\n"
@@ -188,9 +230,13 @@ def main():
                     help="the representation whose cost is plotted")
     ap.add_argument("--baseline-arm", choices=ARMS, default="eps", dest="ref",
                     help="the representation it is measured against")
-    ap.add_argument("--width", type=float, default=3.5,
-                    help=f"inches; acmsmall \\textwidth is {ACMSMALL_TEXTWIDTH:.3f}")
-    ap.add_argument("--height", type=float, default=2.2, help="inches")
+    ap.add_argument("--width", type=float, default=HALF_WIDTH,
+                    help=f"inches (default {HALF_WIDTH:.3f}, two figures on a line); "
+                         f"acmsmall \\textwidth is {ACMSMALL_TEXTWIDTH:.3f}")
+    ap.add_argument("--height", type=float, default=1.8, help="inches")
+    ap.add_argument("--bar-width", type=float, default=BAR_WIDTH,
+                    help="width of the bars of an operation together, as a fraction "
+                         "of the distance between operations (default: %(default)s)")
     ap.add_argument("--font-size", type=float, default=8.0,
                     help="points; 8 is \\footnotesize in a 10pt document")
     ap.add_argument("--font", help="text face to use instead of the paper's")
@@ -216,7 +262,7 @@ def main():
 
     fig, ax = plt.subplots(figsize=(args.width, args.height))
     x = np.arange(len(ops))
-    bw = 0.68 / len(scales)
+    bw = args.bar_width / len(scales)
     top = 0.0
 
     for k, n in enumerate(scales):
@@ -228,7 +274,8 @@ def main():
             lo.append(m - min(vs))
             hi.append(max(vs) - m)
         pos = x + (k - (len(scales) - 1) / 2) * bw
-        ax.bar(pos, means, bw, label=scale_label(n), color=fills[k],
+        # A small gap between neighbouring bars keeps their labels apart.
+        ax.bar(pos, means, bw * BAR_FILL, label=scale_label(n), color=fills[k],
                edgecolor="black", linewidth=0.5, zorder=3)
         ax.errorbar(pos, means, yerr=[lo, hi], fmt="none", ecolor="black",
                     elinewidth=0.5, capsize=1.5, capthick=0.5, zorder=4)
@@ -240,7 +287,7 @@ def main():
 
     ax.set_xticks(x)
     ax.set_xticklabels(ops, **({"fontfamily": mono} if mono else {}))
-    ax.set_ylabel(f"{ARM_PROSE[args.subject]} overhead over {ARM_PROSE[args.ref]} (%)")
+    ax.set_ylabel(f"{ARM_PROSE[args.subject]} overhead\nover {ARM_PROSE[args.ref]} (%)")
     ax.set_ylim(0, top * 1.20)
     ax.set_xlim(-0.55, len(ops) - 0.45)
     ax.yaxis.grid(True, color="#d8d8d8", linewidth=0.4, zorder=0)
