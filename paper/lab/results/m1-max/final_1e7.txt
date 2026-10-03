@@ -1,0 +1,19 @@
+n = 10000000
+ref plus S=8 l=5.25          2.1155 bits/key  build    40.3 ns/key  query   22.8 ns
+ref w1 S=8 l=5.25            2.0954 bits/key  build    48.4 ns/key  query   22.0 ns
+ref w2 S=8 l=5               2.0111 bits/key  build    58.9 ns/key  query   20.9 ns
+ref w3 S=8 l=5               1.9698 bits/key  build    69.7 ns/key  query   21.3 ns
+ref phast S=8 l=4.5          1.9229 bits/key  build   561.7 ns/key  query   19.9 ns
+ref plus S=10 l=5.15         2.0847 bits/key  build    38.1 ns/key  query   19.7 ns
+ref w1 S=10 l=6.2            1.9055 bits/key  build    60.1 ns/key  query   19.9 ns
+ref w2 S=10 l=5.9            1.8841 bits/key  build    86.9 ns/key  query   19.7 ns
+ref w3 S=10 l=6              1.8722 bits/key  build   121.3 ns/key  query   20.1 ns
+ref phast S=10 l=6.05        1.8536 bits/key  build  1645.8 ns/key  query   19.9 ns
+PHast-R S=8 L=512 R=4 d=0 l=5 2.0221 bits/key  build    48.2 ns/key  query   21.9 ns  levels 4
+PHast-R S=8 L=512 R=4 d=1 l=5 1.9353 bits/key  build    78.3 ns/key  query   21.1 ns  levels 4
+PHast-R S=8 L=512 R=4 d=2 l=5 1.9243 bits/key  build   125.6 ns/key  query   21.1 ns  levels 4
+PHast-R S=9 L=1024 R=4 d=1 l=5.75 1.8884 bits/key  build    85.0 ns/key  query   24.6 ns  levels 4
+PHast-R S=10 L=2048 R=4 d=0 l=6 1.9217 bits/key  build    52.6 ns/key  query   24.0 ns  levels 4
+PHast-R S=10 L=2048 R=4 d=1 l=6 1.8610 bits/key  build    86.5 ns/key  query   23.8 ns  levels 4
+PHast-R S=10 L=2048 R=4 d=2 l=6.25 1.8542 bits/key  build   136.5 ns/key  query   23.9 ns  levels 4
+PHast-R S=11 L=4096 R=4 d=1 l=6.75 1.8600 bits/key  build    88.3 ns/key  query   23.8 ns  levels 4

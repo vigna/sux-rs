@@ -1,0 +1,28 @@
+[package]
+name = "phast-r-lab"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Experimental harness for PHast-R (see ../NOTES.md)"
+
+[lib]
+name = "lab"
+
+[dependencies]
+# Reference implementation of PHast/PHast+ (Beling), pinned to the commit used
+# for the results in results/m1-max.
+ph = { git = "https://github.com/vigna/bsuccinct-rs", rev = "7d18454cc213a5853f0c7fcbcc5d65159e7ae890", features = ["wyhash"] }
+sux = { path = "../..", features = ["epserde"] }
+clap = { version = "4", features = ["derive"] }
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+dsi-progress-logger = "0.8"
+mem_dbg = "0.4"
+
+[profile.release]
+opt-level = 3
+debug = true
+codegen-units = 1
+lto = "thin"
+
+# Standalone workspace, independent of the sux package.
+[workspace]

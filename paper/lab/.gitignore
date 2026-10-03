@@ -1,0 +1,4 @@
+/target
+# Re-include files ignored by the top-level .gitignore of sux
+!Cargo.lock
+!*.sh

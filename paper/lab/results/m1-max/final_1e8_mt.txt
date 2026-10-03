@@ -1,0 +1,8 @@
+n = 100000000
+ref plus S=8 l=5.25          2.1155 bits/key  build     9.1 ns/key  query   38.6 ns
+ref w3 S=8 l=5               1.9687 bits/key  build    13.6 ns/key  query   35.3 ns
+ref w3 S=10 l=6              1.8703 bits/key  build    19.2 ns/key  query   32.0 ns
+PHast-R S=8 L=512 R=4 d=1 l=5 1.9342 bits/key  build    19.0 ns/key  query   35.1 ns  levels 5
+PHast-R S=8 L=512 R=4 d=2 l=5 1.9227 bits/key  build    24.2 ns/key  query   35.0 ns  levels 5
+PHast-R S=10 L=2048 R=4 d=1 l=6 1.8577 bits/key  build    18.8 ns/key  query   37.8 ns  levels 4
+PHast-R S=10 L=2048 R=4 d=2 l=6.25 1.8508 bits/key  build    25.0 ns/key  query   40.7 ns  levels 4

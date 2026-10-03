@@ -1,0 +1,4 @@
+# Both sux and ph are compiled as dependencies of this crate, so they get
+# these flags; sux's own .cargo/config.toml does not apply here.
+[build]
+rustflags = ["-C", "target-cpu=native"]

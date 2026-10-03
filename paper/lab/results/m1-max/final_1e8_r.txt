@@ -1,0 +1,5 @@
+n = 100000000
+PHast-R S=8 L=512 R=4 d=1 l=5 1.9342 bits/key  build    81.2 ns/key  query   34.9 ns  levels 5
+PHast-R S=8 L=512 R=4 d=2 l=5 1.9226 bits/key  build   126.7 ns/key  query   35.0 ns  levels 5
+PHast-R S=10 L=2048 R=4 d=1 l=6 1.8568 bits/key  build    86.6 ns/key  query   37.3 ns  levels 4
+PHast-R S=10 L=2048 R=4 d=2 l=6.25 1.8503 bits/key  build   136.8 ns/key  query   38.3 ns  levels 4

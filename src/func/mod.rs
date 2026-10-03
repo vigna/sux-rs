@@ -107,6 +107,9 @@ pub mod codec;
 mod comp_vfunc;
 pub use comp_vfunc::CompVFunc;
 
+pub mod phast_r;
+pub use phast_r::{PHastR, PHastRBuilder};
+
 /// Avalanches bits using the finalization step of Austin Appleby's
 /// [MurmurHash3].
 ///
