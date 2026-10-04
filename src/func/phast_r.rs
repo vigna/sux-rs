@@ -56,7 +56,6 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 use crate::bits::BitFieldVec;
 use crate::dict::elias_fano::{EfSeq, EliasFanoBuilder};
 use crate::func::mix64;
-use crate::traits::IndexedSeq;
 use crate::utils::{Sig, ToSig};
 
 /// Returns the most significant 64 bits of the 128-bit product of `a` and
@@ -245,6 +244,24 @@ pub struct LevelParams {
 /// See the [module documentation](self) for a description of the algorithm.
 /// Instances are built using [`PHastRBuilder`].
 ///
+/// # Type Parameters
+///
+/// - `K`: the type of the keys.
+/// - `S`: the signature type (see [`PHastSig`]); default `[u64; 2]`.
+/// - `D`: the storage of the seeds (see [`SeedStore`]); default `Box<[u8]>`.
+/// - `P`: the parameters of the levels after the first one; default
+///   `Box<[LevelParams]>`.
+/// - `R`: the sequence remapping the outputs of the levels after the first
+///   one to the free slots of the first one; default [`EfSeq`].
+///
+/// The last three parameters make it possible to deserialize with ε-serde
+/// without copying: for example, [`deserialize_eps`] on a `PHastR<K>`
+/// returns a structure whose seeds are a `&[u8]`, whose parameters are a
+/// `&[LevelParams]`, and whose remapping sequence is an Elias–Fano sequence
+/// over slices.
+///
+/// [`deserialize_eps`]: https://docs.rs/epserde/latest/epserde/deser/trait.Deserialize.html#tymethod.deserialize_eps
+///
 /// # Examples
 ///
 /// ```rust
@@ -265,7 +282,7 @@ pub struct LevelParams {
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(phantom(K, S)))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct PHastR<K: ?Sized, S = [u64; 2], D = Box<[u8]>> {
+pub struct PHastR<K: ?Sized, S = [u64; 2], D = Box<[u8]>, P = Box<[LevelParams]>, R = EfSeq> {
     /// The seed used to compute signatures.
     seed: u64,
     /// The number of keys.
@@ -279,20 +296,20 @@ pub struct PHastR<K: ?Sized, S = [u64; 2], D = Box<[u8]>> {
     /// The seeds of the first level.
     seeds0: D,
     /// The parameters of the following levels.
-    params: Box<[LevelParams]>,
+    params: P,
     /// The seeds of the following levels, concatenated.
     seeds: D,
     /// Maps outputs of levels after the first one to the free slots of the
     /// first one.
-    remap: EfSeq,
+    remap: R,
     _marker: std::marker::PhantomData<(*const K, S)>,
 }
 
 // SAFETY: K and S occur only inside _marker (see VFunc).
-unsafe impl<K: ?Sized, S, D: Send> Send for PHastR<K, S, D> {}
-unsafe impl<K: ?Sized, S, D: Sync> Sync for PHastR<K, S, D> {}
+unsafe impl<K: ?Sized, S, D: Send, P: Send, R: Send> Send for PHastR<K, S, D, P, R> {}
+unsafe impl<K: ?Sized, S, D: Sync, P: Sync, R: Sync> Sync for PHastR<K, S, D, P, R> {}
 
-impl<K: ?Sized, S, D> PHastR<K, S, D> {
+impl<K: ?Sized, S, D, P: AsRef<[LevelParams]>, R> PHastR<K, S, D, P, R> {
     /// Returns the number of keys.
     pub const fn len(&self) -> usize {
         self.n
@@ -305,11 +322,13 @@ impl<K: ?Sized, S, D> PHastR<K, S, D> {
 
     /// Returns the number of levels.
     pub fn num_levels(&self) -> usize {
-        self.params.len() + 1
+        self.params.as_ref().len() + 1
     }
 }
 
-impl<K: ?Sized, S, D: SeedStore> PHastR<K, S, D> {
+impl<K: ?Sized, S, D: SeedStore, P: AsRef<[LevelParams]>, R: SliceByValue<Value = usize>>
+    PHastR<K, S, D, P, R>
+{
     /// Returns the output of a key in the given level, given its seed.
     #[inline(always)]
     fn pos(&self, lv: &LevelParams, h: u64, o: u64, seed: usize) -> usize {
@@ -352,7 +371,7 @@ impl<K: ?Sized, S, D: SeedStore> PHastR<K, S, D> {
     #[inline(never)]
     fn get_by_ho_slow(&self, h: u64, o: u64) -> usize {
         let (mut h, mut o) = (h, o);
-        for lv in &self.params {
+        for lv in self.params.as_ref() {
             (h, o) = next_level(h, o, lv.salt);
             // SAFETY: the seeds of the level are stored consecutively
             let s = unsafe {
@@ -363,10 +382,8 @@ impl<K: ?Sized, S, D: SeedStore> PHastR<K, S, D> {
                 // SAFETY: by construction, the remapping sequence contains
                 // one entry for each output of each level after the first
                 return unsafe {
-                    IndexedSeq::get_unchecked(
-                        &self.remap,
-                        lv.offset as usize + self.pos(lv, h, o, s),
-                    )
+                    self.remap
+                        .get_value_unchecked(lv.offset as usize + self.pos(lv, h, o, s))
                 };
             }
         }
@@ -375,7 +392,14 @@ impl<K: ?Sized, S, D: SeedStore> PHastR<K, S, D> {
     }
 }
 
-impl<K: ?Sized + ToSig<S>, S: PHastSig, D: SeedStore> PHastR<K, S, D> {
+impl<
+    K: ?Sized + ToSig<S>,
+    S: PHastSig,
+    D: SeedStore,
+    P: AsRef<[LevelParams]>,
+    R: SliceByValue<Value = usize>,
+> PHastR<K, S, D, P, R>
+{
     /// Returns the value associated with the given key.
     ///
     /// The returned value is in the range [0 . . *n*), where *n* is the
@@ -387,7 +411,9 @@ impl<K: ?Sized + ToSig<S>, S: PHastSig, D: SeedStore> PHastR<K, S, D> {
         let (h, o) = K::to_sig(key.borrow(), self.seed).ho();
         self.get_by_ho(h, o)
     }
+}
 
+impl<K: ?Sized + ToSig<S>, S: PHastSig, D: SeedStore> PHastR<K, S, D> {
     /// Builds a function using default parameters.
     pub fn try_new<B: Borrow<K> + Sync>(keys: &[B], pl: &mut impl ProgressLog) -> Result<Self>
     where
@@ -1802,20 +1828,87 @@ mod tests {
         assert!(r.is_err());
     }
 
+    /// Serializes, deserializes zero-copy (checking at compile time that
+    /// seeds, level parameters, and the remapping sequence are borrowed),
+    /// and compares outputs.
     #[cfg(feature = "epserde")]
+    macro_rules! check_epserde {
+        ($d:ty, $deser_d:ty, $builder:expr) => {{
+            use epserde::prelude::*;
+            use epserde::utils::AlignedCursor;
+            let keys: Vec<u64> = (0..200_000).collect();
+            let phf: PHastR<u64, [u64; 2], $d> = $builder.try_build(&keys, no_logging![]).unwrap();
+            let mut cursor = <AlignedCursor<Aligned64>>::new();
+            // SAFETY: phf was built by its constructor
+            unsafe { phf.serialize(&mut cursor) }.unwrap();
+            let len = cursor.len();
+            cursor.set_position(0);
+            // SAFETY: we just serialized a valid structure into this buffer
+            let case = unsafe { <PHastR<u64, [u64; 2], $d>>::read_mem(&mut cursor, len) }.unwrap();
+            let des = case.uncase();
+            let _: &$deser_d = &des.seeds0;
+            let _: &$deser_d = &des.seeds;
+            let _: &&[LevelParams] = &des.params;
+            let _: &crate::dict::EliasFano<
+                usize,
+                crate::rank_sel::SelectAdaptConst<crate::bits::BitVec<&[usize]>, &[usize]>,
+                BitFieldVec<&[usize]>,
+            > = &des.remap;
+            assert_eq!(des.len(), keys.len());
+            for key in &keys {
+                assert_eq!(phf.get(key), des.get(key));
+            }
+        }};
+    }
+
+    /// A memory-mapped function must take little memory beyond the mapping:
+    /// with the default flags mem_dbg does not follow references, so it
+    /// counts only the fields of the structure, whereas following references
+    /// it must count the same data as the original.
+    #[cfg(feature = "mmap")]
     #[test]
-    fn test_epserde() {
+    fn test_mmap_mem_size() {
         use epserde::prelude::*;
-        let keys: Vec<u64> = (0..100_000).collect();
+        let keys: Vec<u64> = (0..1_000_000).collect();
         let phf: PHastR<u64> = PHastRBuilder::default()
             .try_build(&keys, no_logging![])
             .unwrap();
-        let mut buf = vec![];
-        unsafe { phf.serialize(&mut buf) }.unwrap();
-        let des = unsafe { <PHastR<u64>>::deserialize_eps(&buf) }.unwrap();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        // SAFETY: phf was built by its constructor
+        unsafe { phf.store(file.path()) }.unwrap();
+        // SAFETY: we just stored a valid structure into the file
+        let case = unsafe { <PHastR<u64>>::mmap(file.path(), Flags::empty()) }.unwrap();
+        let mapped = case.uncase();
+        let owned_size = phf.mem_size(SizeFlags::default());
+        let mapped_size = mapped.mem_size(SizeFlags::default());
+        let mapped_followed = mapped.mem_size(SizeFlags::FOLLOW_REFS);
+        eprintln!(
+            "owned {owned_size} bytes, mapped {mapped_size} bytes, mapped following references {mapped_followed} bytes"
+        );
+        assert!(
+            mapped_size < 1024,
+            "mapped structure takes {mapped_size} bytes"
+        );
+        assert!(mapped_followed >= owned_size - 1024 && mapped_followed <= owned_size + 1024);
         for key in &keys {
-            assert_eq!(phf.get(key), des.get(key));
+            assert_eq!(phf.get(key), mapped.get(key));
         }
+    }
+
+    #[cfg(feature = "epserde")]
+    #[test]
+    fn test_epserde() {
+        check_epserde!(Box<[u8]>, &[u8], PHastRBuilder::default());
+        check_epserde!(
+            Box<[u16]>,
+            &[u16],
+            PHastRBuilder::default().seed_bits(11).log2_slice_len(12)
+        );
+        check_epserde!(
+            BitFieldVec<Box<[usize]>>,
+            BitFieldVec<&[usize]>,
+            PHastRBuilder::default().seed_bits(10).log2_slice_len(11)
+        );
     }
 
     #[test]
