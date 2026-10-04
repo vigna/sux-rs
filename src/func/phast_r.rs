@@ -44,10 +44,14 @@
 //! 1.93 bits per key; depth-2 repair (see [`PHastRBuilder::repair_depth`])
 //! reaches the space of PHast (about 1.92 bits per key) at about 1.6 times
 //! the construction time, and 10-bit seeds stored in a [`BitFieldVec`] (see
-//! [`PHastRBuilder::seed_bits`]) reach about 1.86 bits per key.
+//! [`PHastRBuilder::seed_bits`]) reach about 1.86 bits per key; in this
+//! case, queries are faster after converting the function with
+//! [`TryIntoUnaligned::try_into_unaligned`], so that seeds are accessed with
+//! [unaligned reads].
 //!
 //! [Beling and Sanders, *PHast — Perfect Hashing made fast*]: https://arxiv.org/abs/2504.17918
 //! [Elias–Fano]: crate::dict::elias_fano
+//! [unaligned reads]: BitFieldVec::get_unaligned
 
 use std::borrow::Borrow;
 use std::cmp::Reverse;
@@ -58,8 +62,9 @@ use dsi_progress_logger::ProgressLog;
 use mem_dbg::*;
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
-use crate::bits::BitFieldVec;
+use crate::bits::{BitFieldVec, BitFieldVecU};
 use crate::dict::elias_fano::{EfSeq, EliasFanoBuilder};
+use crate::traits::{TryIntoUnaligned, Unaligned, UnalignedConversionError};
 use crate::utils::ToSig;
 
 /// Returns the most significant 64 bits of the 128-bit product of `a` and
@@ -109,8 +114,9 @@ const PAR_MIN_LEN: usize = 1 << 17;
 ///
 /// Implementations are provided for `Box<[u8]>` (at most 8 bits per seed,
 /// the fastest option), `Box<[u16]>`, [`BitFieldVec`] (any width up to 16
-/// bits), and for the corresponding borrowed types obtained by ε-serde
-/// deserialization.
+/// bits), [`BitFieldVecU`] (the same, with unaligned reads, obtained by
+/// [`TryIntoUnaligned::try_into_unaligned`]), and for the corresponding
+/// borrowed types obtained by ε-serde deserialization.
 pub trait SeedStore {
     /// Returns the seed of index `i`.
     ///
@@ -163,25 +169,16 @@ impl_seed_store_slice!(u16, 16);
 impl<B: crate::traits::Backend<Word = usize> + AsRef<[usize]>> SeedStore for BitFieldVec<B> {
     #[inline(always)]
     unsafe fn get_seed(&self, i: usize) -> usize {
-        #[cfg(target_endian = "little")]
-        {
-            // Seeds have at most 16 bits, so a 32-bit unaligned read
-            // suffices; it crosses cache lines less often than a word read.
-            let bit_width = crate::traits::BitWidth::bit_width(self);
-            let start = i * bit_width;
-            // SAFETY: the vector is padded with a word, so the four bytes
-            // starting at byte start / 8 are within the allocation
-            let word = unsafe {
-                (self.as_slice().as_ptr().cast::<u8>().add(start / 8) as *const u32)
-                    .read_unaligned()
-            };
-            (word as usize >> (start % 8)) & ((1 << bit_width) - 1)
-        }
-        #[cfg(target_endian = "big")]
-        // SAFETY: the vector is padded and the bit width is at most 16
-        unsafe {
-            self.get_unaligned_unchecked(i)
-        }
+        // SAFETY: by the contract of this method
+        unsafe { self.get_value_unchecked(i) }
+    }
+}
+
+impl<B: crate::traits::Backend<Word = usize> + AsRef<[usize]>> SeedStore for BitFieldVecU<B> {
+    #[inline(always)]
+    unsafe fn get_seed(&self, i: usize) -> usize {
+        // SAFETY: by the contract of this method (reads are unaligned)
+        unsafe { self.get_value_unchecked(i) }
     }
 }
 
@@ -189,11 +186,59 @@ impl SeedStoreBuild for BitFieldVec<Box<[usize]>> {
     const MAX_BITS: u32 = 16;
 
     fn from_seeds(seeds: &[u16], bits: u32) -> Self {
+        // Padded, so that conversion to unaligned reads needs no reallocation
         let mut bfv = BitFieldVec::<Box<[usize]>>::new_padded(bits as usize, seeds.len());
         for (i, &s) in seeds.iter().enumerate() {
             bfv.set_value(i, s as usize);
         }
         bfv
+    }
+}
+
+// ── Aligned ↔ Unaligned conversions ─────────────────────────────────
+
+/// Converts the seed storage and the remapping sequence to [unaligned
+/// reads]; this is useful only for seeds stored in a [`BitFieldVec`], as
+/// slices of bytes or of 16-bit values are left unchanged.
+///
+/// [unaligned reads]: BitFieldVec::get_unaligned
+impl<K: ?Sized, D: TryIntoUnaligned, P, R: TryIntoUnaligned> TryIntoUnaligned
+    for PHastR<K, D, P, R>
+{
+    type Unaligned = PHastR<K, Unaligned<D>, P, Unaligned<R>>;
+
+    fn try_into_unaligned(self) -> Result<Self::Unaligned, UnalignedConversionError> {
+        Ok(PHastR {
+            seed: self.seed,
+            n: self.n,
+            log2_patterns: self.log2_patterns,
+            log2_slice_len: self.log2_slice_len,
+            params0: self.params0,
+            seeds0: self.seeds0.try_into_unaligned()?,
+            params: self.params,
+            seeds: self.seeds.try_into_unaligned()?,
+            remap: self.remap.try_into_unaligned()?,
+            _marker: std::marker::PhantomData,
+        })
+    }
+}
+
+impl<K: ?Sized, P> From<Unaligned<PHastR<K, BitFieldVec<Box<[usize]>>, P, EfSeq>>>
+    for PHastR<K, BitFieldVec<Box<[usize]>>, P, EfSeq>
+{
+    fn from(f: Unaligned<PHastR<K, BitFieldVec<Box<[usize]>>, P, EfSeq>>) -> Self {
+        PHastR {
+            seed: f.seed,
+            n: f.n,
+            log2_patterns: f.log2_patterns,
+            log2_slice_len: f.log2_slice_len,
+            params0: f.params0,
+            seeds0: f.seeds0.into(),
+            params: f.params,
+            seeds: f.seeds.into(),
+            remap: f.remap.into(),
+            _marker: std::marker::PhantomData,
+        }
     }
 }
 
@@ -336,7 +381,7 @@ impl<
     /// number of keys, and different keys of the original set are mapped to
     /// different values. If the key was not in the original set, the result
     /// is arbitrary.
-    #[inline]
+    #[inline(always)]
     pub fn get(&self, key: impl Borrow<K>) -> usize {
         let key = key.borrow();
         let h = K::to_sig(key, self.seed)[0];
@@ -411,7 +456,8 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStore> PHastR<K, D> {
 ///
 /// For 10-bit seeds, good parameters are slices of length 2048 and an
 /// expected bucket size of 6 keys; seeds must then be stored in a
-/// [`BitFieldVec`].
+/// [`BitFieldVec`], and the function should be converted with
+/// [`TryIntoUnaligned::try_into_unaligned`] to use unaligned reads.
 #[derive(Debug, Clone)]
 pub struct PHastRBuilder {
     seed_bits: u32,
@@ -1894,6 +1940,33 @@ mod tests {
     }
 
     #[test]
+    fn test_unaligned() -> Result<()> {
+        for (bits, ll, n) in [
+            (10, 11, 300_000),
+            (12, 12, 300_000),
+            (16, 12, 10_000),
+            (10, 11, 0),
+        ] {
+            let keys: Vec<u64> = (0..n as u64).collect();
+            let phf: PHastR<u64, BitFieldVec<Box<[usize]>>> = PHastRBuilder::default()
+                .seed_bits(bits)
+                .log2_slice_len(ll)
+                .bucket_size(6.0)
+                .try_build(&keys, no_logging![])?;
+            let expected: Vec<usize> = keys.iter().map(|k| phf.get(k)).collect();
+            let phf = phf.try_into_unaligned()?;
+            for (k, &e) in keys.iter().zip(&expected) {
+                assert_eq!(phf.get(k), e);
+            }
+            let phf: PHastR<u64, BitFieldVec<Box<[usize]>>> = phf.into();
+            for (k, &e) in keys.iter().zip(&expected) {
+                assert_eq!(phf.get(k), e);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn test_duplicates() {
         let keys: Vec<u64> = vec![1, 2, 3, 2];
         let r: Result<PHastR<u64>> = PHastRBuilder::default().try_build(&keys, no_logging![]);
@@ -2029,6 +2102,31 @@ mod tests {
             BitFieldVec<&[usize]>,
             PHastRBuilder::default().seed_bits(10).log2_slice_len(11)
         );
+        // Unaligned reads
+        {
+            use epserde::prelude::*;
+            use epserde::utils::AlignedCursor;
+            type U = Unaligned<PHastR<u64, BitFieldVec<Box<[usize]>>>>;
+            let keys: Vec<u64> = (0..200_000).collect();
+            let phf: PHastR<u64, BitFieldVec<Box<[usize]>>> = PHastRBuilder::default()
+                .seed_bits(10)
+                .log2_slice_len(11)
+                .try_build(&keys, no_logging![])
+                .unwrap();
+            let phf: U = phf.try_into_unaligned().unwrap();
+            let mut cursor = <AlignedCursor<Aligned64>>::new();
+            // SAFETY: phf was built by its constructor
+            unsafe { phf.serialize(&mut cursor) }.unwrap();
+            let len = cursor.len();
+            cursor.set_position(0);
+            // SAFETY: we just serialized a valid structure into this buffer
+            let case = unsafe { <U>::read_mem(&mut cursor, len) }.unwrap();
+            let des = case.uncase();
+            let _: &BitFieldVecU<&[usize]> = &des.seeds0;
+            for key in &keys {
+                assert_eq!(phf.get(key), des.get(key));
+            }
+        }
     }
 
     #[test]

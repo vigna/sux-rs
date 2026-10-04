@@ -9,7 +9,8 @@
 //!
 //! - `r:<S>:<log2 L>:<depth>:<lambda>[:<log2 R>[:<storage>]]` for PHast-R,
 //!   where `<depth>` is the maximum repair depth (0 disables repair) and
-//!   `<storage>` is `u8`, `u16`, or `bfv` (default: `u8` if S <= 8, `bfv`
+//!   `<storage>` is `u8`, `u16`, `bfv`, or `bfvu` (a [`BitFieldVec`] with
+//!   unaligned reads) (default: `u8` if S <= 8, `bfv`
 //!   otherwise).
 //!
 //! Keys are hashed with GxHash (as in the experiments of the PHast paper) or,
@@ -34,6 +35,7 @@ use std::time::Instant;
 use sux::bits::BitFieldVec;
 use sux::func::phast_r::SeedStoreBuild;
 use sux::func::{PHastR, PHastRBuilder};
+use sux::traits::TryIntoUnaligned;
 use sux::utils::ToSig;
 
 /// XXH3-64 with seed on the 8 bytes of a u64, exactly as sux's
@@ -207,10 +209,52 @@ fn sux_run<'a, D: SeedStoreBuild + MemSize + FlatType + 'a>(
     let gkeys: &'a [GxKey] =
         unsafe { std::slice::from_raw_parts(keys.as_ptr().cast(), keys.len()) };
     match a.hash.as_str() {
-        "gx" => sux_run_k::<GxKey, D>(gkeys, b, a, name),
-        "xxh3" => sux_run_k::<u64, D>(keys, b, a, name),
+        "gx" => sux_run_k::<GxKey, D>(gkeys, b, name),
+        "xxh3" => sux_run_k::<u64, D>(keys, b, name),
         h => panic!("unknown hash {h}"),
     }
+}
+
+/// Like [`sux_run`], but with seeds in a [`BitFieldVec`] converted to
+/// unaligned reads.
+fn sux_run_u<'a>(keys: &'a [u64], b: PHastRBuilder, a: &Args, name: &str) -> Entry<'a> {
+    // SAFETY: GxKey is a transparent wrapper around u64
+    let gkeys: &'a [GxKey] =
+        unsafe { std::slice::from_raw_parts(keys.as_ptr().cast(), keys.len()) };
+    match a.hash.as_str() {
+        "gx" => sux_run_k_u::<GxKey>(gkeys, b, name),
+        "xxh3" => sux_run_k_u::<u64>(keys, b, name),
+        h => panic!("unknown hash {h}"),
+    }
+}
+
+/// Verifies that a function is a bijection, counts the bumped keys, and
+/// returns the entry for the function.
+macro_rules! sux_entry {
+    ($keys:expr, $f:expr, $build:expr, $name:expr) => {{
+        let (keys, f, build, name) = ($keys, $f, $build, $name);
+        let bits = f.mem_size(SizeFlags::default()) as f64 * 8.0 / keys.len() as f64;
+        let mut seen = vec![false; keys.len()];
+        for k in keys {
+            let v = f.get(*k);
+            assert!(!seen[v], "duplicate output {v}");
+            seen[v] = true;
+        }
+        let bumped = keys.iter().filter(|&&k| f.is_bumped(k)).count();
+        let extra = format!(
+            "  levels {}  bumped {:.2}%",
+            f.num_levels(),
+            100.0 * bumped as f64 / keys.len() as f64
+        );
+        Entry {
+            name: name.to_string(),
+            n: keys.len(),
+            bits,
+            build,
+            extra,
+            bench: Box::new(move |q, r| query_batch(keys, q, r, |k| f.get(k))),
+        }
+    }};
 }
 
 fn sux_run_k<
@@ -220,37 +264,24 @@ fn sux_run_k<
 >(
     keys: &'a [K],
     b: PHastRBuilder,
-    _a: &Args,
     name: &str,
 ) -> Entry<'a> {
     let t = Instant::now();
     let f: PHastR<K, D> = b.try_build(keys, no_logging![]).unwrap();
     let build = t.elapsed().as_secs_f64() * 1e9 / keys.len() as f64;
-    let bits = f.mem_size(SizeFlags::default()) as f64 * 8.0 / keys.len() as f64;
-    // Verify that the function is a bijection
-    let mut seen = vec![false; keys.len()];
-    for k in keys {
-        let v = f.get(*k);
-        assert!(!seen[v], "duplicate output {v}");
-        seen[v] = true;
-    }
-    let bumped = keys
-        .iter()
-        .filter(|&&k| f.is_bumped(k))
-        .count();
-    let extra = format!(
-        "  levels {}  bumped {:.2}%",
-        f.num_levels(),
-        100.0 * bumped as f64 / keys.len() as f64
-    );
-    Entry {
-        name: name.to_string(),
-        n: keys.len(),
-        bits,
-        build,
-        extra,
-        bench: Box::new(move |q, r| query_batch(keys, q, r, |k| f.get(k))),
-    }
+    sux_entry!(keys, f, build, name)
+}
+
+fn sux_run_k_u<'a, K: ToSig<[u64; 1]> + Copy + Sync + 'a>(
+    keys: &'a [K],
+    b: PHastRBuilder,
+    name: &str,
+) -> Entry<'a> {
+    let t = Instant::now();
+    let f: PHastR<K, BitFieldVec<Box<[usize]>>> = b.try_build(keys, no_logging![]).unwrap();
+    let f = f.try_into_unaligned().unwrap();
+    let build = t.elapsed().as_secs_f64() * 1e9 / keys.len() as f64;
+    sux_entry!(keys, f, build, name)
 }
 
 fn main() {
@@ -312,6 +343,7 @@ fn main() {
                     "u8" => sux_run::<Box<[u8]>>(&keys, b, &a, &name),
                     "u16" => sux_run::<Box<[u16]>>(&keys, b, &a, &name),
                     "bfv" => sux_run::<BitFieldVec<Box<[usize]>>>(&keys, b, &a, &name),
+                    "bfvu" => sux_run_u(&keys, b, &a, &name),
                     _ => panic!("unknown storage {storage}"),
                 }
             }

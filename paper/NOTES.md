@@ -234,6 +234,22 @@ reference rows in each process; base = d2a9cb35):
   the address path); rehashing only at level 1 (fatal collisions at level 1);
   128-bit signatures (no gain, as `vpextrq` costs as much as `imul`).
 
+## String keys and seed reads (October 2026)
+
+- String keys (`cmpstr`, `results/rehash/str_ab_inl.*`): `PHastR::get` was
+  `#[inline]`, and with the GxHash of a string inlined LLVM did not inline it
+  in the query loop, whereas `ph` marks `Function2::get` `#[inline(always)]`.
+  With `#[inline(always)]` queries are 0.9–1.7 ns faster up to 10⁷ keys (more
+  at 10⁸), and PHast-R goes from +2.1–2.6 ns to −2.6–+0.9 ns vs PHast+.
+- Seeds in a `BitFieldVec` (`results/unaligned`): the store used a private
+  32-bit unaligned read, relying on the padding added by `from_seeds`. Now a
+  `BitFieldVec` uses aligned reads, and `PHastR` implements
+  `TryIntoUnaligned` (seeds become a `BitFieldVecU`, and the low bits of the
+  Elias–Fano remapping are converted too). Unaligned reads are 2.1–4.4 ns
+  faster than aligned ones for 10 and 12 bits, and as fast as the previous
+  32-bit read. PHast-R with S=10 is still 2.7–4.6 ns slower than PHast+ with
+  wrapping at S=10 (to be investigated).
+
 ## Key findings (see Section 2 of the paper; reference implementation)
 
 - With output range m = n, holes = bumped keys; each hole costs about
