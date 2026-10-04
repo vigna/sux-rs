@@ -18,6 +18,7 @@ sux = { path = "../..", features = ["epserde"] }
 clap = { version = "4", features = ["derive"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 gxhash = "3.5"
+value-traits = "0.3.0"
 dsi-progress-logger = "0.8"
 mem_dbg = "0.4"
 

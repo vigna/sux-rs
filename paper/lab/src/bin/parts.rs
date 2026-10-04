@@ -9,7 +9,7 @@ use dsi_progress_logger::no_logging;
 use lab::GxKey;
 use mem_dbg::{DbgFlags, MemDbg};
 use ph::GetSize;
-use ph::phast::{DefaultCompressedArray, Function2, Generic, GenericCore, ShiftOnlyWrapped};
+use ph::phast::{Core, DefaultCompressedArray, Function2, Generic, GenericCore, ShiftOnlyWrapped};
 use ph::seedable_hash::BuildGxHash;
 use ph::seeds::Bits8;
 use sux::func::{PHastR, PHastRBuilder};
@@ -34,6 +34,36 @@ fn main() {
     let f: Function2<GenericCore, Bits8, ShiftOnlyWrapped<3>, DefaultCompressedArray, BuildGxHash> =
         Function2::with_slice_p_hash_sc(&keys, &params, BuildGxHash, ShiftOnlyWrapped::<3>);
     let (l0, remap, further) = f.component_sizes();
+    {
+        let conf = *f.level0_conf();
+        let mut cnt = vec![0usize; 256];
+        let nb = ph::phast::Core::buckets_num(&conf);
+        for b in 0..nb {
+            cnt[f.level0_seed(b) as usize] += 1;
+        }
+        let h: f64 = cnt
+            .iter()
+            .filter(|&&c| c > 0)
+            .map(|&c| {
+                let p = c as f64 / nb as f64;
+                -p * p.log2()
+            })
+            .sum();
+        let mut sorted = cnt.clone();
+        sorted.sort_unstable_by(|a, b| b.cmp(a));
+        let mut acc = 0.0;
+        eprint!(
+            "PH ENTROPY {h:.4} bits (zero seeds {:.3}%) ",
+            100.0 * cnt[0] as f64 / nb as f64
+        );
+        for (i, &c) in sorted.iter().enumerate() {
+            acc += c as f64 / nb as f64;
+            if [15, 31, 63, 127, 191].contains(&i) {
+                eprint!("top{}={:.3} ", i + 1, acc);
+            }
+        }
+        eprintln!();
+    }
     println!(
         "ph w3:    total {:.4}  first level {:.4}  remapping {:.4}  further levels {:.4}",
         bits(f.size_bytes()),

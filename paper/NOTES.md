@@ -288,6 +288,48 @@ reference rows in each process; base = d2a9cb35):
   1.8536 b/k, 131 ns/key, 43.2 ns. W1 with repair beats PHast+ w3 in space,
   construction, and query time.
 
+## Brainstorm from scratch (October 5, 2026)
+
+Accounting (10⁸ keys, W3 d1 λ=5, 1.918 b/k, 3.66% bumped): the ideal cost of
+placing 96.34% of the keys injectively into *n* slots is 1.215 b/k, and of
+the rest 0.228, so the first level wastes 0.385 b/k (8-bit seeds where 6.1
+would be ideal) and remapping plus further levels ~0.09. Seeds are nearly
+uniform (empirical entropy 7.91 bits; PHast+ w3 7.89), so entropy coding
+would save ≤ 0.02 b/k: the waste is the redundancy of choosing among several
+feasible shifts. Bump rate by bucket size is nearly flat for sizes 2–10
+(1.3–5%), so bumping is driven by congestion (deferred small buckets), not by
+hard large buckets.
+
+Negative results (3·10⁶ keys unless noted):
+- Partial bumping (seeds bumping only the keys of one of C hash classes):
+  a probe said 47–59% of bumped keys could stay, but the real thing is worse
+  (P=64: 1.993 vs 1.924 b/k; bumped keys 4.6% vs 3.7%).
+- Evicting for good a smaller blocker to place a failing bucket: +0.027 b/k;
+  a larger blocker: +0.06–0.08 b/k. Holes are set by the packing density of
+  the sweep: slots left by a bumped bucket are filled by later (small)
+  buckets, so bumping fewer keys at a failure does not reduce holes.
+- Repair candidates where two keys are blocked by the same bucket: no gain,
+  +15–25% construction; 32 candidates instead of 16: −0.0014 b/k.
+- Skipping eviction trials of buckets that had no alternative placement:
+  their trials succeed as often (11% vs 12%).
+- Weights retuned for wrapping with repair (`wtune`, `results/wtune_wrap`):
+  −0.0034 b/k. Geometry grid (`results/wrap_grid`): M=3, L=1024, λ=5 is
+  optimal; even multipliers are bad (a single residue class mod M).
+
+Remapping: optimal coding of the holes and of the unused outputs of the
+further levels would take 0.270 instead of 0.297 b/k at 10⁷ (≤ 0.027 b/k for
+both PHast+ and PHast-R).
+
+Batched queries (`get_batch`, hidden; `lab/src/bin/batch.rs`): hashing a
+batch of keys and prefetching their first-level seeds before computing the
+outputs. At 10⁷ keys, 24.4 → 16.2 ns (W3) and 28.5 → 15.8 ns (R=4); at 10⁸,
+35.6 → 27.9 and 41.6 → 27.6; 10-bit seeds (unaligned) 28.8–29.9 ns at 10⁸.
+In batch mode the extra operations after the seed load (patterns, unaligned
+reads) cost almost nothing, so the configurations differ in space only.
+
+9-bit seeds (8 threads, 3·10⁶): R=4, L=2048, λ=5.5 1.908 b/k at 22.8 ns/key
+(untuned), vs 1.928 b/k at 35.2 ns/key for S=8 W3 and 1.981 for PHast+ w3.
+
 ## Key findings (see Section 2 of the paper; reference implementation)
 
 - With output range m = n, holes = bumped keys; each hole costs about

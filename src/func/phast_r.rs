@@ -126,6 +126,10 @@ pub trait SeedStore {
     ///
     /// `i` must be smaller than the number of seeds.
     unsafe fn get_seed(&self, i: usize) -> usize;
+
+    /// Prefetches the seed of index `i` (by default, does nothing).
+    #[inline(always)]
+    fn prefetch_seed(&self, _i: usize) {}
 }
 
 /// Storage for the seeds of a level (construction side).
@@ -144,6 +148,11 @@ macro_rules! impl_seed_store_slice {
             unsafe fn get_seed(&self, i: usize) -> usize {
                 // SAFETY: by the contract of this method
                 unsafe { *<[$ty]>::get_unchecked(self, i) as usize }
+            }
+
+            #[inline(always)]
+            fn prefetch_seed(&self, i: usize) {
+                crate::utils::prefetch_index(self, i);
             }
         }
 
@@ -174,6 +183,12 @@ impl<B: crate::traits::Backend<Word = usize> + AsRef<[usize]>> SeedStore for Bit
         // SAFETY: by the contract of this method
         unsafe { self.get_value_unchecked(i) }
     }
+
+    #[inline(always)]
+    fn prefetch_seed(&self, i: usize) {
+        let bw = crate::traits::BitWidth::bit_width(self);
+        crate::utils::prefetch_index(self.as_slice(), i * bw / usize::BITS as usize);
+    }
 }
 
 impl<B: crate::traits::Backend<Word = usize> + AsRef<[usize]>> SeedStore for BitFieldVecU<B> {
@@ -181,6 +196,12 @@ impl<B: crate::traits::Backend<Word = usize> + AsRef<[usize]>> SeedStore for Bit
     unsafe fn get_seed(&self, i: usize) -> usize {
         // SAFETY: by the contract of this method (reads are unaligned)
         unsafe { self.get_value_unchecked(i) }
+    }
+
+    #[inline(always)]
+    fn prefetch_seed(&self, i: usize) {
+        let bw = crate::traits::BitWidth::bit_width(self);
+        crate::utils::prefetch_index(self.as_ref(), i * bw / usize::BITS as usize);
     }
 }
 
@@ -428,6 +449,36 @@ impl<
             return self.pos(lv, h, o, s);
         }
         self.get_slow(key, o)
+    }
+
+    /// Returns the values associated with a batch of keys, prefetching the
+    /// seeds of the first level of all keys before computing the values
+    /// (experimental).
+    #[doc(hidden)]
+    #[inline(always)]
+    pub fn get_batch<const B: usize>(&self, keys: [&K; B]) -> [usize; B] {
+        let lv = &self.params0;
+        let hs: [u64; B] = std::array::from_fn(|i| {
+            let h = K::to_sig(keys[i], self.seed)[0];
+            self.seeds0.prefetch_seed(mul_hi(h, lv.buckets) as usize);
+            h
+        });
+        std::array::from_fn(|i| {
+            let h = hs[i];
+            // SAFETY: mul_hi(h, buckets) < buckets, which is the number of seeds
+            let s = unsafe { self.seeds0.get_seed(mul_hi(h, lv.buckets) as usize) };
+            if self.wrap != 0 {
+                if s != 0 {
+                    return self.pos_wrap(lv, h, s);
+                }
+                return self.get_slow(keys[i], 0);
+            }
+            let o = offsets(h);
+            if s != 0 {
+                return self.pos(lv, h, o, s);
+            }
+            self.get_slow(keys[i], o)
+        })
     }
 
     /// Returns whether the given key is bumped from the first level (for
