@@ -138,7 +138,9 @@ fn analyze<SS: SeedSize>(keys: &[u64], ss: SS, a: &Args) {
 fn main() {
     let a = Args::parse();
     let keys: Vec<u64> = (0..a.n as u64)
-        .map(|i| (i + a.key_seed.wrapping_mul(1 << 40)).wrapping_mul(0x9e3779b97f4a7c15) ^ 0x1234567)
+        .map(|i| {
+            (i + a.key_seed.wrapping_mul(1 << 40)).wrapping_mul(0x9e3779b97f4a7c15) ^ 0x1234567
+        })
         .collect();
     if a.s == 8 {
         analyze(&keys, Bits8, &a);
