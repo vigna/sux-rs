@@ -2,7 +2,7 @@
 #
 # Reproduces the experiments of ../phast.tex on the current machine.
 #
-# Usage: ./run.sh [env|tables|anatomy|negative|tune|all]...   (default: env tables)
+# Usage: ./run.sh [env|tables|anatomy|tune|all]...   (default: env tables)
 #
 # Environment variables:
 #   N1       number of keys for the small experiments  (default 10000000)
@@ -100,44 +100,10 @@ step_tables() {
 	cmp_run mt table2-mt -n "$N2" $Q -t "$THREADS" -v "$large"
 }
 
-# Section 2: anatomy of PHast+ (bump rates by size, self-collisions, seed
-# entropy), with the reference size for comparison.
+# Section 2: anatomy of PHast+ (space breakdown, bump rates by size,
+# self-collisions, seed entropy), measured on the reference implementation.
 step_anatomy() {
-	pin "$BIN/baseline" -n "$N1" -s 8 -l 5.25 --reference --hist | tee "$OUT/anatomy.txt"
-}
-
-# Table 3 of the paper (negative results), plus the repair parameter sweep.
-step_negative() {
-	{
-		echo "### overloaded / underloaded first level"
-		pin "$BIN/overload" -n "$N1" -s 8 -l 5.25 --gamma=0,0.04,-0.05
-		echo "### block reseeding"
-		pin "$BIN/blocks" -n "$N1" -g 256 -t 1,16 -l 5.25
-		echo "### mixed bucket sizes"
-		pin "$BIN/mix" -n "$N1" -q 3 -b 6 -m 2
-		echo "### filler sweep"
-		pin "$BIN/two" -n "$N1" -p 0,0.1 --l0 5.25 --l1 1 --s1 6
-		echo "### two-tier seeds"
-		pin "$BIN/esc" -n "$N1" --s2 0,12 --r2 16 -l 5.25
-		echo "### chained seeds"
-		pin "$BIN/chain" -n "$N1" -L 512 -t 0,64 -l 5
-		echo "### fingerprint thresholds: oracle (free encoding)"
-		pin "$BIN/two" -n "$N1" -p 0 --l0 5.25 --thr 7
-		echo "### fingerprint thresholds: encoded in the seed"
-		pin "$BIN/thr" -n "$N1" -a 239 -t 4 -l 5.25
-		echo "### lattice-steered holes"
-		pin "$BIN/lattice" -n "$N1" -q 8 -p 0,4,256
-		echo "### row-permutation placement"
-		pin "$BIN/rows" -n "$N1" --rowmode 1 -r 8 -c 0 -s 8 -l 5.5
-		echo "### k-perfect PHast (reference)"
-		pin "$BIN/kperf" $((N1 / 2))
-		echo "### cuckoo repair on regular PHast"
-		pin "$BIN/evict" -n "$N1" -r 0 -L 1024 -c 0,8 -d 1 -l 4.5
-		echo "### patterns x shifts"
-		pin "$BIN/multi" -n "$N1" -r 1,2,4,8 -L 512 -l 4.75,5.25
-		echo "### repair sweep (lab version)"
-		pin "$BIN/evict" -n "$N1" -r 2,4 -c 16,64 -d 2,3 -l 4.75,5.25,5.75
-	} 2>&1 | tee "$OUT/negative.txt"
+	pin "$BIN/anatomy" -n "$N1" -s 8 -l 5.25 | tee "$OUT/anatomy.txt"
 }
 
 # Coordinate-descent tuning of the bucket-priority weights.
@@ -151,7 +117,7 @@ if [ ${#steps[@]} -eq 0 ]; then
 	steps=(env tables)
 fi
 if [ "${steps[0]}" = all ]; then
-	steps=(env tables anatomy negative tune)
+	steps=(env tables anatomy tune)
 fi
 
 build

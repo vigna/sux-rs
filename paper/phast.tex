@@ -77,17 +77,15 @@ construction.
 This paper makes three contributions:
 \begin{itemize}
 \item an analysis of the space of \PHastP showing that its excess comes from
-bumping, that bumping is the slack the sweep cannot do without, and that a
-large part of it is caused by self-collisions inherent to additive placement
-(Section~\ref{sec:anatomy});
+bumping, and that a large part of it is caused by self-collisions inherent to
+additive placement (Section~\ref{sec:anatomy});
 \item \PHastR, a structure in which the seed chooses one of $R$ independent
 offset patterns and a shift, and whose construction repairs failing buckets
 by evicting the owner of the only blocking slot, detected by a bit-parallel
 half adder (Section~\ref{sec:phastr});
 \item an implementation in the Rust crate \texttt{sux} and an experimental
-comparison with the reference implementation of \PHast and \PHastP, together
-with a short account of the ideas that did not work
-(Sections~\ref{sec:experiments} and~\ref{sec:negative}).
+comparison with the reference implementation of \PHast and \PHastP
+(Section~\ref{sec:experiments}).
 \end{itemize}
 
 \section{The Space of \PHastP}
@@ -95,9 +93,9 @@ with a short account of the ideas that did not work
 
 All measurements in this section refer to $10^7$ random keys, 8-bit seeds,
 expected bucket size $\lambda=5.25$ and slice length $L=512$, the
-space-optimal configuration of \PHastP. We use our own re-implementation,
-whose space matches the reference implementation within about $0.01$ bits per key
-(the difference is the selection index of Elias--Fano).
+space-optimal configuration of \PHastP. They have been obtained on the
+reference implementation of \PHastP (the \texttt{ph} crate, using GxHash as
+hash function), whose first level we inspect through read-only accessors.
 
 \paragraph{Holes are bumped keys.}
 The first level of \PHastP has output range $m=n$. Every key is either placed
@@ -112,30 +110,19 @@ following levels. With $S$-bit seeds the space is thus approximately
 and since the entropy of a random set of $\beta n$ holes is already about
 $\beta n(\log_2(1/\beta)+\log_2 e)$, the encoding of holes cannot be
 substantially improved: \emph{the only lever is $\beta$}. In our
-configuration $\beta=7.6\%$, and bumping costs $0.58$ of the $2.10$ bits per
-key ($0.46$ for Elias--Fano, $0.12$ for the seeds of further levels).
-
-\paragraph{Bumping is necessary slack.}
-One could try to reduce holes by overloading the first level ($m<n$), by
-retrying the seeds of whole blocks of buckets, or by giving failing buckets a
-second, wider seed. None of this works (Section~\ref{sec:negative}). In
-particular, if failing buckets always succeed with a secondary seed, the
-fraction of buckets that fail with the primary seed grows from $6.8\%$ to
-$46\%$: without bumped keys the region around the frontier of the sweep becomes
-completely full and every bucket faces a jam. Bumping keeps the frontier loose;
-the bump rate is the amount of slack that a placement scheme of given
-flexibility needs to flow, and the way to reduce it is to make placement more
-flexible.
+configuration $\beta=7.6\%$, and bumping costs $0.59$ of the $2.12$ bits per
+key ($0.47$ for Elias--Fano, $0.13$ for the further levels).
 
 \paragraph{Additive placement is rigid.}
 Additive placement translates a fixed pattern: two keys of a bucket whose base
 positions coincide collide for every seed. For a bucket of size $k$ this
 happens with probability about $k(k-1)/(2L)$, so a fraction
 $\lambda^2/(2L)\approx 2.7\%$ of the buckets cannot be placed at all
-(we measure $2.6\%$); they are $38\%$ of the bumped buckets and contain
-about $(\lambda^2+2\lambda)/(2L)\approx 3.7\%$ of the keys. Moreover,
+(we measure $2.6\%$); they are $38.5\%$ of the bumped buckets and contain
+about $(\lambda^2+2\lambda)/(2L)\approx 3.7\%$ of the keys (we measure
+$3.6\%$). Moreover,
 consecutive shifts are strongly correlated trials. Seeds, on the other hand,
-are almost incompressible: their empirical entropy is $7.73$ bits, because
+are almost incompressible: their empirical entropy is $7.71$ bits, because
 the shift mostly encodes how far the leftmost key of the bucket lies behind
 the full part of its slice.
 
@@ -397,48 +384,10 @@ and 2 efficiency cores), \PHastR with depth~1 builds about as fast as \PHastP
 with wrapping and 8-bit seeds, and faster with 10-bit seeds: repair is local, so
 it parallelizes as well as the rest of the sweep.
 
-\section{What Did Not Work}
-\label{sec:negative}
-
-Table~\ref{tab:negative} lists the alternatives we evaluated before
-\PHastR, all on $10^7$ keys with 8-bit seeds (baseline: \PHastP with
-$\lambda=5.25$, 2.105 bits per key in our implementation). They share a
-lesson: holes are the price of the slack that the sweep needs, so any idea
-that removes slack without adding flexibility makes things worse.
-
-\begin{table}[h!]
-\centering
-\caption{Ideas that did not improve on \PHastP ($10^7$ keys, $S=8$; best
-configuration found for each idea).}
-\label{tab:negative}
-\begin{tabular}{p{0.62\textwidth}r}
-\toprule
-Idea & bits/key \\
-\midrule
-Overloaded first level ($m=0.96n$): holes only drop from $7.6\%$ to $6.3\%$ & 2.108 \\
-Underloaded first level ($m=1.05n$) & 2.160 \\
-Block reseeding: an extra seed per 256 buckets, best of 16 retries & 2.061 \\
-Mixed bucket sizes (three buckets with $\lambda=6$, one with $\lambda=2$) & 2.196 \\
-A second sweep of 10\% ``filler'' keys in tiny buckets with their own seeds & 2.595 \\
-Two-tier seeds: an escape value and a 12-bit secondary seed (jam: escapes
-grow to $46\%$ of the buckets) & 2.694 \\
-Chained seeds: the pattern of a bucket depends on the seed of the previous one,
-with backtracking (requires index order) & 2.150 \\
-Partial bumping by fingerprint thresholds encoded in the seed (1.93 if the
-threshold were free) & 2.107 \\
-Steering holes to a lattice of slots, to encode them cheaply (holes on the
-lattice grow from $1.0\%$ to at most $4.0\%$ of the slots) & 2.104 \\
-Row-permutation placement: 64 column permutations tested in parallel & 2.057 \\
-$k$-perfect \PHast ($k=8$, 0.675 bits/key) followed by bijections & ${\ge}1.85$ \\
-Cuckoo repair on \PHast with pseudorandom placement (from 1.920) & 1.916 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
 \section{Conclusions}
 
-The space of \PHastP is dominated by the cost of its slack, and slack is what a
-greedy sweep with rigid additive placement needs. Independent offset patterns
+The excess space of \PHastP is the cost of bumping, and a large part of it is
+caused by the rigidity of additive placement. Independent offset patterns
 remove the rigidity without losing bit-parallelism, and a half adder over the
 same words that test feasibility turns failures into cheap, local cuckoo
 repairs. The resulting structure, \PHastR, has the query of \PHastP, the space

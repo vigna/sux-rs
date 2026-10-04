@@ -12,9 +12,14 @@ the context of the original one: point it to this file).
   (`cargo run --release --example bench_phast_r -- 10000000`).
 - `paper/phast.tex`: the paper (6 pages, `latexmk -pdf phast.tex`).
 - `paper/lab/`: the experimental harness, a standalone crate depending on sux
-  (by path) and on the reference implementation `ph` (pinned git revision).
-  It contains the comparison driver, the tuning tools, and the prototypes of
-  all the ideas in the "What did not work" section.
+  (by path) and on the reference implementation `ph` (currently by path on
+  a local clone of the fork vigna/bsuccinct-rs, branch `sux`, commit 8d722ff,
+  which adds hidden analysis accessors to `Function2`; switch to the git
+  revision once it is pushed). It contains the comparison driver, the
+  anatomy of PHast+ (Section 2), and the tuning tools. The lab
+  re-implementation of PHast+ and the prototypes of the negative results
+  have been removed (October 2026): everything now uses the reference
+  implementation.
 - `paper/lab/results/m1-max/`: the raw results behind the paper (see the
   README there for caveats).
 
@@ -24,7 +29,7 @@ the context of the original one: point it to this file).
 git clone git@github.com:vigna/sux-rs.git && cd sux-rs && git checkout phast-r
 cd paper/lab
 ./run.sh                      # env + tables (10-15 minutes, ~4 GiB of RAM)
-./run.sh anatomy negative     # Section 2 and Table 3
+./run.sh anatomy              # Section 2 (on the reference implementation)
 ./run.sh tune                 # weight tuning (space only, hardware-independent)
 ```
 
@@ -194,18 +199,15 @@ Profile of what remains (single thread): search over four patterns (the
 inherent cost of patterns; PHast+ searches one), eviction trials (1.37M at
 10⁷ keys, 87% failing), the priority queue, and the sort.
 
-## Key findings (see Section 2 and 5 of the paper)
+## Key findings (see Section 2 of the paper; reference implementation)
 
 - With output range m = n, holes = bumped keys; each hole costs about
   log₂(1/β) + 2 bits in Elias–Fano, close to the entropy of the hole set, so
   the only lever is the bump rate β.
-- Bumping is the slack a greedy sweep needs: removing it (wide secondary
-  seeds) makes the sweep jam (escapes 6.8% → 46%).
-- ~38% of PHast+ bumped buckets are self-collisions (≈ λ²/2L of the buckets);
-  seeds are incompressible (7.73 bits of entropy).
+- 38.5% of PHast+ bumped buckets are self-collisions (2.6% ≈ λ²/2L of the
+  buckets); seeds are incompressible (7.71 bits of entropy).
 - Independent offset patterns fix the rigidity; repair (half adder +
-  eviction) recovers PHast's space. Repair does nothing for regular PHast
-  (pseudorandom placement is already flexible).
+  eviction) recovers PHast's space.
 
 ## Implementation notes
 

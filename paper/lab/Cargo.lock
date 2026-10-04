@@ -151,7 +151,6 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 [[package]]
 name = "binout"
 version = "0.3.1"
-source = "git+https://github.com/vigna/bsuccinct-rs?rev=7d18454cc213a5853f0c7fcbcc5d65159e7ae890#7d18454cc213a5853f0c7fcbcc5d65159e7ae890"
 
 [[package]]
 name = "bitflags"
@@ -168,7 +167,6 @@ checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 [[package]]
 name = "bitm"
 version = "0.5.2"
-source = "git+https://github.com/vigna/bsuccinct-rs?rev=7d18454cc213a5853f0c7fcbcc5d65159e7ae890#7d18454cc213a5853f0c7fcbcc5d65159e7ae890"
 dependencies = [
  "dyn_size_of",
  "prefetch-index",
@@ -576,7 +574,6 @@ dependencies = [
 [[package]]
 name = "dyn_size_of"
 version = "0.4.5"
-source = "git+https://github.com/vigna/bsuccinct-rs?rev=7d18454cc213a5853f0c7fcbcc5d65159e7ae890#7d18454cc213a5853f0c7fcbcc5d65159e7ae890"
 
 [[package]]
 name = "either"
@@ -1298,7 +1295,6 @@ checksum = "947f833aaa585cf12b8ec7c0476c98784c49f33b861376ffc84ed92adebf2aba"
 [[package]]
 name = "ph"
 version = "0.11.0"
-source = "git+https://github.com/vigna/bsuccinct-rs?rev=7d18454cc213a5853f0c7fcbcc5d65159e7ae890#7d18454cc213a5853f0c7fcbcc5d65159e7ae890"
 dependencies = [
  "aligned-vec",
  "arrayvec",
@@ -1666,7 +1662,6 @@ dependencies = [
 [[package]]
 name = "seedable_hash"
 version = "0.2.3"
-source = "git+https://github.com/vigna/bsuccinct-rs?rev=7d18454cc213a5853f0c7fcbcc5d65159e7ae890#7d18454cc213a5853f0c7fcbcc5d65159e7ae890"
 dependencies = [
  "gxhash",
  "wyhash",

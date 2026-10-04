@@ -1,0 +1,25 @@
+PHast+ S=8 lambda=5.25 L=512 n=10000000: 2.1160 bits/key (first level 1.5238, remapping 0.4662, further levels 0.1259, other 0.0002)
+bumped keys 7.601% (beta), bumped buckets 6.846% of the nonempty ones
+self-colliding buckets 2.636% of the nonempty ones, 38.5% of the bumped ones (containing 3.598% of the keys)
+empirical entropy of the first-level seeds: 7.709 bits (7.910 bits excluding bumped buckets)
+size: buckets bumped rate
+   1:      52538          0 0.0000
+   2:     138441       4085 0.0295
+   3:     241341      14603 0.0605
+   4:     314986      20995 0.0667
+   5:     332109      23862 0.0718
+   6:     290470      19982 0.0688
+   7:     218582      17510 0.0801
+   8:     142905      12267 0.0858
+   9:      83813       7792 0.0930
+  10:      43954       4307 0.0980
+  11:      20689       2284 0.1104
+  12:       9171       1154 0.1258
+  13:       3661        522 0.1426
+  14:       1422        226 0.1589
+  15:        457         84 0.1838
+  16:        182         40 0.2198
+  17:         51          7 0.1373
+  18:         14          4 0.2857
+  19:          1          0 0.0000
+  20:          2          0 0.0000

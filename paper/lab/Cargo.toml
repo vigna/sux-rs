@@ -9,9 +9,11 @@ description = "Experimental harness for PHast-R (see ../NOTES.md)"
 name = "lab"
 
 [dependencies]
-# Reference implementation of PHast/PHast+ (Beling), pinned to the commit used
-# for the results in results/m1-max.
-ph = { git = "https://github.com/vigna/bsuccinct-rs", rev = "7d18454cc213a5853f0c7fcbcc5d65159e7ae890", features = ["wyhash", "gxhash"] }
+# Reference implementation of PHast/PHast+ (Beling), from the fork with hidden
+# analysis accessors (commit 8d722ff of vigna/bsuccinct-rs, branch sux, on top
+# of 7d18454). TODO: once 8d722ff is pushed, replace the path with
+# git = "https://github.com/vigna/bsuccinct-rs", rev = "8d722ff..."
+ph = { path = "../../../bsuccinct-rs/ph", features = ["wyhash", "gxhash"] }
 sux = { path = "../..", features = ["epserde"] }
 clap = { version = "4", features = ["derive"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }

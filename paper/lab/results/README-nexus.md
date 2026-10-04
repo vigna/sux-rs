@@ -18,7 +18,8 @@ Reference: `ph` at commit `7d18454`.
 
 | Directory | Code | Contents |
 |---|---|---|
-| `nexus-run1` | original PHast-R (`origin/phast-r`), XXH3 | `run.sh env tables anatomy negative` (sequential query timing) |
+| `nexus-run1` | original PHast-R (`origin/phast-r`), XXH3 | `run.sh env tables` (sequential query timing; the anatomy and negative-result outputs, produced by the lab re-implementation of PHast+, have been removed) |
+| `anatomy.txt` | reference PHast+ (`ph` with analysis accessors), GxHash | `anatomy -n 10000000 -s 8 -l 5.25` (Section 2) |
 | `nexus-run2`, `nexus-run3` | new PHast-R, GxHash | `run.sh tables` with interleaved query timing |
 | `ab/ab2.txt` | original vs new, GxHash | interleaved A/B, 10⁷ and 10⁸ keys |
 | `nexus-run4`, `nexus-run5` | new PHast-R + `next_level` fix, GxHash, `performance` governor | `run.sh tables`, interleaved query timing (final) |
@@ -155,11 +156,15 @@ S = 8, L = 1024, λ = 4.75, depth 1 has the space of the current default
 with 30% fewer bumped keys, and queries faster than PHast+ at 10⁷ and 10⁸
 (30.3 vs 30.6 ns, 43.4 vs 46.7 ns): candidate default.
 
-## Reproduced space results
+## Section 2 on the reference implementation
 
-`nexus-run1/anatomy.txt` and `negative.txt` reproduce Section 2 and Table 3
-exactly (space does not depend on the hardware): β = 7.6%, seed entropy
-7.73 bits, 2.6% self-colliding buckets, and all rows of Table 3.
+`anatomy.txt` measures Section 2 on `ph` itself (through the hidden accessors
+`level0_conf`, `level0_seed`, `component_sizes` of `Function2`, fork commit
+8d722ff): 2.116 bits/key (first level 1.524, remapping 0.466, further levels
+0.126), β = 7.60%, 2.64% of the nonempty buckets self-collide (38.5% of the
+bumped ones, 3.60% of the keys), seed entropy 7.71 bits. The previous figures
+came from the lab re-implementation of PHast+, which has been removed together
+with the negative results (Table 3).
 
 ## The log₂e + O(log λ/λ) conjecture (reference PHast)
 

@@ -26,6 +26,4 @@ differences in setup:
 | `final_1e8_r.txt` | Table 2, single-threaded, PHast-R rows (final code) |
 | `final_1e8_mt.txt`/`.csv` | Table 2, 10 threads, reference rows (PHast-R rows superseded) |
 | `final_1e8_mt_r.txt` | Table 2, 10 threads, PHast-R rows (final code, after the parallel-gap fix) |
-| `evict_sweep.txt` | Repair sweep (patterns × candidates × depth), lab implementation, S=8 |
-| `evict_bigS.txt` | Same for S=10/12 (S=12 rows are mistuned: λ too small, L too short) |
 | `wt_8_d1.txt`, `wt_10_d1.txt` | Coordinate-descent tuning of the priority weights (now the sux defaults) |
