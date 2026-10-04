@@ -148,13 +148,11 @@ mapped to
 \]
 As in \PHast, seed $0$ means that the bucket is bumped. A query computes the
 same quantities as in \PHastP, plus two shifts (and, with 64-bit signatures,
-the multiplication deriving $o$, see below). The encoding is chosen
-so that no instruction is needed to extract $r$: since hardware shifts of
-64-bit values take their count modulo 64 (on both x86 and ARM), we can shift
-$o$ right by $s\cdot 64/R$, that is, by $s$ shifted left by $6-\rho$ bits, and
-then mask; $d$ is just $s$ shifted right by $\rho$ bits. With 64-bit
-signatures, we set $o=h\cdot c \bmod 2^{64}$ for an odd constant $c<2^{31}$,
-which needs a single instruction on x86. Keys of the same bucket share the
+the multiplication deriving $o$, see below). The encoding
+makes it unnecessary to extract $r$: since $(s\cdot 64/R)\bmod 64=r\cdot 64/R$,
+$\omega_r(o)$ is obtained by shifting $o$ right by $s\cdot 64/R$ modulo $64$
+and masking, whereas $d$ is $s$ shifted right by $\rho$ bits. With 64-bit
+signatures, we set $o=h\cdot c \bmod 2^{64}$ for an odd constant $c$. Keys of the same bucket share the
 upper $\approx\log_2 B$ bits of $h$, and their slices start at about the same
 position; but bit $j$ of $o$ depends on all bits $0$, \dots, $j$ of $h$, so
 every offset depends on the lower bits of $h$, which vary independently among
@@ -214,9 +212,8 @@ a query for a bumped key needs no further hashing of the key; \PHastP,
 instead, hashes the key again with a different seed at each level. Since
 $\mu$ is a bijection, distinct pairs remain distinct, and since $\mu(h)$
 depends on all bits of $h$, the offsets provided by $o$ remain independent of
-the new bucket and slice. (Mixing $o$, too, would lengthen the query of
-bumped keys for no benefit: on AVX-512 hardware the compiler vectorizes two
-independent mixes using a high-latency vector multiplication.) Levels after
+the new bucket and slice. (Mixing $o$, too, would only lengthen the query
+of bumped keys.) Levels after
 the first use the same scheme with range equal to their number of keys. As in
 \PHastP, an Elias--Fano sequence maps the outputs of the levels after the
 first to the holes of the first level.
