@@ -7,7 +7,7 @@
 //!   `<chooser>` is `plus` (PHast+), `w1`/`w2`/`w3` (PHast+ with wrapping and
 //!   multiplier 1/2/3), or `phast` (regular PHast);
 //!
-//! - `r:<S>:<log2 L>:<depth>:<lambda>[:<log2 R>[:<storage>[:<s64|s128>]]]` for PHast-R,
+//! - `r:<S>:<log2 L>:<depth>:<lambda>[:<log2 R>[:<storage>]]` for PHast-R,
 //!   where `<depth>` is the maximum repair depth (0 disables repair) and
 //!   `<storage>` is `u8`, `u16`, or `bfv` (default: `u8` if S <= 8, `bfv`
 //!   otherwise).
@@ -202,24 +202,20 @@ fn sux_run<'a, D: SeedStoreBuild + MemSize + FlatType + 'a>(
     b: PHastRBuilder,
     a: &Args,
     name: &str,
-    sig128: bool,
 ) -> Entry<'a> {
     // SAFETY: GxKey is a transparent wrapper around u64
     let gkeys: &'a [GxKey] =
         unsafe { std::slice::from_raw_parts(keys.as_ptr().cast(), keys.len()) };
-    match (a.hash.as_str(), sig128) {
-        ("gx", false) => sux_run_k::<GxKey, [u64; 1], D>(gkeys, b, a, name),
-        ("gx", true) => sux_run_k::<GxKey, [u64; 2], D>(gkeys, b, a, name),
-        ("xxh3", false) => sux_run_k::<u64, [u64; 1], D>(keys, b, a, name),
-        ("xxh3", true) => sux_run_k::<u64, [u64; 2], D>(keys, b, a, name),
-        (h, _) => panic!("unknown hash {h}"),
+    match a.hash.as_str() {
+        "gx" => sux_run_k::<GxKey, D>(gkeys, b, a, name),
+        "xxh3" => sux_run_k::<u64, D>(keys, b, a, name),
+        h => panic!("unknown hash {h}"),
     }
 }
 
 fn sux_run_k<
     'a,
-    K: ToSig<SG> + Copy + Sync + 'a,
-    SG: sux::func::phast_r::PHastSig + Send + Sync + 'a,
+    K: ToSig<[u64; 1]> + Copy + Sync + 'a,
     D: SeedStoreBuild + MemSize + FlatType + 'a,
 >(
     keys: &'a [K],
@@ -228,7 +224,7 @@ fn sux_run_k<
     name: &str,
 ) -> Entry<'a> {
     let t = Instant::now();
-    let f: PHastR<K, SG, D> = b.try_build(keys, no_logging![]).unwrap();
+    let f: PHastR<K, D> = b.try_build(keys, no_logging![]).unwrap();
     let build = t.elapsed().as_secs_f64() * 1e9 / keys.len() as f64;
     let bits = f.mem_size(SizeFlags::default()) as f64 * 8.0 / keys.len() as f64;
     // Verify that the function is a bijection
@@ -240,7 +236,7 @@ fn sux_run_k<
     }
     let bumped = keys
         .iter()
-        .filter(|&&k| f.is_bumped(K::to_sig(k, 0).ho().0))
+        .filter(|&&k| f.is_bumped(k))
         .count();
     let extra = format!(
         "  levels {}  bumped {:.2}%",
@@ -307,21 +303,15 @@ fn main() {
                     .repair_candidates(if depth == 0 { 0 } else { 16 })
                     .bucket_size(lam)
                     .log2_patterns(lr);
-                let sig128 = match p.get(7).copied().unwrap_or("s64") {
-                    "s64" => false,
-                    "s128" => true,
-                    s => panic!("unknown signature width {s}"),
-                };
                 let name = format!(
-                    "PHast-R S={sbits} L={} R={} d={depth} l={lam} {storage}{}",
+                    "PHast-R S={sbits} L={} R={} d={depth} l={lam} {storage}",
                     1 << ll,
-                    1 << lr,
-                    if sig128 { " s128" } else { "" }
+                    1 << lr
                 );
                 match storage {
-                    "u8" => sux_run::<Box<[u8]>>(&keys, b, &a, &name, sig128),
-                    "u16" => sux_run::<Box<[u16]>>(&keys, b, &a, &name, sig128),
-                    "bfv" => sux_run::<BitFieldVec<Box<[usize]>>>(&keys, b, &a, &name, sig128),
+                    "u8" => sux_run::<Box<[u8]>>(&keys, b, &a, &name),
+                    "u16" => sux_run::<Box<[u16]>>(&keys, b, &a, &name),
+                    "bfv" => sux_run::<BitFieldVec<Box<[usize]>>>(&keys, b, &a, &name),
                     _ => panic!("unknown storage {storage}"),
                 }
             }

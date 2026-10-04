@@ -9,10 +9,10 @@ pub fn phast_r_bits_per_key(keys: &[u64], b: &sux::func::PHastRBuilder, seed_bit
     use mem_dbg::{MemSize, SizeFlags};
     use sux::func::PHastR;
     let bytes = if seed_bits <= 8 {
-        let f: PHastR<u64, [u64; 1], Box<[u8]>> = b.try_build(keys, no_logging![]).unwrap();
+        let f: PHastR<u64, Box<[u8]>> = b.try_build(keys, no_logging![]).unwrap();
         f.mem_size(SizeFlags::default())
     } else {
-        let f: PHastR<u64, [u64; 1], sux::bits::BitFieldVec<Box<[usize]>>> =
+        let f: PHastR<u64, sux::bits::BitFieldVec<Box<[usize]>>> =
             b.try_build(keys, no_logging![]).unwrap();
         f.mem_size(SizeFlags::default())
     };
@@ -33,19 +33,5 @@ impl sux::utils::ToSig<[u64; 1]> for GxKey {
         let mut h = gxhash::GxHasher::with_seed(seed as i64);
         h.write_u64(key.borrow().0);
         [h.finish()]
-    }
-}
-
-/// 128-bit signatures from the same GxHash computation: the lower half is
-/// the 64-bit hash (`finish`), the upper half the rest of the 128-bit state
-/// (`finish_u128`), so hashing costs the same as with 64-bit signatures.
-impl sux::utils::ToSig<[u64; 2]> for GxKey {
-    #[inline(always)]
-    fn to_sig(key: impl std::borrow::Borrow<Self>, seed: u64) -> [u64; 2] {
-        use std::hash::Hasher;
-        let mut h = gxhash::GxHasher::with_seed(seed as i64);
-        h.write_u64(key.borrow().0);
-        let x = h.finish_u128();
-        [x as u64, (x >> 64) as u64]
     }
 }

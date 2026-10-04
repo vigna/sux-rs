@@ -58,9 +58,9 @@ selects XXH3-64 instead (the `BuildX` hasher in `cmp.rs` reproduces sux's
 On machines with HWP (Intel) the clock drops during memory-bound query loops,
 by an amount that varies between runs (±10% observed): use `cmp
 --interleave <rounds>` (as `run.sh` does), which builds all structures first
-and then interleaves batches of queries, reporting medians. Note that
-`PHastR<K>` defaults to `[u64; 2]` signatures (XXH3-128), which are safer for
-huge key sets but slower to compute; the benchmarks use `[u64; 1]`.
+and then interleaves batches of queries, reporting medians. `PHastR<K>` uses
+64-bit signatures (`ToSig<[u64; 1]>`): as in PHast+, keys with the same
+signature are bumped and separated by rehashing at the following levels.
 
 ## Comparison driver
 
@@ -127,10 +127,10 @@ it is the natural candidate to replace PHast+.
   *2^S/R* shifts per pattern (64 for S = 8), which slightly improves space.
 - `[u64; 1]` signatures: *o = h·c* with *c* odd and < 2³¹ (a single
   `imul $imm32`) instead of a xorshift-multiply.
-- `next_level` remixes only *h* (`(mix64(h ^ salt ^ c), o)`; `mix64` is a
-  bijection). The previous two independent mixes were vectorized by LLVM with
-  AVX-512 `vpmullq` (~15 cycles latency each), making each bumped key ~15 ns
-  slower than in the reference; now the slow paths cost the same.
+- Levels after the first used to remix (h, o) with `next_level`; two
+  independent mixes were vectorized by LLVM with AVX-512 `vpmullq` (~15 cycles
+  latency each), making each bumped key ~15 ns slower than in the reference.
+  Now keys are hashed again at each level (see "64-bit collisions" below).
 
 Before the changes, on x86 PHast-R queries were 4–8 ns slower than PHast+.
 Bumping works as in the reference, and PHast-R bumps fewer keys (3.7%) than
@@ -199,6 +199,41 @@ Profile of what remains (single thread): search over four patterns (the
 inherent cost of patterns; PHast+ searches one), eviction trials (1.37M at
 10⁷ keys, 87% failing), the priority queue, and the sort.
 
+## 64-bit collisions (October 2026, `lab/results/rehash`)
+
+PHast+ needs only 64-bit hashes because keys with the same hash self-collide,
+are bumped, and are separated at the next level, where the key is hashed
+again with a new seed. The previous PHast-R remixed (h, o) at each level, so
+equal 64-bit hashes stayed equal and construction failed. Now:
+
+- the first level is unchanged (*h* = 64-bit hash, *o = h·c*);
+- at each following level the key is hashed again with the seed of the level,
+  and the new hash *h'* gives bucket and slice; offsets come from *o ⊕ h'*.
+  The query passes *o* to the slow path, so it is still computed in parallel
+  with the seed load. Reusing *o* unchanged instead fails for *R = 1* at the
+  last level: keys of a bucket of a small level have nearly the same slice,
+  and two of them with the same `o & (L - 1)` collide at every attempt;
+- duplicate keys are detected before building: keys whose first-level hashes
+  coincide are hashed again with a different seed.
+
+Measurements (Xeon E-2388G, single thread, pinned, 11 interleaved rounds,
+reference rows in each process; base = d2a9cb35):
+
+- space and construction are unchanged (within 1%, 1 and 8 threads);
+- strings of 10–50 bytes (`cmpstr`): queries 0.6–2.2 ns *faster*;
+- u64 keys: queries 0.3–1.1 ns slower. `qsplit` shows that the slow path is
+  2–4 ns faster (37.6 vs 40.1 ns at 10⁷), whereas the fast path is ~0.5 ns
+  slower because the slow path needs the key: LLVM keeps the u64 key in a
+  general-purpose register and moves it to a vector register for GxHash
+  (`mov` + `vpbroadcastq xmm, r64`) instead of broadcasting it from memory.
+  A base build whose slow path merely takes the key has the same fast path
+  (`qsplit-basekey`: 24.4 vs 23.9 ns at 10⁷). Any scheme that hashes the key
+  again (PHast+ included) pays this; it does not occur with string keys.
+- Discarded routes: reusing *o* unchanged (fails at small last levels, see
+  above); deriving the bucket from *x·c* (V2, +0.5–1 ns, multiplication on
+  the address path); rehashing only at level 1 (fatal collisions at level 1);
+  128-bit signatures (no gain, as `vpextrq` costs as much as `imul`).
+
 ## Key findings (see Section 2 of the paper; reference implementation)
 
 - With output range m = n, holes = bumped keys; each hole costs about
@@ -218,9 +253,13 @@ inherent cost of patterns; PHast+ searches one), eviction trials (1.37M at
 - `Sweep::place` = `search` (min-sum over patterns, bit-parallel shifts) +
   repair (exactly-one masks, candidates sorted by sum, one per distinct
   blocker, nested repairs try a quarter of the candidates).
-- Levels after the first derive hashes by `next_level(h, o, salt)`, so keys
-  are never rehashed; the last level (< 4096 keys) does not bump and retries
-  with a salt.
+- Levels after the first hash the key again with the seed of the level
+  (`LevelParams::salt`), as PHast+ does, and take offsets from *o ⊕ h'*, where
+  *o* is the value of the first level; the last level (< 4096 keys) does not
+  bump and retries hashing again with a different seed. Keys with the same
+  64-bit hash at the first level are bumped (they self-collide for every seed)
+  and separated at the next level; duplicate keys are detected by hashing
+  again with a different seed the keys whose first-level hashes coincide.
 - Priority weights for (S=8, L=512) and (S=10, L=2048) were retuned with
   `wtune`; the others come from Beling's PHast+ (`ShiftOnly`) tables.
 

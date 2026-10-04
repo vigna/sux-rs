@@ -44,7 +44,7 @@ fn run<D: SeedStoreBuild + SeedStore + MemSize + mem_dbg::FlatType>(args: &Args,
         .repair_depth(args.depth)
         .repair_candidates(if args.depth == 0 { 0 } else { 16 });
     let start = Instant::now();
-    let phf: PHastR<u64, [u64; 1], D> = builder.try_build(keys, no_logging![]).unwrap();
+    let phf: PHastR<u64, D> = builder.try_build(keys, no_logging![]).unwrap();
     let build = start.elapsed().as_nanos() as f64 / keys.len() as f64;
     let bits = phf.mem_size(SizeFlags::default()) as f64 * 8.0 / keys.len() as f64;
     eprintln!("Construction: {build:.1} ns/key");

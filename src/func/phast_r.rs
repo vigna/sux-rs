@@ -35,6 +35,11 @@
 //! small fraction of the keys accesses further levels and the Elias–Fano
 //! sequence. With byte seeds (the default) queries are as fast as in PHast+.
 //!
+//! As in PHast+, keys are hashed again with a different seed at each level
+//! after the first, so 64-bit signatures suffice for any number of keys: keys
+//! with the same signature are bumped from the first level and separated at
+//! the following ones. Duplicate keys are detected and reported as errors.
+//!
 //! With the default parameters (8-bit seeds, depth-1 repair) space is about
 //! 1.93 bits per key; depth-2 repair (see [`PHastRBuilder::repair_depth`])
 //! reaches the space of PHast (about 1.92 bits per key) at about 1.6 times
@@ -55,8 +60,7 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 
 use crate::bits::BitFieldVec;
 use crate::dict::elias_fano::{EfSeq, EliasFanoBuilder};
-use crate::func::mix64;
-use crate::utils::{Sig, ToSig};
+use crate::utils::ToSig;
 
 /// Returns the most significant 64 bits of the 128-bit product of `a` and
 /// `b`.
@@ -65,33 +69,25 @@ const fn mul_hi(a: u64, b: u64) -> u64 {
     ((a as u128 * b as u128) >> 64) as u64
 }
 
-/// Extraction of the two 64-bit values used by [`PHastR`] from a signature.
+/// Derives from the hash *h* of a key for the first level the value *o*
+/// providing the in-slice offsets of the patterns (at the following levels,
+/// the offsets are provided by *o* ⊕ *h*, where *h* is the hash of the level).
 ///
-/// The first value, *h*, determines the bucket and the slice of a key; the
-/// second value, *o*, provides the in-slice offsets for the patterns.
-pub trait PHastSig: Sig + Copy {
-    /// Returns the pair (*h*, *o*).
-    fn ho(self) -> (u64, u64);
+/// Offsets are derived with a single multiplication by an odd constant: bit
+/// *j* of the product depends on the bits of the hash up to *j*, so the
+/// offsets of all patterns depend on the lower bits of the hash, which vary
+/// independently among the keys of a bucket (whose upper bits coincide).
+#[inline(always)]
+const fn offsets(h: u64) -> u64 {
+    h.wrapping_mul(0x5BD1_E995)
 }
 
-impl PHastSig for [u64; 2] {
-    #[inline(always)]
-    fn ho(self) -> (u64, u64) {
-        (self[0], self[1])
-    }
-}
-
-impl PHastSig for [u64; 1] {
-    /// Offsets are derived from the only available hash with a single
-    /// multiplication: bit *k* of the product depends on the bits of the hash
-    /// up to *k*, so the offsets of all patterns depend on the lower bits of
-    /// the hash, which are independent of the upper bits determining the
-    /// bucket and the slice. For very large key sets `[u64; 2]` is
-    /// preferable.
-    #[inline(always)]
-    fn ho(self) -> (u64, u64) {
-        (self[0], self[0].wrapping_mul(0x5BD1_E995))
-    }
+/// Returns the seed used to hash keys for a level: the first level uses the
+/// seed of the function; level *ℓ* > 0 uses the seed plus *ℓ*, and attempt *a*
+/// of the last level adds *a* · 2³² to it.
+#[inline(always)]
+const fn level_seed(seed: u64, level: usize, attempt: u64) -> u64 {
+    seed.wrapping_add(level as u64).wrapping_add(attempt << 32)
 }
 
 /// Returns whether to process `len` elements using rayon, that is, whether
@@ -108,20 +104,6 @@ fn parallel(len: usize) -> bool {
 /// this size the overhead of parallelism exceeds its benefits.
 #[cfg(feature = "rayon")]
 const PAR_MIN_LEN: usize = 1 << 17;
-
-/// Derives the pair (*h*, *o*) of the next level.
-///
-/// Only *h* is remixed: since [`mix64`] is a bijection, keys with distinct
-/// pairs keep distinct pairs at every level, and since the new *h* is a
-/// pseudorandom function of the whole old *h*, the offsets provided by *o* are
-/// independent of the new bucket and slice. Remixing a single value keeps
-/// the query of bumped keys short (two independent mixes are vectorized by
-/// the compiler on AVX-512 hardware using `vpmullq`, which has a high
-/// latency).
-#[inline(always)]
-fn next_level(h: u64, o: u64, salt: u64) -> (u64, u64) {
-    (mix64(h ^ salt ^ 0x9E37_79B9_7F4A_7C15), o)
-}
 
 /// Storage for the seeds of a level (query side).
 ///
@@ -231,8 +213,8 @@ pub struct LevelParams {
     l_mask: u64,
     /// The offset of the outputs of this level in the remapping sequence.
     offset: u64,
-    /// A salt for the derivation of the hashes of this level from those of
-    /// the previous level.
+    /// The seed used to hash keys for this level (unused for the first
+    /// level, which uses the seed of the function).
     salt: u64,
     /// The index of the first seed of this level in the seed storage.
     first_seed: u64,
@@ -246,8 +228,8 @@ pub struct LevelParams {
 ///
 /// # Type Parameters
 ///
-/// - `K`: the type of the keys.
-/// - `S`: the signature type (see [`PHastSig`]); default `[u64; 2]`.
+/// - `K`: the type of the keys, which must be hashable to 64-bit signatures
+///   (see [`ToSig`]).
 /// - `D`: the storage of the seeds (see [`SeedStore`]); default `Box<[u8]>`.
 /// - `P`: the parameters of the levels after the first one; default
 ///   `Box<[LevelParams]>`.
@@ -280,9 +262,9 @@ pub struct LevelParams {
 /// # }
 /// ```
 #[derive(Debug, Clone, MemSize, MemDbg)]
-#[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(phantom(K, S)))]
+#[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(phantom(K)))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct PHastR<K: ?Sized, S = [u64; 2], D = Box<[u8]>, P = Box<[LevelParams]>, R = EfSeq> {
+pub struct PHastR<K: ?Sized, D = Box<[u8]>, P = Box<[LevelParams]>, R = EfSeq> {
     /// The seed used to compute signatures.
     seed: u64,
     /// The number of keys.
@@ -302,14 +284,14 @@ pub struct PHastR<K: ?Sized, S = [u64; 2], D = Box<[u8]>, P = Box<[LevelParams]>
     /// Maps outputs of levels after the first one to the free slots of the
     /// first one.
     remap: R,
-    _marker: std::marker::PhantomData<(*const K, S)>,
+    _marker: std::marker::PhantomData<*const K>,
 }
 
-// SAFETY: K and S occur only inside _marker (see VFunc).
-unsafe impl<K: ?Sized, S, D: Send, P: Send, R: Send> Send for PHastR<K, S, D, P, R> {}
-unsafe impl<K: ?Sized, S, D: Sync, P: Sync, R: Sync> Sync for PHastR<K, S, D, P, R> {}
+// SAFETY: K occurs only inside _marker (see VFunc).
+unsafe impl<K: ?Sized, D: Send, P: Send, R: Send> Send for PHastR<K, D, P, R> {}
+unsafe impl<K: ?Sized, D: Sync, P: Sync, R: Sync> Sync for PHastR<K, D, P, R> {}
 
-impl<K: ?Sized, S, D, P: AsRef<[LevelParams]>, R> PHastR<K, S, D, P, R> {
+impl<K: ?Sized, D, P: AsRef<[LevelParams]>, R> PHastR<K, D, P, R> {
     /// Returns the number of keys.
     pub const fn len(&self) -> usize {
         self.n
@@ -326,10 +308,16 @@ impl<K: ?Sized, S, D, P: AsRef<[LevelParams]>, R> PHastR<K, S, D, P, R> {
     }
 }
 
-impl<K: ?Sized, S, D: SeedStore, P: AsRef<[LevelParams]>, R: SliceByValue<Value = usize>>
-    PHastR<K, S, D, P, R>
+impl<
+    K: ?Sized + ToSig<[u64; 1]>,
+    D: SeedStore,
+    P: AsRef<[LevelParams]>,
+    R: SliceByValue<Value = usize>,
+> PHastR<K, D, P, R>
 {
-    /// Returns the output of a key in the given level, given its seed.
+    /// Returns the output of a key in the given level, given its hash *h* for
+    /// the level, the value *o* providing its in-slice offsets, and the seed of
+    /// its bucket.
     #[inline(always)]
     fn pos(&self, lv: &LevelParams, h: u64, o: u64, seed: usize) -> usize {
         // The pattern is the lowest log2_patterns bits of the seed, and its
@@ -342,22 +330,31 @@ impl<K: ?Sized, S, D: SeedStore, P: AsRef<[LevelParams]>, R: SliceByValue<Value 
             + (seed >> self.log2_patterns)
     }
 
-    /// Returns the value associated with a pair (*h*, *o*) of hashes.
+    /// Returns the value associated with the given key.
+    ///
+    /// The returned value is in the range [0 . . *n*), where *n* is the
+    /// number of keys, and different keys of the original set are mapped to
+    /// different values. If the key was not in the original set, the result
+    /// is arbitrary.
     #[inline]
-    pub fn get_by_ho(&self, h: u64, o: u64) -> usize {
+    pub fn get(&self, key: impl Borrow<K>) -> usize {
+        let key = key.borrow();
+        let h = K::to_sig(key, self.seed)[0];
+        let o = offsets(h);
         let lv = &self.params0;
         // SAFETY: mul_hi(h, buckets) < buckets, which is the number of seeds
         let s = unsafe { self.seeds0.get_seed(mul_hi(h, lv.buckets) as usize) };
         if s != 0 {
             return self.pos(lv, h, o, s);
         }
-        self.get_by_ho_slow(h, o)
+        self.get_slow(key, o)
     }
 
-    /// Returns whether a pair (*h*, *o*) of hashes is bumped from the first
-    /// level (for benchmarking).
+    /// Returns whether the given key is bumped from the first level (for
+    /// benchmarking).
     #[doc(hidden)]
-    pub fn is_bumped(&self, h: u64) -> bool {
+    pub fn is_bumped(&self, key: impl Borrow<K>) -> bool {
+        let h = K::to_sig(key.borrow(), self.seed)[0];
         // SAFETY: mul_hi(h, buckets) < buckets, which is the number of seeds
         unsafe {
             self.seeds0
@@ -366,13 +363,16 @@ impl<K: ?Sized, S, D: SeedStore, P: AsRef<[LevelParams]>, R: SliceByValue<Value 
         }
     }
 
-    /// Handles keys bumped from the first level.
+    /// Handles keys bumped from the first level: at each level, the key is
+    /// hashed again with the seed of the level to find its bucket and its
+    /// slice, and the in-slice offsets are provided by `o ^ h`, where `o` is
+    /// the value of the first level: the offsets of a key thus change at each
+    /// level, at the cost of an exclusive or.
     #[cold]
     #[inline(never)]
-    fn get_by_ho_slow(&self, h: u64, o: u64) -> usize {
-        let (mut h, mut o) = (h, o);
+    fn get_slow(&self, key: &K, o: u64) -> usize {
         for lv in self.params.as_ref() {
-            (h, o) = next_level(h, o, lv.salt);
+            let h = K::to_sig(key, lv.salt)[0];
             // SAFETY: the seeds of the level are stored consecutively
             let s = unsafe {
                 self.seeds
@@ -383,7 +383,7 @@ impl<K: ?Sized, S, D: SeedStore, P: AsRef<[LevelParams]>, R: SliceByValue<Value 
                 // one entry for each output of each level after the first
                 return unsafe {
                     self.remap
-                        .get_value_unchecked(lv.offset as usize + self.pos(lv, h, o, s))
+                        .get_value_unchecked(lv.offset as usize + self.pos(lv, h, o ^ h, s))
                 };
             }
         }
@@ -392,33 +392,11 @@ impl<K: ?Sized, S, D: SeedStore, P: AsRef<[LevelParams]>, R: SliceByValue<Value 
     }
 }
 
-impl<
-    K: ?Sized + ToSig<S>,
-    S: PHastSig,
-    D: SeedStore,
-    P: AsRef<[LevelParams]>,
-    R: SliceByValue<Value = usize>,
-> PHastR<K, S, D, P, R>
-{
-    /// Returns the value associated with the given key.
-    ///
-    /// The returned value is in the range [0 . . *n*), where *n* is the
-    /// number of keys, and different keys of the original set are mapped to
-    /// different values. If the key was not in the original set, the result
-    /// is arbitrary.
-    #[inline]
-    pub fn get(&self, key: impl Borrow<K>) -> usize {
-        let (h, o) = K::to_sig(key.borrow(), self.seed).ho();
-        self.get_by_ho(h, o)
-    }
-}
-
-impl<K: ?Sized + ToSig<S>, S: PHastSig, D: SeedStore> PHastR<K, S, D> {
+impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStore> PHastR<K, D> {
     /// Builds a function using default parameters.
     pub fn try_new<B: Borrow<K> + Sync>(keys: &[B], pl: &mut impl ProgressLog) -> Result<Self>
     where
         K: Sync,
-        S: Send + Sync,
         D: SeedStoreBuild,
     {
         PHastRBuilder::default().try_build(keys, pl)
@@ -530,16 +508,11 @@ impl PHastRBuilder {
     }
 
     /// Builds a function on the given keys.
-    pub fn try_build<
-        K: ?Sized + ToSig<S> + Sync,
-        S: PHastSig + Send + Sync,
-        D: SeedStoreBuild,
-        B: Borrow<K> + Sync,
-    >(
+    pub fn try_build<K: ?Sized + ToSig<[u64; 1]> + Sync, D: SeedStoreBuild, B: Borrow<K> + Sync>(
         &self,
         keys: &[B],
         pl: &mut impl ProgressLog,
-    ) -> Result<PHastR<K, S, D>> {
+    ) -> Result<PHastR<K, D>> {
         if self.seed_bits == 0 || self.seed_bits > D::MAX_BITS {
             bail!(
                 "The number of seed bits must be in [1 . . {}] for this seed storage",
@@ -558,24 +531,25 @@ impl PHastRBuilder {
 
         pl.info(format_args!("Computing signatures..."));
         let seed = self.seed;
-        let hash = |k: &B| {
-            let (h, o) = K::to_sig(k.borrow(), seed).ho();
-            Ho { h, o }
+        let hash = |(i, k): (usize, &B)| Ho {
+            h: K::to_sig(k.borrow(), seed)[0],
+            idx: i as u64,
         };
         #[cfg(feature = "rayon")]
         let hos: Vec<Ho> = if parallel(keys.len()) {
             use rayon::prelude::*;
             keys.par_iter()
+                .enumerate()
                 .with_min_len(crate::RAYON_MIN_LEN)
                 .map(hash)
                 .collect()
         } else {
-            keys.iter().map(hash).collect()
+            keys.iter().enumerate().map(hash).collect()
         };
         #[cfg(not(feature = "rayon"))]
-        let hos: Vec<Ho> = keys.iter().map(hash).collect();
+        let hos: Vec<Ho> = keys.iter().enumerate().map(hash).collect();
 
-        let (levels, remap) = self.build_from_ho(hos, pl)?;
+        let (levels, remap) = self.build_levels::<K, B>(keys, hos, pl)?;
         let mut levels = levels.into_iter();
         let (params0, seeds0) = levels.next().expect("there is always at least one level");
         let mut params = vec![];
@@ -599,18 +573,31 @@ impl PHastRBuilder {
         })
     }
 
+    /// Builds the levels from the hashes of the first level (each with the
+    /// index of its key, so that keys bumped from a level can be hashed again
+    /// for the next one).
     #[allow(clippy::type_complexity)]
-    fn build_from_ho(
+    fn build_levels<K: ?Sized + ToSig<[u64; 1]> + Sync, B: Borrow<K> + Sync>(
         &self,
+        keys: &[B],
         mut cur: Vec<Ho>,
         pl: &mut impl ProgressLog,
     ) -> Result<(Vec<(LevelParams, Vec<u16>)>, EfSeq)> {
+        // Hashes again the keys of the given records with the given seed
+        let hash = |idx: u64, seed: u64| K::to_sig(keys[idx as usize].borrow(), seed)[0];
+        let rehash = |v: &mut [Hoi], seed: u64| {
+            let f = |x: &mut Hoi| x.h = hash(x.idx, seed);
+            #[cfg(feature = "rayon")]
+            if parallel(v.len()) {
+                use rayon::prelude::*;
+                v.par_iter_mut().with_min_len(1 << 16).for_each(f);
+                return;
+            }
+            v.iter_mut().for_each(f);
+        };
         let n = cur.len();
         let mut levels: Vec<(LevelParams, Vec<u16>)> = vec![];
-        let mut holes: Vec<usize> = vec![];
         let mut entries: Vec<usize> = vec![];
-        let mut hole_idx = 0;
-        let mut last_hole = 0;
         // Priority weights depend on the slice length of each level
         let weights = |g: &Geometry| {
             self.weights
@@ -621,9 +608,15 @@ impl PHastRBuilder {
             // A single empty level, so that queries need no special case
             let geom = self.geometry(0, 1, self.bucket_size);
             levels.push((geom.level(), vec![0]));
+            let efb = EliasFanoBuilder::new(0, 1);
+            return Ok((levels, efb.build_with_seq()));
         }
 
-        // Check for duplicate signatures: keys with the same h are adjacent
+        // Keys with the same hash are adjacent after sorting. They are bumped
+        // (their bucket self-collides for every seed), and separated by the
+        // hashes of the following levels, unless they are equal: we detect
+        // duplicate keys hashing again keys with the same hash with a
+        // different seed.
         sort_ho(&mut cur);
         let equal = |w: &[Ho]| (w[0].h == w[1].h).then_some(w[0].h);
         #[cfg(feature = "rayon")]
@@ -639,61 +632,75 @@ impl PHastRBuilder {
         for h in equal_h {
             let start = cur.partition_point(|x| x.h < h);
             let end = cur.partition_point(|x| x.h <= h);
-            let run = &cur[start..end];
-            for i in 0..run.len() {
-                for j in i + 1..run.len() {
-                    if run[i].o == run[j].o {
-                        bail!("Duplicate signatures (duplicate keys?)");
-                    }
-                }
+            let mut other: Vec<u64> = cur[start..end]
+                .iter()
+                .map(|x| hash(x.idx, self.seed ^ 0xD6E8_FEB8_6659_FD93))
+                .collect();
+            other.sort_unstable();
+            if other.windows(2).any(|w| w[0] == w[1]) {
+                bail!("Duplicate keys");
             }
         }
 
-        // At the beginning of each iteration, cur contains the hashes of the
-        // previous level (or of the first level, sorted, at the first
-        // iteration); the hashes of a level after the first one are obtained
-        // by applying next_level() with the salt of the level.
-        let mut first = true;
+        // The first level
+        let geom = self.geometry(n, n, self.bucket_size);
+        let out = sweep_level(&cur, &geom, self, &weights(&geom), true)
+            .expect("bumping sweeps cannot fail");
+        drop(cur);
+        pl.info(format_args!(
+            "Level 0: {} keys, {} bumped ({:.3}%)",
+            n,
+            out.bumped.len(),
+            100.0 * out.bumped.len() as f64 / n as f64
+        ));
+        let holes = self::holes(&out.occupied, n);
+        debug_assert_eq!(holes.len(), out.bumped.len());
+        levels.push((geom.level(), out.seeds));
+        let mut hole_idx = 0;
+        let mut last_hole = 0;
+
+        // The following levels: keys are hashed again with the seed of the
+        // level to find their bucket and slice; their offsets are given by
+        // the value of the first level xored with the hash of the level
+        let mut cur: Vec<Hoi> = out
+            .bumped
+            .iter()
+            .map(|x| Hoi {
+                h: 0,
+                o: x.o(),
+                idx: x.idx,
+            })
+            .collect();
         while !cur.is_empty() {
             let k = cur.len();
-            let last = !first && k <= LAST_LEVEL_THRESHOLD;
-            let (level, occupied, bumped, occupied_len) = if !last {
-                if !first {
-                    let remix = |x: &mut Ho| (x.h, x.o) = next_level(x.h, x.o, 0);
-                    #[cfg(feature = "rayon")]
-                    if parallel(cur.len()) {
-                        use rayon::prelude::*;
-                        cur.par_iter_mut().with_min_len(1 << 16).for_each(remix);
-                    } else {
-                        cur.iter_mut().for_each(remix);
-                    }
-                    #[cfg(not(feature = "rayon"))]
-                    cur.iter_mut().for_each(remix);
-                    sort_ho(&mut cur);
-                }
+            let (level, seeds, occupied, bumped, m) = if k > LAST_LEVEL_THRESHOLD {
+                let seed = level_seed(self.seed, levels.len(), 0);
+                rehash(&mut cur, seed);
+                sort_ho(&mut cur);
                 let geom = self.geometry(k, k, self.bucket_size);
                 let out = sweep_level(&cur, &geom, self, &weights(&geom), true)
                     .expect("bumping sweeps cannot fail");
-                ((geom.level(), out.seeds), out.occupied, out.bumped, geom.m)
+                let mut level = geom.level();
+                level.salt = seed;
+                (level, out.seeds, out.occupied, out.bumped, geom.m)
             } else {
                 // The last level does not bump: we enlarge the range and
-                // change the salt until we succeed
-                let mut salt = 0u64;
+                // hash the keys with a different seed until we succeed
+                let mut attempt = 0u64;
                 loop {
-                    let m = k + k / 4 + 16 + (salt as usize / 8) * (k / 8 + 8);
+                    let m = k + k / 4 + 16 + (attempt as usize / 8) * (k / 8 + 8);
                     let geom = self.geometry(k, m, self.bucket_size.min(3.0));
-                    let mut keys = cur.clone();
-                    for x in keys.iter_mut() {
-                        (x.h, x.o) = next_level(x.h, x.o, salt);
-                    }
-                    sort_ho(&mut keys);
-                    if let Some(out) = sweep_level(&keys, &geom, self, &weights(&geom), false) {
+                    let seed = level_seed(self.seed, levels.len(), attempt);
+                    let mut hos = cur.clone();
+                    rehash(&mut hos, seed);
+                    sort_ho(&mut hos);
+                    if let Some(out) = sweep_level(&hos, &geom, self, &weights(&geom), false) {
                         let mut level = geom.level();
-                        level.salt = salt;
-                        break ((level, out.seeds), out.occupied, out.bumped, geom.m);
+                        level.salt = seed;
+                        break (level, out.seeds, out.occupied, out.bumped, geom.m);
                     }
-                    salt += 1;
-                    if salt > 1000 {
+                    attempt += 1;
+                    if attempt > 1000 {
                         bail!("Could not build the last level");
                     }
                 }
@@ -708,28 +715,20 @@ impl PHastRBuilder {
             ));
 
             let mut level = level;
-            if first {
-                // Holes of the first level
-                holes = self::holes(&occupied, n);
-                debug_assert_eq!(holes.len(), bumped.len());
-                first = false;
-            } else {
-                level.0.offset = entries.len() as u64;
-                let m = occupied_len;
-                for p in 0..m {
-                    if is_occupied(&occupied, p) {
-                        last_hole = holes[hole_idx];
-                        hole_idx += 1;
-                    }
-                    entries.push(last_hole);
+            level.offset = entries.len() as u64;
+            for p in 0..m {
+                if is_occupied(&occupied, p) {
+                    last_hole = holes[hole_idx];
+                    hole_idx += 1;
                 }
+                entries.push(last_hole);
             }
-            levels.push(level);
+            levels.push((level, seeds));
             cur = bumped;
         }
         debug_assert_eq!(hole_idx, holes.len());
 
-        let mut efb = EliasFanoBuilder::new(entries.len(), n.max(1));
+        let mut efb = EliasFanoBuilder::new(entries.len(), n);
         for &e in &entries {
             efb.push(e);
         }
@@ -773,26 +772,47 @@ impl PHastRBuilder {
 /// Number of keys below which a level is built without bumping.
 const LAST_LEVEL_THRESHOLD: usize = 4096;
 
-/// A pair of hashes.
+/// A key during construction: the hash *h* determining its bucket and its
+/// slice, and the value *o* providing its in-slice offsets.
+trait Rec:
+    Copy + Default + Send + Sync + PartialOrd + voracious_radix_sort::Radixable<u64, Key = u64>
+{
+    fn h(&self) -> u64;
+    fn o(&self) -> u64;
+}
+
+/// A key of the first level: its hash *h* and the index of the key (used to
+/// hash it again for the following levels); *o* is derived from *h*.
 #[derive(Debug, Clone, Copy, Default)]
 struct Ho {
     h: u64,
-    o: u64,
+    idx: u64,
 }
 
-/// Ordering by *h* (and *o*, to break ties), needed by
+impl Rec for Ho {
+    #[inline(always)]
+    fn h(&self) -> u64 {
+        self.h
+    }
+    #[inline(always)]
+    fn o(&self) -> u64 {
+        offsets(self.h)
+    }
+}
+
+/// Ordering by *h* (and index, to break ties), needed by
 /// [`voracious_radix_sort`].
 impl PartialOrd for Ho {
     #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some((self.h, self.o).cmp(&(other.h, other.o)))
+        Some((self.h, self.idx).cmp(&(other.h, other.idx)))
     }
 }
 
 impl PartialEq for Ho {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
-        self.h == other.h && self.o == other.o
+        self.h == other.h && self.idx == other.idx
     }
 }
 
@@ -804,9 +824,52 @@ impl voracious_radix_sort::Radixable<u64> for Ho {
     }
 }
 
+/// A key of a level after the first: its hash *h* for the level, the value
+/// *o* of the first level, and the index of the key (offsets are provided by
+/// *o* ⊕ *h*).
+#[derive(Debug, Clone, Copy, Default)]
+struct Hoi {
+    h: u64,
+    o: u64,
+    idx: u64,
+}
+
+impl Rec for Hoi {
+    #[inline(always)]
+    fn h(&self) -> u64 {
+        self.h
+    }
+    #[inline(always)]
+    fn o(&self) -> u64 {
+        self.o ^ self.h
+    }
+}
+
+impl PartialOrd for Hoi {
+    #[inline(always)]
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some((self.h, self.idx).cmp(&(other.h, other.idx)))
+    }
+}
+
+impl PartialEq for Hoi {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.h == other.h && self.idx == other.idx
+    }
+}
+
+impl voracious_radix_sort::Radixable<u64> for Hoi {
+    type Key = u64;
+    #[inline(always)]
+    fn key(&self) -> u64 {
+        self.h
+    }
+}
+
 /// Sorts by *h* using [`voracious_radix_sort`] (multithreaded with the
 /// `rayon` feature).
-fn sort_ho(v: &mut [Ho]) {
+fn sort_ho<T: Rec>(v: &mut [T]) {
     use voracious_radix_sort::RadixSort;
     #[cfg(feature = "rayon")]
     if parallel(v.len()) {
@@ -839,8 +902,8 @@ impl Geometry {
     }
 
     #[inline(always)]
-    fn base(&self, x: Ho, r: usize) -> usize {
-        self.slice_begin(x.h) + ((x.o >> (r as u32 * self.stride())) & self.l_mask) as usize
+    fn base<T: Rec>(&self, x: T, r: usize) -> usize {
+        self.slice_begin(x.h()) + ((x.o() >> (r as u32 * self.stride())) & self.l_mask) as usize
     }
 
     /// The distance in bits between the offsets of consecutive patterns.
@@ -850,7 +913,7 @@ impl Geometry {
     }
 
     #[inline(always)]
-    fn pos(&self, x: Ho, seed: usize) -> usize {
+    fn pos<T: Rec>(&self, x: T, seed: usize) -> usize {
         let r = seed & (self.patterns - 1);
         self.base(x, r) + (seed >> self.log2_patterns)
     }
@@ -880,24 +943,24 @@ const HEAP_BITS: usize = 1024;
 /// Number of buckets in the window.
 const WINDOW: usize = 256;
 
-struct SweepOut {
+struct SweepOut<T> {
     seeds: Vec<u16>,
     /// Occupancy bitmap of the output range.
     occupied: Vec<u64>,
-    bumped: Vec<Ho>,
+    bumped: Vec<T>,
 }
 
 /// Assigns seeds to the buckets of a level, possibly in parallel.
 ///
 /// Returns `None` if `allow_bump` is false and some bucket could not be
 /// placed.
-fn sweep_level(
-    keys: &[Ho],
+fn sweep_level<T: Rec>(
+    keys: &[T],
     g: &Geometry,
     b: &PHastRBuilder,
     weights: &[i64; 7],
     allow_bump: bool,
-) -> Option<SweepOut> {
+) -> Option<SweepOut<T>> {
     let nb = g.buckets;
 
     // Number of buckets between chunks whose positions cannot overlap (the
@@ -969,10 +1032,10 @@ fn sweep_level(
             let after = (hi + gap).min(bounds[i + 2]);
             let first = sw.first_slice();
             for (from, to) in [(before, lo), (hi, after)] {
-                let k_lo = keys.partition_point(|x| g.bucket(x.h) < from);
-                let k_hi = keys.partition_point(|x| g.bucket(x.h) < to);
+                let k_lo = keys.partition_point(|x| g.bucket(x.h()) < from);
+                let k_hi = keys.partition_point(|x| g.bucket(x.h()) < to);
                 for &x in &keys[k_lo..k_hi] {
-                    let s = seeds_ro[g.bucket(x.h)] as usize;
+                    let s = seeds_ro[g.bucket(x.h())] as usize;
                     if s != 0 {
                         let p = g.pos(x, s);
                         if p >= first {
@@ -1009,16 +1072,16 @@ fn sweep_level(
     let words = g.m.div_ceil(64);
     let span = g.l_mask as usize + 1 + g.shifts;
     let seeds_ro: &[u16] = &seeds;
-    let process = |part: &[Ho]| -> (usize, Vec<u64>, Vec<Ho>) {
+    let process = |part: &[T]| -> (usize, Vec<u64>, Vec<T>) {
         let mut bumped = vec![];
         let (Some(first), Some(last)) = (part.first(), part.last()) else {
             return (0, vec![], bumped);
         };
-        let lo = g.slice_begin(first.h) / 64;
-        let hi = (g.slice_begin(last.h) + span).div_ceil(64).min(words);
+        let lo = g.slice_begin(first.h()) / 64;
+        let hi = (g.slice_begin(last.h()) + span).div_ceil(64).min(words);
         let mut seg = vec![0u64; hi - lo];
         for &x in part {
-            let s = seeds_ro[g.bucket(x.h)] as usize;
+            let s = seeds_ro[g.bucket(x.h())] as usize;
             if s == 0 {
                 bumped.push(x);
             } else {
@@ -1032,14 +1095,14 @@ fn sweep_level(
     };
     let part_len = keys.len().div_ceil(threads.max(1)).max(1 << 16);
     #[cfg(feature = "rayon")]
-    let parts: Vec<(usize, Vec<u64>, Vec<Ho>)> = if parallel(keys.len()) {
+    let parts: Vec<(usize, Vec<u64>, Vec<T>)> = if parallel(keys.len()) {
         use rayon::prelude::*;
         keys.par_chunks(part_len).map(process).collect()
     } else {
         keys.chunks(part_len).map(process).collect()
     };
     #[cfg(not(feature = "rayon"))]
-    let parts: Vec<(usize, Vec<u64>, Vec<Ho>)> = keys.chunks(part_len).map(process).collect();
+    let parts: Vec<(usize, Vec<u64>, Vec<T>)> = keys.chunks(part_len).map(process).collect();
     let mut occupied = vec![0u64; words];
     let mut bumped = Vec::with_capacity(parts.iter().map(|p| p.2.len()).sum());
     for (lo, seg, b) in parts {
@@ -1105,9 +1168,9 @@ fn holes(bits: &[u64], m: usize) -> Vec<usize> {
 }
 
 /// The state of a sweep over a range of buckets.
-struct Sweep<'a> {
+struct Sweep<'a, T: Rec> {
     /// The keys of the buckets in the range.
-    keys: &'a [Ho],
+    keys: &'a [T],
     /// The beginning of each bucket of the range in `keys`.
     bucket_begin: Vec<usize>,
     g: &'a Geometry,
@@ -1147,10 +1210,10 @@ struct Sweep<'a> {
     best_bases: Vec<usize>,
 }
 
-impl<'a> Sweep<'a> {
+impl<'a, T: Rec> Sweep<'a, T> {
     #[allow(clippy::too_many_arguments)]
     fn new(
-        keys: &'a [Ho],
+        keys: &'a [T],
         g: &'a Geometry,
         b: &PHastRBuilder,
         weights: &'a [i64; 7],
@@ -1170,12 +1233,12 @@ impl<'a> Sweep<'a> {
         let cyc_bits = (4 * span + 2 * WINDOW * per_bucket)
             .next_power_of_two()
             .max(128);
-        let k_lo = keys.partition_point(|x| g.bucket(x.h) < lo);
-        let k_hi = keys.partition_point(|x| g.bucket(x.h) < hi);
+        let k_lo = keys.partition_point(|x| g.bucket(x.h()) < lo);
+        let k_hi = keys.partition_point(|x| g.bucket(x.h()) < hi);
         let keys = &keys[k_lo..k_hi];
         let mut bucket_begin = vec![0usize; hi - lo + 1];
         for x in keys {
-            bucket_begin[g.bucket(x.h) - lo + 1] += 1;
+            bucket_begin[g.bucket(x.h()) - lo + 1] += 1;
         }
         for i in 0..hi - lo {
             bucket_begin[i + 1] += bucket_begin[i];
@@ -1213,7 +1276,7 @@ impl<'a> Sweep<'a> {
     }
 
     #[inline(always)]
-    fn bucket_keys(&self, b: usize) -> &'a [Ho] {
+    fn bucket_keys(&self, b: usize) -> &'a [T] {
         &self.keys[self.bucket_begin[b - self.lo]..self.bucket_begin[b - self.lo + 1]]
     }
 
@@ -1227,7 +1290,7 @@ impl<'a> Sweep<'a> {
             usize::MAX
         } else {
             self.g
-                .slice_begin(self.keys[self.bucket_begin[b - self.lo]].h)
+                .slice_begin(self.keys[self.bucket_begin[b - self.lo]].h())
         }
     }
 
@@ -1338,12 +1401,12 @@ impl<'a> Sweep<'a> {
 
     /// Loads the slice beginnings and offset sources of the keys of a bucket.
     #[inline]
-    fn load_bucket(&mut self, keys: &[Ho]) {
+    fn load_bucket(&mut self, keys: &[T]) {
         let g = self.g;
         self.sb.clear();
-        self.sb.extend(keys.iter().map(|x| g.slice_begin(x.h)));
+        self.sb.extend(keys.iter().map(|x| g.slice_begin(x.h())));
         self.oo.clear();
-        self.oo.extend(keys.iter().map(|x| x.o));
+        self.oo.extend(keys.iter().map(|x| x.o()));
     }
 
     /// Fills `self.bases` with the bases for pattern `r` of the keys of the
@@ -1534,7 +1597,7 @@ impl<'a> Sweep<'a> {
             // The evicted bucket must have all its potential positions in
             // the active part of the cyclic window.
             let first = self.keys[self.bucket_begin[blocker - self.lo]];
-            if self.g.slice_begin(first.h) < self.value_to_clear {
+            if self.g.slice_begin(first.h()) < self.value_to_clear {
                 continue;
             }
             let key = if self.repair_by_size {
@@ -1645,7 +1708,7 @@ impl<'a> Sweep<'a> {
             return true;
         }
         let slice_begin_of =
-            |s: &Self, b: usize| s.g.slice_begin(s.keys[s.bucket_begin[b - s.lo]].h);
+            |s: &Self, b: usize| s.g.slice_begin(s.keys[s.bucket_begin[b - s.lo]].h());
         let span_end = |sb: usize| (sb + WINDOW).min(hi);
         let mut ok = true;
         self.value_to_clear = slice_begin_of(&self, span_begin);
@@ -1745,7 +1808,7 @@ mod tests {
 
     fn check<D: SeedStoreBuild>(n: usize, builder: PHastRBuilder) {
         let keys: Vec<u64> = (0..n as u64).collect();
-        let phf: PHastR<u64, [u64; 2], D> = builder.try_build(&keys, no_logging![]).unwrap();
+        let phf: PHastR<u64, D> = builder.try_build(&keys, no_logging![]).unwrap();
         let mut seen = vec![false; n];
         for key in &keys {
             let v = phf.get(key);
@@ -1837,6 +1900,54 @@ mod tests {
         assert!(r.is_err());
     }
 
+    /// A key whose 64-bit signature with seed 0 collides with that of another
+    /// key for the first 2 · `COLLIDING` keys (pairs 2*i*, 2*i* + 1); other
+    /// seeds give independent signatures.
+    #[derive(Clone, Copy)]
+    struct CollidingKey(u64);
+    const COLLIDING: u64 = 2000;
+
+    impl ToSig<[u64; 1]> for CollidingKey {
+        fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
+            let k = key.borrow().0;
+            if seed == 0 && k < 2 * COLLIDING {
+                <u64 as ToSig<[u64; 1]>>::to_sig(k / 2, 0)
+            } else {
+                <u64 as ToSig<[u64; 1]>>::to_sig(k, seed)
+            }
+        }
+    }
+
+    #[test]
+    fn test_signature_collisions() {
+        // Colliding signatures are bumped and separated by the hashes of the
+        // following levels, with all configurations of the following levels
+        // (in particular, with only the last level)
+        for n in [5_000u64, 300_000] {
+            let keys: Vec<CollidingKey> = (0..n).map(CollidingKey).collect();
+            for builder in [
+                PHastRBuilder::default(),
+                PHastRBuilder::default()
+                    .repair_depth(0)
+                    .repair_candidates(0),
+            ] {
+                let phf: PHastR<CollidingKey> = builder.try_build(&keys, no_logging![]).unwrap();
+                let mut seen = vec![false; keys.len()];
+                for &key in &keys {
+                    let v = phf.get(key);
+                    assert!(!seen[v], "duplicate output {v}");
+                    seen[v] = true;
+                }
+            }
+        }
+        // Equal keys are still detected
+        let mut keys: Vec<CollidingKey> = (0..100_000).map(CollidingKey).collect();
+        keys.push(CollidingKey(50_000));
+        let r: Result<PHastR<CollidingKey>> =
+            PHastRBuilder::default().try_build(&keys, no_logging![]);
+        assert!(r.is_err());
+    }
+
     /// Serializes, deserializes zero-copy (checking at compile time that
     /// seeds, level parameters, and the remapping sequence are borrowed),
     /// and compares outputs.
@@ -1846,14 +1957,14 @@ mod tests {
             use epserde::prelude::*;
             use epserde::utils::AlignedCursor;
             let keys: Vec<u64> = (0..200_000).collect();
-            let phf: PHastR<u64, [u64; 2], $d> = $builder.try_build(&keys, no_logging![]).unwrap();
+            let phf: PHastR<u64, $d> = $builder.try_build(&keys, no_logging![]).unwrap();
             let mut cursor = <AlignedCursor<Aligned64>>::new();
             // SAFETY: phf was built by its constructor
             unsafe { phf.serialize(&mut cursor) }.unwrap();
             let len = cursor.len();
             cursor.set_position(0);
             // SAFETY: we just serialized a valid structure into this buffer
-            let case = unsafe { <PHastR<u64, [u64; 2], $d>>::read_mem(&mut cursor, len) }.unwrap();
+            let case = unsafe { <PHastR<u64, $d>>::read_mem(&mut cursor, len) }.unwrap();
             let des = case.uncase();
             let _: &$deser_d = &des.seeds0;
             let _: &$deser_d = &des.seeds;

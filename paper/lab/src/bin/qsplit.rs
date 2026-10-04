@@ -9,9 +9,8 @@ use dsi_progress_logger::no_logging;
 use lab::GxKey;
 use std::time::Instant;
 use sux::bits::BitFieldVec;
-use sux::func::phast_r::{PHastSig, SeedStore, SeedStoreBuild};
+use sux::func::phast_r::{SeedStore, SeedStoreBuild};
 use sux::func::{PHastR, PHastRBuilder};
-use sux::utils::ToSig;
 
 #[derive(Parser)]
 struct Args {
@@ -49,10 +48,10 @@ fn time<T: Copy>(ks: &[T], queries: usize, repeats: usize, f: impl Fn(T) -> usiz
 }
 
 fn run<D: SeedStoreBuild + SeedStore>(keys: &[GxKey], b: PHastRBuilder, a: &Args, name: &str) {
-    let f: PHastR<GxKey, [u64; 1], D> = b.try_build(keys, no_logging![]).unwrap();
+    let f: PHastR<GxKey, D> = b.try_build(keys, no_logging![]).unwrap();
     let (bumped, placed): (Vec<GxKey>, Vec<GxKey>) = keys
         .iter()
-        .partition(|&&k| f.is_bumped(<GxKey as ToSig<[u64; 1]>>::to_sig(k, 0).ho().0));
+        .partition(|&&k| f.is_bumped(k));
     let all = time(keys, a.queries, a.repeats, |k| f.get(k));
     let fast = time(&placed, a.queries, a.repeats, |k| f.get(k));
     let slow = time(&bumped, a.queries / 4, a.repeats, |k| f.get(k));
