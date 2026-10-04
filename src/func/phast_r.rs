@@ -1682,10 +1682,14 @@ impl<'a, T: Rec> Sweep<'a, T> {
         let m = self.g.wrap;
         // Seeds 1 . . max_seed are the total shifts 0, m, . . .
         let total_end = m * self.g.max_seed;
+        // Rounds up to a multiple of m without divisions: for x < 2^16 and
+        // m <= 64, ⌊x · ⌈2^32 / m⌉ / 2^32⌋ = ⌊x / m⌋
+        let inv = (1u64 << 32).div_ceil(m as u64);
+        let round_up = |x: usize| (((x + m - 1) as u64 * inv) >> 32) as usize * m;
         let mut t0 = 0;
         loop {
             let max_off = self.oo.iter().copied().max().unwrap_or(0) as usize;
-            let mut len = (l - max_off).div_ceil(m) * m;
+            let mut len = round_up(l - max_off);
             let last = t0 + len >= total_end;
             if last {
                 len = total_end - t0;
@@ -1703,7 +1707,7 @@ impl<'a, T: Rec> Sweep<'a, T> {
             // When the slice is shorter than the multiplier, a key can wrap
             // more than once
             for o in &mut self.oo {
-                *o = (*o + len as u64) % l as u64;
+                *o = (*o + len as u64) & (l as u64 - 1);
             }
         }
     }
