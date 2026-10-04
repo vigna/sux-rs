@@ -1,6 +1,9 @@
 //! Lab for PHast-R experiments: comparison with the reference implementation
 //! of PHast/PHast+ (`ph`), and helpers.
 
+pub mod dfs;
+pub mod walk;
+
 /// Builds a PHast-R function on the given keys, choosing byte seeds for at
 /// most 8 bits per seed and a bit-field vector otherwise, and returns its
 /// space in bits per key.

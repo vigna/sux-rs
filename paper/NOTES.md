@@ -10,7 +10,7 @@ the context of the original one: point it to this file).
   `SeedStore`/`SeedStoreBuild`), with unit tests.
 - `examples/bench_phast_r.rs`: quick benchmark of PHast-R alone
   (`cargo run --release --example bench_phast_r -- 10000000`).
-- `paper/phast.tex`: the paper (6 pages, `latexmk -pdf phast.tex`).
+- `paper/phast.tex`: the paper (11 pages, `latexmk -pdf phast.tex`; references in `paper/biblio.bib`).
 - `paper/lab/`: the experimental harness, a standalone crate depending on sux
   (by path) and on the reference implementation `ph` (currently by path on
   a local clone of the fork vigna/bsuccinct-rs, branch `sux`, commit 8d722ff,
@@ -263,6 +263,23 @@ reference rows in each process; base = d2a9cb35):
 - Priority weights for (S=8, L=512) and (S=10, L=2048) were retuned with
   `wtune`; the others come from Beling's PHast+ (`ShiftOnly`) tables.
 
+## Limits of repair (Section 5 of the paper)
+
+All numbers in Section 5 are space-only or counts, so they do not depend on
+the hardware and need not be rerun. Commands (from `paper/lab`):
+
+- Table 3 (sux, bump rate and bits/key by repair depth and breadth):
+  `RAYON_NUM_THREADS=1 target/release/bumps 10000000 8:10:<d>:<cand>:<λ>...`
+  (spec `<S>:<log2 L>:<depth>:<candidates>:<lambda>`).
+- Proposition 1 check (mean range of the bridge vs √(πn/2)):
+  `target/release/bridge 200 4096 65536 1048576`.
+- Unbounded (PtrHash-style) eviction: `target/release/walk 65536 10000 2
+  8:9:2:5.0:1.0:prio 8:9:2:5.0:0.95:prio` (`capped@` counts episodes over
+  the cap; options `a<age cost>`, `o<owner cost>`, `z<zone>`, `single`).
+- CONSENSUS-style search with chained seeds (`lab::dfs`):
+  `target/release/dfs 100000 2000 8:9:2:4.0:8`; it never places more than
+  ~160 buckets in any configuration.
+
 ## Open issues and next steps
 
 1. **Query fast path**: ~2 instructions more than PHast+ are inherent in
@@ -280,7 +297,7 @@ reference rows in each process; base = d2a9cb35):
    or to Lehmann's MPHF-Experiments to compare with PtrHash, PHOBIC, etc. on
    the standard workload (random strings of 10–50 bytes).
 6. **Paper**: author line is empty; Section 3 describes the new encoding, but
-   Tables 1–2 and Figure 1 still contain the M1 numbers of the old encoding:
+   Tables 1–2 and Figure 3 (the Pareto plot) still contain the M1 numbers of the old encoding:
    regenerate them (the new numbers are in `lab/results/README-nexus.md`).
 7. **The log₂e + O(log λ/λ) conjecture** of the PHast paper: for reference
    PHast, the excess over log₂e divided by ln λ/λ is ≈ 1.5 for λ in
