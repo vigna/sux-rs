@@ -97,6 +97,9 @@ struct Args {
     /// makes comparisons immune to frequency drift.
     #[arg(long, default_value_t = 0)]
     interleave: usize,
+    /// Generates a different key set (for averaging over key sets).
+    #[arg(long, default_value_t = 0)]
+    key_seed: u64,
 }
 
 /// A built structure: name, statistics, and a function running a batch of
@@ -257,7 +260,9 @@ fn sux_run_k<
 fn main() {
     let a = Args::parse();
     let keys: Vec<u64> = (0..a.n as u64)
-        .map(|i| i.wrapping_mul(0x9e3779b97f4a7c15) ^ 0x1234567)
+        .map(|i| {
+            (i + a.key_seed.wrapping_mul(1 << 40)).wrapping_mul(0x9e3779b97f4a7c15) ^ 0x1234567
+        })
         .collect();
     // Both implementations must compute the same hashes
     for &k in keys.iter().take(1000) {

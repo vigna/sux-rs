@@ -203,29 +203,80 @@ the greedy sweep of \PHast into a local search, as in PtrHash~\cite{GrKPtrHash},
 but it is triggered only by failures, and bumping remains as a safety valve:
 the structure stays minimal and needs no slack in the output range.
 
+\paragraph{Slice length.}
+As in \PHast, the slice length depends on the size of the level: the first
+and last $L+D$ positions are reached by fewer slices than the others, so
+small levels need shorter slices. We use $L=64$ when the range of the level
+is smaller than $2500$, $128$ below $4000$, $256$ below $70\,000$, $512$
+below $600\,000$, and a maximum, which is a parameter, above (and always
+$L\le m/2$); the thresholds have been tuned experimentally for $S=8$. With
+repair, longer slices than in \PHastP pay off for large levels: for $S=8$ the
+best maximum is $L=1024$, whereas \PHastP uses $L=512$. \PHast uses a similar
+table with different thresholds ($64$ below $1300$, $128$ below $9500$, $256$
+below $12\,000$, $512$ below $140\,000$, then $1024$ for $S<12$), whereas
+\PHastP uses a fixed length depending only on $S$, limited by the range of
+the level. The priority weights used by the sweep depend on the slice length,
+and are chosen for each level accordingly; those for $S=8$ and $L=512$ or
+$L=1024$, and for $S=10$ and $L=2048$, have been retuned for \PHastR by
+coordinate descent (the others are those of \PHastP).
+
 \paragraph{Levels.}
 For keys of bumped buckets, the next level uses the pair $(\mu(h),o)$, where
 $\mu$ is a bijective mixing function, so construction never rehashes keys and
-a query for a bumped key needs no further hashing of the key. Since $\mu$ is
-a bijection, distinct pairs remain distinct, and since $\mu(h)$ depends on
-all bits of $h$, the offsets provided by $o$ remain independent of the new
-bucket and slice. (Mixing $o$, too, would lengthen the query of bumped keys
-for no benefit: on AVX-512 hardware the compiler vectorizes two independent
-mixes using a high-latency vector multiplication.) Levels after the first use the same
-scheme with range equal to their number of keys; when fewer than $4096$ keys
-are left, a last level uses a range $25\%$ larger, smaller buckets, and no
-bumping, retrying with a different salt (and, every eight attempts, a larger
-range) in the unlikely case of failure. As in \PHastP, an
-Elias--Fano sequence maps the outputs of the levels after the first to the
-holes of the first level.
+a query for a bumped key needs no further hashing of the key; \PHastP,
+instead, hashes the key again with a different seed at each level. Since
+$\mu$ is a bijection, distinct pairs remain distinct, and since $\mu(h)$
+depends on all bits of $h$, the offsets provided by $o$ remain independent of
+the new bucket and slice. (Mixing $o$, too, would lengthen the query of
+bumped keys for no benefit: on AVX-512 hardware the compiler vectorizes two
+independent mixes using a high-latency vector multiplication.) Levels after
+the first use the same scheme with range equal to their number of keys. As in
+\PHastP, an Elias--Fano sequence maps the outputs of the levels after the
+first to the holes of the first level.
+
+\paragraph{Last level.}
+When fewer than $4096$ keys are left, a last level uses the same placement
+scheme with a range $25\%$ larger, expected bucket size $\min(\lambda,3)$, and
+no bumping, retrying with a different salt (and, every eight attempts, a
+larger range) in the unlikely case of failure. \PHastP behaves differently:
+when at most $8192$ keys are left ($4096$ for the variants with wrapping), it
+builds a level of regular \PHast (pseudorandom placement, all $256$ seeds of
+$8$ bits tried for each bucket, expected bucket size $4$, no bumping) with
+range $1.2(k+10)$, where $k$ is the number of keys, rehashing all keys with a
+new seed in case of failure; queries reaching this level hash the key again.
+In particular, for small sets (up to about $10^5$ keys, as \PHastP bumps
+$7.6\%$ of the keys) all bumped keys go directly from the first level to a
+level of regular \PHast.
 
 \paragraph{Parallel construction.}
-We adopt the scheme of \PHast: buckets are split into chunks separated by gaps
-of $\lceil (L+D)B/(m-L-D+2)\rceil+2$ buckets (the slice of bucket $b$ starts at
-about $b(m-L-D+2)/B$, and spans $L+D-1$ positions), so that the positions of
-different chunks cannot overlap. Chunks are swept in parallel; then gaps are swept in parallel
-with the slots of the neighboring buckets marked as occupied and not
-evictable.
+As in \PHast, buckets are split into chunks separated by gaps of
+\[
+\left\lfloor \frac{(L+D-1)B}{m-L-D+2}\right\rfloor+1
+\]
+buckets: the slice of bucket $b$ starts at about $b(m-L-D+2)/B$, and the
+positions of a key lie at most $L+D-2$ slots after the start of its slice, so
+(considering the rounding of slice starts) the positions of different chunks
+cannot overlap. Chunks are swept in parallel. Gaps are then processed
+differently: \PHast processes them serially, continuing for each gap the
+sweep of the previous chunk (whose state, including the priority queue, is
+preserved) after adding to its occupancy the positions of the first buckets
+of the following chunk; \PHastR sweeps all gaps in parallel, each with a new
+sweep in which the positions of the buckets of the neighboring chunks (on both
+sides) are marked as occupied and \emph{not evictable}, as repair must not
+move buckets owned by another chunk.
+
+\paragraph{Summary of the differences with \PHastP.}
+Besides patterns and repair, \PHastR differs from \PHastP in the following
+respects: the seed encodes a pattern and a shift, and offsets are taken from a
+second hash $o$ (Placement); levels after the first remix $h$ instead of
+rehashing the key (Levels); the slice length adapts to the size of the level,
+and it is longer for large levels (Slice length); the last level uses the
+same scheme as the other levels instead of regular \PHast (Last level); and
+gaps between parallel chunks are swept in parallel by independent sweeps
+instead of serially by continuing the previous sweep (Parallel construction).
+Bucket priorities have the same form as in \PHastP (a weight depending on
+the size of the bucket, extrapolated linearly beyond size $7$, minus $1024$
+times the index of the bucket), with retuned weights.
 
 \section{Experiments}
 \label{sec:experiments}

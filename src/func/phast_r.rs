@@ -573,9 +573,11 @@ impl PHastRBuilder {
         let mut entries: Vec<usize> = vec![];
         let mut hole_idx = 0;
         let mut last_hole = 0;
-        let weights = self
-            .weights
-            .unwrap_or_else(|| default_weights(self.seed_bits, 1 << self.log2_slice_len));
+        // Priority weights depend on the slice length of each level
+        let weights = |g: &Geometry| {
+            self.weights
+                .unwrap_or_else(|| default_weights(self.seed_bits, g.l_mask as usize + 1))
+        };
 
         if n == 0 {
             // A single empty level, so that queries need no special case
@@ -637,7 +639,7 @@ impl PHastRBuilder {
                     sort_ho(&mut cur);
                 }
                 let geom = self.geometry(k, k, self.bucket_size);
-                let out = sweep_level(&cur, &geom, self, &weights, true)
+                let out = sweep_level(&cur, &geom, self, &weights(&geom), true)
                     .expect("bumping sweeps cannot fail");
                 ((geom.level(), out.seeds), out.occupied, out.bumped, geom.m)
             } else {
@@ -652,7 +654,7 @@ impl PHastRBuilder {
                         (x.h, x.o) = next_level(x.h, x.o, salt);
                     }
                     sort_ho(&mut keys);
-                    if let Some(out) = sweep_level(&keys, &geom, self, &weights, false) {
+                    if let Some(out) = sweep_level(&keys, &geom, self, &weights(&geom), false) {
                         let mut level = geom.level();
                         level.salt = salt;
                         break ((level, out.seeds), out.occupied, out.bumped, geom.m);
@@ -703,8 +705,19 @@ impl PHastRBuilder {
 
     /// Computes the geometry of a level with `k` keys and output range `m`.
     fn geometry(&self, k: usize, m: usize, bucket_size: f64) -> Geometry {
+        // Small levels need shorter slices, as the first and last L + D
+        // positions are reached by fewer slices (thresholds on the output
+        // range tuned for 8-bit seeds; the slice length set by the user is a
+        // maximum)
         let max_l = 1usize << self.log2_slice_len;
-        let mut l = max_l;
+        let target = match m {
+            0..2500 => 64,
+            2500..4000 => 128,
+            4000..70_000 => 256,
+            70_000..600_000 => 512,
+            _ => usize::MAX,
+        };
+        let mut l = max_l.min(target);
         while l > 1 && l > m / 2 {
             l /= 2;
         }
@@ -857,11 +870,14 @@ fn sweep_level(
 ) -> Option<SweepOut> {
     let nb = g.buckets;
 
-    // Number of buckets between chunks whose slices cannot overlap: the
-    // slice beginning grows by num_slices / nb per bucket, and the positions
-    // of a bucket span less than L + D slots after it.
+    // Number of buckets between chunks whose positions cannot overlap (the
+    // same formula as in PHast): the slice start grows by num_slices / nb per
+    // bucket, and the positions of a key lie at most L + D - 2 slots after
+    // its slice start (D is the number of shifts), so considering the
+    // rounding of slice starts it suffices that gap * num_slices / nb >= L +
+    // D - 1.
     let span = g.l_mask as usize + 1 + g.shifts;
-    let gap = (span * nb).div_ceil(g.num_slices.max(1) as usize) + 2;
+    let gap = (span - 1) * nb / g.num_slices.max(1) as usize + 1;
     #[cfg(feature = "rayon")]
     let threads = rayon::current_num_threads();
     #[cfg(not(feature = "rayon"))]
