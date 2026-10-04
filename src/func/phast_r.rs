@@ -1068,31 +1068,40 @@ fn is_occupied(bits: &[u64], p: usize) -> bool {
 /// Returns the positions in [0 . . m) that are not set in the occupancy
 /// bitmap, in increasing order.
 fn holes(bits: &[u64], m: usize) -> Vec<usize> {
-    let scan = |(w, &word): (usize, &u64)| {
-        let mut free = !word;
-        let valid = m - w * 64;
-        if valid < 64 {
-            free &= (1u64 << valid) - 1;
+    /// Number of words scanned by a parallel task.
+    const CHUNK: usize = 1 << 12;
+    // Appends to out the free positions of the words starting at word first
+    let scan = |first: usize, words: &[u64], out: &mut Vec<usize>| {
+        for (i, &word) in words.iter().enumerate() {
+            let w = first + i;
+            let mut free = !word;
+            let valid = m - w * 64;
+            if valid < 64 {
+                free &= (1u64 << valid) - 1;
+            }
+            while free != 0 {
+                out.push(w * 64 + free.trailing_zeros() as usize);
+                free &= free - 1;
+            }
         }
-        let mut out = vec![];
-        while free != 0 {
-            out.push(w * 64 + free.trailing_zeros() as usize);
-            free &= free - 1;
-        }
-        out
     };
     #[cfg(feature = "rayon")]
     if parallel(m) {
         use rayon::prelude::*;
-        return bits
-            .par_iter()
+        let parts: Vec<Vec<usize>> = bits
+            .par_chunks(CHUNK)
             .enumerate()
-            .with_min_len(1 << 12)
-            .map(scan)
-            .flatten()
+            .map(|(c, words)| {
+                let mut out = vec![];
+                scan(c * CHUNK, words, &mut out);
+                out
+            })
             .collect();
+        return parts.concat();
     }
-    bits.iter().enumerate().flat_map(scan).collect()
+    let mut out = vec![];
+    scan(0, bits, &mut out);
+    out
 }
 
 /// The state of a sweep over a range of buckets.
