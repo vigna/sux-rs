@@ -277,6 +277,16 @@ reference rows in each process; base = d2a9cb35):
   in space and query time; construction is 30–45% slower than PHast+ w3, as
   89% of eviction trials fail after scanning the whole shift range of the
   evicted bucket (`grid.txt`: fewer candidates trade space for time).
+- With 8 threads (`ph` also on 8 threads) the construction gap shrinks:
+  10⁸ keys, PHast+ w3 λ=5 24.4 ns/key; PHast-R W3 d1 λ=4.75 28.8, λ=5 31.4.
+  Scanning shifts by words instead of segments was tried and is slower
+  (145 vs 109 ns/key at d0): segments prune much better, as the sum of
+  positions grows by k at each shift within a segment.
+- 10-bit seeds (`s10.txt`, unaligned reads, 10⁸ keys): PHast-R W1 d1 λ=6
+  1.8526 b/k, 140 ns/key, 38.2 ns; PHast+ w3 λ=6 1.8693 b/k, 253 ns/key,
+  38.9 ns; PHast+ w1 1.9073 b/k, 118 ns/key, 37.6 ns; PHast-R R=4 d1
+  1.8536 b/k, 131 ns/key, 43.2 ns. W1 with repair beats PHast+ w3 in space,
+  construction, and query time.
 
 ## Key findings (see Section 2 of the paper; reference implementation)
 

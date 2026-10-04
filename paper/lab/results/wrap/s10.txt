@@ -1,0 +1,18 @@
+n = 10000000 hash = gx
+ref w1 S=10 l=6                              1.9098 bits/key  build   112.5 ns/key  query   26.3 ns  [min 26.0 max 26.4]
+ref w3 S=10 l=6                              1.8718 bits/key  build   247.5 ns/key  query   27.3 ns  [min 27.2 max 27.8]
+PHast-R S=10 L=2048 R=4 d=1 l=6 bfvu         1.8574 bits/key  build   131.5 ns/key  query   30.1 ns  levels 4  bumped 1.96%  [min 28.9 max 30.4]
+PHast-R S=10 L=2048 W1 d=0 l=6 bfvu          1.9102 bits/key  build   102.1 ns/key  query   27.4 ns  levels 4  bumped 2.61%  [min 27.0 max 29.1]
+PHast-R S=10 L=2048 W1 d=1 l=6 bfvu          1.8556 bits/key  build   137.1 ns/key  query   27.1 ns  levels 4  bumped 1.95%  [min 26.9 max 27.3]
+PHast-R S=10 L=2048 W2 d=1 l=6 bfvu          1.8573 bits/key  build   196.7 ns/key  query   26.9 ns  levels 4  bumped 1.97%  [min 26.8 max 29.0]
+PHast-R S=10 L=2048 W3 d=1 l=6 bfvu          1.8513 bits/key  build   246.9 ns/key  query   26.9 ns  levels 4  bumped 1.90%  [min 26.7 max 27.3]
+PHast-R S=10 L=2048 W3 d=1 l=6.25 bfvu       1.8475 bits/key  build   292.6 ns/key  query   27.1 ns  levels 4  bumped 2.68%  [min 27.1 max 29.4]
+n = 100000000 hash = gx
+ref w1 S=10 l=6                              1.9073 bits/key  build   117.8 ns/key  query   37.6 ns  [min 36.9 max 39.0]
+ref w3 S=10 l=6                              1.8693 bits/key  build   252.7 ns/key  query   38.9 ns  [min 38.1 max 39.6]
+PHast-R S=10 L=2048 R=4 d=1 l=6 bfvu         1.8536 bits/key  build   131.2 ns/key  query   43.2 ns  levels 4  bumped 1.95%  [min 41.8 max 44.3]
+PHast-R S=10 L=2048 W1 d=0 l=6 bfvu          1.9074 bits/key  build   102.7 ns/key  query   38.6 ns  levels 4  bumped 2.61%  [min 37.9 max 39.5]
+PHast-R S=10 L=2048 W1 d=1 l=6 bfvu          1.8526 bits/key  build   139.8 ns/key  query   38.2 ns  levels 4  bumped 1.94%  [min 37.0 max 38.8]
+PHast-R S=10 L=2048 W2 d=1 l=6 bfvu          1.8544 bits/key  build   199.3 ns/key  query   37.7 ns  levels 4  bumped 1.96%  [min 37.2 max 39.9]
+PHast-R S=10 L=2048 W3 d=1 l=6 bfvu          1.8481 bits/key  build   248.7 ns/key  query   37.7 ns  levels 4  bumped 1.88%  [min 37.2 max 39.2]
+PHast-R S=10 L=2048 W3 d=1 l=6.25 bfvu       1.8447 bits/key  build   295.0 ns/key  query   39.1 ns  levels 4  bumped 2.68%  [min 38.0 max 39.6]
