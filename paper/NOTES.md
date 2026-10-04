@@ -11,6 +11,9 @@ the context of the original one: point it to this file).
 - `examples/bench_phast_r.rs`: quick benchmark of PHast-R alone
   (`cargo run --release --example bench_phast_r -- 10000000`).
 - `paper/phast.tex`: the paper (11 pages, `latexmk -pdf phast.tex`; references in `paper/biblio.bib`).
+- `paper/lean/`: Lean 4 + Mathlib formalization of Proposition 1
+  (`cd paper/lean && lake build`; see its README; `.lake/` is not tracked,
+  `lake exe cache get` fetches Mathlib).
 - `paper/lab/`: the experimental harness, a standalone crate depending on sux
   (by path) and on the reference implementation `ph` (currently by path on
   a local clone of the fork vigna/bsuccinct-rs, branch `sux`, commit 8d722ff,
