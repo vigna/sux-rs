@@ -2,15 +2,29 @@
 //! (fast path) and bumped keys (slow path), and compares with the
 //! reference PHast+ on the same keys.
 //!
-//! Usage: qsplit [-n keys] [-q queries] [--s8-depth d]
+//! Configurations are `<S>:<log2 L>:<depth>:<lambda>` for PHast-R (with
+//! S > 8, seeds are stored as `u16`, in a `BitFieldVec`, and in a
+//! `BitFieldVec` with unaligned reads), or `ref:<plus|w3>:<S>:<lambda>` for
+//! the reference implementation, whose bumped keys are those whose bucket of
+//! the first level has seed 0.
+//!
+//! Usage: qsplit [-n keys] [-q queries] [-v configurations]
 
 use clap::Parser;
 use dsi_progress_logger::no_logging;
 use lab::GxKey;
+use ph::BuildSeededHasher;
+use ph::phast::{
+    DefaultCompressedArray, Function2, Generic, GenericCore, SeedChooser, ShiftOnly,
+    ShiftOnlyWrapped,
+};
+use ph::seedable_hash::BuildGxHash;
+use ph::seeds::{Bits8, BitsFast, SeedSize};
 use std::time::Instant;
 use sux::bits::BitFieldVec;
 use sux::func::phast_r::{SeedStore, SeedStoreBuild};
 use sux::func::{PHastR, PHastRBuilder};
+use sux::traits::TryIntoUnaligned;
 
 #[derive(Parser)]
 struct Args {
@@ -49,12 +63,50 @@ fn time<T: Copy>(ks: &[T], queries: usize, repeats: usize, f: impl Fn(T) -> usiz
 
 fn run<D: SeedStoreBuild + SeedStore>(keys: &[GxKey], b: PHastRBuilder, a: &Args, name: &str) {
     let f: PHastR<GxKey, D> = b.try_build(keys, no_logging![]).unwrap();
-    let (bumped, placed): (Vec<GxKey>, Vec<GxKey>) = keys
+    let (bumped, placed): (Vec<GxKey>, Vec<GxKey>) = keys.iter().partition(|&&k| f.is_bumped(k));
+    report(keys, &bumped, &placed, a, name, |k| f.get(k));
+}
+
+fn run_u(keys: &[GxKey], b: PHastRBuilder, a: &Args, name: &str) {
+    let f: PHastR<GxKey, BitFieldVec<Box<[usize]>>> = b.try_build(keys, no_logging![]).unwrap();
+    let (bumped, placed): (Vec<GxKey>, Vec<GxKey>) = keys.iter().partition(|&&k| f.is_bumped(k));
+    let f = f.try_into_unaligned().unwrap();
+    report(keys, &bumped, &placed, a, name, |k| f.get(k));
+}
+
+fn run_ref<SS: SeedSize, SC: SeedChooser>(
+    keys: &[GxKey],
+    ss: SS,
+    sc: SC,
+    lam: f64,
+    a: &Args,
+    name: &str,
+) {
+    // SAFETY: GxKey is a transparent wrapper around u64, and ph hashes u64
+    // keys as sux hashes GxKey
+    let keys: &[u64] = unsafe { std::slice::from_raw_parts(keys.as_ptr().cast(), keys.len()) };
+    let params = Generic::new(ss, (lam * 100.0).round() as u16);
+    let f: Function2<GenericCore, SS, SC, DefaultCompressedArray, BuildGxHash> =
+        Function2::with_slice_p_hash_sc(keys, &params, BuildGxHash, sc);
+    let conf = *f.level0_conf();
+    let (bumped, placed): (Vec<u64>, Vec<u64>) = keys
         .iter()
-        .partition(|&&k| f.is_bumped(k));
-    let all = time(keys, a.queries, a.repeats, |k| f.get(k));
-    let fast = time(&placed, a.queries, a.repeats, |k| f.get(k));
-    let slow = time(&bumped, a.queries / 4, a.repeats, |k| f.get(k));
+        .partition(|&&k| f.level0_seed(conf.bucket_for(BuildGxHash.hash_one(k, 0))) == 0);
+    report(keys, &bumped, &placed, a, name, |k| f.get(&k));
+}
+
+#[inline(always)]
+fn report<T: Copy>(
+    keys: &[T],
+    bumped: &[T],
+    placed: &[T],
+    a: &Args,
+    name: &str,
+    get: impl Fn(T) -> usize + Copy,
+) {
+    let all = time(keys, a.queries, a.repeats, get);
+    let fast = time(placed, a.queries, a.repeats, get);
+    let slow = time(bumped, a.queries / 4, a.repeats, get);
     let beta = bumped.len() as f64 / keys.len() as f64;
     println!(
         "{name:28} all {all:6.2} ns  fast {fast:6.2} ns  slow {slow:6.2} ns  bumped {:.2}%  (fast + beta * (slow - fast) = {:.2})",
@@ -70,6 +122,18 @@ fn main() {
         .collect();
     for v in &a.variant {
         let p: Vec<&str> = v.split(':').collect();
+        if p[0] == "ref" {
+            let sbits: u8 = p[2].parse().unwrap();
+            let lam: f64 = p[3].parse().unwrap();
+            match (p[1], sbits) {
+                ("plus", 8) => run_ref(&keys, Bits8, ShiftOnly, lam, &a, v),
+                ("plus", s) => run_ref(&keys, BitsFast(s), ShiftOnly, lam, &a, v),
+                ("w3", 8) => run_ref(&keys, Bits8, ShiftOnlyWrapped::<3>, lam, &a, v),
+                ("w3", s) => run_ref(&keys, BitsFast(s), ShiftOnlyWrapped::<3>, lam, &a, v),
+                (c, _) => panic!("unknown chooser {c}"),
+            }
+            continue;
+        }
         let s: u32 = p[0].parse().unwrap();
         let ll: u32 = p[1].parse().unwrap();
         let depth: u32 = p[2].parse().unwrap();
@@ -84,7 +148,8 @@ fn main() {
             run::<Box<[u8]>>(&keys, b, &a, &format!("{v} u8"));
         } else {
             run::<Box<[u16]>>(&keys, b.clone(), &a, &format!("{v} u16"));
-            run::<BitFieldVec<Box<[usize]>>>(&keys, b, &a, &format!("{v} bfv"));
+            run::<BitFieldVec<Box<[usize]>>>(&keys, b.clone(), &a, &format!("{v} bfv"));
+            run_u(&keys, b, &a, &format!("{v} bfvu"));
         }
     }
 }

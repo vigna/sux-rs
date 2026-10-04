@@ -253,6 +253,31 @@ reference rows in each process; base = d2a9cb35):
   32-bit read. PHast-R with S=10 is still 2.7–4.6 ns slower than PHast+ with
   wrapping at S=10 (to be investigated).
 
+## Wrapping (October 2026, `lab/results/wrap`)
+
+- Fast-path anatomy (`qsplit`, diagnostic builds at 10⁷, S=8): PHast-R's
+  first-level path was 4.1 ns slower than PHast+'s; removing the variable
+  pattern shift `o >> (s·64/R)` recovers ~3 ns, removing the multiplication
+  deriving *o* ~1 ns. PHast-R won overall only because it bumps 2.6% of the
+  keys instead of 7.6% (the slow path of PHast+ costs ~54 ns).
+- `PHastRBuilder::wrap(M)`: shifts with wrapping as in PHast+ with wrapping
+  (`slice + ((h + s·M) mod L)`, no patterns, no *o*), with our repair, levels
+  and last level. Search and repair scan *segments* of shifts in which no key
+  wraps (as in `ph`); segments play the role of patterns in repair. Default
+  weights are those of `ph` for wrapping.
+- Without repair, the first level and the following levels reproduce `ph`
+  exactly (same bumped keys at each level when built single-threaded); the
+  residual space difference was the remapping: sux 0.10.3 (used by `ph`) has
+  `EfSeq` with a `SelectAdaptConst<_, _, 12, 3>` inventory, current sux 11.
+  PHast-R now uses its own `Remap` type with 12 (−0.0065 b/k at 10⁷,
+  +4 ns on the slow path, i.e., +0.1–0.15 ns on average).
+- 10⁸ keys (`pareto.txt`): PHast-R W3 d1 λ=4.75 1.9309 b/k, 33.9 ns, build
+  165 ns/key; λ=5 1.9183 b/k, 35.0 ns, 186; PHast+ w3 λ=5 1.9681 b/k,
+  36.5 ns, 128; PHast-R R=4 d1 1.9259 b/k, 38.5 ns, 122. Wrapping dominates
+  in space and query time; construction is 30–45% slower than PHast+ w3, as
+  89% of eviction trials fail after scanning the whole shift range of the
+  evicted bucket (`grid.txt`: fewer candidates trade space for time).
+
 ## Key findings (see Section 2 of the paper; reference implementation)
 
 - With output range m = n, holes = bumped keys; each hole costs about

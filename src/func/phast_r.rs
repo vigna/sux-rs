@@ -62,8 +62,10 @@ use dsi_progress_logger::ProgressLog;
 use mem_dbg::*;
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
+use crate::bits::BitVec;
 use crate::bits::{BitFieldVec, BitFieldVecU};
-use crate::dict::elias_fano::{EfSeq, EliasFanoBuilder};
+use crate::dict::elias_fano::{EliasFano, EliasFanoBuilder};
+use crate::rank_sel::SelectAdaptConst;
 use crate::traits::{TryIntoUnaligned, Unaligned, UnalignedConversionError};
 use crate::utils::ToSig;
 
@@ -213,6 +215,7 @@ impl<K: ?Sized, D: TryIntoUnaligned, P, R: TryIntoUnaligned> TryIntoUnaligned
             n: self.n,
             log2_patterns: self.log2_patterns,
             log2_slice_len: self.log2_slice_len,
+            wrap: self.wrap,
             params0: self.params0,
             seeds0: self.seeds0.try_into_unaligned()?,
             params: self.params,
@@ -223,15 +226,16 @@ impl<K: ?Sized, D: TryIntoUnaligned, P, R: TryIntoUnaligned> TryIntoUnaligned
     }
 }
 
-impl<K: ?Sized, P> From<Unaligned<PHastR<K, BitFieldVec<Box<[usize]>>, P, EfSeq>>>
-    for PHastR<K, BitFieldVec<Box<[usize]>>, P, EfSeq>
+impl<K: ?Sized, P> From<Unaligned<PHastR<K, BitFieldVec<Box<[usize]>>, P, Remap>>>
+    for PHastR<K, BitFieldVec<Box<[usize]>>, P, Remap>
 {
-    fn from(f: Unaligned<PHastR<K, BitFieldVec<Box<[usize]>>, P, EfSeq>>) -> Self {
+    fn from(f: Unaligned<PHastR<K, BitFieldVec<Box<[usize]>>, P, Remap>>) -> Self {
         PHastR {
             seed: f.seed,
             n: f.n,
             log2_patterns: f.log2_patterns,
             log2_slice_len: f.log2_slice_len,
+            wrap: f.wrap,
             params0: f.params0,
             seeds0: f.seeds0.into(),
             params: f.params,
@@ -240,6 +244,19 @@ impl<K: ?Sized, P> From<Unaligned<PHastR<K, BitFieldVec<Box<[usize]>>, P, EfSeq>
             _marker: std::marker::PhantomData,
         }
     }
+}
+
+/// The default remapping sequence of a [`PHastR`]: an Elias–Fano sequence
+/// whose selection inventory is sparser than that of
+/// [`EfSeq`](crate::dict::elias_fano::EfSeq) (one entry every 4096 ones
+/// instead of 2048), as it is accessed only by keys bumped from the first
+/// level.
+pub type Remap = EliasFano<usize, SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
+
+/// Builds a [`Remap`].
+fn remap(efb: EliasFanoBuilder<usize>) -> Remap {
+    // SAFETY: the selection structure is built on the high bits
+    unsafe { efb.build().map_high_bits(SelectAdaptConst::new) }
 }
 
 /// The parameters of a level.
@@ -279,7 +296,7 @@ pub struct LevelParams {
 /// - `P`: the parameters of the levels after the first one; default
 ///   `Box<[LevelParams]>`.
 /// - `R`: the sequence remapping the outputs of the levels after the first
-///   one to the free slots of the first one; default [`EfSeq`].
+///   one to the free slots of the first one; default [`Remap`].
 ///
 /// The last three parameters make it possible to deserialize with ε-serde
 /// without copying: for example, [`deserialize_eps`] on a `PHastR<K>`
@@ -309,7 +326,7 @@ pub struct LevelParams {
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(phantom(K)))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct PHastR<K: ?Sized, D = Box<[u8]>, P = Box<[LevelParams]>, R = EfSeq> {
+pub struct PHastR<K: ?Sized, D = Box<[u8]>, P = Box<[LevelParams]>, R = Remap> {
     /// The seed used to compute signatures.
     seed: u64,
     /// The number of keys.
@@ -318,6 +335,8 @@ pub struct PHastR<K: ?Sized, D = Box<[u8]>, P = Box<[LevelParams]>, R = EfSeq> {
     log2_patterns: u32,
     /// The base-2 logarithm of the (maximum) slice length.
     log2_slice_len: u32,
+    /// The multiplier of shifts with wrapping (0 if patterns are used).
+    wrap: u32,
     /// The parameters of the first level.
     params0: LevelParams,
     /// The seeds of the first level.
@@ -375,6 +394,14 @@ impl<
             + (seed >> self.log2_patterns)
     }
 
+    /// Returns the output of a key in the given level with wrapping, given
+    /// its hash *h* for the level and the seed of its bucket.
+    #[inline(always)]
+    fn pos_wrap(&self, lv: &LevelParams, h: u64, seed: usize) -> usize {
+        mul_hi(h, lv.num_slices) as usize
+            + (h.wrapping_add((seed * self.wrap as usize) as u64) & lv.l_mask) as usize
+    }
+
     /// Returns the value associated with the given key.
     ///
     /// The returned value is in the range [0 . . *n*), where *n* is the
@@ -385,8 +412,16 @@ impl<
     pub fn get(&self, key: impl Borrow<K>) -> usize {
         let key = key.borrow();
         let h = K::to_sig(key, self.seed)[0];
-        let o = offsets(h);
         let lv = &self.params0;
+        if self.wrap != 0 {
+            // SAFETY: mul_hi(h, buckets) < buckets, which is the number of seeds
+            let s = unsafe { self.seeds0.get_seed(mul_hi(h, lv.buckets) as usize) };
+            if s != 0 {
+                return self.pos_wrap(lv, h, s);
+            }
+            return self.get_slow(key, 0);
+        }
+        let o = offsets(h);
         // SAFETY: mul_hi(h, buckets) < buckets, which is the number of seeds
         let s = unsafe { self.seeds0.get_seed(mul_hi(h, lv.buckets) as usize) };
         if s != 0 {
@@ -426,10 +461,12 @@ impl<
             if s != 0 {
                 // SAFETY: by construction, the remapping sequence contains
                 // one entry for each output of each level after the first
-                return unsafe {
-                    self.remap
-                        .get_value_unchecked(lv.offset as usize + self.pos(lv, h, o ^ h, s))
+                let p = if self.wrap != 0 {
+                    self.pos_wrap(lv, h, s)
+                } else {
+                    self.pos(lv, h, o ^ h, s)
                 };
+                return unsafe { self.remap.get_value_unchecked(lv.offset as usize + p) };
             }
         }
         // Only keys outside the original set can reach this point
@@ -469,6 +506,7 @@ pub struct PHastRBuilder {
     repair_by_size: bool,
     seed: u64,
     weights: Option<[i64; 7]>,
+    wrap: u32,
 }
 
 impl Default for PHastRBuilder {
@@ -483,6 +521,7 @@ impl Default for PHastRBuilder {
             repair_by_size: false,
             seed: 0,
             weights: None,
+            wrap: 0,
         }
     }
 }
@@ -535,6 +574,16 @@ impl PHastRBuilder {
         self
     }
 
+    /// Uses shifts with wrapping inside the slice, as in PHast+ with
+    /// wrapping, instead of patterns: seed *s* maps a key with hash *h* to
+    /// its slice plus (*h* + *s* · `multiplier`) mod *L* (default: 0, that
+    /// is, patterns are used; when wrapping is used, the number of patterns
+    /// is ignored).
+    pub fn wrap(mut self, multiplier: u32) -> Self {
+        self.wrap = multiplier;
+        self
+    }
+
     /// Sets the seed used to compute signatures (default: 0).
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
@@ -565,11 +614,15 @@ impl PHastRBuilder {
                 D::MAX_BITS
             );
         }
-        if self.log2_patterns > 6 || (1u32 << self.log2_patterns) * self.log2_slice_len > 64 {
-            bail!("Too many patterns for the given slice length");
-        }
-        if self.shifts() == 0 {
-            bail!("Too many patterns for the given number of seed bits");
+        if self.wrap == 0 {
+            if self.log2_patterns > 6 || (1u32 << self.log2_patterns) * self.log2_slice_len > 64 {
+                bail!("Too many patterns for the given slice length");
+            }
+            if self.shifts() == 0 {
+                bail!("Too many patterns for the given number of seed bits");
+            }
+        } else if self.wrap > 64 {
+            bail!("The multiplier of shifts with wrapping must be at most 64");
         }
         if self.log2_slice_len > 13 {
             bail!("The slice length must be at most 8192");
@@ -608,8 +661,13 @@ impl PHastRBuilder {
         Ok(PHastR {
             seed,
             n: keys.len(),
-            log2_patterns: self.log2_patterns,
+            log2_patterns: if self.wrap != 0 {
+                0
+            } else {
+                self.log2_patterns
+            },
             log2_slice_len: self.log2_slice_len,
+            wrap: self.wrap,
             params0,
             seeds0: D::from_seeds(&seeds0, self.seed_bits),
             params: params.into_boxed_slice(),
@@ -628,7 +686,7 @@ impl PHastRBuilder {
         keys: &[B],
         mut cur: Vec<Ho>,
         pl: &mut impl ProgressLog,
-    ) -> Result<(Vec<(LevelParams, Vec<u16>)>, EfSeq)> {
+    ) -> Result<(Vec<(LevelParams, Vec<u16>)>, Remap)> {
         // Hashes again the keys of the given records with the given seed
         let hash = |idx: u64, seed: u64| K::to_sig(keys[idx as usize].borrow(), seed)[0];
         let rehash = |v: &mut [Hoi], seed: u64| {
@@ -646,8 +704,13 @@ impl PHastRBuilder {
         let mut entries: Vec<usize> = vec![];
         // Priority weights depend on the slice length of each level
         let weights = |g: &Geometry| {
-            self.weights
-                .unwrap_or_else(|| default_weights(self.seed_bits, g.l_mask as usize + 1))
+            self.weights.unwrap_or_else(|| {
+                if self.wrap != 0 {
+                    wrap_weights(self.seed_bits, self.wrap, g.l_mask as usize + 1)
+                } else {
+                    default_weights(self.seed_bits, g.l_mask as usize + 1)
+                }
+            })
         };
 
         if n == 0 {
@@ -655,7 +718,7 @@ impl PHastRBuilder {
             let geom = self.geometry(0, 1, self.bucket_size);
             levels.push((geom.level(), vec![0]));
             let efb = EliasFanoBuilder::new(0, 1);
-            return Ok((levels, efb.build_with_seq()));
+            return Ok((levels, remap(efb)));
         }
 
         // Keys with the same hash are adjacent after sorting. They are bumped
@@ -778,7 +841,7 @@ impl PHastRBuilder {
         for &e in &entries {
             efb.push(e);
         }
-        Ok((levels, efb.build_with_seq()))
+        Ok((levels, remap(efb)))
     }
 
     /// Computes the geometry of a level with `k` keys and output range `m`.
@@ -788,6 +851,27 @@ impl PHastRBuilder {
         // range tuned for 8-bit seeds; the slice length set by the user is a
         // maximum)
         let max_l = 1usize << self.log2_slice_len;
+        if self.wrap != 0 {
+            // As in PHast+ with wrapping: shifts wrap inside the slice, so
+            // there is no extra range for shifts
+            let l = if m < 4096 {
+                (m / 2 + 1).next_power_of_two().min(max_l)
+            } else {
+                max_l
+            };
+            let l = l.min(m.max(1));
+            return Geometry {
+                buckets: (k as f64 / bucket_size).round().max(1.0) as usize,
+                num_slices: (m.max(1) + 1 - l) as u64,
+                l_mask: l as u64 - 1,
+                shifts: 1,
+                patterns: 1,
+                log2_patterns: 0,
+                wrap: self.wrap as usize,
+                max_seed: (1 << self.seed_bits) - 1,
+                m,
+            };
+        }
         let target = match m {
             0..2500 => 64,
             2500..4000 => 128,
@@ -810,6 +894,8 @@ impl PHastRBuilder {
             shifts: d,
             patterns: 1 << self.log2_patterns,
             log2_patterns: self.log2_patterns,
+            wrap: 0,
+            max_seed: (1 << self.seed_bits) - 1,
             m,
         }
     }
@@ -933,6 +1019,10 @@ struct Geometry {
     shifts: usize,
     patterns: usize,
     log2_patterns: u32,
+    /// The multiplier of shifts with wrapping (0 if patterns are used).
+    wrap: usize,
+    /// The maximum seed.
+    max_seed: usize,
     m: usize,
 }
 
@@ -960,6 +1050,10 @@ impl Geometry {
 
     #[inline(always)]
     fn pos<T: Rec>(&self, x: T, seed: usize) -> usize {
+        if self.wrap != 0 {
+            return self.slice_begin(x.h())
+                + (x.h().wrapping_add((seed * self.wrap) as u64) & self.l_mask) as usize;
+        }
         let r = seed & (self.patterns - 1);
         self.base(x, r) + (seed >> self.log2_patterns)
     }
@@ -1254,6 +1348,11 @@ struct Sweep<'a, T: Rec> {
     ypos: Vec<usize>,
     /// Bases of the best pattern found by the last search.
     best_bases: Vec<usize>,
+    /// Shift of the best pattern found by the last search.
+    best_d: usize,
+    /// With wrapping, the total shift at the start of each segment of the
+    /// last candidate collection (segments play the role of patterns).
+    seg_t0: Vec<usize>,
 }
 
 impl<'a, T: Rec> Sweep<'a, T> {
@@ -1311,6 +1410,8 @@ impl<'a, T: Rec> Sweep<'a, T> {
             cands: Vec::with_capacity(256),
             ypos: Vec::with_capacity(64),
             best_bases: Vec::with_capacity(64),
+            best_d: 0,
+            seg_t0: Vec::with_capacity(64),
             evict: Vec::with_capacity(64),
             all_bases: Vec::with_capacity(256),
         }
@@ -1427,7 +1528,7 @@ impl<'a, T: Rec> Sweep<'a, T> {
     /// Marks bucket `b` with the seed just returned by
     /// [`search`](Self::search), using the bases it computed.
     fn mark_best(&mut self, b: usize, seed: usize) {
-        let d = seed >> self.g.log2_patterns;
+        let d = self.best_d;
         let best_bases = std::mem::take(&mut self.best_bases);
         for &x in &best_bases {
             self.set(x + d, b);
@@ -1497,6 +1598,9 @@ impl<'a, T: Rec> Sweep<'a, T> {
 
     /// Finds the best seed (minimum sum of positions) for bucket `b`, or 0.
     fn search(&mut self, b: usize) -> usize {
+        if self.g.wrap != 0 {
+            return self.search_wrap(b);
+        }
         let keys = self.bucket_keys(b);
         let k = keys.len();
         self.load_bucket(keys);
@@ -1527,6 +1631,7 @@ impl<'a, T: Rec> Sweep<'a, T> {
                     if sum < best_sum && !self.self_collides() {
                         best_sum = sum;
                         best_seed = self.g.seed_of(r, d);
+                        self.best_d = d;
                         self.best_bases.clear();
                         self.best_bases.extend_from_slice(&self.bases);
                     }
@@ -1539,6 +1644,149 @@ impl<'a, T: Rec> Sweep<'a, T> {
             }
         }
         best_seed
+    }
+
+    /// Returns the seed of a configuration found by
+    /// [`place`](Self::place): a pattern, or a segment with wrapping.
+    #[inline(always)]
+    fn conf_seed(&self, seg_t0: &[usize], r: usize, d: usize) -> usize {
+        match self.g.wrap {
+            0 => self.g.seed_of(r, d),
+            m => (seg_t0[r] + d) / m + 1,
+        }
+    }
+
+    /// With wrapping, loads in `self.sb` the slice beginnings and in
+    /// `self.oo` the in-slice offsets for seed 1 of the keys of bucket `b`.
+    fn load_bucket_wrap(&mut self, b: usize) {
+        let keys = self.bucket_keys(b);
+        let g = self.g;
+        let m = g.wrap as u64;
+        self.sb.clear();
+        self.sb.extend(keys.iter().map(|x| g.slice_begin(x.h())));
+        self.oo.clear();
+        self.oo
+            .extend(keys.iter().map(|x| x.h().wrapping_add(m) & g.l_mask));
+    }
+
+    /// With wrapping, iterates over the segments of shifts of the bucket
+    /// last loaded by [`load_bucket_wrap`](Self::load_bucket_wrap), as in
+    /// PHast+ with wrapping: in each segment no key wraps, so positions are
+    /// the bases of the segment plus a shift. For each segment, fills
+    /// `self.bases` and calls `f` with the total shift at the start of the
+    /// segment, its length, and the sum of the bases; `f` returns `false` to
+    /// stop.
+    #[inline(always)]
+    fn for_each_segment(&mut self, mut f: impl FnMut(&mut Self, usize, usize, usize) -> bool) {
+        let l = self.g.l_mask as usize + 1;
+        let m = self.g.wrap;
+        // Seeds 1 . . max_seed are the total shifts 0, m, . . .
+        let total_end = m * self.g.max_seed;
+        let mut t0 = 0;
+        loop {
+            let max_off = self.oo.iter().copied().max().unwrap_or(0) as usize;
+            let mut len = (l - max_off).div_ceil(m) * m;
+            let last = t0 + len >= total_end;
+            if last {
+                len = total_end - t0;
+            }
+            self.bases.clear();
+            let sum = {
+                let (sb, oo, bases) = (&self.sb, &self.oo, &mut self.bases);
+                bases.extend(sb.iter().zip(oo).map(|(&s, &o)| s + o as usize));
+                bases.iter().sum()
+            };
+            if !f(self, t0, len, sum) || last {
+                return;
+            }
+            t0 += len;
+            // When the slice is shorter than the multiplier, a key can wrap
+            // more than once
+            for o in &mut self.oo {
+                *o = (*o + len as u64) % l as u64;
+            }
+        }
+    }
+
+    /// Like [`search`](Self::search), with wrapping.
+    fn search_wrap(&mut self, b: usize) -> usize {
+        let k = self.size(b);
+        self.load_bucket_wrap(b);
+        let m = self.g.wrap;
+        let (step, disallowed) = wrap_step_mask(m);
+        let mut best_sum = usize::MAX;
+        let mut best_seed = 0;
+        self.for_each_segment(|s, t0, len, base_sum| {
+            if base_sum >= best_sum {
+                return true;
+            }
+            let mut shift = 0;
+            while shift < len {
+                let mut u = disallowed;
+                for &x in &s.bases {
+                    u |= s.get64(x + shift);
+                }
+                if shift + 64 > len {
+                    u |= !0u64 << (len - shift);
+                }
+                if u != u64::MAX {
+                    let d = shift + u.trailing_ones() as usize;
+                    let sum = base_sum + d * k;
+                    if sum < best_sum && !s.self_collides() {
+                        best_sum = sum;
+                        best_seed = (t0 + d) / m + 1;
+                        s.best_d = d;
+                        s.best_bases.clear();
+                        s.best_bases.extend_from_slice(&s.bases);
+                    }
+                    break;
+                }
+                shift += step;
+                if base_sum + shift * k >= best_sum {
+                    break;
+                }
+            }
+            true
+        });
+        best_seed
+    }
+
+    /// With wrapping, collects the repair candidates of bucket `b` (see
+    /// [`place`](Self::place)), using segments as patterns.
+    fn wrap_candidates(&mut self, b: usize, cands: &mut Vec<u128>, all_bases: &mut Vec<usize>) {
+        let k = self.size(b);
+        self.load_bucket_wrap(b);
+        let (step, disallowed) = wrap_step_mask(self.g.wrap);
+        self.seg_t0.clear();
+        self.for_each_segment(|s, t0, len, base_sum| {
+            let r = s.seg_t0.len();
+            s.seg_t0.push(t0);
+            all_bases.extend_from_slice(&s.bases);
+            if s.self_collides() {
+                return true;
+            }
+            let mut shift = 0;
+            while shift < len {
+                let mut ones = 0u64;
+                let mut twos = 0u64;
+                for &x in &s.bases {
+                    let w = s.get64(x + shift);
+                    twos |= ones & w;
+                    ones |= w;
+                }
+                let mut one = ones & !twos & !disallowed;
+                if shift + 64 > len {
+                    one &= !(!0u64 << (len - shift));
+                }
+                while one != 0 {
+                    let d = shift + one.trailing_zeros() as usize;
+                    one &= one - 1;
+                    cands.push(((base_sum + d * k) as u128) << 32 | (r as u128) << 16 | d as u128);
+                }
+                shift += step;
+            }
+            true
+        });
     }
 
     /// Places bucket `b`, possibly evicting other buckets. Returns `true` on
@@ -1560,7 +1808,12 @@ impl<'a, T: Rec> Sweep<'a, T> {
         let mut all_bases = std::mem::take(&mut self.all_bases);
         cands.clear();
         all_bases.clear();
-        for r in 0..self.g.patterns {
+        if self.g.wrap != 0 {
+            self.wrap_candidates(b, &mut cands, &mut all_bases);
+        }
+        // Nested repairs overwrite the segments
+        let seg_t0 = std::mem::take(&mut self.seg_t0);
+        for r in 0..if self.g.wrap != 0 { 0 } else { self.g.patterns } {
             let base_sum = self.fill_bases(r);
             all_bases.extend_from_slice(&self.bases);
             if self.self_collides() {
@@ -1654,7 +1907,8 @@ impl<'a, T: Rec> Sweep<'a, T> {
             evict.push((key, r, d, blocker));
             if !self.repair_by_size {
                 tried += 1;
-                if self.try_evict(b, depth, r, d, blocker, &all_bases[r * k..][..k]) {
+                let seed = self.conf_seed(&seg_t0, r, d);
+                if self.try_evict(b, depth, seed, d, blocker, &all_bases[r * k..][..k]) {
                     ok = true;
                     break;
                 }
@@ -1663,26 +1917,28 @@ impl<'a, T: Rec> Sweep<'a, T> {
         if self.repair_by_size {
             evict.sort_unstable();
             for &(_, r, d, blocker) in evict.iter().take(max_tries) {
-                if self.try_evict(b, depth, r, d, blocker, &all_bases[r * k..][..k]) {
+                let seed = self.conf_seed(&seg_t0, r, d);
+                if self.try_evict(b, depth, seed, d, blocker, &all_bases[r * k..][..k]) {
                     ok = true;
                     break;
                 }
             }
         }
         self.all_bases = all_bases;
+        self.seg_t0 = seg_t0;
         self.cands = cands;
         self.evict = evict;
         ok
     }
 
-    /// Evicts `blocker`, places `b` with pattern `r` and shift `d` (whose
-    /// bases are `b_bases`), and tries to place `blocker` again; on failure,
-    /// restores the previous state.
+    /// Evicts `blocker`, places `b` with seed `b_seed`, that is, with shift
+    /// `d` from the bases `b_bases`, and tries to place `blocker` again; on
+    /// failure, restores the previous state.
     fn try_evict(
         &mut self,
         b: usize,
         depth: u32,
-        r: usize,
+        b_seed: usize,
         d: usize,
         blocker: usize,
         b_bases: &[usize],
@@ -1692,7 +1948,7 @@ impl<'a, T: Rec> Sweep<'a, T> {
         if depth > 1 {
             // Nested repairs need the owners of all slots
             self.unmark(blocker);
-            self.mark(b, self.g.seed_of(r, d));
+            self.mark(b, b_seed);
             if self.place(blocker, depth - 1, b) {
                 return true;
             }
@@ -1724,7 +1980,7 @@ impl<'a, T: Rec> Sweep<'a, T> {
             for &x in b_bases {
                 self.owner[(x + d) & self.cyc_mask] = b as u32;
             }
-            self.seeds[b - self.lo] = self.g.seed_of(r, d) as u16;
+            self.seeds[b - self.lo] = b_seed as u16;
             self.mark_best(blocker, seed);
         } else {
             for &x in b_bases {
@@ -1847,6 +2103,112 @@ fn default_weights(seed_bits: u32, slice_len: usize) -> [i64; 7] {
     w.map(|x| x as i64)
 }
 
+/// With wrapping and multiplier `m`, returns the step between the words of
+/// a scan of shifts and the mask of the shifts in a word that are not
+/// multiples of `m` (as in PHast+ with wrapping, the step is a multiple of
+/// `m`, so the mask is the same for all words).
+#[inline(always)]
+fn wrap_step_mask(m: usize) -> (usize, u64) {
+    let mut allowed = 0u64;
+    let mut i = 0;
+    while i < 64 {
+        allowed |= 1 << i;
+        i += m;
+    }
+    (64 - 64 % m, !allowed)
+}
+
+/// Returns the default priority weights with wrapping (those of PHast+ with
+/// wrapping, for multipliers 1, 2, and at least 3).
+fn wrap_weights(seed_bits: u32, multiplier: u32, slice_len: usize) -> [i64; 7] {
+    match multiplier {
+        1 => wrap_weights_m1(seed_bits, slice_len),
+        2 => wrap_weights_m2(seed_bits, slice_len),
+        _ => wrap_weights_m3(seed_bits, slice_len),
+    }
+    .map(|x| x as i64)
+}
+
+/// Weights of PHast+ with wrapping and multiplier 1 (from `ph`).
+#[rustfmt::skip]
+fn wrap_weights_m1(bits_per_seed: u32, slice_len: usize) -> [i32; 7] {
+    match (bits_per_seed, slice_len) {
+        (_, ..=64) => [-76520, 97960, 103626, 106759, 109053, 110149, 112662],   // 8, 4.1, 64
+        (_, ..=128) => [-80872, 90492, 100641, 105939, 109960, 112290, 118119], // 8, 4.1, 128
+        (..=6, ..=256) => [-76632, 59701, 89939, 103115, 111040, 117906, 283652], // 6, 3.0, slice=256
+        (..=6, ..=512) => [-102171, 30195, 95877, 122987, 138980, 152173, 206055],  // 6, 3.0, slice=512
+        (_, ..=256) => [-84425, 81165, 96951, 106065, 112137, 117421, 122309],  // 7, 3.5, slice=256
+        (7, ..=512) => [-69271, 61152, 101770, 119869, 132454, 141236, 148273],  // 7, 3.5, slice=512
+        (8, ..=512) => [-66903, 81776, 107154, 122354, 132033, 140641, 146584], // 4.1, slice=512
+        (8, ..=1024) => [-50666, 55977, 116129, 145446, 164172, 180129, 192120],  // 4.1, slice=1024
+        (_, ..=512) => [-45845, 91690, 122225, 138169, 149160, 155706, 164757],  // 5.1, slice=512
+        (9, ..=1024) => [-51695, 68190, 121468, 146481, 164082, 178054, 186488],  // 5.1, slice=1024
+        (..=9, ..=2048) => [-3365, 12300, 85113, 138418, 170087, 197668, 215654],  // 9, 5.1, slice=2048
+        (10, ..=1024) => [-4011, 15045, 106558, 112844, 133305, 145623, 154991], // 5.7, slice=1024
+        (..=10, ..=2048) => [-3301, 12449, 83323, 139924, 169323, 198105, 212187],   // 10, 5.7, slice=2048
+        (11, ..=1024) => [-1524, 23928, 115028, 153353, 187370, 191075, 197861],    // 6.3, slice=1024 USELESS
+        (11, ..=2048) => [-1777, 22788, 106158, 139632, 174143, 200775, 214797],  // 6.3, slice=2048
+        (11, _) => [-4924, 19116, 22394, 59714, 110668, 154482, 181404],
+        (_, ..=1024) => [-2190, 30393, 114587, 141471, 162103, 177602, 183787], // 12, 6.8, slice=1024 USELESS
+        (_, ..=2048) => [-2355, 16099, 113987, 153868, 183912, 213486, 226897],   // 12, 6.8, slice=2048 USELESS
+        (_, _) => [-3938, 38130, 29589, 52311, 96328, 147014, 172193], // 12, 6.8, 4096
+    }
+}
+
+/// Weights of PHast+ with wrapping and multiplier 2 (from `ph`).
+#[rustfmt::skip]
+fn wrap_weights_m2(bits_per_seed: u32, slice_len: usize) -> [i32; 7] {
+    match (bits_per_seed, slice_len) {
+        (_, ..=64) => [-78586, 98418, 103824, 106532, 108539, 109981, 111063],  // 8, 4.1, 64
+        (_, ..=128) => [-85534, 90593, 100261, 105362, 108728, 111329, 113115], // 8, 4.1, 128
+        (..=6, ..=256) => [-113309, 70659, 92719, 103205, 111784, 117218, 121395], // 6, 3.0, slice=256
+        (..=6, ..=512) => [-113437, 36479, 87740, 109716, 124793, 137012, 209528], // 6, 3.0, slice=512
+        (_, ..=256) => [-83108, 76805, 93889, 104574, 111919, 117701, 137200],  // 7, 3.5, slice=256
+        (7, ..=512) => [-11364, 71851, 100238, 116988, 128732, 138656, 145275],  // 7, 3.5, slice=512
+        (8, ..=512) => [-67763, 78133, 104489, 121464, 133392, 140946, 155107], // 4.1, slice=512
+        (8, ..=1024) => [-50137, 65904, 111782, 139890, 159029, 175922, 186995],  // 4.1, slice=1024
+        (..=8, ..=2048) => [-3445, 11224, 85129, 138005, 176794, 209479, 234058], // 8, 4.1, slice=2048
+        (_, ..=512) => [-45845, 91690, 122225, 138169, 149160, 155706, 164757],  // 5.1, slice=512
+        (9, ..=1024) => [-49692, 70537, 115707, 143201, 163216, 178981, 188448],  // 5.1, slice=1024
+        (..=9, ..=2048) => [-3514, 12002, 85880, 136849, 171127, 197699, 215787],  // 9, 5.1, slice=2048
+        (10, ..=1024) => [-4383, 16783, 82867, 112554, 131931, 148281, 156013], // 5.7, slice=1024 USELESS
+        (..=10, ..=2048) => [-3386, 13051, 82525, 133516, 169004, 198445, 214518],   // 10, 5.7, slice=2048
+        (11, ..=1024) => [-1562, 24796, 122828, 155722, 174139, 191420, 198085],    // 6.3, slice=1024 USELESS
+        (11, ..=2048) => [-2243, 21043, 83146, 136599, 172186, 200713, 215298],  // 6.3, slice=2048 USELESS
+        (11, _) => [-4045, 8964, 9362, 21128, 86855, 136683, 166640],   // 11, 6.3, slice=4096
+        (_, ..=1024) => [-2244, 32777, 107196, 142051, 161424, 177763, 183475], // 12, 6.8, slice=1024 USELESS
+        (_, ..=2048) => [-2808, 16026, 90346, 150206, 185508, 214963, 227887],   // 12, 6.8, slice=2048 USELESS
+        (_, _ /*..=4096*/) => [-4044, 7164, 10158, 22096, 92563, 142914, 171123],    // 12, 6.8, slice=4096  USELESS?? pure performance
+        //(_, _) => [-4849, 12371, 19420, 27337, 28560, 51301, 103428]    // 12, 6.8, slice=8192, TODO optimize
+    }
+}
+
+/// Weights of PHast+ with wrapping and multiplier 3 (from `ph`).
+#[rustfmt::skip]
+fn wrap_weights_m3(bits_per_seed: u32, slice_len: usize) -> [i32; 7] {
+    match (bits_per_seed, slice_len) { // multiplier=3, almost the same result as for multiplier=2 weights
+        (_, ..=64) => [-81342, 97738, 103193, 106305, 108524, 109876, 112382],  // 8, 4.1, 64
+        (_, ..=128) => [-82883, 89250, 99246, 105030, 108983, 111224, 117058], // 8, 4.1, 128
+        (..=6, ..=256) => [-143420, 70364, 89794, 100431, 107778, 113842, 253543], // 6, 3.0, slice=256
+        (..=6, ..=512) => [-118906, 41451, 83177, 104570, 119520, 131788, 197543], // 6, 3.0, slice=512
+        (_, ..=256) => [-82828, 77192, 94710, 105243, 112716, 118768, 136225],  // 7, 3.5, slice=256
+        (7, ..=512) => [-11540, 68580, 98218, 115370, 128607, 139118, 145832],  // 7, 3.5, slice=512
+        (_, ..=512) => [25100, 89361, 117113, 134755, 147369, 154606, 172378], // 4.1, slice=512
+        (8, ..=1024) => [-50649, 63792, 110014, 139267, 161285, 176594, 188305],  // 4.1, slice=1024
+        (..=8, ..=2048) => [-3427, 10388, 90470, 141895, 179413, 208576, 232553], // 8, 4.1, slice=2048
+        (9, ..=1024) => [-41757, 60279, 113069, 143467, 162892, 179091, 188139],  // 5.1, slice=1024
+        (..=9, ..=2048) => [-3753, 11840, 77702, 132696, 169641, 200687, 218764],  // 9, 5.1, slice=2048
+        (10, ..=1024) => [-2394, 29640, 81921, 108732, 126229, 141102, 150457], // 5.7, slice=1024 USELESS
+        (..=10, ..=2048) => [-3417, 13564, 81208, 133035, 168506, 198114, 214382],   // 10, 5.7, slice=2048
+        (11, ..=1024) => [-1555, 25982, 126717, 155711, 174202, 191358, 198247],    // 6.3, slice=1024 USELESS
+        (11, ..=2048) => [-2229, 21208, 88554, 137643, 169905, 200075, 213746],  // 6.3, slice=2048 USELESS
+        (11, _) => [-3267, 25041, 24325, 40786, 100528, 155125, 182822],  // 11, 6.3, slice=4096
+        (_, ..=1024) => [-2206, 33628, 110901, 143147, 161228, 177559, 183794], // 12, 6.8, slice=1024 USELESS
+        (_, ..=2048) => [-2665, 16252, 98048, 149519, 183487, 214959, 227347],   // 12, 6.8, slice=2048 USELESS
+        (_, _) => [-3356, 26074, 26278, 44692, 94747, 143426, 168599],  // 12, 6.8, slice=4096  USELESS
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1870,6 +2232,34 @@ mod tests {
             check::<Box<[u8]>>(n, PHastRBuilder::default());
             check::<BitFieldVec<Box<[usize]>>>(n, PHastRBuilder::default().seed_bits(10));
         }
+    }
+
+    #[test]
+    fn test_wrap() {
+        for n in [0, 1, 2, 3, 10, 100, 1000, 5000, 10000] {
+            check::<Box<[u8]>>(n, PHastRBuilder::default().wrap(3).bucket_size(5.0));
+        }
+        for m in 1..=3 {
+            for depth in 0..=2 {
+                check::<Box<[u8]>>(
+                    300_000,
+                    PHastRBuilder::default()
+                        .wrap(m)
+                        .bucket_size(5.0)
+                        .repair_depth(depth)
+                        .repair_candidates(if depth == 0 { 0 } else { 16 }),
+                );
+            }
+        }
+        check::<BitFieldVec<Box<[usize]>>>(
+            300_000,
+            PHastRBuilder::default()
+                .wrap(1)
+                .seed_bits(10)
+                .log2_slice_len(11)
+                .bucket_size(6.0),
+        );
+        check::<Box<[u8]>>(1_000_000, PHastRBuilder::default().wrap(3).bucket_size(5.0));
     }
 
     #[test]
@@ -2003,6 +2393,7 @@ mod tests {
                 PHastRBuilder::default()
                     .repair_depth(0)
                     .repair_candidates(0),
+                PHastRBuilder::default().wrap(3).bucket_size(5.0),
             ] {
                 let phf: PHastR<CollidingKey> = builder.try_build(&keys, no_logging![]).unwrap();
                 let mut seen = vec![false; keys.len()];
@@ -2044,7 +2435,7 @@ mod tests {
             let _: &&[LevelParams] = &des.params;
             let _: &crate::dict::EliasFano<
                 usize,
-                crate::rank_sel::SelectAdaptConst<crate::bits::BitVec<&[usize]>, &[usize]>,
+                crate::rank_sel::SelectAdaptConst<crate::bits::BitVec<&[usize]>, &[usize], 12, 3>,
                 BitFieldVec<&[usize]>,
             > = &des.remap;
             assert_eq!(des.len(), keys.len());

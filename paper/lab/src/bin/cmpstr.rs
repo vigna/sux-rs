@@ -10,10 +10,13 @@
 use clap::Parser;
 use dsi_progress_logger::no_logging;
 use mem_dbg::{MemSize, SizeFlags};
-use ph::phast::{DefaultCompressedArray, Function2, Generic, GenericCore, SeedChooser, ShiftOnly, ShiftOnlyWrapped};
+use ph::GetSize;
+use ph::phast::{
+    DefaultCompressedArray, Function2, Generic, GenericCore, SeedChooser, ShiftOnly,
+    ShiftOnlyWrapped,
+};
 use ph::seedable_hash::BuildGxHash;
 use ph::seeds::Bits8;
-use ph::GetSize;
 use std::hash::{Hash, Hasher};
 use std::time::Instant;
 use sux::func::{PHastR, PHastRBuilder};
@@ -76,14 +79,24 @@ fn batch<'a>(keys: &'a [GxStr], q: usize, round: u64, f: impl Fn(&'a GxStr) -> u
     t.elapsed().as_secs_f64() * 1e9 / q as f64
 }
 
-fn reference<'a, SC: SeedChooser + 'a>(keys: &'a [GxStr], lam: f64, sc: SC, name: String) -> Entry<'a> {
+fn reference<'a, SC: SeedChooser + 'a>(
+    keys: &'a [GxStr],
+    lam: f64,
+    sc: SC,
+    name: String,
+) -> Entry<'a> {
     let t = Instant::now();
     let params = Generic::new(Bits8, (lam * 100.0).round() as u16);
     let f: Function2<GenericCore, Bits8, SC, DefaultCompressedArray, BuildGxHash> =
         Function2::with_slice_p_hash_sc(keys, &params, BuildGxHash, sc);
     let build = t.elapsed().as_secs_f64() * 1e9 / keys.len() as f64;
     let bits = f.size_bytes() as f64 * 8.0 / keys.len() as f64;
-    Entry { name, bits, build, bench: Box::new(move |q, r| batch(keys, q, r, |k| f.get(k))) }
+    Entry {
+        name,
+        bits,
+        build,
+        bench: Box::new(move |q, r| batch(keys, q, r, |k| f.get(k))),
+    }
 }
 
 fn phast_r<'a>(keys: &'a [GxStr], b: PHastRBuilder, name: String) -> Entry<'a> {
@@ -97,7 +110,12 @@ fn phast_r<'a>(keys: &'a [GxStr], b: PHastRBuilder, name: String) -> Entry<'a> {
         assert!(!seen[v], "duplicate output {v}");
         seen[v] = true;
     }
-    Entry { name, bits, build, bench: Box::new(move |q, r| batch(keys, q, r, |k| f.get(k))) }
+    Entry {
+        name,
+        bits,
+        build,
+        bench: Box::new(move |q, r| batch(keys, q, r, |k| f.get(k))),
+    }
 }
 
 fn main() {
@@ -143,7 +161,11 @@ fn main() {
                     .repair_depth(depth)
                     .repair_candidates(if depth == 0 { 0 } else { 16 })
                     .bucket_size(lam);
-                phast_r(&keys, b, format!("PHast-R S=8 L={} d={depth} l={lam}", 1 << ll))
+                phast_r(
+                    &keys,
+                    b,
+                    format!("PHast-R S=8 L={} d={depth} l={lam}", 1 << ll),
+                )
             }
             _ => panic!("unknown variant {v}"),
         });
@@ -158,7 +180,13 @@ fn main() {
     for (e, t) in entries.iter().zip(times.iter_mut()) {
         t.sort_by(f64::total_cmp);
         let q = t[t.len() / 2];
-        println!("{:36} {:.4} bits/key  build {:7.1} ns/key  query {:6.1} ns", e.name, e.bits, e.build, q);
-        eprintln!("CSV,{},{},{:.4},{:.1},{:.1}", e.name, a.n, e.bits, e.build, q);
+        println!(
+            "{:36} {:.4} bits/key  build {:7.1} ns/key  query {:6.1} ns",
+            e.name, e.bits, e.build, q
+        );
+        eprintln!(
+            "CSV,{},{},{:.4},{:.1},{:.1}",
+            e.name, a.n, e.bits, e.build, q
+        );
     }
 }
