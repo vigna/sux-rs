@@ -812,6 +812,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gxhash"
+version = "3.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3ce1bab7aa741d4e7042b2aae415b78741f267a98a7271ea226cd5ba6c43d7d"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "half"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1310,6 +1319,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "dsi-progress-logger",
+ "gxhash",
  "mem_dbg 0.4.4",
  "ph",
  "sux 0.15.0",
@@ -1658,6 +1668,7 @@ name = "seedable_hash"
 version = "0.2.3"
 source = "git+https://github.com/vigna/bsuccinct-rs?rev=7d18454cc213a5853f0c7fcbcc5d65159e7ae890#7d18454cc213a5853f0c7fcbcc5d65159e7ae890"
 dependencies = [
+ "gxhash",
  "wyhash",
 ]
 
@@ -1813,6 +1824,7 @@ dependencies = [
  "thiserror 2.0.21",
  "thread-priority",
  "value-traits 0.3.1",
+ "voracious_radix_sort",
  "xxhash-rust",
  "zerocopy",
  "zstd",

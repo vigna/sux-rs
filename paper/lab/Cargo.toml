@@ -11,10 +11,11 @@ name = "lab"
 [dependencies]
 # Reference implementation of PHast/PHast+ (Beling), pinned to the commit used
 # for the results in results/m1-max.
-ph = { git = "https://github.com/vigna/bsuccinct-rs", rev = "7d18454cc213a5853f0c7fcbcc5d65159e7ae890", features = ["wyhash"] }
+ph = { git = "https://github.com/vigna/bsuccinct-rs", rev = "7d18454cc213a5853f0c7fcbcc5d65159e7ae890", features = ["wyhash", "gxhash"] }
 sux = { path = "../..", features = ["epserde"] }
 clap = { version = "4", features = ["derive"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
+gxhash = "3.5"
 dsi-progress-logger = "0.8"
 mem_dbg = "0.4"
 

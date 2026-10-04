@@ -1,0 +1,10 @@
+n = 100000000 hash = gx
+ref phast S=8 l=4.5                          1.9205 bits/key  build   921.0 ns/key  query   38.6 ns  [min 37.4 max 39.8]
+ref plus S=8 l=5.25                          2.1154 bits/key  build    79.0 ns/key  query   44.7 ns  [min 43.6 max 47.3]
+ref w3 S=8 l=5                               1.9681 bits/key  build   144.0 ns/key  query   41.9 ns  [min 39.2 max 44.2]
+ref w3 S=10 l=6                              1.8693 bits/key  build   283.1 ns/key  query   45.6 ns  [min 43.5 max 47.4]
+PHast-R S=8 L=512 R=4 d=1 l=5 u8             1.9301 bits/key  build   161.9 ns/key  query   44.4 ns  levels 5  [min 42.1 max 45.8]
+PHast-R S=8 L=512 R=4 d=2 l=5 u8             1.9189 bits/key  build   244.6 ns/key  query   44.7 ns  levels 5  [min 41.9 max 45.6]
+PHast-R S=8 L=512 R=4 d=2 l=4.75 u8          1.9298 bits/key  build   226.4 ns/key  query   42.7 ns  levels 4  [min 40.5 max 44.4]
+PHast-R S=10 L=2048 R=4 d=1 l=6 bfv          1.8564 bits/key  build   170.8 ns/key  query   48.4 ns  levels 4  [min 45.9 max 50.6]
+PHast-R S=10 L=2048 R=4 d=2 l=6.25 bfv       1.8495 bits/key  build   262.6 ns/key  query   48.9 ns  levels 4  [min 47.8 max 50.3]

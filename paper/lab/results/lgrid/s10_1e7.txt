@@ -1,0 +1,10 @@
+n = 10000000 hash = gx
+PHast-R S=10 L=1024 R=4 d=1 l=5.75 bfv       1.9088 bits/key  build   155.4 ns/key  query   35.9 ns  levels 3  bumped 1.67%
+PHast-R S=10 L=1024 R=4 d=1 l=6 bfv          1.8990 bits/key  build   159.9 ns/key  query   34.5 ns  levels 4  bumped 2.44%
+PHast-R S=10 L=1024 R=4 d=1 l=6.25 bfv       1.9015 bits/key  build   158.4 ns/key  query   36.3 ns  levels 4  bumped 3.33%
+PHast-R S=10 L=2048 R=4 d=1 l=5.75 bfv       1.8741 bits/key  build   168.1 ns/key  query   35.9 ns  levels 3  bumped 1.26%
+PHast-R S=10 L=2048 R=4 d=1 l=6 bfv          1.8600 bits/key  build   178.5 ns/key  query   34.6 ns  levels 4  bumped 1.96%
+PHast-R S=10 L=2048 R=4 d=1 l=6.25 bfv       1.8590 bits/key  build   189.4 ns/key  query   35.3 ns  levels 4  bumped 2.77%
+PHast-R S=10 L=4096 R=4 d=1 l=5.75 bfv       1.9778 bits/key  build   136.6 ns/key  query   36.8 ns  levels 4  bumped 2.46%
+PHast-R S=10 L=4096 R=4 d=1 l=6 bfv          1.9705 bits/key  build   139.9 ns/key  query   37.2 ns  levels 4  bumped 3.29%
+PHast-R S=10 L=4096 R=4 d=1 l=6.25 bfv       1.9705 bits/key  build   147.8 ns/key  query   36.3 ns  levels 4  bumped 4.21%

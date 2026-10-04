@@ -1,0 +1,14 @@
+--- a/ph/src/phast/function2.rs	2026-10-03 11:47:41.712336037 +0200
++++ b/ph/src/phast/function2.rs	2026-10-03 14:47:14.896063430 +0200
+@@ -56,6 +56,11 @@
+ 
+ impl<C: Core, SS: SeedSize, SC: SeedChooser, CA: CompressedArray, S: BuildSeededHasher> Function2<C, SS, SC, CA, S> {
+     
++    /// Returns whether the key is bumped from level 0 (for benchmarking).
++    pub fn is_bumped<K>(&self, key: &K) -> bool where K: Hash + ?Sized {
++        self.seed_chooser.try_f(self.seed_size, &self.level0.seeds, self.hasher.hash_one(key, 0), &self.level0.conf).is_none()
++    }
++
+     /// Returns value assigned to the given `key`.
+     /// 
+     /// The returned value is in the range from `0` (inclusive) to the number of elements in the input key collection (exclusive).

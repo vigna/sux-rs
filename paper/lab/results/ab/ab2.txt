@@ -1,0 +1,48 @@
+### base 1e7
+n = 10000000 hash = gx
+ref plus S=8 l=5.25                          2.1160 bits/key  build    66.6 ns/key  query   25.8 ns  [min 24.3 max 28.0]
+ref w3 S=8 l=5                               1.9701 bits/key  build   123.1 ns/key  query   23.7 ns  [min 22.2 max 26.8]
+ref phast S=8 l=4.5                          1.9218 bits/key  build   837.3 ns/key  query   22.6 ns  [min 21.6 max 24.5]
+ref plus S=10 l=5.15                         2.0853 bits/key  build    77.0 ns/key  query   28.1 ns  [min 26.7 max 31.5]
+ref w3 S=10 l=6                              1.8718 bits/key  build   250.9 ns/key  query   27.9 ns  [min 26.8 max 31.0]
+PHast-R S=8 L=512 R=4 d=0 l=5 u8             2.0220 bits/key  build    93.3 ns/key  query   30.9 ns  levels 4  [min 29.9 max 32.7]
+PHast-R S=8 L=512 R=4 d=1 l=5 u8             1.9351 bits/key  build   148.4 ns/key  query   30.0 ns  levels 4  [min 28.4 max 31.1]
+PHast-R S=8 L=512 R=4 d=2 l=5 u8             1.9238 bits/key  build   221.8 ns/key  query   29.9 ns  levels 4  [min 28.4 max 31.9]
+PHast-R S=9 L=1024 R=4 d=1 l=5.75 bfv        1.8889 bits/key  build   157.6 ns/key  query   34.3 ns  levels 4  [min 32.5 max 35.8]
+PHast-R S=10 L=2048 R=4 d=0 l=6 bfv          1.9219 bits/key  build   101.3 ns/key  query   34.0 ns  levels 4  [min 32.7 max 37.4]
+PHast-R S=10 L=2048 R=4 d=1 l=6 bfv          1.8602 bits/key  build   154.4 ns/key  query   33.9 ns  levels 4  [min 31.1 max 36.9]
+PHast-R S=10 L=2048 R=4 d=2 l=6.25 bfv       1.8547 bits/key  build   237.3 ns/key  query   34.7 ns  levels 4  [min 32.8 max 38.1]
+PHast-R S=11 L=4096 R=4 d=1 l=6.75 bfv       1.8599 bits/key  build   157.8 ns/key  query   34.7 ns  levels 4  [min 33.4 max 42.5]
+### base 1e8
+n = 100000000 hash = gx
+ref plus S=8 l=5.25                          2.1154 bits/key  build    71.2 ns/key  query   38.8 ns  [min 36.3 max 40.5]
+ref w3 S=8 l=5                               1.9681 bits/key  build   129.4 ns/key  query   35.6 ns  [min 33.9 max 40.9]
+ref w3 S=10 l=6                              1.8693 bits/key  build   256.5 ns/key  query   39.4 ns  [min 37.9 max 41.4]
+PHast-R S=8 L=512 R=4 d=1 l=5 u8             1.9341 bits/key  build   145.3 ns/key  query   44.1 ns  levels 5  [min 42.4 max 45.2]
+PHast-R S=8 L=512 R=4 d=2 l=5 u8             1.9227 bits/key  build   218.9 ns/key  query   43.1 ns  levels 5  [min 41.0 max 46.2]
+PHast-R S=10 L=2048 R=4 d=1 l=6 bfv          1.8568 bits/key  build   151.0 ns/key  query   46.3 ns  levels 4  [min 44.8 max 49.2]
+PHast-R S=10 L=2048 R=4 d=2 l=6.25 bfv       1.8502 bits/key  build   232.9 ns/key  query   46.4 ns  levels 4  [min 45.0 max 50.3]
+### new 1e7
+n = 10000000 hash = gx
+ref plus S=8 l=5.25                          2.1160 bits/key  build    70.3 ns/key  query   25.1 ns  [min 24.1 max 26.6]
+ref w3 S=8 l=5                               1.9701 bits/key  build   123.2 ns/key  query   23.4 ns  [min 22.3 max 24.7]
+ref phast S=8 l=4.5                          1.9218 bits/key  build   845.4 ns/key  query   23.0 ns  [min 20.8 max 23.9]
+ref plus S=10 l=5.15                         2.0853 bits/key  build    84.1 ns/key  query   27.5 ns  [min 25.9 max 29.1]
+ref w3 S=10 l=6                              1.8718 bits/key  build   252.9 ns/key  query   26.7 ns  [min 25.9 max 29.1]
+PHast-R S=8 L=512 R=4 d=0 l=5 u8             2.0166 bits/key  build    96.7 ns/key  query   26.4 ns  levels 4  [min 25.2 max 28.6]
+PHast-R S=8 L=512 R=4 d=1 l=5 u8             1.9305 bits/key  build   150.8 ns/key  query   26.2 ns  levels 4  [min 24.0 max 28.8]
+PHast-R S=8 L=512 R=4 d=2 l=5 u8             1.9201 bits/key  build   233.0 ns/key  query   25.6 ns  levels 4  [min 24.3 max 28.5]
+PHast-R S=9 L=1024 R=4 d=1 l=5.75 bfv        1.8874 bits/key  build   163.2 ns/key  query   30.4 ns  levels 4  [min 28.1 max 32.3]
+PHast-R S=10 L=2048 R=4 d=0 l=6 bfv          1.9203 bits/key  build   104.6 ns/key  query   28.9 ns  levels 4  [min 27.5 max 32.3]
+PHast-R S=10 L=2048 R=4 d=1 l=6 bfv          1.8599 bits/key  build   161.3 ns/key  query   29.6 ns  levels 4  [min 27.5 max 31.3]
+PHast-R S=10 L=2048 R=4 d=2 l=6.25 bfv       1.8531 bits/key  build   247.9 ns/key  query   29.1 ns  levels 4  [min 27.4 max 30.8]
+PHast-R S=11 L=4096 R=4 d=1 l=6.75 bfv       1.8599 bits/key  build   160.6 ns/key  query   29.1 ns  levels 4  [min 27.5 max 31.7]
+### new 1e8
+n = 100000000 hash = gx
+ref plus S=8 l=5.25                          2.1154 bits/key  build    72.5 ns/key  query   38.6 ns  [min 37.5 max 42.0]
+ref w3 S=8 l=5                               1.9681 bits/key  build   128.9 ns/key  query   34.9 ns  [min 33.4 max 38.8]
+ref w3 S=10 l=6                              1.8693 bits/key  build   258.5 ns/key  query   38.8 ns  [min 37.8 max 40.0]
+PHast-R S=8 L=512 R=4 d=1 l=5 u8             1.9299 bits/key  build   148.8 ns/key  query   38.6 ns  levels 5  [min 37.2 max 40.4]
+PHast-R S=8 L=512 R=4 d=2 l=5 u8             1.9189 bits/key  build   225.4 ns/key  query   38.5 ns  levels 5  [min 35.7 max 39.5]
+PHast-R S=10 L=2048 R=4 d=1 l=6 bfv          1.8563 bits/key  build   154.1 ns/key  query   41.4 ns  levels 4  [min 39.3 max 43.2]
+PHast-R S=10 L=2048 R=4 d=2 l=6.25 bfv       1.8493 bits/key  build   238.4 ns/key  query   42.6 ns  levels 4  [min 41.2 max 44.5]

@@ -1,0 +1,72 @@
+n = 1000000 hash = gx
+ref phast S=6 l=4                            2.0782 bits/key  build    85.8 ns/key  query   20.6 ns
+ref phast S=6 l=3.8                          2.0728 bits/key  build    86.1 ns/key  query   18.6 ns
+ref phast S=6 l=3.61                         2.0664 bits/key  build    88.2 ns/key  query   18.4 ns
+ref phast S=6 l=3.45                         2.0675 bits/key  build    89.9 ns/key  query   17.5 ns
+ref phast S=6 l=3.3                          2.0795 bits/key  build    89.6 ns/key  query   18.2 ns
+ref phast S=6 l=3.16                         2.1035 bits/key  build    92.9 ns/key  query   17.2 ns
+ref phast S=6 l=3                            2.1525 bits/key  build    94.8 ns/key  query   16.9 ns
+n = 1000000 hash = gx
+ref phast S=7 l=4.67                         2.0072 bits/key  build   125.8 ns/key  query   22.2 ns
+ref phast S=7 l=4.43                         1.9959 bits/key  build   129.7 ns/key  query   19.8 ns
+ref phast S=7 l=4.22                         1.9864 bits/key  build   129.6 ns/key  query   18.4 ns
+ref phast S=7 l=4.02                         1.9848 bits/key  build   135.6 ns/key  query   18.7 ns
+ref phast S=7 l=3.85                         1.9964 bits/key  build   135.8 ns/key  query   17.6 ns
+ref phast S=7 l=3.68                         2.0230 bits/key  build   139.2 ns/key  query   18.3 ns
+ref phast S=7 l=3.5                          2.0846 bits/key  build   146.0 ns/key  query   15.7 ns
+n = 1000000 hash = gx
+ref phast S=8 l=5.33                         1.9673 bits/key  build   227.3 ns/key  query   16.9 ns
+ref phast S=8 l=5.06                         1.9412 bits/key  build   228.8 ns/key  query   16.0 ns
+ref phast S=8 l=4.82                         1.9388 bits/key  build   225.0 ns/key  query   16.7 ns
+ref phast S=8 l=4.6                          1.9371 bits/key  build   226.9 ns/key  query   14.8 ns
+ref phast S=8 l=4.4                          1.9511 bits/key  build   229.9 ns/key  query   14.9 ns
+ref phast S=8 l=4.21                         1.9854 bits/key  build   242.6 ns/key  query   14.4 ns
+ref phast S=8 l=4                            2.0607 bits/key  build   257.3 ns/key  query   13.8 ns
+n = 1000000 hash = gx
+ref phast S=9 l=6                            1.9230 bits/key  build   334.2 ns/key  query   20.5 ns
+ref phast S=9 l=5.7                          1.9003 bits/key  build   353.7 ns/key  query   19.1 ns
+ref phast S=9 l=5.42                         1.9008 bits/key  build   353.6 ns/key  query   18.3 ns
+ref phast S=9 l=5.17                         1.9084 bits/key  build   362.7 ns/key  query   18.3 ns
+ref phast S=9 l=4.95                         1.9264 bits/key  build   376.8 ns/key  query   17.7 ns
+ref phast S=9 l=4.74                         1.9712 bits/key  build   399.4 ns/key  query   17.5 ns
+ref phast S=9 l=4.5                          2.0569 bits/key  build   436.6 ns/key  query   30.5 ns
+n = 1000000 hash = gx
+ref phast S=10 l=6.67                        1.8946 bits/key  build   620.9 ns/key  query   19.8 ns
+ref phast S=10 l=6.33                        1.8793 bits/key  build   611.9 ns/key  query   21.5 ns
+ref phast S=10 l=6.02                        1.8739 bits/key  build   698.0 ns/key  query   19.0 ns
+ref phast S=10 l=5.75                        1.8843 bits/key  build   753.5 ns/key  query   19.0 ns
+ref phast S=10 l=5.49                        1.9150 bits/key  build   790.7 ns/key  query   19.4 ns
+ref phast S=10 l=5.26                        1.9663 bits/key  build   826.0 ns/key  query   18.9 ns
+ref phast S=10 l=5                           2.0587 bits/key  build   890.9 ns/key  query   20.0 ns
+n = 1000000 hash = gx
+ref phast S=11 l=7.33                        1.8769 bits/key  build  1312.2 ns/key  query   20.3 ns
+ref phast S=11 l=6.96                        1.8599 bits/key  build  1305.0 ns/key  query   19.7 ns
+ref phast S=11 l=6.63                        1.8529 bits/key  build  1308.5 ns/key  query   36.7 ns
+ref phast S=11 l=6.32                        1.8685 bits/key  build  1332.0 ns/key  query   19.2 ns
+ref phast S=11 l=6.04                        1.9046 bits/key  build  1302.7 ns/key  query   18.8 ns
+ref phast S=11 l=5.79                        1.9622 bits/key  build  1492.1 ns/key  query   33.5 ns
+ref phast S=11 l=5.5                         2.0566 bits/key  build  1708.9 ns/key  query   36.8 ns
+n = 1000000 hash = gx
+ref phast S=12 l=8                           1.8686 bits/key  build  2391.7 ns/key  query   20.3 ns
+ref phast S=12 l=7.59                        1.8507 bits/key  build  2414.3 ns/key  query   19.6 ns
+ref phast S=12 l=7.23                        1.8499 bits/key  build  2446.0 ns/key  query   19.4 ns
+ref phast S=12 l=6.9                         1.8734 bits/key  build  2632.7 ns/key  query   18.8 ns
+ref phast S=12 l=6.59                        1.9117 bits/key  build  2803.1 ns/key  query   18.8 ns
+ref phast S=12 l=6.32                        1.9705 bits/key  build  2785.9 ns/key  query   18.6 ns
+ref phast S=12 l=6                           2.0632 bits/key  build  2913.7 ns/key  query   19.6 ns
+n = 1000000 hash = gx
+ref phast S=13 l=8.67                        1.8700 bits/key  build  4319.6 ns/key  query   21.0 ns
+ref phast S=13 l=8.23                        1.8465 bits/key  build  4650.5 ns/key  query   48.2 ns
+ref phast S=13 l=7.83                        1.8419 bits/key  build  4892.0 ns/key  query   35.2 ns
+ref phast S=13 l=7.47                        1.8628 bits/key  build  4679.7 ns/key  query   22.0 ns
+ref phast S=13 l=7.14                        1.9090 bits/key  build  5161.5 ns/key  query   18.7 ns
+ref phast S=13 l=6.84                        1.9716 bits/key  build  5568.2 ns/key  query   18.8 ns
+ref phast S=13 l=6.5                         2.0627 bits/key  build  4948.2 ns/key  query   37.6 ns
+n = 1000000 hash = gx
+ref phast S=14 l=9.33                        1.8798 bits/key  build  6609.2 ns/key  query   19.8 ns
+ref phast S=14 l=8.86                        1.8513 bits/key  build  6488.6 ns/key  query   19.7 ns
+ref phast S=14 l=8.43                        1.8395 bits/key  build  6693.8 ns/key  query   19.3 ns
+ref phast S=14 l=8.05                        1.8575 bits/key  build  7264.6 ns/key  query   20.4 ns
+ref phast S=14 l=7.69                        1.9082 bits/key  build  8041.1 ns/key  query   19.5 ns
+ref phast S=14 l=7.37                        1.9714 bits/key  build  8658.1 ns/key  query   18.5 ns
+ref phast S=14 l=7                           2.0633 bits/key  build  9348.6 ns/key  query   18.2 ns

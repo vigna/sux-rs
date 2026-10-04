@@ -36,7 +36,7 @@
 //! sequence. With byte seeds (the default) queries are as fast as in PHast+.
 //!
 //! With the default parameters (8-bit seeds, depth-1 repair) space is about
-//! 1.94 bits per key; depth-2 repair (see [`PHastRBuilder::repair_depth`])
+//! 1.93 bits per key; depth-2 repair (see [`PHastRBuilder::repair_depth`])
 //! reaches the space of PHast (about 1.92 bits per key) at about 1.6 times
 //! the construction time, and 10-bit seeds stored in a [`BitFieldVec`] (see
 //! [`PHastRBuilder::seed_bits`]) reach about 1.86 bits per key.
@@ -51,7 +51,6 @@ use std::collections::BinaryHeap;
 use anyhow::{Result, bail};
 use dsi_progress_logger::ProgressLog;
 use mem_dbg::*;
-use rdst::{RadixKey, RadixSort};
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
 use crate::bits::BitFieldVec;
@@ -85,25 +84,29 @@ impl PHastSig for [u64; 2] {
 
 impl PHastSig for [u64; 1] {
     /// Offsets are derived from the only available hash with a single
-    /// xorshift-multiply step; for very large key sets `[u64; 2]` is
+    /// multiplication: bit *k* of the product depends on the bits of the hash
+    /// up to *k*, so the offsets of all patterns depend on the lower bits of
+    /// the hash, which are independent of the upper bits determining the
+    /// bucket and the slice. For very large key sets `[u64; 2]` is
     /// preferable.
     #[inline(always)]
     fn ho(self) -> (u64, u64) {
-        (
-            self[0],
-            (self[0] ^ (self[0] >> 29)).wrapping_mul(0xBF58_476D_1CE4_E5B9),
-        )
+        (self[0], self[0].wrapping_mul(0x5BD1_E995))
     }
 }
 
 /// Derives the pair (*h*, *o*) of the next level.
+///
+/// Only *h* is remixed: since [`mix64`] is a bijection, keys with distinct
+/// pairs keep distinct pairs at every level, and since the new *h* is a
+/// pseudorandom function of the whole old *h*, the offsets provided by *o* are
+/// independent of the new bucket and slice. Remixing a single value keeps
+/// the query of bumped keys short (two independent mixes are vectorized by
+/// the compiler on AVX-512 hardware using `vpmullq`, which has a high
+/// latency).
 #[inline(always)]
 fn next_level(h: u64, o: u64, salt: u64) -> (u64, u64) {
-    let h = h ^ salt;
-    (
-        mix64(h ^ o.rotate_left(29) ^ 0x9E37_79B9_7F4A_7C15),
-        mix64(o ^ h.rotate_left(17) ^ 0xD6E8_FEB8_6659_FD93),
-    )
+    (mix64(h ^ salt ^ 0x9E37_79B9_7F4A_7C15), o)
 }
 
 /// Storage for the seeds of a level (query side).
@@ -295,12 +298,14 @@ impl<K: ?Sized, S, D: SeedStore> PHastR<K, S, D> {
     /// Returns the output of a key in the given level, given its seed.
     #[inline(always)]
     fn pos(&self, lv: &LevelParams, h: u64, o: u64, seed: usize) -> usize {
-        let v = seed - 1;
-        let r = v & ((1 << self.log2_patterns) - 1);
-        let d = v >> self.log2_patterns;
+        // The pattern is the lowest log2_patterns bits of the seed, and its
+        // offset starts at bit pattern * 64 / R of o: since shifts are
+        // taken modulo 64, shifting the whole seed left by log2(64 / R)
+        // yields the shift count without extracting the pattern
+        let count = (seed as u32) << (6 - self.log2_patterns);
         mul_hi(h, lv.num_slices) as usize
-            + ((o >> (r as u32 * self.log2_slice_len)) & lv.l_mask) as usize
-            + d
+            + (o.wrapping_shr(count) & lv.l_mask) as usize
+            + (seed >> self.log2_patterns)
     }
 
     /// Returns the value associated with a pair (*h*, *o*) of hashes.
@@ -313,6 +318,18 @@ impl<K: ?Sized, S, D: SeedStore> PHastR<K, S, D> {
             return self.pos(lv, h, o, s);
         }
         self.get_by_ho_slow(h, o)
+    }
+
+    /// Returns whether a pair (*h*, *o*) of hashes is bumped from the first
+    /// level (for benchmarking).
+    #[doc(hidden)]
+    pub fn is_bumped(&self, h: u64) -> bool {
+        // SAFETY: mul_hi(h, buckets) < buckets, which is the number of seeds
+        unsafe {
+            self.seeds0
+                .get_seed(mul_hi(h, self.params0.buckets) as usize)
+                == 0
+        }
     }
 
     /// Handles keys bumped from the first level.
@@ -369,8 +386,8 @@ impl<K: ?Sized + ToSig<S>, S: PHastSig, D: SeedStore> PHastR<K, S, D> {
 
 /// Builder for [`PHastR`].
 ///
-/// The defaults use 8-bit seeds, four patterns of 63 shifts, slices of length
-/// 512, an expected bucket size of 5 keys, and repairs of depth one trying at
+/// The defaults use 8-bit seeds, four patterns of 64 shifts, slices of length
+/// 1024, an expected bucket size of 4.75 keys, and repairs of depth one trying at
 /// most 16 candidates.
 ///
 /// For 10-bit seeds, good parameters are slices of length 2048 and an
@@ -394,8 +411,8 @@ impl Default for PHastRBuilder {
         Self {
             seed_bits: 8,
             log2_patterns: 2,
-            log2_slice_len: 9,
-            bucket_size: 5.0,
+            log2_slice_len: 10,
+            bucket_size: 4.75,
             repair_candidates: 16,
             repair_depth: 1,
             repair_by_size: false,
@@ -419,13 +436,13 @@ impl PHastRBuilder {
         self
     }
 
-    /// Sets the base-2 logarithm of the slice length (default: 9).
+    /// Sets the base-2 logarithm of the slice length (default: 10).
     pub fn log2_slice_len(mut self, log2_slice_len: u32) -> Self {
         self.log2_slice_len = log2_slice_len;
         self
     }
 
-    /// Sets the expected number of keys per bucket (default: 5).
+    /// Sets the expected number of keys per bucket (default: 4.75).
     pub fn bucket_size(mut self, bucket_size: f64) -> Self {
         self.bucket_size = bucket_size;
         self
@@ -468,7 +485,7 @@ impl PHastRBuilder {
 
     /// Returns the number of shifts per pattern.
     fn shifts(&self) -> usize {
-        ((1usize << self.seed_bits) - 1) >> self.log2_patterns
+        (1usize << self.seed_bits) >> self.log2_patterns
     }
 
     /// Builds a function on the given keys.
@@ -496,12 +513,6 @@ impl PHastRBuilder {
         }
         if self.log2_slice_len > 13 {
             bail!("The slice length must be at most 8192");
-        }
-        if (1usize << self.log2_slice_len) + self.shifts() > CYC_BITS / 4 {
-            bail!(
-                "The slice length plus the number of shifts must be at most {}",
-                CYC_BITS / 4
-            );
         }
 
         pl.info(format_args!("Computing signatures..."));
@@ -573,7 +584,7 @@ impl PHastRBuilder {
         }
 
         // Check for duplicate signatures: keys with the same h are adjacent
-        cur.radix_sort_unstable();
+        sort_ho(&mut cur);
         #[cfg(feature = "rayon")]
         let mut equal_h: Vec<u64> = {
             use rayon::prelude::*;
@@ -623,7 +634,7 @@ impl PHastRBuilder {
                     for x in cur.iter_mut() {
                         (x.h, x.o) = next_level(x.h, x.o, 0);
                     }
-                    cur.radix_sort_unstable();
+                    sort_ho(&mut cur);
                 }
                 let geom = self.geometry(k, k, self.bucket_size);
                 let out = sweep_level(&cur, &geom, self, &weights, true)
@@ -640,7 +651,7 @@ impl PHastRBuilder {
                     for x in keys.iter_mut() {
                         (x.h, x.o) = next_level(x.h, x.o, salt);
                     }
-                    keys.radix_sort_unstable();
+                    sort_ho(&mut keys);
                     if let Some(out) = sweep_level(&keys, &geom, self, &weights, false) {
                         let mut level = geom.level();
                         level.salt = salt;
@@ -708,7 +719,6 @@ impl PHastRBuilder {
             shifts: d,
             patterns: 1 << self.log2_patterns,
             log2_patterns: self.log2_patterns,
-            log2_slice_len: self.log2_slice_len,
             m,
         }
     }
@@ -724,13 +734,43 @@ struct Ho {
     o: u64,
 }
 
-impl RadixKey for Ho {
-    const LEVELS: usize = 8;
-
+/// Ordering by *h* (and *o*, to break ties), needed by
+/// [`voracious_radix_sort`].
+impl PartialOrd for Ho {
     #[inline(always)]
-    fn get_level(&self, level: usize) -> u8 {
-        (self.h >> (level * 8)) as u8
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some((self.h, self.o).cmp(&(other.h, other.o)))
     }
+}
+
+impl PartialEq for Ho {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.h == other.h && self.o == other.o
+    }
+}
+
+impl voracious_radix_sort::Radixable<u64> for Ho {
+    type Key = u64;
+    #[inline(always)]
+    fn key(&self) -> u64 {
+        self.h
+    }
+}
+
+/// Sorts by *h* using [`voracious_radix_sort`] (multithreaded with the
+/// `rayon` feature).
+fn sort_ho(v: &mut [Ho]) {
+    use voracious_radix_sort::RadixSort;
+    #[cfg(feature = "rayon")]
+    {
+        let threads = rayon::current_num_threads();
+        if threads > 1 {
+            v.voracious_mt_sort(threads);
+            return;
+        }
+    }
+    v.voracious_sort();
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -741,7 +781,6 @@ struct Geometry {
     shifts: usize,
     patterns: usize,
     log2_patterns: u32,
-    log2_slice_len: u32,
     m: usize,
 }
 
@@ -758,19 +797,27 @@ impl Geometry {
 
     #[inline(always)]
     fn base(&self, x: Ho, r: usize) -> usize {
-        self.slice_begin(x.h) + ((x.o >> (r as u32 * self.log2_slice_len)) & self.l_mask) as usize
+        self.slice_begin(x.h) + ((x.o >> (r as u32 * self.stride())) & self.l_mask) as usize
+    }
+
+    /// The distance in bits between the offsets of consecutive patterns.
+    #[inline(always)]
+    fn stride(&self) -> u32 {
+        64 >> self.log2_patterns
     }
 
     #[inline(always)]
     fn pos(&self, x: Ho, seed: usize) -> usize {
-        let v = seed - 1;
-        let r = v & (self.patterns - 1);
-        self.base(x, r) + (v >> self.log2_patterns)
+        let r = seed & (self.patterns - 1);
+        self.base(x, r) + (seed >> self.log2_patterns)
     }
 
+    /// Returns the seed of pattern `r` and shift `d`; the pair (0, 0) is
+    /// not valid, as seed 0 marks bumped buckets.
     #[inline(always)]
     fn seed_of(&self, r: usize, d: usize) -> usize {
-        (d << self.log2_patterns) + r + 1
+        debug_assert!(r != 0 || d != 0);
+        (d << self.log2_patterns) | r
     }
 
     fn level(&self) -> LevelParams {
@@ -785,10 +832,6 @@ impl Geometry {
     }
 }
 
-/// Size of the cyclic window of slots, in bits.
-const CYC_BITS: usize = 1 << 16;
-const CYC_MASK: usize = CYC_BITS - 1;
-const CYC_WORDS: usize = CYC_BITS / 64;
 /// Size of the cyclic set recording buckets in the priority queue.
 const HEAP_BITS: usize = 1024;
 /// Number of buckets in the window.
@@ -913,13 +956,21 @@ fn sweep_level(
         return None;
     }
 
-    // Occupancy and bumped keys
-    use std::sync::atomic::{AtomicU64, Ordering};
+    // Occupancy and bumped keys. Keys are sorted by bucket, so the positions
+    // of a part of the keys lie in a range that overlaps those of the other
+    // parts only at its ends: each part fills a private segment of the
+    // occupancy bitmap, and segments are then merged (no atomic operations).
     let words = g.m.div_ceil(64);
-    let occ: Vec<AtomicU64> = (0..words).map(|_| AtomicU64::new(0)).collect();
+    let span = g.l_mask as usize + 1 + g.shifts;
     let seeds_ro: &[u16] = &seeds;
-    let process = |part: &[Ho]| -> Vec<Ho> {
+    let process = |part: &[Ho]| -> (usize, Vec<u64>, Vec<Ho>) {
         let mut bumped = vec![];
+        let (Some(first), Some(last)) = (part.first(), part.last()) else {
+            return (0, vec![], bumped);
+        };
+        let lo = g.slice_begin(first.h) / 64;
+        let hi = (g.slice_begin(last.h) + span).div_ceil(64).min(words);
+        let mut seg = vec![0u64; hi - lo];
         for &x in part {
             let s = seeds_ro[g.bucket(x.h)] as usize;
             if s == 0 {
@@ -927,26 +978,35 @@ fn sweep_level(
             } else {
                 let p = g.pos(x, s);
                 debug_assert!(p < g.m);
-                let _old = occ[p / 64].fetch_or(1 << (p % 64), Ordering::Relaxed);
-                debug_assert!(_old & (1 << (p % 64)) == 0, "collision at {p}");
+                debug_assert!(seg[p / 64 - lo] & (1 << (p % 64)) == 0, "collision at {p}");
+                seg[p / 64 - lo] |= 1 << (p % 64);
             }
         }
-        bumped
+        (lo, seg, bumped)
     };
     let part_len = keys.len().div_ceil(threads.max(1)).max(1 << 16);
     #[cfg(feature = "rayon")]
-    let bumped: Vec<Ho> = {
+    let parts: Vec<(usize, Vec<u64>, Vec<Ho>)> = {
         use rayon::prelude::*;
-        keys.par_chunks(part_len).map(process).flatten().collect()
+        keys.par_chunks(part_len).map(process).collect()
     };
     #[cfg(not(feature = "rayon"))]
-    let bumped: Vec<Ho> = keys.chunks(part_len).flat_map(process).collect();
+    let parts: Vec<(usize, Vec<u64>, Vec<Ho>)> = keys.chunks(part_len).map(process).collect();
+    let mut occupied = vec![0u64; words];
+    let mut bumped = Vec::with_capacity(parts.iter().map(|p| p.2.len()).sum());
+    for (lo, seg, b) in parts {
+        for (o, w) in occupied[lo..lo + seg.len()].iter_mut().zip(seg) {
+            debug_assert!(*o & w == 0, "collision between parts");
+            *o |= w;
+        }
+        bumped.extend(b);
+    }
     if !allow_bump && !bumped.is_empty() {
         return None;
     }
     Some(SweepOut {
         seeds,
-        occupied: occ.into_iter().map(AtomicU64::into_inner).collect(),
+        occupied,
         bumped,
     })
 }
@@ -1006,6 +1066,11 @@ struct Sweep<'a> {
     seeds: &'a mut [u16],
     /// Cyclic bit set of used slots.
     used: Box<[u64]>,
+    /// Size of the cyclic window of slots minus one (the size is a power of
+    /// two).
+    cyc_mask: usize,
+    /// Number of words of the cyclic window minus one.
+    cyc_wmask: usize,
     /// Owner (low 32 bits of the bucket index) of each used slot.
     owner: Box<[u32]>,
     /// Slots before this value are no longer reachable.
@@ -1013,8 +1078,16 @@ struct Sweep<'a> {
     bases: Vec<usize>,
     sb: Vec<usize>,
     oo: Vec<u64>,
-    cands: Vec<(usize, usize, usize)>,
+    /// Repair candidates: sum of positions, pattern, and shift, packed so
+    /// that their natural order is lexicographic.
+    cands: Vec<u128>,
     evict: Vec<(usize, usize, usize, usize)>,
+    /// Bases of all patterns of a bucket being repaired.
+    all_bases: Vec<usize>,
+    /// Positions of an evicted bucket.
+    ypos: Vec<usize>,
+    /// Bases of the best pattern found by the last search.
+    best_bases: Vec<usize>,
 }
 
 impl<'a> Sweep<'a> {
@@ -1030,6 +1103,16 @@ impl<'a> Sweep<'a> {
     ) -> Self {
         debug_assert_eq!(<[u16]>::len(seeds), hi - lo);
         // Keys are sorted by bucket
+        // The cyclic window must contain the positions reachable from the
+        // buckets in the priority queue (WINDOW buckets, whose slices start
+        // about num_slices / buckets slots apart) plus a slice and the shifts;
+        // gap sweeps need (L + D) times three more. A small window keeps the
+        // owner array in the L2 cache, which matters for parallel sweeps.
+        let per_bucket = (g.num_slices as usize).div_ceil(g.buckets.max(1));
+        let span = g.l_mask as usize + 1 + g.shifts;
+        let cyc_bits = (4 * span + 2 * WINDOW * per_bucket)
+            .next_power_of_two()
+            .max(128);
         let k_lo = keys.partition_point(|x| g.bucket(x.h) < lo);
         let k_hi = keys.partition_point(|x| g.bucket(x.h) < hi);
         let keys = &keys[k_lo..k_hi];
@@ -1051,14 +1134,19 @@ impl<'a> Sweep<'a> {
             lo,
             hi,
             seeds,
-            used: vec![0; CYC_WORDS].into_boxed_slice(),
-            owner: vec![0; CYC_BITS].into_boxed_slice(),
+            used: vec![0; cyc_bits / 64].into_boxed_slice(),
+            owner: vec![0; cyc_bits].into_boxed_slice(),
+            cyc_mask: cyc_bits - 1,
+            cyc_wmask: cyc_bits / 64 - 1,
             value_to_clear: 0,
             bases: Vec::with_capacity(64),
             sb: Vec::with_capacity(64),
             oo: Vec::with_capacity(64),
             cands: Vec::with_capacity(256),
+            ypos: Vec::with_capacity(64),
+            best_bases: Vec::with_capacity(64),
             evict: Vec::with_capacity(64),
+            all_bases: Vec::with_capacity(256),
         }
     }
 
@@ -1100,32 +1188,36 @@ impl<'a> Sweep<'a> {
 
     #[inline(always)]
     fn get(&self, p: usize) -> bool {
-        let p = p & CYC_MASK;
+        let p = p & self.cyc_mask;
         self.used[p / 64] >> (p % 64) & 1 != 0
     }
 
     #[inline(always)]
     fn get64(&self, p: usize) -> u64 {
-        let w = (p / 64) & (CYC_WORDS - 1);
-        let b = p % 64;
-        let lo = self.used[w];
-        if b == 0 {
-            lo
-        } else {
-            (lo >> b) | (self.used[(w + 1) & (CYC_WORDS - 1)] << (64 - b))
-        }
+        let w = (p / 64) & self.cyc_wmask;
+        // Branchless: a 128-bit shift (shrd on x86)
+        let lo = self.used[w] as u128;
+        let hi = self.used[(w + 1) & self.cyc_wmask] as u128;
+        ((hi << 64 | lo) >> (p % 64)) as u64
     }
 
     #[inline(always)]
     fn set(&mut self, p: usize, b: usize) {
-        let q = p & CYC_MASK;
+        let q = p & self.cyc_mask;
         self.used[q / 64] |= 1 << (q % 64);
         self.owner[q] = b as u32;
     }
 
+    /// Sets a slot as used without recording its owner.
+    #[inline(always)]
+    fn set_bit(&mut self, p: usize) {
+        let q = p & self.cyc_mask;
+        self.used[q / 64] |= 1 << (q % 64);
+    }
+
     #[inline(always)]
     fn clear(&mut self, p: usize) {
-        let q = p & CYC_MASK;
+        let q = p & self.cyc_mask;
         self.used[q / 64] &= !(1 << (q % 64));
     }
 
@@ -1139,7 +1231,7 @@ impl<'a> Sweep<'a> {
     /// array, using a nearby bucket as reference.
     #[inline(always)]
     fn owner_of(&self, p: usize, near: usize) -> usize {
-        let low = self.owner[p & CYC_MASK] as usize;
+        let low = self.owner[p & self.cyc_mask] as usize;
         #[cfg(target_pointer_width = "64")]
         {
             let mut b = (near & !0xFFFF_FFFF) | low;
@@ -1166,6 +1258,18 @@ impl<'a> Sweep<'a> {
         self.seeds[b - self.lo] = seed as u16;
     }
 
+    /// Marks bucket `b` with the seed just returned by
+    /// [`search`](Self::search), using the bases it computed.
+    fn mark_best(&mut self, b: usize, seed: usize) {
+        let d = seed >> self.g.log2_patterns;
+        let best_bases = std::mem::take(&mut self.best_bases);
+        for &x in &best_bases {
+            self.set(x + d, b);
+        }
+        self.best_bases = best_bases;
+        self.seeds[b - self.lo] = seed as u16;
+    }
+
     fn unmark(&mut self, b: usize) {
         let seed = self.seeds[b - self.lo] as usize;
         for &x in self.bucket_keys(b) {
@@ -1178,12 +1282,11 @@ impl<'a> Sweep<'a> {
     /// Loads the slice beginnings and offset sources of the keys of a bucket.
     #[inline]
     fn load_bucket(&mut self, keys: &[Ho]) {
+        let g = self.g;
         self.sb.clear();
+        self.sb.extend(keys.iter().map(|x| g.slice_begin(x.h)));
         self.oo.clear();
-        for &x in keys {
-            self.sb.push(self.g.slice_begin(x.h));
-            self.oo.push(x.o);
-        }
+        self.oo.extend(keys.iter().map(|x| x.o));
     }
 
     /// Fills `self.bases` with the bases for pattern `r` of the keys of the
@@ -1191,16 +1294,16 @@ impl<'a> Sweep<'a> {
     /// their sum.
     #[inline]
     fn fill_bases(&mut self, r: usize) -> usize {
-        self.bases.clear();
-        let shift = r as u32 * self.g.log2_slice_len;
+        let shift = r as u32 * self.g.stride();
         let mask = self.g.l_mask;
-        let mut sum = 0;
-        for (&sb, &o) in self.sb.iter().zip(self.oo.iter()) {
-            let b = sb + ((o >> shift) & mask) as usize;
-            sum += b;
-            self.bases.push(b);
-        }
-        sum
+        self.bases.clear();
+        self.bases.extend(
+            self.sb
+                .iter()
+                .zip(self.oo.iter())
+                .map(|(&sb, &o)| sb + ((o >> shift) & mask) as usize),
+        );
+        self.bases.iter().sum()
     }
 
     fn self_collides(&self) -> bool {
@@ -1248,12 +1351,18 @@ impl<'a> Sweep<'a> {
                 if shift + 64 > d_max {
                     u |= !0u64 << (d_max - shift);
                 }
+                if r == 0 && shift == 0 {
+                    // Seed 0 marks bumped buckets
+                    u |= 1;
+                }
                 if u != u64::MAX {
                     let d = shift + u.trailing_ones() as usize;
                     let sum = base_sum + d * k;
                     if sum < best_sum && !self.self_collides() {
                         best_sum = sum;
                         best_seed = self.g.seed_of(r, d);
+                        self.best_bases.clear();
+                        self.best_bases.extend_from_slice(&self.bases);
                     }
                     break 'scan;
                 }
@@ -1271,20 +1380,23 @@ impl<'a> Sweep<'a> {
     fn place(&mut self, b: usize, depth: u32, forbidden: usize) -> bool {
         let seed = self.search(b);
         if seed != 0 {
-            self.mark(b, seed);
+            self.mark_best(b, seed);
             return true;
         }
         if depth == 0 || self.repair_candidates == 0 {
             return false;
         }
-        let keys = self.bucket_keys(b);
-        let k = keys.len();
+        let k = self.size(b);
         let d_max = self.g.shifts;
-        // Collect the shifts at which exactly one key is blocked.
+        // Collect the shifts at which exactly one key is blocked, keeping the
+        // bases of all patterns (pattern r at all_bases[r * k..][..k]).
         let mut cands = std::mem::take(&mut self.cands);
+        let mut all_bases = std::mem::take(&mut self.all_bases);
         cands.clear();
+        all_bases.clear();
         for r in 0..self.g.patterns {
             let base_sum = self.fill_bases(r);
+            all_bases.extend_from_slice(&self.bases);
             if self.self_collides() {
                 continue;
             }
@@ -1301,10 +1413,13 @@ impl<'a> Sweep<'a> {
                 if shift + 64 > d_max {
                     one &= !(!0u64 << (d_max - shift));
                 }
+                if r == 0 && shift == 0 {
+                    one &= !1;
+                }
                 while one != 0 {
                     let d = shift + one.trailing_zeros() as usize;
                     one &= one - 1;
-                    cands.push((base_sum + d * k, r, d));
+                    cands.push(((base_sum + d * k) as u128) << 32 | (r as u128) << 16 | d as u128);
                 }
                 shift += 64;
             }
@@ -1315,15 +1430,35 @@ impl<'a> Sweep<'a> {
             cands.truncate(num_cands);
         }
         cands.sort_unstable();
-        // Resolve blockers, keeping for each blocker only the best candidate,
-        // and discarding blockers that cannot be evicted.
+        // Nested repairs (for evicted buckets) try fewer candidates
+        let max_tries = if depth == self.repair_depth {
+            self.repair_candidates
+        } else {
+            (self.repair_candidates / 4).max(1)
+        };
+        // Resolve blockers in order of candidate, keeping for each blocker
+        // only its first (best) candidate, and discarding blockers that
+        // cannot be evicted. Unless candidates are ordered by size, evictions
+        // are tried as soon as their blocker is resolved: since a failed
+        // eviction restores the state, the result is the same as resolving
+        // all blockers first.
         let mut evict = std::mem::take(&mut self.evict);
         evict.clear();
-        for &(sum, r, d) in &cands {
+        let mut tried = 0;
+        let mut ok = false;
+        for &c in &cands {
+            if tried == max_tries && !self.repair_by_size {
+                break;
+            }
+            let (sum, r, d) = (
+                (c >> 32) as usize,
+                (c >> 16) as usize & 0xFFFF,
+                c as usize & 0xFFFF,
+            );
             // Find the blocked key and the owner of its slot
             let mut blocker = usize::MAX;
-            for &x in keys {
-                let p = self.g.base(x, r) + d;
+            for &x in &all_bases[r * k..][..k] {
+                let p = x + d;
                 if self.get(p) {
                     blocker = self.owner_of(p, b);
                     break;
@@ -1351,31 +1486,89 @@ impl<'a> Sweep<'a> {
                 sum
             };
             evict.push((key, r, d, blocker));
+            if !self.repair_by_size {
+                tried += 1;
+                if self.try_evict(b, depth, r, d, blocker, &all_bases[r * k..][..k]) {
+                    ok = true;
+                    break;
+                }
+            }
         }
         if self.repair_by_size {
             evict.sort_unstable();
+            for &(_, r, d, blocker) in evict.iter().take(max_tries) {
+                if self.try_evict(b, depth, r, d, blocker, &all_bases[r * k..][..k]) {
+                    ok = true;
+                    break;
+                }
+            }
         }
-        // Nested repairs (for evicted buckets) try fewer candidates
-        let max_tries = if depth == self.repair_depth {
-            self.repair_candidates
-        } else {
-            (self.repair_candidates / 4).max(1)
-        };
-        let mut ok = false;
-        for &(_, r, d, blocker) in evict.iter().take(max_tries) {
-            let old_seed = self.seeds[blocker - self.lo] as usize;
-            debug_assert!(old_seed != 0);
+        self.all_bases = all_bases;
+        self.cands = cands;
+        self.evict = evict;
+        ok
+    }
+
+    /// Evicts `blocker`, places `b` with pattern `r` and shift `d` (whose
+    /// bases are `b_bases`), and tries to place `blocker` again; on failure,
+    /// restores the previous state.
+    fn try_evict(
+        &mut self,
+        b: usize,
+        depth: u32,
+        r: usize,
+        d: usize,
+        blocker: usize,
+        b_bases: &[usize],
+    ) -> bool {
+        let old_seed = self.seeds[blocker - self.lo] as usize;
+        debug_assert!(old_seed != 0);
+        if depth > 1 {
+            // Nested repairs need the owners of all slots
             self.unmark(blocker);
             self.mark(b, self.g.seed_of(r, d));
             if self.place(blocker, depth - 1, b) {
-                ok = true;
-                break;
+                return true;
             }
             self.unmark(b);
             self.mark(blocker, old_seed);
+            return false;
         }
-        self.cands = cands;
-        self.evict = evict;
+        // The evicted bucket cannot repair, so owners are not needed during
+        // the trial: we just flip occupancy bits, and write the owners of the
+        // slots of b only on success (the owners of the slots of the evicted
+        // bucket are never overwritten, so a failure needs no restore).
+        let mut ypos = std::mem::take(&mut self.ypos);
+        ypos.clear();
+        let g = self.g;
+        ypos.extend(
+            self.bucket_keys(blocker)
+                .iter()
+                .map(|&x| g.pos(x, old_seed)),
+        );
+        for &p in &ypos {
+            self.clear(p);
+        }
+        for &x in b_bases {
+            self.set_bit(x + d);
+        }
+        let seed = self.search(blocker);
+        let ok = seed != 0;
+        if ok {
+            for &x in b_bases {
+                self.owner[(x + d) & self.cyc_mask] = b as u32;
+            }
+            self.seeds[b - self.lo] = self.g.seed_of(r, d) as u16;
+            self.mark_best(blocker, seed);
+        } else {
+            for &x in b_bases {
+                self.clear(x + d);
+            }
+            for &p in &ypos {
+                self.set_bit(p);
+            }
+        }
+        self.ypos = ypos;
         ok
     }
 
@@ -1432,7 +1625,7 @@ impl<'a> Sweep<'a> {
                 let end = slice_begin_of(&self, span_begin);
                 while self.value_to_clear < end {
                     if self.value_to_clear % 64 == 0 && self.value_to_clear + 64 <= end {
-                        self.used[(self.value_to_clear / 64) & (CYC_WORDS - 1)] = 0;
+                        self.used[(self.value_to_clear / 64) & self.cyc_wmask] = 0;
                         self.value_to_clear += 64;
                     } else {
                         let v = self.value_to_clear;
@@ -1455,8 +1648,8 @@ impl<'a> Sweep<'a> {
 
 /// Default size-dependent priority weights. They are the weights of the
 /// PHast+ implementation by Piotr Beling, except for 8-bit seeds with slices
-/// of length 512 and 10-bit seeds with slices of length 2048, which have been
-/// retuned for PHast-R by coordinate descent.
+/// of length 512 or 1024 and 10-bit seeds with slices of length 2048, which
+/// have been retuned for PHast-R by coordinate descent.
 fn default_weights(seed_bits: u32, slice_len: usize) -> [i64; 7] {
     let w: [i32; 7] = if slice_len <= 256 {
         match (seed_bits, slice_len) {
@@ -1469,7 +1662,8 @@ fn default_weights(seed_bits: u32, slice_len: usize) -> [i64; 7] {
     } else {
         match (seed_bits, slice_len) {
             (..=7, ..=512) => [-95834, 38499, 103035, 124756, 137603, 147839, 155448],
-            (_, ..=512) => [-48137, 68016, 105189, 121129, 132794, 140850, 145685],
+            (_, ..=512) => [31863, 68016, 105189, 121129, 132794, 140850, 145685],
+            (8, ..=1024) => [-50000, 20000, 90000, 130000, 150000, 165000, 175000],
             (..=8, ..=1024) => [-49776, 28610, 120514, 154976, 177328, 193499, 204936],
             (..=8, ..=2048) => [-14014, -11926, 63698, 144877, 194056, 353593, 360338],
             (9, ..=1024) => [-60439, 49207, 121850, 149181, 166713, 179181, 187815],
@@ -1533,6 +1727,21 @@ mod tests {
         );
         check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_patterns(0));
         check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_patterns(1));
+        // Few shifts per pattern (pattern 0 has one shift less than the
+        // others, as seed 0 marks bumped buckets)
+        check::<Box<[u8]>>(
+            100_000,
+            PHastRBuilder::default()
+                .seed_bits(4)
+                .log2_patterns(2)
+                .log2_slice_len(8)
+                .bucket_size(2.0),
+        );
+        // Eight patterns, whose offsets are eight bits apart
+        check::<Box<[u8]>>(
+            300_000,
+            PHastRBuilder::default().log2_patterns(3).log2_slice_len(8),
+        );
     }
 
     #[cfg(feature = "rayon")]

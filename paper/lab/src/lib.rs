@@ -104,3 +104,20 @@ pub fn phast_r_bits_per_key(keys: &[u64], b: &sux::func::PHastRBuilder, seed_bit
     };
     bytes as f64 * 8.0 / keys.len() as f64
 }
+
+/// A 64-bit key hashed by sux with GxHash, exactly as `ph::BuildGxHash`
+/// hashes a `u64` (`GxHasher::with_seed`, `write_u64`, `finish`), so that
+/// PHast-R and the reference implementation pay the same hashing cost.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct GxKey(pub u64);
+
+impl sux::utils::ToSig<[u64; 1]> for GxKey {
+    #[inline(always)]
+    fn to_sig(key: impl std::borrow::Borrow<Self>, seed: u64) -> [u64; 1] {
+        use std::hash::Hasher;
+        let mut h = gxhash::GxHasher::with_seed(seed as i64);
+        h.write_u64(key.borrow().0);
+        [h.finish()]
+    }
+}

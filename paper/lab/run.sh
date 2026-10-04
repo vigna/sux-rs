@@ -32,7 +32,7 @@ NTUNE=${NTUNE:-4000000}
 OUT=${OUT:-results/$(hostname -s)-$(date +%Y%m%d)}
 mkdir -p "$OUT"
 
-BIN=target/release
+BIN=${CARGO_TARGET_DIR:-target}/release
 
 # Pins single-threaded runs to a core on Linux; no-op elsewhere.
 pin() {
@@ -83,16 +83,21 @@ step_env() {
 	} | tee "$OUT/env.txt"
 }
 
-# Tables 1 and 2 of the paper.
+# Tables 1 and 2 of the paper. Query times are medians of 11 interleaved
+# rounds of 2M queries per structure (see --interleave in cmp.rs), which makes
+# them immune to frequency drift (e.g., HWP lowering the clock of
+# memory-bound phases); construction times are single measurements.
+Q="-q 2000000 --interleave 11"
+
 step_tables() {
 	local ref1=ref:plus:8:5.25,ref:w1:8:5.25,ref:w2:8:5.0,ref:w3:8:5.0,ref:phast:8:4.5
 	local ref2=ref:plus:10:5.15,ref:w1:10:6.2,ref:w2:10:5.9,ref:w3:10:6.0,ref:phast:10:6.05
-	local r=r:8:9:0:5.0,r:8:9:1:5.0,r:8:9:2:5.0,r:9:10:1:5.75,r:10:11:0:6.0,r:10:11:1:6.0,r:10:11:2:6.25,r:11:12:1:6.75
-	cmp_run 1 table1 -n "$N1" -q 10000000 -r 3 -v "$ref1,$ref2,$r"
+	local r=r:8:9:0:5.0,r:8:9:1:5.0,r:8:9:2:5.0,r:8:9:2:4.75,r:9:10:1:5.75,r:10:11:0:6.0,r:10:11:1:6.0,r:10:11:2:6.25,r:11:12:1:6.75
+	cmp_run 1 table1 -n "$N1" $Q -v "$ref1,$ref2,$r"
 
-	local large=ref:plus:8:5.25,ref:w3:8:5.0,ref:w3:10:6.0,r:8:9:1:5.0,r:8:9:2:5.0,r:10:11:1:6.0,r:10:11:2:6.25
-	cmp_run 1 table2-1thread -n "$N2" -q 10000000 -r 3 -v "ref:phast:8:4.5,$large"
-	cmp_run mt table2-mt -n "$N2" -q 10000000 -r 3 -t "$THREADS" -v "$large"
+	local large=ref:plus:8:5.25,ref:w3:8:5.0,ref:w3:10:6.0,r:8:9:1:5.0,r:8:9:2:5.0,r:8:9:2:4.75,r:10:11:1:6.0,r:10:11:2:6.25
+	cmp_run 1 table2-1thread -n "$N2" $Q -v "ref:phast:8:4.5,$large"
+	cmp_run mt table2-mt -n "$N2" $Q -t "$THREADS" -v "$large"
 }
 
 # Section 2: anatomy of PHast+ (bump rates by size, self-collisions, seed

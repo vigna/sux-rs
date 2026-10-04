@@ -1,0 +1,17 @@
+n = 10000000 hash = gx
+PHast-R S=8 L=512 R=4 d=1 l=4.5 u8           1.9640 bits/key  build   151.8 ns/key  query   30.4 ns  levels 3  bumped 1.87%
+PHast-R S=8 L=512 R=4 d=2 l=4.5 u8           1.9556 bits/key  build   199.5 ns/key  query   30.4 ns  levels 3  bumped 1.77%
+PHast-R S=8 L=512 R=4 d=1 l=4.75 u8          1.9409 bits/key  build   156.0 ns/key  query   31.4 ns  levels 4  bumped 2.74%
+PHast-R S=8 L=512 R=4 d=2 l=4.75 u8          1.9298 bits/key  build   215.1 ns/key  query   31.6 ns  levels 4  bumped 2.61%
+PHast-R S=8 L=512 R=4 d=1 l=5 u8             1.9303 bits/key  build   162.2 ns/key  query   34.2 ns  levels 4  bumped 3.73%
+PHast-R S=8 L=512 R=4 d=2 l=5 u8             1.9201 bits/key  build   237.2 ns/key  query   31.2 ns  levels 4  bumped 3.59%
+PHast-R S=8 L=512 R=4 d=1 l=5.25 u8          1.9335 bits/key  build   167.6 ns/key  query   32.2 ns  levels 4  bumped 4.83%
+PHast-R S=8 L=512 R=4 d=2 l=5.25 u8          1.9208 bits/key  build   253.7 ns/key  query   35.9 ns  levels 4  bumped 4.67%
+PHast-R S=8 L=1024 R=4 d=1 l=4.5 u8          1.9533 bits/key  build   159.7 ns/key  query   29.9 ns  levels 3  bumped 1.73%
+PHast-R S=8 L=1024 R=4 d=2 l=4.5 u8          1.9434 bits/key  build   223.2 ns/key  query   30.2 ns  levels 3  bumped 1.61%
+PHast-R S=8 L=1024 R=4 d=1 l=4.75 u8         1.9313 bits/key  build   166.1 ns/key  query   29.9 ns  levels 4  bumped 2.61%
+PHast-R S=8 L=1024 R=4 d=2 l=4.75 u8         1.9190 bits/key  build   244.5 ns/key  query   29.8 ns  levels 4  bumped 2.47%
+PHast-R S=8 L=1024 R=4 d=1 l=5 u8            1.9231 bits/key  build   171.4 ns/key  query   31.7 ns  levels 4  bumped 3.62%
+PHast-R S=8 L=1024 R=4 d=2 l=5 u8            1.9102 bits/key  build   264.3 ns/key  query   32.4 ns  levels 4  bumped 3.45%
+PHast-R S=8 L=1024 R=4 d=1 l=5.25 u8         1.9265 bits/key  build   179.6 ns/key  query   32.1 ns  levels 4  bumped 4.73%
+PHast-R S=8 L=1024 R=4 d=2 l=5.25 u8         1.9098 bits/key  build   288.1 ns/key  query   32.1 ns  levels 4  bumped 4.51%

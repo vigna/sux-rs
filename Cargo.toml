@@ -33,6 +33,7 @@ zstd = { version = "0.13.1", optional = true }
 flate2 = { version = "1.0.28", optional = true }
 rand = "0.10.1"
 rdst = "0.20.12"
+voracious_radix_sort = "1.2.0"
 mem_dbg = "0.4.1"
 rayon = { version = "1.8.1", optional = true }
 env_logger = { version = "0.11.0", optional = true }
@@ -75,7 +76,7 @@ slow_tests = [] # Run slow tests (use --release)
 aarch64_prefetch = [] # Enable aarch64 prefetch (requires nightly)
 iter_advance_by = [] # Enable iter_advance_by (requires nightly)
 mwhc = [] # Compile MWHC data structures (mainly for benchmarking)
-rayon = ["dep:rayon", "dep:thread-priority"]
+rayon = ["dep:rayon", "dep:thread-priority", "voracious_radix_sort/voracious_multithread"]
 deko = ["dep:deko"]
 serde = ["dep:serde", "dep:serde_arrays"]
 epserde = ["dep:epserde"]

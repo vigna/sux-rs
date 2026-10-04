@@ -144,29 +144,38 @@ the full part of its slice.
 
 \paragraph{Placement.}
 Each key has two 64-bit hashes, $h$ and $o$. Let $R=2^\rho$ be the number of
-\emph{patterns}, $L=2^\ell$ the slice length with $R\ell\le 64$, and
-$D=\lfloor(2^S-1)/R\rfloor$ the number of shifts. The bucket of a key is
+\emph{patterns}, $L=2^\ell$ the slice length with $\ell\le 64/R$, and
+$D=2^S/R$ the number of shifts. The bucket of a key is
 $\hi(hB)$ and the start of its slice is $\sigma(h)=\hi(h(m-L-D+2))$, where
 $\hi(x)$ denotes the 64 most significant bits of a 128-bit product. The
 $r$-th pattern assigns to the key the in-slice offset
 \[
-\omega_r(o)=\lfloor o/2^{r\ell}\rfloor \bmod L,
+\omega_r(o)=\bigl\lfloor o/2^{64r/R}\bigr\rfloor \bmod L,
 \]
-that is, the $r$-th group of $\ell$ bits of $o$: different patterns are
-independent. A seed $s\in[1\,.\,.\,RD]$ encodes the pair $r=(s-1)\bmod R$,
-$d=\lfloor (s-1)/R\rfloor$, and the key is mapped to
+that is, the $\ell$ bits of $o$ starting at bit $64r/R$: different patterns
+are independent. A seed $s\in[1\,.\,.\,2^S)$ encodes the pair $r=s\bmod R$,
+$d=\lfloor s/R\rfloor$ (the pair $r=d=0$ is not available), and the key is
+mapped to
 \[
 \sigma(h)+\omega_r(o)+d.
 \]
 As in \PHast, seed $0$ means that the bucket is bumped. A query computes the
-same quantities as in \PHastP plus a shift and a mask; with $R=1$ and $o=h$,
-\PHastR is exactly \PHastP.
+same quantities as in \PHastP plus a shift and a mask. The encoding is chosen
+so that no instruction is needed to extract $r$: since hardware shifts of
+64-bit values take their count modulo 64 (on both x86 and ARM), we can shift
+$o$ right by $s\cdot 64/R$, that is, by $s$ shifted left by $6-\rho$ bits, and
+then mask; $d$ is just $s$ shifted right by $\rho$ bits. With 64-bit
+signatures, we set $o=h\cdot c$ for an odd constant $c<2^{31}$, which needs a
+single instruction on x86: bit $j$ of the product depends only on bits $0$,
+\dots, $j$ of $h$, so all offsets are determined by the lower bits of $h$,
+which are independent of the upper bits that determine the bucket and the
+slice. With $R=1$ and $o=h$, \PHastR is essentially \PHastP.
 
 \paragraph{Search.}
 For each pattern, the best shift is found as in \PHastP: the occupancy words
 starting at the base positions $\sigma(h_i)+\omega_r(o_i)$ of the $k$ keys are
 \textsc{or}ed, and the first zero bit is the smallest feasible shift; for
-$S=8$ and $R=4$ we have $D=63$, so one word per key suffices. Among patterns, we keep the one minimizing
+$S=8$ and $R=4$ we have $D=64$, so one word per key suffices. Among patterns, we keep the one minimizing
 the sum of positions, skipping a pattern as soon as the sum of its bases
 exceeds the best sum found. Since all $R$ patterns of a bucket collide only
 with probability about $(k(k-1)/2L)^R$, self-collisions disappear for
@@ -192,9 +201,14 @@ but it is triggered only by failures, and bumping remains as a safety valve:
 the structure stays minimal and needs no slack in the output range.
 
 \paragraph{Levels.}
-Keys of bumped buckets are mapped to a new pair of hashes by a mixing function
-of $(h,o)$, so construction never rehashes keys and a query for a bumped key
-needs no further hashing of the key. Levels after the first use the same
+For keys of bumped buckets, the next level uses the pair $(\mu(h),o)$, where
+$\mu$ is a bijective mixing function, so construction never rehashes keys and
+a query for a bumped key needs no further hashing of the key. Since $\mu$ is
+a bijection, distinct pairs remain distinct, and since $\mu(h)$ depends on
+all bits of $h$, the offsets provided by $o$ remain independent of the new
+bucket and slice. (Mixing $o$, too, would lengthen the query of bumped keys
+for no benefit: on AVX-512 hardware the compiler vectorizes two independent
+mixes using a high-latency vector multiplication.) Levels after the first use the same
 scheme with range equal to their number of keys; when fewer than $4096$ keys
 are left, a last level uses a slightly larger range and no bumping, retrying
 with a different salt in the unlikely case of failure. As in \PHastP, an
