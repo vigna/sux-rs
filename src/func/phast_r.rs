@@ -95,6 +95,21 @@ impl PHastSig for [u64; 1] {
     }
 }
 
+/// Returns whether to process `len` elements using rayon, that is, whether
+/// `len` is large enough and the current pool has more than one thread (with a single thread, dispatching
+/// work to the pool only adds overhead, and if the process is restricted to
+/// a single CPU the thread waiting for the pool competes with the worker).
+#[cfg(feature = "rayon")]
+#[inline]
+fn parallel(len: usize) -> bool {
+    len >= PAR_MIN_LEN && rayon::current_num_threads() > 1
+}
+
+/// Minimum number of elements for which a pass is run in parallel: below
+/// this size the overhead of parallelism exceeds its benefits.
+#[cfg(feature = "rayon")]
+const PAR_MIN_LEN: usize = 1 << 17;
+
 /// Derives the pair (*h*, *o*) of the next level.
 ///
 /// Only *h* is remixed: since [`mix64`] is a bijection, keys with distinct
@@ -517,25 +532,22 @@ impl PHastRBuilder {
 
         pl.info(format_args!("Computing signatures..."));
         let seed = self.seed;
+        let hash = |k: &B| {
+            let (h, o) = K::to_sig(k.borrow(), seed).ho();
+            Ho { h, o }
+        };
         #[cfg(feature = "rayon")]
-        let hos: Vec<Ho> = {
+        let hos: Vec<Ho> = if parallel(keys.len()) {
             use rayon::prelude::*;
             keys.par_iter()
                 .with_min_len(crate::RAYON_MIN_LEN)
-                .map(|k| {
-                    let (h, o) = K::to_sig(k.borrow(), seed).ho();
-                    Ho { h, o }
-                })
+                .map(hash)
                 .collect()
+        } else {
+            keys.iter().map(hash).collect()
         };
         #[cfg(not(feature = "rayon"))]
-        let hos: Vec<Ho> = keys
-            .iter()
-            .map(|k| {
-                let (h, o) = K::to_sig(k.borrow(), seed).ho();
-                Ho { h, o }
-            })
-            .collect();
+        let hos: Vec<Ho> = keys.iter().map(hash).collect();
 
         let (levels, remap) = self.build_from_ho(hos, pl)?;
         let mut levels = levels.into_iter();
@@ -587,20 +599,16 @@ impl PHastRBuilder {
 
         // Check for duplicate signatures: keys with the same h are adjacent
         sort_ho(&mut cur);
+        let equal = |w: &[Ho]| (w[0].h == w[1].h).then_some(w[0].h);
         #[cfg(feature = "rayon")]
-        let mut equal_h: Vec<u64> = {
+        let mut equal_h: Vec<u64> = if parallel(cur.len()) {
             use rayon::prelude::*;
-            cur.par_windows(2)
-                .filter(|w| w[0].h == w[1].h)
-                .map(|w| w[0].h)
-                .collect()
+            cur.par_windows(2).filter_map(equal).collect()
+        } else {
+            cur.windows(2).filter_map(equal).collect()
         };
         #[cfg(not(feature = "rayon"))]
-        let mut equal_h: Vec<u64> = cur
-            .windows(2)
-            .filter(|w| w[0].h == w[1].h)
-            .map(|w| w[0].h)
-            .collect();
+        let mut equal_h: Vec<u64> = cur.windows(2).filter_map(equal).collect();
         equal_h.dedup();
         for h in equal_h {
             let start = cur.partition_point(|x| x.h < h);
@@ -625,17 +633,16 @@ impl PHastRBuilder {
             let last = !first && k <= LAST_LEVEL_THRESHOLD;
             let (level, occupied, bumped, occupied_len) = if !last {
                 if !first {
+                    let remix = |x: &mut Ho| (x.h, x.o) = next_level(x.h, x.o, 0);
                     #[cfg(feature = "rayon")]
-                    {
+                    if parallel(cur.len()) {
                         use rayon::prelude::*;
-                        cur.par_iter_mut().with_min_len(1 << 16).for_each(|x| {
-                            (x.h, x.o) = next_level(x.h, x.o, 0);
-                        });
+                        cur.par_iter_mut().with_min_len(1 << 16).for_each(remix);
+                    } else {
+                        cur.iter_mut().for_each(remix);
                     }
                     #[cfg(not(feature = "rayon"))]
-                    for x in cur.iter_mut() {
-                        (x.h, x.o) = next_level(x.h, x.o, 0);
-                    }
+                    cur.iter_mut().for_each(remix);
                     sort_ho(&mut cur);
                 }
                 let geom = self.geometry(k, k, self.bucket_size);
@@ -776,12 +783,9 @@ impl voracious_radix_sort::Radixable<u64> for Ho {
 fn sort_ho(v: &mut [Ho]) {
     use voracious_radix_sort::RadixSort;
     #[cfg(feature = "rayon")]
-    {
-        let threads = rayon::current_num_threads();
-        if threads > 1 {
-            v.voracious_mt_sort(threads);
-            return;
-        }
+    if parallel(v.len()) {
+        v.voracious_mt_sort(rayon::current_num_threads());
+        return;
     }
     v.voracious_sort();
 }
@@ -1002,9 +1006,11 @@ fn sweep_level(
     };
     let part_len = keys.len().div_ceil(threads.max(1)).max(1 << 16);
     #[cfg(feature = "rayon")]
-    let parts: Vec<(usize, Vec<u64>, Vec<Ho>)> = {
+    let parts: Vec<(usize, Vec<u64>, Vec<Ho>)> = if parallel(keys.len()) {
         use rayon::prelude::*;
         keys.par_chunks(part_len).map(process).collect()
+    } else {
+        keys.chunks(part_len).map(process).collect()
     };
     #[cfg(not(feature = "rayon"))]
     let parts: Vec<(usize, Vec<u64>, Vec<Ho>)> = keys.chunks(part_len).map(process).collect();
@@ -1050,16 +1056,16 @@ fn holes(bits: &[u64], m: usize) -> Vec<usize> {
         out
     };
     #[cfg(feature = "rayon")]
-    {
+    if parallel(m) {
         use rayon::prelude::*;
-        bits.par_iter()
+        return bits
+            .par_iter()
             .enumerate()
             .with_min_len(1 << 12)
             .map(scan)
             .flatten()
-            .collect()
+            .collect();
     }
-    #[cfg(not(feature = "rayon"))]
     bits.iter().enumerate().flat_map(scan).collect()
 }
 
