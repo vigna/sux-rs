@@ -1,0 +1,36 @@
+n = 1000000 hash = gx
+ref plus S=8 l=5.25                          2.1328 bits/key  build    85.3 ns/key  query   11.3 ns  [min 10.9 max 11.9]
+ref w3 S=8 l=5                               1.9827 bits/key  build   132.6 ns/key  query    9.5 ns  [min 9.3 max 9.8]
+PHast-R S=8 L=1024 W3 d=1 l=5 u8             1.9339 bits/key  build   193.4 ns/key  query    9.4 ns  levels 3  bumped 3.70%  [min 9.2 max 10.1]
+PHast-R S=8 L=1024 G4 d=0 l=5 u8             1.9418 bits/key  build    98.3 ns/key  query   10.2 ns  levels 3  bumped 3.82%  [min 9.8 max 10.5]
+PHast-R S=8 L=1024 G4 d=0 l=4.75 u8          1.9369 bits/key  build   100.8 ns/key  query    9.4 ns  levels 3  bumped 2.61%  [min 9.2 max 10.0]
+PHast-R S=8 L=1024 G4 d=1 l=5 u8             1.9318 bits/key  build   163.5 ns/key  query   10.2 ns  levels 3  bumped 3.67%  [min 9.7 max 10.7]
+n = 10000000 hash = gx
+ref plus S=8 l=5.25                          2.1160 bits/key  build    65.1 ns/key  query   26.1 ns  [min 25.6 max 26.6]
+ref w3 S=8 l=5                               1.9701 bits/key  build   122.9 ns/key  query   24.4 ns  [min 23.7 max 25.1]
+PHast-R S=8 L=1024 W3 d=1 l=5 u8             1.9200 bits/key  build   183.8 ns/key  query   24.0 ns  levels 4  bumped 3.66%  [min 23.6 max 24.9]
+PHast-R S=8 L=1024 G4 d=0 l=5 u8             1.9254 bits/key  build   101.0 ns/key  query   25.4 ns  levels 4  bumped 3.73%  [min 25.1 max 25.7]
+PHast-R S=8 L=1024 G4 d=0 l=4.75 u8          1.9209 bits/key  build   103.7 ns/key  query   24.7 ns  levels 4  bumped 2.54%  [min 23.5 max 25.0]
+PHast-R S=8 L=1024 G4 d=1 l=5 u8             1.9164 bits/key  build   164.8 ns/key  query   25.4 ns  levels 4  bumped 3.61%  [min 24.6 max 26.0]
+n = 100000000 hash = gx
+ref plus S=8 l=5.25                          2.1154 bits/key  build    70.8 ns/key  query   38.7 ns  [min 38.4 max 40.0]
+ref w3 S=8 l=5                               1.9681 bits/key  build   128.4 ns/key  query   35.7 ns  [min 35.2 max 37.1]
+PHast-R S=8 L=1024 W3 d=1 l=5 u8             1.9183 bits/key  build   186.6 ns/key  query   34.3 ns  levels 5  bumped 3.65%  [min 34.2 max 36.3]
+PHast-R S=8 L=1024 G4 d=0 l=5 u8             1.9243 bits/key  build   104.7 ns/key  query   37.1 ns  levels 5  bumped 3.74%  [min 36.4 max 38.3]
+PHast-R S=8 L=1024 G4 d=0 l=4.75 u8          1.9194 bits/key  build   105.4 ns/key  query   35.6 ns  levels 4  bumped 2.54%  [min 34.7 max 40.1]
+PHast-R S=8 L=1024 G4 d=1 l=5 u8             1.9145 bits/key  build   169.0 ns/key  query   37.0 ns  levels 5  bumped 3.60%  [min 36.2 max 37.9]
+== construction with 8 threads
+n = 10000000 hash = gx
+ref plus S=8 l=5.25                          2.1172 bits/key  build    16.7 ns/key  query 
+ref w3 S=8 l=5                               1.9725 bits/key  build    24.3 ns/key  query 
+PHast-R S=8 L=1024 W3 d=1 l=5 u8             1.9216 bits/key  build    32.8 ns/key  query 
+PHast-R S=8 L=1024 G4 d=0 l=5 u8             1.9285 bits/key  build    19.9 ns/key  query 
+PHast-R S=8 L=1024 G4 d=0 l=4.75 u8          1.9243 bits/key  build    20.0 ns/key  query 
+PHast-R S=8 L=1024 G4 d=1 l=5 u8             1.9180 bits/key  build    29.5 ns/key  query 
+n = 100000000 hash = gx
+ref plus S=8 l=5.25                          2.1155 bits/key  build    16.8 ns/key  query 
+ref w3 S=8 l=5                               1.9686 bits/key  build    24.3 ns/key  query 
+PHast-R S=8 L=1024 W3 d=1 l=5 u8             1.9185 bits/key  build    32.8 ns/key  query 
+PHast-R S=8 L=1024 G4 d=0 l=5 u8             1.9244 bits/key  build    20.8 ns/key  query 
+PHast-R S=8 L=1024 G4 d=0 l=4.75 u8          1.9198 bits/key  build    20.7 ns/key  query 
+PHast-R S=8 L=1024 G4 d=1 l=5 u8             1.9147 bits/key  build    30.3 ns/key  query 

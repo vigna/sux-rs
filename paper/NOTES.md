@@ -330,6 +330,96 @@ reads) cost almost nothing, so the configurations differ in space only.
 9-bit seeds (8 threads, 3·10⁶): R=4, L=2048, λ=5.5 1.908 b/k at 22.8 ns/key
 (untuned), vs 1.928 b/k at 35.2 ns/key for S=8 W3 and 1.981 for PHast+ w3.
 
+## Second brainstorm: cost model, the floor, ring patterns (October 5–6, 2026)
+
+Tools: `lab/src/bin/overload.rs` (single-level statistics through the hidden
+`PHastRBuilder::level_stats`: bumped keys, holes, bump rate and feasible
+shifts by bucket size, self-colliding buckets), with hidden experimental
+builder options (`skew`, `log2_band`, `window`, `ring`) and environment
+variables (`PHAST_FEAS`, `PHAST_OBJ`).
+
+**Cost model** (S = 8, checked against real sizes): bits/key ≈ S/λ + 1.9 ·
+bumped + (2.06 + log₂(1/holes)) · 1.045 · holes. A hole costs a remapping
+entry (~6.8 bits), a bumped key its share of the next level (~1.9 bits).
+
+**Diagnosis.**
+- Single-key buckets never fail and pairs fail 1–2%: holes are plentiful for
+  small buckets, but Poisson(5) has few of them (0.7% of the keys in buckets
+  of size 1, 3.4% in size 2).
+- When placed, a bucket has ~7 feasible shifts on average (all sizes 2–8,
+  equalized by the weights), but 4% have none and 16% one or two: the count
+  is overdispersed, as adjacent shifts are strongly correlated (the keys of a
+  bucket are spread over a slice that spans the whole density gradient).
+  The choice among feasible shifts costs ~2 bits per bucket (0.4 b/key).
+- **Self-collisions**: with wrapping, two keys of a bucket with the same base
+  position collide for all seeds (probability C(k,2)/L per bucket): 1.70% of
+  the keys are in such buckets, all bumped — 39% of the bumped keys without
+  repair, 46–47% with repair, which cannot fix them. Patterns (R = 4) bump
+  only 0.13% for this reason, but pack worse (64 shifts per pattern, no
+  wrapping).
+
+**The floor.** At S = 8, λ = 5 everything converges to ~3.6% bumped keys:
+W3 + repair 3.68% (depth 1) and 3.59% (depth 2), patterns + repair 3.64%,
+ring patterns 3.72% without repair and 3.63%/3.61% with repair of depth 1/2.
+Removing self-collisions does not add up: the freed capacity is taken by
+other failures. Ideas that do not move the floor (3·10⁶ keys):
+- overloading (first level with n/(1+δ) slots, later levels in direct
+  ranges, only the final keys remapped onto all holes): each 1% of overload
+  removes 0.19–0.28% of holes, break-even is 0.25%;
+- skewed periodic bucket sizes (PHOBIC-like profiles): worse the stronger the
+  skew (4.4% → 6.3–9.6% with W3, 3.7% → 3.8–6.3% with ring patterns); large
+  buckets fail, as they do not find empty space in a sliding window. With a
+  realistic allowance of ~4 feasible shifts even the ideal profile gives
+  ~1.92 b/key;
+- narrow band of offsets moved along the slice without wrapping: 10% bumped
+  (self-collisions C(k,2)/w; small buckets starve);
+- strict largest-first order (larger window, scaled weights): much worse;
+- concave objectives instead of the sum of positions (log, cube root):
+  3.72% → 3.65%; convex ones are worse;
+- larger seeds with ring patterns (estimates): S = 10 1.864, S = 12 1.840,
+  S = 14 1.885, S = 16 1.911 (untuned weights): no byte-aligned win.
+
+**Ring patterns** (`PHastRBuilder::ring(R)`, hidden; cmp spec `g<R>` in the
+pattern field). Seed *s* selects pattern *r = s mod R* and the offset
+((lo >> 64r/R) + s·2^a) mod L, with L = 2^(S+a) and lo the lower half of the
+product h·B whose upper half is the bucket (free, and uniform within a
+bucket; B is forced to be odd): the seeds of a pattern cycle exactly once
+around the slots of the slice in a residue class modulo R·2^a.
+- No self-collisions, so the floor is reached without repair.
+- Query: shift, variable shift, scaled add, mask, add after the seed load
+  (one operation more than PHast+ with wrapping).
+- Construction: the set of used slots is stored by residue classes, so the
+  feasibility of the 64 seeds of a pattern for a key is a 64-bit read and a
+  rotation; only free indices are evaluated.
+- R = 4, L = 1024 is the best configuration found; R = 2 is slightly worse,
+  more patterns need more hash bits than the 64 of lo, and L = 4096 would
+  need new weights.
+
+Results (`lab/results/ring/run.txt`; 10⁸ keys, GxHash, single thread unless
+noted; construction with 8 threads in parentheses):
+
+| | bits/key | build ns/key | query ns | bumped |
+|---|---|---|---|---|
+| PHast+ w3 (λ=5) | 1.9681 | 128.4 (24.3) | 35.7 | 4.35% |
+| W3 + repair d1 (λ=5) | 1.9183 | 186.6 (32.8) | 34.3 | 3.65% |
+| G4, no repair (λ=5) | 1.9243 | 104.7 (20.8) | 37.1 | 3.74% |
+| G4, no repair (λ=4.75) | 1.9194 | 105.4 (20.7) | 35.6 | 2.54% |
+| G4 + repair d1 (λ=5) | 1.9145 | 169.0 (30.3) | 37.0 | 3.60% |
+
+So G4 at λ = 4.75 has the space of wrapping with repair, builds 18% faster
+than PHast+ w3 (15% with 8 threads), and its queries take the same time as
+those of PHast+ w3: the additional operation (~1 ns, see λ = 5) is paid by
+the smaller number of bumped keys. Wrapping with repair remains the fastest
+at query time. Using the seed as shift count (64 patterns of 4 seeds,
+`g64`) would have the same operations as PHast+ w3, but it bumps 4.7% of the
+keys at λ = 5 (64 bits do not provide enough independent offsets).
+
+Open issues: for fewer than ~10⁵ keys both wrapping and ring patterns use
+more space than PHast+ w3 (e.g., 2.79–2.84 vs 2.70 b/key at 10⁴ keys): the
+geometry of small levels was tuned only for patterns without wrapping. The
+experimental options and the diagnostics should be removed or moved out of
+`phast_r.rs` once a design is chosen.
+
 ## Key findings (see Section 2 of the paper; reference implementation)
 
 - With output range m = n, holes = bumped keys; each hole costs about

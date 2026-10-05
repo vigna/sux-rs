@@ -237,6 +237,7 @@ impl<K: ?Sized, D: TryIntoUnaligned, P, R: TryIntoUnaligned> TryIntoUnaligned
             log2_patterns: self.log2_patterns,
             log2_slice_len: self.log2_slice_len,
             wrap: self.wrap,
+            ring: self.ring,
             params0: self.params0,
             seeds0: self.seeds0.try_into_unaligned()?,
             params: self.params,
@@ -257,6 +258,7 @@ impl<K: ?Sized, P> From<Unaligned<PHastR<K, BitFieldVec<Box<[usize]>>, P, Remap>
             log2_patterns: f.log2_patterns,
             log2_slice_len: f.log2_slice_len,
             wrap: f.wrap,
+            ring: f.ring,
             params0: f.params0,
             seeds0: f.seeds0.into(),
             params: f.params,
@@ -301,6 +303,9 @@ pub struct LevelParams {
     salt: u64,
     /// The index of the first seed of this level in the seed storage.
     first_seed: u64,
+    /// With ring patterns, the base-2 logarithm of the multiplier of the
+    /// seed.
+    scale: u64,
 }
 
 /// A minimal perfect hash function based on PHast+ with multiple patterns and
@@ -358,6 +363,8 @@ pub struct PHastR<K: ?Sized, D = Box<[u8]>, P = Box<[LevelParams]>, R = Remap> {
     log2_slice_len: u32,
     /// The multiplier of shifts with wrapping (0 if patterns are used).
     wrap: u32,
+    /// The number of ring patterns (0 if they are not used).
+    ring: u32,
     /// The parameters of the first level.
     params0: LevelParams,
     /// The seeds of the first level.
@@ -423,6 +430,29 @@ impl<
             + (h.wrapping_add((seed * self.wrap as usize) as u64) & lv.l_mask) as usize
     }
 
+    /// Returns the output of a key in the given level with ring patterns,
+    /// given its hash *h* for the level, the lower half `lo` of the product
+    /// of *h* and the number of buckets (whose upper half is the bucket), and
+    /// the seed of its bucket.
+    ///
+    /// The pattern is given by the lowest bits of the seed: as shifts are
+    /// taken modulo 64, shifting the seed left by log₂(64 / *R*) yields the
+    /// first bit of the offset of the pattern in `lo` without extracting the
+    /// pattern.
+    #[inline(always)]
+    fn pos_ring(&self, lv: &LevelParams, h: u64, lo: u64, seed: usize) -> usize {
+        let s = seed as u64;
+        let t = if self.ring == 4 && lv.scale == 2 {
+            // Constant shifts for the default parameters
+            lo.wrapping_shr((s << 4) as u32).wrapping_add(s << 2)
+        } else {
+            let pattern_shift = 6 - self.ring.trailing_zeros();
+            lo.wrapping_shr((s << pattern_shift) as u32)
+                .wrapping_add(s << lv.scale)
+        };
+        mul_hi(h, lv.num_slices) as usize + (t & lv.l_mask) as usize
+    }
+
     /// Returns the value associated with the given key.
     ///
     /// The returned value is in the range [0 . . *n*), where *n* is the
@@ -434,6 +464,16 @@ impl<
         let key = key.borrow();
         let h = K::to_sig(key, self.seed)[0];
         let lv = &self.params0;
+        if self.ring != 0 {
+            let p = h as u128 * lv.buckets as u128;
+            // SAFETY: the upper half of the product is smaller than the
+            // number of buckets, which is the number of seeds
+            let s = unsafe { self.seeds0.get_seed((p >> 64) as usize) };
+            if s != 0 {
+                return self.pos_ring(lv, h, p as u64, s);
+            }
+            return self.get_slow(key, 0);
+        }
         if self.wrap != 0 {
             // SAFETY: mul_hi(h, buckets) < buckets, which is the number of seeds
             let s = unsafe { self.seeds0.get_seed(mul_hi(h, lv.buckets) as usize) };
@@ -467,6 +507,12 @@ impl<
             let h = hs[i];
             // SAFETY: mul_hi(h, buckets) < buckets, which is the number of seeds
             let s = unsafe { self.seeds0.get_seed(mul_hi(h, lv.buckets) as usize) };
+            if self.ring != 0 {
+                if s != 0 {
+                    return self.pos_ring(lv, h, h.wrapping_mul(lv.buckets), s);
+                }
+                return self.get_slow(keys[i], 0);
+            }
             if self.wrap != 0 {
                 if s != 0 {
                     return self.pos_wrap(lv, h, s);
@@ -512,7 +558,9 @@ impl<
             if s != 0 {
                 // SAFETY: by construction, the remapping sequence contains
                 // one entry for each output of each level after the first
-                let p = if self.wrap != 0 {
+                let p = if self.ring != 0 {
+                    self.pos_ring(lv, h, h.wrapping_mul(lv.buckets), s)
+                } else if self.wrap != 0 {
                     self.pos_wrap(lv, h, s)
                 } else {
                     self.pos(lv, h, o ^ h, s)
@@ -558,6 +606,19 @@ pub struct PHastRBuilder {
     seed: u64,
     weights: Option<[i64; 7]>,
     wrap: u32,
+    /// Relative expected sizes of the buckets of a period (experimental;
+    /// empty for uniform buckets).
+    skew: Vec<f64>,
+    /// With wrapping, the base-2 logarithm of the width of the band of
+    /// in-slice offsets for seed 0 (experimental; 0 for the whole slice).
+    log2_band: u32,
+    /// With wrapping, the number of patterns of a ring (experimental; 0 for
+    /// plain wrapping).
+    ring: u32,
+    /// The number of buckets in the window of the sweep (experimental).
+    window: usize,
+    /// A multiplier for the size-dependent priority weights (experimental).
+    weight_scale: f64,
 }
 
 impl Default for PHastRBuilder {
@@ -573,6 +634,11 @@ impl Default for PHastRBuilder {
             seed: 0,
             weights: None,
             wrap: 0,
+            skew: vec![],
+            log2_band: 0,
+            ring: 0,
+            window: WINDOW,
+            weight_scale: 1.0,
         }
     }
 }
@@ -635,6 +701,50 @@ impl PHastRBuilder {
         self
     }
 
+    /// Sets the relative expected sizes of the buckets of a period (at most
+    /// 16; experimental, for construction statistics only).
+    #[doc(hidden)]
+    pub fn skew(mut self, skew: &[f64]) -> Self {
+        self.skew = skew.to_vec();
+        self
+    }
+
+    /// With wrapping, restricts the in-slice offsets for seed 0 to a band of
+    /// the given width: if the band plus the largest shift fits the slice,
+    /// positions never wrap (experimental, for construction statistics
+    /// only).
+    #[doc(hidden)]
+    pub fn log2_band(mut self, log2_band: u32) -> Self {
+        self.log2_band = log2_band;
+        self
+    }
+
+    /// With wrapping, uses `patterns` patterns (a power of two) selected by
+    /// the lowest bits of the seed *s*: pattern *r* takes its in-slice offset
+    /// from bit 64*r*/*R* of *o*, and the offset for seed *s* is that value
+    /// plus *s* · *L*/2^*S* modulo *L*, so the seeds of a pattern cycle once
+    /// around the positions of the slice in a residue class (experimental,
+    /// for construction statistics only).
+    #[doc(hidden)]
+    pub fn ring(mut self, patterns: u32) -> Self {
+        self.ring = patterns;
+        if patterns != 0 {
+            // Selects the code paths and the weights of wrapping
+            self.wrap = 3;
+        }
+        self
+    }
+
+    /// Sets the number of buckets in the window of the sweep, and a
+    /// multiplier for the size-dependent priority weights (experimental, for
+    /// construction statistics only).
+    #[doc(hidden)]
+    pub fn window(mut self, window: usize, weight_scale: f64) -> Self {
+        self.window = window;
+        self.weight_scale = weight_scale;
+        self
+    }
+
     /// Sets the seed used to compute signatures (default: 0).
     pub fn seed(mut self, seed: u64) -> Self {
         self.seed = seed;
@@ -674,6 +784,16 @@ impl PHastRBuilder {
             }
         } else if self.wrap > 64 {
             bail!("The multiplier of shifts with wrapping must be at most 64");
+        }
+        if self.ring != 0
+            && (!self.ring.is_power_of_two()
+                || self.ring > 32
+                || self.seed_bits > 8
+                || self.log2_slice_len > 12
+                || self.log2_slice_len < self.seed_bits
+                || (self.ring << (self.log2_slice_len - self.seed_bits)) > 64)
+        {
+            bail!("Unsupported parameters for ring patterns");
         }
         if self.log2_slice_len > 13 {
             bail!("The slice length must be at most 8192");
@@ -719,6 +839,7 @@ impl PHastRBuilder {
             },
             log2_slice_len: self.log2_slice_len,
             wrap: self.wrap,
+            ring: self.ring,
             params0,
             seeds0: D::from_seeds(&seeds0, self.seed_bits),
             params: params.into_boxed_slice(),
@@ -726,6 +847,82 @@ impl PHastRBuilder {
             remap,
             _marker: std::marker::PhantomData,
         })
+    }
+
+    /// Sweeps a single level on the given keys with output range `m`, and
+    /// returns the number of bumped keys and the number of free positions
+    /// (for experiments on overloading).
+    #[doc(hidden)]
+    pub fn level_stats<K: ?Sized + ToSig<[u64; 1]> + Sync, B: Borrow<K> + Sync>(
+        &self,
+        keys: &[B],
+        m: usize,
+    ) -> (usize, usize, Vec<(usize, usize)>) {
+        let mut hos: Vec<Ho> = keys
+            .iter()
+            .enumerate()
+            .map(|(i, k)| Ho {
+                h: K::to_sig(k.borrow(), self.seed)[0],
+                idx: i as u64,
+            })
+            .collect();
+        sort_ho(&mut hos);
+        let geom = self.geometry(hos.len(), m, self.bucket_size);
+        let weights = self.weights.unwrap_or_else(|| {
+            if self.wrap != 0 {
+                wrap_weights(self.seed_bits, self.wrap, geom.l_mask as usize + 1)
+            } else {
+                default_weights(self.seed_bits, geom.l_mask as usize + 1)
+            }
+        });
+        let weights = weights.map(|w| (w as f64 * self.weight_scale) as i64);
+        let out =
+            sweep_level(&hos, &geom, self, &weights, true).expect("bumping sweeps cannot fail");
+        // Buckets and bumped buckets by size
+        let mut sizes = vec![0usize; geom.buckets];
+        for x in &hos {
+            sizes[geom.bucket(x.h())] += 1;
+        }
+        let mut by_size = vec![(0usize, 0usize); 33];
+        for (b, &sd) in out.seeds.iter().enumerate() {
+            let k = sizes[b].min(32);
+            by_size[k].0 += 1;
+            if sd == 0 {
+                by_size[k].1 += 1;
+            }
+        }
+        // Buckets containing two keys with the same base position (they
+        // collide for all seeds, up to wrapping), and their keys: all, and
+        // among the bumped ones
+        let mut sc = [0usize; 4];
+        let mut i = 0;
+        let mut bases: Vec<usize> = vec![];
+        while i < hos.len() {
+            let b = geom.bucket(hos[i].h());
+            let mut j = i;
+            bases.clear();
+            while j < hos.len() && geom.bucket(hos[j].h()) == b {
+                let x = hos[j];
+                bases.push(if geom.wrap != 0 {
+                    geom.slice_begin(x.h()) + (x.h() & geom.band_mask) as usize
+                } else {
+                    geom.base(x, 0)
+                });
+                j += 1;
+            }
+            bases.sort_unstable();
+            if bases.windows(2).any(|w| w[0] == w[1]) {
+                sc[0] += 1;
+                sc[1] += j - i;
+                if out.seeds[b] == 0 {
+                    sc[2] += 1;
+                    sc[3] += j - i;
+                }
+            }
+            i = j;
+        }
+        SELF_COLL.with(|c| c.set(sc));
+        (out.bumped.len(), holes(&out.occupied, m).len(), by_size)
     }
 
     /// Builds the levels from the hashes of the first level (each with the
@@ -911,17 +1108,41 @@ impl PHastRBuilder {
                 max_l
             };
             let l = l.min(m.max(1));
+            // With slices shorter than 2^S positions, seeds are redundant
+            let ring = self.ring as usize;
+            let ring_a = if ring != 0 {
+                l.ilog2().saturating_sub(self.seed_bits)
+            } else {
+                0
+            };
             return Geometry {
-                buckets: (k as f64 / bucket_size).round().max(1.0) as usize,
+                // With ring patterns the number of buckets must be odd, as
+                // offsets are taken from the product of the hash and the
+                // number of buckets
+                buckets: (k as f64 / bucket_size).round().max(1.0) as usize | (ring != 0) as usize,
                 num_slices: (m.max(1) + 1 - l) as u64,
                 l_mask: l as u64 - 1,
                 shifts: 1,
                 patterns: 1,
                 log2_patterns: 0,
-                wrap: self.wrap as usize,
+                wrap: if ring != 0 {
+                    ring << ring_a
+                } else {
+                    self.wrap as usize
+                },
+                ring,
+                ring_a,
                 max_seed: (1 << self.seed_bits) - 1,
                 m,
-            };
+                band_mask: if self.log2_band != 0 {
+                    ((1u64 << self.log2_band) - 1).min(l as u64 - 1)
+                } else {
+                    l as u64 - 1
+                },
+                period: 0,
+                cum: [0; 16],
+            }
+            .with_skew(&self.skew);
         }
         let target = match m {
             0..2500 => 64,
@@ -948,10 +1169,28 @@ impl PHastRBuilder {
             wrap: 0,
             max_seed: (1 << self.seed_bits) - 1,
             m,
+            band_mask: l as u64 - 1,
+            ring: 0,
+            ring_a: 0,
+            period: 0,
+            cum: [0; 16],
         }
+        .with_skew(&self.skew)
     }
 }
 
+thread_local! {
+    /// Diagnostic: self-colliding buckets and their keys (all, bumped) of
+    /// the last call to `level_stats`.
+    #[doc(hidden)]
+    pub static SELF_COLL: std::cell::Cell<[usize; 4]> = const { std::cell::Cell::new([0; 4]) };
+}
+static COUNT_FEAS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+/// Diagnostic counters by bucket size: buckets, feasible shifts, sum of
+/// log2 (times 1000), buckets without feasible shifts, with one or two.
+#[doc(hidden)]
+pub static FEAS: [[std::sync::atomic::AtomicUsize; 5]; 24] =
+    [const { [const { std::sync::atomic::AtomicUsize::new(0) }; 5] }; 24];
 /// Number of keys below which a level is built without bumping.
 const LAST_LEVEL_THRESHOLD: usize = 4096;
 
@@ -1075,12 +1314,48 @@ struct Geometry {
     /// The maximum seed.
     max_seed: usize,
     m: usize,
+    /// The mask of the in-slice offsets for seed 0 (with wrapping).
+    band_mask: u64,
+    /// The number of patterns of a ring (0 for plain wrapping).
+    ring: usize,
+    /// The base-2 logarithm of the multiplier of the seed in a ring.
+    ring_a: u32,
+    /// The number of buckets of a period (0 for uniform buckets).
+    period: usize,
+    /// For each bucket of a period, the beginning of its part of the hash
+    /// range of the period, as a 64-bit fraction.
+    cum: [u64; 16],
 }
 
 impl Geometry {
+    /// Sets the relative expected sizes of the buckets of a period.
+    fn with_skew(mut self, skew: &[f64]) -> Self {
+        if skew.is_empty() || self.buckets < 4 * skew.len() {
+            return self;
+        }
+        self.period = skew.len();
+        self.buckets = (self.buckets / self.period).max(1) * self.period;
+        let tot: f64 = skew.iter().sum();
+        let mut acc = 0.0;
+        for (i, &x) in skew.iter().enumerate() {
+            self.cum[i] = (acc / tot * 18446744073709551616.0) as u64;
+            acc += x;
+        }
+        self
+    }
+
     #[inline(always)]
     fn bucket(&self, h: u64) -> usize {
-        mul_hi(h, self.buckets as u64) as usize
+        if self.period == 0 {
+            return mul_hi(h, self.buckets as u64) as usize;
+        }
+        let p = h as u128 * (self.buckets / self.period) as u128;
+        let (group, frac) = ((p >> 64) as usize, p as u64);
+        let mut j = 0;
+        for &c in &self.cum[1..self.period] {
+            j += (frac >= c) as usize;
+        }
+        group * self.period + j
     }
 
     #[inline(always)]
@@ -1093,6 +1368,15 @@ impl Geometry {
         self.slice_begin(x.h()) + ((x.o() >> (r as u32 * self.stride())) & self.l_mask) as usize
     }
 
+    /// With ring patterns, returns the value providing the in-slice
+    /// offsets: the lower half of the product of the hash and the number of
+    /// buckets, whose upper half is the bucket (it is thus uniform among the
+    /// keys of a bucket).
+    #[inline(always)]
+    fn ring_o(&self, h: u64) -> u64 {
+        h.wrapping_mul(self.buckets as u64)
+    }
+
     /// The distance in bits between the offsets of consecutive patterns.
     #[inline(always)]
     fn stride(&self) -> u32 {
@@ -1101,9 +1385,15 @@ impl Geometry {
 
     #[inline(always)]
     fn pos<T: Rec>(&self, x: T, seed: usize) -> usize {
+        if self.ring != 0 {
+            let r = seed & (self.ring - 1);
+            let o = self.ring_o(x.h()) >> (r as u32 * (64 / self.ring as u32));
+            return self.slice_begin(x.h())
+                + (o.wrapping_add((seed as u64) << self.ring_a) & self.l_mask) as usize;
+        }
         if self.wrap != 0 {
             return self.slice_begin(x.h())
-                + (x.h().wrapping_add((seed * self.wrap) as u64) & self.l_mask) as usize;
+                + (((x.h() & self.band_mask) + (seed * self.wrap) as u64) & self.l_mask) as usize;
         }
         let r = seed & (self.patterns - 1);
         self.base(x, r) + (seed >> self.log2_patterns)
@@ -1125,6 +1415,7 @@ impl Geometry {
             offset: 0,
             salt: 0,
             first_seed: 0,
+            scale: self.ring_a as u64,
         }
     }
 }
@@ -1401,6 +1692,29 @@ struct Sweep<'a, T: Rec> {
     best_bases: Vec<usize>,
     /// Shift of the best pattern found by the last search.
     best_d: usize,
+    /// The number of buckets in the window.
+    window: usize,
+    /// With ring patterns, the base-2 logarithm of the distance between the
+    /// positions of a key for consecutive seeds of a pattern (zero
+    /// otherwise). The set of used slots is stored by residue classes modulo
+    /// this distance: bit *q* of row *ρ* is associated with slot *q* ·
+    /// 2^`log2_stride` + *ρ*, so the positions of a key for the seeds of a
+    /// pattern are consecutive bits of a row.
+    log2_stride: u32,
+    /// The base-2 logarithm of the number of bits of a row.
+    log2_row: u32,
+    /// With ring patterns, the slice beginning and the value providing the
+    /// offsets of each key of the bucket being searched.
+    ring_keys: Vec<(usize, u64)>,
+    /// Experimental objective: cost of a key at a given distance from the
+    /// first reachable slot (empty for the sum of positions).
+    obj: Vec<u32>,
+    /// With wrapping, the seed of the first shift, the difference between
+    /// the seeds of consecutive shifts, and the number of shifts of the
+    /// pattern last loaded by `load_bucket_wrap`.
+    seed0: usize,
+    seed_step: usize,
+    num_shifts: usize,
     /// With wrapping, the total shift at the start of each segment of the
     /// last candidate collection (segments play the role of patterns).
     seg_t0: Vec<usize>,
@@ -1426,9 +1740,17 @@ impl<'a, T: Rec> Sweep<'a, T> {
         // owner array in the L2 cache, which matters for parallel sweeps.
         let per_bucket = (g.num_slices as usize).div_ceil(g.buckets.max(1));
         let span = g.l_mask as usize + 1 + g.shifts;
-        let cyc_bits = (4 * span + 2 * WINDOW * per_bucket)
+        // With ring patterns, the stride is at most the slice length
+        let log2_stride = if g.ring >= 2 {
+            g.wrap.ilog2().min((g.l_mask + 1).ilog2())
+        } else {
+            0
+        };
+        // Rows must contain at least a word
+        let cyc_bits = (4 * span + 2 * b.window * per_bucket)
             .next_power_of_two()
-            .max(128);
+            .max(128)
+            .max(64 << log2_stride);
         let k_lo = keys.partition_point(|x| g.bucket(x.h()) < lo);
         let k_hi = keys.partition_point(|x| g.bucket(x.h()) < hi);
         let keys = &keys[k_lo..k_hi];
@@ -1462,6 +1784,14 @@ impl<'a, T: Rec> Sweep<'a, T> {
             ypos: Vec::with_capacity(64),
             best_bases: Vec::with_capacity(64),
             best_d: 0,
+            window: b.window,
+            log2_stride,
+            log2_row: cyc_bits.ilog2() - log2_stride,
+            ring_keys: Vec::with_capacity(64),
+            obj: objective_table(cyc_bits),
+            seed0: 1,
+            seed_step: 1,
+            num_shifts: 0,
             seg_t0: Vec::with_capacity(64),
             evict: Vec::with_capacity(64),
             all_bases: Vec::with_capacity(256),
@@ -1504,10 +1834,32 @@ impl<'a, T: Rec> Sweep<'a, T> {
         w - 1024 * b as i64
     }
 
+    /// Returns the index of the bit associated with slot `p` in the set of
+    /// used slots (see `log2_stride`; without ring patterns, the slot modulo
+    /// the size of the cyclic window).
+    #[inline(always)]
+    fn addr(&self, p: usize) -> usize {
+        let t = self.log2_stride;
+        ((p & ((1 << t) - 1)) << self.log2_row) | ((p >> t) & ((1 << self.log2_row) - 1))
+    }
+
     #[inline(always)]
     fn get(&self, p: usize) -> bool {
-        let p = p & self.cyc_mask;
+        let p = self.addr(p);
         self.used[p / 64] >> (p % 64) & 1 != 0
+    }
+
+    /// With ring patterns, returns 64 consecutive bits of row `rho` starting
+    /// from bit `q` (cyclically).
+    #[inline(always)]
+    fn get_row64(&self, rho: usize, q: usize) -> u64 {
+        let row_words = 1usize << (self.log2_row - 6);
+        let first = rho << (self.log2_row - 6);
+        let q = q & ((1 << self.log2_row) - 1);
+        let w = q / 64;
+        let lo = self.used[first + w] as u128;
+        let hi = self.used[first + ((w + 1) & (row_words - 1))] as u128;
+        ((hi << 64 | lo) >> (q % 64)) as u64
     }
 
     #[inline(always)]
@@ -1521,21 +1873,21 @@ impl<'a, T: Rec> Sweep<'a, T> {
 
     #[inline(always)]
     fn set(&mut self, p: usize, b: usize) {
-        let q = p & self.cyc_mask;
+        let q = self.addr(p);
         self.used[q / 64] |= 1 << (q % 64);
-        self.owner[q] = b as u32;
+        self.owner[p & self.cyc_mask] = b as u32;
     }
 
     /// Sets a slot as used without recording its owner.
     #[inline(always)]
     fn set_bit(&mut self, p: usize) {
-        let q = p & self.cyc_mask;
+        let q = self.addr(p);
         self.used[q / 64] |= 1 << (q % 64);
     }
 
     #[inline(always)]
     fn clear(&mut self, p: usize) {
-        let q = p & self.cyc_mask;
+        let q = self.addr(p);
         self.used[q / 64] &= !(1 << (q % 64));
     }
 
@@ -1649,6 +2001,9 @@ impl<'a, T: Rec> Sweep<'a, T> {
 
     /// Finds the best seed (minimum sum of positions) for bucket `b`, or 0.
     fn search(&mut self, b: usize) -> usize {
+        if self.g.ring >= 2 {
+            return self.search_ring(b);
+        }
         if self.g.wrap != 0 {
             return self.search_wrap(b);
         }
@@ -1703,21 +2058,348 @@ impl<'a, T: Rec> Sweep<'a, T> {
     fn conf_seed(&self, seg_t0: &[usize], r: usize, d: usize) -> usize {
         match self.g.wrap {
             0 => self.g.seed_of(r, d),
-            m => (seg_t0[r] + d) / m + 1,
+            // With wrapping, we record the seed of the first shift of each
+            // segment
+            m => seg_t0[r] + self.g.ring.max(1) * (d / m),
         }
     }
 
-    /// With wrapping, loads in `self.sb` the slice beginnings and in
-    /// `self.oo` the in-slice offsets for seed 1 of the keys of bucket `b`.
-    fn load_bucket_wrap(&mut self, b: usize) {
+    /// With ring patterns, loads the keys of bucket `b` for pattern `r`:
+    /// fills `self.sb` with the positions of the keys for the first seed of
+    /// the cycle of the pattern and `self.oo` with their indices in the
+    /// cycle for *j* = 0 (the seed of index *j* of the pattern is *jR* +
+    /// *r*, and the position of a key is its first position plus its index
+    /// in the cycle, which is increased by *j* modulo the length of the
+    /// cycle, times the stride). Returns the sum of the first positions.
+    #[inline(always)]
+    fn load_ring(&mut self, b: usize, r: usize) -> usize {
         let keys = self.bucket_keys(b);
         let g = self.g;
-        let m = g.wrap as u64;
+        let t = self.log2_stride;
+        let shift = r as u32 * (64 / g.ring as u32);
+        let first = (r as u64) << g.ring_a;
+        self.sb.clear();
+        self.oo.clear();
+        let mut sum = 0;
+        for x in keys {
+            let c = ((g.ring_o(x.h()) >> shift).wrapping_add(first) & g.l_mask) as usize;
+            let p0 = g.slice_begin(x.h()) + (c & ((1 << t) - 1));
+            self.sb.push(p0);
+            self.oo.push((c >> t) as u64);
+            sum += p0;
+        }
+        sum
+    }
+
+    /// With ring patterns, returns for each index *j* of a seed of the
+    /// pattern last loaded by [`load_ring`](Self::load_ring) the number of
+    /// keys (saturated at two) whose slot is used: bit *j* of the first
+    /// result is set if at least one slot is used, and bit *j* of the second
+    /// result if at least two are.
+    #[inline(always)]
+    fn ring_blocked(&self) -> (u128, u128) {
+        let t = self.log2_stride;
+        let l = self.g.l_mask as usize + 1;
+        // Length of the cycle and number of seeds of a pattern
+        let cycle = l >> t;
+        let seeds = (self.g.max_seed + 1) / self.g.ring;
+        let (mut ones, mut twos) = (0u128, 0u128);
+        if cycle == 64 && seeds == 64 {
+            // The common case: the seeds of the pattern are the rotations of
+            // a word
+            let (mut o, mut tw) = (0u64, 0u64);
+            for (&p0, &q) in self.sb.iter().zip(&self.oo) {
+                let w = self
+                    .get_row64(p0 & ((1 << t) - 1), p0 >> t)
+                    .rotate_right(q as u32);
+                tw |= o & w;
+                o |= w;
+            }
+            return (o as u128, tw as u128);
+        }
+        for (&p0, &q) in self.sb.iter().zip(&self.oo) {
+            let mut w = 0u128;
+            for j in 0..seeds {
+                let i = (q as usize + j) % cycle;
+                w |= (self.get(p0 + (i << t)) as u128) << j;
+            }
+            twos |= ones & w;
+            ones |= w;
+        }
+        (ones, twos)
+    }
+
+    /// With ring patterns, fills `self.bases` with the positions of the keys
+    /// of the pattern last loaded by [`load_ring`](Self::load_ring) for the
+    /// seed of index `j`, and returns their sum.
+    #[inline(always)]
+    fn ring_positions(&mut self, j: usize) -> usize {
+        let t = self.log2_stride;
+        let cycle = (self.g.l_mask as usize + 1) >> t;
+        self.bases.clear();
+        let (sb, oo, bases) = (&self.sb, &self.oo, &mut self.bases);
+        bases.extend(
+            sb.iter()
+                .zip(oo)
+                .map(|(&p0, &q)| p0 + (((q as usize + j) & (cycle - 1)) << t)),
+        );
+        bases.iter().sum()
+    }
+
+    /// Like [`search_ring`](Self::search_ring), for patterns of 64 seeds
+    /// whose cycle has length 64 (the default): the slots of a key for the
+    /// seeds of a pattern are then a rotation of a word of a row.
+    fn search_ring64(&mut self, b: usize) -> usize {
+        let keys = self.bucket_keys(b);
+        let k = keys.len();
+        let g = self.g;
+        let t = self.log2_stride;
+        let t_mask = (1usize << t) - 1;
+        let l_mask = g.l_mask;
+        let ring = g.ring;
+        let pat_bits = 64 / ring as u32;
+        let row_mask = (1usize << self.log2_row) - 1;
+        let row_words = 1usize << (self.log2_row - 6);
+        self.ring_keys.clear();
+        self.ring_keys
+            .extend(keys.iter().map(|x| (g.slice_begin(x.h()), g.ring_o(x.h()))));
+        self.sb.clear();
+        self.sb.resize(k, 0);
+        self.oo.clear();
+        self.oo.resize(k, 0);
+        let mut best_sum = usize::MAX;
+        let mut best_seed = 0;
+        for r in 0..ring {
+            let shift = r as u32 * pat_bits;
+            let first = (r as u64) << g.ring_a;
+            // Used slots by index of seed, and sum of the positions for
+            // index zero
+            let (mut ones, mut first_sum) = (0u64, 0usize);
+            {
+                let (used, ring_keys) = (&self.used, &self.ring_keys);
+                for (i, &(sb, o)) in ring_keys.iter().enumerate() {
+                    let c = ((o >> shift).wrapping_add(first) & l_mask) as usize;
+                    let p0 = sb + (c & t_mask);
+                    let q = c >> t;
+                    self.sb[i] = p0;
+                    self.oo[i] = q as u64;
+                    let idx = (p0 >> t) & row_mask;
+                    let row = (p0 & t_mask) * row_words;
+                    let w = idx / 64;
+                    let lo = used[row + w] as u128;
+                    let hi = used[row + ((w + 1) & (row_words - 1))] as u128;
+                    let word = ((hi << 64 | lo) >> (idx % 64)) as u64;
+                    ones |= word.rotate_right(q as u32);
+                    first_sum += p0 + (q << t);
+                }
+            }
+            let mut free = !ones;
+            if r == 0 {
+                // Seed 0 marks bumped buckets
+                free &= !1;
+            }
+            // The sum for index j is the sum for index zero plus kj strides,
+            // minus a cycle for each key that went back to the beginning of
+            // its cycle
+            if free.count_ones() <= 4 {
+                // Few free indices (the common case): we check all of them
+                while free != 0 {
+                    let j = free.trailing_zeros() as usize;
+                    free &= free - 1;
+                    let back = self.oo.iter().filter(|&&q| q as usize + j >= 64).count();
+                    let sum = first_sum + ((k * j) << t) - ((64 * back) << t);
+                    if sum < best_sum {
+                        self.ring_positions(j);
+                        if !self.self_collides() {
+                            best_sum = sum;
+                            best_seed = j * ring + r;
+                            self.best_d = 0;
+                            self.best_bases.clear();
+                            self.best_bases.extend_from_slice(&self.bases);
+                        }
+                    }
+                }
+                continue;
+            }
+            // The sum of the positions increases with the index of the seed,
+            // except at the indices at which some key goes back: between two
+            // such indices (or zero) only the first free index can be the
+            // best one
+            let mut starts = 1u64;
+            for &q in &self.oo {
+                starts |= 1 << ((64 - q) & 63);
+            }
+            let mut back = 0;
+            while starts != 0 && free != 0 {
+                let a = starts.trailing_zeros();
+                starts &= starts - 1;
+                // Keys going back at a (none at zero)
+                if a != 0 {
+                    back += self.oo.iter().filter(|&&q| 64 - q as u32 == a).count();
+                }
+                let end = if starts != 0 {
+                    starts.trailing_zeros()
+                } else {
+                    64
+                };
+                free = free >> a << a;
+                let j = free.trailing_zeros();
+                if j >= end {
+                    continue;
+                }
+                let j = j as usize;
+                let sum = first_sum + ((k * j) << t) - ((64 * back) << t);
+                if sum < best_sum {
+                    self.ring_positions(j);
+                    if !self.self_collides() {
+                        best_sum = sum;
+                        best_seed = j * ring + r;
+                        self.best_d = 0;
+                        self.best_bases.clear();
+                        self.best_bases.extend_from_slice(&self.bases);
+                    }
+                }
+            }
+        }
+        best_seed
+    }
+
+    /// Like [`search`](Self::search), with ring patterns.
+    fn search_ring(&mut self, b: usize) -> usize {
+        let g = self.g;
+        let seeds = (g.max_seed + 1) / g.ring;
+        if seeds == 64 && (g.l_mask as usize + 1) >> self.log2_stride == 64 {
+            return self.search_ring64(b);
+        }
+        let valid = if seeds == 128 {
+            !0u128
+        } else {
+            (1u128 << seeds) - 1
+        };
+        let mut best_sum = usize::MAX;
+        let mut best_seed = 0;
+        for r in 0..g.ring {
+            let first_sum = self.load_ring(b, r);
+            // Positions are at least the first ones
+            if first_sum >= best_sum {
+                continue;
+            }
+            let (ones, _) = self.ring_blocked();
+            let mut free = !ones & valid;
+            if r == 0 {
+                // Seed 0 marks bumped buckets
+                free &= !1;
+            }
+            if free == 0 {
+                continue;
+            }
+            // The sum of the positions increases with the index of the seed,
+            // except at the indices at which the position of some key goes
+            // back to the beginning of its cycle: thus, between two such
+            // indices only the first free index can be the best one
+            let cycle = (g.l_mask as usize + 1) >> self.log2_stride;
+            let mut starts = 1u128;
+            if cycle == seeds {
+                for &q in &self.oo {
+                    starts |= 1 << ((cycle - q as usize) & (cycle - 1));
+                }
+            } else {
+                // Redundant seeds: we check all free indices
+                starts = free;
+            }
+            while starts != 0 {
+                let a = starts.trailing_zeros();
+                starts &= starts - 1;
+                let end = if starts != 0 {
+                    starts.trailing_zeros()
+                } else {
+                    128
+                };
+                let f = free >> a << a;
+                if f == 0 {
+                    break;
+                }
+                let j = f.trailing_zeros();
+                if j >= end {
+                    continue;
+                }
+                let j = j as usize;
+                let sum = self.ring_positions(j);
+                if sum < best_sum && !self.self_collides() {
+                    best_sum = sum;
+                    best_seed = j * g.ring + r;
+                    self.best_d = 0;
+                    self.best_bases.clear();
+                    self.best_bases.extend_from_slice(&self.bases);
+                }
+            }
+        }
+        best_seed
+    }
+
+    /// With ring patterns, collects the repair candidates of bucket `b` (see
+    /// [`place`](Self::place)): a candidate is identified by its pattern and
+    /// by the index of its seed in the pattern.
+    fn ring_candidates(&mut self, b: usize, cands: &mut Vec<u128>) {
+        let g = self.g;
+        let seeds = (g.max_seed + 1) / g.ring;
+        let valid = if seeds == 128 {
+            !0u128
+        } else {
+            (1u128 << seeds) - 1
+        };
+        for r in 0..g.ring {
+            self.load_ring(b, r);
+            let (ones, twos) = self.ring_blocked();
+            let mut one = ones & !twos & valid;
+            if r == 0 {
+                one &= !1;
+            }
+            while one != 0 {
+                let j = one.trailing_zeros() as usize;
+                one &= one - 1;
+                let sum = self.ring_positions(j);
+                if !self.self_collides() {
+                    cands.push((sum as u128) << 32 | (r as u128) << 16 | j as u128);
+                }
+            }
+        }
+    }
+
+    /// With wrapping, returns the number of patterns.
+    #[inline(always)]
+    fn wrap_patterns(&self) -> usize {
+        self.g.ring.max(1)
+    }
+
+    /// With wrapping, loads in `self.sb` the slice beginnings and in
+    /// `self.oo` the in-slice offsets for the first seed of pattern `r` of
+    /// the keys of bucket `b`.
+    fn load_bucket_wrap(&mut self, b: usize, r: usize) {
+        let keys = self.bucket_keys(b);
+        let g = self.g;
         self.sb.clear();
         self.sb.extend(keys.iter().map(|x| g.slice_begin(x.h())));
         self.oo.clear();
-        self.oo
-            .extend(keys.iter().map(|x| x.h().wrapping_add(m) & g.l_mask));
+        if let Some(per_pattern) = (g.max_seed + 1).checked_div(g.ring) {
+            // Pattern r contains the seeds congruent to r modulo R (but 0)
+            self.seed0 = if r == 0 { g.ring } else { r };
+            self.seed_step = g.ring;
+            self.num_shifts = per_pattern - (r == 0) as usize;
+            let shift = r as u32 * (64 / g.ring as u32);
+            let first = (self.seed0 as u64) << g.ring_a;
+            self.oo.extend(
+                keys.iter()
+                    .map(|x| (g.ring_o(x.h()) >> shift).wrapping_add(first) & g.l_mask),
+            );
+        } else {
+            let m = g.wrap as u64;
+            self.seed0 = 1;
+            self.seed_step = 1;
+            self.num_shifts = g.max_seed;
+            self.oo
+                .extend(keys.iter().map(|x| ((x.h() & g.band_mask) + m) & g.l_mask));
+        }
     }
 
     /// With wrapping, iterates over the segments of shifts of the bucket
@@ -1731,8 +2413,8 @@ impl<'a, T: Rec> Sweep<'a, T> {
     fn for_each_segment(&mut self, mut f: impl FnMut(&mut Self, usize, usize, usize) -> bool) {
         let l = self.g.l_mask as usize + 1;
         let m = self.g.wrap;
-        // Seeds 1 . . max_seed are the total shifts 0, m, . . .
-        let total_end = m * self.g.max_seed;
+        // The seeds of the pattern are the total shifts 0, m, . . .
+        let total_end = m * self.num_shifts;
         // Rounds up to a multiple of m without divisions: for x < 2^16 and
         // m <= 64, ⌊x · ⌈2^32 / m⌉ / 2^32⌋ = ⌊x / m⌋
         let inv = (1u64 << 32).div_ceil(m as u64);
@@ -1763,46 +2445,103 @@ impl<'a, T: Rec> Sweep<'a, T> {
         }
     }
 
+    /// Diagnostic: counts the feasible shifts of bucket `b` (with wrapping).
+    fn count_feasible(&mut self, b: usize) {
+        use std::sync::atomic::Ordering::Relaxed;
+        let k = self.size(b).min(23);
+        let (step, disallowed) = wrap_step_mask(self.g.wrap);
+        let mut feasible = 0usize;
+        for r in 0..self.wrap_patterns() {
+            self.load_bucket_wrap(b, r);
+            self.for_each_segment(|s, _t0, len, _| {
+                if s.self_collides() {
+                    return true;
+                }
+                let mut shift = 0;
+                while shift < len {
+                    let mut u = disallowed;
+                    for &x in &s.bases {
+                        u |= s.get64(x + shift);
+                    }
+                    if shift + 64 > len {
+                        u |= !0u64 << (len - shift);
+                    }
+                    if step < 64 {
+                        u |= !0u64 << step;
+                    }
+                    feasible += (!u).count_ones() as usize;
+                    shift += step;
+                }
+                true
+            });
+        }
+        FEAS[k][0].fetch_add(1, Relaxed);
+        FEAS[k][1].fetch_add(feasible, Relaxed);
+        FEAS[k][2].fetch_add(((feasible.max(1) as f64).log2() * 1000.0) as usize, Relaxed);
+        FEAS[k][3].fetch_add((feasible == 0) as usize, Relaxed);
+        FEAS[k][4].fetch_add((feasible > 0 && feasible <= 2) as usize, Relaxed);
+    }
+
     /// Like [`search`](Self::search), with wrapping.
     fn search_wrap(&mut self, b: usize) -> usize {
         let k = self.size(b);
-        self.load_bucket_wrap(b);
         let m = self.g.wrap;
         let (step, disallowed) = wrap_step_mask(m);
         let mut best_sum = usize::MAX;
         let mut best_seed = 0;
-        self.for_each_segment(|s, t0, len, base_sum| {
-            if base_sum >= best_sum {
-                return true;
-            }
-            let mut shift = 0;
-            while shift < len {
-                let mut u = disallowed;
-                for &x in &s.bases {
-                    u |= s.get64(x + shift);
+        for r in 0..self.wrap_patterns() {
+            self.load_bucket_wrap(b, r);
+            self.for_each_segment(|s, t0, len, base_sum| {
+                // With an experimental objective, the cost at shift 0 is a lower
+                // bound for the segment, as costs are nondecreasing
+                let cost = |s: &Self, d: usize| -> usize {
+                    let edge = s.value_to_clear;
+                    s.bases
+                        .iter()
+                        .map(|&x| s.obj[(x + d - edge).min(s.obj.len() - 1)] as usize)
+                        .sum()
+                };
+                let base_sum = if s.obj.is_empty() {
+                    base_sum
+                } else {
+                    cost(s, 0)
+                };
+                if base_sum >= best_sum {
+                    return true;
                 }
-                if shift + 64 > len {
-                    u |= !0u64 << (len - shift);
-                }
-                if u != u64::MAX {
-                    let d = shift + u.trailing_ones() as usize;
-                    let sum = base_sum + d * k;
-                    if sum < best_sum && !s.self_collides() {
-                        best_sum = sum;
-                        best_seed = (t0 + d) / m + 1;
-                        s.best_d = d;
-                        s.best_bases.clear();
-                        s.best_bases.extend_from_slice(&s.bases);
+                let mut shift = 0;
+                while shift < len {
+                    let mut u = disallowed;
+                    for &x in &s.bases {
+                        u |= s.get64(x + shift);
                     }
-                    break;
+                    if shift + 64 > len {
+                        u |= !0u64 << (len - shift);
+                    }
+                    if u != u64::MAX {
+                        let d = shift + u.trailing_ones() as usize;
+                        let sum = if s.obj.is_empty() {
+                            base_sum + d * k
+                        } else {
+                            cost(s, d)
+                        };
+                        if sum < best_sum && !s.self_collides() {
+                            best_sum = sum;
+                            best_seed = s.seed0 + s.seed_step * ((t0 + d) / m);
+                            s.best_d = d;
+                            s.best_bases.clear();
+                            s.best_bases.extend_from_slice(&s.bases);
+                        }
+                        break;
+                    }
+                    shift += step;
+                    if s.obj.is_empty() && base_sum + shift * k >= best_sum {
+                        break;
+                    }
                 }
-                shift += step;
-                if base_sum + shift * k >= best_sum {
-                    break;
-                }
-            }
-            true
-        });
+                true
+            });
+        }
         best_seed
     }
 
@@ -1810,38 +2549,43 @@ impl<'a, T: Rec> Sweep<'a, T> {
     /// [`place`](Self::place)), using segments as patterns.
     fn wrap_candidates(&mut self, b: usize, cands: &mut Vec<u128>, all_bases: &mut Vec<usize>) {
         let k = self.size(b);
-        self.load_bucket_wrap(b);
-        let (step, disallowed) = wrap_step_mask(self.g.wrap);
+        let m = self.g.wrap;
+        let (step, disallowed) = wrap_step_mask(m);
         self.seg_t0.clear();
-        self.for_each_segment(|s, t0, len, base_sum| {
-            let r = s.seg_t0.len();
-            s.seg_t0.push(t0);
-            all_bases.extend_from_slice(&s.bases);
-            if s.self_collides() {
-                return true;
-            }
-            let mut shift = 0;
-            while shift < len {
-                let mut ones = 0u64;
-                let mut twos = 0u64;
-                for &x in &s.bases {
-                    let w = s.get64(x + shift);
-                    twos |= ones & w;
-                    ones |= w;
+        for p in 0..self.wrap_patterns() {
+            self.load_bucket_wrap(b, p);
+            self.for_each_segment(|s, t0, len, base_sum| {
+                let r = s.seg_t0.len();
+                s.seg_t0.push(s.seed0 + s.seed_step * (t0 / m));
+                all_bases.extend_from_slice(&s.bases);
+                if s.self_collides() {
+                    return true;
                 }
-                let mut one = ones & !twos & !disallowed;
-                if shift + 64 > len {
-                    one &= !(!0u64 << (len - shift));
+                let mut shift = 0;
+                while shift < len {
+                    let mut ones = 0u64;
+                    let mut twos = 0u64;
+                    for &x in &s.bases {
+                        let w = s.get64(x + shift);
+                        twos |= ones & w;
+                        ones |= w;
+                    }
+                    let mut one = ones & !twos & !disallowed;
+                    if shift + 64 > len {
+                        one &= !(!0u64 << (len - shift));
+                    }
+                    while one != 0 {
+                        let d = shift + one.trailing_zeros() as usize;
+                        one &= one - 1;
+                        cands.push(
+                            ((base_sum + d * k) as u128) << 32 | (r as u128) << 16 | d as u128,
+                        );
+                    }
+                    shift += step;
                 }
-                while one != 0 {
-                    let d = shift + one.trailing_zeros() as usize;
-                    one &= one - 1;
-                    cands.push(((base_sum + d * k) as u128) << 32 | (r as u128) << 16 | d as u128);
-                }
-                shift += step;
-            }
-            true
-        });
+                true
+            });
+        }
     }
 
     /// Places bucket `b`, possibly evicting other buckets. Returns `true` on
@@ -1863,7 +2607,10 @@ impl<'a, T: Rec> Sweep<'a, T> {
         let mut all_bases = std::mem::take(&mut self.all_bases);
         cands.clear();
         all_bases.clear();
-        if self.g.wrap != 0 {
+        let ring = self.g.ring >= 2;
+        if ring {
+            self.ring_candidates(b, &mut cands);
+        } else if self.g.wrap != 0 {
             self.wrap_candidates(b, &mut cands, &mut all_bases);
         }
         // Nested repairs overwrite the segments
@@ -1929,9 +2676,21 @@ impl<'a, T: Rec> Sweep<'a, T> {
                 (c >> 16) as usize & 0xFFFF,
                 c as usize & 0xFFFF,
             );
+            // With ring patterns, the positions of a candidate are computed
+            // on demand (d is the index of the seed in the pattern)
+            let (seed, d) = if ring {
+                self.load_ring(b, r);
+                self.ring_positions(d);
+                all_bases.clear();
+                all_bases.extend_from_slice(&self.bases);
+                (d * self.g.ring + r, 0)
+            } else {
+                (self.conf_seed(&seg_t0, r, d), d)
+            };
+            let cand_bases = if ring { 0 } else { r * k };
             // Find the blocked key and the owner of its slot
             let mut blocker = usize::MAX;
-            for &x in &all_bases[r * k..][..k] {
+            for &x in &all_bases[cand_bases..][..k] {
                 let p = x + d;
                 if self.get(p) {
                     blocker = self.owner_of(p, b);
@@ -1959,11 +2718,10 @@ impl<'a, T: Rec> Sweep<'a, T> {
             } else {
                 sum
             };
-            evict.push((key, r, d, blocker));
+            evict.push((key, r, c as usize & 0xFFFF, blocker));
             if !self.repair_by_size {
                 tried += 1;
-                let seed = self.conf_seed(&seg_t0, r, d);
-                if self.try_evict(b, depth, seed, d, blocker, &all_bases[r * k..][..k]) {
+                if self.try_evict(b, depth, seed, d, blocker, &all_bases[cand_bases..][..k]) {
                     ok = true;
                     break;
                 }
@@ -1972,8 +2730,16 @@ impl<'a, T: Rec> Sweep<'a, T> {
         if self.repair_by_size {
             evict.sort_unstable();
             for &(_, r, d, blocker) in evict.iter().take(max_tries) {
-                let seed = self.conf_seed(&seg_t0, r, d);
-                if self.try_evict(b, depth, seed, d, blocker, &all_bases[r * k..][..k]) {
+                let (seed, d, cand_bases) = if ring {
+                    self.load_ring(b, r);
+                    self.ring_positions(d);
+                    all_bases.clear();
+                    all_bases.extend_from_slice(&self.bases);
+                    (d * self.g.ring + r, 0, 0)
+                } else {
+                    (self.conf_seed(&seg_t0, r, d), d, r * k)
+                };
+                if self.try_evict(b, depth, seed, d, blocker, &all_bases[cand_bases..][..k]) {
                     ok = true;
                     break;
                 }
@@ -2054,9 +2820,11 @@ impl<'a, T: Rec> Sweep<'a, T> {
     /// sweep stops immediately).
     fn run(mut self, allow_bump: bool) -> bool {
         let (lo, hi) = (self.lo, self.hi);
-        let mut heap: BinaryHeap<(i64, Reverse<usize>)> = BinaryHeap::with_capacity(WINDOW);
-        let mut in_heap = [0u64; HEAP_BITS / 64];
-        let in_heap_get = |s: &[u64], b: usize| s[(b % HEAP_BITS) / 64] >> (b % 64) & 1 != 0;
+        let window = self.window;
+        let heap_bits = (4 * window).next_power_of_two().max(HEAP_BITS);
+        let mut heap: BinaryHeap<(i64, Reverse<usize>)> = BinaryHeap::with_capacity(window);
+        let mut in_heap = vec![0u64; heap_bits / 64];
+        let in_heap_get = |s: &[u64], b: usize| s[(b % heap_bits) / 64] >> (b % 64) & 1 != 0;
         let mut span_begin = lo;
         while span_begin < hi && self.size(span_begin) == 0 {
             span_begin += 1;
@@ -2066,19 +2834,25 @@ impl<'a, T: Rec> Sweep<'a, T> {
         }
         let slice_begin_of =
             |s: &Self, b: usize| s.g.slice_begin(s.keys[s.bucket_begin[b - s.lo]].h());
-        let span_end = |sb: usize| (sb + WINDOW).min(hi);
+        let span_end = |sb: usize| (sb + window).min(hi);
         let mut ok = true;
         self.value_to_clear = slice_begin_of(&self, span_begin);
         for b in span_begin..span_end(span_begin) {
             let sz = self.size(b);
             if sz != 0 {
                 heap.push((self.priority(b, sz), Reverse(b)));
-                in_heap[(b % HEAP_BITS) / 64] |= 1 << (b % 64);
+                in_heap[(b % heap_bits) / 64] |= 1 << (b % 64);
             }
         }
         let depth = self.repair_depth;
         while let Some((_, Reverse(b))) = heap.pop() {
-            in_heap[(b % HEAP_BITS) / 64] &= !(1 << (b % 64));
+            in_heap[(b % heap_bits) / 64] &= !(1 << (b % 64));
+            if self.g.wrap != 0
+                && self.log2_stride == 0
+                && *COUNT_FEAS.get_or_init(|| std::env::var("PHAST_FEAS").is_ok())
+            {
+                self.count_feasible(b);
+            }
             if !self.place(b, depth, usize::MAX) {
                 ok = false;
                 if !allow_bump {
@@ -2101,7 +2875,10 @@ impl<'a, T: Rec> Sweep<'a, T> {
                 }
                 let end = slice_begin_of(&self, span_begin);
                 while self.value_to_clear < end {
-                    if self.value_to_clear % 64 == 0 && self.value_to_clear + 64 <= end {
+                    if self.log2_stride == 0
+                        && self.value_to_clear % 64 == 0
+                        && self.value_to_clear + 64 <= end
+                    {
                         self.used[(self.value_to_clear / 64) & self.cyc_wmask] = 0;
                         self.value_to_clear += 64;
                     } else {
@@ -2114,7 +2891,7 @@ impl<'a, T: Rec> Sweep<'a, T> {
                     let sz = self.size(b2);
                     if sz != 0 {
                         heap.push((self.priority(b2, sz), Reverse(b2)));
-                        in_heap[(b2 % HEAP_BITS) / 64] |= 1 << (b2 % 64);
+                        in_heap[(b2 % heap_bits) / 64] |= 1 << (b2 % 64);
                     }
                 }
             }
@@ -2156,6 +2933,33 @@ fn default_weights(seed_bits: u32, slice_len: usize) -> [i64; 7] {
         }
     };
     w.map(|x| x as i64)
+}
+
+/// Experimental: returns the table of the objective selected by the
+/// environment variable `PHAST_OBJ` (`sqrt`, `log`, `cbrt`, `sq`, `cap<x>`,
+/// `pow<e>`), or an empty table for the sum of positions.
+fn objective_table(len: usize) -> Vec<u32> {
+    let Ok(name) = std::env::var("PHAST_OBJ") else {
+        return vec![];
+    };
+    let f: Box<dyn Fn(f64) -> f64> = if name == "sqrt" {
+        Box::new(|x| x.sqrt() * 1000.0)
+    } else if name == "cbrt" {
+        Box::new(|x| x.cbrt() * 10000.0)
+    } else if name == "log" {
+        Box::new(|x| (1.0 + x).log2() * 100000.0)
+    } else if name == "sq" {
+        Box::new(|x| x * x / 16.0)
+    } else if let Some(c) = name.strip_prefix("cap") {
+        let c: f64 = c.parse().unwrap();
+        Box::new(move |x| x.min(c) * 1000.0)
+    } else if let Some(e) = name.strip_prefix("pow") {
+        let e: f64 = e.parse().unwrap();
+        Box::new(move |x| x.powf(e) * 1000.0)
+    } else {
+        return vec![];
+    };
+    (0..len).map(|x| f(x as f64).min(4e9) as u32).collect()
 }
 
 /// With wrapping and multiplier `m`, returns the step between the words of
@@ -2318,6 +3122,27 @@ mod tests {
     }
 
     #[test]
+    fn test_ring() {
+        for n in [0, 1, 2, 3, 10, 100, 1000, 5000, 10000] {
+            check::<Box<[u8]>>(n, PHastRBuilder::default().ring(4).bucket_size(5.0));
+        }
+        for r in [1, 2, 4, 8, 16] {
+            for depth in 0..=2 {
+                check::<Box<[u8]>>(
+                    300_000,
+                    PHastRBuilder::default()
+                        .ring(r)
+                        .bucket_size(5.0)
+                        .repair_depth(depth)
+                        .repair_candidates(if depth == 0 { 0 } else { 16 }),
+                );
+            }
+        }
+        check::<Box<[u8]>>(300_000, PHastRBuilder::default().ring(4).log2_slice_len(11));
+        check::<Box<[u8]>>(1_000_000, PHastRBuilder::default().ring(4).bucket_size(5.0));
+    }
+
+    #[test]
     fn test_medium() {
         check::<Box<[u8]>>(1_000_000, PHastRBuilder::default());
         check::<Box<[u8]>>(300_000, PHastRBuilder::default().repair_candidates(0));
@@ -2449,6 +3274,7 @@ mod tests {
                     .repair_depth(0)
                     .repair_candidates(0),
                 PHastRBuilder::default().wrap(3).bucket_size(5.0),
+                PHastRBuilder::default().ring(4).bucket_size(5.0),
             ] {
                 let phf: PHastR<CollidingKey> = builder.try_build(&keys, no_logging![]).unwrap();
                 let mut seen = vec![false; keys.len()];

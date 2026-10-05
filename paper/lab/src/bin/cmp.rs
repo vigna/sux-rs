@@ -327,10 +327,12 @@ fn main() {
                 let lam: f64 = p[4].parse().unwrap();
                 // The pattern field is either log2 R or w<M> (wrapping with
                 // multiplier M)
-                let (lr, wrap): (u32, u32) = match p.get(5) {
-                    Some(x) if x.starts_with('w') => (0, x[1..].parse().unwrap()),
-                    Some(x) => (x.parse().unwrap(), 0),
-                    None => (2, 0),
+                // (or g<R>: ring patterns)
+                let (lr, wrap, ring): (u32, u32, u32) = match p.get(5) {
+                    Some(x) if x.starts_with('w') => (0, x[1..].parse().unwrap(), 0),
+                    Some(x) if x.starts_with('g') => (0, 0, x[1..].parse().unwrap()),
+                    Some(x) => (x.parse().unwrap(), 0, 0),
+                    None => (2, 0, 0),
                 };
                 let storage = p
                     .get(6)
@@ -347,8 +349,11 @@ fn main() {
                     })
                     .bucket_size(lam)
                     .log2_patterns(lr)
-                    .wrap(wrap);
-                let pat = if wrap != 0 {
+                    .wrap(wrap)
+                    .ring(ring);
+                let pat = if ring != 0 {
+                    format!("G{ring}")
+                } else if wrap != 0 {
                     format!("W{wrap}")
                 } else {
                     format!("R={}", 1 << lr)
