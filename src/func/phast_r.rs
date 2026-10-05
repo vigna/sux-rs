@@ -728,17 +728,13 @@ impl PHastRBuilder {
     }
 
     /// Builds the levels.
-    ///
-    /// Signatures are stored with the index of their key, so that the
-    /// signatures of the keys bumped from a level can be computed for the
-    /// next one.
     #[allow(clippy::type_complexity)]
     fn build_levels<K: ?Sized + ToSig<[u64; 1]> + Sync, B: Borrow<K> + Sync>(
         &self,
         keys: &[B],
         pl: &mut impl ProgressLog,
     ) -> Result<(Vec<(LevelParams, Vec<u16>)>, Remap)> {
-        let hash = |idx: u64, seed: u64| K::to_sig(keys[idx as usize].borrow(), seed)[0];
+        let hash = |idx: usize, seed: u64| K::to_sig(keys[idx].borrow(), seed)[0];
         let n = keys.len();
         let mut levels: Vec<(LevelParams, Vec<u16>)> = vec![];
         let mut entries: Vec<usize> = vec![];
@@ -759,25 +755,26 @@ impl PHastRBuilder {
         // The first level
         pl.info(format_args!("Computing signatures..."));
         let geom = self.geometry(n, n, self.bucket_size);
-        let (sigs, bucket_begin) = group(
-            n,
-            |i| Sig {
-                h: hash(i as u64, self.seed),
-                idx: i as u64,
-            },
+        let sigs = group(n, |i| hash(i, self.seed), &geom);
+        let out = sweep_level(
+            &sigs.by_bucket,
+            &sigs.bucket_begin,
             &geom,
-        );
-        let out = sweep_level(&sigs, &bucket_begin, &geom, &weights(&geom), true)
-            .expect("bumping sweeps cannot fail");
-        drop((sigs, bucket_begin));
+            &weights(&geom),
+            true,
+        )
+        .expect("bumping sweeps cannot fail");
+        // The indices of the keys of the next level
+        let mut cur = bumped(&sigs.by_key, &out.seeds, &geom);
+        drop(sigs);
         pl.info(format_args!(
             "Level 0: {} keys, {} bumped ({:.3}%)",
             n,
-            out.bumped.len(),
-            100.0 * out.bumped.len() as f64 / n as f64
+            cur.len(),
+            100.0 * cur.len() as f64 / n as f64
         ));
         let holes = self::holes(&out.occupied, n);
-        debug_assert_eq!(holes.len(), out.bumped.len());
+        debug_assert_eq!(holes.len(), cur.len());
         levels.push((geom.level(), out.seeds));
         let mut hole_idx = 0;
         let mut last_hole = 0;
@@ -786,56 +783,68 @@ impl PHastRBuilder {
         // seed, so they are bumped, and separated by the signatures of the
         // following levels, which depend on a second hash, unless the keys
         // are equal: since equal keys are bumped from the first level, we
-        // detect them in the following levels, hashing keys with the same
-        // signature with a third seed.
-        let duplicates = |sigs: &[Sig], bucket_begin: &[usize]| {
+        // detect them in the following levels, hashing with a third seed
+        // the keys of a bucket with the same signature.
+        let duplicates = |sigs: &Signatures, cur: &[usize]| {
             let mut bucket = vec![];
-            bucket_begin.windows(2).any(|w| {
+            let mut repeated = vec![];
+            for w in sigs.bucket_begin.windows(2) {
                 bucket.clear();
-                bucket.extend_from_slice(&sigs[w[0]..w[1]]);
-                bucket.sort_unstable_by_key(|x| x.h);
-                bucket.chunk_by(|x, y| x.h == y.h).any(|equal| {
-                    let mut other: Vec<u64> = equal
-                        .iter()
-                        .map(|x| hash(x.idx, self.seed ^ 0xD6E8_FEB8_6659_FD93))
-                        .collect();
-                    other.sort_unstable();
-                    other.windows(2).any(|w| w[0] == w[1])
-                })
-            })
+                bucket.extend_from_slice(&sigs.by_bucket[w[0]..w[1]]);
+                bucket.sort_unstable();
+                repeated.extend(bucket.windows(2).filter(|w| w[0] == w[1]).map(|w| w[0]));
+            }
+            if repeated.is_empty() {
+                return false;
+            }
+            repeated.sort_unstable();
+            let mut other: Vec<(u64, u64)> = sigs
+                .by_key
+                .iter()
+                .zip(cur)
+                .filter(|&(h, _)| repeated.binary_search(h).is_ok())
+                .map(|(&h, &idx)| (h, hash(idx, self.seed ^ 0xD6E8_FEB8_6659_FD93)))
+                .collect();
+            other.sort_unstable();
+            other.windows(2).any(|w| w[0] == w[1])
         };
 
         // The following levels: signatures are computed from the two
         // hashes of each key and the salt of the level
-        let mut cur = out.bumped;
         while !cur.is_empty() {
             let k = cur.len();
             let group = |salt: u64, geom: &Geometry| {
                 group(
                     k,
                     |i| {
-                        let idx = cur[i].idx;
-                        let second = hash(idx, self.seed ^ SECOND_HASH);
-                        Sig {
-                            h: level_sig(hash(idx, self.seed), second, salt),
-                            idx,
-                        }
+                        let second = hash(cur[i], self.seed ^ SECOND_HASH);
+                        level_sig(hash(cur[i], self.seed), second, salt)
                     },
                     geom,
                 )
             };
-            let (level, seeds, occupied, bumped, m) = if k > LAST_LEVEL_THRESHOLD {
+            let (level, seeds, occupied, next, m) = if k > LAST_LEVEL_THRESHOLD {
                 let salt = level_salt(self.seed, levels.len(), 0);
                 let geom = self.geometry(k, k, self.bucket_size);
-                let (sigs, bucket_begin) = group(salt, &geom);
-                if duplicates(&sigs, &bucket_begin) {
+                let sigs = group(salt, &geom);
+                if duplicates(&sigs, &cur) {
                     bail!("Duplicate keys");
                 }
-                let out = sweep_level(&sigs, &bucket_begin, &geom, &weights(&geom), true)
-                    .expect("bumping sweeps cannot fail");
+                let out = sweep_level(
+                    &sigs.by_bucket,
+                    &sigs.bucket_begin,
+                    &geom,
+                    &weights(&geom),
+                    true,
+                )
+                .expect("bumping sweeps cannot fail");
+                let next: Vec<usize> = bumped(&sigs.by_key, &out.seeds, &geom)
+                    .into_iter()
+                    .map(|i| cur[i])
+                    .collect();
                 let mut level = geom.level();
                 level.salt = salt;
-                (level, out.seeds, out.occupied, out.bumped, geom.m)
+                (level, out.seeds, out.occupied, next, geom.m)
             } else {
                 // The last level does not bump: we enlarge the range and
                 // change the salt until we succeed
@@ -844,16 +853,20 @@ impl PHastRBuilder {
                     let m = k + k / 4 + 16 + (attempt as usize / 8) * (k / 8 + 8);
                     let geom = self.geometry(k, m, self.bucket_size.min(3.0));
                     let salt = level_salt(self.seed, levels.len(), attempt);
-                    let (sigs, bucket_begin) = group(salt, &geom);
-                    if attempt == 0 && duplicates(&sigs, &bucket_begin) {
+                    let sigs = group(salt, &geom);
+                    if attempt == 0 && duplicates(&sigs, &cur) {
                         bail!("Duplicate keys");
                     }
-                    if let Some(out) =
-                        sweep_level(&sigs, &bucket_begin, &geom, &weights(&geom), false)
-                    {
+                    if let Some(out) = sweep_level(
+                        &sigs.by_bucket,
+                        &sigs.bucket_begin,
+                        &geom,
+                        &weights(&geom),
+                        false,
+                    ) {
                         let mut level = geom.level();
                         level.salt = salt;
-                        break (level, out.seeds, out.occupied, out.bumped, geom.m);
+                        break (level, out.seeds, out.occupied, vec![], geom.m);
                     }
                     attempt += 1;
                     if attempt > 1000 {
@@ -866,8 +879,8 @@ impl PHastRBuilder {
                 "Level {}: {} keys, {} bumped ({:.3}%)",
                 levels.len(),
                 k,
-                bumped.len(),
-                100.0 * bumped.len() as f64 / k as f64
+                next.len(),
+                100.0 * next.len() as f64 / k as f64
             ));
 
             let mut level = level;
@@ -880,7 +893,7 @@ impl PHastRBuilder {
                 entries.push(last_hole);
             }
             levels.push((level, seeds));
-            cur = bumped;
+            cur = next;
         }
         debug_assert_eq!(hole_idx, holes.len());
 
@@ -920,12 +933,15 @@ impl PHastRBuilder {
 /// Number of keys below which a level is built without bumping.
 const LAST_LEVEL_THRESHOLD: usize = 4096;
 
-/// A key during construction: its signature for the current level and its
-/// index (used to compute its signatures for the following levels).
-#[derive(Debug, Clone, Copy)]
-struct Sig {
-    h: u64,
-    idx: u64,
+/// The signatures of the keys of a level (see [`group`]).
+struct Signatures {
+    /// The signatures, in the order of the keys.
+    by_key: Vec<u64>,
+    /// The signatures grouped by bucket, with buckets in order.
+    by_bucket: Vec<u64>,
+    /// The position in `by_bucket` of the first signature of each bucket,
+    /// followed by the number of keys.
+    bucket_begin: Vec<usize>,
 }
 
 /// The base-2 logarithm of the number of keys of the parts that [`group`]
@@ -936,25 +952,24 @@ const LOG2_PART_KEYS: u32 = 14;
 const MAX_LOG2_PARTS: u32 = 11;
 
 /// Computes the signatures of the keys of a level and groups them by
-/// bucket.
-///
-/// Returns the signatures, with those of each bucket in consecutive
-/// positions and buckets in order, and the position of the first signature
-/// of each bucket, followed by the number of keys. The signature of the
-/// key of index *i* in the level is `sig(i)`.
+/// bucket; the signature of the key of index *i* in the level is `sig(i)`.
 ///
 /// Signatures need not be sorted, so we just distribute them: first into
 /// parts made of a power of two of consecutive buckets, and then each part
 /// into its buckets, counting in both cases the number of signatures with
-/// each destination beforehand. The first phase processes a chunk of the
-/// keys for each thread, and writes sequentially into each part; the second
-/// phase processes parts in parallel, gathering the signatures of a part
-/// from all chunks, and writes into a region that fits the cache. With very
-/// large key sets (more than 2<sup>[`LOG2_PART_KEYS`] +
-/// [`MAX_LOG2_PARTS`]</sup> keys) that would require too many parts: in
-/// that case parts are larger, and the second phase distributes each part
-/// into smaller parts before distributing the latter into buckets.
-fn group(n: usize, sig: impl Fn(usize) -> Sig + Sync, g: &Geometry) -> (Vec<Sig>, Vec<usize>) {
+/// each destination beforehand. In the first phase each thread computes the
+/// signatures of a chunk of the keys, and then writes them sequentially
+/// into its own region of each part; in the second phase parts, which fit
+/// the cache, are processed in parallel. With very large key sets (more
+/// than 2<sup>[`LOG2_PART_KEYS`] + [`MAX_LOG2_PARTS`]</sup> keys) that
+/// would require too many parts: in that case parts are larger, and the
+/// second phase distributes each part into smaller parts before
+/// distributing the latter into buckets.
+///
+/// Besides the signatures, which take eight bytes per key, we need just a
+/// copy of them and a position for each bucket: in particular, signatures
+/// are not stored with the index of their key (see [`bumped`]).
+fn group(n: usize, sig: impl Fn(usize) -> u64 + Sync, g: &Geometry) -> Signatures {
     group_with(n, sig, g, LOG2_PART_KEYS, MAX_LOG2_PARTS)
 }
 
@@ -962,11 +977,11 @@ fn group(n: usize, sig: impl Fn(usize) -> Sig + Sync, g: &Geometry) -> (Vec<Sig>
 /// [`LOG2_PART_KEYS`] and [`MAX_LOG2_PARTS`].
 fn group_with(
     n: usize,
-    sig: impl Fn(usize) -> Sig + Sync,
+    sig: impl Fn(usize) -> u64 + Sync,
     g: &Geometry,
     log2_part_keys: u32,
     max_log2_parts: u32,
-) -> (Vec<Sig>, Vec<usize>) {
+) -> Signatures {
     let nb = g.buckets;
     // The number of parts that fit the cache: if they are too many for a
     // single pass we use two passes with about the same number of parts
@@ -980,6 +995,7 @@ fn group_with(
     // amount
     let shift = (usize::BITS - (nb - 1).leading_zeros()).saturating_sub(log2_parts);
     let parts = ((nb - 1) >> shift) + 1;
+    let part = |h: u64| g.bucket(h) >> shift;
     #[cfg(feature = "rayon")]
     let par = parallel(n);
     #[cfg(feature = "rayon")]
@@ -992,95 +1008,114 @@ fn group_with(
     let chunk_len = n;
     let chunk_len = chunk_len.max(1);
 
-    // The signatures are written here by the first phase in the order of
-    // the keys, and then by the second phase grouped by bucket
-    let mut sigs: Vec<Sig> = Vec::with_capacity(n);
-
-    // First phase: each chunk of the keys is hashed, and its signatures are
-    // distributed into parts; we return the signatures of the chunk and
-    // the position of the first signature of each part
-    type Chunk<'a> = (usize, &'a mut [MaybeUninit<Sig>]);
-    let distribute = |(chunk, sigs): Chunk| -> (Vec<Sig>, Vec<usize>) {
-        let mut part_begin = vec![0usize; parts + 1];
+    // First phase: the signatures of each chunk of the keys are computed,
+    // counting those of each part...
+    let mut by_key: Vec<u64> = Vec::with_capacity(n);
+    let hash = |(chunk, sigs): (usize, &mut [MaybeUninit<u64>])| -> Vec<usize> {
+        let mut part_len = vec![0usize; parts];
         for (i, x) in sigs.iter_mut().enumerate() {
-            let x = x.write(sig(chunk * chunk_len + i));
-            part_begin[(g.bucket(x.h) >> shift) + 1] += 1;
+            part_len[part(*x.write(sig(chunk * chunk_len + i)))] += 1;
         }
-        for p in 0..parts {
-            part_begin[p + 1] += part_begin[p];
-        }
-        let mut next = part_begin.clone();
-        let mut distributed = Vec::with_capacity(sigs.len());
-        let spare = distributed.spare_capacity_mut();
-        for x in sigs.iter() {
-            // SAFETY: we have just written this element
-            let x = unsafe { x.assume_init() };
-            let next = &mut next[g.bucket(x.h) >> shift];
-            spare[*next].write(x);
-            *next += 1;
-        }
-        // SAFETY: we counted the signatures of each part, so each of the
-        // first sigs.len() positions has been written exactly once
-        unsafe { distributed.set_len(sigs.len()) };
-        (distributed, part_begin)
+        part_len
     };
-    let spare = &mut sigs.spare_capacity_mut()[..n];
+    let spare = &mut by_key.spare_capacity_mut()[..n];
     #[cfg(feature = "rayon")]
-    let chunks: Vec<(Vec<Sig>, Vec<usize>)> = if par {
+    let part_len: Vec<Vec<usize>> = if par {
         use rayon::prelude::*;
         spare
             .par_chunks_mut(chunk_len)
             .enumerate()
-            .map(distribute)
+            .map(hash)
             .collect()
     } else {
-        spare
-            .chunks_mut(chunk_len)
-            .enumerate()
-            .map(distribute)
-            .collect()
+        spare.chunks_mut(chunk_len).enumerate().map(hash).collect()
     };
     #[cfg(not(feature = "rayon"))]
-    let chunks: Vec<(Vec<Sig>, Vec<usize>)> = spare
-        .chunks_mut(chunk_len)
-        .enumerate()
-        .map(distribute)
-        .collect();
+    let part_len: Vec<Vec<usize>> = spare.chunks_mut(chunk_len).enumerate().map(hash).collect();
+    // SAFETY: each of the first n positions has been written
+    unsafe { by_key.set_len(n) };
 
-    // Second phase: the signatures of each part are distributed into
-    // buckets
+    // ...and then they are written to the region of each part reserved to
+    // the chunk
     let mut part_begin = vec![0usize; parts + 1];
-    for (_, chunk_part_begin) in &chunks {
+    for part_len in &part_len {
         for p in 0..parts {
-            part_begin[p + 1] += chunk_part_begin[p + 1] - chunk_part_begin[p];
+            part_begin[p + 1] += part_len[p];
         }
     }
     for p in 0..parts {
         part_begin[p + 1] += part_begin[p];
     }
+    let mut by_bucket: Vec<u64> = Vec::with_capacity(n);
+    let mut regions: Vec<Vec<&mut [MaybeUninit<u64>]>> =
+        part_len.iter().map(|_| Vec::with_capacity(parts)).collect();
+    let mut spare = &mut by_bucket.spare_capacity_mut()[..n];
+    for p in 0..parts {
+        for (regions, part_len) in regions.iter_mut().zip(&part_len) {
+            let (region, rest) = spare.split_at_mut(part_len[p]);
+            regions.push(region);
+            spare = rest;
+        }
+    }
+    type Chunk<'a, 'b, 'c> = (&'a [u64], &'b mut Vec<&'c mut [MaybeUninit<u64>]>);
+    let distribute = |(sigs, regions): Chunk| {
+        for &h in sigs {
+            let region = &mut regions[part(h)];
+            let (first, rest) = std::mem::take(region)
+                .split_first_mut()
+                .expect("signatures were counted");
+            first.write(h);
+            *region = rest;
+        }
+    };
+    #[cfg(feature = "rayon")]
+    if par {
+        use rayon::prelude::*;
+        by_key
+            .par_chunks(chunk_len)
+            .zip(regions.par_iter_mut())
+            .for_each(distribute);
+    } else {
+        by_key
+            .chunks(chunk_len)
+            .zip(regions.iter_mut())
+            .for_each(distribute);
+    }
+    #[cfg(not(feature = "rayon"))]
+    by_key
+        .chunks(chunk_len)
+        .zip(regions.iter_mut())
+        .for_each(distribute);
+    drop(regions);
+    // SAFETY: we counted the signatures of each chunk for each part, so
+    // each of the first n positions has been written exactly once
+    unsafe { by_bucket.set_len(n) };
+
+    // Second phase: the signatures of each part are distributed into
+    // buckets, using a copy of the part
     let mut bucket_begin = vec![0usize; nb + 1];
     let mut part_sigs = Vec::with_capacity(parts);
-    let mut spare = &mut sigs.spare_capacity_mut()[..n];
+    let mut rest = &mut by_bucket[..];
     for p in 0..parts {
-        let (part, rest) = spare.split_at_mut(part_begin[p + 1] - part_begin[p]);
+        let (part, others) = rest.split_at_mut(part_begin[p + 1] - part_begin[p]);
         part_sigs.push(part);
-        spare = rest;
+        rest = others;
     }
-    type Part<'a, 'b> = (usize, (&'a mut &'b mut [MaybeUninit<Sig>], &'a mut [usize]));
-    let distribute = |(p, (sigs, begin)): Part| {
+    type Part<'a, 'b> = (usize, (&'a mut &'b mut [u64], &'a mut [usize]));
+    let distribute = |copy: &mut Vec<u64>, (p, (sigs, begin)): Part| {
         let first_bucket = p << shift;
-        let part = || {
-            chunks
-                .iter()
-                .map(move |(sigs, part_begin)| &sigs[part_begin[p]..part_begin[p + 1]])
-        };
         let log2_subparts = (sigs.len() >> log2_part_keys)
             .next_power_of_two()
             .ilog2()
             .min(shift);
+        if copy.len() < sigs.len() {
+            copy.resize(sigs.len(), 0);
+        }
+        let copy = &mut copy[..sigs.len()];
         if log2_subparts <= 1 {
             // The part fits the cache (or almost)
-            into_buckets(part(), sigs, begin, first_bucket, part_begin[p], g);
+            copy.copy_from_slice(sigs);
+            into_buckets(copy, sigs, begin, first_bucket, part_begin[p], g);
             return;
         }
         // We distribute the signatures of the part into smaller parts made
@@ -1088,32 +1123,25 @@ fn group_with(
         // part into its buckets
         let sub_shift = shift - log2_subparts;
         let subparts = ((begin.len() - 1) >> sub_shift) + 1;
+        let subpart = |h: u64| (g.bucket(h) - first_bucket) >> sub_shift;
         let mut subpart_begin = vec![0usize; subparts + 1];
-        for run in part() {
-            for x in run {
-                subpart_begin[((g.bucket(x.h) - first_bucket) >> sub_shift) + 1] += 1;
-            }
+        for &h in sigs.iter() {
+            subpart_begin[subpart(h) + 1] += 1;
         }
         for s in 0..subparts {
             subpart_begin[s + 1] += subpart_begin[s];
         }
         let mut next = subpart_begin.clone();
-        for run in part() {
-            for &x in run {
-                let next = &mut next[(g.bucket(x.h) - first_bucket) >> sub_shift];
-                sigs[*next].write(x);
-                *next += 1;
-            }
+        for &h in sigs.iter() {
+            let next = &mut next[subpart(h)];
+            copy[*next] = h;
+            *next += 1;
         }
-        let mut subpart: Vec<Sig> = vec![];
         for (s, begin) in begin.chunks_mut(1 << sub_shift).enumerate() {
-            let sigs = &mut sigs[subpart_begin[s]..subpart_begin[s + 1]];
-            subpart.clear();
-            // SAFETY: we have just written these elements
-            subpart.extend(sigs.iter().map(|x| unsafe { x.assume_init() }));
+            let range = subpart_begin[s]..subpart_begin[s + 1];
             into_buckets(
-                std::iter::once(&subpart[..]),
-                sigs,
+                &copy[range.clone()],
+                &mut sigs[range],
                 begin,
                 first_bucket + (s << sub_shift),
                 part_begin[p] + subpart_begin[s],
@@ -1128,46 +1156,49 @@ fn group_with(
             .par_iter_mut()
             .zip(bucket_begin[..nb].par_chunks_mut(1 << shift))
             .enumerate()
-            .for_each(distribute);
+            .for_each_init(Vec::new, |copy, part| distribute(copy, part));
     } else {
+        let mut copy = vec![];
         part_sigs
             .iter_mut()
             .zip(bucket_begin[..nb].chunks_mut(1 << shift))
             .enumerate()
-            .for_each(distribute);
+            .for_each(|part| distribute(&mut copy, part));
     }
     #[cfg(not(feature = "rayon"))]
-    part_sigs
-        .iter_mut()
-        .zip(bucket_begin[..nb].chunks_mut(1 << shift))
-        .enumerate()
-        .for_each(distribute);
+    {
+        let mut copy = vec![];
+        part_sigs
+            .iter_mut()
+            .zip(bucket_begin[..nb].chunks_mut(1 << shift))
+            .enumerate()
+            .for_each(|part| distribute(&mut copy, part));
+    }
     bucket_begin[nb] = n;
-    // SAFETY: we counted the signatures of each part and of each bucket,
-    // so each of the first n positions has been written exactly once
-    unsafe { sigs.set_len(n) };
-    (sigs, bucket_begin)
+    Signatures {
+        by_key,
+        by_bucket,
+        bucket_begin,
+    }
 }
 
-/// Distributes into buckets the signatures of a sequence of runs whose
-/// buckets are consecutive and start from `first_bucket`.
+/// Distributes into buckets a sequence of signatures whose buckets are
+/// consecutive and start from `first_bucket`.
 ///
 /// The signatures are written to `sigs`, and the position of the first
 /// signature of each bucket to `begin`, assuming that `sigs` starts at
 /// position `offset`.
 #[inline(always)]
-fn into_buckets<'a>(
-    runs: impl Iterator<Item = &'a [Sig]> + Clone,
-    sigs: &mut [MaybeUninit<Sig>],
+fn into_buckets(
+    source: &[u64],
+    sigs: &mut [u64],
     begin: &mut [usize],
     first_bucket: usize,
     offset: usize,
     g: &Geometry,
 ) {
-    for run in runs.clone() {
-        for x in run {
-            begin[g.bucket(x.h) - first_bucket] += 1;
-        }
+    for &h in source {
+        begin[g.bucket(h) - first_bucket] += 1;
     }
     let mut sum = 0;
     for begin in begin.iter_mut() {
@@ -1175,12 +1206,10 @@ fn into_buckets<'a>(
         *begin = sum;
         sum += size;
     }
-    for run in runs {
-        for &x in run {
-            let next = &mut begin[g.bucket(x.h) - first_bucket];
-            sigs[*next].write(x);
-            *next += 1;
-        }
+    for &h in source {
+        let next = &mut begin[g.bucket(h) - first_bucket];
+        sigs[*next] = h;
+        *next += 1;
     }
     // Each element is now the end of its bucket, that is, the beginning of
     // the following one
@@ -1190,6 +1219,37 @@ fn into_buckets<'a>(
         *begin = offset + prev;
         prev = end;
     }
+}
+
+/// Returns the positions in `sigs` of the signatures whose bucket has no
+/// seed, in increasing order.
+///
+/// Signatures are not stored with the index of their key: thus, to find
+/// the keys bumped from a level we scan the signatures in the order of the
+/// keys, and we check the bucket of each signature in a bit vector.
+fn bumped(sigs: &[u64], seeds: &[u16], g: &Geometry) -> Vec<usize> {
+    let word = |seeds: &[u16]| {
+        seeds
+            .iter()
+            .enumerate()
+            .fold(0u64, |word, (i, &seed)| word | (((seed == 0) as u64) << i))
+    };
+    let is_bumped = |bits: &[u64], i: usize| {
+        let b = g.bucket(sigs[i]);
+        bits[b / 64] >> (b % 64) & 1 != 0
+    };
+    #[cfg(feature = "rayon")]
+    if parallel(sigs.len()) {
+        use rayon::prelude::*;
+        let bits: Vec<u64> = seeds.par_chunks(64).map(word).collect();
+        return (0..sigs.len())
+            .into_par_iter()
+            .with_min_len(crate::RAYON_MIN_LEN)
+            .filter(|&i| is_bumped(&bits, i))
+            .collect();
+    }
+    let bits: Vec<u64> = seeds.chunks(64).map(word).collect();
+    (0..sigs.len()).filter(|&i| is_bumped(&bits, i)).collect()
 }
 
 /// The geometry of a level during construction.
@@ -1408,16 +1468,15 @@ struct Level {
     seeds: Vec<u16>,
     /// The used slots, as a set of bits.
     occupied: Vec<u64>,
-    /// The keys of the buckets that could not be placed.
-    bumped: Vec<Sig>,
 }
 
-/// Assigns seeds to the buckets of a level, possibly in parallel.
+/// Assigns seeds to the buckets of a level, possibly in parallel, given the
+/// signatures of its keys grouped by bucket (see [`group`]).
 ///
 /// Returns `None` if `allow_bump` is false and some bucket could not be
 /// placed.
 fn sweep_level(
-    keys: &[Sig],
+    keys: &[u64],
     bucket_begin: &[usize],
     g: &Geometry,
     weights: &[i64; 7],
@@ -1440,24 +1499,17 @@ fn sweep_level(
 
     let mut seeds = vec![0u16; nb];
     let mut occupied = vec![0u64; g.m.div_ceil(64)];
-    let mut bumped = vec![];
-    // Each sweep returns the slots it used (and those marked as used) and
-    // the keys it bumped
+    // Each sweep returns the slots it used (and those marked as used)
     let mut merge = |swept: Swept| {
         let occupied = occupied.iter_mut().skip(swept.occupied_begin / 64);
         for (occupied, word) in occupied.zip(&swept.occupied) {
             *occupied |= word;
         }
-        bumped.extend(swept.bumped);
     };
 
     if chunks == 1 {
         merge(Sweep::new(keys, bucket_begin, g, weights, 0, nb, &mut seeds).run(allow_bump)?);
-        return Some(Level {
-            seeds,
-            occupied,
-            bumped,
-        });
+        return Some(Level { seeds, occupied });
     }
 
     // Chunk boundaries; chunk i processes [bounds[i], bounds[i + 1] - gap),
@@ -1503,9 +1555,9 @@ fn sweep_level(
         let first = g.first_slice(lo);
         for (from, to) in [(before, lo), (hi, after)] {
             for x in &keys[bucket_begin[from]..bucket_begin[to]] {
-                let s = seeds[g.bucket(x.h)] as usize;
+                let s = seeds[g.bucket(*x)] as usize;
                 if s != 0 {
-                    let p = g.pos(x.h, s);
+                    let p = g.pos(*x, s);
                     if p >= first {
                         sw.set(p);
                     }
@@ -1526,11 +1578,7 @@ fn sweep_level(
         merge(swept?);
         seeds[bounds[i + 1] - gap..bounds[i + 1]].copy_from_slice(&gap_seeds);
     }
-    Some(Level {
-        seeds,
-        occupied,
-        bumped,
-    })
+    Some(Level { seeds, occupied })
 }
 
 /// Returns whether position `p` is set in the occupancy bitmap.
@@ -1757,8 +1805,8 @@ const MAX_FREE: u32 = 32;
 /// feasible for a bucket are obtained by rotating the ring of each key and
 /// combining the results (see [`Rings`]).
 struct Sweep<'a> {
-    /// The keys of the level, grouped by bucket.
-    keys: &'a [Sig],
+    /// The signatures of the keys of the level, grouped by bucket.
+    keys: &'a [u64],
     /// The position in `keys` of the first key of each bucket.
     bucket_begin: &'a [usize],
     g: &'a Geometry,
@@ -1779,8 +1827,6 @@ struct Sweep<'a> {
     /// starting from slot `occupied_begin` (a multiple of 64).
     occupied: Vec<u64>,
     occupied_begin: usize,
-    /// The keys of the buckets that could not be placed.
-    bumped: Vec<Sig>,
     /// The state of the search for the seed of a bucket (see
     /// [`state`](Self::state)).
     state: Vec<u64>,
@@ -1793,7 +1839,7 @@ struct Sweep<'a> {
 
 impl<'a> Sweep<'a> {
     fn new(
-        keys: &'a [Sig],
+        keys: &'a [u64],
         bucket_begin: &'a [usize],
         g: &'a Geometry,
         weights: &'a [i64; 7],
@@ -1819,7 +1865,6 @@ impl<'a> Sweep<'a> {
             first_slot,
             occupied: vec![],
             occupied_begin: first_slot,
-            bumped: vec![],
             state: Vec::with_capacity(free_words + rings.patterns * 3),
             nonzero: vec![(0, 0); free_words],
             back: Vec::with_capacity(64),
@@ -1832,7 +1877,7 @@ impl<'a> Sweep<'a> {
     }
 
     #[inline(always)]
-    fn bucket_keys(&self, b: usize) -> &'a [Sig] {
+    fn bucket_keys(&self, b: usize) -> &'a [u64] {
         &self.keys[self.bucket_begin[b]..self.bucket_begin[b + 1]]
     }
 
@@ -1964,8 +2009,8 @@ impl<'a> Sweep<'a> {
         // that the bit of index j is associated with the slot of the key
         // for the seed of index j, and combine the results: we obtain the
         // indices of the seeds for which some key is mapped to a used slot
-        for (k, key) in keys.iter().enumerate() {
-            let (slice_begin, offsets) = (g.slice_begin(key.h), g.offsets(key.h));
+        for (k, &key) in keys.iter().enumerate() {
+            let (slice_begin, offsets) = (g.slice_begin(key), g.offsets(key));
             let indices = &mut indices[(k >> log2_group) * patterns..][..patterns];
             let field = (k as u32 % (1 << log2_group)) << log2_field;
             for r in 0..patterns {
@@ -2066,7 +2111,7 @@ impl<'a> Sweep<'a> {
     /// ring: between two such indices only the first free index can be the
     /// best one.
     #[inline(never)]
-    fn search_many(&mut self, keys: &[Sig]) -> usize {
+    fn search_many(&mut self, keys: &[u64]) -> usize {
         let (g, rings) = (self.g, self.rings);
         let n = rings.len;
         let words = n.div_ceil(64);
@@ -2077,9 +2122,9 @@ impl<'a> Sweep<'a> {
             self.back.clear();
             self.back.extend(
                 keys.iter()
-                    .map(|key| {
-                        let offset = rings.offset(g.offsets(key.h), r);
-                        rings.ring(g.slice_begin(key.h), offset).1
+                    .map(|&key| {
+                        let offset = rings.offset(g.offsets(key), r);
+                        rings.ring(g.slice_begin(key), offset).1
                     })
                     .filter(|&x| x != 0)
                     .map(|x| (n - x) as u32),
@@ -2104,11 +2149,11 @@ impl<'a> Sweep<'a> {
     /// the same slot, in which case nothing happens and the method returns
     /// `false`.
     #[inline(always)]
-    fn place(&mut self, rings: &Rings, keys: &[Sig], r: usize, j: usize) -> bool {
+    fn place(&mut self, rings: &Rings, keys: &[u64], r: usize, j: usize) -> bool {
         let g = *self.g;
-        let bit = |key: &Sig| {
-            let offset = rings.offset(g.offsets(key.h), r);
-            let (first, x) = rings.ring(g.slice_begin(key.h), offset);
+        let bit = |key: u64| {
+            let offset = rings.offset(g.offsets(key), r);
+            let (first, x) = rings.ring(g.slice_begin(key), offset);
             let p = rings.slot(first, x, j);
             (rings.word(p), 1u64 << ((p >> rings.log2_stride) % 64))
         };
@@ -2116,13 +2161,13 @@ impl<'a> Sweep<'a> {
         // key of the bucket
         let used = &mut self.used[..];
         let mut collisions = 0;
-        for key in keys {
+        for &key in keys {
             let (w, mask) = bit(key);
             collisions |= used[w] & mask;
             used[w] |= mask;
         }
         if collisions != 0 {
-            for key in keys {
+            for &key in keys {
                 let (w, mask) = bit(key);
                 used[w] &= !mask;
             }
@@ -2135,7 +2180,7 @@ impl<'a> Sweep<'a> {
     /// distinct slots is found (this happens rarely).
     #[cold]
     #[inline(never)]
-    fn search_distinct(&mut self, keys: &[Sig]) -> usize {
+    fn search_distinct(&mut self, keys: &[u64]) -> usize {
         let rings = self.rings;
         let ring_bits = 64 * rings.len.div_ceil(64);
         let mut candidates = vec![];
@@ -2204,11 +2249,8 @@ impl<'a> Sweep<'a> {
         while let Some(b) = window.pop(span_begin) {
             let seed = self.search(rings, b);
             self.seeds[b - lo] = seed as u16;
-            if seed == 0 {
-                if !allow_bump {
-                    return None;
-                }
-                self.bumped.extend_from_slice(self.bucket_keys(b));
+            if seed == 0 && !allow_bump {
+                return None;
             }
             if b == span_begin {
                 let old_end = span_end(span_begin);
@@ -2242,7 +2284,6 @@ impl<'a> Sweep<'a> {
         Some(Swept {
             occupied_begin: self.occupied_begin,
             occupied: self.occupied,
-            bumped: self.bumped,
         })
     }
 }
@@ -2254,8 +2295,6 @@ struct Swept {
     /// `occupied_begin` (a multiple of 64).
     occupied: Vec<u64>,
     occupied_begin: usize,
-    /// The keys of the buckets that could not be placed.
-    bumped: Vec<Sig>,
 }
 
 /// Returns the index of the first bit set in `bits` in the range
@@ -2389,24 +2428,27 @@ mod tests {
                 let g = PHastRBuilder::default().geometry(n, n, 4.5);
                 let sig = |i: usize| {
                     let h = mix(i as u64 + 1, 0x9E37_79B9_7F4A_7C15);
-                    Sig {
-                        h: if skew { h >> (i % 8) } else { h },
-                        idx: i as u64,
-                    }
+                    if skew { h >> (i % 8) } else { h }
                 };
-                let (sigs, bucket_begin) = group_with(n, sig, &g, log2_part_keys, max_log2_parts);
-                assert_eq!(sigs.len(), n);
-                assert_eq!(bucket_begin.len(), g.buckets + 1);
-                assert_eq!(bucket_begin[g.buckets], n);
-                let mut seen = vec![false; n];
+                let sigs = group_with(n, sig, &g, log2_part_keys, max_log2_parts);
+                assert!(sigs.by_key.iter().enumerate().all(|(i, &h)| h == sig(i)));
+                assert_eq!(sigs.bucket_begin.len(), g.buckets + 1);
+                assert_eq!(sigs.bucket_begin[g.buckets], n);
                 for b in 0..g.buckets {
-                    for x in &sigs[bucket_begin[b]..bucket_begin[b + 1]] {
-                        assert_eq!(g.bucket(x.h), b);
-                        assert_eq!(x.h, sig(x.idx as usize).h);
-                        assert!(!std::mem::replace(&mut seen[x.idx as usize], true));
-                    }
+                    let bucket = &sigs.by_bucket[sigs.bucket_begin[b]..sigs.bucket_begin[b + 1]];
+                    assert!(bucket.iter().all(|&h| g.bucket(h) == b));
                 }
-                assert!(seen.iter().all(|&x| x));
+                let (mut by_key, mut by_bucket) = (sigs.by_key.clone(), sigs.by_bucket.clone());
+                by_key.sort_unstable();
+                by_bucket.sort_unstable();
+                assert_eq!(by_key, by_bucket);
+
+                // The keys of the buckets without a seed
+                let seeds: Vec<u16> = (0..g.buckets).map(|b| (b % 3) as u16).collect();
+                let expected: Vec<usize> = (0..n)
+                    .filter(|&i| g.bucket(sigs.by_key[i]) % 3 == 0)
+                    .collect();
+                assert_eq!(bumped(&sigs.by_key, &seeds, &g), expected);
             }
         }
     }
