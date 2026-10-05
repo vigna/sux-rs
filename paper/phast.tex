@@ -20,7 +20,7 @@
 \newcommand{\hi}{\operatorname{hi}}
 \newtheorem{proposition}{Proposition}
 
-\title{\PHastR: Bit--Parallel Perfect Hashing\\with Patterns and Cuckoo Repair}
+\title{\PHastR: Bit--Parallel Perfect Hashing\\with Rings of Patterns}
 \author{Sebastiano Vigna\\Dipartimento di Informatica, Università degli Studi di Milano}
 \date{}
 
@@ -34,24 +34,29 @@ with the fastest known queries: a key is mapped to a bucket by a linear
 function of its hash, and a fixed-width per-bucket seed selects the positions
 of the keys of the bucket inside small overlapping slices of the output range.
 \PHastP uses additive placement, so that feasible seeds can be found with
-bit-parallel operations, but it needs about $0.2$ more bits per key than
-\PHast. We analyze where this space goes: with a minimal output range, every
-bumped key leaves a hole that must be encoded, and the rigidity of additive
-placement both forces more bumping and causes \emph{self-collisions} that no
-seed can resolve. We then propose \PHastR, in which the seed selects one of $R$
-independent offset patterns in addition to a shift, and in which construction
-\emph{repairs} failing buckets by cuckoo-style eviction, detecting with a
-bit-parallel half adder the shifts at which exactly one key is blocked.
-Queries perform the same operations as in \PHastP, plus two shifts and a
-multiplication that does not depend on the access to the seed. With 8-bit seeds, \PHastR matches the space
-of \PHast (1.92 bits per key) while building $4.4$ times faster; with 10-bit
-seeds it reaches 1.85 bits per key, the space of \PHast, $12$ times faster, and
-improves on all \PHastP variants at the same construction time. Finally, we
-study the limits of repair: we prove that when keys can move only within
-windows of $W$ slots no placement of $n$ keys on $n$ slots, however found, can
-avoid bumping about $\sqrt{\pi n/2}-W$ keys, and we show that most failures of
-the sweep cannot be repaired at any depth, which explains why shallow repairs
-are sufficient.
+bit-parallel operations, but it needs more space than \PHast, even in its
+variants with wrapping. We analyze where this space goes: with a minimal
+output range, every bumped key leaves a hole that must be encoded, and since
+all seeds move the keys of a bucket by the same amount, two keys that collide
+for a seed collide for (almost) all seeds: even with wrapping, such
+\emph{self-collisions} account for almost $40\%$ of the bumped keys. We then
+propose \PHastR, in which the lowest bits of the seed select one of $R$
+independent in-slice offsets (\emph{patterns}), taken from bits that the
+computation of the bucket provides for free, and the seeds of a pattern move a
+key exactly once through a \emph{ring} of equally spaced slots of its slice.
+Self-collisions disappear, and queries need just two shifts more than those
+of \PHastP with wrapping. Moreover, storing the set of used
+slots by residue classes turns a ring into a block of consecutive bits, so the
+seeds of a pattern that are feasible for a bucket are found by rotating and
+combining one block per key. With 8-bit seeds, \PHastR uses $1.92$ bits per key
+against the $1.97$ of \PHastP with wrapping, it is faster to build, and it has
+the same query time; with 10-bit seeds it uses $1.85$ bits per key against
+$1.87$. Finally, we study the limits of the approach: we prove that when keys
+can move only within windows of $W$ slots no placement of $n$ keys on $n$
+slots, however found, can avoid bumping about $\sqrt{\pi n/2}-W$ keys, and we
+report evidence that the fraction of keys bumped by a sweep is bounded by the
+density that the sweep can reach, rather than by the flexibility of
+placement.
 \end{abstract}
 
 \section{Introduction}
@@ -81,36 +86,40 @@ trying all $2^S-1$ of them; construction takes hundreds of nanoseconds per key.
 feasibility of $64$ consecutive seeds of a bucket is the complement of the
 bitwise \textsc{or} of $64$-bit windows of the occupancy bitmap, one per key,
 and the best seed is the first feasible one. Construction becomes an order of
-magnitude faster, but with 8-bit seeds space grows from 1.92 to 2.12 bits per
-key; \emph{wrapping} variants partially close the gap at the cost of slower
-construction.
+magnitude faster, but with 8-bit seeds space grows from $1.92$ to $2.12$ bits
+per key. \PHastP \emph{with wrapping} uses $p(s,c)=(c+\delta s)\bmod L$ for a
+small multiplier $\delta$, so that keys do not leave their slice, and reduces
+space to $1.97$ bits per key ($\delta=3$) at the cost of a slower construction.
 
 This paper makes four contributions:
 \begin{itemize}
-\item an analysis of the space of \PHastP showing that its excess comes from
-bumping, and that a large part of it is caused by self-collisions inherent to
-additive placement (Section~\ref{sec:anatomy});
-\item \PHastR, a structure in which the seed chooses one of $R$ independent
-offset patterns and a shift, and whose construction repairs failing buckets
-by evicting the owner of the only blocking slot, detected by a bit-parallel
-half adder (Section~\ref{sec:phastr});
+\item an analysis of the space of \PHastP, with and without wrapping, showing
+that its excess comes from bumping, and that a large part of the bumping is
+caused by self-collisions inherent to additive placement
+(Section~\ref{sec:anatomy});
+\item \PHastR, a structure in which the lowest bits of the seed choose one of
+$R$ independent patterns, obtained at no cost from the computation of the
+bucket, and the seeds of a pattern move a key through a ring of slots; rings
+make it possible to find all feasible seeds of a pattern by rotating blocks of
+bits (Section~\ref{sec:phastr});
 \item an implementation in the Rust crate \texttt{sux} and an experimental
 comparison with the reference implementation of \PHast and \PHastP
 (Section~\ref{sec:experiments});
 \item a lower bound on the number of bumped keys that holds for every placement
-in which keys move within windows of fixed length, and an analysis of the
-limits of repair, showing that most failures of the sweep cannot be repaired
-at any depth, and that repair makes the sweep fail more often
-(Section~\ref{sec:limits}).
+in which keys move within windows of fixed length, and experimental evidence
+that the fraction of bumped keys is limited by the density that the sweep can
+reach: once self-collisions are gone, more flexible placements or searches do
+not reduce it significantly (Section~\ref{sec:limits}).
 \end{itemize}
 
 \section{The Space of \PHastP}
 \label{sec:anatomy}
 
-All measurements in this section refer to $10^7$ random keys, 8-bit seeds,
-expected bucket size $\lambda=5.25$ and slice length $L=512$, the
-space-optimal configuration of \PHastP. They have been obtained on the
-reference implementation of \PHastP (the \texttt{ph} crate, using GxHash as
+All measurements in this section refer to $10^7$ random keys and 8-bit seeds,
+with the space-optimal configurations of \PHastP (expected bucket size
+$\lambda=5.25$ and slice length $L=512$) and of \PHastP with wrapping
+($\delta=3$, $\lambda=5$, $L=1024$). They have been obtained on the
+reference implementation (the \texttt{ph} crate, using GxHash as
 hash function), whose first level we inspect through read-only accessors.
 
 \paragraph{Holes are bumped keys.}
@@ -125,250 +134,241 @@ following levels. With $S$-bit seeds the space is thus approximately
 \]
 and since the entropy of a random set of $\beta n$ holes is already about
 $\beta n(\lg(1/\beta)+\lg e)$, the encoding of holes cannot be
-substantially improved: \emph{the only lever is $\beta$}. In our
-configuration $\beta=7.6\%$, and bumping costs $0.59$ of the $2.12$ bits per
-key ($0.47$ for Elias--Fano, $0.13$ for the further levels). We will show in Section~\ref{sec:limits} that on large key
+substantially improved: \emph{the only lever is $\beta$}. Without wrapping
+$\beta=7.6\%$, and bumping costs $0.59$ of the $2.12$ bits per
+key ($0.47$ for Elias--Fano, $0.13$ for the further levels); with wrapping
+$\beta=4.3\%$, and bumping costs $0.37$ of the $1.97$ bits per key ($0.30$
+and $0.07$). We will show in Section~\ref{sec:limits} that on large key
 sets no placement, however found, can avoid bumping altogether.
 
 \paragraph{Additive placement is rigid.}
 Additive placement translates a fixed pattern: two keys of a bucket whose base
 positions coincide collide for every seed. For a bucket of size $k$ this
-happens with probability about $k(k-1)/(2L)$, so a fraction
+happens with probability about $k(k-1)/(2L)$, so without wrapping a fraction
 $\lambda^2/(2L)\approx 2.7\%$ of the buckets cannot be placed at all
 (we measure $2.6\%$); they are $38.5\%$ of the bumped buckets and contain
 about $(\lambda^2+2\lambda)/(2L)\approx 3.7\%$ of the keys (we measure
-$3.6\%$). Moreover,
-consecutive shifts are strongly correlated trials. Seeds, on the other hand,
-are almost incompressible: their empirical entropy is $7.71$ bits, because
-the shift mostly encodes how far the leftmost key of the bucket lies behind
-the full part of its slice.
+$3.6\%$). Wrapping does not change the picture: two keys with the same base
+position are moved together around their slices, and collide for all seeds
+but the few for which exactly one of them has wrapped. The slices of the
+variant with wrapping are longer, so these \emph{self-collisions} are half as
+frequent, but so is bumping: they happen in $1.2\%$ of the buckets, which
+contain $1.7\%$ of the keys, that is, $39\%$ of the bumped keys. Moreover,
+consecutive seeds are strongly correlated trials. Seeds, on the other hand,
+are almost incompressible: their empirical entropy is $7.71$ bits without
+wrapping and $7.89$ bits with wrapping.
 
 \section{\PHastR}
 \label{sec:phastr}
 
 \begin{figure}[t]
 \centering
-\begin{tikzpicture}[x=4.2mm,y=4.2mm,font=\footnotesize,>={Latex[length=1.6mm]},
-  base/.style={circle,draw,fill=white,inner sep=0pt,minimum size=3mm,font=\tiny},
-  chosen/.style={base,draw=red!70!black,fill=red!15,text=red!70!black,thick}]
-% The output range, with occupied slots shaded, and the slices of the keys
-\def\strip{%
-  \foreach \i in {2,3,4,6,11,12,17,19,20,21,22,24}
-    \fill[gray!40] (\i,0) rectangle ++(1,1);
-  \foreach \i in {0,...,26} \draw (\i,0) rectangle ++(1,1);
-  \foreach \i in {0,5,...,25} \node[below,font=\tiny] at (\i+.5,0) {$\i$};
-  \foreach \s/\y/\k in {2/4.2/1,3/3/2,5/1.8/3} {
-    \fill[gray!15] (\s,\y-.25) rectangle ++(16,.5);
-    \draw[gray] (\s,\y-.4) -- ++(0,.8);
-    \node[left] at (-.2,\y) {$x_\k$};
-  }}
-\begin{scope}
-  \strip
-  \node[anchor=west] at (-2.6,5.6) {(a) \PHastP};
-  \foreach \b/\y in {11/4.2,7/3,17/1.8} {
-    \draw[->,dashed] (\b+.5,\y-.2) -- (\b+3.5,1.1);
-    \fill (\b+.5,\y) circle (.2);
-  }
-  \draw[red!70!black,thick] (20.15,.15) -- (20.85,.85) (20.15,.85) -- (20.85,.15);
-\end{scope}
-\begin{scope}[yshift=-34mm]
-  \strip
-  \node[anchor=west] at (-2.6,5.6) {(b) \PHastR};
-  \foreach \b/\y/\r in {11/4.2/0,4/4.2/1,8/4.2/3,7/3/0,14/3/1,3/3/3,19/1.8/0,20/1.8/1,15/1.8/3}
-    \node[base] at (\b+.5,\y) {$\r$};
-  \foreach \b/\y in {15/4.2,10/3,6/1.8} {
-    \draw[->,dashed,red!70!black] (\b+.5,\y-.3) -- (\b+3.5,1.1);
-    \node[chosen] at (\b+.5,\y) {$2$};
-  }
-  \foreach \p in {18,13,9}
-    \draw[red!70!black,thick,fill=red!25] (\p,0) rectangle ++(1,1);
-\end{scope}
+\begin{tikzpicture}[x=5.4mm,y=5.4mm,font=\footnotesize,
+  p0/.style={circle,draw,fill=gray!35,inner sep=0pt,minimum size=3.9mm,font=\scriptsize},
+  p1/.style={circle,draw,fill=white,inner sep=0pt,minimum size=3.9mm,font=\scriptsize}]
+% Three keys with the same slice (L = 16), S = 3, R = 2: the offset for seed s
+% is (omega_r + 2s) mod 16, where r = s mod 2. Offsets: x1 (6, 13), x2 (6, 3),
+% x3 (1, 8).
+\foreach \y/\k in {5.2/1,3.8/2,2.4/3} {
+  \node[left] at (-.2,\y+.5) {$x_\k$};
+  \foreach \i in {0,...,15} \draw[gray!60] (\i,\y) rectangle ++(1,1);
+}
+\foreach \i in {0,4,8,12,15} \node[above,font=\tiny] at (\i+.5,6.2) {$\i$};
+% x1: pattern 0 (seeds 2, 4, 6) at 10, 14, 2; pattern 1 (1, 3, 5, 7) at 15, 3, 7, 11
+\foreach \p/\s in {10/2,14/4,2/6} \node[p0] at (\p+.5,5.7) {$\s$};
+\foreach \p/\s in {15/1,3/3,7/5,11/7} \node[p1] at (\p+.5,5.7) {$\s$};
+% x2: pattern 0 at 10, 14, 2; pattern 1 at 5, 9, 13, 1
+\foreach \p/\s in {10/2,14/4,2/6} \node[p0] at (\p+.5,4.3) {$\s$};
+\foreach \p/\s in {5/1,9/3,13/5,1/7} \node[p1] at (\p+.5,4.3) {$\s$};
+% x3: pattern 0 at 5, 9, 13; pattern 1 at 10, 14, 2, 6
+\foreach \p/\s in {5/2,9/4,13/6} \node[p0] at (\p+.5,2.9) {$\s$};
+\foreach \p/\s in {10/1,14/3,2/5,6/7} \node[p1] at (\p+.5,2.9) {$\s$};
+% Used slots, and the slots chosen by seed 5
+\node[left] at (-.2,.5) {used};
+\foreach \i in {0,3,4,6,8,10,12,15} \fill[gray!40] (\i,0) rectangle ++(1,1);
+\foreach \i in {0,...,15} \draw (\i,0) rectangle ++(1,1);
+\foreach \p/\k in {7/1,13/2,2/3}
+  \draw[red!70!black,thick,fill=red!25] (\p,0) rectangle ++(1,1)
+    node[midway,font=\tiny,text=red!70!black] {$x_\k$};
+\foreach \p/\y in {7/5.7,13/4.3,2/2.9}
+  \draw[red!70!black,thick] (\p+.5,\y) circle (2.4mm);
 \end{tikzpicture}
-\caption{\label{fig:placement}Placing a bucket with three keys $x_1$, $x_2$,
-$x_3$ using $4$-bit seeds; gray bars are the slices of the keys ($L=16$), and
-shaded slots are occupied. (a) In \PHastP each key has a single base position
-(dot), and the seed $s$ translates all bases by $s-1$: the $15$ seeds translate
-the same rigid pattern, and in this example all of them hit an occupied slot
-(the dashed arrows show $s=4$), so the bucket is bumped. (b) In \PHastR each key
-has $R=4$ independent base positions, one per pattern (circles), and the seed
-selects a pattern $r$ and a shift $d\in[0\..4)$; here the only feasible choice
-is $r=2$ and $d=3$, that is, $s=dR+r=14$.}
-\end{figure}
-
-\begin{figure}[t]
-\centering
-\begin{tikzpicture}[x=4.2mm,y=4.2mm,font=\footnotesize,>={Latex[length=1.6mm]}]
-% Bits of the words w_1, w_2, w_3 (bit d is the occupancy of the slot at
-% shift d from the base position of the key) and of the half adder
-\def\bits#1#2#3{% row name, y, bits
-  \node[left] at (-.2,#2+.5) {#1};
-  \foreach \v [count=\d from 0] in {#3} {
-    \ifnum\v=1 \fill[gray!40] (\d,#2) rectangle ++(1,1); \fi
-    \draw (\d,#2) rectangle ++(1,1);
-    \node[font=\tiny] at (\d+.5,#2+.5) {$\v$};
-  }}
-\begin{scope}
-  \node[anchor=west] at (-4.6,8.6) {(a)};
-  \foreach \d in {0,...,15} \node[font=\tiny] at (\d+.5,7.6) {$\d$};
-  \node[left,font=\tiny] at (-.2,7.6) {$d$};
-  \bits{$w_1$}{6}{1,1,0,1,1,0,1,1,1,0,1,0,1,1,1,1}
-  \bits{$w_2$}{5}{1,0,0,1,0,1,1,1,0,1,1,1,1,0,1,1}
-  \bits{$w_3$}{4}{0,1,1,1,1,1,0,1,1,0,0,1,1,0,1,1}
-  \bits{$u$}{2.5}{1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}
-  \bits{$t$}{1.5}{1,1,0,1,1,1,1,1,1,0,1,1,1,0,1,1}
-  \bits{$u\land\lnot t$}{.5}{0,0,1,0,0,0,0,0,0,1,0,0,0,1,0,0}
-  \foreach \d in {2,9,13}
-    \draw[red!70!black,thick,fill=red!25] (\d,.5) rectangle ++(1,1)
-      node[midway,font=\tiny,text=red!70!black] {$1$};
-\end{scope}
-\begin{scope}[yshift=-32mm]
-  \node[anchor=west] at (-4.6,6.2) {(b)};
-  \foreach \y/\name in {3.5/before,0/after} {
-    \node[left] at (-.2,\y+.5) {\name};
-    \foreach \i in {0,1,4,5,7,10,12,13,15,16,19,20}
-      \fill[gray!40] (\i,\y) rectangle ++(1,1);
-  }
-  % Before: the targets of the bucket at d = 9; the slot of x_2 is owned by Y
-  \foreach \p/\k in {3/1,9/2,14/3}
-    \node[font=\tiny,text=red!70!black] at (\p+.5,5.05) {$x_\k$};
-  \foreach \p in {9,17} {
-    \fill[gray!75] (\p,3.5) rectangle ++(1,1);
-    \node[font=\tiny,text=white] at (\p+.5,4) {$Y$};
-  }
-  \foreach \i in {0,...,21} \draw (\i,3.5) rectangle ++(1,1);
-  \foreach \p in {3,9,14} \draw[red!70!black,thick] (\p,3.5) rectangle ++(1,1);
-  % After: the bucket is placed, and Y is placed again with a new seed
-  \foreach \p/\k in {3/1,9/2,14/3}
-    \draw[red!70!black,thick,fill=red!25] (\p,0) rectangle ++(1,1)
-      node[midway,font=\tiny,text=red!70!black] {$x_\k$};
-  \foreach \p in {6,18} {
-    \fill[gray!75] (\p,0) rectangle ++(1,1);
-    \node[font=\tiny,text=white] at (\p+.5,.5) {$Y$};
-  }
-  \foreach \i in {0,...,21} \draw (\i,0) rectangle ++(1,1);
-  \draw[->,dashed] (9.5,3.4) -- (6.5,1.1);
-  \draw[->,dashed] (17.5,3.4) -- (18.5,1.1);
-\end{scope}
-\end{tikzpicture}
-\caption{\label{fig:search}Search and repair. (a) The occupancy words $w_1$,
-$w_2$, $w_3$ read at the base positions of the three keys of a bucket for a
-given pattern ($16$ shifts shown instead of $64$): bit $d$ of $w_i$ tells
-whether the slot at shift $d$ from the base position of the $i$-th key is
-occupied. The first zero of $u=w_1\lor w_2\lor w_3$ would be the smallest
-feasible shift, but here there is none. The half adder accumulates in $t$ the
-shifts at which at least two keys are blocked, so $u\land\lnot t$ marks the
-shifts at which exactly one key is blocked: $d=2$ (by $x_3$), $d=9$ (by
-$x_2$), and $d=13$ (by $x_1$). (b) Repair with $d=9$: the owner array shows
-that the slot blocking $x_2$ belongs to a bucket $Y$ with two keys; $Y$ is
-evicted, the bucket is placed, and $Y$ is placed again with a new seed. Had $Y$
-found no place, the eviction would have been undone, and the next candidate
-would have been tried.}
+\caption{\label{fig:placement}The slots of the three keys $x_1$, $x_2$, $x_3$
+of a bucket for each seed, with $3$-bit seeds, $R=2$ patterns, and slices of
+length $L=16$ (for simplicity, the three slices coincide). Even seeds (gray)
+select pattern $0$, odd seeds (white) pattern $1$, and seed $s$ moves a key
+by $2s$ slots, modulo $16$, from the offset of its pattern: the seeds of a
+pattern thus move a key by multiples of the stride $T=4$ through a ring of
+four slots. In pattern $0$ the keys $x_1$ and $x_2$ have the same offset, so
+they collide for all even seeds, as they would do for all seeds in \PHastP; in
+pattern~$1$ they do not. The last row shows the slots that are already used:
+the only feasible seed is $5$.}
 \end{figure}
 
 \paragraph{Placement.}
-Each key has a 64-bit hash $h$, from which we derive a second 64-bit value $o$
-(see below). Let $R=2^\rho$ be the number of
-\emph{patterns}, $L=2^\ell$ the slice length with $\ell\le 64/R$, and
-$D=2^S/R$ the number of shifts. The bucket of a key is
-$\hi(hB)$ and the start of its slice is $\sigma(h)=\hi(h(m-L-D+2))$, where
-$\hi(x)$ denotes the 64 most significant bits of a 128-bit product. The
-$r$-th pattern assigns to the key the in-slice offset
+Each key has a 64-bit hash $h$. Let $B$ be the number of buckets, which we
+require to be odd, and denote with $\hi(x)$ and $\operatorname{lo}(x)$ the
+upper and lower $64$ bits of a $128$-bit product. The bucket of a key is
+$\hi(hB)$, and the start of its slice is $\sigma(h)=\hi(h(m-L+1))$, as in
+\PHastP with wrapping. Let moreover $R=2^\rho$ be the number of
+\emph{patterns}, and $L=2^\ell$ the slice length, with $R\ell\le 64$ and, for
+the time being, $\ell\geq S$. We let $o=\operatorname{lo}(hB)$: the $r$-th
+pattern assigns to the key the in-slice offset
 \[
 \omega_r(o)=\bigl\lfloor o/2^{64r/R}\bigr\rfloor \bmod L,
 \]
-that is, the $\ell$ bits of $o$ starting at bit $64r/R$: different patterns
-are independent. A seed $s\in[1\..2^S)$ encodes the pair $r=s\bmod R$,
-$d=\lfloor s/R\rfloor$ (the pair $r=d=0$ is not available), and the key is
-mapped to
+that is, the $\ell$ bits of $o$ starting at bit $64r/R$. A seed
+$s\in[1\..2^S)$ selects the pattern $r=s\bmod R$, and the key is mapped to
 \[
-\sigma(h)+\omega_r(o)+d.
+\sigma(h)+\bigl(\omega_r(o)+s\cdot 2^{\ell-S}\bigr)\bmod L.
 \]
-In other words, whereas in \PHastP all seeds translate the same rigid pattern
-of base positions, in \PHastR the seed first chooses among $R$ independent
-patterns, and then translates the chosen one (Figure~\ref{fig:placement}).
-As in \PHast, seed $0$ means that the bucket is bumped. A query computes the
-same quantities as in \PHastP, plus two shifts and the multiplication
-deriving $o$ (see below), which is independent of the access to the seed. The encoding
-makes it unnecessary to extract $r$: since $(s\cdot 64/R)\bmod 64=r\cdot 64/R$,
-$\omega_r(o)$ is obtained by shifting $o$ right by $s\cdot 64/R$ modulo $64$
-and masking, whereas $d$ is $s$ shifted right by $\rho$ bits. We set
-$o=h\cdot c \bmod 2^{64}$ for an odd constant $c$. Keys of the same bucket share the
-upper ${\approx}\lg B$ bits of $h$, and their slices start at about the same
-position; but bit $j$ of $o$ depends on all bits $0$, \dots, $j$ of $h$, so
-every offset depends on the lower bits of $h$, which vary independently among
-the keys of a bucket. (Since $\omega_{R-1}$ uses bits of $o$ up to $63$, taking
-$o=h$ would make the last pattern nearly constant within a bucket.) With $R=1$ and $o=h$, \PHastR is essentially \PHastP.
+As in \PHast, seed $0$ means that the bucket is bumped.
+
+The seeds of pattern $r$ are $r$, $r+R$, $r+2R$,~\dots, so they move a key by
+multiples of the \emph{stride} $T=RL/2^S$: as the seed varies, the key goes
+exactly once through the $2^S/R=L/T$ slots of its slice that are congruent to
+$\sigma(h)+\omega_r(o)+r2^{\ell-S}$ modulo $T$. We call these slots a
+\emph{ring} (Figure~\ref{fig:placement}). In other words, whereas in \PHastP
+all seeds move the same rigid pattern of base positions, in \PHastR the seed
+first chooses among $R$ patterns, and then moves the keys along the rings of
+the chosen one. Two keys of a bucket collide for all seeds of a pattern if
+they are mapped to the same slot by the first one, but since the offsets
+of different patterns are disjoint blocks of bits of $o$, this happens
+independently in each pattern: a bucket of size $k$ has no usable pattern with
+probability about $(k(k-1)/2L)^R$, so self-collisions disappear already for
+$R=2$. Moreover, different patterns provide (almost) independent trials.
+
+The value $o$ costs nothing, as it is the other half of the product that
+yields the bucket, and it is a good source of offsets: for the keys of bucket
+$b$ we have $hB=b\cdot2^{64}+o$, so $o$ is the position of $h$ in the interval
+of hashes of the bucket, scaled to $64$ bits, and it is uniformly distributed
+if $h$ is. (Since $B$ is odd, also the lowest bits of $o$ depend bijectively
+on those of $h$.) In particular, the offsets of the keys of a bucket are
+independent of each other for every pattern, which would not be true of
+blocks of bits of $h$, as the keys of a bucket share the upper
+${\approx}\lg B$ bits of $h$.
+
+\paragraph{Queries.}
+A query computes $hB$, reads the seed $s$ of bucket $\hi(hB)$, and, unless
+$s=0$, computes the formula above. There is no need to extract $r$: since
+$(s\cdot 64/R)\bmod 64=r\cdot 64/R$, the offset $\omega_r(o)$ is obtained by
+shifting $o$ right by $s\cdot 64/R$ modulo $64$, and the lower bits of the
+result are extracted by the reduction modulo $L$ that follows the addition of
+$s\cdot2^{\ell-S}$. After reading the seed, \PHastP with wrapping multiplies
+it by $\delta$, adds the hash, reduces the result modulo $L$, and adds
+$\sigma(h)$; \PHastR performs the same operations, with a shift in place of
+the multiplication and $o$ in place of the hash, after computing
+$s\cdot 64/R$ and shifting $o$: two shifts more. With $R=1$ and
+$\delta=2^{\ell-S}$, \PHastR is essentially \PHastP with wrapping (which,
+however, uses odd multipliers).
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[x=5.4mm,y=5.4mm,font=\footnotesize,>={Latex[length=1.6mm]}]
+\def\bits#1#2#3#4{% name, x, y, bits
+  \node[left] at (#2-.2,#3+.5) {#1};
+  \foreach \v [count=\d from 0] in {#4} {
+    \ifnum\v=1 \fill[gray!40] (#2+\d,#3) rectangle ++(1,1); \fi
+    \draw (#2+\d,#3) rectangle ++(1,1);
+    \node[font=\scriptsize] at (#2+\d+.5,#3+.5) {$\v$};
+  }}
+% (a) The rows of the set of used slots of Figure 1
+\node[anchor=west] at (-3.4,6.4) {(a)};
+\node[font=\tiny] at (2,5.6) {index};
+\foreach \d in {0,...,3} \node[font=\tiny] at (\d+.5,4.9) {$\d$};
+\bits{row $0$}{0}{3.6}{1,1,1,1}
+\bits{row $1$}{0}{2.4}{0,0,0,0}
+\bits{row $2$}{0}{1.2}{0,1,1,0}
+\bits{row $3$}{0}{0}{1,0,0,1}
+\foreach \y/\l in {3.6/{0, 4, 8, 12},2.4/{1, 5, 9, 13},1.2/{2, 6, 10, 14},0/{3, 7, 11, 15}}
+  \node[right,font=\tiny] at (4.2,\y+.5) {slots \l};
+% (b) Pattern 1: rings rotated by the index of the first seed
+\begin{scope}[xshift=76mm]
+\node[anchor=west] at (-4.4,6.4) {(b)};
+\node[font=\tiny] at (2,5.6) {seed};
+\foreach \s [count=\d from 0] in {1,3,5,7} \node[font=\tiny] at (\d+.5,4.9) {$\s$};
+\bits{$x_1$}{0}{3.6}{1,1,0,0}
+\bits{$x_2$}{0}{2.4}{0,0,0,0}
+\bits{$x_3$}{0}{1.2}{1,0,0,1}
+\bits{\textsc{or}}{0}{-.3}{1,1,0,1}
+\draw[red!70!black,thick,fill=red!25] (2,-.3) rectangle ++(1,1)
+  node[midway,font=\tiny,text=red!70!black] {$0$};
+\foreach \y/\l in {3.6/{row $3$ rotated by $3$},2.4/{row $1$ rotated by $1$},1.2/{row $2$ rotated by $2$}}
+  \node[right,font=\tiny] at (4.2,\y+.5) {\l};
+\end{scope}
+\end{tikzpicture}
+\caption{\label{fig:search}Searching for the seeds of pattern $1$ that are
+feasible for the bucket of Figure~\ref{fig:placement}. (a) The set of used
+slots is stored by residue classes modulo the stride $T=4$: bit $q$ of row
+$\varrho$ is associated with slot $qT+\varrho$. (b) The ring of a key is a
+row (in general, a block of consecutive bits of a row), and the seeds of the
+pattern go through its bits cyclically, starting from the index of the slot of
+the first seed: for example, seed $1$ maps $x_1$ to slot $15$, which has
+index $3$ in row $3$. The bits of the rings, rotated by these indices, are
+combined by a bitwise \textsc{or}: the zeros of the result are the feasible
+seeds.}
+\end{figure}
 
 \paragraph{Search.}
-For each pattern, the best shift is found as in \PHastP: the occupancy words
-starting at the base positions $\sigma(h_i)+\omega_r(o_i)$ of the $k$ keys are
-\textsc{or}ed, and the first zero bit is the smallest feasible shift
-(Figure~\ref{fig:search}(a)); for
-$S=8$ and $R=4$ we have $D=64$, so one word per key suffices. Among patterns, we keep the one minimizing
-the sum of positions, skipping a pattern as soon as the sum of its bases
-exceeds the best sum found. Since all $R$ patterns of a bucket collide only
-with probability about $(k(k-1)/2L)^R$, self-collisions disappear for
-$R\ge2$, and independent patterns decorrelate the trials.
+In \PHastP the positions of a key for consecutive seeds are consecutive slots,
+so the seeds that are feasible for a bucket are found by combining windows of
+the bitmap of used slots; with wrapping, however, the range of seeds must be
+split at the points at which some key wraps, and with $\delta>1$ only one bit
+out of $\delta$ of each window is meaningful. In \PHastR the positions of a
+key for the seeds of a pattern are $T$ slots apart, but since $T$ is a power
+of two and it divides $L$ we can make them adjacent again, and get rid of
+wrapping at the same time: we store the set of used slots by residue classes
+modulo $T$, that is, as $T$ \emph{rows} in which bit $q$ of row $\varrho$ is
+associated with slot $qT+\varrho$. The ring of a key is then a block of $L/T$
+consecutive bits of a row, and the seed of index $j$ of a pattern (i.e.,
+$jR+r$) maps the key to the bit of its ring of index $(x+j)\bmod (L/T)$, where
+$x$ is the index for the first seed. Thus, the bits telling which seeds of a
+pattern map a key to a used slot are the bits of its ring rotated by $x$, and
+combining them for all the keys of the bucket by a bitwise \textsc{or} we
+obtain a block whose zeros are the feasible seeds
+(Figure~\ref{fig:search}). For $S=8$ and $R=4$ a ring has $64$ slots,
+whatever the slice length: each pattern requires just reading and rotating a
+word for each key. Note that in the first pattern the first seed is $0$, which
+is not available.
 
-\paragraph{Repair.}
-When no pattern admits a feasible shift, \PHastR tries to make room. Using
-the same words $w_1$, \dots, $w_k$, the half adder
-\[
-t \leftarrow t \lor (u\land w_i),\qquad u\leftarrow u\lor w_i
-\]
-computes in $u\land\lnot t$ the shifts at which \emph{exactly one} key is
-blocked. For each such candidate, in order of increasing sum of positions, an
-\emph{owner} array parallel to the cyclic occupancy bitmap gives the bucket
-$Y$ occupying the blocking slot. If $Y$ is still entirely inside the active
-part of the window, we evict $Y$, place the current bucket, and place $Y$
-again (Figure~\ref{fig:search}(b)); if $Y$ fails, it may in turn evict another bucket (with a quarter of
-the candidates), up to a maximum depth. If $Y$ cannot be placed, the eviction
-is undone and the next candidate (we keep one per distinct $Y$) is tried. A
-failing bucket is bumped only after $16$ unsuccessful candidates. Repair turns
-the greedy sweep of \PHast into a local search, as in PtrHash~\cite{RagPTR},
-but it is triggered only by failures, and bumping remains as a safety valve:
-the structure stays minimal and needs no slack in the output range.
+Among feasible seeds we choose, as in \PHast, the one minimizing the sum of
+the slots of the keys. In a pattern, the sum increases with the index of the
+seed, except at the indices at which some key goes back to the first slot of
+its ring: thus, we need to consider only the first feasible index and, for
+each key, the first feasible index after the key went back, that is, at most
+$k+1$ candidates per pattern for a bucket of size $k$. Finally, we check that
+the best candidate does not map two keys of the bucket to the same slot, and
+otherwise move to the next one.
 
 \paragraph{Slice length.}
-As in \PHast, the slice length depends on the size of the level: the first
-and last $L+D$ positions are reached by fewer slices than the others, so
-small levels need shorter slices. We use $L=64$ when the range of the level
-is smaller than $2500$, $128$ below $4000$, $256$ below $70\,000$, $512$
-below $600\,000$, and a maximum, which is a parameter, above (and always
-$L\le m/2$); the thresholds have been tuned experimentally for $S=8$. With
-repair, longer slices than in \PHastP pay off for large levels: for $S=8$ the
-best maximum is $L=1024$, whereas \PHastP uses $L=512$. \PHast uses a similar
-table with different thresholds ($64$ below $1300$, $128$ below $9500$, $256$
-below $12\,000$, $512$ below $140\,000$, then $1024$ for $S<12$), whereas
-\PHastP uses a fixed length depending only on $S$, limited by the range of
-the level. The priority weights used by the sweep depend on the slice length,
-and are chosen for each level accordingly; those for $S=8$ and $L=512$ or
-$L=1024$, and for $S=10$ and $L=2048$, have been retuned for \PHastR by
-coordinate descent (the others are those of \PHastP).
+The slice length of a level with output range $m$ is the smallest power of two
+larger than $m/2$, up to a maximum, which is a parameter: we use $L=1024$ for
+$S=8$ and $L=2048$ for $S=10$, as \PHastP with wrapping does. The slices of
+small levels can thus be shorter than the number of seeds, that is, $\ell<S$:
+in this case seed $s$ moves a key by $s$, so the stride is $R$, rings have
+$L/R$ slots (a single slot if $L<R$), and different seeds of a pattern map
+the keys of a bucket to the same slots. The priority of a bucket has the same
+form as in \PHast (a weight depending on the size of the bucket, extrapolated
+linearly beyond size $7$, minus $1024$ times the index of the bucket), and we
+use the weights of \PHastP with wrapping.
 
 \paragraph{Levels.}
 As in \PHastP, keys of bumped buckets are hashed again at each following
-level with a different seed, and the new hash $h'$ determines their bucket and
-slice. Offsets are provided by $o\oplus h'$, where $o$ is the value of the
-first level: a query reaching further levels has already computed $o$ (in
-parallel with the access to the seed of the first level), and needs a further
-hash of the key at each level, but no further multiplication. Since $h'$ is
-independent of $h$, the offsets of a key at each level are independent of
-those of the previous levels and of the new bucket and slice. Levels after the
-first use the same scheme with range equal to their number of keys. As in
-\PHastP, an Elias--Fano sequence maps the outputs of the levels after the
-first to the holes of the first level.
+level with a different seed, and the new hash determines their bucket, their
+slice, and their offsets. Levels after the first use the same scheme with
+range equal to their number of keys, and an Elias--Fano sequence maps their
+outputs to the holes of the first level.
 
 \paragraph{Colliding signatures.}
-Keys with the same $64$-bit hash $h$ at the first level have the same slice and
-the same offsets, so their bucket self-collides for every seed and it is
-bumped; at the following levels they are hashed again, and thus separated. As
-in \PHastP, $64$-bit hashes are therefore sufficient for any number of keys,
-and no larger signature is necessary. Construction would fail only if two
-keys had the same hash at all levels, which happens in practice only for
-duplicate keys: to report duplicates before building the levels, keys whose
-hashes at the first level coincide are hashed again with a different seed,
-and keys whose hashes coincide again are considered duplicates.
+Keys with the same $64$-bit hash at the first level have the same slice and
+the same offsets in all patterns, so they collide for every seed and their
+bucket is bumped; at the following levels they are hashed again, and thus
+separated. As in \PHastP, $64$-bit hashes are therefore sufficient for any
+number of keys, and no larger signature is necessary. Construction would fail
+only if two keys had the same hash at all levels, which happens in practice
+only for duplicate keys: to report duplicates before building the levels, keys
+whose hashes at the first level coincide are hashed again with a different
+seed, and keys whose hashes coincide again are considered duplicates.
 
 \paragraph{Last level.}
 When at most $4096$ keys are left, a last level uses the same placement
@@ -379,18 +379,15 @@ when at most $8192$ keys are left ($4096$ for the variants with wrapping), it
 builds a level of regular \PHast (pseudorandom placement, all $256$ seeds of
 $8$ bits tried for each bucket, expected bucket size $4$, no bumping) with
 range $1.2(k+10)$, where $k$ is the number of keys, rehashing all keys with a
-new seed in case of failure; queries reaching this level hash the key again.
-In particular, for small sets (up to about $10^5$ keys, as \PHastP bumps
-$7.6\%$ of the keys) all bumped keys go directly from the first level to a
-level of regular \PHast.
+new seed in case of failure.
 
 \paragraph{Parallel construction.}
 As in \PHast, buckets are split into chunks separated by gaps of
 \[
-\left\lfloor \frac{(L+D-1)B}{m-L-D+2}\right\rfloor+1
+\left\lfloor \frac{LB}{m-L+1}\right\rfloor+1
 \]
-buckets: the slice of bucket $b$ starts at about $b(m-L-D+2)/B$, and the
-positions of a key lie at most $L+D-2$ slots after the start of its slice, so
+buckets: the slice of bucket $b$ starts at about $b(m-L+1)/B$, and the
+positions of a key lie at most $L-1$ slots after the start of its slice, so
 (considering the rounding of slice starts) the positions of different chunks
 cannot overlap. Chunks are swept in parallel. Gaps are then processed
 differently: \PHast processes them serially, continuing for each gap the
@@ -398,69 +395,65 @@ sweep of the previous chunk (whose state, including the priority queue, is
 preserved) after adding to its occupancy the positions of the first buckets
 of the following chunk; \PHastR sweeps all gaps in parallel, each with a new
 sweep in which the positions of the buckets of the neighboring chunks (on both
-sides) are marked as occupied and \emph{not evictable}, as repair must not
-move buckets owned by another chunk.
+sides) are marked as used.
 
 \paragraph{Summary of the differences with \PHastP.}
-Besides patterns and repair, \PHastR differs from \PHastP in the following
-respects: the seed encodes a pattern and a shift, and offsets are taken from a
-value $o$ derived from the hash of the first level (Placement), also at
-the following levels, where offsets are given by $o$ xored with the hash of
-the level (Levels); the slice length adapts to the size of the level,
-and it is longer for large levels (Slice length); the last level uses the
-same scheme as the other levels instead of regular \PHast (Last level); and
-gaps between parallel chunks are swept in parallel by independent sweeps
-instead of serially by continuing the previous sweep (Parallel construction).
-Bucket priorities have the same form as in \PHastP (a weight depending on
-the size of the bucket, extrapolated linearly beyond size $7$, minus $1024$
-times the index of the bucket), with retuned weights.
+With respect to \PHastP with wrapping, in \PHastR the seed selects a pattern,
+besides moving the keys, and the offsets of the patterns are taken from the
+lower half of the product yielding the bucket, rather than from the hash; the
+multiplier of the seed is the power of two $L/2^S$, so that the seeds of a
+pattern form rings, rather than a small odd number; the set of used slots is
+stored by residue classes, and feasible seeds are found by rotations
+(Search); the last level uses the same scheme as the other levels instead of
+regular \PHast (Last level); and gaps between parallel chunks are swept in
+parallel by independent sweeps instead of serially by continuing the previous
+sweep (Parallel construction). Slice lengths, bucket priorities and the
+treatment of keys with the same hash are the same; the suggested expected
+bucket size for 8-bit seeds is $4.75$ instead of $5$.
 
 \section{Experiments}
 \label{sec:experiments}
 
-We ran all experiments on an Apple M1 Max with 64\,GiB of RAM, compiling with
-Rust 1.98 at optimization level 3 with thin link-time optimization. Keys are
-distinct 64-bit integers. The reference implementation is the \texttt{ph}
-crate by Beling (\texttt{Function2} with the \texttt{ShiftOnly},
-\texttt{ShiftOnlyWrapped<$\delta$>} and \texttt{SeedOnly} seed choosers for
-\PHastP, \PHastP with wrapping and \PHast, respectively). To make query times
-comparable we fed both implementations the same hash function, XXH3-64 with a
-seed. Construction times are single-threaded unless otherwise noted and
-include hashing; query times are the best of three averages over $10^7$
-queries of random keys of the set. \PHastR uses $R=4$ patterns, $16$ repair
-candidates, and byte seeds for $S=8$ and bit-packed seeds otherwise.
+We ran all experiments on an Intel Xeon E-2388G (8 cores, 3.2\,GHz) with
+128\,GiB of RAM, compiling with Rust 1.98 at optimization level 3 with thin
+link-time optimization. Keys are distinct 64-bit integers. The reference
+implementation is the \texttt{ph} crate by Beling (\texttt{Function2} with
+the \texttt{ShiftOnly}, \texttt{ShiftOnlyWrapped<$\delta$>} and
+\texttt{SeedOnly} seed choosers for \PHastP, \PHastP with wrapping and \PHast,
+respectively). To make query times comparable we fed both implementations the
+same hash function, GxHash with a seed, as in the experiments of the \PHast
+paper. Construction times are single-threaded unless otherwise noted and
+include hashing; query times are medians over nine rounds of $2\cdot10^6$
+queries of random keys of the set, and the rounds of the different structures
+are interleaved. \PHastR uses $R=4$ patterns, with byte seeds for $S=8$ and
+bit-packed seeds read without alignment for $S=10$.
 
 \begin{table}[t]
 \centering
-\caption{Comparison on $10^7$ keys (single-threaded construction). $d$ is the
-maximum depth of repair ($d=0$: no repair).}
+\caption{Comparison on $10^7$ keys (single-threaded construction).}
 \label{tab:1e7}
 \small
 \begin{tabular}{llrrr}
 \toprule
 Method & Configuration & bits/key & build [ns/key] & query [ns] \\
 \midrule
-\PHastP & $S=8$, $\lambda=5.25$ & 2.116 & 40 & 22.8 \\
-\PHastP wrap $\delta=1$ & $S=8$, $\lambda=5.25$ & 2.095 & 48 & 22.0 \\
-\PHastP wrap $\delta=2$ & $S=8$, $\lambda=5$ & 2.011 & 59 & 20.9 \\
-\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.970 & 70 & 21.3 \\
-\PHast & $S=8$, $\lambda=4.5$ & 1.923 & 562 & 19.9 \\
+\PHastP & $S=8$, $\lambda=5.25$ & 2.116 & 66 & 25.7 \\
+\PHastP wrap $\delta=1$ & $S=8$, $\lambda=5.25$ & 2.096 & 81 & 24.5 \\
+\PHastP wrap $\delta=2$ & $S=8$, $\lambda=5$ & 2.013 & 99 & 22.9 \\
+\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.970 & 123 & 24.5 \\
+\PHast & $S=8$, $\lambda=4.5$ & 1.922 & 826 & 23.3 \\
 \addlinespace
-\PHastR & $S=8$, $L=512$, $\lambda=5$, $d=0$ & 2.022 & 48 & 22.2 \\
-\PHastR & $S=8$, $L=512$, $\lambda=5$, $d=1$ & 1.935 & 79 & 21.4 \\
-\PHastR & $S=8$, $L=512$, $\lambda=5$, $d=2$ & 1.924 & 127 & 21.4 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.921 & 110 & 24.2 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.925 & 106 & 24.7 \\
 \midrule
-\PHastP & $S=10$, $\lambda=5.15$ & 2.085 & 38 & 19.7 \\
-\PHastP wrap $\delta=1$ & $S=10$, $\lambda=6.2$ & 1.906 & 60 & 19.9 \\
-\PHastP wrap $\delta=2$ & $S=10$, $\lambda=5.9$ & 1.884 & 87 & 19.7 \\
-\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.872 & 121 & 20.1 \\
-\PHast & $S=10$, $\lambda=6.05$ & 1.854 & 1646 & 19.9 \\
+\PHastP & $S=10$, $\lambda=5.15$ & 2.085 & 77 & 27.9 \\
+\PHastP wrap $\delta=1$ & $S=10$, $\lambda=6.2$ & 1.905 & 115 & 27.0 \\
+\PHastP wrap $\delta=2$ & $S=10$, $\lambda=5.9$ & 1.883 & 178 & 26.0 \\
+\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.872 & 249 & 27.5 \\
+\PHast & $S=10$, $\lambda=6.05$ & 1.854 & 2238 & 27.8 \\
 \addlinespace
-\PHastR & $S=9$, $L=1024$, $\lambda=5.75$, $d=1$ & 1.888 & 85 & 24.8 \\
-\PHastR & $S=10$, $L=2048$, $\lambda=6$, $d=0$ & 1.922 & 52 & 24.2 \\
-\PHastR & $S=10$, $L=2048$, $\lambda=6$, $d=1$ & 1.861 & 86 & 23.7 \\
-\PHastR & $S=10$, $L=2048$, $\lambda=6.25$, $d=2$ & 1.854 & 137 & 24.0 \\
-\PHastR & $S=11$, $L=4096$, $\lambda=6.75$, $d=1$ & 1.860 & 88 & 24.1 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.852 & 217 & 29.2 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=6.25$ & 1.857 & 213 & 29.5 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -472,17 +465,18 @@ Method & Configuration & bits/key & build [ns/key] & query [ns] \\
   width=0.82\textwidth, height=0.5\textwidth,
   xmode=log, xlabel={construction time [ns/key]}, ylabel={space [bits/key]},
   legend pos=north east, legend cell align=left, grid=major, grid style={gray!20},
-  xmin=30, xmax=2500, ymin=1.83, ymax=2.13]
+  xmin=50, xmax=3000, ymin=1.83, ymax=2.13]
 \addplot[only marks, mark=o, color=black] coordinates {
-  (40.3,2.1155) (48.4,2.0954) (58.9,2.0111) (69.7,1.9698)
-  (38.1,2.0847) (60.1,1.9055) (86.9,1.8841) (121.3,1.8722)};
+  (66,2.116) (81,2.096) (99,2.013) (123,1.970) (77,2.085) (115,1.905) (178,1.883) (249,1.872)
+};
 \addlegendentry{\PHastP (with and without wrapping)}
 \addplot[only marks, mark=square, color=black] coordinates {
-  (561.7,1.9229) (1645.8,1.8536)};
+  (826,1.922) (2238,1.854)
+};
 \addlegendentry{\PHast}
 \addplot[only marks, mark=*, color=red!70!black] coordinates {
-  (47.7,2.0221) (79.1,1.9353) (126.7,1.9243) (85.3,1.8884)
-  (52.3,1.9217) (86.0,1.8610) (137.1,1.8542) (87.8,1.8600)};
+  (110,1.921) (106,1.925) (217,1.852) (213,1.857)
+};
 \addlegendentry{\PHastR}
 \end{axis}
 \end{tikzpicture}
@@ -492,20 +486,20 @@ Table~\ref{tab:1e7}).}
 \end{figure}
 
 Table~\ref{tab:1e7} and Figure~\ref{fig:pareto} show the results on $10^7$
-keys. Patterns alone (\PHastR with $d=0$) reduce space by $0.09$ bits per key
-with respect to \PHastP at a cost of $7$\,ns per key. Repair is worth another
-$0.06$--$0.10$ bits per key. With 8-bit seeds and depth 2, \PHastR uses the
-same space as \PHast and builds $4.4$ times faster; with 10-bit seeds and depth
-2 it matches \PHast in space and builds $12$ times faster. Against the best
-\PHastP variant with wrapping, \PHastR with depth 1 uses $0.035$ fewer bits per
-key with 8-bit seeds at $13\%$ more construction time, and with 10-bit seeds it
-is both smaller and $29\%$ faster to build. Queries with byte seeds are as fast
-as in \PHastP; bit-packed seeds currently cost about $4$\,ns more in our
-implementation.
+keys. With 8-bit seeds, \PHastR uses $0.05$ bits per key less than the best
+variant of \PHastP with wrapping, and it is $10\%$ faster to build; it uses
+the same space as \PHast, which takes more than seven times as long to build.
+Queries take the same time as those of \PHastP with wrapping: with
+$\lambda=4.75$ \PHastR bumps $2.5\%$ of the keys from the first level, against
+$4.3\%$, which compensates for the additional operations of its queries. With
+10-bit seeds \PHastR uses less space than all variants of \PHastP, and even
+slightly less than \PHast, with a construction time between those of \PHastP
+with wrapping for $\delta=2$ and $\delta=3$; its queries are, however,
+slightly slower.
 
 \begin{table}[t]
 \centering
-\caption{Comparison on $10^8$ keys, with single-threaded and 10-threaded
+\caption{Comparison on $10^8$ keys, with single-threaded and 8-threaded
 construction.}
 \label{tab:1e8}
 \small
@@ -513,45 +507,46 @@ construction.}
 \toprule
 & & & \multicolumn{2}{c}{build [ns/key]} & \\
 \cmidrule(lr){4-5}
-Method & Configuration & bits/key & 1 thread & 10 threads & query [ns] \\
+Method & Configuration & bits/key & 1 thread & 8 threads & query [ns] \\
 \midrule
-\PHastP & $S=8$, $\lambda=5.25$ & 2.115 & 44 & 9.1 & 38.6 \\
-\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.968 & 75 & 13.6 & 34.9 \\
-\PHast & $S=8$, $\lambda=4.5$ & 1.921 & 575 & -- & 31.1 \\
-\PHastR & $S=8$, $\lambda=5$, $d=1$ & 1.934 & 81 & 13.8 & 34.9 \\
-\PHastR & $S=8$, $\lambda=5$, $d=2$ & 1.923 & 127 & 18.7 & 35.0 \\
+\PHastP & $S=8$, $\lambda=5.25$ & 2.115 & 72 & 17.1 & 39.5 \\
+\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.968 & 131 & 25.4 & 36.6 \\
+\PHast & $S=8$, $\lambda=4.5$ & 1.921 & 836 & -- & 33.4 \\
+\addlinespace
+\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.919 & 114 & 22.0 & 35.8 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.924 & 111 & 22.3 & 37.0 \\
 \midrule
-\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.869 & 126 & 19.2 & 32.5 \\
-\PHastR & $S=10$, $\lambda=6$, $d=1$ & 1.857 & 87 & 13.0 & 37.3 \\
-\PHastR & $S=10$, $\lambda=6.25$, $d=2$ & 1.850 & 137 & 19.4 & 38.3 \\
+\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.869 & 256 & 47.1 & 39.3 \\
+\addlinespace
+\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.849 & 220 & 37.1 & 42.4 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 Table~\ref{tab:1e8} shows that the picture does not change on $10^8$ keys,
-where queries are dominated by cache misses. With 10 threads (8 performance
-and 2 efficiency cores), \PHastR with depth~1 builds about as fast as \PHastP
-with wrapping and 8-bit seeds, and faster with 10-bit seeds: repair is local, so
-it parallelizes as well as the rest of the sweep.
+where queries are dominated by cache misses. With 8 threads \PHastR builds
+$13\%$ faster than \PHastP with wrapping with 8-bit seeds, and $21\%$ faster
+with 10-bit seeds.
 
-\section{The Limits of Repair}
+\section{The Limits of the Approach}
 \label{sec:limits}
 
-Since repair is responsible for a large part of the improvement of \PHastR over
-\PHastP, it is natural to ask how far it can go: if we let repairs proceed with
-no bound on their depth or breadth, can we get rid of bumping altogether? In
-this section we show that the answer is negative, for two different reasons.
-The first reason is structural, and it applies to every placement scheme of the
-\PHast family, with or without repair: no placement of the keys, however found,
-can avoid bumping. The second reason is algorithmic: most failures of the sweep
-cannot be repaired at any depth, and repairing the other ones makes the sweep
-fail more often.
+The first level of \PHastR still bumps a few percent of the keys, and bumping
+is where space goes: it is natural to ask whether a more flexible placement, or
+a more powerful search, could get rid of it. In this section we show that the
+answer is negative, for two different reasons. The first reason is structural,
+and it applies to every placement scheme of the \PHast family: no placement of
+the keys, however found, can avoid bumping. The second reason is experimental:
+the fraction of bumped keys settles on a value that depends on the density
+that the sweep can reach, and attempts to reduce it by making placement more
+flexible, or the search more powerful, have little effect.
 
 \subsection{A Lower Bound on Bumping}
 
 In all structures of the \PHast family a key whose slice starts at $\sigma$ can
 be placed only in the \emph{window} $[\sigma\..\sigma+W)$, where $W=L$ for
-\PHast, $W=L+2^S-2$ for \PHastP, and $W=L+D-1$ for \PHastR. The seed of a
+\PHast, for \PHastP with wrapping, and for \PHastR, and $W=L+2^S-2$ for \PHastP
+without wrapping. The seed of a
 bucket chooses positions within the windows of its keys, but the windows
 themselves depend only on the hashes of the keys. This simple constraint is
 sufficient to force bumping.
@@ -603,9 +598,9 @@ $2^{16}$, and $2^{20}$ keys, the average range is within $1\%$ of
 $\sqrt{\pi n/2}$.
 
 The bound is irrelevant in terms of space. For \PHastR with $S=8$ and $L=1024$
-we have $W=1087$, so on $10^7$ keys at least about $2900$ keys ($0.03\%$) must
-be bumped, and on $10^9$ keys about $38\,500$ ($0.004\%$), whereas, as we will
-see shortly, the first level of \PHastR bumps about $2.6\%$ of the keys. Its
+we have $W=1024$, so on $10^7$ keys at least about $2900$ keys ($0.03\%$) must
+be bumped, and on $10^9$ keys about $38\,600$ ($0.004\%$), whereas, as we will
+see shortly, the first level of \PHastR bumps a few percent of the keys. Its
 importance lies in the fact that it applies to \emph{every} placement: as soon
 as $\sqrt{\pi n/2}$ is significantly larger than $W$, that is, beyond a few
 hundred thousand keys, no amount of search can make a first level with $m=n$
@@ -632,96 +627,127 @@ slots are occupied, the search never placed more than $160$ buckets, even with
 more than two bits of slack per bucket and a budget of thousands of placements
 per bucket.
 
-\subsection{Repairable and Unrepairable Failures}
+\subsection{The Density Limit}
 
 \begin{table}[t]
 \centering
-\caption{Fraction of keys bumped from the first level of \PHastR, and space, as
-a function of the maximum depth $d$ of repair ($10^7$ keys, $S=8$, $L=1024$,
-$16$ candidates). These values do not depend on the hardware.}
-\label{tab:depth}
+\caption{Fraction of keys bumped from the first level, and space, for
+variants of the construction ($10^7$ keys, $S=8$, $L=1024$, $\lambda=5$).
+These values do not depend on the hardware.}
+\label{tab:floor}
 \small
-\begin{tabular}{rrrrr}
+\begin{tabular}{lrr}
 \toprule
-& \multicolumn{2}{c}{$\lambda=4.75$} & \multicolumn{2}{c}{$\lambda=5.25$}\\
-\cmidrule(lr){2-3}\cmidrule(lr){4-5}
-$d$ & bumped & bits/key & bumped & bits/key\\
+Construction & bumped & bits/key\\
 \midrule
-0 & $3.819\%$ & 2.0241 & $6.049\%$ & 2.0244\\
-1 & $2.612\%$ & 1.9304 & $4.724\%$ & 1.9251\\
-2 & $2.464\%$ & 1.9179 & $4.517\%$ & 1.9098\\
-3 & $2.430\%$ & 1.9152 & $4.449\%$ & 1.9050\\
-4 & $2.423\%$ & 1.9145 & $4.431\%$ & 1.9037\\
+Wrapping ($\delta=3$, as in \PHastP) & $4.35\%$ & 1.970\\
+Wrapping, repair of depth 1 & $3.66\%$ & 1.920\\
+Wrapping, repair of depth 2 & $3.55\%$ & 1.913\\
+Rings of patterns ($R=4$, \PHastR) & $3.73\%$ & 1.925\\
+Rings of patterns, repair of depth 1 & $3.61\%$ & 1.916\\
 \bottomrule
 \end{tabular}
 \end{table}
 
 The bump rate of \PHastR is two orders of magnitude larger than the lower bound
-of Proposition~\ref{prop:bump}, so the latter is not what limits repair in
-practice. Table~\ref{tab:depth} shows the fraction of keys bumped from the first
-level of \PHastR as a function of the maximum depth of repair. The decrease is
-geometric: depth one removes more than $80\%$ of the bumps that repair can
-remove at all, and each further level removes about three quarters of the
-remaining ones. The limit, about $2.42\%$ for $\lambda=4.75$ and $4.43\%$ for
-$\lambda=5.25$, is $63\%$ and $73\%$, respectively, of the bump rate without
-repair. Breadth saturates in the same way: at depth one and $\lambda=4.75$, the
-bump rate is $3.59\%$, $3.13\%$, $2.81\%$, $2.61\%$, $2.59\%$, and $2.59\%$ with
-$1$, $4$, $8$, $16$, $32$, and $64$ candidates.
+of Proposition~\ref{prop:bump}, so the latter is not what limits it in
+practice. On the other hand, self-collisions involve $1.7\%$ of the keys
+(Section~\ref{sec:anatomy}), but getting rid of them reduces the fraction of
+bumped keys much less: with $\lambda=5$, from $4.35\%$ to $3.73\%$. To
+understand why, we experimented with several variants of the
+construction.\footnote{The variants discussed in this section are not part of
+the final implementation, but they are available in the history of its
+repository.}
 
-Thus, a failure is either \emph{repairable}, in which case a short chain of
-evictions suffices, or \emph{unrepairable}, in which case no chain of
-evictions exists within the region that repair can reach: the blockers of an
-unrepairable bucket are typically buckets whose windows lie mostly in the fully
-occupied region behind the frontier of the sweep, and thus cannot be moved.
+The first variant is a cuckoo-style \emph{repair}, similar to the eviction
+mechanism of PtrHash~\cite{RagPTR}: when no seed is feasible for a bucket, we
+look for the seeds for which exactly one of its keys is mapped to a used slot
+(they can be found in a bit-parallel fashion, too), evict the bucket owning
+the slot, place the failing bucket, and place the evicted bucket again,
+possibly evicting in turn another bucket up to a maximum depth; if the evicted
+bucket cannot be placed, the eviction is undone, and another seed is tried.
+Table~\ref{tab:floor} shows the results. Repair cannot do anything for
+self-collisions, yet when applied to placement with wrapping it reaches (at a
+significant cost in construction time) the bump rate of \PHastR, and repair
+of depth two improves on it only slightly; applied to \PHastR, it is almost
+useless. All variants converge to a bump rate of about $3.6\%$.
 
-Letting repairs proceed with no bounds, as in PtrHash~\cite{RagPTR}, makes
-things worse. In a simulator of the sweep (with the placement of \PHastR on a
-cyclic output range) in which an evicted bucket evicts in turn the
-cheapest blockers (with a tabu list to avoid short cycles), chains of evictions
-drift backwards, as the owner of a blocking slot is usually a bucket whose slice
-starts earlier than that of the evicting one. When a chain reaches a bucket
-whose window is entirely occupied, every seed blocks several keys, every
-eviction causes several further evictions, and the process becomes
-supercritical: on $2^{16}$ keys with $\lambda=5$, about $9\%$ of the repairs
-did not terminate within $10^4$ evictions, both with $m=n$ and with $5\%$ of
-slack in the output range. Confining evictions to buckets near the frontier
-stops the drift, but repairs then either terminate after a few evictions or
-cycle forever.
+The reason is a feedback effect. Since with $m=n$ holes and
+bumped keys are the same thing (Section~\ref{sec:anatomy}), every additional
+bucket that is placed fills slots that would otherwise have remained empty:
+the region around the frontier of the sweep becomes denser, and more buckets
+fail. The sweep settles into an equilibrium that depends on the density at
+which buckets no longer fit, rather than on the placement scheme: in this
+equilibrium, buckets containing a single key are always placed, and
+buckets containing two keys fail one or two times out of a hundred, so
+holes would be easily filled by small buckets; but with $\lambda=5$ only
+$0.7\%$ of the keys are in buckets of size one, and $3.4\%$ in buckets of
+size two. When it is placed, a bucket of \PHastR has on average $4.5$
+feasible seeds, almost independently of its size (which is the purpose of
+priorities); the number of feasible seeds, however, has a large variance,
+and $3$--$4\%$ of the buckets have none. The two bits or so of each seed that
+pay for this slack are the price of a greedy choice with seeds of fixed
+width, and they account for most of the distance of \PHastR from the lower
+bound.
 
-Finally, repair has a feedback effect on the sweep. Since with $m=n$ holes and
-bumped keys are the same thing (Section~\ref{sec:anatomy}), every repaired
-failure fills a slot that would otherwise have remained empty: the region
-around the frontier becomes denser, and more buckets fail at their first
-placement. The reduction of bumping is thus smaller than the fraction of
-failures that repair fixes: the sweep settles into a new equilibrium, which
-repair, as any increase in flexibility, moves, but without removing bumping.
+Other attempts to move the equilibrium confirm this picture (the following
+figures refer to $3\cdot10^6$ keys and $\lambda=5$, where \PHastR bumps
+$3.7\%$ of the keys):
+\begin{itemize}
+\item \emph{Overloading.} A hole costs more than three times as much as a
+bumped key, so we can give the first level fewer slots than keys, so that
+fewer holes are left, let each following level use directly a part of the
+remaining output range, and remap only the last keys to the holes of all
+levels. However, each percent of overload removes just $0.19$--$0.28\%$ of
+holes, and the trade is convenient only above $0.25\%$.
+\item \emph{Skewed bucket sizes.} With seeds of fixed width, a suitable
+nonuniform distribution of bucket sizes is much better than a uniform one
+when buckets are placed globally by decreasing size~\cite{HLPPPHOBSIC}. In a
+sweep, sizes must be mixed locally: we tried periodic sequences of expected
+sizes, but bumping increases with the skew (from $3.8\%$ to $6.3\%$ in our
+experiments), as large buckets do not find the almost empty regions they
+need, even when they are processed first.
+\item \emph{A different choice among feasible seeds.} Choosing the seed
+minimizing the sum of a concave function of the positions of the keys,
+which favors seeds filling old holes, helps only slightly (logarithms give
+$3.65\%$); convex functions are harmful.
+\item \emph{Unbounded repair.} Letting repairs proceed with no bounds, as in
+PtrHash, makes things worse: chains of evictions drift backwards, as the owner
+of a blocking slot is usually a bucket whose slice starts earlier than that of
+the evicting one, and when a chain reaches a bucket whose window is entirely
+occupied every eviction causes several further evictions.
+\end{itemize}
 
-In practice, then, depth one or two is not a compromise: from depth two to
-depth four the bump rate decreases by less than $0.1$ percentage points, and
-space by less than $0.007$ bits per key, while construction time keeps
-increasing.
+In practice, then, once self-collisions are out of the way the bump rate is
+determined by the expected bucket size and by the number of seeds, and the
+only effective levers are those of \PHast: smaller buckets, which cost
+$S/\lambda$ bits per key, or larger seeds.
 
 \section{Conclusions}
 
-The excess space of \PHastP is the cost of bumping, and a large part of it is
-caused by the rigidity of additive placement. Independent offset patterns
-remove the rigidity without losing bit-parallelism, and a half adder over the
-same words that test feasibility turns failures into cheap, local cuckoo
-repairs. The resulting structure, \PHastR, has the query of \PHastP, the space
-of \PHast, and an intermediate construction time. Repair has, however, intrinsic
+The excess space of \PHastP is the cost of bumping, and a large part of the
+bumping is caused by the rigidity of additive placement, even with wrapping.
+Selecting one of a few independent patterns with the lowest bits of the seed
+removes the rigidity at the cost of two shifts per query, since the offsets of
+the patterns come for free with the computation of the bucket; and moving the
+keys along rings preserves bit-parallelism, as feasible seeds are found by
+rotating blocks of bits of a set of used slots stored by residue classes. The
+resulting structure, \PHastR, has the query time of \PHastP with wrapping,
+uses less space, and is faster to build. Bumping has, however, intrinsic
 limits: no placement in which keys move within windows of $W$ slots can avoid
-bumping about $\sqrt{\pi n/2}-W$ keys, and in practice most failures of the
-sweep cannot be repaired at any depth, so shallow repairs capture almost all of
-the benefit.
+bumping about $\sqrt{\pi n/2}-W$ keys, and in practice the fraction of bumped
+keys is determined by the density that the sweep can reach, which more
+flexible placements and searches do not change.
 
 There are several open problems and further research directions. On the
-practical side, the bucket priority should be retuned for larger seeds, access
-to bit-packed seeds should be made faster, and the last levels could be replaced
-by a more compact structure. More interestingly, the lower bound of
-Section~\ref{sec:limits} does not apply to keys split into parts of exactly
-known size: whether bump-free placements, which would use just $S/\lambda$ bits
-per key, can be found efficiently within such parts, in spite of the long-range
-constraints that defeat backtracking, is an open problem.
+practical side, the bucket priorities and the geometry of small levels should
+be tuned for rings, access to bit-packed seeds should be made faster, and the
+last levels could be replaced by a more compact structure. More interestingly,
+the lower bound of Section~\ref{sec:limits} does not apply to keys split into
+parts of exactly known size: whether bump-free placements, which would use
+just $S/\lambda$ bits per key, can be found efficiently within such parts, in
+spite of the long-range constraints that defeat backtracking, is an open
+problem.
 
 The implementation is available in the \texttt{sux} crate as
 \texttt{sux::func::PHastR}.

@@ -41,7 +41,7 @@
 //! upper half is the bucket: such a value is uniform among the keys of a
 //! bucket, and it is computed anyway. Queries thus need a hash, a seed access,
 //! two multiplications, and a handful of shifts, additions, and masks—just
-//! one operation more than PHast+ with wrapping; a small fraction of the keys
+//! two shifts more than PHast+ with wrapping; a small fraction of the keys
 //! accesses further levels and the Elias–Fano sequence.
 //!
 //! During construction the set of used slots is stored by residue classes

@@ -1,16 +1,19 @@
-//! Anatomy of the space of PHast+ (Section 2 of the paper), measured on the
-//! reference implementation `ph` (using the hidden accessors
-//! `Function2::level0_conf`, `level0_seed`, and `component_sizes`).
+//! Anatomy of the space of PHast+, with or without wrapping (Section 2 of the
+//! paper), measured on the reference implementation `ph` (using the hidden
+//! accessors `Function2::level0_conf`, `level0_seed`, and `component_sizes`).
 //!
 //! Reports the space breakdown, the fraction of keys bumped from the first
 //! level and its dependence on bucket size, the buckets whose keys have
 //! coinciding base positions (self-collisions, which no shift can resolve),
 //! and the empirical entropy of the seeds of the first level.
 //!
-//! Usage: anatomy [-n keys] [-s seed bits] [-l lambda]
+//! Usage: anatomy [-n keys] [-s seed bits] [-l lambda] [-w multiplier]
 
 use clap::Parser;
-use ph::phast::{Core, DefaultCompressedArray, Function2, Generic, GenericCore, ShiftOnly};
+use ph::phast::{
+    Core, DefaultCompressedArray, Function2, Generic, GenericCore, SeedChooser, ShiftOnly,
+    ShiftOnlyWrapped,
+};
 use ph::seedable_hash::BuildGxHash;
 use ph::seeds::{Bits8, BitsFast, SeedSize};
 use ph::{BuildSeededHasher, GetSize};
@@ -23,25 +26,30 @@ struct Args {
     s: u8,
     #[arg(short, default_value_t = 5.25)]
     l: f64,
+    /// The multiplier of PHast+ with wrapping (0 for PHast+ without
+    /// wrapping).
+    #[arg(short, default_value_t = 0)]
+    w: u8,
     /// Generates a different key set.
     #[arg(long, default_value_t = 0)]
     key_seed: u64,
 }
 
-fn analyze<SS: SeedSize>(keys: &[u64], ss: SS, a: &Args) {
+fn analyze<SS: SeedSize, SC: SeedChooser>(keys: &[u64], ss: SS, sc: SC, a: &Args) {
     let n = keys.len();
     let params = Generic::new(ss, (a.l * 100.0).round() as u16);
-    let f: Function2<GenericCore, SS, ShiftOnly, DefaultCompressedArray, BuildGxHash> =
-        Function2::with_slice_p_hash_sc(keys, &params, BuildGxHash, ShiftOnly);
+    let f: Function2<GenericCore, SS, SC, DefaultCompressedArray, BuildGxHash> =
+        Function2::with_slice_p_hash_sc(keys, &params, BuildGxHash, sc);
     let bits = |bytes: usize| bytes as f64 * 8.0 / n as f64;
     let total = bits(f.size_bytes());
     let (l0, remap, further) = f.component_sizes();
     let conf = *f.level0_conf();
     println!(
-        "PHast+ S={} lambda={} L={} n={n}: {total:.4} bits/key \
+        "PHast+ S={} lambda={} wrap={} L={} n={n}: {total:.4} bits/key \
          (first level {:.4}, remapping {:.4}, further levels {:.4}, other {:.4})",
         a.s,
         a.l,
+        a.w,
         conf.slice_len(),
         bits(l0),
         bits(remap),
@@ -80,9 +88,11 @@ fn analyze<SS: SeedSize>(keys: &[u64], ss: SS, a: &Args) {
             continue;
         }
         buckets_by_size[k.min(max_size)] += 1;
-        // A bucket self-collides if two keys have the same base position
+        // A bucket self-collides if two keys have the same position for
+        // the first seed (and thus for all seeds, or, with wrapping, for all
+        // seeds but those for which exactly one of the two has wrapped)
         bases.clear();
-        bases.extend(hb[start..i].iter().map(|&(_, h)| conf.f_shift0(h)));
+        bases.extend(hb[start..i].iter().map(|&(_, h)| sc.f(h, 1, &conf)));
         bases.sort_unstable();
         let sc = bases.windows(2).any(|w| w[0] == w[1]);
         if sc {
@@ -142,9 +152,15 @@ fn main() {
             (i + a.key_seed.wrapping_mul(1 << 40)).wrapping_mul(0x9e3779b97f4a7c15) ^ 0x1234567
         })
         .collect();
-    if a.s == 8 {
-        analyze(&keys, Bits8, &a);
-    } else {
-        analyze(&keys, BitsFast(a.s), &a);
+    match (a.s, a.w) {
+        (8, 0) => analyze(&keys, Bits8, ShiftOnly, &a),
+        (8, 1) => analyze(&keys, Bits8, ShiftOnlyWrapped::<1>, &a),
+        (8, 2) => analyze(&keys, Bits8, ShiftOnlyWrapped::<2>, &a),
+        (8, 3) => analyze(&keys, Bits8, ShiftOnlyWrapped::<3>, &a),
+        (s, 0) => analyze(&keys, BitsFast(s), ShiftOnly, &a),
+        (s, 1) => analyze(&keys, BitsFast(s), ShiftOnlyWrapped::<1>, &a),
+        (s, 2) => analyze(&keys, BitsFast(s), ShiftOnlyWrapped::<2>, &a),
+        (s, 3) => analyze(&keys, BitsFast(s), ShiftOnlyWrapped::<3>, &a),
+        _ => panic!("unsupported multiplier"),
     }
 }
