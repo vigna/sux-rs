@@ -19,8 +19,8 @@ Perfect Hashing with Rings of Patterns* (`../phast.tex`). Lean 4
 | Paper claim | Status |
 |---|---|
 | Section 2 (128): with `m = n`, holes are exactly the bumped keys | ✔ `holes_eq_bumped` |
-| Prop. 1 (554): every placement leaves at least `R - W + 1` keys unplaced | ✔ `prop1`, with the hypothesis `W ≥ 1` (stated in the paper since the formalization showed it missing); the hypothesis is necessary (`prop1_needs_W_pos`: for `n = 1`, `σ = 1`, and `W = 0` we have `R = 1`, but only one key is bumped) |
-| Proof (565–575): empty slots in `[s + W - 1 . . t)` | ✔ `deficit` (needs only `t ≤ n`) |
-| Proof (565–575): bumped keys among those with `σ ∈ [s . . t)` | ✔ `excess` (no hypotheses) |
-| Proof (565–575): the bound `\|X t - X s\| - W + 1` for all `s ≤ t` | ✔ `bumped_ge`, slightly stronger: `X a - X b - W + 1` for all `a ≤ n` and all `b` |
-| Asymptotics (576–595): `R = n·V_n`, `E[R] = √(πn/2)(1 + o(1))` | not formalized (needs Donsker's theorem and the distribution of the Brownian-excursion maximum) |
+| Prop. 1 (616): every placement leaves at least `R - W + 1` keys unplaced | ✔ `prop1`, with the hypothesis `W ≥ 1` (stated in the paper since the formalization showed it missing); the hypothesis is necessary (`prop1_needs_W_pos`: for `n = 1`, `σ = 1`, and `W = 0` we have `R = 1`, but only one key is bumped) |
+| Proof (627–637): empty slots in `[s + W - 1 . . t)` | ✔ `deficit` (needs only `t ≤ n`) |
+| Proof (627–637): bumped keys among those with `σ ∈ [s . . t)` | ✔ `excess` (no hypotheses) |
+| Proof (627–637): the bound `\|X t - X s\| - W + 1` for all `s ≤ t` | ✔ `bumped_ge`, slightly stronger: `X a - X b - W + 1` for all `a ≤ n` and all `b` |
+| Asymptotics (638–657): `R = n·V_n`, `E[R] = √(πn/2)(1 + o(1))` | not formalized (needs Donsker's theorem and the distribution of the Brownian-excursion maximum) |

@@ -1,6 +1,6 @@
 # PHast-R: handoff notes
 
-State of the work on PHast-R as of 2026-10-03, written to continue it on
+State of the work on PHast-R as of 2026-10-05, written to continue it on
 other hardware (possibly in a new Claude Code session, which will not have
 the context of the original one: point it to this file).
 
@@ -63,7 +63,8 @@ by an amount that varies between runs (±10% observed): use `cmp
 --interleave <rounds>` (as `run.sh` does), which builds all structures first
 and then interleaves batches of queries, reporting medians. `PHastR<K>` uses
 64-bit signatures (`ToSig<[u64; 1]>`): as in PHast+, keys with the same
-signature are bumped and separated by rehashing at the following levels.
+signature are bumped and separated at the following levels, whose signatures
+depend also on a second hash of the key.
 
 ## Comparison driver
 
@@ -71,14 +72,19 @@ signature are bumped and separated by rehashing at the following levels.
 
 - `ref:<plus|w1|w2|w3|phast>:<S>:<lambda>` for PHast+, PHast+ with wrapping,
   or PHast (reference implementation);
-- `r:<S>:<log2 L>:<depth>:<lambda>[:<log2 R>[:<u8|u16|bfv>]]` for PHast-R.
+- `r:<S>:<log2 L>:<lambda>[:<log2 R>[:<u8|u16|bfv|bfvu>]]` for PHast-R
+  (`bfvu` is a `BitFieldVec` with unaligned reads).
 
 `-t <threads>` sets the threads of the reference; PHast-R uses rayon
 (`RAYON_NUM_THREADS`). Every PHast-R structure is verified to be a bijection.
 
-`target/release/qsplit -n <keys> -v <S>:<log2 L>:<depth>:<lambda>,...` times
-separately the keys placed in the first level and the bumped keys, and
-prints the bump rate.
+`target/release/qsplit -n <keys> -v <spec>,...` (specs
+`<S>:<log2 L>:<lambda>[:<log2 R>]` or `ref:<plus|w3|phast>:<S>:<lambda>`)
+times separately all keys, the keys placed in the first level, and the
+bumped keys, in interleaved rounds (medians are reported), and prints the
+bump rate; `--set <0|1|2>` measures a single set, for use with `perf stat`.
+`target/release/btime -n <keys> -v <S>:<log2 L>:<lambda>[:<log2 R>]` times
+construction only (byte seeds).
 
 ## Results so far (M1 Max, 10⁷ keys, single-threaded construction)
 
@@ -420,6 +426,92 @@ geometry of small levels was tuned only for patterns without wrapping. The
 experimental options and the diagnostics should be removed or moved out of
 `phast_r.rs` once a design is chosen.
 
+## Rings only: cleanup and engineering (October 5, 2026)
+
+The design chosen is rings of patterns without repair (R = 4; λ = 4.75 and
+L = 1024 for 8-bit seeds). `phast_r.rs` was rewritten around it (commit
+`59f22b47`): wrapping, repair, the experimental options and the diagnostics
+are gone, together with the lab tools that used them (`overload`, `bumps`).
+Everything is still available at commit `e22eef68`, which is what the
+sections above describe.
+
+**Construction** (commit `a4d948c1`; 10⁷ keys, one thread: 111 → 58 ns/key,
+with identical seeds at each step, which makes the space a regression check).
+`perf` top-down on the first version showed 25% of the cycles in bad
+speculation (about 10 mispredicted branches per bucket) and a scan loop of
+54 instructions per key and pattern, mostly stack spills. In order of
+effect:
+
+- constant parameters for the default configuration (`Rings::DEFAULT`):
+  the sweep is compiled twice, and in one version shifts and masks are
+  immediates and the loop over patterns is unrolled (96 → 83 ns/key);
+- one pass over the keys of a bucket, with patterns in the inner loop, and a
+  single loop over all free seeds whose only branch is the exit; the sum of
+  the slots of a seed is computed on packed ring indices with a population
+  count (branch mispredictions per key: 2.1 → 0.75; 78 → 69);
+- grouping by bucket with a two-level distribution instead of sorting with
+  voracious (the sort was 27% of the single-threaded time and 41% of the CPU
+  time with 8 threads; 69 → 64);
+- queues by bucket size instead of a binary heap (78 → 75), unchecked reads
+  of the set of used slots (62 → 60), contiguous search state (−2.5%),
+  occupancy and bumped keys collected by the sweep (−2.5%).
+
+Things that did *not* work: scanning patterns in the outer loop (more
+instructions), removing bounds checks from that version (LLVM vectorizes
+the loop with gathers, which are slower), a `match` on several constant
+scales in the sweep or in queries (it becomes a jump table inside the loop,
+or is folded back into variable shifts: use a boolean on a dedicated field),
+zeroing a prefix of the search state of constant size (no gain, and the
+cold paths read the stale suffix).
+
+What is left in the sweep (62% of the time at 10⁷ keys, one thread): the scan
+is about 30 instructions per key and pattern, close to what the formulation
+requires; grouping is 21%, and it is limited by memory bandwidth and page
+faults when run in parallel.
+
+**Queries.** `qsplit` now interleaves rounds and separates first-level keys
+from bumped keys. Findings (10⁷ keys; ns for first-level keys / bumped keys /
+all keys, before the fix):
+
+| | first level | bumped | all | bumped keys |
+|---|---|---|---|---|
+| PHast+ λ=5.25 | 20.8 | 58.0 | 25.5 | 7.60% |
+| PHast+ wrap δ=3 λ=5 | 21.3 | 44.8 | 24.0 | 4.35% |
+| PHast λ=4.5 | 22.3 | 37.2 | 23.0 | 1.40% |
+| PHast-R λ=4.75 | 22.5 | 41.4 | 23.9 | 2.54% |
+
+- Time for first-level keys grows by about 1 ns for each executed operation
+  that depends on the cache-missing loads (probes replacing the position
+  formula in the same structure: PHast+ formula 19.5, wrapping formula 21.2,
+  rings 22.2, PHast's multiplications 23.3); register moves that are
+  eliminated at renaming do not count, so sharing the shift count between
+  the two shifts of the seed (L = 4096) gains nothing.
+- PHast-R and PHast+ with wrapping execute the same number of operations
+  after reading the seed (five). The deficit of PHast-R came from the
+  handling of bumped keys: `get_slow` took the key, so the compiler kept the
+  key in a general-purpose register and GxHash had to move it to a vector
+  register instead of loading it directly (one more dependent operation per
+  query). With `get_slow(h, h')`, where h' is a second hash computed in the
+  cold branch, first-level keys take 21.3 ns. Inlining the slow path, as
+  `ph` does, gains much less (the loop runs out of registers).
+- The average is the first-level time plus the fraction of bumped keys
+  times about 40 ns (10⁷ keys) or 110 ns (10⁸ keys), which includes the
+  branch misprediction: λ trades space for query time.
+
+Final results (`lab/results/paper/run-final.csv`; build ns/key with one
+thread, query ns):
+
+| | 10⁷: bits/key | build | query | 10⁸: bits/key | build | 8 threads | query |
+|---|---|---|---|---|---|---|---|
+| PHast+ λ=5.25 | 2.116 | 66 | 23.7 | 2.115 | 69 | 15.8 | 35.8 |
+| PHast+ wrap δ=3 λ=5 | 1.970 | 120 | 22.1 | 1.968 | 126 | 23.2 | 32.9 |
+| PHast λ=4.5 | 1.922 | 819 | 21.0 | 1.921 | 825 | – | 30.5 |
+| PHast-R λ=4.5 | 1.929 | 60 | 20.5 | 1.927 | 63 | 13.1 | 29.9 |
+| PHast-R λ=4.75 | 1.921 | 58 | 21.0 | 1.919 | 62 | 13.5 | 31.0 |
+| PHast-R λ=5 | 1.925 | 59 | 21.7 | 1.924 | 62 | 14.3 | 32.3 |
+| PHast+ wrap δ=3 S=10 λ=6 | 1.872 | 242 | 25.3 | 1.869 | 248 | 41.3 | 35.8 |
+| PHast-R S=10 L=2048 λ=6 | 1.852 | 123 | 25.0 | 1.849 | 128 | 21.4 | 35.5 |
+
 ## Key findings (see Section 2 of the paper; reference implementation)
 
 - With output range m = n, holes = bumped keys; each hole costs about
@@ -432,22 +524,50 @@ experimental options and the diagnostics should be removed or moved out of
 
 ## Implementation notes
 
-- Level 0 sweep: `sweep_level` splits buckets into chunks separated by gaps
-  of ⌈(L + D)B/num_slices⌉ + 2 buckets (it must be `num_slices`, not `m`:
-  using `m` was a real bug, now covered by `test_many_chunks`), sweeps chunks
-  in parallel, then gaps with neighbor slots pre-marked as non-evictable.
-- `Sweep::place` = `search` (min-sum over patterns, bit-parallel shifts) +
-  repair (exactly-one masks, candidates sorted by sum, one per distinct
-  blocker, nested repairs try a quarter of the candidates).
-- Levels after the first hash the key again with the seed of the level
-  (`LevelParams::salt`), as PHast+ does, and take offsets from *o ⊕ h'*, where
-  *o* is the value of the first level; the last level (< 4096 keys) does not
-  bump and retries hashing again with a different seed. Keys with the same
-  64-bit hash at the first level are bumped (they self-collide for every seed)
-  and separated at the next level; duplicate keys are detected by hashing
-  again with a different seed the keys whose first-level hashes coincide.
-- Priority weights for (S=8, L=512) and (S=10, L=2048) were retuned with
-  `wtune`; the others come from Beling's PHast+ (`ShiftOnly`) tables.
+- `group` computes the signatures of a level and groups them by bucket
+  (they are *not* sorted): each thread hashes a chunk of the keys and
+  distributes its signatures into parts made of 2^k consecutive buckets
+  (about 2¹⁴ keys per part, at most 2¹¹ parts), then parts are distributed
+  into buckets in parallel. It returns the signatures and the position of
+  the first signature of each bucket. Two buffers of 16 bytes per key are
+  used; page faults on fresh buffers are a visible cost (about 6 ns/key per
+  buffer at 10⁷ keys with 4 KiB pages).
+- `sweep_level` splits buckets into chunks separated by gaps of
+  ⌊L·B/num_slices⌋ + 1 buckets (it must be `num_slices`, not `m`: using `m`
+  was a real bug, covered by `test_many_chunks`), sweeps chunks in parallel,
+  then gaps in parallel with the slots of the neighboring buckets marked as
+  used. Each `Sweep` returns the slots it used and the keys it bumped.
+- `Sweep::search` scans the keys of a bucket once: for each pattern it
+  rotates the ring of the key and accumulates the blocked seeds, the sum of
+  the slots for the first seed, and the ring indices packed into 8/16/32-bit
+  fields. Free seeds are then evaluated in a single loop (`Sweep::sum`: one
+  addition, one mask and one population count per group of keys); with more
+  than `MAX_FREE` = 32 free seeds `search_many` considers only the first
+  free seed after each wrap point. `place` marks the slots and detects two
+  keys of the bucket on the same slot (then `search_distinct` tries the
+  other candidates in order).
+- The set of used slots is stored by rows (residues modulo the stride) and
+  columns (64 strides): word c·T + ρ contains the bits of slots (64c + i)·T
+  + ρ. Columns are recycled cyclically; `retire_column` copies the bits of a
+  column to the occupancy bitmap of the sweep before clearing it.
+- `Window` replaces the priority queue: one FIFO queue per bucket size
+  (sizes ≥ 64 go to a heap). The order is exactly that of the previous
+  binary heap.
+- `Sweep::run` calls `sweep` with either the actual `Rings` or the constant
+  `Rings::DEFAULT` (8-bit seeds, R = 4, L = 1024): in the second case shifts
+  and masks are constants and the loop over the patterns is unrolled.
+- Levels after the first: the signature is `level_sig(h, h', salt)`, where
+  h is the first-level signature, h' = `to_sig(key, seed ^ SECOND_HASH)` and
+  `salt` is `LevelParams::salt`. The last level (≤ 4096 keys) does not bump
+  and retries with a different salt. Keys with the same first-level
+  signature are bumped (they collide for every seed) and separated at the
+  next level; duplicate keys always reach the second level, where keys of a
+  bucket with the same signature are hashed with a third seed.
+- Queries: `get` inlines the first level; `get_slow(h, h')` is cold and out
+  of line. `fast_scale`/`default_shifts` select constant shifts (see
+  `pos0`).
+- Priority weights are those of PHast+ with wrapping (δ = 3) in Beling's
+  implementation (`default_weights`); they have not been retuned for rings.
 
 ## Limits of repair (Section 5 of the paper)
 
@@ -468,11 +588,12 @@ the hardware and need not be rerun. Commands (from `paper/lab`):
 
 ## Open issues and next steps
 
-1. **Query fast path**: ~2 instructions more than PHast+ are inherent in
-   selecting a pattern; bit-packed seeds (S > 8) add ~2 ns more on x86.
-   Consider λ = 4.5 / depth 1 as the default (lower bump rate, faster
-   queries and construction, 1.964 bits/key), and retune its priority
-   weights with `wtune`.
+1. **Queries**: at 10⁸ keys PHast (λ = 4.5) is 2% faster than PHast-R with
+   λ = 4.75, because it bumps fewer keys; λ = 4.5 reverses the result with
+   0.4% more space. Possible further steps: with λ = 5 the slice of a key
+   could be 5 times its bucket (one `lea` instead of a multiplication, about
+   1 ns), but the larger bump rate cancels the gain; bit-packed seeds
+   (S > 8) cost about 4 ns per query on x86 whatever the structure.
 2. **Seeds of 11–12 bits**: retune λ and weights with L = 4096/8192
    (`tune <keys> 12:12:1:7.5,8,8.5 12:13:1:8,8.5,9`, then `wtune`).
 3. **Scale**: 10⁹ keys (construction keeps 16 bytes per key plus bucket
@@ -482,9 +603,13 @@ the hardware and need not be rerun. Commands (from `paper/lab`):
 5. **String keys / other MPHFs**: add PHast-R to Beling's `mphf_benchmark`
    or to Lehmann's MPHF-Experiments to compare with PtrHash, PHOBIC, etc. on
    the standard workload (random strings of 10–50 bytes).
-6. **Paper**: author line is empty; Section 3 describes the new encoding, but
-   Tables 1–2 and Figure 3 (the Pareto plot) still contain the M1 numbers of the old encoding:
-   regenerate them (the new numbers are in `lab/results/README-nexus.md`).
+6. **Paper**: author line is empty; the tables are generated by
+   `lab/results/paper/tables.py` from the output of `run.sh`; the new entry
+   for PHOBIC in `biblio.bib` should be checked; `lean/README.md` cites line
+   numbers of `phast.tex`, which change with every edit above Section 5.
+   The priority weights have not been retuned for rings (`wtune`), and for
+   fewer than about 10⁵ keys PHast-R uses more space than PHast+ with
+   wrapping (fixed overhead and geometry of small levels).
 7. **The log₂e + O(log λ/λ) conjecture** of the PHast paper: for reference
    PHast, the excess over log₂e divided by ln λ/λ is ≈ 1.5 for λ in
    4.6–7.2, but grows for λ ≥ 7.8 (excess flattening at 0.40; see

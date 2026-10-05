@@ -49,9 +49,9 @@ of \PHastP with wrapping. Moreover, storing the set of used
 slots by residue classes turns a ring into a block of consecutive bits, so the
 seeds of a pattern that are feasible for a bucket are found by rotating and
 combining one block per key. With 8-bit seeds, \PHastR uses $1.92$ bits per key
-against the $1.97$ of \PHastP with wrapping, it is faster to build, and it has
-the same query time; with 10-bit seeds it uses $1.85$ bits per key against
-$1.87$. Finally, we study the limits of the approach: we prove that when keys
+against the $1.97$ of \PHastP with wrapping, it is built in half the time, and
+its queries are slightly faster; with 10-bit seeds it uses $1.85$ bits per key
+against $1.87$. Finally, we study the limits of the approach: we prove that when keys
 can move only within windows of $W$ slots no placement of $n$ keys on $n$
 slots, however found, can avoid bumping about $\sqrt{\pi n/2}-W$ keys, and we
 report evidence that the fraction of keys bumped by a sweep is bounded by the
@@ -332,13 +332,48 @@ word for each key. Note that in the first pattern the first seed is $0$, which
 is not available.
 
 Among feasible seeds we choose, as in \PHast, the one minimizing the sum of
-the slots of the keys. In a pattern, the sum increases with the index of the
-seed, except at the indices at which some key goes back to the first slot of
-its ring: thus, we need to consider only the first feasible index and, for
-each key, the first feasible index after the key went back, that is, at most
-$k+1$ candidates per pattern for a bucket of size $k$. Finally, we check that
-the best candidate does not map two keys of the bucket to the same slot, and
-otherwise move to the next one.
+the slots of the keys. For a bucket of size $k$, the sum for the seed of index
+$j$ of a pattern is the sum for the first seed of the pattern plus $kjT$,
+minus $L$ for each key that has gone past the end of its ring, that is, for
+each key such that $x+j\geq L/T$. To count such keys we pack the indices $x$ of
+the keys of the bucket into fields of a word that are large enough to contain
+the sum of two indices (for $S=8$ and $R=4$, eight fields of eight bits):
+after adding $j$ to all fields with a single addition, the bit of weight $L/T$
+of each field tells whether the corresponding key has gone past the end of its
+ring, and counting such bits gives the number of keys. Evaluating a seed thus
+requires a number of operations that does not depend on the size of the
+bucket (for buckets with at most eight keys, in the case above), and since
+buckets have usually just a few feasible seeds (Section~\ref{sec:limits}) we
+evaluate all of them, with a single loop over the zeros of the blocks of all
+patterns that contains no other branch. When there are many feasible seeds
+(e.g., at the beginning of a sweep) we use instead the fact that in a pattern
+the sum increases with the index of the seed, except at the indices at which
+some key goes back to the first slot of its ring: thus, we need to consider
+only the first feasible index and, for each key, the first feasible index
+after the key went back, that is, at most $k+1$ candidates per pattern.
+Finally, when marking the slots of the best candidate as used we check that
+no two keys of the bucket are mapped to the same slot, and otherwise we move
+to the next candidate.
+
+\paragraph{Grouping and scheduling.}
+The sweep needs the keys of each bucket, but in no particular order: thus,
+instead of sorting the hashes, as the reference implementation of \PHast does,
+we distribute them, first into parts made of a power of two of consecutive
+buckets, and then each part, which fits the cache, into its buckets, counting
+in both cases the number of hashes for each destination beforehand. In a
+parallel construction, each thread applies the first phase to a chunk of the
+keys, and the second phase to a different set of parts. Moreover, the
+priority of a bucket depends on its size and decreases with its index, and
+buckets enter the window of the sweep in order of index: thus, the buckets of
+each size in the window form a queue, and the bucket with the highest
+priority is the first bucket of one of the queues. Instead of a priority
+queue we keep a queue for each size: extracting the next bucket requires
+scanning the first elements of a few queues, and adding a bucket takes
+constant time. Finally, the set of used slots of the level and the keys of
+bumped buckets, which are necessary to build the following levels, are
+byproducts of the sweep: the bits of the slots that are no longer reachable
+are copied to the bitmap of the level when their part of the set of used
+slots is recycled.
 
 \paragraph{Slice length.}
 The slice length of a level with output range $m$ is the smallest power of two
@@ -353,27 +388,39 @@ linearly beyond size $7$, minus $1024$ times the index of the bucket), and we
 use the weights of \PHastP with wrapping.
 
 \paragraph{Levels.}
-As in \PHastP, keys of bumped buckets are hashed again at each following
-level with a different seed, and the new hash determines their bucket, their
-slice, and their offsets. Levels after the first use the same scheme with
-range equal to their number of keys, and an Elias--Fano sequence maps their
-outputs to the holes of the first level.
+Levels after the first use the same scheme with range equal to their number
+of keys, and an Elias--Fano sequence maps their outputs to the holes of the
+first level. In \PHastP the keys of bumped buckets are hashed again at each
+following level with a different seed, and the new hash determines their
+bucket, their slice, and their offsets. In \PHastR a bumped key is hashed
+again just once, with a different seed: if $h'$ is this second hash, the value
+playing the role of $h$ at level $i>1$ is
+\[
+\hi\bigl((h\oplus z_i)(h'\oplus c)\bigr)\oplus\operatorname{lo}\bigl((h\oplus z_i)(h'\oplus c)\bigr),
+\]
+where $z_i$ is a \emph{salt} associated with the level and $c$ is a constant.
+Thus, after a bumped bucket is detected and the second hash is computed the
+key is no longer necessary: the levels after the first are accessed by code
+that depends just on two integers, which can be kept separate from the code
+accessing the first level without the need of preserving the key.
 
 \paragraph{Colliding signatures.}
 Keys with the same $64$-bit hash at the first level have the same slice and
 the same offsets in all patterns, so they collide for every seed and their
-bucket is bumped; at the following levels they are hashed again, and thus
-separated. As in \PHastP, $64$-bit hashes are therefore sufficient for any
-number of keys, and no larger signature is necessary. Construction would fail
-only if two keys had the same hash at all levels, which happens in practice
-only for duplicate keys: to report duplicates before building the levels, keys
-whose hashes at the first level coincide are hashed again with a different
-seed, and keys whose hashes coincide again are considered duplicates.
+bucket is bumped; at the following levels their values depend also on the
+second hash, and thus they are separated. As in \PHastP, $64$-bit hashes are
+therefore sufficient for any number of keys, and no larger signature is
+necessary. Construction would fail only if two keys had the same pair of
+hashes, which happens in practice only for duplicate keys. Since duplicate
+keys are always bumped from the first level, to report them we examine the
+buckets of the following levels: keys of a bucket with the same value are
+hashed with a third seed, and keys whose hashes coincide again are considered
+duplicates.
 
 \paragraph{Last level.}
 When at most $4096$ keys are left, a last level uses the same placement
 scheme with a range larger by $25\%$ plus $16$ slots, expected bucket size $\min(\lambda,3)$, and
-no bumping, hashing the keys again with a different seed (and, every eight
+no bumping, changing the salt (and, every eight
 attempts, enlarging the range) in the unlikely case of failure. \PHastP behaves differently:
 when at most $8192$ keys are left ($4096$ for the variants with wrapping), it
 builds a level of regular \PHast (pseudorandom placement, all $256$ seeds of
@@ -403,13 +450,17 @@ besides moving the keys, and the offsets of the patterns are taken from the
 lower half of the product yielding the bucket, rather than from the hash; the
 multiplier of the seed is the power of two $L/2^S$, so that the seeds of a
 pattern form rings, rather than a small odd number; the set of used slots is
-stored by residue classes, and feasible seeds are found by rotations
-(Search); the last level uses the same scheme as the other levels instead of
-regular \PHast (Last level); and gaps between parallel chunks are swept in
-parallel by independent sweeps instead of serially by continuing the previous
-sweep (Parallel construction). Slice lengths, bucket priorities and the
-treatment of keys with the same hash are the same; the suggested expected
-bucket size for 8-bit seeds is $4.75$ instead of $5$.
+stored by residue classes, feasible seeds are found by rotations, and their
+sums of slots are computed on packed indices (Search); hashes are grouped by
+bucket by distribution, rather than sorted, the priority queue of the sweep is
+replaced by a queue for each bucket size, and the set of used slots of a
+level is a byproduct of the sweep (Grouping and scheduling); the keys of
+bumped buckets are hashed just once more, rather than at each level (Levels);
+the last level uses the same scheme as the other levels instead of regular
+\PHast (Last level); and gaps between parallel chunks are swept in parallel by
+independent sweeps instead of serially by continuing the previous sweep
+(Parallel construction). Slice lengths and bucket priorities are the same;
+the suggested expected bucket size for 8-bit seeds is $4.75$ instead of $5$.
 
 \section{Experiments}
 \label{sec:experiments}
@@ -437,23 +488,24 @@ bit-packed seeds read without alignment for $S=10$.
 \toprule
 Method & Configuration & bits/key & build [ns/key] & query [ns] \\
 \midrule
-\PHastP & $S=8$, $\lambda=5.25$ & 2.116 & 66 & 25.7 \\
-\PHastP wrap $\delta=1$ & $S=8$, $\lambda=5.25$ & 2.096 & 81 & 24.5 \\
-\PHastP wrap $\delta=2$ & $S=8$, $\lambda=5$ & 2.013 & 99 & 22.9 \\
-\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.970 & 123 & 24.5 \\
-\PHast & $S=8$, $\lambda=4.5$ & 1.922 & 826 & 23.3 \\
+\PHastP & $S=8$, $\lambda=5.25$ & 2.116 & 66 & 23.7 \\
+\PHastP wrap $\delta=1$ & $S=8$, $\lambda=5.25$ & 2.096 & 80 & 22.7 \\
+\PHastP wrap $\delta=2$ & $S=8$, $\lambda=5$ & 2.013 & 99 & 21.3 \\
+\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.970 & 120 & 22.1 \\
+\PHast & $S=8$, $\lambda=4.5$ & 1.922 & 819 & 21.0 \\
 \addlinespace
-\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.921 & 110 & 24.2 \\
-\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.925 & 106 & 24.7 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.929 & 60 & 20.5 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.921 & 58 & 21.0 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.925 & 59 & 21.7 \\
 \midrule
-\PHastP & $S=10$, $\lambda=5.15$ & 2.085 & 77 & 27.9 \\
-\PHastP wrap $\delta=1$ & $S=10$, $\lambda=6.2$ & 1.905 & 115 & 27.0 \\
-\PHastP wrap $\delta=2$ & $S=10$, $\lambda=5.9$ & 1.883 & 178 & 26.0 \\
-\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.872 & 249 & 27.5 \\
-\PHast & $S=10$, $\lambda=6.05$ & 1.854 & 2238 & 27.8 \\
+\PHastP & $S=10$, $\lambda=5.15$ & 2.085 & 74 & 25.4 \\
+\PHastP wrap $\delta=1$ & $S=10$, $\lambda=6.2$ & 1.905 & 110 & 24.5 \\
+\PHastP wrap $\delta=2$ & $S=10$, $\lambda=5.9$ & 1.883 & 172 & 23.7 \\
+\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.872 & 242 & 25.3 \\
+\PHast & $S=10$, $\lambda=6.05$ & 1.854 & 2201 & 25.4 \\
 \addlinespace
-\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.852 & 217 & 29.2 \\
-\PHastR & $S=10$, $L=2048$, $\lambda=6.25$ & 1.857 & 213 & 29.5 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.852 & 123 & 25.0 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=6.25$ & 1.857 & 121 & 25.3 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -467,15 +519,15 @@ Method & Configuration & bits/key & build [ns/key] & query [ns] \\
   legend pos=north east, legend cell align=left, grid=major, grid style={gray!20},
   xmin=50, xmax=3000, ymin=1.83, ymax=2.13]
 \addplot[only marks, mark=o, color=black] coordinates {
-  (66,2.116) (81,2.096) (99,2.013) (123,1.970) (77,2.085) (115,1.905) (178,1.883) (249,1.872)
+  (66,2.116) (80,2.096) (99,2.013) (120,1.970) (74,2.085) (110,1.905) (172,1.883) (242,1.872)
 };
 \addlegendentry{\PHastP (with and without wrapping)}
 \addplot[only marks, mark=square, color=black] coordinates {
-  (826,1.922) (2238,1.854)
+  (819,1.922) (2201,1.854)
 };
 \addlegendentry{\PHast}
 \addplot[only marks, mark=*, color=red!70!black] coordinates {
-  (110,1.921) (106,1.925) (217,1.852) (213,1.857)
+  (60,1.929) (58,1.921) (59,1.925) (123,1.852) (121,1.857)
 };
 \addlegendentry{\PHastR}
 \end{axis}
@@ -487,15 +539,21 @@ Table~\ref{tab:1e7}).}
 
 Table~\ref{tab:1e7} and Figure~\ref{fig:pareto} show the results on $10^7$
 keys. With 8-bit seeds, \PHastR uses $0.05$ bits per key less than the best
-variant of \PHastP with wrapping, and it is $10\%$ faster to build; it uses
-the same space as \PHast, which takes more than seven times as long to build.
-Queries take the same time as those of \PHastP with wrapping: with
+variant of \PHastP with wrapping, and it is built in less than half the time
+(it is faster to build even than \PHastP without wrapping); it uses the same
+space as \PHast, which takes fourteen times as long to build. Its queries are
+faster than those of all variants of \PHastP ($5\%$ faster than those of the
+variant using the least space), and as fast as those of \PHast: with
 $\lambda=4.75$ \PHastR bumps $2.5\%$ of the keys from the first level, against
-$4.3\%$, which compensates for the additional operations of its queries. With
+the $4.3\%$ of \PHastP with wrapping and $\delta=3$, and queries for bumped
+keys are much slower than the others. The expected bucket size thus trades
+space for query time: with $\lambda=4.5$ just $1.5\%$ of the keys are bumped,
+and queries are faster than those of \PHast using $0.4\%$ more space. With
 10-bit seeds \PHastR uses less space than all variants of \PHastP, and even
-slightly less than \PHast, with a construction time between those of \PHastP
-with wrapping for $\delta=2$ and $\delta=3$; its queries are, however,
-slightly slower.
+slightly less than \PHast; it is built in about half the time of \PHastP
+with wrapping and $\delta=3$, and its queries are slightly faster than those
+of the latter and of \PHast (the variants of \PHastP with a smaller
+multiplier have faster queries, but they use more space).
 
 \begin{table}[t]
 \centering
@@ -509,24 +567,28 @@ construction.}
 \cmidrule(lr){4-5}
 Method & Configuration & bits/key & 1 thread & 8 threads & query [ns] \\
 \midrule
-\PHastP & $S=8$, $\lambda=5.25$ & 2.115 & 72 & 17.1 & 39.5 \\
-\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.968 & 131 & 25.4 & 36.6 \\
-\PHast & $S=8$, $\lambda=4.5$ & 1.921 & 836 & -- & 33.4 \\
+\PHastP & $S=8$, $\lambda=5.25$ & 2.115 & 69 & 15.8 & 35.8 \\
+\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.968 & 126 & 23.2 & 32.9 \\
+\PHast & $S=8$, $\lambda=4.5$ & 1.921 & 825 & -- & 30.5 \\
 \addlinespace
-\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.919 & 114 & 22.0 & 35.8 \\
-\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.924 & 111 & 22.3 & 37.0 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.927 & 63 & 13.1 & 29.9 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.919 & 62 & 13.5 & 31.0 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.924 & 62 & 14.3 & 32.3 \\
 \midrule
-\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.869 & 256 & 47.1 & 39.3 \\
+\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.869 & 248 & 41.3 & 35.8 \\
 \addlinespace
-\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.849 & 220 & 37.1 & 42.4 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.849 & 128 & 21.4 & 35.5 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 Table~\ref{tab:1e8} shows that the picture does not change on $10^8$ keys,
-where queries are dominated by cache misses. With 8 threads \PHastR builds
-$13\%$ faster than \PHastP with wrapping with 8-bit seeds, and $21\%$ faster
-with 10-bit seeds.
+where queries are dominated by cache misses: with 8-bit seeds \PHastR is
+built in half the time of \PHastP with wrapping, and its queries are $6\%$
+faster; the queries of \PHast are $2\%$ faster than those of \PHastR with
+$\lambda=4.75$, and $2\%$ slower than those of \PHastR with $\lambda=4.5$.
+With 8 threads \PHastR builds in $58\%$ of the time of \PHastP with wrapping
+with 8-bit seeds, and in $52\%$ of the time with 10-bit seeds.
 
 \section{The Limits of the Approach}
 \label{sec:limits}
@@ -732,12 +794,12 @@ removes the rigidity at the cost of two shifts per query, since the offsets of
 the patterns come for free with the computation of the bucket; and moving the
 keys along rings preserves bit-parallelism, as feasible seeds are found by
 rotating blocks of bits of a set of used slots stored by residue classes. The
-resulting structure, \PHastR, has the query time of \PHastP with wrapping,
-uses less space, and is faster to build. Bumping has, however, intrinsic
-limits: no placement in which keys move within windows of $W$ slots can avoid
-bumping about $\sqrt{\pi n/2}-W$ keys, and in practice the fraction of bumped
-keys is determined by the density that the sweep can reach, which more
-flexible placements and searches do not change.
+resulting structure, \PHastR, uses less space than \PHastP with wrapping, is
+built in half the time, and has slightly faster queries. Bumping has, however,
+intrinsic limits: no placement in which keys move within windows of $W$ slots
+can avoid bumping about $\sqrt{\pi n/2}-W$ keys, and in practice the fraction
+of bumped keys is determined by the density that the sweep can reach, which
+more flexible placements and searches do not change.
 
 There are several open problems and further research directions. On the
 practical side, the bucket priorities and the geometry of small levels should
