@@ -48,12 +48,14 @@ Self-collisions disappear, and queries need just two shifts more than those
 of \PHastP with wrapping. Moreover, storing the set of used
 slots by residue classes turns a ring into a block of consecutive bits, so the
 seeds of a pattern that are feasible for a bucket are found by rotating and
-combining one block per key. With 8-bit seeds, \PHastR uses $1.92$ bits per key
+combining one block per key. With 8-bit seeds, \PHastR uses $1.93$ bits per key
 against the $1.97$ of \PHastP with wrapping, it is built in half the time, and
-its queries are slightly faster; with 10-bit seeds it uses $1.85$ bits per key
-against $1.87$. Finally, we study the limits of the approach: we prove that when keys
-can move only within windows of $W$ slots no placement of $n$ keys on $n$
-slots, however found, can avoid bumping about $\sqrt{\pi n/2}-W$ keys, and we
+its queries are faster; its space and its query time are close to those of
+\PHast, which takes more than ten times as long to build. With 10-bit seeds
+it uses $1.85$ bits per key against $1.87$. Finally, we study the limits of
+the approach: we prove that when keys can move only within windows of $W$
+slots no placement of $n$ keys on $n$ slots, however found, can avoid bumping
+about $\sqrt{\pi n/2}-W$ keys, and we
 report evidence that the fraction of keys bumped by a sweep is bounded by the
 density that the sweep can reach, rather than by the flexibility of
 placement.
@@ -460,7 +462,7 @@ the last level uses the same scheme as the other levels instead of regular
 \PHast (Last level); and gaps between parallel chunks are swept in parallel by
 independent sweeps instead of serially by continuing the previous sweep
 (Parallel construction). Slice lengths and bucket priorities are the same;
-the suggested expected bucket size for 8-bit seeds is $4.75$ instead of $5$.
+the suggested expected bucket size for 8-bit seeds is $4.5$ instead of $5$.
 
 \section{Experiments}
 \label{sec:experiments}
@@ -538,22 +540,25 @@ Table~\ref{tab:1e7}).}
 \end{figure}
 
 Table~\ref{tab:1e7} and Figure~\ref{fig:pareto} show the results on $10^7$
-keys. With 8-bit seeds, \PHastR uses $0.05$ bits per key less than the best
-variant of \PHastP with wrapping, and it is built in less than half the time
-(it is faster to build even than \PHastP without wrapping); it uses the same
-space as \PHast, which takes fourteen times as long to build. Its queries are
-faster than those of all variants of \PHastP ($5\%$ faster than those of the
-variant using the least space), and as fast as those of \PHast: with
-$\lambda=4.75$ \PHastR bumps $2.5\%$ of the keys from the first level, against
+keys. With 8-bit seeds and the suggested expected bucket size $\lambda=4.5$,
+\PHastR uses $0.04$ bits per key less than the best variant of \PHastP with
+wrapping, and it is built in half the time (it is faster to build even than
+\PHastP without wrapping). Its queries are faster than those of all variants
+of \PHastP ($7\%$ faster than those of the variant using the least space),
+and slightly faster than those of \PHast, which uses $0.4\%$ less space but
+takes almost fourteen times as long to build. The speed of queries is due to
+bumping: \PHastR bumps just $1.5\%$ of the keys from the first level, against
 the $4.3\%$ of \PHastP with wrapping and $\delta=3$, and queries for bumped
 keys are much slower than the others. The expected bucket size thus trades
-space for query time: with $\lambda=4.5$ just $1.5\%$ of the keys are bumped,
-and queries are faster than those of \PHast using $0.4\%$ more space. With
-10-bit seeds \PHastR uses less space than all variants of \PHastP, and even
-slightly less than \PHast; it is built in about half the time of \PHastP
-with wrapping and $\delta=3$, and its queries are slightly faster than those
-of the latter and of \PHast (the variants of \PHastP with a smaller
-multiplier have faster queries, but they use more space).
+space for query time: with $\lambda=4.75$ \PHastR bumps $2.5\%$ of the keys,
+and it has the space and the query time of \PHast; with $\lambda=5$ it bumps
+$3.7\%$ of the keys, and its queries are still faster than those of \PHastP
+with wrapping and $\delta=3$. With 10-bit seeds \PHastR uses less space than
+all variants of \PHastP, and even slightly less than \PHast; it is built in
+about half the time of \PHastP with wrapping and $\delta=3$, and its queries
+are slightly faster than those of the latter and of \PHast (the variants of
+\PHastP with a smaller multiplier have faster queries, but they use more
+space).
 
 \begin{table}[t]
 \centering
@@ -583,11 +588,10 @@ Method & Configuration & bits/key & 1 thread & 8 threads & query [ns] \\
 \end{table}
 
 Table~\ref{tab:1e8} shows that the picture does not change on $10^8$ keys,
-where queries are dominated by cache misses: with 8-bit seeds \PHastR is
-built in half the time of \PHastP with wrapping, and its queries are $6\%$
-faster; the queries of \PHast are $2\%$ faster than those of \PHastR with
-$\lambda=4.75$, and $2\%$ slower than those of \PHastR with $\lambda=4.5$.
-With 8 threads \PHastR builds in $58\%$ of the time of \PHastP with wrapping
+where queries are dominated by cache misses: with 8-bit seeds and
+$\lambda=4.5$ \PHastR is built in half the time of \PHastP with wrapping, and
+its queries are $9\%$ faster; they are also $2\%$ faster than those of \PHast.
+With 8 threads \PHastR builds in $56\%$ of the time of \PHastP with wrapping
 with 8-bit seeds, and in $52\%$ of the time with 10-bit seeds.
 
 \section{The Limits of the Approach}
@@ -795,7 +799,7 @@ the patterns come for free with the computation of the bucket; and moving the
 keys along rings preserves bit-parallelism, as feasible seeds are found by
 rotating blocks of bits of a set of used slots stored by residue classes. The
 resulting structure, \PHastR, uses less space than \PHastP with wrapping, is
-built in half the time, and has slightly faster queries. Bumping has, however,
+built in half the time, and has faster queries. Bumping has, however,
 intrinsic limits: no placement in which keys move within windows of $W$ slots
 can avoid bumping about $\sqrt{\pi n/2}-W$ keys, and in practice the fraction
 of bumped keys is determined by the density that the sweep can reach, which

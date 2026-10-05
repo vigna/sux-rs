@@ -428,8 +428,9 @@ experimental options and the diagnostics should be removed or moved out of
 
 ## Rings only: cleanup and engineering (October 5, 2026)
 
-The design chosen is rings of patterns without repair (R = 4; λ = 4.75 and
-L = 1024 for 8-bit seeds). `phast_r.rs` was rewritten around it (commit
+The design chosen is rings of patterns without repair (R = 4 and L = 1024
+for 8-bit seeds; the default λ was 4.75, and it is 4.5 since the evening of
+October 5, as query speed comes first: see the end of this section). `phast_r.rs` was rewritten around it (commit
 `59f22b47`): wrapping, repair, the experimental options and the diagnostics
 are gone, together with the lab tools that used them (`overload`, `bumps`).
 Everything is still available at commit `e22eef68`, which is what the
@@ -511,6 +512,19 @@ thread, query ns):
 | PHast-R λ=5 | 1.925 | 59 | 21.7 | 1.924 | 62 | 14.3 | 32.3 |
 | PHast+ wrap δ=3 S=10 λ=6 | 1.872 | 242 | 25.3 | 1.869 | 248 | 41.3 | 35.8 |
 | PHast-R S=10 L=2048 λ=6 | 1.852 | 123 | 25.0 | 1.849 | 128 | 21.4 | 35.5 |
+
+Expected bucket size (`cmp`, one thread; bits/key, build ns/key, query ns):
+
+| λ | 10⁷ | | | 10⁸ | | |
+|---|---|---|---|---|---|---|
+| 4.0 | 2.042 | 73 | 20.1 | 2.041 | 77 | 28.8 |
+| 4.25 | 1.961 | 63 | 20.2 | 1.960 | 67 | 29.1 |
+| 4.5 | 1.929 | 60 | 20.5 | 1.927 | 63 | 29.8 |
+| 4.75 | 1.921 | 58 | 21.0 | 1.919 | 62 | 30.9 |
+| 5.0 | 1.925 | 59 | 21.7 | 1.924 | 62 | 32.3 |
+
+Below 4.5 space grows quickly for a small gain in query time; 4.5 is the
+default (decided by Sebastiano: "We need query speed").
 
 ## Key findings (see Section 2 of the paper; reference implementation)
 

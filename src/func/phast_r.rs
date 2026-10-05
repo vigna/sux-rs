@@ -56,7 +56,7 @@
 //! and reported as errors.
 //!
 //! With the default parameters (8-bit seeds, four patterns, slices of length
-//! 1024) space is about 1.92 bits per key, against the 1.97 bits per key of
+//! 1024) space is about 1.93 bits per key, against the 1.97 bits per key of
 //! PHast+ with wrapping, construction is about twice as fast, and queries
 //! are slightly faster. With 10-bit seeds stored in a [`BitFieldVec`] (see
 //! [`PHastRBuilder::seed_bits`]) space is about 1.86 bits per key; in this
@@ -596,7 +596,9 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStore> PHastR<K, D> {
 /// Builder for [`PHastR`].
 ///
 /// The defaults use 8-bit seeds, four patterns, slices of length 1024, and
-/// an expected bucket size of 4.75 keys.
+/// an expected bucket size of 4.5 keys: a larger size (e.g., 4.75) reduces
+/// space slightly, but more keys are bumped from the first level, and
+/// queries for such keys are slower.
 ///
 /// For 10-bit seeds, good parameters are slices of length 2048 and an
 /// expected bucket size of 6 keys; seeds must then be stored in a
@@ -618,7 +620,7 @@ impl Default for PHastRBuilder {
             seed_bits: 8,
             log2_patterns: 2,
             log2_slice_len: 10,
-            bucket_size: 4.75,
+            bucket_size: 4.5,
             seed: 0,
             weights: None,
         }
@@ -653,7 +655,7 @@ impl PHastRBuilder {
         self
     }
 
-    /// Sets the expected number of keys per bucket (default: 4.75).
+    /// Sets the expected number of keys per bucket (default: 4.5).
     pub fn bucket_size(mut self, bucket_size: f64) -> Self {
         self.bucket_size = bucket_size;
         self

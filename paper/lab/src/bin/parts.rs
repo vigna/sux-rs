@@ -21,7 +21,7 @@ struct Args {
     #[arg(short, default_value_t = 5.0)]
     l: f64,
     /// Expected bucket size of PHast-R.
-    #[arg(short, default_value_t = 4.75)]
+    #[arg(short, default_value_t = 4.5)]
     r: f64,
 }
 
