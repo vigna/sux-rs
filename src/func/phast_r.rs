@@ -49,15 +49,16 @@
 //! the seeds of a pattern that are feasible for a bucket are obtained by
 //! rotating and combining one such block for each key.
 //!
-//! As in PHast+, keys are hashed again with a different seed at each level
-//! after the first, so 64-bit signatures suffice for any number of keys: keys
-//! with the same signature are bumped from the first level and separated at
-//! the following ones. Duplicate keys are detected and reported as errors.
+//! The signatures of the levels after the first one depend also on a second
+//! hash of the key, so, as in PHast+, 64-bit signatures suffice for any
+//! number of keys: keys with the same signature are bumped from the first
+//! level and separated at the following ones. Duplicate keys are detected
+//! and reported as errors.
 //!
 //! With the default parameters (8-bit seeds, four patterns, slices of length
 //! 1024) space is about 1.92 bits per key, against the 1.97 bits per key of
-//! PHast+ with wrapping, construction is faster, and queries take about the
-//! same time. With 10-bit seeds stored in a [`BitFieldVec`] (see
+//! PHast+ with wrapping, construction is about twice as fast, and queries
+//! are slightly faster. With 10-bit seeds stored in a [`BitFieldVec`] (see
 //! [`PHastRBuilder::seed_bits`]) space is about 1.86 bits per key; in this
 //! case, queries are faster after converting the function with
 //! [`TryIntoUnaligned::try_into_unaligned`], so that seeds are accessed with
@@ -68,8 +69,8 @@
 //! [unaligned reads]: BitFieldVec::get_unaligned
 
 use std::borrow::Borrow;
-use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+use std::mem::MaybeUninit;
 
 use anyhow::{Result, bail};
 use dsi_progress_logger::ProgressLog;
@@ -97,12 +98,42 @@ const DEFAULT_PATTERN_SHIFT: u32 = 4;
 /// slices of length 1024).
 const DEFAULT_SCALE: u32 = 2;
 
-/// Returns the seed used to hash keys for a level: the first level uses the
-/// seed of the function; level *ℓ* > 0 uses the seed plus *ℓ*, and attempt *a*
-/// of the last level adds *a* · 2³² to it.
+/// Returns the salt of a level after the first one (see [`level_sig`]): a
+/// value depending on the seed of the function, on the level, and, for the
+/// last level, on the attempt.
 #[inline(always)]
-const fn level_seed(seed: u64, level: usize, attempt: u64) -> u64 {
-    seed.wrapping_add(level as u64).wrapping_add(attempt << 32)
+const fn level_salt(seed: u64, level: usize, attempt: u64) -> u64 {
+    mix(
+        seed.wrapping_add(level as u64).wrapping_add(attempt << 32) | 1,
+        0x9E37_79B9_7F4A_7C15,
+    )
+}
+
+/// The value combined with the seed of the function to obtain the seed of
+/// the second hash of a key (see [`level_sig`]).
+const SECOND_HASH: u64 = 0x5851_F42D_4C95_7F2D;
+
+/// Returns the upper half of the 128-bit product of `a` and `b` xored with
+/// the lower half.
+#[inline(always)]
+const fn mix(a: u64, b: u64) -> u64 {
+    let p = a as u128 * b as u128;
+    (p >> 64) as u64 ^ p as u64
+}
+
+/// Returns the signature of a key for a level after the first one, given
+/// its signature for the first level, a second hash of the key, and the salt
+/// of the level.
+///
+/// Keys with the same signature for the first level have different
+/// signatures for the following ones, as the second hash is independent
+/// from the first one; on the other hand, the key itself is not necessary
+/// after computing the two hashes, and this makes it possible to handle the
+/// keys bumped from the first level out of line without keeping the key
+/// around.
+#[inline(always)]
+const fn level_sig(h: u64, second: u64, salt: u64) -> u64 {
+    mix(h ^ salt, second ^ 0xD6E8_FEB8_6659_FD93)
 }
 
 /// Returns whether to process `len` elements using rayon, that is, whether
@@ -244,6 +275,7 @@ impl<K: ?Sized, D: TryIntoUnaligned, P, R: TryIntoUnaligned> TryIntoUnaligned
             n: self.n,
             pattern_shift: self.pattern_shift,
             default_shifts: self.default_shifts,
+            fast_scale: self.fast_scale,
             params0: self.params0,
             seeds0: self.seeds0.try_into_unaligned()?,
             params: self.params,
@@ -263,6 +295,7 @@ impl<K: ?Sized, P> From<Unaligned<PHastR<K, BitFieldVec<Box<[usize]>>, P, Remap>
             n: f.n,
             pattern_shift: f.pattern_shift,
             default_shifts: f.default_shifts,
+            fast_scale: f.fast_scale,
             params0: f.params0,
             seeds0: f.seeds0.into(),
             params: f.params,
@@ -305,8 +338,8 @@ pub struct LevelParams {
     scale: u64,
     /// The offset of the outputs of this level in the remapping sequence.
     offset: u64,
-    /// The seed used to hash keys for this level (unused for the first
-    /// level, which uses the seed of the function).
+    /// The salt used to compute the signatures of the keys of this level
+    /// from their hashes (unused for the first level).
     salt: u64,
     /// The index of the first seed of this level in the seed storage.
     first_seed: u64,
@@ -368,6 +401,10 @@ pub struct PHastR<K: ?Sized, D = Box<[u8]>, P = Box<[LevelParams]>, R = Remap> {
     /// parameters (see [`DEFAULT_PATTERN_SHIFT`] and [`DEFAULT_SCALE`]), in
     /// which case queries use constants.
     default_shifts: bool,
+    /// The scale of the first level plus one, if there are four patterns
+    /// and the scale is at most three, in which case queries use constants
+    /// even if the shifts are not the default ones; zero otherwise.
+    fast_scale: u8,
     /// The parameters of the first level.
     params0: LevelParams,
     /// The seeds of the first level.
@@ -443,14 +480,21 @@ impl<
     /// With the default shifts we use constants, so that the compiler can
     /// fuse the scaling of the seed with the addition (the test is on a
     /// dedicated field because a test on the shifts themselves would be
-    /// optimized away; queries in a loop perform it just once).
+    /// optimized away; queries in a loop perform it just once). We use
+    /// constants also for the other scales that can be fused when there
+    /// are four patterns (e.g., with 10-bit seeds and slices of length
+    /// 2048), albeit in this case the test is not moved out of loops.
     #[inline(always)]
     fn pos0(&self, h: u64, lo: u64, seed: usize) -> usize {
         let lv = &self.params0;
         if self.default_shifts {
-            Self::pos(lv, h, lo, seed, DEFAULT_PATTERN_SHIFT, DEFAULT_SCALE)
-        } else {
-            Self::pos(lv, h, lo, seed, self.pattern_shift, lv.scale as u32)
+            return Self::pos(lv, h, lo, seed, DEFAULT_PATTERN_SHIFT, DEFAULT_SCALE);
+        }
+        match self.fast_scale {
+            1 => Self::pos(lv, h, lo, seed, DEFAULT_PATTERN_SHIFT, 0),
+            2 => Self::pos(lv, h, lo, seed, DEFAULT_PATTERN_SHIFT, 1),
+            4 => Self::pos(lv, h, lo, seed, DEFAULT_PATTERN_SHIFT, 3),
+            _ => Self::pos(lv, h, lo, seed, self.pattern_shift, lv.scale as u32),
         }
     }
 
@@ -472,7 +516,7 @@ impl<
         if s != 0 {
             return self.pos0(h, p as u64, s);
         }
-        self.get_slow(key)
+        self.get_slow(h, K::to_sig(key, self.seed ^ SECOND_HASH)[0])
     }
 
     /// Returns the values associated with a batch of keys, prefetching the
@@ -496,7 +540,7 @@ impl<
             if s != 0 {
                 return self.pos0(h, p as u64, s);
             }
-            self.get_slow(keys[i])
+            self.get_slow(h, K::to_sig(keys[i], self.seed ^ SECOND_HASH)[0])
         })
     }
 
@@ -513,13 +557,13 @@ impl<
         }
     }
 
-    /// Handles keys bumped from the first level: at each level, the key is
-    /// hashed again with the seed of the level.
+    /// Handles keys bumped from the first level, given the signature for
+    /// the first level and the second hash of the key (see [`level_sig`]).
     #[cold]
     #[inline(never)]
-    fn get_slow(&self, key: &K) -> usize {
+    fn get_slow(&self, h: u64, second: u64) -> usize {
         for lv in self.params.as_ref() {
-            let h = K::to_sig(key, lv.salt)[0];
+            let h = level_sig(h, second, lv.salt);
             let p = h as u128 * lv.buckets as u128;
             // SAFETY: the seeds of the level are stored consecutively
             let s = unsafe {
@@ -650,27 +694,8 @@ impl PHastRBuilder {
             bail!("Too many patterns for the given slice length");
         }
 
-        pl.info(format_args!("Computing signatures..."));
         let seed = self.seed;
-        let hash = |(i, k): (usize, &B)| Sig {
-            h: K::to_sig(k.borrow(), seed)[0],
-            idx: i as u64,
-        };
-        #[cfg(feature = "rayon")]
-        let sigs: Vec<Sig> = if parallel(keys.len()) {
-            use rayon::prelude::*;
-            keys.par_iter()
-                .enumerate()
-                .with_min_len(crate::RAYON_MIN_LEN)
-                .map(hash)
-                .collect()
-        } else {
-            keys.iter().enumerate().map(hash).collect()
-        };
-        #[cfg(not(feature = "rayon"))]
-        let sigs: Vec<Sig> = keys.iter().enumerate().map(hash).collect();
-
-        let (levels, remap) = self.build_levels::<K, B>(keys, sigs, pl)?;
+        let (levels, remap) = self.build_levels::<K, B>(keys, pl)?;
         let mut levels = levels.into_iter();
         let (params0, seeds0) = levels.next().expect("there is always at least one level");
         let mut params = vec![];
@@ -686,6 +711,11 @@ impl PHastRBuilder {
             pattern_shift: 6 - self.log2_patterns,
             default_shifts: 6 - self.log2_patterns == DEFAULT_PATTERN_SHIFT
                 && params0.scale == DEFAULT_SCALE as u64,
+            fast_scale: if 6 - self.log2_patterns == DEFAULT_PATTERN_SHIFT && params0.scale <= 3 {
+                params0.scale as u8 + 1
+            } else {
+                0
+            },
             params0,
             seeds0: D::from_seeds(&seeds0, self.seed_bits),
             params: params.into_boxed_slice(),
@@ -695,29 +725,19 @@ impl PHastRBuilder {
         })
     }
 
-    /// Builds the levels from the signatures of the first level (each with
-    /// the index of its key, so that keys bumped from a level can be hashed
-    /// again for the next one).
+    /// Builds the levels.
+    ///
+    /// Signatures are stored with the index of their key, so that the
+    /// signatures of the keys bumped from a level can be computed for the
+    /// next one.
     #[allow(clippy::type_complexity)]
     fn build_levels<K: ?Sized + ToSig<[u64; 1]> + Sync, B: Borrow<K> + Sync>(
         &self,
         keys: &[B],
-        mut cur: Vec<Sig>,
         pl: &mut impl ProgressLog,
     ) -> Result<(Vec<(LevelParams, Vec<u16>)>, Remap)> {
-        // Hashes again the keys of the given signatures with the given seed
         let hash = |idx: u64, seed: u64| K::to_sig(keys[idx as usize].borrow(), seed)[0];
-        let rehash = |v: &mut [Sig], seed: u64| {
-            let f = |x: &mut Sig| x.h = hash(x.idx, seed);
-            #[cfg(feature = "rayon")]
-            if parallel(v.len()) {
-                use rayon::prelude::*;
-                v.par_iter_mut().with_min_len(1 << 16).for_each(f);
-                return;
-            }
-            v.iter_mut().for_each(f);
-        };
-        let n = cur.len();
+        let n = keys.len();
         let mut levels: Vec<(LevelParams, Vec<u16>)> = vec![];
         let mut entries: Vec<usize> = vec![];
         // Priority weights depend on the slice length of each level
@@ -734,41 +754,20 @@ impl PHastRBuilder {
             return Ok((levels, remap(efb)));
         }
 
-        // Keys with the same signature are adjacent after sorting. They are
-        // bumped (they are mapped to the same slot by every seed), and
-        // separated by the signatures of the following levels, unless they
-        // are equal: we detect duplicate keys hashing again keys with the
-        // same signature with a different seed.
-        sort_sigs(&mut cur);
-        let equal = |w: &[Sig]| (w[0].h == w[1].h).then_some(w[0].h);
-        #[cfg(feature = "rayon")]
-        let mut equal_h: Vec<u64> = if parallel(cur.len()) {
-            use rayon::prelude::*;
-            cur.par_windows(2).filter_map(equal).collect()
-        } else {
-            cur.windows(2).filter_map(equal).collect()
-        };
-        #[cfg(not(feature = "rayon"))]
-        let mut equal_h: Vec<u64> = cur.windows(2).filter_map(equal).collect();
-        equal_h.dedup();
-        for h in equal_h {
-            let start = cur.partition_point(|x| x.h < h);
-            let end = cur.partition_point(|x| x.h <= h);
-            let mut other: Vec<u64> = cur[start..end]
-                .iter()
-                .map(|x| hash(x.idx, self.seed ^ 0xD6E8_FEB8_6659_FD93))
-                .collect();
-            other.sort_unstable();
-            if other.windows(2).any(|w| w[0] == w[1]) {
-                bail!("Duplicate keys");
-            }
-        }
-
         // The first level
+        pl.info(format_args!("Computing signatures..."));
         let geom = self.geometry(n, n, self.bucket_size);
-        let out =
-            sweep_level(&cur, &geom, &weights(&geom), true).expect("bumping sweeps cannot fail");
-        drop(cur);
+        let (sigs, bucket_begin) = group(
+            n,
+            |i| Sig {
+                h: hash(i as u64, self.seed),
+                idx: i as u64,
+            },
+            &geom,
+        );
+        let out = sweep_level(&sigs, &bucket_begin, &geom, &weights(&geom), true)
+            .expect("bumping sweeps cannot fail");
+        drop((sigs, bucket_begin));
         pl.info(format_args!(
             "Level 0: {} keys, {} bumped ({:.3}%)",
             n,
@@ -781,35 +780,77 @@ impl PHastRBuilder {
         let mut hole_idx = 0;
         let mut last_hole = 0;
 
-        // The following levels: keys are hashed again with the seed of the
-        // level
+        // Keys with the same signature are mapped to the same slot by every
+        // seed, so they are bumped, and separated by the signatures of the
+        // following levels, which depend on a second hash, unless the keys
+        // are equal: since equal keys are bumped from the first level, we
+        // detect them in the following levels, hashing keys with the same
+        // signature with a third seed.
+        let duplicates = |sigs: &[Sig], bucket_begin: &[usize]| {
+            let mut bucket = vec![];
+            bucket_begin.windows(2).any(|w| {
+                bucket.clear();
+                bucket.extend_from_slice(&sigs[w[0]..w[1]]);
+                bucket.sort_unstable_by_key(|x| x.h);
+                bucket.chunk_by(|x, y| x.h == y.h).any(|equal| {
+                    let mut other: Vec<u64> = equal
+                        .iter()
+                        .map(|x| hash(x.idx, self.seed ^ 0xD6E8_FEB8_6659_FD93))
+                        .collect();
+                    other.sort_unstable();
+                    other.windows(2).any(|w| w[0] == w[1])
+                })
+            })
+        };
+
+        // The following levels: signatures are computed from the two
+        // hashes of each key and the salt of the level
         let mut cur = out.bumped;
         while !cur.is_empty() {
             let k = cur.len();
+            let group = |salt: u64, geom: &Geometry| {
+                group(
+                    k,
+                    |i| {
+                        let idx = cur[i].idx;
+                        let second = hash(idx, self.seed ^ SECOND_HASH);
+                        Sig {
+                            h: level_sig(hash(idx, self.seed), second, salt),
+                            idx,
+                        }
+                    },
+                    geom,
+                )
+            };
             let (level, seeds, occupied, bumped, m) = if k > LAST_LEVEL_THRESHOLD {
-                let seed = level_seed(self.seed, levels.len(), 0);
-                rehash(&mut cur, seed);
-                sort_sigs(&mut cur);
+                let salt = level_salt(self.seed, levels.len(), 0);
                 let geom = self.geometry(k, k, self.bucket_size);
-                let out = sweep_level(&cur, &geom, &weights(&geom), true)
+                let (sigs, bucket_begin) = group(salt, &geom);
+                if duplicates(&sigs, &bucket_begin) {
+                    bail!("Duplicate keys");
+                }
+                let out = sweep_level(&sigs, &bucket_begin, &geom, &weights(&geom), true)
                     .expect("bumping sweeps cannot fail");
                 let mut level = geom.level();
-                level.salt = seed;
+                level.salt = salt;
                 (level, out.seeds, out.occupied, out.bumped, geom.m)
             } else {
                 // The last level does not bump: we enlarge the range and
-                // hash the keys with a different seed until we succeed
+                // change the salt until we succeed
                 let mut attempt = 0u64;
                 loop {
                     let m = k + k / 4 + 16 + (attempt as usize / 8) * (k / 8 + 8);
                     let geom = self.geometry(k, m, self.bucket_size.min(3.0));
-                    let seed = level_seed(self.seed, levels.len(), attempt);
-                    let mut sigs = cur.clone();
-                    rehash(&mut sigs, seed);
-                    sort_sigs(&mut sigs);
-                    if let Some(out) = sweep_level(&sigs, &geom, &weights(&geom), false) {
+                    let salt = level_salt(self.seed, levels.len(), attempt);
+                    let (sigs, bucket_begin) = group(salt, &geom);
+                    if attempt == 0 && duplicates(&sigs, &bucket_begin) {
+                        bail!("Duplicate keys");
+                    }
+                    if let Some(out) =
+                        sweep_level(&sigs, &bucket_begin, &geom, &weights(&geom), false)
+                    {
                         let mut level = geom.level();
-                        level.salt = seed;
+                        level.salt = salt;
                         break (level, out.seeds, out.occupied, out.bumped, geom.m);
                     }
                     attempt += 1;
@@ -856,10 +897,12 @@ impl PHastRBuilder {
         let l = (m / 2 + 1)
             .next_power_of_two()
             .min(1 << self.log2_slice_len);
+        // The number of buckets must be odd, as offsets are taken from the
+        // product of the signature and the number of buckets
+        let buckets = (k as f64 / bucket_size).round().max(1.0) as usize | 1;
         Geometry {
-            // The number of buckets must be odd, as offsets are taken from
-            // the product of the signature and the number of buckets
-            buckets: (k as f64 / bucket_size).round().max(1.0) as usize | 1,
+            buckets,
+            bucket_width: u64::MAX / buckets as u64,
             num_slices: (m + 1 - l) as u64,
             l_mask: l as u64 - 1,
             // With slices shorter than the number of seeds, seeds are
@@ -876,47 +919,191 @@ impl PHastRBuilder {
 const LAST_LEVEL_THRESHOLD: usize = 4096;
 
 /// A key during construction: its signature for the current level and its
-/// index (used to hash it again for the following levels).
-#[derive(Debug, Clone, Copy, Default)]
+/// index (used to compute its signatures for the following levels).
+#[derive(Debug, Clone, Copy)]
 struct Sig {
     h: u64,
     idx: u64,
 }
 
-/// Ordering by signature (and index, to break ties), needed by
-/// [`voracious_radix_sort`].
-impl PartialOrd for Sig {
-    #[inline(always)]
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some((self.h, self.idx).cmp(&(other.h, other.idx)))
-    }
-}
+/// The base-2 logarithm of the number of keys of a part of [`group`]: the
+/// keys of a part should fit the second-level cache.
+const LOG2_PART_KEYS: u32 = 14;
+/// The base-2 logarithm of the maximum number of parts of [`group`].
+const MAX_LOG2_PARTS: u32 = 11;
 
-impl PartialEq for Sig {
-    #[inline(always)]
-    fn eq(&self, other: &Self) -> bool {
-        self.h == other.h && self.idx == other.idx
-    }
-}
-
-impl voracious_radix_sort::Radixable<u64> for Sig {
-    type Key = u64;
-    #[inline(always)]
-    fn key(&self) -> u64 {
-        self.h
-    }
-}
-
-/// Sorts by signature using [`voracious_radix_sort`] (multithreaded with the
-/// `rayon` feature).
-fn sort_sigs(v: &mut [Sig]) {
-    use voracious_radix_sort::RadixSort;
+/// Computes the signatures of the keys of a level and groups them by
+/// bucket.
+///
+/// Returns the signatures, with those of each bucket in consecutive
+/// positions and buckets in order, and the position of the first signature
+/// of each bucket, followed by the number of keys. The signature of the
+/// key of index *i* in the level is `sig(i)`.
+///
+/// Signatures need not be sorted, so we just distribute them: first into
+/// parts made of a power of two of consecutive buckets, and then each part
+/// into its buckets, counting in both cases the number of signatures with
+/// each destination beforehand. The first phase processes a chunk of the
+/// keys for each thread, and writes sequentially into each part; the second
+/// phase processes parts in parallel, gathering the signatures of a part
+/// from all chunks, and writes into a region that fits the cache.
+fn group(n: usize, sig: impl Fn(usize) -> Sig + Sync, g: &Geometry) -> (Vec<Sig>, Vec<usize>) {
+    let nb = g.buckets;
+    let log2_parts = (n >> LOG2_PART_KEYS)
+        .next_power_of_two()
+        .ilog2()
+        .min(MAX_LOG2_PARTS);
+    // The part of a bucket is given by its index shifted right by this
+    // amount
+    let shift = (usize::BITS - (nb - 1).leading_zeros()).saturating_sub(log2_parts);
+    let parts = ((nb - 1) >> shift) + 1;
     #[cfg(feature = "rayon")]
-    if parallel(v.len()) {
-        v.voracious_mt_sort(rayon::current_num_threads());
-        return;
+    let par = parallel(n);
+    #[cfg(feature = "rayon")]
+    let chunk_len = if par {
+        n.div_ceil(rayon::current_num_threads())
+    } else {
+        n
+    };
+    #[cfg(not(feature = "rayon"))]
+    let chunk_len = n;
+    let chunk_len = chunk_len.max(1);
+
+    // The signatures are written here by the first phase in the order of
+    // the keys, and then by the second phase grouped by bucket
+    let mut sigs: Vec<Sig> = Vec::with_capacity(n);
+
+    // First phase: each chunk of the keys is hashed, and its signatures are
+    // distributed into parts; we return the signatures of the chunk and
+    // the position of the first signature of each part
+    type Chunk<'a> = (usize, &'a mut [MaybeUninit<Sig>]);
+    let distribute = |(chunk, sigs): Chunk| -> (Vec<Sig>, Vec<usize>) {
+        let mut part_begin = vec![0usize; parts + 1];
+        for (i, x) in sigs.iter_mut().enumerate() {
+            let x = x.write(sig(chunk * chunk_len + i));
+            part_begin[(g.bucket(x.h) >> shift) + 1] += 1;
+        }
+        for p in 0..parts {
+            part_begin[p + 1] += part_begin[p];
+        }
+        let mut next = part_begin.clone();
+        let mut distributed = Vec::with_capacity(sigs.len());
+        let spare = distributed.spare_capacity_mut();
+        for x in sigs.iter() {
+            // SAFETY: we have just written this element
+            let x = unsafe { x.assume_init() };
+            let next = &mut next[g.bucket(x.h) >> shift];
+            spare[*next].write(x);
+            *next += 1;
+        }
+        // SAFETY: we counted the signatures of each part, so each of the
+        // first sigs.len() positions has been written exactly once
+        unsafe { distributed.set_len(sigs.len()) };
+        (distributed, part_begin)
+    };
+    let spare = &mut sigs.spare_capacity_mut()[..n];
+    #[cfg(feature = "rayon")]
+    let chunks: Vec<(Vec<Sig>, Vec<usize>)> = if par {
+        use rayon::prelude::*;
+        spare
+            .par_chunks_mut(chunk_len)
+            .enumerate()
+            .map(distribute)
+            .collect()
+    } else {
+        spare
+            .chunks_mut(chunk_len)
+            .enumerate()
+            .map(distribute)
+            .collect()
+    };
+    #[cfg(not(feature = "rayon"))]
+    let chunks: Vec<(Vec<Sig>, Vec<usize>)> = spare
+        .chunks_mut(chunk_len)
+        .enumerate()
+        .map(distribute)
+        .collect();
+
+    // Second phase: the signatures of each part are distributed into
+    // buckets
+    let mut part_begin = vec![0usize; parts + 1];
+    for (_, chunk_part_begin) in &chunks {
+        for p in 0..parts {
+            part_begin[p + 1] += chunk_part_begin[p + 1] - chunk_part_begin[p];
+        }
     }
-    v.voracious_sort();
+    for p in 0..parts {
+        part_begin[p + 1] += part_begin[p];
+    }
+    let mut bucket_begin = vec![0usize; nb + 1];
+    let mut part_sigs = Vec::with_capacity(parts);
+    let mut spare = &mut sigs.spare_capacity_mut()[..n];
+    for p in 0..parts {
+        let (part, rest) = spare.split_at_mut(part_begin[p + 1] - part_begin[p]);
+        part_sigs.push(part);
+        spare = rest;
+    }
+    type Part<'a, 'b> = (usize, (&'a mut &'b mut [MaybeUninit<Sig>], &'a mut [usize]));
+    let distribute = |(p, (sigs, begin)): Part| {
+        let first_bucket = p << shift;
+        let part = || {
+            chunks
+                .iter()
+                .map(move |(sigs, part_begin)| &sigs[part_begin[p]..part_begin[p + 1]])
+        };
+        for chunk in part() {
+            for x in chunk {
+                begin[g.bucket(x.h) - first_bucket] += 1;
+            }
+        }
+        let mut sum = 0;
+        for begin in begin.iter_mut() {
+            let size = *begin;
+            *begin = sum;
+            sum += size;
+        }
+        for chunk in part() {
+            for &x in chunk {
+                let next = &mut begin[g.bucket(x.h) - first_bucket];
+                sigs[*next].write(x);
+                *next += 1;
+            }
+        }
+        // Each element is now the end of its bucket in the part, that is,
+        // the beginning of the following one
+        let mut prev = 0;
+        for begin in begin.iter_mut() {
+            let end = *begin;
+            *begin = part_begin[p] + prev;
+            prev = end;
+        }
+    };
+    #[cfg(feature = "rayon")]
+    if par {
+        use rayon::prelude::*;
+        part_sigs
+            .par_iter_mut()
+            .zip(bucket_begin[..nb].par_chunks_mut(1 << shift))
+            .enumerate()
+            .for_each(distribute);
+    } else {
+        part_sigs
+            .iter_mut()
+            .zip(bucket_begin[..nb].chunks_mut(1 << shift))
+            .enumerate()
+            .for_each(distribute);
+    }
+    #[cfg(not(feature = "rayon"))]
+    part_sigs
+        .iter_mut()
+        .zip(bucket_begin[..nb].chunks_mut(1 << shift))
+        .enumerate()
+        .for_each(distribute);
+    bucket_begin[nb] = n;
+    // SAFETY: we counted the signatures of each part and of each bucket,
+    // so each of the first n positions has been written exactly once
+    unsafe { sigs.set_len(n) };
+    (sigs, bucket_begin)
 }
 
 /// The geometry of a level during construction.
@@ -924,6 +1111,8 @@ fn sort_sigs(v: &mut [Sig]) {
 struct Geometry {
     /// The number of buckets (always odd).
     buckets: usize,
+    /// A lower bound for the number of signatures of a bucket.
+    bucket_width: u64,
     /// The number of slices.
     num_slices: u64,
     /// The slice length minus one.
@@ -948,6 +1137,14 @@ impl Geometry {
     #[inline(always)]
     fn slice_begin(&self, h: u64) -> usize {
         mul_hi(h, self.num_slices) as usize
+    }
+
+    /// Returns a lower bound for the beginning of the slices of the keys
+    /// of bucket `b` and of the following buckets.
+    #[inline(always)]
+    fn first_slice(&self, b: usize) -> usize {
+        // The signatures of bucket b are at least b · 2⁶⁴ / buckets
+        mul_hi(b as u64 * self.bucket_width, self.num_slices) as usize
     }
 
     /// Returns the value providing the in-slice offsets of the patterns:
@@ -982,15 +1179,150 @@ impl Geometry {
     }
 }
 
-/// Size of the cyclic set recording the buckets in the priority queue.
-const HEAP_BITS: usize = 1024;
 /// Number of buckets in the window of a sweep.
 const WINDOW: usize = 256;
+/// Size of the cyclic set recording the buckets in the window.
+const WINDOW_BITS: usize = 1024;
+/// Number of keys from which the buckets of a window are kept in a heap.
+const LARGE_BUCKET: usize = 64;
 
-struct SweepOut {
+/// The buckets in the window of a sweep, in order of priority.
+///
+/// The priority of a bucket depends on its size, and decreases with its
+/// index. Since buckets enter the window in order of index, the buckets of
+/// each size form a queue, and the bucket with the highest priority is the
+/// first bucket of one of the queues: finding it requires just to scan the
+/// nonempty queues, and adding a bucket takes constant time. Buckets with
+/// at least [`LARGE_BUCKET`] keys, if any, are kept in a heap.
+struct Window {
+    /// The priority weights for buckets with less than [`LARGE_BUCKET`]
+    /// keys.
+    weights: [i64; LARGE_BUCKET],
+    /// For each size below [`LARGE_BUCKET`], a cyclic buffer containing
+    /// the lowest bits of the indices of the buckets of that size.
+    queues: Box<[[u8; WINDOW]]>,
+    /// The position in its cyclic buffer of the first bucket of each
+    /// queue.
+    first: [u8; LARGE_BUCKET],
+    /// The length of each queue.
+    len: [u16; LARGE_BUCKET],
+    /// The key of the first bucket of each nonempty queue.
+    keys: [i64; LARGE_BUCKET],
+    /// The sizes of the nonempty queues, as a set of bits.
+    nonempty: u64,
+    /// The keys of the buckets with at least [`LARGE_BUCKET`] keys.
+    large: BinaryHeap<i64>,
+    /// The buckets in the window, as a cyclic set of bits.
+    buckets: [u64; WINDOW_BITS / 64],
+}
+
+impl Window {
+    fn new(weights: &[i64; 7]) -> Self {
+        const { assert!(WINDOW <= 256 && WINDOW <= WINDOW_BITS) }
+        Self {
+            weights: std::array::from_fn(|size| Self::weight(weights, size)),
+            queues: vec![[0; WINDOW]; LARGE_BUCKET].into_boxed_slice(),
+            first: [0; LARGE_BUCKET],
+            len: [0; LARGE_BUCKET],
+            keys: [0; LARGE_BUCKET],
+            nonempty: 0,
+            large: BinaryHeap::new(),
+            buckets: [0; WINDOW_BITS / 64],
+        }
+    }
+
+    /// Returns the priority weight of the buckets of the given size:
+    /// weights are given for the first seven sizes, and extrapolated
+    /// linearly for the following ones.
+    fn weight(weights: &[i64; 7], size: usize) -> i64 {
+        if size <= 7 {
+            weights[size.max(1) - 1]
+        } else {
+            weights[6] + (weights[6] - weights[5]) * (size - 7) as i64
+        }
+    }
+
+    /// Returns the key of a bucket: its priority and, in the lowest bits,
+    /// the complement of the lowest bits of its index, which give
+    /// precedence to the first bucket in case of equal priorities (and
+    /// identify the bucket inside the window).
+    #[inline(always)]
+    fn key(weight: i64, b: usize) -> i64 {
+        ((weight - 1024 * b as i64) << WINDOW_BITS.ilog2())
+            | (WINDOW_BITS - 1 - b % WINDOW_BITS) as i64
+    }
+
+    /// Returns whether bucket `b` is in the window.
+    #[inline(always)]
+    fn contains(&self, b: usize) -> bool {
+        self.buckets[(b % WINDOW_BITS) / 64] >> (b % 64) & 1 != 0
+    }
+
+    /// Adds bucket `b`, which must follow all buckets added previously and
+    /// have the given nonzero size.
+    #[inline(always)]
+    fn push(&mut self, b: usize, size: usize, weights: &[i64; 7]) {
+        self.buckets[(b % WINDOW_BITS) / 64] |= 1 << (b % 64);
+        if size >= LARGE_BUCKET {
+            self.large.push(Self::key(Self::weight(weights, size), b));
+            return;
+        }
+        if self.len[size] == 0 {
+            self.keys[size] = Self::key(self.weights[size], b);
+            self.nonempty |= 1 << size;
+        }
+        let last = self.first[size] as usize + self.len[size] as usize;
+        self.queues[size][last % WINDOW] = b as u8;
+        self.len[size] += 1;
+    }
+
+    /// Removes and returns the bucket with the highest priority, if any,
+    /// given the first bucket in the window.
+    #[inline(always)]
+    fn pop(&mut self, span_begin: usize) -> Option<usize> {
+        let (mut key, mut size) = (i64::MIN, 0);
+        let mut nonempty = self.nonempty;
+        while nonempty != 0 {
+            let s = nonempty.trailing_zeros() as usize;
+            nonempty &= nonempty - 1;
+            (key, size) = if self.keys[s] > key {
+                (self.keys[s], s)
+            } else {
+                (key, size)
+            };
+        }
+        // Buckets are identified by the lowest bits of their index
+        let bucket = |low: usize, bits: usize| span_begin + low.wrapping_sub(span_begin) % bits;
+        let b = if self.large.peek().is_some_and(|&large| large > key) {
+            let key = self.large.pop().unwrap();
+            bucket(WINDOW_BITS - 1 - key as usize % WINDOW_BITS, WINDOW_BITS)
+        } else if size == 0 {
+            return None;
+        } else {
+            let queue = &self.queues[size];
+            let b = bucket(queue[self.first[size] as usize % WINDOW] as usize, 256);
+            self.first[size] = self.first[size].wrapping_add(1);
+            self.len[size] -= 1;
+            if self.len[size] == 0 {
+                self.nonempty &= !(1 << size);
+            } else {
+                let next = bucket(queue[self.first[size] as usize % WINDOW] as usize, 256);
+                self.keys[size] = Self::key(self.weights[size], next);
+            }
+            b
+        };
+        self.buckets[(b % WINDOW_BITS) / 64] &= !(1 << (b % 64));
+        Some(b)
+    }
+}
+
+/// The result of the sweep of a level.
+struct Level {
+    /// The seeds of the buckets.
     seeds: Vec<u16>,
-    /// Occupancy bitmap of the output range.
+    /// The used slots, as a set of bits.
     occupied: Vec<u64>,
+    /// The keys of the buckets that could not be placed.
     bumped: Vec<Sig>,
 }
 
@@ -1000,10 +1332,11 @@ struct SweepOut {
 /// placed.
 fn sweep_level(
     keys: &[Sig],
+    bucket_begin: &[usize],
     g: &Geometry,
     weights: &[i64; 7],
     allow_bump: bool,
-) -> Option<SweepOut> {
+) -> Option<Level> {
     let nb = g.buckets;
     let l = g.l_mask as usize + 1;
 
@@ -1020,143 +1353,94 @@ fn sweep_level(
     let chunks = threads.min(nb / (64 * gap).max(4096)).max(1);
 
     let mut seeds = vec![0u16; nb];
-    let ok = if chunks == 1 {
-        Sweep::new(keys, g, weights, 0, nb, &mut seeds).run(allow_bump)
-    } else {
-        // Chunk boundaries; chunk i processes [bounds[i], bounds[i + 1] - gap),
-        // except for the last one, which processes everything.
-        let bounds: Vec<usize> = (0..=chunks).map(|i| i * nb / chunks).collect();
-        let mut parts: Vec<&mut [u16]> = Vec::with_capacity(chunks);
-        let mut rest = &mut seeds[..];
-        for i in 0..chunks {
-            let (a, r) = rest.split_at_mut(bounds[i + 1] - bounds[i]);
-            parts.push(a);
-            rest = r;
+    let mut occupied = vec![0u64; g.m.div_ceil(64)];
+    let mut bumped = vec![];
+    // Each sweep returns the slots it used (and those marked as used) and
+    // the keys it bumped
+    let mut merge = |swept: Swept| {
+        let occupied = occupied.iter_mut().skip(swept.occupied_begin / 64);
+        for (occupied, word) in occupied.zip(&swept.occupied) {
+            *occupied |= word;
         }
-        let run_chunk = |(i, part): (usize, &mut &mut [u16])| {
-            let lo = bounds[i];
-            let hi = if i + 1 == chunks {
-                bounds[i + 1]
-            } else {
-                bounds[i + 1] - gap
-            };
-            Sweep::new(keys, g, weights, lo, hi, &mut part[..hi - lo]).run(allow_bump)
-        };
-        #[cfg(feature = "rayon")]
-        let ok1 = {
-            use rayon::prelude::*;
-            parts
-                .par_iter_mut()
-                .enumerate()
-                .map(run_chunk)
-                .reduce(|| true, |a, b| a && b)
-        };
-        #[cfg(not(feature = "rayon"))]
-        let ok1 = parts
-            .iter_mut()
-            .enumerate()
-            .map(run_chunk)
-            .fold(true, |a, b| a && b);
-        drop(parts);
-        if !ok1 && !allow_bump {
-            return None;
-        }
+        bumped.extend(swept.bumped);
+    };
 
-        // Gaps: the seeds of the neighboring buckets are now known, and the
-        // slots they use are marked.
-        let seeds_ro: &[u16] = &seeds;
-        let run_gap = |i: usize| -> (usize, Vec<u16>, bool) {
-            let lo = bounds[i + 1] - gap;
-            let hi = bounds[i + 1];
-            let mut gap_seeds = vec![0u16; hi - lo];
-            let mut sw = Sweep::new(keys, g, weights, lo, hi, &mut gap_seeds);
-            let before = lo.saturating_sub(gap).max(bounds[i]);
-            let after = (hi + gap).min(bounds[i + 2]);
-            let first = sw.first_slice();
-            for (from, to) in [(before, lo), (hi, after)] {
-                let k_lo = keys.partition_point(|x| g.bucket(x.h) < from);
-                let k_hi = keys.partition_point(|x| g.bucket(x.h) < to);
-                for x in &keys[k_lo..k_hi] {
-                    let s = seeds_ro[g.bucket(x.h)] as usize;
-                    if s != 0 {
-                        let p = g.pos(x.h, s);
-                        if p >= first {
-                            sw.set(p);
-                        }
+    if chunks == 1 {
+        merge(Sweep::new(keys, bucket_begin, g, weights, 0, nb, &mut seeds).run(allow_bump)?);
+        return Some(Level {
+            seeds,
+            occupied,
+            bumped,
+        });
+    }
+
+    // Chunk boundaries; chunk i processes [bounds[i], bounds[i + 1] - gap),
+    // except for the last one, which processes everything.
+    let bounds: Vec<usize> = (0..=chunks).map(|i| i * nb / chunks).collect();
+    let mut parts: Vec<&mut [u16]> = Vec::with_capacity(chunks);
+    let mut rest = &mut seeds[..];
+    for i in 0..chunks {
+        let (a, r) = rest.split_at_mut(bounds[i + 1] - bounds[i]);
+        parts.push(a);
+        rest = r;
+    }
+    let run_chunk = |(i, part): (usize, &mut &mut [u16])| {
+        let lo = bounds[i];
+        let hi = if i + 1 == chunks {
+            bounds[i + 1]
+        } else {
+            bounds[i + 1] - gap
+        };
+        Sweep::new(keys, bucket_begin, g, weights, lo, hi, &mut part[..hi - lo]).run(allow_bump)
+    };
+    #[cfg(feature = "rayon")]
+    let swept: Vec<Option<Swept>> = {
+        use rayon::prelude::*;
+        parts.par_iter_mut().enumerate().map(run_chunk).collect()
+    };
+    #[cfg(not(feature = "rayon"))]
+    let swept: Vec<Option<Swept>> = parts.iter_mut().enumerate().map(run_chunk).collect();
+    drop(parts);
+    for swept in swept {
+        merge(swept?);
+    }
+
+    // Gaps: the seeds of the neighboring buckets are now known, and the
+    // slots they use are marked.
+    let run_gap = |i: usize| -> (Vec<u16>, Option<Swept>) {
+        let lo = bounds[i + 1] - gap;
+        let hi = bounds[i + 1];
+        let mut gap_seeds = vec![0u16; hi - lo];
+        let mut sw = Sweep::new(keys, bucket_begin, g, weights, lo, hi, &mut gap_seeds);
+        let before = lo.saturating_sub(gap).max(bounds[i]);
+        let after = (hi + gap).min(bounds[i + 2]);
+        let first = g.first_slice(lo);
+        for (from, to) in [(before, lo), (hi, after)] {
+            for x in &keys[bucket_begin[from]..bucket_begin[to]] {
+                let s = seeds[g.bucket(x.h)] as usize;
+                if s != 0 {
+                    let p = g.pos(x.h, s);
+                    if p >= first {
+                        sw.set(p);
                     }
                 }
             }
-            let ok = sw.run(allow_bump);
-            (lo, gap_seeds, ok)
-        };
-        #[cfg(feature = "rayon")]
-        let gaps: Vec<(usize, Vec<u16>, bool)> = {
-            use rayon::prelude::*;
-            (0..chunks - 1).into_par_iter().map(run_gap).collect()
-        };
-        #[cfg(not(feature = "rayon"))]
-        let gaps: Vec<(usize, Vec<u16>, bool)> = (0..chunks - 1).map(run_gap).collect();
-        let mut ok = ok1;
-        for (lo, gs, gok) in gaps {
-            seeds[lo..lo + gs.len()].copy_from_slice(&gs);
-            ok &= gok;
         }
-        ok
+        let swept = sw.run(allow_bump);
+        (gap_seeds, swept)
     };
-    if !ok && !allow_bump {
-        return None;
-    }
-
-    // Occupancy and bumped keys. Keys are sorted by bucket, so the slots of
-    // a part of the keys lie in a range that overlaps those of the other
-    // parts only at its ends: each part fills a private segment of the
-    // occupancy bitmap, and segments are then merged (no atomic operations).
-    let words = g.m.div_ceil(64);
-    let seeds_ro: &[u16] = &seeds;
-    let process = |part: &[Sig]| -> (usize, Vec<u64>, Vec<Sig>) {
-        let mut bumped = vec![];
-        let (Some(first), Some(last)) = (part.first(), part.last()) else {
-            return (0, vec![], bumped);
-        };
-        let lo = g.slice_begin(first.h) / 64;
-        let hi = (g.slice_begin(last.h) + l).div_ceil(64).min(words);
-        let mut seg = vec![0u64; hi - lo];
-        for &x in part {
-            let s = seeds_ro[g.bucket(x.h)] as usize;
-            if s == 0 {
-                bumped.push(x);
-            } else {
-                let p = g.pos(x.h, s);
-                debug_assert!(p < g.m);
-                debug_assert!(seg[p / 64 - lo] & (1 << (p % 64)) == 0, "collision at {p}");
-                seg[p / 64 - lo] |= 1 << (p % 64);
-            }
-        }
-        (lo, seg, bumped)
-    };
-    let part_len = keys.len().div_ceil(threads.max(1)).max(1 << 16);
     #[cfg(feature = "rayon")]
-    let parts: Vec<(usize, Vec<u64>, Vec<Sig>)> = if parallel(keys.len()) {
+    let gaps: Vec<(Vec<u16>, Option<Swept>)> = {
         use rayon::prelude::*;
-        keys.par_chunks(part_len).map(process).collect()
-    } else {
-        keys.chunks(part_len).map(process).collect()
+        (0..chunks - 1).into_par_iter().map(run_gap).collect()
     };
     #[cfg(not(feature = "rayon"))]
-    let parts: Vec<(usize, Vec<u64>, Vec<Sig>)> = keys.chunks(part_len).map(process).collect();
-    let mut occupied = vec![0u64; words];
-    let mut bumped = Vec::with_capacity(parts.iter().map(|p| p.2.len()).sum());
-    for (lo, seg, b) in parts {
-        for (o, w) in occupied[lo..lo + seg.len()].iter_mut().zip(seg) {
-            debug_assert!(*o & w == 0, "collision between parts");
-            *o |= w;
-        }
-        bumped.extend(b);
+    let gaps: Vec<(Vec<u16>, Option<Swept>)> = (0..chunks - 1).map(run_gap).collect();
+    for (i, (gap_seeds, swept)) in gaps.into_iter().enumerate() {
+        merge(swept?);
+        seeds[bounds[i + 1] - gap..bounds[i + 1]].copy_from_slice(&gap_seeds);
     }
-    if !allow_bump && !bumped.is_empty() {
-        return None;
-    }
-    Some(SweepOut {
+    Some(Level {
         seeds,
         occupied,
         bumped,
@@ -1173,6 +1457,7 @@ fn is_occupied(bits: &[u64], p: usize) -> bool {
 /// bitmap, in increasing order.
 fn holes(bits: &[u64], m: usize) -> Vec<usize> {
     /// Number of words scanned by a parallel task.
+    #[cfg(feature = "rayon")]
     const CHUNK: usize = 1 << 12;
     // Appends to out the free positions of the words starting at word first
     let scan = |first: usize, words: &[u64], out: &mut Vec<usize>| {
@@ -1208,27 +1493,188 @@ fn holes(bits: &[u64], m: usize) -> Vec<usize> {
     out
 }
 
-/// The state of a sweep over a range of buckets.
-///
-/// Buckets are processed in order of priority inside a window sliding over
-/// the range, as in PHast: for each bucket we look for the seed minimizing
-/// the sum of the slots of its keys.
+/// The parameters of the rings of a level, and of the set of used slots of
+/// a sweep.
 ///
 /// The seeds of a pattern move a key through the slots of its *ring*: the
 /// slots of its slice that are congruent to its first slot modulo the
 /// stride (the stride is the number of patterns times the amount by which a
 /// unit increase of the seed moves a key). The set of used slots is stored
-/// by residue classes modulo the stride (*rows*), so a ring is a block of
-/// consecutive bits of a row, and the seed of index *j* of a pattern maps a
-/// key to the bit of its ring whose index is the index for the first seed of
-/// the pattern plus *j*, modulo the length of the ring: the seeds that are
-/// feasible for a bucket are thus obtained by rotating the ring of each key
-/// and combining the results.
+/// by residue classes modulo the stride (*rows*), 64 slots of each row at a
+/// time (*columns*): bit *i* of word *c* · 2^`log2_stride` + *ρ* is
+/// associated with slot (64*c* + *i*) · 2^`log2_stride` + *ρ* (the number
+/// of columns is a power of two, and columns are used cyclically). A ring
+/// is thus a block of consecutive bits of a row, and the seed of index *j*
+/// of a pattern maps a key to the bit of its ring whose index is the index
+/// for the first seed of the pattern plus *j*, modulo the length of the
+/// ring.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Rings {
+    /// The slice length minus one.
+    l_mask: u64,
+    /// The base-2 logarithm of the amount by which a unit increase of the
+    /// seed moves the keys of a bucket.
+    scale: u32,
+    /// The number of patterns.
+    patterns: usize,
+    /// The distance in bits between the offsets of two consecutive
+    /// patterns.
+    pattern_bits: u32,
+    /// The base-2 logarithm of the stride (at most that of the slice
+    /// length).
+    log2_stride: u32,
+    /// The number of slots of a ring.
+    len: usize,
+    /// The number of seeds of a pattern (at least the length of a ring; if
+    /// it is larger, seeds are redundant).
+    pattern_seeds: usize,
+    /// The number of words of the set of used slots, minus one.
+    word_mask: usize,
+}
+
+impl Rings {
+    /// The rings of the levels of a function with default parameters
+    /// (8-bit seeds, four patterns, and slices of 1024 slots), except for
+    /// the size of the set of used slots.
+    const DEFAULT: Rings = Rings {
+        l_mask: 1023,
+        scale: DEFAULT_SCALE,
+        patterns: 4,
+        pattern_bits: 16,
+        log2_stride: 4,
+        len: 64,
+        pattern_seeds: 64,
+        word_mask: 0,
+    };
+
+    fn new(g: &Geometry) -> Self {
+        let l = g.l_mask as usize + 1;
+        // With slices shorter than the stride, a ring is a single slot
+        let log2_stride = (g.log2_patterns + g.scale).min(l.ilog2());
+        // The cyclic set must contain the slots reachable from the buckets
+        // in the window (WINDOW buckets, whose slices begin about
+        // num_slices / buckets slots apart) plus a slice; gap sweeps need
+        // three slices more. Moreover, slots that are no longer reachable
+        // are cleared a column at a time, so there must be room for the
+        // slots of a column (in particular, there is at least a column).
+        let per_bucket = (g.num_slices as usize).div_ceil(g.buckets);
+        let slots =
+            (4 * (l + 1) + 2 * WINDOW * per_bucket + (64 << log2_stride)).next_power_of_two();
+        Self {
+            l_mask: g.l_mask,
+            scale: g.scale,
+            patterns: 1 << g.log2_patterns,
+            pattern_bits: 64 >> g.log2_patterns,
+            log2_stride,
+            len: l >> log2_stride,
+            pattern_seeds: (1usize << g.seed_bits) >> g.log2_patterns,
+            word_mask: slots / 64 - 1,
+        }
+    }
+
+    /// Returns the offset in its slice of a key for the first seed of
+    /// pattern `r`, given the value providing its offsets.
+    #[inline(always)]
+    fn offset(&self, offsets: u64, r: usize) -> usize {
+        ((offsets >> (r as u32 * self.pattern_bits)).wrapping_add((r as u64) << self.scale)
+            & self.l_mask) as usize
+    }
+
+    /// Returns the first slot of the ring of a key for a pattern and the
+    /// index in the ring of the slot of the key for the first seed of the
+    /// pattern, given the beginning of the slice of the key and its
+    /// [offset](Self::offset) for the pattern.
+    #[inline(always)]
+    fn ring(&self, slice_begin: usize, offset: usize) -> (usize, usize) {
+        (
+            slice_begin + (offset & ((1 << self.log2_stride) - 1)),
+            offset >> self.log2_stride,
+        )
+    }
+
+    /// Returns the slot of a key for the seed of index `j` of a pattern,
+    /// given the first slot of its ring and its index for the first seed
+    /// of the pattern (see [`ring`](Self::ring)).
+    #[inline(always)]
+    fn slot(&self, first: usize, index: usize, j: usize) -> usize {
+        first + (((index + j) & (self.len - 1)) << self.log2_stride)
+    }
+
+    /// Returns the seed of index `j` of pattern `r`.
+    ///
+    /// The first seed of the first pattern is zero, which marks bumped
+    /// buckets; if seeds are redundant we use instead the first seed of
+    /// the second turn around the ring.
+    #[inline(always)]
+    fn seed(&self, r: usize, j: usize) -> usize {
+        if r == 0 && j == 0 {
+            debug_assert!(self.len < self.pattern_seeds);
+            self.len * self.patterns
+        } else {
+            j * self.patterns + r
+        }
+    }
+
+    /// Returns the index of the word of the set of used slots containing
+    /// the bit associated with slot `p` (the index of the bit in the word
+    /// is `p >> log2_stride`, modulo 64).
+    #[inline(always)]
+    fn word(&self, p: usize) -> usize {
+        let stride_mask = (1 << self.log2_stride) - 1;
+        (((p >> 6) & !stride_mask) | (p & stride_mask)) & self.word_mask
+    }
+
+    /// Returns the bits of the 64 slots of the row of slot `p` starting
+    /// from `p` (that is, bit *i* is associated with the slot `p` plus *i*
+    /// strides).
+    #[inline(always)]
+    fn row64(&self, used: &[u64], p: usize) -> u64 {
+        let t = self.log2_stride;
+        let w = self.word(p);
+        // The next word of the row is in the next column
+        debug_assert_eq!(used.len(), self.word_mask + 1);
+        // SAFETY: the indices are at most word_mask
+        let (lo, hi) = unsafe {
+            (
+                *used.get_unchecked(w),
+                *used.get_unchecked((w + (1 << t)) & self.word_mask),
+            )
+        };
+        // Branchless: a 128-bit shift
+        ((((hi as u128) << 64) | lo as u128) >> ((p >> t) % 64)) as u64
+    }
+
+    /// Returns the base-2 logarithm of the number of bits of the fields
+    /// packing indices in a ring into words (see [`Sweep::sum`]): the sum
+    /// of two indices must fit a field.
+    #[inline(always)]
+    fn log2_field(&self) -> u32 {
+        if self.len <= 1 << 7 {
+            3
+        } else if self.len <= 1 << 15 {
+            4
+        } else {
+            5
+        }
+    }
+}
+
+/// The maximum number of free seeds of a bucket that are examined
+/// exhaustively when looking for the best seed.
+const MAX_FREE: u32 = 32;
+
+/// The state of a sweep over a range of buckets.
+///
+/// Buckets are processed in order of priority inside a window sliding over
+/// the range, as in PHast: for each bucket we look for the seed minimizing
+/// the sum of the slots of its keys. The seeds of a pattern that are
+/// feasible for a bucket are obtained by rotating the ring of each key and
+/// combining the results (see [`Rings`]).
 struct Sweep<'a> {
-    /// The keys of the buckets in the range.
+    /// The keys of the level, grouped by bucket.
     keys: &'a [Sig],
-    /// The beginning of each bucket of the range in `keys`.
-    bucket_begin: Vec<usize>,
+    /// The position in `keys` of the first key of each bucket.
+    bucket_begin: &'a [usize],
     g: &'a Geometry,
     weights: &'a [i64; 7],
     /// First bucket of the range.
@@ -1237,50 +1683,32 @@ struct Sweep<'a> {
     hi: usize,
     /// Seeds of the buckets in the range.
     seeds: &'a mut [u16],
-    /// Cyclic bit set of used slots, stored by rows: bit *q* of row *ρ* is
-    /// associated with slot *q* · 2^`log2_stride` + *ρ* (modulo the size of
-    /// the set).
+    /// Cyclic bit set of used slots (see [`Rings`]).
     used: Box<[u64]>,
-    /// The base-2 logarithm of the stride (at most that of the slice
-    /// length).
-    log2_stride: u32,
-    /// The base-2 logarithm of the number of bits of a row.
-    log2_row: u32,
-    /// The number of slots of a ring.
-    ring_len: usize,
-    /// The number of seeds of a pattern (at least the length of a ring; if
-    /// it is larger, seeds are redundant).
-    pattern_seeds: usize,
-    /// Slots before this value are no longer reachable.
-    value_to_clear: usize,
-    /// The beginning of the slice and the value providing the offsets of
-    /// each key of the bucket being searched.
-    bucket: Vec<(usize, u64)>,
-    /// For each key of the bucket and the pattern being searched, the first
-    /// slot of its ring.
-    first: Vec<usize>,
-    /// For each key of the bucket and the pattern being searched, the index
-    /// in its ring of its slot for the first seed of the pattern.
-    index: Vec<u32>,
-    /// The indices of the seeds of the pattern being searched for which no
-    /// key of the bucket is mapped to a used slot.
-    free: Vec<u64>,
+    rings: Rings,
+    /// The first slot of the first column of the set of used slots; slots
+    /// before this one are no longer reachable.
+    first_slot: usize,
+    /// The used slots that are no longer reachable, as a set of bits
+    /// starting from slot `occupied_begin` (a multiple of 64).
+    occupied: Vec<u64>,
+    occupied_begin: usize,
+    /// The keys of the buckets that could not be placed.
+    bumped: Vec<Sig>,
+    /// The state of the search for the seed of a bucket (see
+    /// [`state`](Self::state)).
+    state: Vec<u64>,
+    /// The nonzero words of `free`, each with its index.
+    nonzero: Vec<(u64, u32)>,
     /// The indices at which some key goes back to the first slot of its
     /// ring.
     back: Vec<u32>,
-    /// Candidate indices of seeds for the pattern being searched, with the
-    /// sum of the slots.
-    candidates: Vec<(usize, usize)>,
-    /// The slots of the keys of the bucket for a candidate.
-    slots: Vec<usize>,
-    /// The slots of the keys of the bucket for the seed returned by the
-    /// last search.
-    best: Vec<usize>,
 }
 
 impl<'a> Sweep<'a> {
     fn new(
         keys: &'a [Sig],
+        bucket_begin: &'a [usize],
         g: &'a Geometry,
         weights: &'a [i64; 7],
         lo: usize,
@@ -1288,28 +1716,10 @@ impl<'a> Sweep<'a> {
         seeds: &'a mut [u16],
     ) -> Self {
         debug_assert_eq!(<[u16]>::len(seeds), hi - lo);
-        let l = g.l_mask as usize + 1;
-        // With slices shorter than the stride, a ring is a single slot
-        let log2_stride = (g.log2_patterns + g.scale).min(l.ilog2());
-        // The cyclic set must contain the slots reachable from the buckets
-        // in the priority queue (WINDOW buckets, whose slices begin about
-        // num_slices / buckets slots apart) plus a slice; gap sweeps need
-        // three slices more. Moreover, rows must contain at least a word.
-        let per_bucket = (g.num_slices as usize).div_ceil(g.buckets);
-        let cyc_bits = (4 * (l + 1) + 2 * WINDOW * per_bucket)
-            .next_power_of_two()
-            .max(64 << log2_stride);
-        // Keys are sorted by bucket
-        let k_lo = keys.partition_point(|x| g.bucket(x.h) < lo);
-        let k_hi = keys.partition_point(|x| g.bucket(x.h) < hi);
-        let keys = &keys[k_lo..k_hi];
-        let mut bucket_begin = vec![0usize; hi - lo + 1];
-        for x in keys {
-            bucket_begin[g.bucket(x.h) - lo + 1] += 1;
-        }
-        for i in 0..hi - lo {
-            bucket_begin[i + 1] += bucket_begin[i];
-        }
+        let rings = Rings::new(g);
+        let free_words = rings.patterns * rings.len.div_ceil(64);
+        // Columns contain 64 strides
+        let first_slot = g.first_slice(lo) >> (rings.log2_stride + 6) << (rings.log2_stride + 6);
         Self {
             keys,
             bucket_begin,
@@ -1318,311 +1728,406 @@ impl<'a> Sweep<'a> {
             lo,
             hi,
             seeds,
-            used: vec![0; cyc_bits / 64].into_boxed_slice(),
-            log2_stride,
-            log2_row: cyc_bits.ilog2() - log2_stride,
-            ring_len: l >> log2_stride,
-            pattern_seeds: (1usize << g.seed_bits) >> g.log2_patterns,
-            value_to_clear: 0,
-            bucket: Vec::with_capacity(64),
-            first: Vec::with_capacity(64),
-            index: Vec::with_capacity(64),
-            free: Vec::with_capacity(4),
+            used: vec![0; rings.word_mask + 1].into_boxed_slice(),
+            rings,
+            first_slot,
+            occupied: vec![],
+            occupied_begin: first_slot,
+            bumped: vec![],
+            state: Vec::with_capacity(free_words + rings.patterns * 3),
+            nonzero: vec![(0, 0); free_words],
             back: Vec::with_capacity(64),
-            candidates: Vec::with_capacity(64),
-            slots: Vec::with_capacity(64),
-            best: Vec::with_capacity(64),
         }
     }
 
     #[inline(always)]
     fn size(&self, b: usize) -> usize {
-        self.bucket_begin[b - self.lo + 1] - self.bucket_begin[b - self.lo]
+        self.bucket_begin[b + 1] - self.bucket_begin[b]
     }
 
     #[inline(always)]
     fn bucket_keys(&self, b: usize) -> &'a [Sig] {
-        &self.keys[self.bucket_begin[b - self.lo]..self.bucket_begin[b - self.lo + 1]]
-    }
-
-    /// Returns the beginning of the slice of the first key of the first
-    /// nonempty bucket of the range.
-    fn first_slice(&self) -> usize {
-        let mut b = self.lo;
-        while b < self.hi && self.size(b) == 0 {
-            b += 1;
-        }
-        if b == self.hi {
-            usize::MAX
-        } else {
-            self.g
-                .slice_begin(self.keys[self.bucket_begin[b - self.lo]].h)
-        }
-    }
-
-    #[inline(always)]
-    fn priority(&self, b: usize, size: usize) -> i64 {
-        let w = if size <= 7 {
-            self.weights[size - 1]
-        } else {
-            let l = self.weights[6];
-            let p = self.weights[5];
-            l + (l - p) * (size - 7) as i64
-        };
-        w - 1024 * b as i64
-    }
-
-    /// Returns the index of the bit associated with slot `p` in the set of
-    /// used slots.
-    #[inline(always)]
-    fn bit(&self, p: usize) -> usize {
-        let t = self.log2_stride;
-        ((p & ((1 << t) - 1)) << self.log2_row) | ((p >> t) & ((1 << self.log2_row) - 1))
+        &self.keys[self.bucket_begin[b]..self.bucket_begin[b + 1]]
     }
 
     /// Marks slot `p` as used.
     #[inline(always)]
     fn set(&mut self, p: usize) {
-        let q = self.bit(p);
-        self.used[q / 64] |= 1 << (q % 64);
+        self.used[self.rings.word(p)] |= 1 << ((p >> self.rings.log2_stride) % 64);
     }
 
-    /// Marks slot `p` as free.
+    /// Returns the parts of the state of the search for the seed of a
+    /// bucket:
+    ///
+    /// - for each pattern, the indices of the seeds for which no key of the
+    ///   bucket is mapped to a used slot (limited to the first turn around
+    ///   the ring);
+    ///
+    /// - for each pattern, the sum of the slots of the keys of the bucket
+    ///   for the first seed of the pattern;
+    ///
+    /// - the indices in their rings of the slots of the keys of the bucket
+    ///   for the first seed of each pattern, packed into words (see
+    ///   [`sum`](Self::sum)): a word for each pattern contains the indices
+    ///   of a group of keys.
+    ///
+    /// The parts are stored contiguously, so that in the innermost loops
+    /// they are accessed through a single pointer.
     #[inline(always)]
-    fn clear(&mut self, p: usize) {
-        let q = self.bit(p);
-        self.used[q / 64] &= !(1 << (q % 64));
+    fn state<'b>(
+        rings: &Rings,
+        state: &'b mut [u64],
+    ) -> (&'b mut [u64], &'b mut [u64], &'b mut [u64]) {
+        let (free, state) = state.split_at_mut(rings.patterns * rings.len.div_ceil(64));
+        let (sums, indices) = state.split_at_mut(rings.patterns);
+        (free, sums, indices)
     }
 
-    /// Returns the bits of the 64 slots of the row of slot `p` starting
-    /// from `p` (that is, bit *i* is associated with the slot `p` plus *i*
-    /// strides).
+    /// Removes the first column from the set of used slots, recording its
+    /// slots in `occupied`: the bits of the column will be associated with
+    /// the slots following those of the last column.
     #[inline(always)]
-    fn row64(&self, p: usize) -> u64 {
-        let q = self.bit(p);
-        // Rows are sequences of whole words
-        let row_mask = (1usize << (self.log2_row - 6)) - 1;
-        let (row, w) = ((q / 64) & !row_mask, (q / 64) & row_mask);
-        // Branchless: a 128-bit shift
-        let lo = self.used[row | w] as u128;
-        let hi = self.used[row | ((w + 1) & row_mask)] as u128;
-        ((hi << 64 | lo) >> (q % 64)) as u64
-    }
-
-    /// Returns 64 bits of the ring whose first slot is `first` starting
-    /// from index `x` (cyclically); if the ring is shorter than a word,
-    /// only the lowest bits are valid.
-    #[inline(always)]
-    fn ring64(&self, first: usize, x: usize) -> u64 {
-        let n = self.ring_len;
-        if n >= 64 {
-            let w = self.row64(first + (x << self.log2_stride));
-            let avail = n - x;
-            if avail >= 64 {
-                w
-            } else {
-                (w & ((1 << avail) - 1)) | (self.row64(first) << avail)
+    fn retire_column(&mut self, rings: &Rings) {
+        let t = rings.log2_stride;
+        let w = rings.word(self.first_slot);
+        let begin = (self.first_slot - self.occupied_begin) / 64;
+        // A column contains a word for each row
+        self.occupied.resize(begin + (1 << t), 0);
+        let occupied = &mut self.occupied[begin..];
+        for (row, word) in self.used[w..w + (1 << t)].iter_mut().enumerate() {
+            let mut word = std::mem::take(word);
+            while word != 0 {
+                let p = ((word.trailing_zeros() as usize) << t) + row;
+                occupied[p / 64] |= 1 << (p % 64);
+                word &= word - 1;
             }
-        } else {
-            let ring = self.row64(first) & ((1 << n) - 1);
-            (ring >> x) | (ring << (n - x))
         }
+        self.first_slot += 64 << t;
+    }
+
+    /// Returns the sum of the slots of the keys of a bucket of the given
+    /// size for the seed of index `j` of pattern `r`, given the sum for
+    /// the first seed of each pattern and the packed indices of the keys.
+    ///
+    /// The seed of index `j` moves each key `j` strides forward, and then
+    /// a slice length backward if the key has gone past the end of its
+    /// ring, that is, if its index plus `j` is at least the length of the
+    /// ring: since indices are packed into fields that can contain the sum
+    /// of two indices, we can count such keys a word at a time.
+    #[inline(always)]
+    fn sum(rings: &Rings, sums: &[u64], indices: &[u64], size: usize, r: usize, j: usize) -> usize {
+        // A one in each field
+        let ones = u64::MAX / (u64::MAX >> (64 - (1 << rings.log2_field())));
+        let (j_in_fields, len_in_fields) = (j as u64 * ones, rings.len as u64 * ones);
+        // Almost all buckets have a single group of keys
+        let (first, others) = indices.split_at(rings.patterns);
+        let mut back = ((first[r] + j_in_fields) & len_in_fields).count_ones() as usize;
+        if !others.is_empty() {
+            back += Self::back_others(others, rings.patterns, r, j_in_fields, len_in_fields);
+        }
+        (sums[r] as usize + ((size * j) << rings.log2_stride))
+            .wrapping_sub(back * (rings.l_mask as usize + 1))
+    }
+
+    /// Returns the number of keys going past the end of their ring in the
+    /// groups after the first one (see [`sum`](Self::sum)).
+    #[cold]
+    #[inline(never)]
+    fn back_others(
+        others: &[u64],
+        patterns: usize,
+        r: usize,
+        j_in_fields: u64,
+        len_in_fields: u64,
+    ) -> usize {
+        others
+            .chunks_exact(patterns)
+            .map(|group| ((group[r] + j_in_fields) & len_in_fields).count_ones() as usize)
+            .sum()
     }
 
     /// Finds the seed of bucket `b` minimizing the sum of the slots of its
-    /// keys, and leaves the slots in `self.best`; returns zero if no seed
-    /// is feasible.
-    fn search(&mut self, b: usize) -> usize {
+    /// keys, and marks the slots as used; returns zero if no seed is
+    /// feasible.
+    #[inline(always)]
+    fn search(&mut self, rings: &Rings, b: usize) -> usize {
+        let g = *self.g;
         let keys = self.bucket_keys(b);
-        let k = keys.len();
-        let g = self.g;
-        let t = self.log2_stride;
-        let stride_mask = (1usize << t) - 1;
-        let n = self.ring_len;
+        let size = keys.len();
+        let (n, patterns) = (rings.len, rings.patterns);
+        // The number of words of the free seeds of a pattern
         let words = n.div_ceil(64);
-        let pattern_bits = 64 >> g.log2_patterns;
-        // The indices of the seeds of a pattern we consider are those of the
-        // first turn around the ring
-        let valid = if n < 64 { (1u64 << n) - 1 } else { !0 };
+        let ring_mask = if n < 64 { (1u64 << n) - 1 } else { !0 };
+        // Indices are packed in groups filling a word
+        let log2_field = rings.log2_field();
+        let log2_group = 6 - log2_field;
 
-        self.bucket.clear();
-        self.bucket
-            .extend(keys.iter().map(|x| (g.slice_begin(x.h), g.offsets(x.h))));
-        self.first.clear();
-        self.first.resize(k, 0);
-        self.index.clear();
-        self.index.resize(k, 0);
-        self.free.clear();
-        self.free.resize(words, 0);
+        let Self {
+            used,
+            state,
+            nonzero,
+            ..
+        } = self;
+        state.clear();
+        state.resize(patterns * (words + 1 + size.div_ceil(1 << log2_group)), 0);
+        // Slices, so that pointers and lengths are loop invariants
+        let (free, sums, indices) = Self::state(rings, state);
+        let (used, nonzero) = (&used[..], &mut nonzero[..patterns * words]);
 
-        let mut best_sum = usize::MAX;
-        let mut best_seed = 0;
-        for r in 0..1usize << g.log2_patterns {
-            let shift = r as u32 * pattern_bits;
-            let first_seed = (r as u64) << g.scale;
-            // The sum of the slots for the first seed of the pattern
-            let mut sum = 0;
-            self.free.fill(0);
-            for i in 0..k {
-                let (slice_begin, offsets) = self.bucket[i];
-                let offset = ((offsets >> shift).wrapping_add(first_seed) & g.l_mask) as usize;
-                let first = slice_begin + (offset & stride_mask);
-                let index = offset >> t;
-                self.first[i] = first;
-                self.index[i] = index as u32;
-                sum += first + (index << t);
-                if n == 64 {
-                    // The seeds of the pattern are the rotations of a word
-                    let used = self.row64(first).rotate_right(index as u32);
-                    self.free[0] |= used;
+        // For each pattern we rotate the ring of each key by its index, so
+        // that the bit of index j is associated with the slot of the key
+        // for the seed of index j, and combine the results: we obtain the
+        // indices of the seeds for which some key is mapped to a used slot
+        for (k, key) in keys.iter().enumerate() {
+            let (slice_begin, offsets) = (g.slice_begin(key.h), g.offsets(key.h));
+            let indices = &mut indices[(k >> log2_group) * patterns..][..patterns];
+            let field = (k as u32 % (1 << log2_group)) << log2_field;
+            for r in 0..patterns {
+                let offset = rings.offset(offsets, r);
+                let (first, x) = rings.ring(slice_begin, offset);
+                sums[r] += (slice_begin + offset) as u64;
+                indices[r] |= (x as u64) << field;
+                if words == 1 {
+                    // Rings of at most a word (e.g., 8-bit seeds and four
+                    // patterns)
+                    let ring = rings.row64(used, first) & ring_mask;
+                    free[r] |= (ring >> x) | (ring << ((n - x) % 64));
                 } else {
-                    for w in 0..words {
-                        let used = self.ring64(first, (index + 64 * w) & (n - 1));
-                        self.free[w] |= used;
-                    }
-                }
-            }
-            let mut count = 0;
-            for w in &mut self.free {
-                *w = !*w & valid;
-                count += w.count_ones();
-            }
-            // The first seed of the first pattern is zero, which marks
-            // bumped buckets; if seeds are redundant we can use instead the
-            // first seed of the second turn around the ring
-            if r == 0 && n == self.pattern_seeds && self.free[0] & 1 != 0 {
-                self.free[0] &= !1;
-                count -= 1;
-            }
-            if count == 0 {
-                continue;
-            }
-
-            // The sum of the slots for the seed of index j is that for the
-            // first seed plus kj strides, minus the length of a ring in
-            // strides for each key that went back to the first slot of its
-            // ring. Thus, between two indices at which some key goes back
-            // only the first free index can be the best one.
-            self.candidates.clear();
-            if count <= 4 {
-                // Just a few free indices (the common case): we consider
-                // all of them
-                for w in 0..words {
-                    let mut free = self.free[w];
-                    while free != 0 {
-                        let j = w * 64 + free.trailing_zeros() as usize;
-                        free &= free - 1;
-                        let back = self.index.iter().filter(|&&x| x as usize + j >= n).count();
-                        self.candidates
-                            .push((sum + ((k * j) << t) - ((n * back) << t), j));
-                    }
-                }
-            } else {
-                self.back.clear();
-                self.back.extend(
-                    self.index
-                        .iter()
-                        .filter(|&&x| x != 0)
-                        .map(|&x| n as u32 - x),
-                );
-                self.back.sort_unstable();
-                let (mut begin, mut back, mut i) = (0, 0, 0);
-                loop {
-                    while i < k && self.back.get(i) == Some(&(begin as u32)) {
-                        back += 1;
-                        i += 1;
-                    }
-                    let end = self.back.get(i).map_or(n, |&x| x as usize);
-                    if let Some(j) = next_set(&self.free, begin, end) {
-                        self.candidates
-                            .push((sum + ((k * j) << t) - ((n * back) << t), j));
-                    }
-                    if end == n {
-                        break;
-                    }
-                    begin = end;
-                }
-            }
-
-            for c in 0..self.candidates.len() {
-                let (sum, j) = self.candidates[c];
-                if sum >= best_sum {
-                    continue;
-                }
-                self.slots.clear();
-                self.slots.extend(
-                    self.first
-                        .iter()
-                        .zip(&self.index)
-                        .map(|(&first, &index)| first + (((index as usize + j) & (n - 1)) << t)),
-                );
-                // Two keys of the bucket might be mapped to the same slot
-                if distinct(&mut self.slots) {
-                    best_sum = sum;
-                    best_seed = if r == 0 && j == 0 {
-                        n << g.log2_patterns
-                    } else {
-                        (j << g.log2_patterns) | r
+                    // Rings are sequences of whole words
+                    let word = |w: usize| {
+                        rings.row64(
+                            used,
+                            first + ((64 * (w & (words - 1))) << rings.log2_stride),
+                        )
                     };
-                    std::mem::swap(&mut self.best, &mut self.slots);
+                    let (xw, xb) = (x / 64, x % 64);
+                    let mut prev = word(xw);
+                    for (w, blocked) in free[r * words..][..words].iter_mut().enumerate() {
+                        let next = word(xw + w + 1);
+                        *blocked |= if xb == 0 {
+                            prev
+                        } else {
+                            (prev >> xb) | (next << (64 - xb))
+                        };
+                        prev = next;
+                    }
                 }
             }
         }
-        best_seed
+        // The first seed of the first pattern is zero, which marks bumped
+        // buckets, unless seeds are redundant (see Rings::seed)
+        if n == rings.pattern_seeds {
+            free[0] |= 1;
+        }
+
+        // We complement the result, and gather the nonzero words
+        let (mut count, mut total) = (0, 0);
+        for (i, w) in free.iter_mut().enumerate() {
+            *w = !*w & ring_mask;
+            nonzero[count] = (*w, i as u32);
+            count += (*w != 0) as usize;
+            total += w.count_ones();
+        }
+        if total == 0 {
+            return 0;
+        }
+
+        // The best seed is identified by the index of its bit in `free`
+        let best = if total <= MAX_FREE {
+            // Just a few free seeds (the common case): we consider all of
+            // them, with a single loop that has no other branches
+            let (mut best_sum, mut best) = (usize::MAX, 0);
+            let mut i = 0;
+            for _ in 0..total {
+                let (word, index) = nonzero[i];
+                let bit = index as usize * 64 + word.trailing_zeros() as usize;
+                let sum = Self::sum(
+                    rings,
+                    sums,
+                    indices,
+                    size,
+                    bit / (64 * words),
+                    bit % (64 * words),
+                );
+                (best_sum, best) = if sum < best_sum {
+                    (sum, bit)
+                } else {
+                    (best_sum, best)
+                };
+                // We move to the next word when no bits are left
+                let word = word & (word - 1);
+                nonzero[i].0 = word;
+                i += (word == 0) as usize;
+            }
+            best
+        } else {
+            self.search_many(keys)
+        };
+
+        let (r, j) = (best / (64 * words), best % (64 * words));
+        if self.place(rings, keys, r, j) {
+            rings.seed(r, j)
+        } else {
+            self.search_distinct(keys)
+        }
     }
 
-    /// Places bucket `b`. Returns `true` on success.
-    fn place(&mut self, b: usize) -> bool {
-        let seed = self.search(b);
-        if seed == 0 {
-            return false;
+    /// Returns the best free seed of the bucket being searched, as
+    /// [`search`](Self::search) does, when there are many free seeds.
+    ///
+    /// The sum of the slots increases with the index of the seed, except
+    /// at the indices at which some key goes back to the first slot of its
+    /// ring: between two such indices only the first free index can be the
+    /// best one.
+    #[inline(never)]
+    fn search_many(&mut self, keys: &[Sig]) -> usize {
+        let (g, rings) = (self.g, self.rings);
+        let n = rings.len;
+        let words = n.div_ceil(64);
+        let mut best = (usize::MAX, 0);
+        let (free, sums, indices) = Self::state(&rings, &mut self.state);
+        for r in 0..rings.patterns {
+            let free = &free[r * words..][..words];
+            self.back.clear();
+            self.back.extend(
+                keys.iter()
+                    .map(|key| {
+                        let offset = rings.offset(g.offsets(key.h), r);
+                        rings.ring(g.slice_begin(key.h), offset).1
+                    })
+                    .filter(|&x| x != 0)
+                    .map(|x| (n - x) as u32),
+            );
+            self.back.sort_unstable();
+            self.back.dedup();
+            let mut begin = 0;
+            for i in 0..=self.back.len() {
+                let end = self.back.get(i).map_or(n, |&x| x as usize);
+                if let Some(j) = next_set(free, begin, end) {
+                    let sum = Self::sum(&rings, sums, indices, keys.len(), r, j);
+                    best = best.min((sum, r * 64 * words + j));
+                }
+                begin = end;
+            }
         }
-        for i in 0..self.best.len() {
-            self.set(self.best[i]);
-        }
-        self.seeds[b - self.lo] = seed as u16;
-        true
+        best.1
     }
 
-    /// Processes the buckets of the range; returns `false` if some bucket
-    /// could not be placed (in which case, if `allow_bump` is false, the
+    /// Marks as used the slots of the given keys for the seed of index `j`
+    /// of pattern `r`, which must be free, unless two keys are mapped to
+    /// the same slot, in which case nothing happens and the method returns
+    /// `false`.
+    #[inline(always)]
+    fn place(&mut self, rings: &Rings, keys: &[Sig], r: usize, j: usize) -> bool {
+        let g = *self.g;
+        let bit = |key: &Sig| {
+            let offset = rings.offset(g.offsets(key.h), r);
+            let (first, x) = rings.ring(g.slice_begin(key.h), offset);
+            let p = rings.slot(first, x, j);
+            (rings.word(p), 1u64 << ((p >> rings.log2_stride) % 64))
+        };
+        // The slots were free: a used slot has been marked by a previous
+        // key of the bucket
+        let used = &mut self.used[..];
+        let mut collisions = 0;
+        for key in keys {
+            let (w, mask) = bit(key);
+            collisions |= used[w] & mask;
+            used[w] |= mask;
+        }
+        if collisions != 0 {
+            for key in keys {
+                let (w, mask) = bit(key);
+                used[w] &= !mask;
+            }
+        }
+        collisions == 0
+    }
+
+    /// Like [`search`](Self::search), but considers all free seeds in
+    /// order of sum of slots until one that maps the keys of the bucket to
+    /// distinct slots is found (this happens rarely).
+    #[cold]
+    #[inline(never)]
+    fn search_distinct(&mut self, keys: &[Sig]) -> usize {
+        let rings = self.rings;
+        let ring_bits = 64 * rings.len.div_ceil(64);
+        let mut candidates = vec![];
+        let (free, sums, indices) = Self::state(&rings, &mut self.state);
+        for (i, &word) in free.iter().enumerate() {
+            let mut word = word;
+            while word != 0 {
+                let bit = i * 64 + word.trailing_zeros() as usize;
+                word &= word - 1;
+                let (r, j) = (bit / ring_bits, bit % ring_bits);
+                let sum = Self::sum(&rings, sums, indices, keys.len(), r, j);
+                candidates.push((sum, r, j));
+            }
+        }
+        candidates.sort_unstable();
+        for (_, r, j) in candidates {
+            if self.place(&rings, keys, r, j) {
+                return rings.seed(r, j);
+            }
+        }
+        0
+    }
+
+    /// Processes the buckets of the range; returns `None` if `allow_bump`
+    /// is false and some bucket could not be placed (in which case the
     /// sweep stops immediately).
-    fn run(mut self, allow_bump: bool) -> bool {
+    fn run(self, allow_bump: bool) -> Option<Swept> {
+        let rings = self.rings;
+        // The parameters of the rings are used as shift amounts and masks
+        // in the innermost loops: we compile a version of the sweep in
+        // which those of the default configuration are constants
+        let default = Rings {
+            word_mask: rings.word_mask,
+            ..Rings::DEFAULT
+        };
+        if rings == default {
+            self.sweep(&default, allow_bump)
+        } else {
+            self.sweep(&rings, allow_bump)
+        }
+    }
+
+    #[inline(always)]
+    fn sweep(mut self, rings: &Rings, allow_bump: bool) -> Option<Swept> {
         let (lo, hi) = (self.lo, self.hi);
-        let mut heap: BinaryHeap<(i64, Reverse<usize>)> = BinaryHeap::with_capacity(WINDOW);
-        let mut in_heap = [0u64; HEAP_BITS / 64];
-        let in_heap_get = |s: &[u64], b: usize| s[(b % HEAP_BITS) / 64] >> (b % 64) & 1 != 0;
+        let mut window = Window::new(self.weights);
         let mut span_begin = lo;
         while span_begin < hi && self.size(span_begin) == 0 {
             span_begin += 1;
         }
-        if span_begin == hi {
-            return true;
-        }
-        let slice_begin_of =
-            |s: &Self, b: usize| s.g.slice_begin(s.keys[s.bucket_begin[b - s.lo]].h);
-        let span_end = |sb: usize| (sb + WINDOW).min(hi);
-        let mut ok = true;
-        self.value_to_clear = slice_begin_of(&self, span_begin);
-        for b in span_begin..span_end(span_begin) {
-            let sz = self.size(b);
-            if sz != 0 {
-                heap.push((self.priority(b, sz), Reverse(b)));
-                in_heap[(b % HEAP_BITS) / 64] |= 1 << (b % 64);
+        let span_end = |span_begin: usize| (span_begin + WINDOW).min(hi);
+        let column = 64usize << rings.log2_stride;
+        if span_begin < hi {
+            // The columns before the first slice in the window contain
+            // slots that are no longer reachable
+            while self.first_slot + column <= self.g.first_slice(span_begin) {
+                self.retire_column(rings);
+            }
+            for b in span_begin..span_end(span_begin) {
+                let size = self.size(b);
+                if size != 0 {
+                    window.push(b, size, self.weights);
+                }
             }
         }
-        while let Some((_, Reverse(b))) = heap.pop() {
-            in_heap[(b % HEAP_BITS) / 64] &= !(1 << (b % 64));
-            if !self.place(b) {
-                ok = false;
+        while let Some(b) = window.pop(span_begin) {
+            let seed = self.search(rings, b);
+            self.seeds[b - lo] = seed as u16;
+            if seed == 0 {
                 if !allow_bump {
-                    return false;
+                    return None;
                 }
+                self.bumped.extend_from_slice(self.bucket_keys(b));
             }
             if b == span_begin {
                 let old_end = span_end(span_begin);
                 span_begin += 1;
-                while span_begin < old_end && !in_heap_get(&in_heap, span_begin) {
+                while span_begin < old_end && !window.contains(span_begin) {
                     span_begin += 1;
                 }
                 if span_begin == old_end {
@@ -1633,24 +2138,38 @@ impl<'a> Sweep<'a> {
                         break;
                     }
                 }
-                // Slots before the first slice in the window are no longer
-                // reachable, and their bits will be used for other slots
-                let end = slice_begin_of(&self, span_begin);
-                for p in self.value_to_clear..end {
-                    self.clear(p);
+                while self.first_slot + column <= self.g.first_slice(span_begin) {
+                    self.retire_column(rings);
                 }
-                self.value_to_clear = self.value_to_clear.max(end);
-                for b2 in old_end..span_end(span_begin) {
-                    let sz = self.size(b2);
-                    if sz != 0 {
-                        heap.push((self.priority(b2, sz), Reverse(b2)));
-                        in_heap[(b2 % HEAP_BITS) / 64] |= 1 << (b2 % 64);
+                for b in old_end..span_end(span_begin) {
+                    let size = self.size(b);
+                    if size != 0 {
+                        window.push(b, size, self.weights);
                     }
                 }
             }
         }
-        ok
+        // The remaining columns
+        for _ in 0..=rings.word_mask >> rings.log2_stride {
+            self.retire_column(rings);
+        }
+        Some(Swept {
+            occupied_begin: self.occupied_begin,
+            occupied: self.occupied,
+            bumped: self.bumped,
+        })
     }
+}
+
+/// The result of a [`Sweep`].
+struct Swept {
+    /// The slots used by the buckets of the range, and those marked as
+    /// used beforehand, as a set of bits starting from slot
+    /// `occupied_begin` (a multiple of 64).
+    occupied: Vec<u64>,
+    occupied_begin: usize,
+    /// The keys of the buckets that could not be placed.
+    bumped: Vec<Sig>,
 }
 
 /// Returns the index of the first bit set in `bits` in the range
@@ -1669,25 +2188,6 @@ fn next_set(bits: &[u64], begin: usize, end: usize) -> Option<usize> {
             return None;
         }
         word = bits[w];
-    }
-}
-
-/// Returns whether the given values are distinct (possibly permuting them).
-#[inline(always)]
-fn distinct(v: &mut [usize]) -> bool {
-    if v.len() <= 12 {
-        for i in 1..v.len() {
-            let x = v[i];
-            for &y in &v[..i] {
-                if x == y {
-                    return false;
-                }
-            }
-        }
-        true
-    } else {
-        v.sort_unstable();
-        v.windows(2).all(|w| w[0] != w[1])
     }
 }
 
@@ -1786,6 +2286,23 @@ mod tests {
         );
         // Slices shorter than the number of seeds: seeds are redundant
         check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_slice_len(6));
+    }
+
+    #[test]
+    fn test_large_buckets() {
+        // Large buckets (kept in a heap, and with several groups of keys)
+        // and very long rings
+        for log2_patterns in [0, 2] {
+            check::<Box<[u16]>>(
+                20_000,
+                PHastRBuilder::default()
+                    .seed_bits(16)
+                    .log2_patterns(log2_patterns)
+                    .log2_slice_len(16)
+                    .bucket_size(70.0),
+            );
+        }
+        check::<Box<[u8]>>(100_000, PHastRBuilder::default().bucket_size(70.0));
     }
 
     #[cfg(feature = "rayon")]
