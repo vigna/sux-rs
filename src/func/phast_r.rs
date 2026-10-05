@@ -928,10 +928,11 @@ struct Sig {
     idx: u64,
 }
 
-/// The base-2 logarithm of the number of keys of a part of [`group`]: the
-/// keys of a part should fit the second-level cache.
+/// The base-2 logarithm of the number of keys of the parts that [`group`]
+/// distributes into buckets: such parts should fit the second-level cache.
 const LOG2_PART_KEYS: u32 = 14;
-/// The base-2 logarithm of the maximum number of parts of [`group`].
+/// The base-2 logarithm of the maximum number of parts into which
+/// [`group`] distributes signatures in a single pass.
 const MAX_LOG2_PARTS: u32 = 11;
 
 /// Computes the signatures of the keys of a level and groups them by
@@ -948,13 +949,33 @@ const MAX_LOG2_PARTS: u32 = 11;
 /// each destination beforehand. The first phase processes a chunk of the
 /// keys for each thread, and writes sequentially into each part; the second
 /// phase processes parts in parallel, gathering the signatures of a part
-/// from all chunks, and writes into a region that fits the cache.
+/// from all chunks, and writes into a region that fits the cache. With very
+/// large key sets (more than 2<sup>[`LOG2_PART_KEYS`] +
+/// [`MAX_LOG2_PARTS`]</sup> keys) that would require too many parts: in
+/// that case parts are larger, and the second phase distributes each part
+/// into smaller parts before distributing the latter into buckets.
 fn group(n: usize, sig: impl Fn(usize) -> Sig + Sync, g: &Geometry) -> (Vec<Sig>, Vec<usize>) {
+    group_with(n, sig, g, LOG2_PART_KEYS, MAX_LOG2_PARTS)
+}
+
+/// Implements [`group`] with the given parameters in place of
+/// [`LOG2_PART_KEYS`] and [`MAX_LOG2_PARTS`].
+fn group_with(
+    n: usize,
+    sig: impl Fn(usize) -> Sig + Sync,
+    g: &Geometry,
+    log2_part_keys: u32,
+    max_log2_parts: u32,
+) -> (Vec<Sig>, Vec<usize>) {
     let nb = g.buckets;
-    let log2_parts = (n >> LOG2_PART_KEYS)
-        .next_power_of_two()
-        .ilog2()
-        .min(MAX_LOG2_PARTS);
+    // The number of parts that fit the cache: if they are too many for a
+    // single pass we use two passes with about the same number of parts
+    let log2_small_parts = (n >> log2_part_keys).next_power_of_two().ilog2();
+    let log2_parts = if log2_small_parts <= max_log2_parts {
+        log2_small_parts
+    } else {
+        log2_small_parts.div_ceil(2)
+    };
     // The part of a bucket is given by its index shifted right by this
     // amount
     let shift = (usize::BITS - (nb - 1).leading_zeros()).saturating_sub(log2_parts);
@@ -1053,31 +1074,51 @@ fn group(n: usize, sig: impl Fn(usize) -> Sig + Sync, g: &Geometry) -> (Vec<Sig>
                 .iter()
                 .map(move |(sigs, part_begin)| &sigs[part_begin[p]..part_begin[p + 1]])
         };
-        for chunk in part() {
-            for x in chunk {
-                begin[g.bucket(x.h) - first_bucket] += 1;
+        let log2_subparts = (sigs.len() >> log2_part_keys)
+            .next_power_of_two()
+            .ilog2()
+            .min(shift);
+        if log2_subparts <= 1 {
+            // The part fits the cache (or almost)
+            into_buckets(part(), sigs, begin, first_bucket, part_begin[p], g);
+            return;
+        }
+        // We distribute the signatures of the part into smaller parts made
+        // of a power of two of consecutive buckets, and then each smaller
+        // part into its buckets
+        let sub_shift = shift - log2_subparts;
+        let subparts = ((begin.len() - 1) >> sub_shift) + 1;
+        let mut subpart_begin = vec![0usize; subparts + 1];
+        for run in part() {
+            for x in run {
+                subpart_begin[((g.bucket(x.h) - first_bucket) >> sub_shift) + 1] += 1;
             }
         }
-        let mut sum = 0;
-        for begin in begin.iter_mut() {
-            let size = *begin;
-            *begin = sum;
-            sum += size;
+        for s in 0..subparts {
+            subpart_begin[s + 1] += subpart_begin[s];
         }
-        for chunk in part() {
-            for &x in chunk {
-                let next = &mut begin[g.bucket(x.h) - first_bucket];
+        let mut next = subpart_begin.clone();
+        for run in part() {
+            for &x in run {
+                let next = &mut next[(g.bucket(x.h) - first_bucket) >> sub_shift];
                 sigs[*next].write(x);
                 *next += 1;
             }
         }
-        // Each element is now the end of its bucket in the part, that is,
-        // the beginning of the following one
-        let mut prev = 0;
-        for begin in begin.iter_mut() {
-            let end = *begin;
-            *begin = part_begin[p] + prev;
-            prev = end;
+        let mut subpart: Vec<Sig> = vec![];
+        for (s, begin) in begin.chunks_mut(1 << sub_shift).enumerate() {
+            let sigs = &mut sigs[subpart_begin[s]..subpart_begin[s + 1]];
+            subpart.clear();
+            // SAFETY: we have just written these elements
+            subpart.extend(sigs.iter().map(|x| unsafe { x.assume_init() }));
+            into_buckets(
+                std::iter::once(&subpart[..]),
+                sigs,
+                begin,
+                first_bucket + (s << sub_shift),
+                part_begin[p] + subpart_begin[s],
+                g,
+            );
         }
     };
     #[cfg(feature = "rayon")]
@@ -1106,6 +1147,49 @@ fn group(n: usize, sig: impl Fn(usize) -> Sig + Sync, g: &Geometry) -> (Vec<Sig>
     // so each of the first n positions has been written exactly once
     unsafe { sigs.set_len(n) };
     (sigs, bucket_begin)
+}
+
+/// Distributes into buckets the signatures of a sequence of runs whose
+/// buckets are consecutive and start from `first_bucket`.
+///
+/// The signatures are written to `sigs`, and the position of the first
+/// signature of each bucket to `begin`, assuming that `sigs` starts at
+/// position `offset`.
+#[inline(always)]
+fn into_buckets<'a>(
+    runs: impl Iterator<Item = &'a [Sig]> + Clone,
+    sigs: &mut [MaybeUninit<Sig>],
+    begin: &mut [usize],
+    first_bucket: usize,
+    offset: usize,
+    g: &Geometry,
+) {
+    for run in runs.clone() {
+        for x in run {
+            begin[g.bucket(x.h) - first_bucket] += 1;
+        }
+    }
+    let mut sum = 0;
+    for begin in begin.iter_mut() {
+        let size = *begin;
+        *begin = sum;
+        sum += size;
+    }
+    for run in runs {
+        for &x in run {
+            let next = &mut begin[g.bucket(x.h) - first_bucket];
+            sigs[*next].write(x);
+            *next += 1;
+        }
+    }
+    // Each element is now the end of its bucket, that is, the beginning of
+    // the following one
+    let mut prev = 0;
+    for begin in begin.iter_mut() {
+        let end = *begin;
+        *begin = offset + prev;
+        prev = end;
+    }
 }
 
 /// The geometry of a level during construction.
@@ -2288,6 +2372,43 @@ mod tests {
         );
         // Slices shorter than the number of seeds: seeds are redundant
         check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_slice_len(6));
+    }
+
+    #[test]
+    fn test_group() {
+        // One, two and three passes, with skewed signatures, too
+        for (n, log2_part_keys, max_log2_parts) in [
+            (1, 14, 11),
+            (1000, 14, 11),
+            (100_000, 6, 11),
+            (100_000, 4, 5),
+            (100_000, 2, 3),
+            (300_000, 5, 4),
+        ] {
+            for skew in [false, true] {
+                let g = PHastRBuilder::default().geometry(n, n, 4.5);
+                let sig = |i: usize| {
+                    let h = mix(i as u64 + 1, 0x9E37_79B9_7F4A_7C15);
+                    Sig {
+                        h: if skew { h >> (i % 8) } else { h },
+                        idx: i as u64,
+                    }
+                };
+                let (sigs, bucket_begin) = group_with(n, sig, &g, log2_part_keys, max_log2_parts);
+                assert_eq!(sigs.len(), n);
+                assert_eq!(bucket_begin.len(), g.buckets + 1);
+                assert_eq!(bucket_begin[g.buckets], n);
+                let mut seen = vec![false; n];
+                for b in 0..g.buckets {
+                    for x in &sigs[bucket_begin[b]..bucket_begin[b + 1]] {
+                        assert_eq!(g.bucket(x.h), b);
+                        assert_eq!(x.h, sig(x.idx as usize).h);
+                        assert!(!std::mem::replace(&mut seen[x.idx as usize], true));
+                    }
+                }
+                assert!(seen.iter().all(|&x| x));
+            }
+        }
     }
 
     #[test]
