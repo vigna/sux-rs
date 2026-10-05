@@ -2,7 +2,7 @@
 //! (fast path) and bumped keys (slow path), and compares with the
 //! reference PHast+ on the same keys.
 //!
-//! Configurations are `<S>:<log2 L>:<depth>:<lambda>` for PHast-R (with
+//! Configurations are `<S>:<log2 L>:<lambda>[:<log2 R>]` for PHast-R (with
 //! S > 8, seeds are stored as `u16`, in a `BitFieldVec`, and in a
 //! `BitFieldVec` with unaligned reads), or `ref:<plus|w3>:<S>:<lambda>` for
 //! the reference implementation, whose bumped keys are those whose bucket of
@@ -34,7 +34,7 @@ struct Args {
     queries: usize,
     #[arg(short, long, default_value_t = 5)]
     repeats: usize,
-    /// Configurations: <S>:<log2 L>:<depth>:<lambda>
+    /// Configurations: <S>:<log2 L>:<lambda>[:<log2 R>]
     #[arg(short, long, value_delimiter = ',', default_value = "8:9:1:5.0")]
     variant: Vec<String>,
 }
@@ -134,16 +134,7 @@ fn main() {
             }
             continue;
         }
-        let s: u32 = p[0].parse().unwrap();
-        let ll: u32 = p[1].parse().unwrap();
-        let depth: u32 = p[2].parse().unwrap();
-        let lam: f64 = p[3].parse().unwrap();
-        let b = PHastRBuilder::default()
-            .seed_bits(s)
-            .log2_slice_len(ll)
-            .repair_depth(depth)
-            .repair_candidates(if depth == 0 { 0 } else { 16 })
-            .bucket_size(lam);
+        let (b, s, _) = lab::parse_config(&p);
         if s <= 8 {
             run::<Box<[u8]>>(&keys, b, &a, &format!("{v} u8"));
         } else {

@@ -7,14 +7,11 @@
 //!   `<chooser>` is `plus` (PHast+), `w1`/`w2`/`w3` (PHast+ with wrapping and
 //!   multiplier 1/2/3), or `phast` (regular PHast);
 //!
-//! - `r:<S>:<log2 L>:<depth>:<lambda>[:<log2 R>[:<storage>]]` for PHast-R,
-//!   where `<log2 R>` can be `w<M>` for shifts with wrapping and multiplier
-//!   `M` instead of patterns, `<depth>` is the maximum repair depth (0
-//!   disables repair; an optional eighth field sets the number of repair
-//!   candidates, 16 by default), and
-//!   `<storage>` is `u8`, `u16`, `bfv`, or `bfvu` (a [`BitFieldVec`] with
-//!   unaligned reads) (default: `u8` if S <= 8, `bfv`
-//!   otherwise).
+//! - `r:<S>:<log2 L>:<lambda>[:<log2 R>[:<storage>]]` for PHast-R (bits per
+//!   seed, base-2 logarithm of the slice length, expected bucket size, base-2
+//!   logarithm of the number of patterns, 2 by default), where `<storage>`
+//!   is `u8`, `u16`, `bfv`, or `bfvu` (a `BitFieldVec` with unaligned reads;
+//!   default: `u8` if S <= 8, `bfv` otherwise).
 //!
 //! Keys are hashed with GxHash (as in the experiments of the PHast paper) or,
 //! with `--hash xxh3`, with XXH3-64; both implementations use the same hash.
@@ -321,48 +318,12 @@ fn main() {
                 }
             }
             "r" => {
-                let sbits: u32 = p[1].parse().unwrap();
-                let ll: u32 = p[2].parse().unwrap();
-                let depth: u32 = p[3].parse().unwrap();
-                let lam: f64 = p[4].parse().unwrap();
-                // The pattern field is either log2 R or w<M> (wrapping with
-                // multiplier M)
-                // (or g<R>: ring patterns)
-                let (lr, wrap, ring): (u32, u32, u32) = match p.get(5) {
-                    Some(x) if x.starts_with('w') => (0, x[1..].parse().unwrap(), 0),
-                    Some(x) if x.starts_with('g') => (0, 0, x[1..].parse().unwrap()),
-                    Some(x) => (x.parse().unwrap(), 0, 0),
-                    None => (2, 0, 0),
-                };
+                let (b, sbits, desc) = lab::parse_config(&p[1..p.len().min(5)]);
                 let storage = p
-                    .get(6)
+                    .get(5)
                     .copied()
                     .unwrap_or(if sbits <= 8 { "u8" } else { "bfv" });
-                let b = PHastRBuilder::default()
-                    .seed_bits(sbits)
-                    .log2_slice_len(ll)
-                    .repair_depth(depth)
-                    .repair_candidates(if depth == 0 {
-                        0
-                    } else {
-                        p.get(7).map(|x| x.parse().unwrap()).unwrap_or(16)
-                    })
-                    .bucket_size(lam)
-                    .log2_patterns(lr)
-                    .wrap(wrap)
-                    .ring(ring);
-                let pat = if ring != 0 {
-                    format!("G{ring}")
-                } else if wrap != 0 {
-                    format!("W{wrap}")
-                } else {
-                    format!("R={}", 1 << lr)
-                };
-                let cands = p.get(7).map(|x| format!(" c={x}")).unwrap_or_default();
-                let name = format!(
-                    "PHast-R S={sbits} L={} {pat} d={depth}{cands} l={lam} {storage}",
-                    1 << ll
-                );
+                let name = format!("{desc} {storage}");
                 match storage {
                     "u8" => sux_run::<Box<[u8]>>(&keys, b, &a, &name),
                     "u16" => sux_run::<Box<[u16]>>(&keys, b, &a, &name),

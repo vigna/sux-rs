@@ -22,6 +22,26 @@ pub fn phast_r_bits_per_key(keys: &[u64], b: &sux::func::PHastRBuilder, seed_bit
     bytes as f64 * 8.0 / keys.len() as f64
 }
 
+/// Parses a PHast-R configuration `<S>:<log2 L>:<lambda>[:<log2 R>]`: bits
+/// per seed, base-2 logarithm of the slice length, expected bucket size,
+/// and base-2 logarithm of the number of patterns (2 if missing). Returns
+/// the builder, the number of bits per seed, and a description.
+pub fn parse_config(fields: &[&str]) -> (sux::func::PHastRBuilder, u32, String) {
+    let s: u32 = fields[0].parse().unwrap();
+    let ll: u32 = fields[1].parse().unwrap();
+    let lam: f64 = fields[2].parse().unwrap();
+    let lr: u32 = fields.get(3).map(|x| x.parse().unwrap()).unwrap_or(2);
+    (
+        sux::func::PHastRBuilder::default()
+            .seed_bits(s)
+            .log2_slice_len(ll)
+            .bucket_size(lam)
+            .log2_patterns(lr),
+        s,
+        format!("PHast-R S={s} L={} R={} l={lam}", 1 << ll, 1 << lr),
+    )
+}
+
 /// A 64-bit key hashed by sux with GxHash, exactly as `ph::BuildGxHash`
 /// hashes a `u64` (`GxHasher::with_seed`, `write_u64`, `finish`), so that
 /// PHast-R and the reference implementation pay the same hashing cost.

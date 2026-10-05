@@ -1,6 +1,6 @@
 //! Coordinate-descent tuning of the bucket priority weights of PHast-R.
 //!
-//! Usage: wtune <seed bits> <log2 slice len> <repair depth> <bucket size> [<keys> [<wrap multiplier>]]
+//! Usage: wtune <seed bits> <log2 slice len> <bucket size> [<keys> [<log2 R> [<w1> ... <w7>]]]
 //!
 //! Space does not depend on the hardware, so tuning can be run anywhere.
 use lab::phast_r_bits_per_key;
@@ -18,10 +18,9 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let s: u32 = args[1].parse().unwrap();
     let ll: u32 = args[2].parse().unwrap();
-    let depth: u32 = args[3].parse().unwrap();
-    let lam: f64 = args[4].parse().unwrap();
-    let n: usize = args.get(5).map(|x| x.parse().unwrap()).unwrap_or(4_000_000);
-    let wrap: u32 = args.get(6).map(|x| x.parse().unwrap()).unwrap_or(0);
+    let lam: f64 = args[3].parse().unwrap();
+    let n: usize = args.get(4).map(|x| x.parse().unwrap()).unwrap_or(4_000_000);
+    let lr: u32 = args.get(5).map(|x| x.parse().unwrap()).unwrap_or(2);
     let keysets: Vec<Vec<u64>> = (0..2u64)
         .map(|k| {
             (0..n as u64)
@@ -32,24 +31,20 @@ fn main() {
     let base = PHastRBuilder::default()
         .seed_bits(s)
         .log2_slice_len(ll)
-        .repair_depth(depth)
         .bucket_size(lam)
-        .wrap(wrap);
-    // Start from the current defaults of sux (those for (8, 512) and
-    // (10, 2048) are the result of a previous run of this program)
-    let mut w: [i64; 7] = match (wrap, s, 1usize << ll) {
-        // With wrapping, the weights of PHast+ with wrapping (multiplier 3)
-        (1.., 8, 1024) => [-50649, 63792, 110014, 139267, 161285, 176594, 188305],
-        (1.., 8, 512) => [25100, 89361, 117113, 134755, 147369, 154606, 172378],
-        (1.., 8, 2048) => [-3427, 10388, 90470, 141895, 179413, 208576, 232553],
-        (1.., 10, 2048) => [-3301, 12449, 83323, 139924, 169323, 198105, 212187],
-        (_, s, l) => match (s, l) {
-            (8, 512) => [-48137, 68016, 105189, 121129, 132794, 140850, 145685],
-            (9, 1024) => [-60439, 49207, 121850, 149181, 166713, 179181, 187815],
-            (10, 2048) => [-3419, 3042, 88860, 135429, 176433, 198538, 214441],
-            (11, 4096) => [-2674, 19194, 37310, 111428, 167443, 205425, 236469],
+        .log2_patterns(lr);
+    // Start from the defaults of sux, or from the weights given as further
+    // arguments
+    let mut w: [i64; 7] = if args.len() >= 13 {
+        std::array::from_fn(|i| args[6 + i].parse().unwrap())
+    } else {
+        match (s, 1usize << ll) {
+            (8, 512) => [25100, 89361, 117113, 134755, 147369, 154606, 172378],
+            (8, 1024) => [-50649, 63792, 110014, 139267, 161285, 176594, 188305],
+            (8, 2048) => [-3427, 10388, 90470, 141895, 179413, 208576, 232553],
+            (10, 2048) => [-3417, 13564, 81208, 133035, 168506, 198114, 214382],
             _ => [-50000, 50000, 100000, 130000, 150000, 165000, 175000],
-        },
+        }
     };
     let mut best = eval(&keysets, &base.clone().weights(w), s);
     println!("start {best:.5} {w:?}");
@@ -75,7 +70,8 @@ fn main() {
         step /= 2;
     }
     println!(
-        "final S={s} L={} d={depth} lambda={lam} wrap={wrap}: {best:.5} {w:?}",
-        1 << ll
+        "final S={s} L={} R={} lambda={lam}: {best:.5} {w:?}",
+        1 << ll,
+        1 << lr
     );
 }

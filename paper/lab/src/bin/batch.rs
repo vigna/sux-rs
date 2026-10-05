@@ -1,15 +1,15 @@
 //! Query throughput of PHast-R with single queries and with batches that
 //! prefetch the seeds of the first level (`get_batch`), on random keys.
 //!
-//! Usage: batch [-n keys] [-v configurations as in cmp: S:logL:depth:lambda[:w<M>]]
+//! Usage: batch [-n keys] [-v <S>:<log2 L>:<lambda>[:<log2 R>],...]
 
 use clap::Parser;
 use dsi_progress_logger::no_logging;
 use lab::GxKey;
 use std::time::Instant;
 use sux::bits::BitFieldVec;
+use sux::func::PHastR;
 use sux::func::phast_r::{LevelParams, SeedStore};
-use sux::func::{PHastR, PHastRBuilder};
 use sux::traits::TryIntoUnaligned;
 use value_traits::slices::SliceByValue;
 
@@ -21,7 +21,7 @@ struct Args {
     queries: usize,
     #[arg(short, long, default_value_t = 5)]
     rounds: usize,
-    #[arg(short, long, value_delimiter = ',', default_value = "8:10:1:5.0:w3")]
+    #[arg(short, long, value_delimiter = ',', default_value = "8:10:4.75")]
     variant: Vec<String>,
 }
 
@@ -43,7 +43,7 @@ fn single<D: SeedStore, R: SliceByValue<Value = usize>>(
     let mut acc = 0usize;
     let t = Instant::now();
     for _ in 0..q {
-        acc = acc.wrapping_add(f.get(&keys[idx(&mut x, n)]));
+        acc = acc.wrapping_add(f.get(keys[idx(&mut x, n)]));
     }
     std::hint::black_box(acc);
     t.elapsed().as_secs_f64() * 1e9 / q as f64
@@ -102,14 +102,7 @@ fn main() {
         .collect();
     for v in &a.variant {
         let p: Vec<&str> = v.split(':').collect();
-        let wrap: u32 = p.get(4).map(|x| x[1..].parse().unwrap()).unwrap_or(0);
-        let sbits: u32 = p[0].parse().unwrap();
-        let b = PHastRBuilder::default()
-            .seed_bits(sbits)
-            .log2_slice_len(p[1].parse().unwrap())
-            .repair_depth(p[2].parse().unwrap())
-            .bucket_size(p[3].parse().unwrap())
-            .wrap(wrap);
+        let (b, sbits, _) = lab::parse_config(&p);
         if sbits <= 8 {
             let f: PHastR<GxKey> = b.try_build(&keys, no_logging![]).unwrap();
             run(v, &f, &keys, &a);

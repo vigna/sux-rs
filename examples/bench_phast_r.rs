@@ -25,24 +25,23 @@ struct Args {
     /// The number of bits per seed (byte seeds are used for 8 bits or less).
     #[arg(short, long, default_value_t = 8)]
     seed_bits: u32,
+    /// The base-2 logarithm of the number of patterns.
+    #[arg(short = 'R', long, default_value_t = 2)]
+    log2_patterns: u32,
     /// The base-2 logarithm of the slice length.
-    #[arg(short = 'L', long, default_value_t = 9)]
+    #[arg(short = 'L', long, default_value_t = 10)]
     log2_slice_len: u32,
     /// The expected number of keys per bucket.
-    #[arg(short = 'l', long, default_value_t = 5.0)]
+    #[arg(short = 'l', long, default_value_t = 4.75)]
     bucket_size: f64,
-    /// The maximum depth of repair (0 disables repair).
-    #[arg(short, long, default_value_t = 1)]
-    depth: u32,
 }
 
 fn run<D: SeedStoreBuild + SeedStore + MemSize + mem_dbg::FlatType>(args: &Args, keys: &[u64]) {
     let builder = PHastRBuilder::default()
         .seed_bits(args.seed_bits)
+        .log2_patterns(args.log2_patterns)
         .log2_slice_len(args.log2_slice_len)
-        .bucket_size(args.bucket_size)
-        .repair_depth(args.depth)
-        .repair_candidates(if args.depth == 0 { 0 } else { 16 });
+        .bucket_size(args.bucket_size);
     let start = Instant::now();
     let phf: PHastR<u64, D> = builder.try_build(keys, no_logging![]).unwrap();
     let build = start.elapsed().as_nanos() as f64 / keys.len() as f64;

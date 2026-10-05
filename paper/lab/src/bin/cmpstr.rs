@@ -4,7 +4,7 @@
 //! as `std::hash::Hash` feeds a `str` to a hasher) for both.
 //!
 //! Configurations are as in `cmp` (`ref:<chooser>:<S>:<lambda>` and
-//! `r:<S>:<log2 L>:<depth>:<lambda>`, byte seeds); query times are medians of
+//! `r:<S>:<log2 L>:<lambda>[:<log2 R>]`, byte seeds); query times are medians of
 //! interleaved rounds.
 
 use clap::Parser;
@@ -153,19 +153,9 @@ fn main() {
                 }
             }
             "r" => {
-                let ll: u32 = p[2].parse().unwrap();
-                let depth: u32 = p[3].parse().unwrap();
-                let lam: f64 = p[4].parse().unwrap();
-                let b = PHastRBuilder::default()
-                    .log2_slice_len(ll)
-                    .repair_depth(depth)
-                    .repair_candidates(if depth == 0 { 0 } else { 16 })
-                    .bucket_size(lam);
-                phast_r(
-                    &keys,
-                    b,
-                    format!("PHast-R S=8 L={} d={depth} l={lam}", 1 << ll),
-                )
+                let (b, sbits, desc) = lab::parse_config(&p[1..]);
+                assert!(sbits <= 8, "byte seeds only");
+                phast_r(&keys, b, desc)
             }
             _ => panic!("unknown variant {v}"),
         });

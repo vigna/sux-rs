@@ -2,15 +2,14 @@
 //! and reports the minimum and median time per key, and the space (which
 //! must not change when optimizing construction).
 //!
-//! Usage: btime [-n keys] [-r repeats] [-v <S>:<log2 L>:<depth>:<lambda>[:<candidates>[:s]],...]
-//! (`s` orders eviction candidates by the size of the evicted bucket)
+//! Usage: btime [-n keys] [-r repeats] [-v <S>:<log2 L>:<lambda>[:<log2 R>],...]
 
 use clap::Parser;
 use dsi_progress_logger::no_logging;
 use lab::GxKey;
 use mem_dbg::{MemSize, SizeFlags};
 use std::time::Instant;
-use sux::func::{PHastR, PHastRBuilder};
+use sux::func::PHastR;
 
 #[derive(Parser)]
 struct Args {
@@ -18,7 +17,7 @@ struct Args {
     n: usize,
     #[arg(short, long, default_value_t = 5)]
     repeats: usize,
-    #[arg(short, long, value_delimiter = ',', default_value = "8:10:1:4.75")]
+    #[arg(short, long, value_delimiter = ',', default_value = "8:10:4.75")]
     variant: Vec<String>,
 }
 
@@ -29,17 +28,8 @@ fn main() {
         .collect();
     for v in &a.variant {
         let p: Vec<&str> = v.split(':').collect();
-        let b = PHastRBuilder::default()
-            .seed_bits(p[0].parse().unwrap())
-            .log2_slice_len(p[1].parse().unwrap())
-            .repair_depth(p[2].parse().unwrap())
-            .repair_candidates(if p[2] == "0" {
-                0
-            } else {
-                p.get(4).map(|x| x.parse().unwrap()).unwrap_or(16)
-            })
-            .repair_by_size(p.get(5) == Some(&"s"))
-            .bucket_size(p[3].parse().unwrap());
+        let (b, sbits, _) = lab::parse_config(&p);
+        assert!(sbits <= 8, "byte seeds only");
         let mut t = vec![];
         let mut bits = 0.0;
         for _ in 0..a.repeats {

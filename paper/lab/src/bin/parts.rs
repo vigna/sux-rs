@@ -1,15 +1,15 @@
 //! Space breakdown (first level, remapping, further levels) of PHast+ with
-//! wrapping (reference implementation) and of PHast-R with wrapping, on the
-//! same keys.
+//! wrapping (reference implementation) and of PHast-R, on the same keys,
+//! with the empirical entropy of the seeds of the first level of PHast+.
 //!
-//! Usage: parts [-n keys] [-m multiplier] [-l lambda] [-d depth]
+//! Usage: parts [-n keys] [-l lambda of PHast+] [-r lambda of PHast-R]
 
 use clap::Parser;
 use dsi_progress_logger::no_logging;
 use lab::GxKey;
 use mem_dbg::{DbgFlags, MemDbg};
 use ph::GetSize;
-use ph::phast::{Core, DefaultCompressedArray, Function2, Generic, GenericCore, ShiftOnlyWrapped};
+use ph::phast::{DefaultCompressedArray, Function2, Generic, GenericCore, ShiftOnlyWrapped};
 use ph::seedable_hash::BuildGxHash;
 use ph::seeds::Bits8;
 use sux::func::{PHastR, PHastRBuilder};
@@ -20,8 +20,9 @@ struct Args {
     n: usize,
     #[arg(short, default_value_t = 5.0)]
     l: f64,
-    #[arg(short, default_value_t = 0)]
-    d: u32,
+    /// Expected bucket size of PHast-R.
+    #[arg(short, default_value_t = 4.75)]
+    r: f64,
 }
 
 fn main() {
@@ -74,10 +75,7 @@ fn main() {
     // SAFETY: GxKey is a transparent wrapper around u64
     let gkeys: &[GxKey] = unsafe { std::slice::from_raw_parts(keys.as_ptr().cast(), keys.len()) };
     let g: PHastR<GxKey> = PHastRBuilder::default()
-        .wrap(3)
-        .bucket_size(a.l)
-        .repair_depth(a.d)
-        .repair_candidates(if a.d == 0 { 0 } else { 16 })
+        .bucket_size(a.r)
         .try_build(gkeys, no_logging![])
         .unwrap();
     g.mem_dbg(DbgFlags::default() | DbgFlags::PERCENTAGE)
