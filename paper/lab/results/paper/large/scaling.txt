@@ -1,0 +1,20 @@
+100000000 1 PHast-R 8:10:4.5         1.9272 bits/key  build min   56.3 median   56.5 ns/key
+100000000 1 CSV,ref w3 S=8 l=5,100000000,1.9681,125.4,57.8
+100000000 2 PHast-R 8:10:4.5         1.9272 bits/key  build min   30.3 median   30.6 ns/key
+100000000 2 CSV,ref w3 S=8 l=5,100000000,1.9682,67.8,57.0
+100000000 4 PHast-R 8:10:4.5         1.9272 bits/key  build min   16.4 median   16.6 ns/key
+100000000 4 CSV,ref w3 S=8 l=5,100000000,1.9682,37.8,58.0
+100000000 8 PHast-R 8:10:4.5         1.9276 bits/key  build min    9.9 median   10.0 ns/key
+100000000 8 CSV,ref w3 S=8 l=5,100000000,1.9686,23.4,58.6
+100000000 16 PHast-R 8:10:4.5         1.9281 bits/key  build min    9.6 median    9.7 ns/key
+100000000 16 CSV,ref w3 S=8 l=5,100000000,1.9687,19.3,58.2
+1000000000 1 PHast-R 8:10:4.5         1.9268 bits/key  build min   60.0 median   60.1 ns/key
+1000000000 1 CSV,ref w3 S=8 l=5,1000000000,1.9680,130.4,85.2
+1000000000 2 PHast-R 8:10:4.5         1.9268 bits/key  build min   32.7 median   32.7 ns/key
+1000000000 2 CSV,ref w3 S=8 l=5,1000000000,1.9679,70.3,84.0
+1000000000 4 PHast-R 8:10:4.5         1.9268 bits/key  build min   18.6 median   19.9 ns/key
+1000000000 4 CSV,ref w3 S=8 l=5,1000000000,1.9679,39.3,85.4
+1000000000 8 PHast-R 8:10:4.5         1.9268 bits/key  build min   11.0 median   11.1 ns/key
+1000000000 8 CSV,ref w3 S=8 l=5,1000000000,1.9679,25.1,85.5
+1000000000 16 PHast-R 8:10:4.5         1.9269 bits/key  build min   10.5 median   10.6 ns/key
+1000000000 16 CSV,ref w3 S=8 l=5,1000000000,1.9680,21.2,81.5

@@ -358,24 +358,34 @@ no two keys of the bucket are mapped to the same slot, and otherwise we move
 to the next candidate.
 
 \paragraph{Grouping and scheduling.}
-The sweep needs the keys of each bucket, but in no particular order: thus,
-instead of sorting the hashes, as the reference implementation of \PHast does,
-we distribute them, first into parts made of a power of two of consecutive
-buckets, and then each part, which fits the cache, into its buckets, counting
-in both cases the number of hashes for each destination beforehand. In a
-parallel construction, each thread applies the first phase to a chunk of the
-keys, and the second phase to a different set of parts. Moreover, the
-priority of a bucket depends on its size and decreases with its index, and
-buckets enter the window of the sweep in order of index: thus, the buckets of
-each size in the window form a queue, and the bucket with the highest
-priority is the first bucket of one of the queues. Instead of a priority
-queue we keep a queue for each size: extracting the next bucket requires
-scanning the first elements of a few queues, and adding a bucket takes
-constant time. Finally, the set of used slots of the level and the keys of
-bumped buckets, which are necessary to build the following levels, are
-byproducts of the sweep: the bits of the slots that are no longer reachable
-are copied to the bitmap of the level when their part of the set of used
-slots is recycled.
+The sweep needs the hashes of the keys of each bucket, but in no particular
+order: thus, instead of sorting the hashes, as the reference implementation
+of \PHast does, we distribute them, first into parts made of a power of two
+of consecutive buckets, and then each part, which fits the cache, into its
+buckets, counting in both cases the number of hashes for each destination
+beforehand. In a parallel construction, each thread computes the hashes of a
+chunk of the keys and writes them into its own region of each part, and
+parts are then processed in parallel. When there are more than a few tens of
+millions of keys the parts fitting the cache would be too many to be written
+efficiently at the same time: in that case we use larger parts, and
+distribute each of them into smaller parts before the distribution into
+buckets. Hashes are not stored with the index of their key: to find the keys
+of bumped buckets, which must be passed to the next level, we scan the hashes
+in the order of the keys, checking for each hash whether its bucket has a
+seed. The construction thus needs, besides the hashes in the order of the
+keys, just a copy of them grouped by bucket and a position for each bucket,
+that is, about $18$ bytes per key.
+
+The priority of a bucket depends on its size and decreases with its index,
+and buckets enter the window of the sweep in order of index: thus, the
+buckets of each size in the window form a queue, and the bucket with the
+highest priority is the first bucket of one of the queues. Instead of a
+priority queue we keep a queue for each size: extracting the next bucket
+requires scanning the first elements of a few queues, and adding a bucket
+takes constant time. Finally, the set of used slots of the level, which is
+necessary to build the following levels, is a byproduct of the sweep: the
+bits of the slots that are no longer reachable are copied to the bitmap of
+the level when their part of the set of used slots is recycled.
 
 \paragraph{Slice length.}
 The slice length of a level with output range $m$ is the smallest power of two
@@ -454,9 +464,10 @@ multiplier of the seed is the power of two $L/2^S$, so that the seeds of a
 pattern form rings, rather than a small odd number; the set of used slots is
 stored by residue classes, feasible seeds are found by rotations, and their
 sums of slots are computed on packed indices (Search); hashes are grouped by
-bucket by distribution, rather than sorted, the priority queue of the sweep is
-replaced by a queue for each bucket size, and the set of used slots of a
-level is a byproduct of the sweep (Grouping and scheduling); the keys of
+bucket by distribution, rather than sorted, the keys of bumped buckets are
+found by scanning the hashes, the priority queue of the sweep is replaced by a
+queue for each bucket size, and the set of used slots of a level is a
+byproduct of the sweep (Grouping and scheduling); the keys of
 bumped buckets are hashed just once more, rather than at each level (Levels);
 the last level uses the same scheme as the other levels instead of regular
 \PHast (Last level); and gaps between parallel chunks are swept in parallel by
@@ -490,24 +501,24 @@ bit-packed seeds read without alignment for $S=10$.
 \toprule
 Method & Configuration & bits/key & build [ns/key] & query [ns] \\
 \midrule
-\PHastP & $S=8$, $\lambda=5.25$ & 2.116 & 66 & 23.7 \\
-\PHastP wrap $\delta=1$ & $S=8$, $\lambda=5.25$ & 2.096 & 80 & 22.7 \\
-\PHastP wrap $\delta=2$ & $S=8$, $\lambda=5$ & 2.013 & 99 & 21.3 \\
-\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.970 & 120 & 22.1 \\
-\PHast & $S=8$, $\lambda=4.5$ & 1.922 & 819 & 21.0 \\
+\PHastP & $S=8$, $\lambda=5.25$ & 2.116 & 68 & 23.7 \\
+\PHastP wrap $\delta=1$ & $S=8$, $\lambda=5.25$ & 2.096 & 79 & 24.0 \\
+\PHastP wrap $\delta=2$ & $S=8$, $\lambda=5$ & 2.013 & 98 & 21.1 \\
+\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.970 & 119 & 22.0 \\
+\PHast & $S=8$, $\lambda=4.5$ & 1.922 & 817 & 21.0 \\
 \addlinespace
-\PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.929 & 60 & 20.5 \\
-\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.921 & 58 & 21.0 \\
-\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.925 & 59 & 21.7 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.929 & 52 & 20.5 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.921 & 50 & 21.1 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.925 & 50 & 21.8 \\
 \midrule
-\PHastP & $S=10$, $\lambda=5.15$ & 2.085 & 74 & 25.4 \\
-\PHastP wrap $\delta=1$ & $S=10$, $\lambda=6.2$ & 1.905 & 110 & 24.5 \\
+\PHastP & $S=10$, $\lambda=5.15$ & 2.085 & 81 & 25.4 \\
+\PHastP wrap $\delta=1$ & $S=10$, $\lambda=6.2$ & 1.905 & 111 & 24.5 \\
 \PHastP wrap $\delta=2$ & $S=10$, $\lambda=5.9$ & 1.883 & 172 & 23.7 \\
-\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.872 & 242 & 25.3 \\
-\PHast & $S=10$, $\lambda=6.05$ & 1.854 & 2201 & 25.4 \\
+\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.872 & 243 & 25.3 \\
+\PHast & $S=10$, $\lambda=6.05$ & 1.854 & 2198 & 25.4 \\
 \addlinespace
-\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.852 & 123 & 25.0 \\
-\PHastR & $S=10$, $L=2048$, $\lambda=6.25$ & 1.857 & 121 & 25.3 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.852 & 116 & 24.8 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=6.25$ & 1.857 & 114 & 25.2 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -521,15 +532,15 @@ Method & Configuration & bits/key & build [ns/key] & query [ns] \\
   legend pos=north east, legend cell align=left, grid=major, grid style={gray!20},
   xmin=50, xmax=3000, ymin=1.83, ymax=2.13]
 \addplot[only marks, mark=o, color=black] coordinates {
-  (66,2.116) (80,2.096) (99,2.013) (120,1.970) (74,2.085) (110,1.905) (172,1.883) (242,1.872)
+  (68,2.116) (79,2.096) (98,2.013) (119,1.970) (81,2.085) (111,1.905) (172,1.883) (243,1.872)
 };
 \addlegendentry{\PHastP (with and without wrapping)}
 \addplot[only marks, mark=square, color=black] coordinates {
-  (819,1.922) (2201,1.854)
+  (817,1.922) (2198,1.854)
 };
 \addlegendentry{\PHast}
 \addplot[only marks, mark=*, color=red!70!black] coordinates {
-  (60,1.929) (58,1.921) (59,1.925) (123,1.852) (121,1.857)
+  (52,1.929) (50,1.921) (50,1.925) (116,1.852) (114,1.857)
 };
 \addlegendentry{\PHastR}
 \end{axis}
@@ -542,23 +553,23 @@ Table~\ref{tab:1e7}).}
 Table~\ref{tab:1e7} and Figure~\ref{fig:pareto} show the results on $10^7$
 keys. With 8-bit seeds and the suggested expected bucket size $\lambda=4.5$,
 \PHastR uses $0.04$ bits per key less than the best variant of \PHastP with
-wrapping, and it is built in half the time (it is faster to build even than
-\PHastP without wrapping). Its queries are faster than those of all variants
-of \PHastP ($7\%$ faster than those of the variant using the least space),
+wrapping, and it is built in less than half the time (it is faster to build
+even than \PHastP without wrapping). Its queries are faster than those of all variants
+of \PHastP ($6\%$ faster than those of the variant using the least space),
 and slightly faster than those of \PHast, which uses $0.4\%$ less space but
-takes almost fourteen times as long to build. The speed of queries is due to
+takes fifteen times as long to build. The speed of queries is due to
 bumping: \PHastR bumps just $1.5\%$ of the keys from the first level, against
 the $4.3\%$ of \PHastP with wrapping and $\delta=3$, and queries for bumped
 keys are much slower than the others. The expected bucket size thus trades
 space for query time: with $\lambda=4.75$ \PHastR bumps $2.5\%$ of the keys,
-and it has the space and the query time of \PHast; with $\lambda=5$ it bumps
-$3.7\%$ of the keys, and its queries are still faster than those of \PHastP
-with wrapping and $\delta=3$. With 10-bit seeds \PHastR uses less space than
-all variants of \PHastP, and even slightly less than \PHast; it is built in
-about half the time of \PHastP with wrapping and $\delta=3$, and its queries
-are slightly faster than those of the latter and of \PHast (the variants of
-\PHastP with a smaller multiplier have faster queries, but they use more
-space).
+and it has the space and essentially the query time of \PHast; with
+$\lambda=5$ it bumps $3.7\%$ of the keys, and its queries are still faster
+than those of \PHastP with wrapping and $\delta=3$. With 10-bit seeds \PHastR
+uses less space than all variants of \PHastP, and even slightly less than
+\PHast; it is built in less than half the time of \PHastP with wrapping and
+$\delta=3$, and its queries are slightly faster than those of the latter and
+of \PHast (the variants of \PHastP with a smaller multiplier have faster
+queries, but they use more space).
 
 \begin{table}[t]
 \centering
@@ -572,27 +583,152 @@ construction.}
 \cmidrule(lr){4-5}
 Method & Configuration & bits/key & 1 thread & 8 threads & query [ns] \\
 \midrule
-\PHastP & $S=8$, $\lambda=5.25$ & 2.115 & 69 & 15.8 & 35.8 \\
-\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.968 & 126 & 23.2 & 32.9 \\
-\PHast & $S=8$, $\lambda=4.5$ & 1.921 & 825 & -- & 30.5 \\
+\PHastP & $S=8$, $\lambda=5.25$ & 2.115 & 70 & 15.8 & 35.7 \\
+\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.968 & 126 & 23.3 & 32.9 \\
+\PHast & $S=8$, $\lambda=4.5$ & 1.921 & 823 & -- & 30.5 \\
 \addlinespace
-\PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.927 & 63 & 13.1 & 29.9 \\
-\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.919 & 62 & 13.5 & 31.0 \\
-\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.924 & 62 & 14.3 & 32.3 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.927 & 56 & 9.9 & 29.8 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.919 & 54 & 10.2 & 30.9 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.924 & 54 & 10.4 & 32.2 \\
 \midrule
-\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.869 & 248 & 41.3 & 35.8 \\
+\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.869 & 249 & 41.4 & 35.7 \\
 \addlinespace
-\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.849 & 128 & 21.4 & 35.5 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.849 & 119 & 18.3 & 35.2 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 Table~\ref{tab:1e8} shows that the picture does not change on $10^8$ keys,
 where queries are dominated by cache misses: with 8-bit seeds and
-$\lambda=4.5$ \PHastR is built in half the time of \PHastP with wrapping, and
-its queries are $9\%$ faster; they are also $2\%$ faster than those of \PHast.
-With 8 threads \PHastR builds in $56\%$ of the time of \PHastP with wrapping
-with 8-bit seeds, and in $52\%$ of the time with 10-bit seeds.
+$\lambda=4.5$ \PHastR is built in less than half the time of \PHastP with
+wrapping, and its queries are $9\%$ faster; they are also slightly faster
+than those of \PHast. With 8 threads \PHastR builds in $42\%$ of the time of
+\PHastP with wrapping with 8-bit seeds, and in $44\%$ of the time with 10-bit
+seeds.
+
+\subsection{Large Key Sets}
+\label{sec:large}
+
+\begin{table}[t]
+\centering
+\caption{Comparison on $10^9$ keys, with single-threaded and 8-threaded
+construction.}
+\label{tab:1e9}
+\small
+\begin{tabular}{llrrrr}
+\toprule
+& & & \multicolumn{2}{c}{build [ns/key]} & \\
+\cmidrule(lr){4-5}
+Method & Configuration & bits/key & 1 thread & 8 threads & query [ns] \\
+\midrule
+\PHastP & $S=8$, $\lambda=5.25$ & 2.115 & 74 & 17.7 & 56.7 \\
+\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.968 & 130 & 25.1 & 52.2 \\
+\PHast & $S=8$, $\lambda=4.5$ & 1.920 & 828 & -- & 47.6 \\
+\addlinespace
+\PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.927 & 60 & 11.0 & 47.1 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.919 & 58 & 11.1 & 48.9 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.924 & 58 & 11.3 & 51.3 \\
+\midrule
+\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.869 & 276 & 43.1 & 54.4 \\
+\addlinespace
+\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.848 & 123 & 19.3 & 54.1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:1e9} reports the results on $10^9$ keys. Space does not depend
+on the number of keys, and the relative performance of the structures is the
+same as on smaller key sets: with 8-bit seeds \PHastR is built in less than
+half the time of \PHastP with wrapping, both with one and with eight threads,
+its queries are $10\%$ faster, and they are as fast as those of \PHast. At
+this scale, however, some phenomena become more visible, and we used them to
+tune the structure.
+
+\begin{table}[t]
+\centering
+\caption{Query time in nanoseconds for the keys of the first level
+(``first'') and for all keys, and for all keys using huge pages; the second
+column is the percentage of keys bumped from the first level.}
+\label{tab:split}
+\small
+\begin{tabular}{lrrrrrrrrr}
+\toprule
+& & \multicolumn{2}{c}{$10^7$ keys} & \multicolumn{2}{c}{$10^8$ keys} & \multicolumn{2}{c}{$10^9$ keys} & \multicolumn{2}{c}{huge pages} \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}\cmidrule(lr){9-10}
+Structure & bumped & first & all & first & all & first & all & $10^8$ & $10^9$ \\
+\midrule
+\PHastP wrap $\delta=3$, $\lambda=5$ & 4.3 & 19.5 & 22.0 & 27.9 & 33.0 & 44.6 & 52.2 & 26.9 & 32.2 \\
+\PHast, $\lambda=4.5$ & 1.4 & 20.2 & 20.9 & 28.9 & 30.4 & 45.3 & 48.1 & 25.2 & 29.0 \\
+\PHastR, $\lambda=4.5$ & 1.5 & 19.7 & 20.5 & 28.3 & 29.9 & 45.1 & 47.4 & 24.6 & 28.1 \\
+\PHastR, $\lambda=4.75$ & 2.5 & 19.6 & 21.1 & 28.2 & 31.0 & 44.7 & 49.6 & 25.5 & 29.6 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Bumped keys.}
+Table~\ref{tab:split} shows the time of queries for the keys of the first
+level only, measured on the same structures. It is essentially the same for
+all structures, as it is dominated by the access to the seed (and, in our
+benchmark, to the key), and it grows with the size of the array of seeds: the
+differences between the structures are due to bumped keys. In a workload in
+which all keys are queried, a query for a bumped key takes about $55$\,ns
+more than a query for a key of the first level on $10^7$ keys, $110$\,ns
+more on $10^8$ keys, and $150$--$200$\,ns more on $10^9$ keys: besides
+accessing another level and the Elias--Fano sequence, a bumped key causes
+the misprediction of the test on the seed, which interrupts the overlapped
+execution of the following queries. Thus, each percent of bumped keys costs
+about $0.55$\,ns on $10^7$ keys, but $1.5$\,ns on $10^9$ keys: the larger the
+key set, the more a small expected bucket size is convenient. This is the
+reason why we suggest $\lambda=4.5$ instead of $\lambda=4.75$, which uses
+slightly less space.
+
+\paragraph{Page size.}
+With $10^9$ keys the seeds of the first level occupy $222$\,MB, and with
+pages of $4$\,KiB almost every access to a seed causes a TLB miss, besides a
+cache miss. The last two columns of Table~\ref{tab:split} show the query time
+when memory is allocated using transparent huge pages (on our system they
+must be requested, which we did through the tunable
+\texttt{glibc.malloc.hugetlb} of the GNU C library): queries are $18\%$
+faster on $10^8$ keys, and $40\%$ faster on $10^9$ keys, for all structures.
+For very large key sets the page size is thus more important than any other
+parameter.
+
+\begin{table}[t]
+\centering
+\caption{Construction on $10^9$ keys ($S=8$): time in nanoseconds per key by
+number of threads (the last column uses both hardware threads of each core),
+speedup with eight threads, and peak memory usage in bytes per key, excluding
+the keys.}
+\label{tab:threads}
+\small
+\begin{tabular}{lrrrrrrr}
+\toprule
+& \multicolumn{5}{c}{threads} & & \\
+\cmidrule(lr){2-6}
+Structure & 1 & 2 & 4 & 8 & 16 & speedup & bytes/key \\
+\midrule
+\PHastR, $\lambda=4.5$ & 60.0 & 32.7 & 18.6 & 11.0 & 10.5 & 5.5 & 18.6 \\
+\PHastP wrap $\delta=3$, $\lambda=5$ & 130.4 & 70.3 & 39.3 & 25.1 & 21.2 & 5.2 & 9.9 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Construction.}
+The construction time per key of \PHastR is almost independent of the number
+of keys ($52$, $56$ and $60$\,ns with one thread on $10^7$, $10^8$ and $10^9$
+keys, respectively), thanks to the additional distribution pass used for
+large key sets (Section~\ref{sec:phastr}): without it, parallel construction
+on $10^9$ keys takes $60\%$ more time. Table~\ref{tab:threads} shows how
+construction scales with the number of threads: the speedup is limited by the
+phases that are bound by memory bandwidth and latency, that is, hashing,
+grouping, and the scan of the hashes finding bumped keys, which with eight
+threads take about half of the time. The peak memory usage is twice that of
+the reference implementation of \PHastP, which sorts hashes in place and
+hashes all keys again to find those of bumped buckets. Huge pages are useful
+for construction, too, as page faults on the large arrays of hashes are a
+significant part of its cost: with them, \PHastR builds $10^9$ keys in
+$54$\,ns per key instead of $60$ with one thread, and in $10.2$ instead of
+$11.0$ with eight.
 
 \section{The Limits of the Approach}
 \label{sec:limits}

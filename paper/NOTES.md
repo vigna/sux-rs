@@ -499,8 +499,8 @@ all keys, before the fix):
   times about 40 ns (10⁷ keys) or 110 ns (10⁸ keys), which includes the
   branch misprediction: λ trades space for query time.
 
-Final results (`lab/results/paper/run-final.csv`; build ns/key with one
-thread, query ns):
+Results at that point (build ns/key with one thread, query ns; the final
+numbers are in `lab/results/paper/run.csv`, see the next section):
 
 | | 10⁷: bits/key | build | query | 10⁸: bits/key | build | 8 threads | query |
 |---|---|---|---|---|---|---|---|
@@ -526,6 +526,59 @@ Expected bucket size (`cmp`, one thread; bits/key, build ns/key, query ns):
 Below 4.5 space grows quickly for a small gain in query time; 4.5 is the
 default (decided by Sebastiano: "We need query speed").
 
+## Large key sets (October 6, 2026)
+
+The machine became free, and the 10⁸ limit was lifted. All experiments were
+redone (`lab/results/paper/run.sh` → `run.csv`, now with 10⁹ keys too), and
+`large.sh` → `large/` adds the query split, thread scaling, peak memory and
+transparent huge pages (`large_tables.py` formats Tables 4–5 of the paper).
+Peak memory with 10⁹ keys is about 27 GB (8 GB of keys included).
+
+Calibration for large key sets (all with identical output):
+
+- `group` with 2¹¹ parts of 488K keys at 10⁹ was DRAM-bound in its second
+  phase (43% of the CPU time with 8 threads): now when more than 2¹¹
+  cache-sized parts would be needed, parts are larger (√ of that number)
+  and each one is distributed into cache-sized parts first (16.5 → 13.4
+  ns/key with 8 threads at 10⁹; neutral at 10⁸).
+- Signatures no longer carry key indices (8 bytes instead of 16): threads
+  write directly into their regions of the parts, parts are distributed in
+  place through a copy, and bumped keys are found by a scan of the
+  signatures in key order against a bit vector of bumped buckets. Memory
+  during construction: 33 → 18.6 bytes/key (ph: 9.9); time: 13.4 → 11.0
+  ns/key (8 threads, 10⁹), 64 → 56 (1 thread, 10⁸). Tried and rejected: a
+  coarse bit vector in front of the fine one (unpredictable branch, slower
+  at 10⁷–10⁸), prefetching in the scan (±2%).
+- With 10⁹ keys the scan of bumped keys is 18% of the CPU time with 8
+  threads (random DRAM accesses into a 28 MB bit vector); the sweep is 49%
+  and the grouping 25%.
+
+Findings (Section 4.1 of the paper):
+
+- A query for a first-level key costs the same in all structures (44–45 ns
+  at 10⁹); a bumped key costs ~55/110/150–200 ns extra at 10⁷/10⁸/10⁹
+  (including the misprediction), so each percent of bumped keys costs
+  0.55–1.5 ns: λ = 4.5 is the right default for large sets.
+- Transparent huge pages (`GLIBC_TUNABLES=glibc.malloc.hugetlb=1`, THP in
+  `madvise` mode on this machine) make queries 18% faster at 10⁸ and 40%
+  faster at 10⁹ for every structure (PHast-R 28.1 ns, PHast 29.0, PHast+
+  w3 32.2 at 10⁹), and construction 10% faster.
+- Thread scaling at 10⁹: 60.0/32.7/18.6/11.0/10.5 ns/key with 1/2/4/8/16
+  threads (5.5× with 8); PHast+ w3: 130.4/70.3/39.3/25.1/21.2.
+- Final numbers (1 thread; bits/key, build ns/key, query ns):
+
+| | 10⁷ | | | 10⁸ | | | 10⁹ | | |
+|---|---|---|---|---|---|---|---|---|---|
+| PHast+ w3 λ=5 | 1.970 | 119 | 22.0 | 1.968 | 126 | 32.9 | 1.968 | 130 | 52.2 |
+| PHast λ=4.5 | 1.922 | 817 | 21.0 | 1.921 | 823 | 30.5 | 1.920 | 828 | 47.6 |
+| PHast-R λ=4.5 | 1.929 | 52 | 20.5 | 1.927 | 56 | 29.8 | 1.927 | 60 | 47.1 |
+| PHast-R λ=4.75 | 1.921 | 50 | 21.1 | 1.919 | 54 | 30.9 | 1.919 | 58 | 48.9 |
+| PHast+ w3 S=10 | 1.872 | 243 | 25.3 | 1.869 | 249 | 35.7 | 1.869 | 276 | 54.4 |
+| PHast-R S=10 | 1.852 | 116 | 24.8 | 1.849 | 119 | 35.2 | 1.848 | 123 | 54.1 |
+
+  With 8 threads (build ns/key): PHast-R 9.1/9.9/11.0, PHast+ w3
+  22.6/23.3/25.1; S=10: 19.3/18.3/19.3 vs 40.8/41.4/43.1.
+
 ## Key findings (see Section 2 of the paper; reference implementation)
 
 - With output range m = n, holes = bumped keys; each hole costs about
@@ -539,18 +592,29 @@ default (decided by Sebastiano: "We need query speed").
 ## Implementation notes
 
 - `group` computes the signatures of a level and groups them by bucket
-  (they are *not* sorted): each thread hashes a chunk of the keys and
-  distributes its signatures into parts made of 2^k consecutive buckets
-  (about 2¹⁴ keys per part, at most 2¹¹ parts), then parts are distributed
-  into buckets in parallel. It returns the signatures and the position of
-  the first signature of each bucket. Two buffers of 16 bytes per key are
-  used; page faults on fresh buffers are a visible cost (about 6 ns/key per
-  buffer at 10⁷ keys with 4 KiB pages).
+  (they are *not* sorted, and they are plain `u64`, without key indices):
+  each thread hashes a chunk of the keys, counting the signatures of each
+  part (2^k consecutive buckets; about 2¹⁴ keys per part, at most 2¹¹
+  parts), and then writes them into its own region of each part; parts are
+  then distributed into buckets in parallel, in place, using a copy of the
+  part. With more than 2²⁵ keys parts are larger (about the square root of
+  the number of cache-sized parts), and each one is first distributed into
+  cache-sized parts. `group` returns the signatures in key order, the
+  signatures grouped by bucket and the position of the first signature of
+  each bucket: about 18 bytes per key in all (two arrays of 8 bytes per key
+  and one of 8 bytes per bucket). Page faults on fresh buffers are a
+  visible cost (about 3 ns/key per 8-byte array with 4 KiB pages).
+- `bumped` finds the keys of the buckets without a seed by scanning the
+  signatures in key order and testing a bit vector with a bit per bucket
+  (28 MB for 10⁹ keys: 6 ns/key with one thread at that size; a coarser
+  bit vector in front of it does not help, because the test becomes an
+  unpredictable branch). The following levels work on the list of the
+  indices of their keys.
 - `sweep_level` splits buckets into chunks separated by gaps of
   ⌊L·B/num_slices⌋ + 1 buckets (it must be `num_slices`, not `m`: using `m`
   was a real bug, covered by `test_many_chunks`), sweeps chunks in parallel,
   then gaps in parallel with the slots of the neighboring buckets marked as
-  used. Each `Sweep` returns the slots it used and the keys it bumped.
+  used. Each `Sweep` returns the slots it used.
 - `Sweep::search` scans the keys of a bucket once: for each pattern it
   rotates the ring of the key and accumulates the blocked seeds, the sum of
   the slots for the first seed, and the ring indices packed into 8/16/32-bit
@@ -610,8 +674,10 @@ the hardware and need not be rerun. Commands (from `paper/lab`):
    (S > 8) cost about 4 ns per query on x86 whatever the structure.
 2. **Seeds of 11–12 bits**: retune λ and weights with L = 4096/8192
    (`tune <keys> 12:12:1:7.5,8,8.5 12:13:1:8,8.5,9`, then `wtune`).
-3. **Scale**: 10⁹ keys (construction keeps 16 bytes per key plus bucket
-   arrays), thread scaling beyond 10 threads.
+3. **Scale**: construction keeps 18.6 bytes per key (ph: 9.9); the scan
+   for bumped keys is DRAM-bound at 10⁹ keys. Rehashing keys instead of
+   keeping the signatures in key order would save 8 bytes per key at the
+   cost of two more hashes per key. Nothing was run beyond 10⁹ keys.
 4. **Repair cost**: depth-2 repair costs ~50 ns/key more than depth 1, mostly
    in nested repairs of evicted buckets that fail.
 5. **String keys / other MPHFs**: add PHast-R to Beling's `mphf_benchmark`
