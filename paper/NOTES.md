@@ -582,6 +582,22 @@ Findings (Section 4.1 of the paper):
   With 8 threads (build ns/key): PHast-R 9.2/9.4/10.3, PHast+ w3
   22.6/23.1/24.9; S=10: 19.2/17.3/19.0 vs 40.7/41.2/43.0.
 
+## Older hardware (October 6, 2026, `lab/results/paper/sexus/`)
+
+`redo.sh` on a 40-core Xeon E7-4870 (Westmere-EX, 2011: no AVX/BMI2, 256 KB
+L2 per core, 4 sockets, 1 TB; cores 0–7 of `lscpu`, glibc 2.42, THP on
+request). Same space to the bit. Queries (ns, 10⁷/10⁸/10⁹): PHast-R λ=4.5
+93.1/146.7/231.3, PHast+ w3 93.1/151.5/249.4, PHast 130.5/183.6/273.3 (its
+multiplications are slow there), plain PHast+ 98.0/162.1/312.9; S=10:
+PHast-R 135.2/192.5/284.1 vs w3 132.8/187.1/280.2 (1–3% slower: unaligned
+bit-field reads cost more on that generation). First-level path: PHast-R
+90.2 vs w3 85.4 at 10⁷ (the extra shift costs ~5 ns without BMI2), made up
+by fewer bumped keys. Construction (ns/key, 1 thread): PHast-R
+160/183/223 vs w3 291/317/353 (55–63%); 8 threads 35/28/35 vs 56/48/62;
+40 threads at 10⁹: 11.4 vs 36.8 (17.8× vs 8.7× scaling). Memory 10.6 vs
+9.9 bytes/key. Huge pages: queries −14% at 10⁸, −30% at 10⁹ (161.6 vs
+231.3), construction −5%.
+
 ## Key findings (see Section 2 of the paper; reference implementation)
 
 - With output range m = n, holes = bumped keys; each hole costs about
