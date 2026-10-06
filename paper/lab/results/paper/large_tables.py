@@ -67,12 +67,13 @@ for line in lines:
         memory[(name, n)] = (int(f[-1]) * 1024 - 8 * n) / n
     elif f[1] == 'PHast-R':
         cur = label(f[2])
-print('% TABLE5: build ns/key at 10^9 with 1, 2, 4, 8, 16 threads; speedup with 8 threads; bytes/key at 10^9')
+n = max(k[0] for v in scaling.values() for k in v)
+threads = sorted({k[1] for v in scaling.values() for k in v if k[0] == n})
+print(f'% TABLE5: build ns/key at {n} with {threads} threads; speedup with {threads[-1]} threads; bytes/key')
 for name, v in scaling.items():
-    n = 10**9
-    cells = [f'{v[(n, t)]:.1f}' for t in (1, 2, 4, 8, 16)]
-    print(rf'{name} & ' + ' & '.join(cells) + rf' & {v[(n, 1)] / v[(n, 8)]:.1f} & {memory[(name, n)]:.1f} \\')
-print('% build ns/key at 10^8:', {k: [v[(10**8, t)] for t in (1, 2, 4, 8, 16)] for k, v in scaling.items()})
+    cells = [f'{v[(n, t)]:.1f}' for t in threads]
+    print(rf'{name} & ' + ' & '.join(cells) + rf' & {v[(n, 1)] / v[(n, threads[-1])]:.1f} & {memory[(name, n)]:.1f} \\')
+print('% build ns/key by (n, threads):', {k: sorted(v.items()) for k, v in scaling.items()})
 print('% bytes/key:', memory)
 print('% huge pages:', huge)
 # Construction with huge pages

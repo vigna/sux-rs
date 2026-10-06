@@ -4,43 +4,55 @@
 # effect of transparent huge pages (through the glibc tunable
 # glibc.malloc.hugetlb, which makes malloc ask for them).
 # Usage: large.sh <directory of the binaries> <output directory>
-# With 10^9 keys the peak memory usage is about 60 GB.
+# Environment: CPU1, CORES (a list of distinct cores), THREADS, SIZES; see
+# redo.sh. With 10^9 keys the peak memory usage is about 60 GB.
 B=${1:-../../target-nexus/release}
 O=${2:-large}
+CPU1=${CPU1:-2}
+CORES=${CORES:-0 1 2 3 4 5 6 7}
+THREADS=${THREADS:-8}
+SIZES=${SIZES:-"10000000 100000000 1000000000"}
+LARGE=$(echo $SIZES | tr ' ' '\n' | grep -v '^10000000$' | tr '\n' ' ')
+# The first t cores, as a taskset list
+cpus() { echo $CORES | tr ' ' '\n' | head -n $1 | tr '\n' ',' | sed 's/,$//'; }
 mkdir -p $O
 
 # Query time of first-level and bumped keys
-for n in 10000000 100000000 1000000000; do
-  RAYON_NUM_THREADS=1 taskset -c 2 $B/qsplit -n $n -q 4000000 -r 9 \
+for n in $SIZES; do
+  RAYON_NUM_THREADS=1 taskset -c $CPU1 $B/qsplit -n $n -q 4000000 -r 9 \
     -v ref:w3:8:5.0,ref:phast:8:4.5,8:10:4.5,8:10:4.75 | sed "s/^/$n /"
 done > $O/qsplit.txt
 
-# Thread scaling of the construction (CPUs 0-7 are distinct cores)
-for n in 100000000 1000000000; do
-  for t in 1 2 4 8 16; do
-    if [ $t = 16 ]; then cpus=0-15; else cpus=0-$((t - 1)); fi
+# Thread scaling of the construction: powers of two up to the number of
+# cores, and then all hardware threads
+for n in $LARGE; do
+  for t in 1 2 4 8 16 32 all; do
+    if [ $t = all ]; then cpus=0-$(($(nproc) - 1)); t=$(nproc); [ $t -le $THREADS ] && break
+    elif [ $t -gt $THREADS ]; then break; else cpus=$(cpus $t); fi
     RAYON_NUM_THREADS=$t taskset -c $cpus $B/btime -n $n -r 2 -v 8:10:4.5 | sed "s/^/$n $t PHast-R /"
     RAYON_NUM_THREADS=$t taskset -c $cpus $B/cmp -n $n -t $t -q 1000 --interleave 1 -v ref:w3:8:5.0 2>&1 >/dev/null \
       | grep '^CSV' | sed "s/^/$n $t /"
   done
 done > $O/scaling.txt
 
-# Peak memory of a construction with 8 threads (it includes 8 bytes per key
+# Peak memory of a multithreaded construction (it includes 8 bytes per key
 # for the keys)
-for n in 100000000 1000000000; do
-  RAYON_NUM_THREADS=8 taskset -c 0-7 /usr/bin/time -v $B/btime -n $n -r 1 -v 8:10:4.5 2>&1 \
+CPUS=$(cpus $THREADS)
+for n in $LARGE; do
+  RAYON_NUM_THREADS=$THREADS taskset -c $CPUS /usr/bin/time -v $B/btime -n $n -r 1 -v 8:10:4.5 2>&1 \
     | grep -E "bits|Maximum resident" | sed "s/^/$n PHast-R /"
   for v in ref:w3:8:5.0 ref:plus:8:5.25; do
-    RAYON_NUM_THREADS=8 taskset -c 0-7 /usr/bin/time -v $B/cmp -n $n -t 8 -q 1000 --interleave 1 -v $v 2>&1 \
+    RAYON_NUM_THREADS=$THREADS taskset -c $CPUS /usr/bin/time -v $B/cmp -n $n -t $THREADS -q 1000 --interleave 1 -v $v 2>&1 \
       | grep -E "^CSV|Maximum resident" | sed "s/^/$n $v /"
   done
 done > $O/memory.txt
 
-# Transparent huge pages
-for n in 100000000 1000000000; do
-  GLIBC_TUNABLES=glibc.malloc.hugetlb=1 RAYON_NUM_THREADS=1 taskset -c 2 $B/cmp -n $n -q 2000000 --interleave 9 \
+# Transparent huge pages (the tunable requires glibc 2.35 or later, and
+# transparent huge pages must be enabled, at least on request)
+for n in $LARGE; do
+  GLIBC_TUNABLES=glibc.malloc.hugetlb=1 RAYON_NUM_THREADS=1 taskset -c $CPU1 $B/cmp -n $n -q 2000000 --interleave 9 \
     -v ref:plus:8:5.25,ref:w3:8:5.0,ref:phast:8:4.5,r:8:10:4.5,r:8:10:4.75 2>&1 >/dev/null | grep '^CSV' | sed "s/^/1,/"
-  GLIBC_TUNABLES=glibc.malloc.hugetlb=1 RAYON_NUM_THREADS=8 taskset -c 0-7 $B/cmp -n $n -t 8 -q 1000 --interleave 1 \
-    -v ref:plus:8:5.25,ref:w3:8:5.0,r:8:10:4.5,r:8:10:4.75 2>&1 >/dev/null | grep '^CSV' | sed "s/^/8,/"
+  GLIBC_TUNABLES=glibc.malloc.hugetlb=1 RAYON_NUM_THREADS=$THREADS taskset -c $CPUS $B/cmp -n $n -t $THREADS -q 1000 --interleave 1 \
+    -v ref:plus:8:5.25,ref:w3:8:5.0,r:8:10:4.5,r:8:10:4.75 2>&1 >/dev/null | grep '^CSV' | sed "s/^/$THREADS,/"
 done > $O/hugepages.csv
 echo done >> $O/hugepages.csv

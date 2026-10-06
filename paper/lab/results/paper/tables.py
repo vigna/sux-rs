@@ -31,5 +31,7 @@ for n in sorted({k[0] for k in rows}):
         if n == 10**7:
             print(rf'{method} & {conf} & {bits:.3f} & {build:.0f} & {query:.1f} \\')
         else:
-            b8 = f"{v['8'][1]:.1f}" if '8' in v else '--'
+            # The multithreaded construction, whatever the number of threads
+            threads = [t for t in v if t != '1']
+            b8 = f"{v[threads[0]][1]:.1f}" if threads else '--'
             print(rf'{method} & {conf} & {bits:.3f} & {build:.0f} & {b8} & {query:.1f} \\')
