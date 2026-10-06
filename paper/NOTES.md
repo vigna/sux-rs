@@ -601,6 +601,21 @@ by fewer bumped keys. Construction (ns/key, 1 thread): PHast-R
 −14% at 10⁸, −30% at 10⁹ (PHast-R 125.5/161.6, w3 129.3/172.6, PHast
 159.6/175.7 at 10⁸/10⁹), construction −5%.
 
+## AWS metal instance (October 6, 2026, `lab/results/paper/c7i/`)
+
+`redo.sh` on a `c7i.metal-24xl` (one Xeon Platinum 8488C, Sapphire Rapids:
+48 cores/96 threads, 192 GB, 105 MB L3, 2 MB L2 per core; Amazon Linux
+2023, rustc 1.99). Same space to the bit. Queries (ns, 10⁷/10⁸/10⁹):
+PHast-R λ=4.5 11.0/29.8/40.8, PHast+ w3 12.4/32.3/47.8 (−11/−8/−15%),
+PHast 11.3/30.4/41.4, plain PHast+ 16.1/36.0/54.5; at 10⁷ everything (the
+structure and the 4M query keys) sits in the 105 MB L3, so that row is
+L3-bound (first-level and all-keys times coincide within noise). S=10:
+PHast-R λ=6 13.7/35.9/50.1 vs w3 13.5/35.3/49.2 (1.5–2% slower, as on the
+Westmere; equal on nexus). Bumped key: ~140/250 ns extra at 10⁸/10⁹.
+Construction (ns/key, 1 thread): PHast-R 45/51/54 vs w3 88/93/100
+(51–54%), PHast 640–652; 8 threads 7.7/8.7 vs 16.9/17.8 (10⁸/10⁹); 96
+threads at 10⁹: 2.8 vs 7.7 (19.6× vs 13.3×). Memory 10.7 vs 9.9 bytes/key.
+
 ## Key findings (see Section 2 of the paper; reference implementation)
 
 - With output range m = n, holes = bumped keys; each hole costs about
