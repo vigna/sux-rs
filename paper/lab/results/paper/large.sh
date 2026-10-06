@@ -25,14 +25,17 @@ done > $O/qsplit.txt
 
 # Thread scaling of the construction: powers of two up to the number of
 # cores, and then all hardware threads
+scale() {
+  RAYON_NUM_THREADS=$1 taskset -c $2 $B/btime -n $n -r 2 -v 8:10:4.5 | sed "s/^/$n $1 PHast-R /"
+  RAYON_NUM_THREADS=$1 taskset -c $2 $B/cmp -n $n -t $1 -q 1000 --interleave 1 -v ref:w3:8:5.0 2>&1 >/dev/null \
+    | grep '^CSV' | sed "s/^/$n $1 /"
+}
 for n in $LARGE; do
-  for t in 1 2 4 8 16 32 all; do
-    if [ $t = all ]; then cpus=0-$(($(nproc) - 1)); t=$(nproc); [ $t -le $THREADS ] && break
-    elif [ $t -gt $THREADS ]; then break; else cpus=$(cpus $t); fi
-    RAYON_NUM_THREADS=$t taskset -c $cpus $B/btime -n $n -r 2 -v 8:10:4.5 | sed "s/^/$n $t PHast-R /"
-    RAYON_NUM_THREADS=$t taskset -c $cpus $B/cmp -n $n -t $t -q 1000 --interleave 1 -v ref:w3:8:5.0 2>&1 >/dev/null \
-      | grep '^CSV' | sed "s/^/$n $t /"
+  for t in 1 2 4 8 16 32 64; do
+    [ $t -gt $THREADS ] && break
+    scale $t $(cpus $t)
   done
+  [ $(nproc) -gt $THREADS ] && scale $(nproc) 0-$(($(nproc) - 1))
 done > $O/scaling.txt
 
 # Peak memory of a multithreaded construction (it includes 8 bytes per key

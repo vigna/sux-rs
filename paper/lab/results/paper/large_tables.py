@@ -69,10 +69,12 @@ for line in lines:
         cur = label(f[2])
 n = max(k[0] for v in scaling.values() for k in v)
 threads = sorted({k[1] for v in scaling.values() for k in v if k[0] == n})
-print(f'% TABLE5: build ns/key at {n} with {threads} threads; speedup with {threads[-1]} threads; bytes/key')
+# The speedup refers to eight threads (the number of cores), if present
+ref = 8 if 8 in threads else threads[-1]
+print(f'% TABLE5: build ns/key at {n} with {threads} threads; speedup with {ref} threads; bytes/key')
 for name, v in scaling.items():
     cells = [f'{v[(n, t)]:.1f}' for t in threads]
-    print(rf'{name} & ' + ' & '.join(cells) + rf' & {v[(n, 1)] / v[(n, threads[-1])]:.1f} & {memory[(name, n)]:.1f} \\')
+    print(rf'{name} & ' + ' & '.join(cells) + rf' & {v[(n, 1)] / v[(n, ref)]:.1f} & {memory[(name, n)]:.1f} \\')
 print('% build ns/key by (n, threads):', {k: sorted(v.items()) for k, v in scaling.items()})
 print('% bytes/key:', memory)
 print('% huge pages:', huge)
