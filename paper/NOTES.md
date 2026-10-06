@@ -531,8 +531,8 @@ default (decided by Sebastiano: "We need query speed").
 The machine became free, and the 10⁸ limit was lifted. All experiments were
 redone, now with 10⁹ keys too: `lab/results/paper/redo.sh` builds the lab
 and runs `run.sh` (→ `<host>/run.csv`) and `large.sh` (→ `<host>/large/`:
-query split, thread scaling, peak memory, transparent huge pages;
-`large_tables.py` formats Tables 4–5 of the paper); the results of this
+query split, thread scaling, peak memory; `large_tables.py` formats
+Tables 4–5 of the paper); the results of this
 machine are in `lab/results/paper/nexus/`. Peak memory with 10⁹ keys is
 about 19 GB (8 GB of keys included).
 
@@ -564,8 +564,11 @@ Findings (Section 4.1 of the paper):
   0.55–1.5 ns: λ = 4.5 is the right default for large sets.
 - Transparent huge pages (`GLIBC_TUNABLES=glibc.malloc.hugetlb=1`, THP in
   `madvise` mode on this machine) make queries 18% faster at 10⁸ and 40%
-  faster at 10⁹ for every structure (PHast-R 28.1 ns, PHast 29.0, PHast+
-  w3 32.2 at 10⁹), and construction 10% faster.
+  faster at 10⁹ for every structure (PHast-R 24.6/28.3 ns, PHast 25.2/28.9,
+  PHast+ w3 26.9/32.1 at 10⁸/10⁹), and construction 10% faster. Removed
+  from the paper and from `large.sh` on October 6 (Sebastiano: "this
+  dilutes a bit too much the tests"); the ordering of the structures is
+  the same with and without them.
 - Thread scaling at 10⁹: 64.4/34.2/18.4/10.5/9.6 ns/key with 1/2/4/8/16
   threads (6.1× with 8); PHast+ w3: 129.8/70.3/39.1/24.9/20.9.
 - Final numbers (1 thread; bits/key, build ns/key, query ns):
@@ -585,8 +588,7 @@ Findings (Section 4.1 of the paper):
 ## Older hardware (October 6, 2026, `lab/results/paper/sexus/`)
 
 `redo.sh` on a 40-core Xeon E7-4870 (Westmere-EX, 2011: no AVX/BMI2, 256 KB
-L2 per core, 4 sockets, 1 TB; cores 0–7 of `lscpu`, glibc 2.42, THP on
-request). Same space to the bit. Queries (ns, 10⁷/10⁸/10⁹): PHast-R λ=4.5
+L2 per core, 4 sockets, 1 TB; cores 0–7 of `lscpu`, glibc 2.42). Same space to the bit. Queries (ns, 10⁷/10⁸/10⁹): PHast-R λ=4.5
 93.1/146.7/231.3, PHast+ w3 93.1/151.5/249.4, PHast 130.5/183.6/273.3 (its
 multiplications are slow there), plain PHast+ 98.0/162.1/312.9; S=10:
 PHast-R 135.2/192.5/284.1 vs w3 132.8/187.1/280.2 (1–3% slower: unaligned
@@ -595,8 +597,9 @@ bit-field reads cost more on that generation). First-level path: PHast-R
 by fewer bumped keys. Construction (ns/key, 1 thread): PHast-R
 160/183/223 vs w3 291/317/353 (55–63%); 8 threads 35/28/35 vs 56/48/62;
 40 threads at 10⁹: 11.4 vs 36.8 (17.8× vs 8.7× scaling). Memory 10.6 vs
-9.9 bytes/key. Huge pages: queries −14% at 10⁸, −30% at 10⁹ (161.6 vs
-231.3), construction −5%.
+9.9 bytes/key. Huge pages (before their removal from the paper): queries
+−14% at 10⁸, −30% at 10⁹ (PHast-R 125.5/161.6, w3 129.3/172.6, PHast
+159.6/175.7 at 10⁸/10⁹), construction −5%.
 
 ## Key findings (see Section 2 of the paper; reference implementation)
 

@@ -26,7 +26,6 @@ SIZES=$(for n in 10000000 100000000 1000000000; do if [ $n -le $MAX ]; then echo
 {
   echo "date: $(date)"; echo "host: $HOST"; echo "cores: $CORES"; echo "threads: $THREADS"; echo "free memory (GB): $FREE"
   echo "sizes: $SIZES"; rustc -V; ldd --version | head -1
-  echo "transparent huge pages: $(cat /sys/kernel/mm/transparent_hugepage/enabled)"
   lscpu
 } > $O/env.txt
 cd results/paper

@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Analysis of large key sets (Section 4.1 of the paper): query time split
-# between first-level and bumped keys, thread scaling, peak memory, and the
-# effect of transparent huge pages (through the glibc tunable
-# glibc.malloc.hugetlb, which makes malloc ask for them).
+# between first-level and bumped keys, thread scaling, and peak memory.
 # Usage: large.sh <directory of the binaries> <output directory>
 # Environment: CPU1, CORES (a list of distinct cores), THREADS, SIZES; see
 # redo.sh. With 10^9 keys the peak memory usage is about 60 GB.
@@ -49,13 +47,3 @@ for n in $LARGE; do
       | grep -E "^CSV|Maximum resident" | sed "s/^/$n $v /"
   done
 done > $O/memory.txt
-
-# Transparent huge pages (the tunable requires glibc 2.35 or later, and
-# transparent huge pages must be enabled, at least on request)
-for n in $LARGE; do
-  GLIBC_TUNABLES=glibc.malloc.hugetlb=1 RAYON_NUM_THREADS=1 taskset -c $CPU1 $B/cmp -n $n -q 2000000 --interleave 9 \
-    -v ref:plus:8:5.25,ref:w3:8:5.0,ref:phast:8:4.5,r:8:10:4.5,r:8:10:4.75 2>&1 >/dev/null | grep '^CSV' | sed "s/^/1,/"
-  GLIBC_TUNABLES=glibc.malloc.hugetlb=1 RAYON_NUM_THREADS=$THREADS taskset -c $CPUS $B/cmp -n $n -t $THREADS -q 1000 --interleave 1 \
-    -v ref:plus:8:5.25,ref:w3:8:5.0,r:8:10:4.5,r:8:10:4.75 2>&1 >/dev/null | grep '^CSV' | sed "s/^/$THREADS,/"
-done > $O/hugepages.csv
-echo done >> $O/hugepages.csv

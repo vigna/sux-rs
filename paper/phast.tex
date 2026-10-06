@@ -651,20 +651,20 @@ tune the structure.
 \begin{table}[t]
 \centering
 \caption{Query time in nanoseconds for the keys of the first level
-(``first'') and for all keys, and for all keys using huge pages; the second
-column is the percentage of keys bumped from the first level.}
+(``first'') and for all keys; the second column is the percentage of keys
+bumped from the first level.}
 \label{tab:split}
 \small
-\begin{tabular}{lrrrrrrrrr}
+\begin{tabular}{lrrrrrrr}
 \toprule
-& & \multicolumn{2}{c}{$10^7$ keys} & \multicolumn{2}{c}{$10^8$ keys} & \multicolumn{2}{c}{$10^9$ keys} & \multicolumn{2}{c}{huge pages} \\
-\cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}\cmidrule(lr){9-10}
-Structure & bumped & first & all & first & all & first & all & $10^8$ & $10^9$ \\
+& & \multicolumn{2}{c}{$10^7$ keys} & \multicolumn{2}{c}{$10^8$ keys} & \multicolumn{2}{c}{$10^9$ keys} \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}
+Structure & bumped & first & all & first & all & first & all \\
 \midrule
-\PHastP wrap $\delta=3$, $\lambda=5$ & 4.3 & 19.5 & 22.0 & 28.1 & 32.9 & 44.1 & 52.4 & 26.9 & 32.1 \\
-\PHast, $\lambda=4.5$ & 1.4 & 20.1 & 20.9 & 28.9 & 30.5 & 45.1 & 48.1 & 25.2 & 28.9 \\
-\PHastR, $\lambda=4.5$ & 1.5 & 19.6 & 20.5 & 28.1 & 29.9 & 44.7 & 47.4 & 24.6 & 28.3 \\
-\PHastR, $\lambda=4.75$ & 2.5 & 19.5 & 21.0 & 28.0 & 30.8 & 44.5 & 49.4 & 25.4 & 29.6 \\
+\PHastP wrap $\delta=3$, $\lambda=5$ & 4.3 & 19.5 & 22.0 & 28.1 & 32.9 & 44.1 & 52.4 \\
+\PHast, $\lambda=4.5$ & 1.4 & 20.1 & 20.9 & 28.9 & 30.5 & 45.1 & 48.1 \\
+\PHastR, $\lambda=4.5$ & 1.5 & 19.6 & 20.5 & 28.1 & 29.9 & 44.7 & 47.4 \\
+\PHastR, $\lambda=4.75$ & 2.5 & 19.5 & 21.0 & 28.0 & 30.8 & 44.5 & 49.4 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -685,17 +685,6 @@ about $0.6$\,ns on $10^7$ keys, but $2$\,ns on $10^9$ keys: the larger the
 key set, the more a small expected bucket size is convenient. This is the
 reason why we suggest $\lambda=4.5$ instead of $\lambda=4.75$, which uses
 slightly less space.
-
-\paragraph{Page size.}
-With $10^9$ keys the seeds of the first level occupy $222$\,MB, and with
-pages of $4$\,KiB almost every access to a seed causes a TLB miss, besides a
-cache miss. The last two columns of Table~\ref{tab:split} show the query time
-when memory is allocated using transparent huge pages (on our system they
-must be requested, which we did through the tunable
-\texttt{glibc.malloc.hugetlb} of the GNU C library): queries are $18\%$
-faster on $10^8$ keys, and $40\%$ faster on $10^9$ keys, for all structures.
-For very large key sets the page size is thus more important than any other
-parameter.
 
 \begin{table}[t]
 \centering
@@ -729,10 +718,7 @@ memory bandwidth and latency, that is, hashing, the distribution into parts,
 and the walk, which with eight threads take about half of the time. The peak
 memory usage is close to that of the reference implementation of \PHastP,
 which sorts hashes in place and hashes all keys again to find those of bumped
-buckets. Huge pages are useful for construction, too, as page faults on the
-large arrays of hashes are a significant part of its cost: with them, \PHastR
-builds $10^9$ keys in $61$\,ns per key instead of $66$ with one thread, and
-in $9.7$ instead of $10.3$ with eight.
+buckets.
 
 \section{The Limits of the Approach}
 \label{sec:limits}
