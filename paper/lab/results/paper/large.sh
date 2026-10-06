@@ -3,7 +3,8 @@
 # between first-level and bumped keys, thread scaling, and peak memory.
 # Usage: large.sh <directory of the binaries> <output directory>
 # Environment: CPU1, CORES (a list of distinct cores), THREADS, SIZES; see
-# redo.sh. With 10^9 keys the peak memory usage is about 60 GB.
+# redo.sh. With 10^9 keys the peak memory usage is about 60 GB, with 10^10
+# keys about 250 GB.
 B=${1:-../../target-nexus/release}
 O=${2:-large}
 CPU1=${CPU1:-2}

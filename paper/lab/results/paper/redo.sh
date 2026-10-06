@@ -6,6 +6,9 @@
 # implementation must be in ../../../bsuccinct-rs (see lab/Cargo.toml).
 # Usage: redo.sh [max keys]      (default: 10^9 if there are 64 GB free)
 # It takes a few hours: run it under nohup or in a terminal multiplexer.
+# Experiments on 10^10 keys must be requested explicitly (redo.sh
+# 10000000000): they need 250 GB of free memory and about eight more hours,
+# most of them spent building the two PHast structures.
 set -e
 cd "$(dirname "$0")/../.."
 HOST=$(hostname -s)
@@ -22,7 +25,8 @@ THREADS=$NCORES; [ $THREADS -gt 8 ] && THREADS=8
 CPU1=$(echo $CORES | awk '{print ($3 != "") ? $3 : $1}')
 FREE=$(free -g | awk '/^Mem:/ {print $7}')
 MAX=${1:-$([ $FREE -ge 64 ] && echo 1000000000 || echo 100000000)}
-SIZES=$(for n in 10000000 100000000 1000000000; do if [ $n -le $MAX ]; then echo -n "$n "; fi; done)
+if [ $MAX -ge 10000000000 ] && [ $FREE -lt 250 ]; then echo "10^10 keys need 250 GB of free memory ($FREE GB free)"; exit 1; fi
+SIZES=$(for n in 10000000 100000000 1000000000 10000000000; do if [ $n -le $MAX ]; then echo -n "$n "; fi; done)
 {
   echo "date: $(date)"; echo "host: $HOST"; echo "cores: $CORES"; echo "threads: $THREADS"; echo "free memory (GB): $FREE"
   echo "sizes: $SIZES"; rustc -V; ldd --version | head -1
@@ -34,4 +38,5 @@ CPUS=$(echo $CORES | tr ' ' '\n' | head -n $THREADS | tr '\n' ',' | sed 's/,$//'
 export CPUS
 bash run.sh $B/cmp $O/run
 bash large.sh $B $O/large
+bash pareto.sh $B/cmp $O/pareto
 echo "done: $O"
