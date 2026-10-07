@@ -2,13 +2,17 @@
 # Redoes all the experiments of the paper on this machine: builds the lab
 # (in a target directory of its own, as the code is optimized for the local
 # CPU), detects cores and memory, and writes the results to
-# results/paper/<hostname>/ (run.csv, large/, env.txt). The reference
-# implementation must be in ../../../bsuccinct-rs (see lab/Cargo.toml).
+# results/paper/<hostname>/ (env.txt, run.csv, large/, spread.csv). The
+# reference implementation must be in ../../../bsuccinct-rs (see
+# lab/Cargo.toml).
 # Usage: redo.sh [max keys]      (default: 10^9 if there are 64 GB free)
-# It takes a few hours: run it under nohup or in a terminal multiplexer.
-# Experiments on 10^10 keys must be requested explicitly (redo.sh
-# 10000000000): they need 250 GB of free memory and about eight more hours,
-# most of them spent building the two PHast structures.
+# It takes about six hours on a c7i.metal-24xl (run.sh four hours and a
+# half, large.sh one hour, spread.sh ten minutes): run it under nohup or in a
+# terminal multiplexer. Experiments on 10^10 keys must be requested
+# explicitly (redo.sh 10000000000): they need 250 GB of free memory and
+# about twenty more hours, most of them spent building the PHast
+# structures. Setting BUILDS overrides the number of constructions of each
+# configuration (see configs.sh).
 set -e
 cd "$(dirname "$0")/../.."
 HOST=$(hostname -s)
@@ -33,10 +37,10 @@ SIZES=$(for n in 10000000 100000000 1000000000 10000000000; do if [ $n -le $MAX 
   lscpu
 } > $O/env.txt
 cd results/paper
-export CPU1 CORES THREADS SIZES
+export CPU1 CORES THREADS SIZES BUILDS
 CPUS=$(echo $CORES | tr ' ' '\n' | head -n $THREADS | tr '\n' ',' | sed 's/,$//')
 export CPUS
 bash run.sh $B/cmp $O/run
 bash large.sh $B $O/large
-bash pareto.sh $B/cmp $O/pareto
+bash spread.sh $B/cmp $O/spread
 echo "done: $O"

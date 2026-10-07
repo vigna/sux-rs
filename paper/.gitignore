@@ -4,3 +4,7 @@ phast.bbl
 phast.blg
 phast.log
 phast.out
+phast.fls
+phast.fdb_latexmk
+phast.synctex.gz
+lean/.lake/

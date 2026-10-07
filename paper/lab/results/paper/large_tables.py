@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Formats the rows of the tables of Section 4.1 of the paper from the
-output of large.sh and from the CSV written by run.sh:
-large_tables.py <directory written by large.sh> <csv written by run.sh>."""
+output of large.sh: the query time of first-level keys and of all keys, and
+the thread scaling and peak memory of the construction. Sizes that are
+missing are skipped.
+Usage: large_tables.py <directory written by large.sh>"""
 import sys, re, collections
 
-d, csv = sys.argv[1], sys.argv[2]
+d = sys.argv[1]
 
 def label(name):
     name = name.replace(' u8', '')
@@ -25,28 +27,26 @@ for line in open(f'{d}/qsplit.txt'):
     m = re.match(r'(\d+) (\S+)(?: u8)?\s+all\s+([\d.]+) ns\s+fast\s+([\d.]+) ns\s+slow\s+([\d.]+) ns\s+bumped ([\d.]+)%', line)
     n, name, all_, fast, slow, beta = m.groups()
     split.setdefault(name, {})[int(n)] = (float(fast), float(all_), float(beta))
-print('% TABLE4: first level / all keys at 10^7, 10^8, 10^9; bumped keys at 10^9')
+sizes = sorted({n for v in split.values() for n in v})
+print(f'% TABLE4: first level / all keys at {sizes}; bumped keys at {sizes[-1] if sizes else None}')
 for name, v in split.items():
     cells = []
-    for n in (10**7, 10**8, 10**9):
-        fast, all_, beta = v[n]
-        cells += [f'{fast:.1f}', f'{all_:.1f}']
-    print(rf'{label(name)} & {v[10**9][2]:.1f} & ' + ' & '.join(cells) + r' \\')
+    for n in sizes:
+        fast, all_, beta = v.get(n, (None, None, None))
+        cells += ['--', '--'] if fast is None else [f'{fast:.1f}', f'{all_:.1f}']
+    beta = v[max(v)][2]
+    print(rf'{label(name)} & {beta:.1f} & ' + ' & '.join(cells) + r' \\')
 print('% extra time of a bumped key in a mixed workload (ns), by n')
 for name, v in split.items():
-    print('% ', label(name), ' '.join(f'{(v[n][1] - v[n][0]) / (v[n][2] / 100):.0f}' for n in (10**7, 10**8, 10**9)))
+    print('% ', label(name), ' '.join(f'{n}: {(v[n][1] - v[n][0]) / (v[n][2] / 100):.0f}' for n in sizes if n in v))
 
-# Construction: threads and memory
+# Construction: threads (one CSV line of cmp per structure, number of keys
+# and number of threads) and memory
 scaling = collections.OrderedDict()
 for line in open(f'{d}/scaling.txt'):
-    f = line.split()
-    n, t = int(f[0]), int(f[1])
-    if f[2] == 'PHast-R':
-        name, build = label(f[3]), float(re.search(r'build min\s+([\d.]+)', line).group(1))
-    else:
-        p = line.split(',')
-        name, build = label(p[1]), float(p[4])
-    scaling.setdefault(name, {})[(n, t)] = build
+    n, t, csv = line.split(maxsplit=2)
+    p = csv.strip().split(',')
+    scaling.setdefault(label(p[1]), {})[(int(n), int(t))] = float(p[4])
 memory = {}
 cur = None
 for line in open(f'{d}/memory.txt'):
@@ -58,13 +58,16 @@ for line in open(f'{d}/memory.txt'):
         memory[(name, n)] = (int(f[-1]) * 1024 - 8 * n) / n
     elif f[1] == 'PHast-R':
         cur = label(f[2])
-n = max(k[0] for v in scaling.values() for k in v)
-threads = sorted({k[1] for v in scaling.values() for k in v if k[0] == n})
-# The speedup refers to eight threads (the number of cores), if present
-ref = 8 if 8 in threads else threads[-1]
-print(f'% TABLE5: build ns/key at {n} with {threads} threads; speedup with {ref} threads; bytes/key')
-for name, v in scaling.items():
-    cells = [f'{v[(n, t)]:.1f}' for t in threads]
-    print(rf'{name} & ' + ' & '.join(cells) + rf' & {v[(n, 1)] / v[(n, ref)]:.1f} & {memory[(name, n)]:.1f} \\')
-print('% build ns/key by (n, threads):', {k: sorted(v.items()) for k, v in scaling.items()})
+if scaling:
+    n = max(k[0] for v in scaling.values() for k in v)
+    threads = sorted({k[1] for v in scaling.values() for k in v if k[0] == n})
+    # The speedup refers to eight threads (the number of cores), if present
+    ref = 8 if 8 in threads else threads[-1]
+    print(f'% TABLE5: build ns/key at {n} with {threads} threads; speedup with {ref} threads; bytes/key')
+    for name, v in scaling.items():
+        cells = [f'{v[(n, t)]:.1f}' if (n, t) in v else '--' for t in threads]
+        speedup = f'{v[(n, 1)] / v[(n, ref)]:.1f}' if (n, 1) in v and (n, ref) in v else '--'
+        mem = f'{memory[(name, n)]:.1f}' if (name, n) in memory else '--'
+        print(rf'{name} & ' + ' & '.join(cells) + rf' & {speedup} & {mem} \\')
+    print('% build ns/key by (n, threads):', {k: sorted(v.items()) for k, v in scaling.items()})
 print('% bytes/key:', memory)

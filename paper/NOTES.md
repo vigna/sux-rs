@@ -28,6 +28,24 @@ the context of the original one: point it to this file).
 
 ## Running on a new machine
 
+The experiments of the paper are run by `lab/results/paper/redo.sh` (on
+AWS, `paper/aws.sh` installs everything and starts it), which writes
+`results/paper/<hostname>/`: `env.txt`; `run.csv` (`run.sh`: single-threaded
+sweeps of λ for every structure and both seed widths, which contain the
+configurations of the tables, then the configurations of the tables with
+`THREADS` threads); `large/` (`large.sh`: `qsplit.txt`, `scaling.txt`,
+`memory.txt`); `spread.csv` (`spread.sh`: space and bumped keys over ten key
+sets of 10⁷ keys). The configurations are in `configs.sh`. Tables and
+figure: `tables.py run.csv spread.csv` (main table), `large_tables.py
+large/` (Section 4.1), `plot_pareto.py run.csv` (the 2×2 trade-off figure).
+The lines of `cmp` are `CSV,<name>,<n>,<bits/key>,<build>,<query>,<query
+min>,<query max>,<build min>,<build max>,<bumped %>` (prefixed by the number
+of threads, or by the key seed in `spread.csv`). The scripts run unpinned
+where `taskset` is missing, so they can be smoke-tested on macOS with small
+`SIZES`.
+
+The older harness below (`lab/run.sh`) predates the paper experiments.
+
 ```sh
 git clone git@github.com:vigna/sux-rs.git && cd sux-rs && git checkout phast-r
 cd paper/lab
@@ -631,6 +649,22 @@ queries. In the 10⁹ sweeps no configuration of PHast+ is Pareto-optimal in
 PHast-R, 99 for PHast+) do not fit in 192 GB; it would need an
 m7i.metal-24xl (384 GiB, `redo.sh 10000000000`, ~10 h). Sebastiano decided
 to keep 10⁹ as the largest size.
+
+Third round (set up October 7, to be run from scratch with `redo.sh`), to
+show dominance over the whole trade-off curves rather than at single points:
+`pareto.sh` merged into `run.sh` (sweeps of λ for PHast+ with and without
+wrapping, δ = 1, 2, 3, PHast and PHast-R, S = 8 and 10, at 10⁷, 10⁸, 10⁹;
+the table configurations are points of the sweeps, so tables and figure
+come from the same measurements); queries on consecutive keys of the set
+(`cmp --order sequential`: the keys are random, so the accesses to the
+structures stay random, but the time no longer includes a cache miss on the
+8 GB array of keys at 10⁹); construction times are medians of three builds
+up to 10⁸ keys (`--builds`); query and construction ranges and the bumped
+fraction of every structure in the CSV; PHast with 8 threads (it was
+missing) and in the thread scaling; space and bumped keys over ten key sets
+(`spread.sh`). Estimated time on a c7i.metal-24xl: about six hours (`run.sh`
+four and a half, two of them building PHast with S = 10 on 10⁹ keys;
+`large.sh` one; `spread.sh` ten minutes); peak memory about 60 GB.
 
 ## Key findings (see Section 2 of the paper; reference implementation)
 

@@ -17,7 +17,12 @@
 //! with `--hash xxh3`, with XXH3-64; both implementations use the same hash.
 //!
 //! Human-readable results go to stdout; machine-readable lines
-//! `CSV,<name>,<n>,<bits/key>,<build ns/key>,<query ns>` go to stderr.
+//! `CSV,<name>,<n>,<bits/key>,<build ns/key>,<query ns>,<query min>,<query
+//! max>,<build min>,<build max>,<bumped %>` go to stderr. The construction
+//! time is the median of `--builds` constructions; the query time is the
+//! median of the interleaved rounds (or the best of the repetitions without
+//! `--interleave`), and the minimum and maximum are over the same rounds; the
+//! last field is the percentage of keys bumped from the first level.
 
 use clap::Parser;
 use dsi_progress_logger::no_logging;
@@ -102,6 +107,14 @@ struct Args {
     /// Generates a different key set (for averaging over key sets).
     #[arg(long, default_value_t = 0)]
     key_seed: u64,
+    /// The number of constructions of each structure (the median time is
+    /// reported, and the last structure is queried).
+    #[arg(long, default_value_t = 1)]
+    builds: usize,
+    /// The order of queries: random (keys chosen uniformly at random) or
+    /// sequential (consecutive keys of the set, see `query_batch`).
+    #[arg(long, default_value = "random")]
+    order: String,
 }
 
 /// A built structure: name, statistics, and a function running a batch of
@@ -110,32 +123,88 @@ struct Entry<'a> {
     name: String,
     n: usize,
     bits: f64,
-    build: f64,
+    /// Median, minimum and maximum construction time (ns/key).
+    build: [f64; 3],
+    /// Percentage of keys bumped from the first level.
+    bumped: f64,
     extra: String,
     bench: Box<dyn Fn(usize, u64) -> f64 + 'a>,
 }
 
-/// Runs a batch of random queries and returns ns per query.
+/// Builds a structure the given number of times, dropping each structure
+/// before building the next one, and returns the last structure and the
+/// median, minimum and maximum construction time in ns/key.
+fn timed_builds<T>(builds: usize, n: usize, mut build: impl FnMut() -> T) -> (T, [f64; 3]) {
+    let mut t = vec![];
+    let mut last = None;
+    for _ in 0..builds.max(1) {
+        drop(last.take());
+        let start = Instant::now();
+        last = Some(build());
+        t.push(start.elapsed().as_secs_f64() * 1e9 / n as f64);
+    }
+    t.sort_by(f64::total_cmp);
+    (last.unwrap(), [t[t.len() / 2], t[0], t[t.len() - 1]])
+}
+
+/// Runs a batch of queries and returns ns per query.
+///
+/// Random queries choose keys uniformly at random; sequential queries read
+/// the keys of the set in order, starting from position `round * queries`
+/// (modulo the number of keys). Since keys are random 64-bit values that both
+/// implementations hash, the accesses to the structures are random in both
+/// cases; but sequential queries read the keys in streaming fashion, so on
+/// large key sets the time does not include a cache miss on the array of
+/// keys, which is the same for all structures and dilutes their differences.
 #[inline(always)]
-fn query_batch<T: Copy>(keys: &[T], queries: usize, round: u64, f: impl Fn(T) -> usize) -> f64 {
-    let n = keys.len() as u64;
-    let mut x = 0x9e3779b97f4a7c15u64 ^ round.wrapping_mul(0xd6e8_feb8_6659_fd93);
+fn query_batch<T: Copy>(
+    keys: &[T],
+    queries: usize,
+    round: u64,
+    sequential: bool,
+    f: impl Fn(T) -> usize,
+) -> f64 {
+    let n = keys.len();
     let mut acc = 0usize;
-    let t = Instant::now();
-    for _ in 0..queries {
-        x = x
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        let k = keys[(((x >> 32) * n) >> 32) as usize];
-        acc = acc.wrapping_add(f(k));
+    let t;
+    if sequential {
+        let mut i = ((round as u128 * queries as u128) % n as u128) as usize;
+        t = Instant::now();
+        for _ in 0..queries {
+            acc = acc.wrapping_add(f(keys[i]));
+            i += 1;
+            if i == n {
+                i = 0;
+            }
+        }
+    } else {
+        let n = n as u64;
+        let mut x = 0x9e3779b97f4a7c15u64 ^ round.wrapping_mul(0xd6e8_feb8_6659_fd93);
+        t = Instant::now();
+        for _ in 0..queries {
+            x = x
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            let k = keys[(((x >> 32) * n) >> 32) as usize];
+            acc = acc.wrapping_add(f(k));
+        }
     }
     std::hint::black_box(acc);
     t.elapsed().as_secs_f64() * 1e9 / queries as f64
 }
 
-fn report(name: &str, n: usize, bits: f64, build: f64, q: f64, extra: &str) {
-    println!("{name:44} {bits:.4} bits/key  build {build:7.1} ns/key  query {q:6.1} ns{extra}");
-    eprintln!("CSV,{name},{n},{bits:.4},{build:.1},{q:.1}");
+/// Reports a structure, given its query time and the minimum and maximum
+/// query time.
+fn report(e: &Entry, q: [f64; 3]) {
+    let (name, n, bits, [build, bmin, bmax], bumped) = (&e.name, e.n, e.bits, e.build, e.bumped);
+    let [q, qmin, qmax] = q;
+    println!(
+        "{name:44} {bits:.4} bits/key  build {build:7.1} ns/key [min {bmin:.1} max {bmax:.1}]  query {q:6.1} ns [min {qmin:.1} max {qmax:.1}]  bumped {bumped:.2}%{}",
+        e.extra
+    );
+    eprintln!(
+        "CSV,{name},{n},{bits:.4},{build:.1},{q:.1},{qmin:.1},{qmax:.1},{bmin:.1},{bmax:.1},{bumped:.2}"
+    );
 }
 
 fn ref_run<'a, SC: SeedChooser + 'a, SS: SeedSize + 'a>(
@@ -153,7 +222,12 @@ fn ref_run<'a, SC: SeedChooser + 'a, SS: SeedSize + 'a>(
     }
 }
 
-fn ref_run_h<'a, SC: SeedChooser + 'a, SS: SeedSize + 'a, H: BuildSeededHasher + Sync + 'a>(
+fn ref_run_h<
+    'a,
+    SC: SeedChooser + Copy + 'a,
+    SS: SeedSize + 'a,
+    H: BuildSeededHasher + Sync + Copy + 'a,
+>(
     keys: &'a [u64],
     ss: SS,
     lam: f64,
@@ -162,22 +236,34 @@ fn ref_run_h<'a, SC: SeedChooser + 'a, SS: SeedSize + 'a, H: BuildSeededHasher +
     name: &str,
     hasher: H,
 ) -> Entry<'a> {
-    let t = Instant::now();
     let params = Generic::new(ss, (lam * 100.0).round() as u16);
-    let f: Function2<GenericCore, SS, SC, DefaultCompressedArray, H> = if a.threads > 1 {
-        Function2::with_slice_p_threads_hash_sc(keys, &params, a.threads, hasher, sc)
-    } else {
-        Function2::with_slice_p_hash_sc(keys, &params, hasher, sc)
-    };
-    let build = t.elapsed().as_secs_f64() * 1e9 / keys.len() as f64;
+    let (f, build) = timed_builds(
+        a.builds,
+        keys.len(),
+        || -> Function2<GenericCore, SS, SC, DefaultCompressedArray, H> {
+            if a.threads > 1 {
+                Function2::with_slice_p_threads_hash_sc(keys, &params, a.threads, hasher, sc)
+            } else {
+                Function2::with_slice_p_hash_sc(keys, &params, hasher, sc)
+            }
+        },
+    );
     let bits = f.size_bytes() as f64 * 8.0 / keys.len() as f64;
+    // Bumped keys are those whose bucket of the first level has seed 0
+    let conf = *f.level0_conf();
+    let bumped = keys
+        .iter()
+        .filter(|&&k| f.level0_seed(conf.bucket_for(hasher.hash_one(k, 0))) == 0)
+        .count();
+    let sequential = a.order == "sequential";
     Entry {
         name: name.to_string(),
         n: keys.len(),
         bits,
         build,
+        bumped: 100.0 * bumped as f64 / keys.len() as f64,
         extra: String::new(),
-        bench: Box::new(move |q, r| query_batch(keys, q, r, |k| f.get(&k))),
+        bench: Box::new(move |q, r| query_batch(keys, q, r, sequential, |k| f.get(&k))),
     }
 }
 
@@ -209,8 +295,8 @@ fn sux_run<'a, D: SeedStoreBuild + MemSize + FlatType + 'a>(
     let gkeys: &'a [GxKey] =
         unsafe { std::slice::from_raw_parts(keys.as_ptr().cast(), keys.len()) };
     match a.hash.as_str() {
-        "gx" => sux_run_k::<GxKey, D>(gkeys, b, name),
-        "xxh3" => sux_run_k::<u64, D>(keys, b, name),
+        "gx" => sux_run_k::<GxKey, D>(gkeys, b, a, name),
+        "xxh3" => sux_run_k::<u64, D>(keys, b, a, name),
         h => panic!("unknown hash {h}"),
     }
 }
@@ -222,8 +308,8 @@ fn sux_run_u<'a>(keys: &'a [u64], b: PHastRBuilder, a: &Args, name: &str) -> Ent
     let gkeys: &'a [GxKey] =
         unsafe { std::slice::from_raw_parts(keys.as_ptr().cast(), keys.len()) };
     match a.hash.as_str() {
-        "gx" => sux_run_k_u::<GxKey>(gkeys, b, name),
-        "xxh3" => sux_run_k_u::<u64>(keys, b, name),
+        "gx" => sux_run_k_u::<GxKey>(gkeys, b, a, name),
+        "xxh3" => sux_run_k_u::<u64>(keys, b, a, name),
         h => panic!("unknown hash {h}"),
     }
 }
@@ -231,8 +317,8 @@ fn sux_run_u<'a>(keys: &'a [u64], b: PHastRBuilder, a: &Args, name: &str) -> Ent
 /// Verifies that a function is a bijection, counts the bumped keys, and
 /// returns the entry for the function.
 macro_rules! sux_entry {
-    ($keys:expr, $f:expr, $build:expr, $name:expr) => {{
-        let (keys, f, build, name) = ($keys, $f, $build, $name);
+    ($keys:expr, $f:expr, $build:expr, $a:expr, $name:expr) => {{
+        let (keys, f, build, a, name) = ($keys, $f, $build, $a, $name);
         let bits = f.mem_size(SizeFlags::default()) as f64 * 8.0 / keys.len() as f64;
         let mut seen = vec![false; keys.len()];
         for k in keys {
@@ -240,19 +326,18 @@ macro_rules! sux_entry {
             assert!(!seen[v], "duplicate output {v}");
             seen[v] = true;
         }
+        drop(seen);
         let bumped = keys.iter().filter(|&&k| f.is_bumped(k)).count();
-        let extra = format!(
-            "  levels {}  bumped {:.2}%",
-            f.num_levels(),
-            100.0 * bumped as f64 / keys.len() as f64
-        );
+        let extra = format!("  levels {}", f.num_levels());
+        let sequential = a.order == "sequential";
         Entry {
             name: name.to_string(),
             n: keys.len(),
             bits,
             build,
+            bumped: 100.0 * bumped as f64 / keys.len() as f64,
             extra,
-            bench: Box::new(move |q, r| query_batch(keys, q, r, |k| f.get(k))),
+            bench: Box::new(move |q, r| query_batch(keys, q, r, sequential, |k| f.get(k))),
         }
     }};
 }
@@ -264,28 +349,35 @@ fn sux_run_k<
 >(
     keys: &'a [K],
     b: PHastRBuilder,
+    a: &Args,
     name: &str,
 ) -> Entry<'a> {
-    let t = Instant::now();
-    let f: PHastR<K, D> = b.try_build(keys, no_logging![]).unwrap();
-    let build = t.elapsed().as_secs_f64() * 1e9 / keys.len() as f64;
-    sux_entry!(keys, f, build, name)
+    let (f, build) = timed_builds(a.builds, keys.len(), || -> PHastR<K, D> {
+        b.try_build(keys, no_logging![]).unwrap()
+    });
+    sux_entry!(keys, f, build, a, name)
 }
 
 fn sux_run_k_u<'a, K: ToSig<[u64; 1]> + Copy + Sync + 'a>(
     keys: &'a [K],
     b: PHastRBuilder,
+    a: &Args,
     name: &str,
 ) -> Entry<'a> {
-    let t = Instant::now();
-    let f: PHastR<K, BitFieldVec<Box<[usize]>>> = b.try_build(keys, no_logging![]).unwrap();
-    let f = f.try_into_unaligned().unwrap();
-    let build = t.elapsed().as_secs_f64() * 1e9 / keys.len() as f64;
-    sux_entry!(keys, f, build, name)
+    let (f, build) = timed_builds(a.builds, keys.len(), || {
+        let f: PHastR<K, BitFieldVec<Box<[usize]>>> = b.try_build(keys, no_logging![]).unwrap();
+        f.try_into_unaligned().unwrap()
+    });
+    sux_entry!(keys, f, build, a, name)
 }
 
 fn main() {
     let a = Args::parse();
+    assert!(
+        a.order == "random" || a.order == "sequential",
+        "unknown order {}",
+        a.order
+    );
     let keys: Vec<u64> = (0..a.n as u64)
         .map(|i| {
             (i + a.key_seed.wrapping_mul(1 << 40)).wrapping_mul(0x9e3779b97f4a7c15) ^ 0x1234567
@@ -336,10 +428,11 @@ fn main() {
         };
         if a.interleave == 0 {
             // Time right away, keeping the best of the repetitions
-            let q = (0..a.repeats as u64)
+            let mut t: Vec<f64> = (0..a.repeats.max(1) as u64)
                 .map(|r| (e.bench)(a.queries, r))
-                .fold(f64::MAX, f64::min);
-            report(&e.name, e.n, e.bits, e.build, q, &e.extra);
+                .collect();
+            t.sort_by(f64::total_cmp);
+            report(&e, [t[0], t[0], t[t.len() - 1]]);
         } else {
             entries.push(e);
         }
@@ -353,15 +446,7 @@ fn main() {
         }
         for (e, t) in entries.iter().zip(times.iter_mut()) {
             t.sort_by(f64::total_cmp);
-            let q = t[t.len() / 2];
-            report(
-                &e.name,
-                e.n,
-                e.bits,
-                e.build,
-                q,
-                &format!("{}  [min {:.1} max {:.1}]", e.extra, t[0], t[t.len() - 1]),
-            );
+            report(e, [t[t.len() / 2], t[0], t[t.len() - 1]]);
         }
     }
 }
