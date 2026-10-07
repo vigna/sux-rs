@@ -506,72 +506,37 @@ bit-packed seeds read without alignment for $S=10$.
 \toprule
 Method & Configuration & bits/key & build [ns/key] & query [ns] \\
 \midrule
-\PHastP & $S=8$, $\lambda=5.25$ & 2.116 & 53 & 16.1 \\
-\PHastP wrap $\delta=1$ & $S=8$, $\lambda=5.25$ & 2.096 & 65 & 14.2 \\
-\PHastP wrap $\delta=2$ & $S=8$, $\lambda=5$ & 2.013 & 77 & 12.3 \\
-\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.970 & 88 & 12.4 \\
-\PHast & $S=8$, $\lambda=4.5$ & 1.922 & 640 & 11.3 \\
+\PHastP & $S=8$, $\lambda=5.25$ & 2.116 & 53 & 16.2 \\
+\PHastP wrap $\delta=1$ & $S=8$, $\lambda=5.25$ & 2.096 & 66 & 14.1 \\
+\PHastP wrap $\delta=2$ & $S=8$, $\lambda=5$ & 2.013 & 77 & 12.2 \\
+\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.970 & 88 & 12.3 \\
+\PHast & $S=8$, $\lambda=4.5$ & 1.922 & 641 & 11.2 \\
 \addlinespace
-\PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.929 & 45 & 11.0 \\
-\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.921 & 50 & 11.5 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.929 & 44 & 10.9 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.921 & 45 & 11.5 \\
 \PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.925 & 44 & 12.2 \\
 \midrule
-\PHastP & $S=10$, $\lambda=5.15$ & 2.085 & 54 & 13.6 \\
-\PHastP wrap $\delta=1$ & $S=10$, $\lambda=6.2$ & 1.905 & 78 & 13.7 \\
+\PHastP & $S=10$, $\lambda=5.15$ & 2.085 & 54 & 13.5 \\
+\PHastP wrap $\delta=1$ & $S=10$, $\lambda=6.2$ & 1.905 & 78 & 13.6 \\
 \PHastP wrap $\delta=2$ & $S=10$, $\lambda=5.9$ & 1.883 & 106 & 12.8 \\
-\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.872 & 137 & 13.5 \\
-\PHast & $S=10$, $\lambda=6.05$ & 1.854 & 1827 & 13.8 \\
+\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.872 & 138 & 13.5 \\
+\PHast & $S=10$, $\lambda=6.05$ & 1.854 & 1829 & 13.7 \\
 \addlinespace
-\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.852 & 84 & 13.7 \\
-\PHastR & $S=10$, $L=2048$, $\lambda=6.25$ & 1.857 & 86 & 14.1 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=5.75$ & 1.858 & 86 & 13.2 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.852 & 86 & 13.7 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=6.25$ & 1.857 & 85 & 14.1 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\begin{figure}[t]
-\centering
-\begin{tikzpicture}
-\begin{axis}[
-  width=0.49\textwidth, height=0.38\textwidth,
-  xlabel={space [bits/key]}, ylabel={query time [ns]},
-  grid=major, grid style={gray!20}, legend to name=leg:pareto, legend columns=3, legend style={font=\small, /tikz/every even column/.append style={column sep=0.5em}}]
-\addplot[only marks, mark=o*, color=black, mark size=1.8pt] coordinates { (1.970,12.4) (2.013,12.3) (2.096,14.2) (2.116,16.1) };
-\addplot[only marks, mark=square*, color=blue!70!black, mark size=1.8pt] coordinates { (1.922,11.3) };
-\addplot[mark=triangle*, color=red!70!black, mark size=1.8pt] coordinates { (1.929,11.0) (1.921,11.5) (1.925,12.2) };
-\addplot[only marks, mark=o, color=black, mark size=1.8pt] coordinates { (2.085,13.6) (1.883,12.8) (1.872,13.5) (1.905,13.7) };
-\addplot[only marks, mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.854,13.8) };
-\addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.852,13.7) (1.857,14.1) };
-\legend{\PHastP ($S=8$), \PHast ($S=8$), \PHastR ($S=8$), \PHastP ($S=10$), \PHast ($S=10$), \PHastR ($S=10$)}
-\end{axis}
-\end{tikzpicture}%
-\begin{tikzpicture}
-\begin{axis}[
-  width=0.49\textwidth, height=0.38\textwidth,
-  xlabel={space [bits/key]}, ylabel={construction time [ns/key]}, ymode=log,
-  grid=major, grid style={gray!20}]
-\addplot[only marks, mark=o*, color=black, mark size=1.8pt] coordinates { (1.970,87.7) (2.013,76.9) (2.096,65.3) (2.116,53.0) };
-\addplot[only marks, mark=square*, color=blue!70!black, mark size=1.8pt] coordinates { (1.922,639.8) };
-\addplot[mark=triangle*, color=red!70!black, mark size=1.8pt] coordinates { (1.929,45.2) (1.921,49.8) (1.925,43.6) };
-\addplot[only marks, mark=o, color=black, mark size=1.8pt] coordinates { (2.085,54.5) (1.883,105.9) (1.872,136.7) (1.905,77.6) };
-\addplot[only marks, mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.854,1827.4) };
-\addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.852,84.1) (1.857,85.6) };
-\end{axis}
-\end{tikzpicture}\\[1ex]
-\ref{leg:pareto}
-\caption{Space versus query time and single-threaded construction time on
-$10^7$ keys (data of Table~\ref{tab:1e7}); configurations of \PHastR with the
-same seed width are joined in order of expected bucket size.}
-\label{fig:pareto}
-\end{figure}
-
-Table~\ref{tab:1e7} and Figure~\ref{fig:pareto} show the results on $10^7$
-keys, a size at which the structures fit in the cache. With 8-bit seeds and
+Table~\ref{tab:1e7} shows the results on $10^7$ keys, a size at which the
+structures fit in the cache. With 8-bit seeds and
 the suggested expected bucket size $\lambda=4.5$, \PHastR uses $0.04$ bits
 per key less than the best variant of \PHastP with wrapping, and it is built
 in half the time (it is faster to build even than \PHastP without wrapping).
 Its queries are faster than those of all variants of \PHastP ($11\%$ faster
 than those of the variant using the least space), and slightly faster than
-those of \PHast, which uses $0.4\%$ less space but takes fourteen times as
+those of \PHast, which uses $0.4\%$ less space but takes fifteen times as
 long to build. The speed of queries is due to bumping: \PHastR bumps just
 $1.5\%$ of the keys from the first level, against the $4.3\%$ of \PHastP with
 wrapping and $\delta=3$, and queries for bumped keys are much slower than the
@@ -579,12 +544,13 @@ others. The expected bucket size thus trades space for query time: with
 $\lambda=4.75$ \PHastR bumps $2.5\%$ of the keys, and it has the space and
 essentially the query time of \PHast; with $\lambda=5$ it bumps $3.7\%$ of
 the keys, and its queries are still slightly faster than those of \PHastP
-with wrapping and $\delta=3$. With 10-bit seeds \PHastR uses less space than
-all variants of \PHastP, and even slightly less than \PHast; it is built in
-$61\%$ of the time of \PHastP with wrapping and $\delta=3$, and its queries
-are as fast as those of \PHast and within $2\%$ of those of the former (the
-variants of \PHastP with a smaller multiplier have faster queries, but they
-use more space).
+with wrapping and $\delta=3$. With 10-bit seeds and $\lambda=5.75$ \PHastR
+uses less space than all variants of \PHastP, it is built in $62\%$ of the
+time of \PHastP with wrapping and $\delta=3$, and its queries are faster
+than those of the latter and of \PHast; with $\lambda=6$ it uses slightly
+less space than \PHast, with the query time of \PHast (the variants of
+\PHastP with a smaller multiplier have faster queries, but they use more
+space).
 
 \begin{table}[t]
 \centering
@@ -598,27 +564,28 @@ construction.}
 \cmidrule(lr){4-5}
 Method & Configuration & bits/key & 1 thread & 8 threads & query [ns] \\
 \midrule
-\PHastP & $S=8$, $\lambda=5.25$ & 2.115 & 57 & 11.6 & 36.0 \\
-\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.968 & 93 & 16.9 & 32.3 \\
-\PHast & $S=8$, $\lambda=4.5$ & 1.921 & 645 & -- & 30.4 \\
+\PHastP & $S=8$, $\lambda=5.25$ & 2.115 & 57 & 11.7 & 36.0 \\
+\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.968 & 94 & 17.5 & 32.4 \\
+\PHast & $S=8$, $\lambda=4.5$ & 1.921 & 646 & -- & 30.4 \\
 \addlinespace
 \PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.927 & 51 & 7.7 & 29.8 \\
-\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.919 & 52 & 8.6 & 30.3 \\
-\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.924 & 49 & 8.4 & 31.1 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.919 & 50 & 7.9 & 30.3 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.924 & 50 & 8.3 & 31.2 \\
 \midrule
-\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.869 & 143 & 23.4 & 35.3 \\
+\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.869 & 144 & 23.2 & 35.4 \\
 \addlinespace
-\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.849 & 91 & 13.4 & 35.9 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=5.75$ & 1.854 & 93 & 13.0 & 35.3 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.849 & 91 & 13.1 & 35.9 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 Table~\ref{tab:1e8} shows that the picture does not change on $10^8$ keys,
 where queries are dominated by cache misses: with 8-bit seeds and
-$\lambda=4.5$ \PHastR is built in $55\%$ of the time of \PHastP with
+$\lambda=4.5$ \PHastR is built in $54\%$ of the time of \PHastP with
 wrapping, and its queries are $8\%$ faster; they are also slightly faster
-than those of \PHast. With 8 threads \PHastR builds in $46\%$ of the time of
-\PHastP with wrapping with 8-bit seeds, and in $57\%$ of the time with 10-bit
+than those of \PHast. With 8 threads \PHastR builds in $44\%$ of the time of
+\PHastP with wrapping with 8-bit seeds, and in $56\%$ of the time with 10-bit
 seeds.
 
 \subsection{Large Key Sets}
@@ -636,24 +603,25 @@ construction.}
 \cmidrule(lr){4-5}
 Method & Configuration & bits/key & 1 thread & 8 threads & query [ns] \\
 \midrule
-\PHastP & $S=8$, $\lambda=5.25$ & 2.115 & 66 & 12.5 & 54.5 \\
-\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.968 & 100 & 17.8 & 47.8 \\
-\PHast & $S=8$, $\lambda=4.5$ & 1.920 & 652 & -- & 41.4 \\
+\PHastP & $S=8$, $\lambda=5.25$ & 2.115 & 64 & 12.7 & 54.6 \\
+\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.968 & 101 & 17.7 & 47.9 \\
+\PHast & $S=8$, $\lambda=4.5$ & 1.920 & 652 & -- & 41.5 \\
 \addlinespace
-\PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.927 & 54 & 8.7 & 40.8 \\
-\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.919 & 53 & 9.0 & 42.6 \\
-\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.924 & 53 & 9.3 & 45.2 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.927 & 54 & 8.4 & 40.9 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.919 & 53 & 8.6 & 42.7 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.924 & 53 & 9.0 & 45.3 \\
 \midrule
-\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.869 & 151 & 23.9 & 49.2 \\
+\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.869 & 152 & 24.1 & 49.3 \\
 \addlinespace
-\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.848 & 95 & 13.9 & 50.1 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=5.75$ & 1.854 & 97 & 13.6 & 48.3 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.848 & 95 & 13.9 & 50.2 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 Table~\ref{tab:1e9} reports the results on $10^9$ keys. Space does not depend
 on the number of keys, and the relative performance of the structures is the
-same as on smaller key sets: with 8-bit seeds \PHastR is built in $54\%$ of
+same as on smaller key sets: with 8-bit seeds \PHastR is built in $53\%$ of
 the time of \PHastP with wrapping with one thread, and in half the time with
 eight, its queries are $15\%$ faster, and they are slightly faster than those
 of \PHast. At this scale, however, some phenomena become more visible, and we
@@ -672,13 +640,67 @@ bumped from the first level.}
 \cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}
 Structure & bumped & first & all & first & all & first & all \\
 \midrule
-\PHastP wrap $\delta=3$, $\lambda=5$ & 4.3 & 17.2 & 17.8 & 27.7 & 31.9 & 38.9 & 48.2 \\
-\PHast, $\lambda=4.5$ & 1.4 & 18.4 & 17.7 & 29.0 & 31.4 & 41.2 & 44.8 \\
-\PHastR, $\lambda=4.5$ & 1.5 & 17.6 & 16.9 & 28.0 & 30.1 & 39.4 & 43.2 \\
-\PHastR, $\lambda=4.75$ & 2.5 & 17.4 & 17.2 & 27.9 & 30.9 & 39.2 & 45.1 \\
+\PHastP wrap $\delta=3$, $\lambda=5$ & 4.3 & 17.2 & 17.8 & 27.7 & 32.0 & 38.9 & 48.2 \\
+\PHast, $\lambda=4.5$ & 1.4 & 18.5 & 17.6 & 29.1 & 31.4 & 41.3 & 45.0 \\
+\PHastR, $\lambda=4.5$ & 1.5 & 17.6 & 16.8 & 28.0 & 30.1 & 39.5 & 43.2 \\
+\PHastR, $\lambda=4.75$ & 2.5 & 17.5 & 17.2 & 28.0 & 30.9 & 39.4 & 45.2 \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.49\textwidth, height=0.38\textwidth,
+  xlabel={space [bits/key]}, ylabel={query time [ns]}, enlargelimits=0.08,
+  grid=major, grid style={gray!20}, legend to name=leg:pareto, legend columns=3, legend style={font=\small, /tikz/every even column/.append style={column sep=0.5em}}]
+\addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.122,52.8) (2.115,53.9) (2.120,55.5) };
+\addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (2.001,43.1) (1.977,44.7) (1.968,46.4) (1.975,48.4) (1.984,51.6) };
+\addplot[mark=square*, color=blue!70!black, mark size=1.8pt] coordinates { (1.952,40.0) (1.920,41.4) (1.915,43.7) };
+\addplot[mark=triangle*, color=red!70!black, mark size=1.8pt] coordinates { (1.959,37.5) (1.927,39.1) (1.919,41.5) (1.924,44.5) (1.937,47.1) };
+\addplot[mark=diamond, color=black, mark size=1.8pt] coordinates { (1.934,46.8) (1.890,47.5) (1.869,49.0) (1.868,50.8) (1.872,53.4) };
+\addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.878,46.9) (1.854,48.2) (1.848,50.1) (1.854,52.4) (1.863,54.9) };
+\legend{\PHastP ($S=8$), \PHastP wrap $\delta=3$ ($S=8$), \PHast ($S=8$), \PHastR ($S=8$), \PHastP wrap $\delta=3$ ($S=10$), \PHastR ($S=10$)}
+\end{axis}
+\end{tikzpicture}%
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.49\textwidth, height=0.38\textwidth,
+  xlabel={space [bits/key]}, ylabel={construction time [ns/key]}, ymode=log, enlargelimits=0.08,
+  log ticks with fixed point, ytick={50,100,200,500,1000}, grid=major, grid style={gray!20}]
+\addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.122,64.0) (2.115,64.2) (2.120,65.0) };
+\addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (2.001,98.9) (1.977,100.0) (1.968,100.7) (1.975,101.7) (1.984,103.1) };
+\addplot[mark=square*, color=blue!70!black, mark size=1.8pt] coordinates { (1.952,695.2) (1.920,651.9) (1.915,625.1) };
+\addplot[mark=triangle*, color=red!70!black, mark size=1.8pt] coordinates { (1.959,58.1) (1.927,53.9) (1.919,53.1) (1.924,53.2) (1.937,53.5) };
+\addplot[mark=diamond, color=black, mark size=1.8pt] coordinates { (1.934,142.2) (1.890,147.8) (1.869,151.6) (1.868,154.5) (1.872,157.3) };
+\addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.878,104.0) (1.854,97.2) (1.848,96.2) (1.854,95.6) (1.863,94.4) };
+\end{axis}
+\end{tikzpicture}\\[1ex]
+\ref{leg:pareto}
+\caption{Space versus query time and single-threaded construction time on
+$10^9$ keys as the expected bucket size varies in steps of $0.25$: from
+$4.25$ to $5.25$ with 8-bit seeds and from $5.5$ to $6.5$ with 10-bit seeds
+(\PHastP without wrapping from $5$ to $5.5$); the configurations of each
+structure are joined in order of expected bucket size.}
+\label{fig:pareto}
+\end{figure}
+
+\paragraph{Trade-offs.}
+Figure~\ref{fig:pareto} shows what happens on $10^9$ keys when the expected
+bucket size varies around the configurations of Table~\ref{tab:1e9}. Space
+has a minimum, query time grows with $\lambda$, as more keys are bumped, and
+construction time is almost independent of $\lambda$, except for \PHast,
+whose search gets cheaper as buckets get larger. The curves of \PHast and
+\PHastR are close in space and in query time, but a decade apart in
+construction time, and those of \PHastP with wrapping are to the right of
+both. Considering the three dimensions at once, no configuration of \PHastP,
+with or without wrapping, is Pareto-optimal: each is dominated by a
+configuration of \PHastR with less space, faster queries and a faster
+construction. The only other configurations that are not dominated are those
+of \PHast with $\lambda=4.5$ and $\lambda=4.75$, which win by $0.1$\,ns in
+query time or by $0.004$ bits per key in space at twelve times the
+construction time.
 
 \paragraph{Bumped keys.}
 Table~\ref{tab:split} shows the time of queries for the keys of the first
@@ -712,15 +734,15 @@ the keys.}
 \cmidrule(lr){2-6}
 Structure & 1 & 2 & 4 & 8 & 96 & speedup & bytes/key \\
 \midrule
-\PHastR, $\lambda=4.5$ & 55.0 & 29.1 & 15.1 & 8.4 & 2.8 & 6.5 & 10.7 \\
-\PHastP wrap $\delta=3$, $\lambda=5$ & 102.5 & 55.0 & 30.1 & 17.7 & 7.7 & 5.8 & 9.9 \\
+\PHastR, $\lambda=4.5$ & 54.9 & 28.7 & 15.0 & 8.2 & 2.8 & 6.7 & 10.7 \\
+\PHastP wrap $\delta=3$, $\lambda=5$ & 102.6 & 55.7 & 31.1 & 17.8 & 7.7 & 5.8 & 9.9 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \paragraph{Construction.}
 The construction time per key of \PHastR grows slowly with the number of
-keys ($45$, $51$ and $54$\,ns with one thread on $10^7$, $10^8$ and $10^9$
+keys ($44$, $51$ and $54$\,ns with one thread on $10^7$, $10^8$ and $10^9$
 keys, respectively), as parts are distributed into smaller parts that fit
 the cache whatever their size (Section~\ref{sec:phastr}); the growth is due
 to the walk finding bumped keys, which accesses randomly a bit vector with a
