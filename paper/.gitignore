@@ -1,9 +1,6 @@
-*.aux
-*.log
-*.fls
-*.fdb_latexmk
-*.out
-*.synctex.gz
-*.bbl
-*.blg
-lean/.lake/
+phast.pdf
+phast.aux
+phast.bbl
+phast.blg
+phast.log
+phast.out
