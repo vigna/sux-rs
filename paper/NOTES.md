@@ -41,7 +41,8 @@ also on 10¹⁰ keys if `TMPDIR` has 170 GB free, and a check that the two
 constructions give the same structure). The configurations are in
 `configs.sh`. Tables and
 figure: `tables.py run.csv spread.csv` (main table), `large_tables.py
-large/` (Section 4.1), `plot_pareto.py run.csv` (the 2×2 trade-off figure).
+large/` (Section 4.1), `plot_pareto.py run.csv` (the trade-off figure: query and
+construction time against space, a row for each key set).
 The lines of `cmp` are `CSV,<name>,<n>,<bits/key>,<build>,<query>,<query
 min>,<query max>,<build min>,<build max>,<bumped %>` (prefixed by the number
 of threads, or by the key seed in `spread.csv`). The scripts run unpinned
