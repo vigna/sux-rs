@@ -12,6 +12,8 @@ use super::*;
 use crate::dict::elias_fano::EliasFanoBuilder;
 use anyhow::{bail, ensure};
 use derive_setters::*;
+use dsi_progress_logger::no_logging;
+use std::time::Instant;
 
 /// The maximum number of keys of the last level, which is built without
 /// bumping.
@@ -108,11 +110,15 @@ impl PHastRBuilder {
             "Offline mode is not supported by the constructors reading keys from a slice; use try_new_with_builder"
         );
         self.check_params::<D>()?;
+        let start = Instant::now();
+        self.log_params(pl);
         let (levels, remap) = self.build_levels::<K>(keys, pl)?;
         let mut levels = levels.into_iter();
         let (params0, seeds0) = levels.next().expect("there is always at least one level");
         let seeds0 = D::from_seeds(&seeds0, self.seed_bits);
-        Ok(self.assemble(keys.len(), params0, seeds0, levels, remap))
+        let func = self.assemble(keys.len(), params0, seeds0, levels, remap);
+        log_completion(start, keys.len(), pl);
+        Ok(func)
     }
 
     /// Checks that the parameters are compatible with the seed storage.
@@ -133,6 +139,17 @@ impl PHastRBuilder {
             bail!("Too many patterns for the given slice length");
         }
         Ok(())
+    }
+
+    /// Logs the parameters of the construction.
+    pub(super) fn log_params(&self, pl: &mut impl ProgressLog) {
+        pl.info(format_args!(
+            "Seed bits: {}; patterns: {}; maximum slice length: {}; expected bucket size: {}",
+            self.seed_bits,
+            1 << self.log2_patterns,
+            1 << self.log2_slice_len,
+            self.bucket_size
+        ));
     }
 
     /// Assembles a function with `num_keys` keys from its first level (whose
@@ -197,11 +214,19 @@ impl PHastRBuilder {
         }
 
         // The first level
-        pl.info(format_args!("Computing signatures..."));
+        pl.item_name("key");
+        pl.expected_updates(n);
+        pl.start(format!(
+            "Computing and distributing 64-bit signatures in parallel ({} threads) in RAM using seed 0x{:016x}...",
+            num_threads(),
+            self.seed
+        ));
+        let start = Instant::now();
         let geom = self.geometry(n, n, self.bucket_size);
         let sigs = group(n, |i| hash(i, self.seed), &geom);
-        let out =
-            sweep_level(&sigs, &geom, &weights(&geom), true).expect("bumping sweeps cannot fail");
+        pl.done_with_count(n);
+        log_signatures(start, n, pl);
+        let out = sweep_bumping_level(&sigs, &geom, &weights(&geom), 0, n, pl);
         // The indices of the keys of the next level
         let mut cur = bumped(&sigs, &out.seeds, &geom);
         drop(sigs);
@@ -275,8 +300,7 @@ impl PHastRBuilder {
                 if duplicates(&sigs, &cur, &geom) {
                     bail!("Duplicate keys");
                 }
-                let out = sweep_level(&sigs, &geom, &weights(&geom), true)
-                    .expect("bumping sweeps cannot fail");
+                let out = sweep_bumping_level(&sigs, &geom, &weights(&geom), levels.len(), k, pl);
                 let next: Vec<usize> = bumped(&sigs, &out.seeds, &geom)
                     .into_iter()
                     .map(|i| cur[i])
@@ -296,7 +320,9 @@ impl PHastRBuilder {
                     if attempt == 0 && duplicates(&sigs, &cur, &geom) {
                         bail!("Duplicate keys");
                     }
-                    if let Some(out) = sweep_level(&sigs, &geom, &weights(&geom), false) {
+                    if let Some(out) =
+                        sweep_level(&sigs, &geom, &weights(&geom), false, no_logging![])
+                    {
                         let mut level = geom.level();
                         level.salt = salt;
                         break (level, out.seeds, out.occupied, vec![], geom.m);
@@ -501,6 +527,41 @@ pub(super) const fn level_salt(seed: u64, level: usize, attempt: u64) -> u64 {
         seed.wrapping_add(level as u64).wrapping_add(attempt << 32) | 1,
         0x9E37_79B9_7F4A_7C15,
     )
+}
+
+/// Logs the completion of the computation of the signatures of `n` keys,
+/// started at `start`.
+pub(super) fn log_signatures(start: Instant, n: usize, pl: &mut impl ProgressLog) {
+    pl.info(format_args!(
+        "Computation of signatures from inputs completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+        start.elapsed().as_secs_f64(),
+        n,
+        start.elapsed().as_nanos() as f64 / n.max(1) as f64
+    ));
+}
+
+/// Logs the completion of the construction of a function on `n` keys,
+/// started at `start`.
+pub(super) fn log_completion(start: Instant, n: usize, pl: &mut impl ProgressLog) {
+    pl.info(format_args!(
+        "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+        start.elapsed().as_secs_f64(),
+        n,
+        start.elapsed().as_nanos() as f64 / n.max(1) as f64
+    ));
+}
+
+/// Returns the number of threads of the current rayon pool (one without
+/// the `rayon` feature).
+pub(super) fn num_threads() -> usize {
+    #[cfg(feature = "rayon")]
+    {
+        rayon::current_num_threads()
+    }
+    #[cfg(not(feature = "rayon"))]
+    {
+        1
+    }
 }
 
 /// Returns whether to process `len` elements using rayon, that is, whether

@@ -14,7 +14,8 @@ name = "lab"
 # of 7d18454). TODO: once 8d722ff is pushed, replace the path with
 # git = "https://github.com/vigna/bsuccinct-rs", rev = "8d722ff..."
 ph = { path = "../../../bsuccinct-rs/ph", features = ["wyhash", "gxhash"] }
-sux = { path = "../..", features = ["epserde"] }
+# cli provides init_env_logger
+sux = { path = "../..", features = ["epserde", "cli"] }
 clap = { version = "4", features = ["derive"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 gxhash = "3.5"

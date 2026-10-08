@@ -38,9 +38,11 @@ use super::sweep::*;
 use super::*;
 use crate::dict::elias_fano::EliasFanoBuilder;
 use anyhow::bail;
+use dsi_progress_logger::no_logging;
 use std::fs::File;
 use std::io::{self, Write};
 use std::sync::Mutex;
+use std::time::Instant;
 use zerocopy::IntoBytes;
 
 /// The signature of a key for the first level and its second hash.
@@ -173,6 +175,20 @@ impl Store {
     /// Returns the number of partitions.
     fn num_partitions(&self) -> usize {
         1 << self.log2_partitions
+    }
+
+    /// Returns the number of records of partition `p`.
+    fn partition_len(&self, p: usize) -> usize {
+        match &self.storage {
+            Storage::File(_, blocks) => {
+                blocks.full[p].len() * BLOCK
+                    + blocks.partial[p]
+                        .iter()
+                        .map(|&(_, len)| len as usize)
+                        .sum::<usize>()
+            }
+            Storage::Memory(partitions) => partitions[p].len(),
+        }
     }
 
     /// Calls `f` on the records of partition `p`, using `buf` as a buffer.
@@ -528,27 +544,21 @@ enum Keys {
     Last(Vec<Record>),
 }
 
-/// Assigns seeds to the buckets of a level whose records are in a store
-/// (see [`sweep_level`]).
-fn sweep_store(store: &Store, g: &Geometry, weights: &[i64; 7]) -> Result<Level> {
+/// Assigns seeds to the buckets of the level of index `index` whose records
+/// are in a store, logging its progress (see [`sweep_bumping_level`]).
+fn sweep_store(
+    store: &Store,
+    g: &Geometry,
+    weights: &[i64; 7],
+    index: usize,
+    pl: &mut impl ProgressLog,
+) -> Result<Level> {
     let parts = Partitioned::new(store, g);
-    let out = sweep_level(&parts, g, weights, true).expect("bumping sweeps cannot fail");
+    let out = sweep_bumping_level(&parts, g, weights, index, store.len, pl);
     if let Some(e) = parts.error.into_inner().unwrap() {
         return Err(e.into());
     }
     Ok(out)
-}
-
-/// Returns the number of threads used by the passes on stores.
-fn num_threads() -> usize {
-    #[cfg(feature = "rayon")]
-    {
-        rayon::current_num_threads()
-    }
-    #[cfg(not(feature = "rayon"))]
-    {
-        1
-    }
 }
 
 /// Applies `f` to disjoint ranges of the partitions of a store, one for each
@@ -577,7 +587,9 @@ fn by_thread<T: Send>(
 
 /// Returns the records of the `k` keys whose bucket has no seed, given the
 /// salt of the following level: in a new store (kept in a file if `offline`
-/// is true), or in a vector, if the following level is the last one.
+/// is true), or in a vector, if the following level is the last one. The
+/// progress of the pass, in records read, is logged on a concurrent logger
+/// obtained from `pl`.
 fn collect_bumped(
     store: &Store,
     g: &Geometry,
@@ -585,11 +597,18 @@ fn collect_bumped(
     k: usize,
     salt: u64,
     offline: bool,
+    pl: &mut impl ProgressLog,
 ) -> Result<Keys> {
     let sig = store.sig;
-    if k <= LAST_LEVEL_THRESHOLD {
+    let mut cpl = pl.concurrent();
+    cpl.item_name("key");
+    cpl.expected_updates(store.len);
+    cpl.start(format!(
+        "Collecting the {k} keys of buckets without a seed..."
+    ));
+    let keys = if k <= LAST_LEVEL_THRESHOLD {
         let parts = by_thread(store, |range| {
-            let (mut out, mut records) = (vec![], vec![]);
+            let (mut out, mut records, mut pl) = (vec![], vec![], cpl.clone());
             for p in range {
                 store.for_each(p, &mut records, |r| {
                     if seeds[g.bucket(sig.sig(r))] == 0 {
@@ -597,29 +616,34 @@ fn collect_bumped(
                     }
                     Ok(())
                 })?;
+                pl.update_with_count(store.partition_len(p));
             }
             Ok(out)
         })?;
         let records = parts.concat();
         debug_assert_eq!(records.len(), k);
-        return Ok(Keys::Last(records));
-    }
-    let writer = StoreWriter::new(SigFn(Some(salt)), log2_partitions(k), offline)?;
-    let lens = by_thread(store, |range| {
-        let (mut buffers, mut records) = (writer.buffers(), vec![]);
-        for p in range {
-            store.for_each(p, &mut records, |r| {
-                if seeds[g.bucket(sig.sig(r))] == 0 {
-                    buffers.push(*r)?;
-                }
-                Ok(())
-            })?;
-        }
-        buffers.finish()
-    })?;
-    let len = lens.iter().sum();
-    debug_assert_eq!(len, k);
-    Ok(Keys::Stored(writer.finish(len)))
+        Keys::Last(records)
+    } else {
+        let writer = StoreWriter::new(SigFn(Some(salt)), log2_partitions(k), offline)?;
+        let lens = by_thread(store, |range| {
+            let (mut buffers, mut records, mut pl) = (writer.buffers(), vec![], cpl.clone());
+            for p in range {
+                store.for_each(p, &mut records, |r| {
+                    if seeds[g.bucket(sig.sig(r))] == 0 {
+                        buffers.push(*r)?;
+                    }
+                    Ok(())
+                })?;
+                pl.update_with_count(store.partition_len(p));
+            }
+            buffers.finish()
+        })?;
+        let len = lens.iter().sum();
+        debug_assert_eq!(len, k);
+        Keys::Stored(writer.finish(len))
+    };
+    cpl.done();
+    Ok(keys)
 }
 
 /// Returns whether two records of a store are equal.
@@ -632,10 +656,17 @@ fn collect_bumped(
 /// keys with the same 128 bits of hashes; in this case, the construction
 /// from a slice would fail anyway (such keys would collide at every level),
 /// unless their hashes with the third seed coincide, too.
-fn has_duplicates(store: &Store) -> Result<bool> {
+///
+/// The progress of the check, in records, is logged on a concurrent logger
+/// obtained from `pl`.
+fn has_duplicates(store: &Store, pl: &mut impl ProgressLog) -> Result<bool> {
+    let mut cpl = pl.concurrent();
+    cpl.item_name("key");
+    cpl.expected_updates(store.len);
+    cpl.start("Checking for duplicate keys...");
     // Equal records have the same signature, and thus the same partition
     let found = by_thread(store, |range| {
-        let (mut all, mut records) = (vec![], vec![]);
+        let (mut all, mut records, mut pl) = (vec![], vec![], cpl.clone());
         for p in range {
             all.clear();
             store.for_each(p, &mut records, |r| {
@@ -646,9 +677,11 @@ fn has_duplicates(store: &Store) -> Result<bool> {
             if all.windows(2).any(|w| w[0] == w[1]) {
                 return Ok(true);
             }
+            pl.update_with_count(all.len());
         }
         Ok(false)
     })?;
+    cpl.done();
     Ok(found.into_iter().any(|x| x))
 }
 
@@ -681,9 +714,13 @@ impl PHastRBuilder {
         pl: &mut impl ProgressLog,
     ) -> Result<PHastR<K, D>> {
         self.check_params::<D>()?;
+        let start = Instant::now();
+        self.log_params(pl);
         let (num_keys, params0, seeds0, levels, remap) =
             self.build_levels_from_lender::<K, D, B>(keys, pl)?;
-        Ok(self.assemble(num_keys, params0, seeds0, levels, remap))
+        let func = self.assemble(num_keys, params0, seeds0, levels, remap);
+        log_completion(start, num_keys, pl);
+        Ok(func)
     }
 
     /// Builds the levels on the keys returned by a lender (see
@@ -710,7 +747,18 @@ impl PHastRBuilder {
     ) -> Result<(usize, LevelParams, D, Vec<(LevelParams, Vec<u16>)>, Remap)> {
         let weights = |g: &Geometry| self.priority_weights(g);
 
-        pl.info(format_args!("Computing signatures..."));
+        pl.item_name("key");
+        pl.expected_updates(None);
+        pl.start(format!(
+            "Computing and storing 128-bit signatures sequentially {} using seed 0x{:016x}...",
+            if self.offline {
+                format!("on disk ({})", std::env::temp_dir().display())
+            } else {
+                "in RAM".to_owned()
+            },
+            self.seed
+        ));
+        let start = Instant::now();
         let writer = StoreWriter::new(SigFn(None), MAX_LOG2_PARTITIONS, self.offline)?;
         let mut buffers = writer.buffers();
         while let Some(key) = keys.next()? {
@@ -719,9 +767,12 @@ impl PHastRBuilder {
                 K::to_sig(key, self.seed)[0],
                 K::to_sig(key, self.seed ^ SECOND_HASH)[0],
             ])?;
+            pl.light_update();
         }
         let n = buffers.finish()?;
         let store = writer.finish(n);
+        pl.done();
+        log_signatures(start, n, pl);
 
         if n == 0 {
             // A single empty level, as in build_levels
@@ -733,7 +784,7 @@ impl PHastRBuilder {
 
         // The first level
         let geom = self.geometry(n, n, self.bucket_size);
-        let Level { seeds, occupied } = sweep_store(&store, &geom, &weights(&geom))?;
+        let Level { seeds, occupied } = sweep_store(&store, &geom, &weights(&geom), 0, pl)?;
         let num_holes = n - occupied
             .iter()
             .map(|w| w.count_ones() as usize)
@@ -764,6 +815,7 @@ impl PHastRBuilder {
             num_holes,
             level_salt(self.seed, 1, 0),
             self.offline,
+            pl,
         )?;
         drop(store);
         let params0 = geom.level();
@@ -783,10 +835,10 @@ impl PHastRBuilder {
                     let k = store.len;
                     let salt = level_salt(self.seed, index, 0);
                     let geom = self.geometry(k, k, self.bucket_size);
-                    if has_duplicates(&store)? {
+                    if has_duplicates(&store, pl)? {
                         bail!("Duplicate keys");
                     }
-                    let out = sweep_store(&store, &geom, &weights(&geom))?;
+                    let out = sweep_store(&store, &geom, &weights(&geom), index, pl)?;
                     let used: usize = out.occupied.iter().map(|w| w.count_ones() as usize).sum();
                     let next = collect_bumped(
                         &store,
@@ -795,6 +847,7 @@ impl PHastRBuilder {
                         k - used,
                         level_salt(self.seed, index + 1, 0),
                         self.offline,
+                        pl,
                     )?;
                     let mut level = geom.level();
                     level.salt = salt;
@@ -817,7 +870,9 @@ impl PHastRBuilder {
                         }
                         let sigs =
                             group(k, |i| level_sig(records[i][0], records[i][1], salt), &geom);
-                        if let Some(out) = sweep_level(&sigs, &geom, &weights(&geom), false) {
+                        if let Some(out) =
+                            sweep_level(&sigs, &geom, &weights(&geom), false, no_logging![])
+                        {
                             let mut level = geom.level();
                             level.salt = salt;
                             break (
@@ -882,7 +937,7 @@ mod tests {
     use super::super::tests::CollidingKey;
     use super::*;
     use crate::utils::FromSlice;
-    use dsi_progress_logger::no_logging;
+    use dsi_progress_logger::{ProgressLogger, no_logging};
 
     /// Asserts that two functions are identical.
     fn assert_same<K: ?Sized, D: SeedStore>(a: &PHastR<K, D>, b: &PHastR<K, D>) {
@@ -1084,6 +1139,27 @@ mod tests {
                 .is_err()
             );
         }
+    }
+
+    #[test]
+    fn test_logging() -> Result<()> {
+        // With half a million keys the second level can bump keys, so all
+        // phases are logged; logging does not change the function
+        let keys: Vec<u64> = (0..500_000).collect();
+        let builder = PHastRBuilder::default();
+        let quiet = <PHastR<u64>>::try_par_new_with_builder(&keys, builder.clone(), no_logging![])?;
+        let mut pl = ProgressLogger::default();
+        let par = <PHastR<u64>>::try_par_new_with_builder(&keys, builder.clone(), &mut pl)?;
+        assert_same(&par, &quiet);
+        for offline in [false, true] {
+            let phf = <PHastR<u64>>::try_new_with_builder(
+                FromSlice::new(&keys),
+                builder.clone().offline(offline),
+                &mut pl,
+            )?;
+            assert_same(&phf, &quiet);
+        }
+        Ok(())
     }
 
     #[test]

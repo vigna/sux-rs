@@ -4,12 +4,13 @@
 //! which contain all their data) and that queries agree. In offline mode keys are generated on the fly, and
 //! never stored. Allocated memory is tracked by a counting allocator: the
 //! peak is reported at the end, and with --trace the amount of allocated
-//! memory is printed on standard error every 50 ms.
+//! memory is printed on standard error every 50 ms. With --log the progress
+//! of the constructions is logged on standard error.
 //!
-//! Usage: offline [-n keys] [-m online|offline|both] [-v <S>:<log2 L>:<lambda>[:<log2 R>]]
+//! Usage: offline [-n keys] [-m online|offline|both] [-v <S>:<log2 L>:<lambda>[:<log2 R>]] [--trace] [--log]
 
 use clap::Parser;
-use dsi_progress_logger::no_logging;
+use dsi_progress_logger::ProgressLogger;
 use lab::GxKey;
 use mem_dbg::{MemSize, SizeFlags};
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -63,6 +64,9 @@ struct Args {
     /// Prints the allocated memory every 50 ms on standard error​
     #[arg(long)]
     trace: bool,
+    /// Logs the progress of the constructions on standard error​
+    #[arg(long)]
+    log: bool,
 }
 
 /// The key of index i.
@@ -72,6 +76,11 @@ fn key(i: u64) -> GxKey {
 
 fn main() {
     let a = Args::parse();
+    if a.log {
+        sux::init_env_logger().unwrap();
+    }
+    // The progress logger of the constructions, if any
+    let pl = || a.log.then(ProgressLogger::default);
     if a.trace {
         let start = Instant::now();
         std::thread::spawn(move || {
@@ -100,7 +109,7 @@ fn main() {
         let keys = FromCloneableIntoIterator::new((0..n as u64).map(key));
         let start = Instant::now();
         let f: PHastR<GxKey> =
-            PHastR::try_new_with_builder(keys, b.clone().offline(true), no_logging![]).unwrap();
+            PHastR::try_new_with_builder(keys, b.clone().offline(true), &mut pl()).unwrap();
         report("offline", start.elapsed().as_secs_f64(), &f);
         f
     };
@@ -112,7 +121,7 @@ fn main() {
             let keys: Vec<GxKey> = (0..n as u64).map(key).collect();
             let start = Instant::now();
             let on: PHastR<GxKey> =
-                PHastR::try_par_new_with_builder(&keys, b.clone(), no_logging![]).unwrap();
+                PHastR::try_par_new_with_builder(&keys, b.clone(), &mut pl()).unwrap();
             report("online", start.elapsed().as_secs_f64(), &on);
             if a.mode == "both" {
                 let off = offline();

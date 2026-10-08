@@ -8,6 +8,7 @@
 
 use super::builder::*;
 use super::*;
+use dsi_progress_logger::ConcurrentProgressLog;
 use std::collections::BinaryHeap;
 
 /// A source of the signatures of the keys of a level, distributed into
@@ -203,16 +204,44 @@ pub(super) struct Level {
     pub(super) occupied: Vec<u64>,
 }
 
+/// Assigns seeds to the buckets of a level that can bump keys (see
+/// [`sweep_level`]), logging the progress of the sweep, in buckets, on a
+/// concurrent logger obtained from `pl`; `index` is the index of the level
+/// and `k` its number of keys.
+pub(super) fn sweep_bumping_level<S: PartSource>(
+    sigs: &S,
+    g: &Geometry,
+    weights: &[i64; 7],
+    index: usize,
+    k: usize,
+    pl: &mut impl ProgressLog,
+) -> Level {
+    let mut cpl = pl.concurrent();
+    cpl.item_name("bucket");
+    cpl.expected_updates(g.buckets);
+    cpl.start(format!(
+        "Sweeping level {index} ({k} keys, {} buckets)...",
+        g.buckets
+    ));
+    let out = sweep_level(sigs, g, weights, true, &mut cpl).expect("bumping sweeps cannot fail");
+    cpl.done();
+    out
+}
+
 /// Assigns seeds to the buckets of a level, possibly in parallel, given the
 /// signatures of its keys (see [`PartSource`]).
 ///
+/// Each sweep updates a clone of `pl` with the number of buckets of each
+/// part it loads.
+///
 /// Returns `None` if `allow_bump` is false and some bucket could not be
 /// placed.
-pub(super) fn sweep_level<S: PartSource>(
+pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog>(
     sigs: &S,
     g: &Geometry,
     weights: &[i64; 7],
     allow_bump: bool,
+    pl: &mut P,
 ) -> Option<Level> {
     let nb = g.buckets;
     let l = g.l_mask as usize + 1;
@@ -240,7 +269,7 @@ pub(super) fn sweep_level<S: PartSource>(
     };
 
     if chunks == 1 {
-        merge(Sweep::new(sigs, g, weights, 0, nb, &mut seeds).run(allow_bump)?);
+        merge(Sweep::new(sigs, g, weights, 0, nb, &mut seeds).run(allow_bump, pl.clone())?);
         return Some(Level { seeds, occupied });
     }
 
@@ -254,6 +283,7 @@ pub(super) fn sweep_level<S: PartSource>(
         parts.push(a);
         rest = r;
     }
+    let pl = &*pl;
     let run_chunk = |(i, part): (usize, &mut &mut [u16])| {
         let lo = bounds[i];
         let hi = if i + 1 == chunks {
@@ -261,7 +291,7 @@ pub(super) fn sweep_level<S: PartSource>(
         } else {
             bounds[i + 1] - gap
         };
-        Sweep::new(sigs, g, weights, lo, hi, &mut part[..hi - lo]).run(allow_bump)
+        Sweep::new(sigs, g, weights, lo, hi, &mut part[..hi - lo]).run(allow_bump, pl.clone())
     };
     #[cfg(feature = "rayon")]
     let swept: Vec<Option<Swept>> = {
@@ -285,7 +315,8 @@ pub(super) fn sweep_level<S: PartSource>(
         let before = lo.saturating_sub(gap).max(bounds[i]);
         let after = (hi + gap).min(bounds[i + 2]);
         let first = g.first_slice(lo);
-        let mut parts = Parts::new(sigs, before..after);
+        // These buckets have been swept already, so we do not log them
+        let mut parts = Parts::<S, P>::new(sigs, before..after, None);
         for b in (before..lo).chain(hi..after) {
             parts.ensure(sigs, g, b);
             for &x in parts.keys(sigs, b) {
@@ -298,7 +329,7 @@ pub(super) fn sweep_level<S: PartSource>(
                 }
             }
         }
-        let swept = sw.run(allow_bump);
+        let swept = sw.run(allow_bump, pl.clone());
         (gap_seeds, swept)
     };
     #[cfg(feature = "rayon")]
@@ -937,10 +968,10 @@ impl<'a, S: PartSource> Sweep<'a, S> {
         0
     }
 
-    /// Processes the buckets of the range; returns `None` if `allow_bump`
-    /// is false and some bucket could not be placed (in which case the
-    /// sweep stops immediately).
-    fn run(self, allow_bump: bool) -> Option<Swept> {
+    /// Processes the buckets of the range, logging them on `pl`; returns
+    /// `None` if `allow_bump` is false and some bucket could not be placed
+    /// (in which case the sweep stops immediately).
+    fn run(self, allow_bump: bool, pl: impl ProgressLog) -> Option<Swept> {
         let rings = self.rings;
         // The parameters of the rings are used as shift amounts and masks
         // in the innermost loops: we compile a version of the sweep in
@@ -950,19 +981,19 @@ impl<'a, S: PartSource> Sweep<'a, S> {
             ..Rings::DEFAULT
         };
         if rings == default {
-            self.sweep(&default, allow_bump)
+            self.sweep(&default, allow_bump, pl)
         } else {
-            self.sweep(&rings, allow_bump)
+            self.sweep(&rings, allow_bump, pl)
         }
     }
 
     #[inline(always)]
-    fn sweep(mut self, rings: &Rings, allow_bump: bool) -> Option<Swept> {
+    fn sweep(mut self, rings: &Rings, allow_bump: bool, pl: impl ProgressLog) -> Option<Swept> {
         let (lo, hi) = (self.lo, self.hi);
         let (sigs, g) = (self.sigs, self.g);
         let mut window = Window::new(self.weights);
         // The parts containing the buckets of the window
-        let mut parts = Parts::new(sigs, lo..hi);
+        let mut parts = Parts::new(sigs, lo..hi, Some(pl));
         let mut span_begin = lo;
         loop {
             if span_begin == hi {
@@ -1052,16 +1083,20 @@ struct Part {
 
 /// The parts loaded by a sweep, restricted to a range of buckets: the
 /// buckets of the window are consecutive, so a few parts are enough.
-struct Parts<S: PartSource> {
+struct Parts<S: PartSource, P> {
     range: std::ops::Range<usize>,
     parts: Vec<Part>,
     temp: Vec<u64>,
     loader: S::Loader,
+    /// The logger updated with the number of buckets of each loaded part,
+    /// if any.
+    pl: Option<P>,
 }
 
-impl<S: PartSource> Parts<S> {
-    /// Creates a cache for the buckets of the given range.
-    fn new(sigs: &S, range: std::ops::Range<usize>) -> Self {
+impl<S: PartSource, P: ProgressLog> Parts<S, P> {
+    /// Creates a cache for the buckets of the given range, logging the
+    /// buckets loaded on `pl`, if any.
+    fn new(sigs: &S, range: std::ops::Range<usize>, pl: Option<P>) -> Self {
         // The window can span (WINDOW >> log2_min_buckets) + 1 parts, and we
         // keep the last one when loading the next
         let slots = (WINDOW >> sigs.log2_min_buckets()) + 2;
@@ -1075,6 +1110,7 @@ impl<S: PartSource> Parts<S> {
                 .collect(),
             temp: vec![],
             loader: S::Loader::default(),
+            pl,
         }
     }
 
@@ -1115,6 +1151,9 @@ impl<S: PartSource> Parts<S> {
         );
         part.index = p;
         part.first_bucket = first;
+        if let Some(pl) = &mut self.pl {
+            pl.update_with_count(end - first);
+        }
     }
 
     /// Returns the loaded part of bucket `b`.

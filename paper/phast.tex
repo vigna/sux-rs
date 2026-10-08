@@ -516,8 +516,10 @@ respectively). To make query times comparable we fed both implementations the
 same hash function, GxHash with a seed, as in the experiments of the \PHast
 paper. Construction times are single-threaded unless otherwise noted and
 include hashing; query times are medians over nine rounds of $2\cdot10^6$
-queries of random keys of the set, and the rounds of the different structures
-are interleaved. \PHastR uses $R=4$ patterns, with byte seeds for $S=8$ and
+queries of consecutive keys of the set, and the rounds of the different
+structures are interleaved. Since all structures hash the key first, their
+memory accesses are random anyway: reading the keys in order avoids adding to
+every query the same cache miss on the array of keys. \PHastR uses $R=4$ patterns, with byte seeds for $S=8$ and
 bit-packed seeds read without alignment for $S=10$.
 
 \begin{table}[t]
@@ -529,25 +531,25 @@ bit-packed seeds read without alignment for $S=10$.
 \toprule
 Method & Configuration & bits/key & build [ns/key] & query [ns] \\
 \midrule
-\PHastP & $S=8$, $\lambda=5.25$ & 2.116 & 53 & 16.2 \\
-\PHastP wrap $\delta=1$ & $S=8$, $\lambda=5.25$ & 2.096 & 66 & 14.1 \\
-\PHastP wrap $\delta=2$ & $S=8$, $\lambda=5$ & 2.013 & 77 & 12.2 \\
-\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.970 & 88 & 12.3 \\
-\PHast & $S=8$, $\lambda=4.5$ & 1.922 & 641 & 11.2 \\
+\PHastP & $S=8$, $\lambda=5.25$ & 2.116 & 52 & 7.6 \\
+\PHastP wrap $\delta=1$ & $S=8$, $\lambda=5.25$ & 2.096 & 65 & 7.4 \\
+\PHastP wrap $\delta=2$ & $S=8$, $\lambda=5$ & 2.013 & 76 & 6.0 \\
+\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.970 & 86 & 5.9 \\
+\PHast & $S=8$, $\lambda=4.5$ & 1.922 & 641 & 4.8 \\
 \addlinespace
-\PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.929 & 44 & 10.9 \\
-\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.921 & 45 & 11.5 \\
-\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.925 & 44 & 12.2 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.929 & 44 & 4.6 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.921 & 43 & 5.1 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.925 & 43 & 5.7 \\
 \midrule
-\PHastP & $S=10$, $\lambda=5.15$ & 2.085 & 54 & 13.5 \\
-\PHastP wrap $\delta=1$ & $S=10$, $\lambda=6.2$ & 1.905 & 78 & 13.6 \\
-\PHastP wrap $\delta=2$ & $S=10$, $\lambda=5.9$ & 1.883 & 106 & 12.8 \\
-\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.872 & 138 & 13.5 \\
-\PHast & $S=10$, $\lambda=6.05$ & 1.854 & 1829 & 13.7 \\
+\PHastP & $S=10$, $\lambda=5.15$ & 2.085 & 54 & 6.5 \\
+\PHastP wrap $\delta=1$ & $S=10$, $\lambda=6.2$ & 1.905 & 78 & 7.0 \\
+\PHastP wrap $\delta=2$ & $S=10$, $\lambda=5.9$ & 1.883 & 103 & 6.3 \\
+\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.872 & 133 & 6.6 \\
+\PHast & $S=10$, $\lambda=6.05$ & 1.854 & 1829 & 7.0 \\
 \addlinespace
-\PHastR & $S=10$, $L=2048$, $\lambda=5.75$ & 1.858 & 86 & 13.2 \\
-\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.852 & 86 & 13.7 \\
-\PHastR & $S=10$, $L=2048$, $\lambda=6.25$ & 1.857 & 85 & 14.1 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=5.75$ & 1.858 & 85 & 5.5 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.852 & 81 & 5.9 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=6.25$ & 1.857 & 80 & 6.3 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -557,23 +559,21 @@ structures fit in the cache. With 8-bit seeds and
 the suggested expected bucket size $\lambda=4.5$, \PHastR uses $0.04$ bits
 per key less than the best variant of \PHastP with wrapping, and it is built
 in half the time (it is faster to build even than \PHastP without wrapping).
-Its queries are faster than those of all variants of \PHastP ($11\%$ faster
+Its queries are faster than those of all variants of \PHastP ($22\%$ faster
 than those of the variant using the least space), and slightly faster than
 those of \PHast, which uses $0.4\%$ less space but takes fifteen times as
 long to build. The speed of queries is due to bumping: \PHastR bumps just
 $1.5\%$ of the keys from the first level, against the $4.3\%$ of \PHastP with
 wrapping and $\delta=3$, and queries for bumped keys are much slower than the
 others. The expected bucket size thus trades space for query time: with
-$\lambda=4.75$ \PHastR bumps $2.5\%$ of the keys, and it has the space and
-essentially the query time of \PHast; with $\lambda=5$ it bumps $3.7\%$ of
-the keys, and its queries are still slightly faster than those of \PHastP
-with wrapping and $\delta=3$. With 10-bit seeds and $\lambda=5.75$ \PHastR
-uses less space than all variants of \PHastP, it is built in $62\%$ of the
-time of \PHastP with wrapping and $\delta=3$, and its queries are faster
-than those of the latter and of \PHast; with $\lambda=6$ it uses slightly
-less space than \PHast, with the query time of \PHast (the variants of
-\PHastP with a smaller multiplier have faster queries, but they use more
-space).
+$\lambda=4.75$ \PHastR bumps $2.5\%$ of the keys, and it has the space of
+\PHast and slightly slower queries; with $\lambda=5$ it bumps $3.7\%$ of the
+keys, and its queries are still slightly faster than those of \PHastP with
+wrapping and $\delta=3$. With 10-bit seeds and $\lambda=5.75$ \PHastR uses
+less space than all variants of \PHastP, and it is built in $64\%$ of the
+time of \PHastP with wrapping and $\delta=3$; with $\lambda=6$ it uses
+slightly less space than \PHast. In both cases its queries are faster than
+those of all the other structures with 10-bit seeds.
 
 \begin{table}[t]
 \centering
@@ -587,18 +587,18 @@ construction.}
 \cmidrule(lr){4-5}
 Method & Configuration & bits/key & 1 thread & 8 threads & query [ns] \\
 \midrule
-\PHastP & $S=8$, $\lambda=5.25$ & 2.115 & 57 & 11.7 & 36.0 \\
-\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.968 & 94 & 17.5 & 32.4 \\
-\PHast & $S=8$, $\lambda=4.5$ & 1.921 & 646 & -- & 30.4 \\
+\PHastP & $S=8$, $\lambda=5.25$ & 2.115 & 58 & 11.6 & 16.2 \\
+\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.968 & 93 & 17.1 & 13.5 \\
+\PHast & $S=8$, $\lambda=4.5$ & 1.921 & 646 & 85.6 & 11.5 \\
 \addlinespace
-\PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.927 & 51 & 7.7 & 29.8 \\
-\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.919 & 50 & 7.9 & 30.3 \\
-\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.924 & 50 & 8.3 & 31.2 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.927 & 50 & 7.6 & 11.0 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.919 & 50 & 7.8 & 11.8 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.924 & 49 & 8.1 & 12.8 \\
 \midrule
-\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.869 & 144 & 23.2 & 35.4 \\
+\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.869 & 139 & 22.5 & 14.9 \\
 \addlinespace
-\PHastR & $S=10$, $L=2048$, $\lambda=5.75$ & 1.854 & 93 & 13.0 & 35.3 \\
-\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.849 & 91 & 13.1 & 35.9 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=5.75$ & 1.854 & 90 & 12.7 & 12.7 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.849 & 88 & 12.6 & 13.4 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -606,7 +606,7 @@ Method & Configuration & bits/key & 1 thread & 8 threads & query [ns] \\
 Table~\ref{tab:1e8} shows that the picture does not change on $10^8$ keys,
 where queries are dominated by cache misses: with 8-bit seeds and
 $\lambda=4.5$ \PHastR is built in $54\%$ of the time of \PHastP with
-wrapping, and its queries are $8\%$ faster; they are also slightly faster
+wrapping, and its queries are $19\%$ faster; they are also slightly faster
 than those of \PHast. With 8 threads \PHastR builds in $44\%$ of the time of
 \PHastP with wrapping with 8-bit seeds, and in $56\%$ of the time with 10-bit
 seeds.
@@ -626,28 +626,28 @@ construction.}
 \cmidrule(lr){4-5}
 Method & Configuration & bits/key & 1 thread & 8 threads & query [ns] \\
 \midrule
-\PHastP & $S=8$, $\lambda=5.25$ & 2.115 & 64 & 12.7 & 54.6 \\
-\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.968 & 101 & 17.7 & 47.9 \\
-\PHast & $S=8$, $\lambda=4.5$ & 1.920 & 652 & -- & 41.5 \\
+\PHastP & $S=8$, $\lambda=5.25$ & 2.115 & 64 & 12.6 & 32.3 \\
+\PHastP wrap $\delta=3$ & $S=8$, $\lambda=5$ & 1.968 & 98 & 18.0 & 26.2 \\
+\PHast & $S=8$, $\lambda=4.5$ & 1.920 & 652 & 86.3 & 21.6 \\
 \addlinespace
-\PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.927 & 54 & 8.4 & 40.9 \\
-\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.919 & 53 & 8.6 & 42.7 \\
-\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.924 & 53 & 9.0 & 45.3 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.5$ & 1.927 & 54 & 8.2 & 20.4 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=4.75$ & 1.919 & 53 & 8.8 & 22.5 \\
+\PHastR & $S=8$, $L=1024$, $\lambda=5$ & 1.924 & 53 & 8.6 & 25.0 \\
 \midrule
-\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.869 & 152 & 24.1 & 49.3 \\
+\PHastP wrap $\delta=3$ & $S=10$, $\lambda=6$ & 1.869 & 148 & 24.0 & 28.5 \\
 \addlinespace
-\PHastR & $S=10$, $L=2048$, $\lambda=5.75$ & 1.854 & 97 & 13.6 & 48.3 \\
-\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.848 & 95 & 13.9 & 50.2 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=5.75$ & 1.854 & 93 & 13.6 & 24.6 \\
+\PHastR & $S=10$, $L=2048$, $\lambda=6$ & 1.848 & 91 & 13.5 & 26.3 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 Table~\ref{tab:1e9} reports the results on $10^9$ keys. Space does not depend
 on the number of keys, and the relative performance of the structures is the
-same as on smaller key sets: with 8-bit seeds \PHastR is built in $53\%$ of
-the time of \PHastP with wrapping with one thread, and in half the time with
-eight, its queries are $15\%$ faster, and they are slightly faster than those
-of \PHast. At this scale, however, some phenomena become more visible, and we
+same as on smaller key sets: with 8-bit seeds \PHastR is built in $55\%$ of
+the time of \PHastP with wrapping with one thread, and in less than half the
+time with eight, its queries are $22\%$ faster, and they are slightly faster
+than those of \PHast. At this scale, however, some phenomena become more visible, and we
 used them to tune the structure.
 
 \begin{table}[t]
@@ -663,10 +663,10 @@ bumped from the first level.}
 \cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}
 Structure & bumped & first & all & first & all & first & all \\
 \midrule
-\PHastP wrap $\delta=3$, $\lambda=5$ & 4.3 & 17.2 & 17.8 & 27.7 & 32.0 & 38.9 & 48.2 \\
-\PHast, $\lambda=4.5$ & 1.4 & 18.5 & 17.6 & 29.1 & 31.4 & 41.3 & 45.0 \\
-\PHastR, $\lambda=4.5$ & 1.5 & 17.6 & 16.8 & 28.0 & 30.1 & 39.5 & 43.2 \\
-\PHastR, $\lambda=4.75$ & 2.5 & 17.5 & 17.2 & 28.0 & 30.9 & 39.4 & 45.2 \\
+\PHastP wrap $\delta=3$, $\lambda=5$ & 4.3 & 3.8 & 5.9 & 5.8 & 11.1 & 14.8 & 24.9 \\
+\PHast, $\lambda=4.5$ & 1.4 & 4.1 & 4.7 & 5.8 & 9.0 & 15.6 & 20.9 \\
+\PHastR, $\lambda=4.5$ & 1.5 & 3.8 & 4.5 & 5.7 & 8.5 & 14.7 & 19.7 \\
+\PHastR, $\lambda=4.75$ & 2.5 & 3.8 & 5.0 & 5.7 & 9.3 & 14.5 & 21.5 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -680,14 +680,14 @@ Structure & bumped & first & all & first & all & first & all \\
   title={(a) queries, $10^{7}$ keys},
   xlabel={space [bits/key]}, ylabel={query time [ns]}, enlargelimits=0.08,
   grid=major, grid style={gray!20}, legend to name=leg:pareto, legend columns=4, legend cell align=left, legend style={font=\small, /tikz/every even column/.append style={column sep=0.5em}}]
-\addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.124,7.3) (2.116,7.7) (2.121,8.2) };
-\addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (2.002,5.1) (1.979,5.5) (1.970,5.9) (1.977,6.4) (1.987,7.2) };
+\addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.124,7.2) (2.116,7.6) (2.121,8.2) };
+\addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (2.002,5.1) (1.979,5.6) (1.970,5.9) (1.977,6.4) (1.987,7.2) };
 \addplot[mark=square*, color=blue!70!black, mark size=1.8pt] coordinates { (1.953,4.5) (1.922,4.8) (1.917,5.3) };
 \addplot[mark=triangle*, color=red!70!black, mark size=1.8pt] coordinates { (1.961,4.3) (1.929,4.6) (1.921,5.1) (1.925,5.7) (1.939,6.2) };
 \addplot[mark=o, color=black, mark size=1.8pt] coordinates { (2.162,6.6) (2.085,6.5) (2.033,6.7) };
 \addplot[mark=diamond, color=black, mark size=1.8pt] coordinates { (1.936,6.2) (1.892,6.3) (1.872,6.6) (1.871,6.9) (1.876,7.4) };
-\addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.861,6.6) (1.854,7.0) (1.859,7.3) };
-\addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.881,5.3) (1.858,5.6) (1.852,5.9) (1.857,6.3) (1.867,6.8) };
+\addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.861,6.6) (1.854,7.0) (1.859,7.4) };
+\addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.881,5.3) (1.858,5.5) (1.852,5.9) (1.857,6.3) (1.867,6.9) };
 \legend{\PHastP ($S=8$), \PHastP wrap $\delta=3$ ($S=8$), \PHast ($S=8$), \PHastR ($S=8$), \PHastP ($S=10$), \PHastP wrap $\delta=3$ ($S=10$), \PHast ($S=10$), \PHastR ($S=10$)}
 \end{axis}
 \end{tikzpicture}%
@@ -697,14 +697,14 @@ Structure & bumped & first & all & first & all & first & all \\
   title={(b) construction, $10^{7}$ keys},
   xlabel={space [bits/key]}, ylabel={construction time [ns/key]}, ymode=log, log ticks with fixed point, ytick={20,50,100,200,500,1000,2000}, enlargelimits=0.08,
   grid=major, grid style={gray!20}]
-\addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.124,52.1) (2.116,52.0) (2.121,52.4) };
-\addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (2.002,88.9) (1.979,89.4) (1.970,90.4) (1.977,91.6) (1.987,93.0) };
-\addplot[mark=square*, color=blue!70!black, mark size=1.8pt] coordinates { (1.953,681.7) (1.922,639.4) (1.917,612.6) };
-\addplot[mark=triangle*, color=red!70!black, mark size=1.8pt] coordinates { (1.961,48.7) (1.929,43.8) (1.921,44.6) (1.925,42.6) (1.939,42.6) };
-\addplot[mark=o, color=black, mark size=1.8pt] coordinates { (2.162,54.1) (2.085,54.2) (2.033,54.5) };
-\addplot[mark=diamond, color=black, mark size=1.8pt] coordinates { (1.936,127.9) (1.892,132.9) (1.872,136.6) (1.871,139.5) (1.876,142.4) };
-\addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.861,1934.0) (1.854,1856.9) (1.859,1808.6) };
-\addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.881,89.7) (1.858,85.7) (1.852,81.1) (1.857,80.8) (1.867,81.0) };
+\addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.124,51.5) (2.116,51.9) (2.121,52.0) };
+\addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (2.002,84.3) (1.979,85.2) (1.970,85.9) (1.977,87.0) (1.987,88.5) };
+\addplot[mark=square*, color=blue!70!black, mark size=1.8pt] coordinates { (1.953,682.8) (1.922,640.7) (1.917,614.2) };
+\addplot[mark=triangle*, color=red!70!black, mark size=1.8pt] coordinates { (1.961,47.2) (1.929,44.0) (1.921,42.8) (1.925,42.6) (1.939,42.7) };
+\addplot[mark=o, color=black, mark size=1.8pt] coordinates { (2.162,53.7) (2.085,54.0) (2.033,54.1) };
+\addplot[mark=diamond, color=black, mark size=1.8pt] coordinates { (1.936,125.4) (1.892,131.0) (1.872,133.3) (1.871,136.2) (1.876,138.6) };
+\addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.861,1900.4) (1.854,1829.4) (1.859,1785.8) };
+\addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.881,89.5) (1.858,85.4) (1.852,81.0) (1.857,80.4) (1.867,80.9) };
 \end{axis}
 \end{tikzpicture}\\[1ex]
 \begin{tikzpicture}
@@ -714,13 +714,13 @@ Structure & bumped & first & all & first & all & first & all \\
   xlabel={space [bits/key]}, ylabel={query time [ns]}, enlargelimits=0.08,
   grid=major, grid style={gray!20}]
 \addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.123,15.8) (2.115,16.2) (2.120,17.1) };
-\addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (2.001,12.1) (1.978,12.8) (1.968,13.5) (1.975,14.4) (1.985,15.6) };
-\addplot[mark=square*, color=blue!70!black, mark size=1.8pt] coordinates { (1.952,11.2) (1.921,11.6) (1.915,12.4) };
-\addplot[mark=triangle*, color=red!70!black, mark size=1.8pt] coordinates { (1.960,10.5) (1.927,11.0) (1.919,11.9) (1.924,12.9) (1.937,13.9) };
-\addplot[mark=o, color=black, mark size=1.8pt] coordinates { (2.158,15.6) (2.083,14.9) (2.029,15.1) };
-\addplot[mark=diamond, color=black, mark size=1.8pt] coordinates { (1.934,14.4) (1.890,14.5) (1.869,15.0) (1.868,15.6) (1.872,16.4) };
-\addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.859,15.3) (1.852,15.9) (1.859,16.7) };
-\addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.878,12.3) (1.854,12.8) (1.849,13.5) (1.855,14.3) (1.864,15.2) };
+\addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (2.001,12.1) (1.978,12.8) (1.968,13.5) (1.975,14.3) (1.985,15.6) };
+\addplot[mark=square*, color=blue!70!black, mark size=1.8pt] coordinates { (1.952,11.1) (1.921,11.5) (1.915,12.4) };
+\addplot[mark=triangle*, color=red!70!black, mark size=1.8pt] coordinates { (1.960,10.4) (1.927,11.0) (1.919,11.8) (1.924,12.8) (1.937,13.9) };
+\addplot[mark=o, color=black, mark size=1.8pt] coordinates { (2.158,15.4) (2.083,14.8) (2.029,15.0) };
+\addplot[mark=diamond, color=black, mark size=1.8pt] coordinates { (1.934,14.3) (1.890,14.5) (1.869,14.9) (1.868,15.6) (1.872,16.4) };
+\addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.859,15.2) (1.852,15.8) (1.859,16.6) };
+\addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.878,12.3) (1.854,12.7) (1.849,13.4) (1.855,14.2) (1.864,15.1) };
 \end{axis}
 \end{tikzpicture}%
 \begin{tikzpicture}
@@ -729,14 +729,14 @@ Structure & bumped & first & all & first & all & first & all \\
   title={(d) construction, $10^{8}$ keys},
   xlabel={space [bits/key]}, ylabel={construction time [ns/key]}, ymode=log, log ticks with fixed point, ytick={20,50,100,200,500,1000,2000}, enlargelimits=0.08,
   grid=major, grid style={gray!20}]
-\addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.123,57.7) (2.115,57.9) (2.120,59.0) };
-\addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (2.001,91.5) (1.978,92.4) (1.968,93.4) (1.975,94.6) (1.985,96.1) };
-\addplot[mark=square*, color=blue!70!black, mark size=1.8pt] coordinates { (1.952,686.5) (1.921,644.1) (1.915,617.6) };
-\addplot[mark=triangle*, color=red!70!black, mark size=1.8pt] coordinates { (1.960,54.1) (1.927,50.7) (1.919,49.8) (1.924,49.4) (1.937,49.8) };
-\addplot[mark=o, color=black, mark size=1.8pt] coordinates { (2.158,60.0) (2.083,59.9) (2.029,60.0) };
-\addplot[mark=diamond, color=black, mark size=1.8pt] coordinates { (1.934,134.4) (1.890,139.6) (1.869,143.0) (1.868,145.2) (1.872,147.9) };
-\addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.859,1935.6) (1.852,1861.3) (1.859,1812.0) };
-\addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.878,97.8) (1.854,91.3) (1.849,90.5) (1.855,93.9) (1.864,87.4) };
+\addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.123,57.3) (2.115,57.7) (2.120,58.0) };
+\addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (2.001,90.3) (1.978,92.2) (1.968,93.1) (1.975,93.9) (1.985,94.6) };
+\addplot[mark=square*, color=blue!70!black, mark size=1.8pt] coordinates { (1.952,688.1) (1.921,645.6) (1.915,618.9) };
+\addplot[mark=triangle*, color=red!70!black, mark size=1.8pt] coordinates { (1.960,53.6) (1.927,50.4) (1.919,49.5) (1.924,49.2) (1.937,49.2) };
+\addplot[mark=o, color=black, mark size=1.8pt] coordinates { (2.158,59.5) (2.083,59.6) (2.029,59.5) };
+\addplot[mark=diamond, color=black, mark size=1.8pt] coordinates { (1.934,131.1) (1.890,136.0) (1.869,139.4) (1.868,142.1) (1.872,144.6) };
+\addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.859,1902.2) (1.852,1833.3) (1.859,1788.3) };
+\addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.878,97.1) (1.854,90.2) (1.849,87.5) (1.855,86.6) (1.864,86.7) };
 \end{axis}
 \end{tikzpicture}\\[1ex]
 \begin{tikzpicture}
@@ -745,14 +745,14 @@ Structure & bumped & first & all & first & all & first & all \\
   title={(e) queries, $10^{9}$ keys},
   xlabel={space [bits/key]}, ylabel={query time [ns]}, enlargelimits=0.08,
   grid=major, grid style={gray!20}]
-\addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.122,30.9) (2.115,32.4) (2.120,34.2) };
-\addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (2.001,23.0) (1.977,24.7) (1.968,26.4) (1.975,28.2) (1.984,30.9) };
-\addplot[mark=square*, color=blue!70!black, mark size=1.8pt] coordinates { (1.952,20.4) (1.920,21.8) (1.915,23.9) };
-\addplot[mark=triangle*, color=red!70!black, mark size=1.8pt] coordinates { (1.959,19.1) (1.927,20.6) (1.919,22.6) (1.924,25.1) (1.937,27.2) };
-\addplot[mark=o, color=black, mark size=1.8pt] coordinates { (2.158,27.3) (2.082,27.5) (2.029,28.5) };
-\addplot[mark=diamond, color=black, mark size=1.8pt] coordinates { (1.934,26.7) (1.890,27.4) (1.869,28.9) (1.868,30.3) (1.872,32.4) };
-\addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.859,29.2) (1.852,30.8) (1.858,32.6) };
-\addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.878,23.6) (1.854,24.8) (1.848,26.5) (1.854,28.2) (1.863,30.4) };
+\addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.122,30.8) (2.115,32.3) (2.120,34.1) };
+\addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (2.001,22.8) (1.977,24.6) (1.968,26.2) (1.975,28.0) (1.984,30.8) };
+\addplot[mark=square*, color=blue!70!black, mark size=1.8pt] coordinates { (1.952,20.2) (1.920,21.6) (1.915,23.6) };
+\addplot[mark=triangle*, color=red!70!black, mark size=1.8pt] coordinates { (1.959,18.9) (1.927,20.4) (1.919,22.5) (1.924,25.0) (1.937,27.1) };
+\addplot[mark=o, color=black, mark size=1.8pt] coordinates { (2.158,27.0) (2.082,27.3) (2.029,28.2) };
+\addplot[mark=diamond, color=black, mark size=1.8pt] coordinates { (1.934,26.5) (1.890,27.1) (1.869,28.5) (1.868,30.1) (1.872,32.3) };
+\addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.859,28.9) (1.852,30.6) (1.858,32.4) };
+\addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.878,23.4) (1.854,24.6) (1.848,26.3) (1.854,28.1) (1.863,30.3) };
 \end{axis}
 \end{tikzpicture}%
 \begin{tikzpicture}
@@ -761,14 +761,14 @@ Structure & bumped & first & all & first & all & first & all \\
   title={(f) construction, $10^{9}$ keys},
   xlabel={space [bits/key]}, ylabel={construction time [ns/key]}, ymode=log, log ticks with fixed point, ytick={20,50,100,200,500,1000,2000}, enlargelimits=0.08,
   grid=major, grid style={gray!20}]
-\addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.122,64.4) (2.115,64.6) (2.120,64.9) };
-\addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (2.001,98.2) (1.977,99.1) (1.968,100.1) (1.975,101.2) (1.984,102.7) };
-\addplot[mark=square*, color=blue!70!black, mark size=1.8pt] coordinates { (1.952,692.7) (1.920,649.9) (1.915,623.4) };
-\addplot[mark=triangle*, color=red!70!black, mark size=1.8pt] coordinates { (1.959,57.4) (1.927,54.3) (1.919,53.5) (1.924,56.9) (1.937,53.8) };
-\addplot[mark=o, color=black, mark size=1.8pt] coordinates { (2.158,68.2) (2.082,68.1) (2.029,68.1) };
-\addplot[mark=diamond, color=black, mark size=1.8pt] coordinates { (1.934,141.5) (1.890,146.6) (1.869,150.5) (1.868,153.1) (1.872,155.7) };
-\addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.859,1943.7) (1.852,1869.2) (1.858,1820.1) };
-\addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.878,102.1) (1.854,94.7) (1.848,94.0) (1.854,92.1) (1.863,94.0) };
+\addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.122,64.5) (2.115,64.2) (2.120,64.5) };
+\addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (2.001,96.7) (1.977,97.6) (1.968,98.3) (1.975,99.6) (1.984,100.9) };
+\addplot[mark=square*, color=blue!70!black, mark size=1.8pt] coordinates { (1.952,694.4) (1.920,651.7) (1.915,624.9) };
+\addplot[mark=triangle*, color=red!70!black, mark size=1.8pt] coordinates { (1.959,56.8) (1.927,53.8) (1.919,53.0) (1.924,52.8) (1.937,53.2) };
+\addplot[mark=o, color=black, mark size=1.8pt] coordinates { (2.158,67.8) (2.082,67.7) (2.029,68.0) };
+\addplot[mark=diamond, color=black, mark size=1.8pt] coordinates { (1.934,139.3) (1.890,144.0) (1.869,147.8) (1.868,150.1) (1.872,152.5) };
+\addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.859,1910.4) (1.852,1841.6) (1.858,1797.0) };
+\addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.878,100.5) (1.854,93.4) (1.848,91.4) (1.854,90.9) (1.863,90.8) };
 \end{axis}
 \end{tikzpicture}\\[1ex]
 \ref{leg:pareto}
@@ -797,27 +797,28 @@ space, faster queries and a faster construction. The only other
 configurations that are not dominated are those of \PHast with $8$-bit seeds
 and $\lambda=4.25$ and $\lambda=4.5$, which win by less than $1$\,ns in query
 time or by $0.007$ bits per key in space at twelve times the construction
-time. The same happens on $10^7$ and $10^8$ keys, except that the
+time. The same happens on $10^7$ and $10^8$ keys (on $10^8$ keys, the
+configuration of \PHast with $\lambda=4.25$ is dominated too), except that the
 configurations of \PHastP with wrapping, $\delta=1$ and 10-bit seeds (not
-plotted) are not dominated either, as they are built up to $3\%$ faster than
+plotted) are not dominated either, as they are built up to $5\%$ faster than
 all configurations of \PHastR with 10-bit seeds, using at least $0.02$ bits
 per key more.
 
 \paragraph{Bumped keys.}
 Table~\ref{tab:split} shows the time of queries for the keys of the first
 level only, measured on the same structures. It is essentially the same for
-all structures, as it is dominated by the access to the seed (and, in our
-benchmark, to the key), and it grows with the size of the array of seeds: the
-differences between the structures are due to bumped keys. On $10^7$ keys,
-where everything is in the cache, bumped keys cost nothing measurable, but in
-a workload in which all keys are queried, a query for a bumped key takes
-$100$--$170$\,ns more than a query for a key of the first level on $10^8$
-keys, and about $250$\,ns more on $10^9$ keys: besides accessing another
-level and the Elias--Fano sequence, a bumped key causes the misprediction of
-the test on the seed, which interrupts the overlapped execution of the
-following queries. Thus, each percent of bumped keys costs more than $1$\,ns
-on $10^8$ keys, and $2.5$\,ns on $10^9$ keys: the larger the key set, the
-more a small expected bucket size is convenient. This is the reason why we
+all structures, as it is dominated by the access to the seed, and it grows
+with the size of the array of seeds: the differences between the structures
+are due to bumped keys. In a workload in which all keys are queried, a query
+for a bumped key takes about $45$\,ns more than a query for a key of the
+first level on $10^7$ keys, $120$--$230$\,ns more on $10^8$ keys, and
+$230$--$380$\,ns more on $10^9$ keys: besides accessing another level and
+the Elias--Fano sequence, a bumped key causes the misprediction of the test
+on the seed, which interrupts the overlapped execution of the following
+queries. Thus, each percent of bumped keys costs about half a nanosecond on
+$10^7$ keys, more than $1$\,ns on $10^8$ keys, and more than $2$\,ns on
+$10^9$ keys: the larger the key set, the more a small expected bucket size
+is convenient. This is the reason why we
 suggest $\lambda=4.5$ instead of $\lambda=4.75$, which uses slightly less
 space.
 
@@ -835,15 +836,15 @@ the keys.}
 \cmidrule(lr){2-6}
 Structure & 1 & 2 & 4 & 8 & 96 & speedup & bytes/key \\
 \midrule
-\PHastR, $\lambda=4.5$ & 54.9 & 28.7 & 15.0 & 8.2 & 2.8 & 6.7 & 10.7 \\
-\PHastP wrap $\delta=3$, $\lambda=5$ & 102.6 & 55.7 & 31.1 & 17.8 & 7.7 & 5.8 & 9.9 \\
+\PHastR, $\lambda=4.5$ & 54.6 & 29.8 & 14.9 & 8.6 & 2.8 & 6.3 & 10.8 \\
+\PHastP wrap $\delta=3$, $\lambda=5$ & 100.3 & 56.3 & 31.4 & 18.7 & 7.6 & 5.4 & 9.9 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \paragraph{Construction.}
 The construction time per key of \PHastR grows slowly with the number of
-keys ($44$, $51$ and $54$\,ns with one thread on $10^7$, $10^8$ and $10^9$
+keys ($44$, $50$ and $54$\,ns with one thread on $10^7$, $10^8$ and $10^9$
 keys, respectively), as parts are distributed into smaller parts that fit
 the cache whatever their size (Section~\ref{sec:phastr}); the growth is due
 to the walk finding bumped keys, which accesses randomly a bit vector with a
@@ -927,17 +928,15 @@ used slots of the following levels, which are small: from this point on,
 memory is essentially that of the structure being built.
 
 \paragraph{Experiments.}
-% TODO: times from offline.txt of the c7i run (offline.sh)
 On $10^9$ keys the offline construction allocates at most $0.71$ bytes per
-key with one thread and $0.74$ with eight, against $10.0$ and $11.6$ bytes
+key with one thread and $0.74$ with eight, against $10.0$ and $11.7$ bytes
 per key, excluding the keys, of the construction in memory (as measured by a
-counting allocator). It takes
-\textbf{??}\,ns per key with one thread and \textbf{??} with eight, against
-\textbf{??} and \textbf{??}: with one thread the difference is small, but with
-eight the time is dominated by the first phase, in which the keys are read,
-and the records are written, by a single thread. On $10^{10}$ keys, the
-offline construction takes \textbf{??}\,ns per key with eight threads. On
-$10^{11}$ keys, it would need about $70$\,GB of memory and $1.6$\,TB of disk,
+counting allocator). It takes $53.8$\,ns per key with one thread and $17.4$
+with eight, against $53.4$ and $8.4$: with one thread the difference is
+small, but with eight the time is dominated by the first phase, in which the
+keys are read, and the records are written, by a single thread. On
+$10^{11}$ keys, the offline construction would need about $70$\,GB of memory
+and $1.6$\,TB of disk,
 whereas the construction in memory would need more than $1$\,TB of memory
 besides the keys.
 
