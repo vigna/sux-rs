@@ -34,7 +34,8 @@ fn main() {
         let mut bits = 0.0;
         for _ in 0..a.repeats {
             let start = Instant::now();
-            let f: PHastR<GxKey, Box<[u8]>> = b.try_build(&keys, no_logging![]).unwrap();
+            let f: PHastR<GxKey, Box<[u8]>> =
+                PHastR::try_par_new_with_builder(&keys, b.clone(), no_logging![]).unwrap();
             t.push(start.elapsed().as_secs_f64() * 1e9 / a.n as f64);
             bits = f.mem_size(SizeFlags::default()) as f64 * 8.0 / a.n as f64;
         }

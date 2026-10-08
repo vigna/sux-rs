@@ -104,11 +104,12 @@ fn main() {
         let p: Vec<&str> = v.split(':').collect();
         let (b, sbits, _) = lab::parse_config(&p);
         if sbits <= 8 {
-            let f: PHastR<GxKey> = b.try_build(&keys, no_logging![]).unwrap();
+            let f: PHastR<GxKey> =
+                PHastR::try_par_new_with_builder(&keys, b.clone(), no_logging![]).unwrap();
             run(v, &f, &keys, &a);
         } else {
             let f: PHastR<GxKey, BitFieldVec<Box<[usize]>>> =
-                b.try_build(&keys, no_logging![]).unwrap();
+                PHastR::try_par_new_with_builder(&keys, b.clone(), no_logging![]).unwrap();
             let f = f.try_into_unaligned().unwrap();
             run(v, &f, &keys, &a);
         }

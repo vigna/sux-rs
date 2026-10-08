@@ -117,14 +117,16 @@ fn run<'a, D: SeedStoreBuild + SeedStore + 'static>(
     name: &str,
     sequential: bool,
 ) -> Entry<'a> {
-    let f: PHastR<GxKey, D> = b.try_build(keys, no_logging![]).unwrap();
+    let f: PHastR<GxKey, D> =
+        PHastR::try_par_new_with_builder(keys, b.clone(), no_logging![]).unwrap();
     let (bumped, placed): (Vec<GxKey>, Vec<GxKey>) = keys.iter().partition(|&&k| f.is_bumped(k));
     let f: &'static PHastR<GxKey, D> = Box::leak(Box::new(f));
     entry(keys, bumped, placed, name, sequential, move |k| f.get(k))
 }
 
 fn run_u<'a>(keys: &'a [GxKey], b: PHastRBuilder, name: &str, sequential: bool) -> Entry<'a> {
-    let f: PHastR<GxKey, BitFieldVec<Box<[usize]>>> = b.try_build(keys, no_logging![]).unwrap();
+    let f: PHastR<GxKey, BitFieldVec<Box<[usize]>>> =
+        PHastR::try_par_new_with_builder(keys, b.clone(), no_logging![]).unwrap();
     let (bumped, placed): (Vec<GxKey>, Vec<GxKey>) = keys.iter().partition(|&&k| f.is_bumped(k));
     let f = Box::leak(Box::new(f.try_into_unaligned().unwrap()));
     let f = &*f;

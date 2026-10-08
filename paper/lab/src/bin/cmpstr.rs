@@ -101,7 +101,8 @@ fn reference<'a, SC: SeedChooser + 'a>(
 
 fn phast_r<'a>(keys: &'a [GxStr], b: PHastRBuilder, name: String) -> Entry<'a> {
     let t = Instant::now();
-    let f: PHastR<GxStr, Box<[u8]>> = b.try_build(keys, no_logging![]).unwrap();
+    let f: PHastR<GxStr, Box<[u8]>> =
+        PHastR::try_par_new_with_builder(keys, b.clone(), no_logging![]).unwrap();
     let build = t.elapsed().as_secs_f64() * 1e9 / keys.len() as f64;
     let bits = f.mem_size(SizeFlags::default()) as f64 * 8.0 / keys.len() as f64;
     let mut seen = vec![false; keys.len()];

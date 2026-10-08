@@ -35,7 +35,11 @@ sweeps of λ for every structure and both seed widths, which contain the
 configurations of the tables, then the configurations of the tables with
 `THREADS` threads); `large/` (`large.sh`: `qsplit.txt`, `scaling.txt`,
 `memory.txt`); `spread.csv` (`spread.sh`: space and bumped keys over ten key
-sets of 10⁷ keys). The configurations are in `configs.sh`. Tables and
+sets of 10⁷ keys); `offline.txt` (`offline.sh`: time and peak memory of
+PHast-R built in memory and offline, with 1 and `THREADS` threads, offline
+also on 10¹⁰ keys if `TMPDIR` has 170 GB free, and a check that the two
+constructions give the same structure). The configurations are in
+`configs.sh`. Tables and
 figure: `tables.py run.csv spread.csv` (main table), `large_tables.py
 large/` (Section 4.1), `plot_pareto.py run.csv` (the 2×2 trade-off figure).
 The lines of `cmp` are `CSV,<name>,<n>,<bits/key>,<build>,<query>,<query
@@ -664,7 +668,8 @@ fraction of every structure in the CSV; PHast with 8 threads (it was
 missing) and in the thread scaling; space and bumped keys over ten key sets
 (`spread.sh`). Estimated time on a c7i.metal-24xl: about six hours (`run.sh`
 four and a half, two of them building PHast with S = 10 on 10⁹ keys;
-`large.sh` one; `spread.sh` ten minutes); peak memory about 60 GB.
+`large.sh` one; `spread.sh` and `offline.sh` ten minutes each, plus half an
+hour for the offline construction on 10¹⁰ keys); peak memory about 60 GB.
 
 ## Key findings (see Section 2 of the paper; reference implementation)
 

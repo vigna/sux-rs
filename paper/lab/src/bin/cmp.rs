@@ -353,7 +353,7 @@ fn sux_run_k<
     name: &str,
 ) -> Entry<'a> {
     let (f, build) = timed_builds(a.builds, keys.len(), || -> PHastR<K, D> {
-        b.try_build(keys, no_logging![]).unwrap()
+        PHastR::try_par_new_with_builder(keys, b.clone(), no_logging![]).unwrap()
     });
     sux_entry!(keys, f, build, a, name)
 }
@@ -365,7 +365,8 @@ fn sux_run_k_u<'a, K: ToSig<[u64; 1]> + Copy + Sync + 'a>(
     name: &str,
 ) -> Entry<'a> {
     let (f, build) = timed_builds(a.builds, keys.len(), || {
-        let f: PHastR<K, BitFieldVec<Box<[usize]>>> = b.try_build(keys, no_logging![]).unwrap();
+        let f: PHastR<K, BitFieldVec<Box<[usize]>>> =
+            PHastR::try_par_new_with_builder(keys, b.clone(), no_logging![]).unwrap();
         f.try_into_unaligned().unwrap()
     });
     sux_entry!(keys, f, build, a, name)

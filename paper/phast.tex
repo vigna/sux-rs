@@ -29,33 +29,19 @@
 \maketitle
 
 \begin{abstract}
-We present \PHastR, a minimal perfect hash function of the \PHast family. As
-in \PHast, a key is mapped to a bucket by a linear function of its hash, and
-a fixed-width per-bucket seed selects the positions of the keys of the bucket
-inside small overlapping slices of the output range. In \PHastR the lowest
-bits of the seed select one of $R$ independent in-slice offsets
-(\emph{patterns}), taken from bits that the computation of the bucket
-provides for free, and the seeds of a pattern move a key exactly once through
-a \emph{ring} of equally spaced slots of its slice. Storing the set of used
-slots by residue classes turns a ring into a block of consecutive bits, so the
-seeds of a pattern that are feasible for a bucket are found by rotating and
-combining one block per key. We then analyze the differences with \PHast and
-with its fast-to-build variant \PHastP, which finds feasible seeds with
-bit-parallel operations thanks to additive placement, but needs more space,
-even in its variants with wrapping. With a minimal output range, every bumped
-key leaves a hole that must be encoded, and since in \PHastP all seeds move
-the keys of a bucket by the same amount, two keys that collide for a seed
-collide for (almost) all seeds: even with wrapping, such
-\emph{self-collisions} account for almost $40\%$ of the bumped keys. Patterns
-make self-collisions disappear, and queries need just two shifts more than
-those of \PHastP with wrapping. With 8-bit seeds, \PHastR uses $1.93$ bits per
-key against the $1.97$ of \PHastP with wrapping, it is built in half the
-time, and its queries are faster; its space and its query time are close to
-those of \PHast, which takes more than ten times as long to build. With
-10-bit seeds it uses $1.85$ bits per key against $1.87$. Finally, we study the
-limits of the approach: we prove that when keys can move only within windows
-of $W$ slots no placement of $n$ keys on $n$ slots, however found, can avoid
-bumping about $\sqrt{\pi n/2}-W$ keys.
+We present \PHastR, a minimal perfect hash function of the \PHast family. Like
+its fast-to-build variant \PHastP, \PHastR finds feasible seeds with
+bit-parallel operations, as its seeds move keys along \emph{rings} of slots
+that are scanned by rotating a word per key; but it avoids
+\emph{self-collisions}, pairs of keys that collide for (almost) all seeds of
+their bucket, which account for almost $40\%$ of the keys bumped by \PHastP
+with wrapping. With 8-bit seeds, \PHastR uses $1.93$ bits per key against the
+$1.97$ of \PHastP with wrapping, it is built in half the time, and its queries
+are faster; its space and its query time are close to those of \PHast, which
+takes more than ten times as long to build. With 10-bit seeds it uses $1.85$
+bits per key against $1.87$. Finally, we prove that when keys can move only
+within windows of $W$ slots no placement of $n$ keys on $n$ slots, however
+found, can avoid bumping about $\sqrt{\pi n/2}-W$ keys.
 \end{abstract}
 
 \section{Introduction}
@@ -91,9 +77,11 @@ the excess space of \PHastP, with and without wrapping, comes from bumping,
 that a large part of the bumping is caused by self-collisions inherent to
 additive placement, and that patterns make them disappear
 (Section~\ref{sec:differences});
-\item an implementation in the Rust crate \texttt{sux} and an experimental
+\item an implementation in the Rust crate \texttt{sux}, an experimental
 comparison with the reference implementation of \PHast and \PHastP
-(Section~\ref{sec:experiments});
+(Section~\ref{sec:experiments}), and an offline construction that reads the
+keys just once, needs less than a byte per key of memory, and builds the same
+structure (Section~\ref{sec:offline});
 \item a lower bound on the number of bumped keys that holds for every placement
 in which keys move within windows of fixed length, which implies that on large
 key sets no search can produce a first level free of bumping
@@ -180,7 +168,8 @@ shows the slots that are already used: the only feasible seed is $5$.}
 \end{figure}
 
 \paragraph{Placement.}
-Let $h$ be the hash of a key. We require the number $B$ of buckets to be odd,
+Let $h$ be the hash of a key: its $64$ bits fill a machine word. We require
+the number $B$ of buckets to be odd,
 and denote with $\hi(x)$ and $\operatorname{lo}(x)$ the upper and lower $64$
 bits of a $128$-bit product. The bucket of a key is $\hi(hB)$, and the start
 of its slice is $\sigma(h)=\hi(h(m-L+1))$. Let moreover $R=2^\rho$ be the
@@ -225,7 +214,8 @@ $s=0$, computes the formula above. There is no need to extract $r$: since
 $(s\cdot 64/R)\bmod 64=r\cdot 64/R$, the offset $\omega_r(o)$ is obtained by
 shifting $o$ right by $s\cdot 64/R$ modulo $64$, and the lower bits of the
 result are extracted by the reduction modulo $L$ that follows the addition of
-$s\cdot2^{\ell-S}$.
+$s\cdot2^{\ell-S}$. Since $o$ fills a word, the reduction modulo $64$ costs
+nothing: processors perform it on shift amounts anyway.
 
 \begin{figure}[t]
 \centering
@@ -286,9 +276,9 @@ first seed. Thus, the bits telling which seeds of a pattern map a key to a
 used slot are the bits of its ring rotated by $x$, and combining them for all
 the keys of the bucket by a bitwise \textsc{or} we obtain a block whose zeros
 are the feasible seeds (Figure~\ref{fig:search}). For $S=8$ and $R=4$ a ring
-has $64$ slots, whatever the slice length: each pattern requires just reading
-and rotating a word for each key. Note that in the first pattern the first
-seed is $0$, which is not available.
+has $2^S/R=64$ slots whatever the slice length, so it fills a word: each
+pattern requires just reading and rotating a word for each key. Note that in
+the first pattern the first seed is $0$, which is not available.
 
 Among feasible seeds we choose, as in \PHast, the one minimizing the sum of
 the slots of the keys. For a bucket of size $k$, the sum for the seed of index
@@ -375,7 +365,10 @@ accessing the first level without the need of preserving the key.
 Keys with the same $64$-bit hash at the first level have the same slice and
 the same offsets in all patterns, so they collide for every seed and their
 bucket is bumped; at the following levels their values depend also on the
-second hash, and thus they are separated. Hence, $64$-bit hashes are
+second hash, and thus they are separated. Since about $n^2/2^{65}$ pairs of
+keys have the same hash (about three for $n=10^{10}$), the keys bumped in this
+way are negligible with respect to the $\beta n$ keys that are bumped anyway.
+Hence, $64$-bit hashes are
 sufficient for any number of keys, and no larger signature is
 necessary. Construction would fail only if two keys had the same pair of
 hashes, which happens in practice only for duplicate keys. Since duplicate
@@ -785,6 +778,91 @@ faster than \PHastP with wrapping. The peak memory usage is close to that of
 the reference implementation of \PHastP, which sorts hashes in place and
 hashes all keys again to find those of bumped buckets.
 
+\section{Offline Construction}
+\label{sec:offline}
+
+The construction of Section~\ref{sec:phastr} keeps in memory the hashes of all
+keys and, as bumped keys are hashed again, the keys themselves: about $11$
+bytes per key besides the keys. To build structures on hundreds of billions
+of keys, \PHastR has also an offline construction, which reads the keys just
+once, keeps their hashes on disk, needs in memory less than a byte per key,
+and builds exactly the same structure.
+
+\paragraph{Records.}
+The value playing the role of the hash at every level depends only on the
+hash~$h$ of a key and on its second hash~$h'$ (Section~\ref{sec:phastr}).
+Thus, while reading the keys we compute both hashes of every key, and write a
+$16$-byte \emph{record} $(h,h')$ to a temporary file: the keys are no longer
+necessary, and they can be streamed, for example, from a file. The records of
+a level are distributed into $P$ \emph{partitions} by the upper $\lg P$ bits
+of the value playing the role of~$h$ at the level. Each partition is a
+sequence of blocks of $1024$ records: the blocks of all partitions are
+appended to the same file as their buffers fill, and an index with an integer
+per block locates the blocks of each partition. For the first level, whose
+number of keys is not known in advance, $P=2^{14}$: the buffers take
+$256$\,MiB, and partitions contain a few million keys even on $10^{11}$ keys.
+At the following levels, whose number~$k$ of keys is known, $P$ is the
+smallest power of two not smaller than $\sqrt{2k/1024}$, which balances the
+memory used by each thread writing the file, which buffers a block for each
+partition, and that used by each thread sweeping the level, which buffers a
+few partitions.
+
+\paragraph{Parts.}
+Since $\hi(hB)$ is a nondecreasing function of $h$, a partition contains the
+keys of an interval of buckets, except that the bucket of the first value of
+a partition can contain also keys of the previous partition. Offline, the
+parts that sweeps load in increasing order (Section~\ref{sec:phastr}) are
+made of consecutive partitions containing at least $512$ buckets, and a
+bucket whose keys lie in two parts belongs to the second one. When a sweep
+loads a part, it passes to the following part the keys of its first bucket
+found in the part: thus, each partition is read once by each sweep, except
+at the beginning of a sweep, where the previous part might need to be read
+too.
+
+\paragraph{Same structure.}
+The seed chosen for a bucket depends on the set of the hashes of its keys,
+but not on their order: feasible seeds are computed by a bitwise
+\textsc{or}, the sum of the slots does not depend on the order of the keys,
+and ties are broken by the index of the seed. Since the sweeps see the same
+buckets in the same order, the structure built offline is identical to that
+built in memory, provided that the number of threads is the same (it
+determines the chunks of a parallel construction). The only difference is in
+the detection of duplicate keys (Section~\ref{sec:phastr}): as the keys are no
+longer available for a third hash, offline we consider duplicates two keys
+with the same record. The two criteria differ only in the presence of two
+distinct keys with the same $128$ bits of hashes, in which case both
+constructions fail.
+
+\paragraph{Following levels and memory.}
+After the sweep of a level, its file is read again, and the records of the
+keys of buckets without a seed are written to the file of the following
+level, or kept in memory if they are at most $4096$: the file of the first
+level is written once and read twice, and the following files are much
+smaller. In memory, besides buffers whose size does not depend on the number
+of keys, the sweep of the first level needs its seeds, as $16$-bit values,
+its set of used slots, and, while merging the sets produced by the chunks of a
+parallel sweep, a second copy of it: with $S=8$ and $\lambda=4.5$, about
+$2/4.5+2/8\approx0.69$ bytes per key. Then, the seeds of the first level are
+stored in their final format, its free slots are kept in an Elias--Fano
+sequence, and the remapping sequence is built at the end from the sets of
+used slots of the following levels, which are small: from this point on,
+memory is essentially that of the structure being built.
+
+\paragraph{Experiments.}
+% TODO: times from offline.txt of the c7i run (offline.sh)
+On $10^9$ keys the offline construction allocates at most $0.71$ bytes per
+key with one thread and $0.74$ with eight, against $10.0$ and $11.6$ bytes
+per key, excluding the keys, of the construction in memory (as measured by a
+counting allocator). It takes
+\textbf{??}\,ns per key with one thread and \textbf{??} with eight, against
+\textbf{??} and \textbf{??}: with one thread the difference is small, but with
+eight the time is dominated by the first phase, in which the keys are read,
+and the records are written, by a single thread. On $10^{10}$ keys, the
+offline construction takes \textbf{??}\,ns per key with eight threads. On
+$10^{11}$ keys, it would need about $70$\,GB of memory and $1.6$\,TB of disk,
+whereas the construction in memory would need more than $1$\,TB of memory
+besides the keys.
+
 \section{The Limits of the Approach}
 \label{sec:limits}
 
@@ -892,7 +970,9 @@ uses less space than \PHastP with wrapping, is built in half the time, and
 has faster queries; its space and its query time are close to those of
 \PHast, which takes more than ten times as long to build. Bumping has, however,
 intrinsic limits: no placement in which keys move within windows of $W$ slots
-can avoid bumping about $\sqrt{\pi n/2}-W$ keys.
+can avoid bumping about $\sqrt{\pi n/2}-W$ keys. Finally, an offline
+construction builds the same structure keeping the hashes of the keys on disk,
+with less than a byte per key of memory.
 
 There are several open problems and further research directions. On the
 practical side, the bucket priorities and the geometry of small levels should

@@ -12,11 +12,12 @@ pub fn phast_r_bits_per_key(keys: &[u64], b: &sux::func::PHastRBuilder, seed_bit
     use mem_dbg::{MemSize, SizeFlags};
     use sux::func::PHastR;
     let bytes = if seed_bits <= 8 {
-        let f: PHastR<u64, Box<[u8]>> = b.try_build(keys, no_logging![]).unwrap();
+        let f: PHastR<u64, Box<[u8]>> =
+            PHastR::try_par_new_with_builder(keys, b.clone(), no_logging![]).unwrap();
         f.mem_size(SizeFlags::default())
     } else {
         let f: PHastR<u64, sux::bits::BitFieldVec<Box<[usize]>>> =
-            b.try_build(keys, no_logging![]).unwrap();
+            PHastR::try_par_new_with_builder(keys, b.clone(), no_logging![]).unwrap();
         f.mem_size(SizeFlags::default())
     };
     bytes as f64 * 8.0 / keys.len() as f64

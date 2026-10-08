@@ -74,10 +74,12 @@ fn main() {
     );
     // SAFETY: GxKey is a transparent wrapper around u64
     let gkeys: &[GxKey] = unsafe { std::slice::from_raw_parts(keys.as_ptr().cast(), keys.len()) };
-    let g: PHastR<GxKey> = PHastRBuilder::default()
-        .bucket_size(a.r)
-        .try_build(gkeys, no_logging![])
-        .unwrap();
+    let g: PHastR<GxKey> = PHastR::try_par_new_with_builder(
+        gkeys,
+        PHastRBuilder::default().bucket_size(a.r),
+        no_logging![],
+    )
+    .unwrap();
     g.mem_dbg(DbgFlags::default() | DbgFlags::PERCENTAGE)
         .unwrap();
 }

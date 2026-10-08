@@ -33,6 +33,10 @@
 //!   [`LcpMmphfInt`]/[`LcpMmphf`] that use a [`VFunc2`]-like technique to reduce
 //!   space usage, at the cost of slightly slower queries.
 //!
+//! - [`PHastR`] is a *minimal perfect hash function*, mapping bijectively
+//!   keys to their number in an arbitrary order, with fast construction and
+//!   queries.
+//!
 //! - [`SignedFunc`] wraps a [`VFunc`], [`LcpMmphfInt`]/[`LcpMmphf`], or
 //!   [`Lcp2MmphfInt`]/[`Lcp2Mmphf`] (but not [`VFunc2`]) with per-key
 //!   verification hashes, returning `None` for keys outside the original set.
@@ -45,7 +49,8 @@
 //!
 //! All constructors follow the pattern `try_new(keys, …, pl)` for default
 //! settings, and `try_new_with_builder(keys, …, builder, pl)` to configure
-//! the [`VBuilder`] (offline mode, thread count, sharding overhead, seed).
+//! the [`VBuilder`] (offline mode, thread count, sharding overhead, seed) or,
+//! for [`PHastR`], the [`PHastRBuilder`].
 //!
 //! # Type annotations
 //!
