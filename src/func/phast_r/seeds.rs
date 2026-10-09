@@ -39,7 +39,18 @@ pub trait SeedStoreBuild: SeedStore + Sized {
     const MAX_BITS: u32;
 
     /// Builds the storage from the given seeds, which use at most `bits` bits.
-    fn from_seeds(seeds: &[u16], bits: u32) -> Self;
+    fn from_seeds<T: Copy + Into<u16>>(seeds: &[T], bits: u32) -> Self;
+
+    /// Builds the storage from the given seeds, which use at most `bits`
+    /// bits (at most eight).
+    ///
+    /// The storage can take the vector without copying it (by default, it
+    /// calls [`from_seeds`]).
+    ///
+    /// [`from_seeds`]: Self::from_seeds
+    fn from_byte_seeds(seeds: Vec<u8>, bits: u32) -> Self {
+        Self::from_seeds(&seeds, bits)
+    }
 }
 
 macro_rules! impl_seed_store_slice {
@@ -64,19 +75,31 @@ macro_rules! impl_seed_store_slice {
                 unsafe { *<[$ty]>::get_unchecked(self, i) as usize }
             }
         }
-
-        impl SeedStoreBuild for Box<[$ty]> {
-            const MAX_BITS: u32 = $bits;
-
-            fn from_seeds(seeds: &[u16], _bits: u32) -> Self {
-                seeds.iter().map(|&s| s as $ty).collect()
-            }
-        }
     };
 }
 
 impl_seed_store_slice!(u8, 8);
 impl_seed_store_slice!(u16, 16);
+
+impl SeedStoreBuild for Box<[u8]> {
+    const MAX_BITS: u32 = 8;
+
+    fn from_seeds<T: Copy + Into<u16>>(seeds: &[T], _bits: u32) -> Self {
+        seeds.iter().map(|&s| s.into() as u8).collect()
+    }
+
+    fn from_byte_seeds(seeds: Vec<u8>, _bits: u32) -> Self {
+        seeds.into_boxed_slice()
+    }
+}
+
+impl SeedStoreBuild for Box<[u16]> {
+    const MAX_BITS: u32 = 16;
+
+    fn from_seeds<T: Copy + Into<u16>>(seeds: &[T], _bits: u32) -> Self {
+        seeds.iter().map(|&s| s.into()).collect()
+    }
+}
 
 impl<B: crate::traits::Backend<Word = usize> + AsRef<[usize]>> SeedStore for BitFieldVec<B> {
     #[inline(always)]
@@ -109,11 +132,11 @@ impl<B: crate::traits::Backend<Word = usize> + AsRef<[usize]>> SeedStore for Bit
 impl SeedStoreBuild for BitFieldVec<Box<[usize]>> {
     const MAX_BITS: u32 = 16;
 
-    fn from_seeds(seeds: &[u16], bits: u32) -> Self {
+    fn from_seeds<T: Copy + Into<u16>>(seeds: &[T], bits: u32) -> Self {
         // Padded, so that conversion to unaligned reads needs no reallocation
         let mut bfv = BitFieldVec::<Box<[usize]>>::new_padded(bits as usize, seeds.len());
         for (i, &s) in seeds.iter().enumerate() {
-            bfv.set_value(i, s as usize);
+            bfv.set_value(i, s.into() as usize);
         }
         bfv
     }

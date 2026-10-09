@@ -36,7 +36,7 @@ use super::builder::*;
 use super::sigs::*;
 use super::sweep::*;
 use super::*;
-use crate::dict::elias_fano::EliasFanoBuilder;
+use crate::dict::elias_fano::{EliasFano, EliasFanoBuilder};
 use anyhow::bail;
 use dsi_progress_logger::no_logging;
 use std::fs::File;
@@ -51,18 +51,34 @@ type Record = [u64; 2];
 /// The base-2 logarithm of the maximum number of partitions of a store,
 /// which is the number of partitions of the first level (whose number of
 /// keys is not known in advance): in offline mode, with blocks of [`BLOCK`]
-/// records, the buffers of a writer take at most 256 MiB, and partitions are
-/// small enough to be loaded quickly by a sweep up to about 10¹¹ keys.
+/// records, the buffers of a writer take 256 MiB, and partitions are small
+/// enough to be loaded quickly by a sweep up to about 10¹¹ keys.
 #[cfg(not(test))]
 const MAX_LOG2_PARTITIONS: u32 = 14;
 #[cfg(test)]
 const MAX_LOG2_PARTITIONS: u32 = 5;
 
-/// The number of records of a block.
+/// The initial number of records of the blocks of a writer.
 #[cfg(not(test))]
 const BLOCK: usize = 1024;
 #[cfg(test)]
 const BLOCK: usize = 16;
+
+/// The maximum number of records of the blocks of a writer.
+#[cfg(not(test))]
+const MAX_BLOCK: usize = 1 << 16;
+#[cfg(test)]
+const MAX_BLOCK: usize = 64;
+
+/// A writer doubles the size of its blocks (up to [`MAX_BLOCK`] records)
+/// when it has written on average this number of blocks for each
+/// partition: on huge key sets blocks become large, so that reading a
+/// partition from a disk requires few seeks, whereas the memory used by the
+/// buffers, a block for each partition, grows sublinearly.
+#[cfg(not(test))]
+const GROWTH: usize = 512;
+#[cfg(test)]
+const GROWTH: usize = 2;
 
 /// Returns the base-2 logarithm of the number of partitions of the store of
 /// a level after the first one with `k` keys.
@@ -139,16 +155,13 @@ fn read_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
 
 /// The table of the blocks of the partitions of a [`Store`] kept in a file.
 ///
-/// Each block occupies [`BLOCK`] records of the file, so blocks are
-/// identified by their index in the file. All blocks are full, except for
-/// the last one written by each writer for each partition.
+/// Blocks have different lengths (see [`GROWTH`]), and are identified by
+/// their position in the file and their length, both in records.
 struct Blocks {
-    /// For each partition, its full blocks.
-    full: Vec<Vec<u32>>,
-    /// For each partition, its blocks that are not full, with their length.
-    partial: Vec<Vec<(u32, u32)>>,
-    /// The number of blocks of the file.
-    len: u32,
+    /// For each partition, the position and the length of its blocks.
+    blocks: Vec<Vec<(u64, u32)>>,
+    /// The number of records of the file.
+    len: u64,
 }
 
 /// The storage of the records of a [`Store`].
@@ -180,13 +193,10 @@ impl Store {
     /// Returns the number of records of partition `p`.
     fn partition_len(&self, p: usize) -> usize {
         match &self.storage {
-            Storage::File(_, blocks) => {
-                blocks.full[p].len() * BLOCK
-                    + blocks.partial[p]
-                        .iter()
-                        .map(|&(_, len)| len as usize)
-                        .sum::<usize>()
-            }
+            Storage::File(_, blocks) => blocks.blocks[p]
+                .iter()
+                .map(|&(_, len)| len as usize)
+                .sum::<usize>(),
             Storage::Memory(partitions) => partitions[p].len(),
         }
     }
@@ -200,10 +210,9 @@ impl Store {
     ) -> io::Result<()> {
         match &self.storage {
             Storage::File(file, blocks) => {
-                let full = blocks.full[p].iter().map(|&b| (b, BLOCK as u32));
-                for (b, len) in full.chain(blocks.partial[p].iter().copied()) {
+                for &(pos, len) in &blocks.blocks[p] {
                     buf.resize(len as usize, [0; 2]);
-                    let pos = b as u64 * (BLOCK * size_of::<Record>()) as u64;
+                    let pos = pos * size_of::<Record>() as u64;
                     read_at(file, buf.as_mut_bytes(), pos)?;
                     for r in buf.iter() {
                         f(r)?;
@@ -241,8 +250,7 @@ impl StoreWriter {
                 Storage::File(
                     tempfile::tempfile()?,
                     Blocks {
-                        full: vec![vec![]; partitions],
-                        partial: vec![vec![]; partitions],
+                        blocks: vec![vec![]; partitions],
                         len: 0,
                     },
                 )
@@ -267,6 +275,7 @@ impl StoreWriter {
                 vec![]
             },
             lens: if offline { vec![0; partitions] } else { vec![] },
+            block: BLOCK,
             parts: if offline {
                 vec![]
             } else {
@@ -292,9 +301,10 @@ impl StoreWriter {
 }
 
 /// The buffers of a thread writing to a [`StoreWriter`]: in offline mode, a
-/// block for each partition, which is appended to the file when full;
-/// otherwise, the records of each partition, which are moved to the store
-/// at the end.
+/// block for each partition, which is appended to the file when full (the
+/// length of the blocks grows with the number of records written, see
+/// [`GROWTH`]); otherwise, the records of each partition, which are moved
+/// to the store at the end.
 struct Buffers<'a> {
     writer: &'a StoreWriter,
     /// Whether the store is kept in a file.
@@ -304,6 +314,8 @@ struct Buffers<'a> {
     /// In offline mode, the number of records in the block of each
     /// partition.
     lens: Vec<u32>,
+    /// In offline mode, the length of the blocks, in records.
+    block: usize,
     /// Otherwise, the records of each partition.
     parts: Vec<Vec<Record>>,
     /// The number of records pushed.
@@ -321,33 +333,44 @@ impl Buffers<'_> {
             return Ok(());
         }
         let len = &mut self.lens[p];
-        self.blocks[p * BLOCK + *len as usize] = r;
+        self.blocks[p * self.block + *len as usize] = r;
         *len += 1;
-        if *len as usize == BLOCK {
+        if *len as usize == self.block {
             self.flush(p)?;
+            if self.block < MAX_BLOCK && self.len >= self.lens.len() * self.block * GROWTH {
+                self.grow()?;
+            }
         }
         Ok(())
     }
 
-    /// Appends the block of partition `p` to the file (if it is not full,
-    /// the rest of the block contains garbage).
+    /// Appends the records in the block of partition `p` to the file.
     fn flush(&mut self, p: usize) -> io::Result<()> {
         let len = self.lens[p];
         let mut storage = self.writer.storage.lock().unwrap();
         let Storage::File(file, blocks) = &mut *storage else {
             unreachable!("blocks are written only to files")
         };
-        if blocks.len == u32::MAX {
-            return Err(io::Error::other("too many blocks"));
-        }
-        file.write_all(self.blocks[p * BLOCK..][..BLOCK].as_bytes())?;
-        if len as usize == BLOCK {
-            blocks.full[p].push(blocks.len);
-        } else {
-            blocks.partial[p].push((blocks.len, len));
-        }
-        blocks.len += 1;
+        file.write_all(self.blocks[p * self.block..][..len as usize].as_bytes())?;
+        blocks.blocks[p].push((blocks.len, len));
+        blocks.len += len as u64;
         self.lens[p] = 0;
+        Ok(())
+    }
+
+    /// Doubles the length of the blocks, after flushing the blocks that are
+    /// not empty.
+    fn grow(&mut self) -> io::Result<()> {
+        for p in 0..self.lens.len() {
+            if self.lens[p] != 0 {
+                self.flush(p)?;
+            }
+        }
+        self.block *= 2;
+        // The old buffers are freed first; the new ones are a zeroed
+        // allocation (see StoreWriter::buffers)
+        self.blocks = vec![];
+        self.blocks = vec![[0; 2]; self.lens.len() * self.block];
         Ok(())
     }
 
@@ -546,13 +569,13 @@ enum Keys {
 
 /// Assigns seeds to the buckets of the level of index `index` whose records
 /// are in a store, logging its progress (see [`sweep_bumping_level`]).
-fn sweep_store(
+fn sweep_store<T: SweepSeed>(
     store: &Store,
     g: &Geometry,
     weights: &[i64; 7],
     index: usize,
     pl: &mut impl ProgressLog,
-) -> Result<Level> {
+) -> Result<Level<T>> {
     let parts = Partitioned::new(store, g);
     let out = sweep_bumping_level(&parts, g, weights, index, store.len, pl);
     if let Some(e) = parts.error.into_inner().unwrap() {
@@ -590,10 +613,10 @@ fn by_thread<T: Send>(
 /// is true), or in a vector, if the following level is the last one. The
 /// progress of the pass, in records read, is logged on a concurrent logger
 /// obtained from `pl`.
-fn collect_bumped(
+fn collect_bumped<T: SweepSeed>(
     store: &Store,
     g: &Geometry,
-    seeds: &[u16],
+    seeds: &[T],
     k: usize,
     salt: u64,
     offline: bool,
@@ -611,7 +634,7 @@ fn collect_bumped(
             let (mut out, mut records, mut pl) = (vec![], vec![], cpl.clone());
             for p in range {
                 store.for_each(p, &mut records, |r| {
-                    if seeds[g.bucket(sig.sig(r))] == 0 {
+                    if seeds[g.bucket(sig.sig(r))].seed() == 0 {
                         out.push(*r);
                     }
                     Ok(())
@@ -629,7 +652,7 @@ fn collect_bumped(
             let (mut buffers, mut records, mut pl) = (writer.buffers(), vec![], cpl.clone());
             for p in range {
                 store.for_each(p, &mut records, |r| {
-                    if seeds[g.bucket(sig.sig(r))] == 0 {
+                    if seeds[g.bucket(sig.sig(r))].seed() == 0 {
                         buffers.push(*r)?;
                     }
                     Ok(())
@@ -698,11 +721,12 @@ impl PHastRBuilder {
     /// just once (see [`PHastR::try_new_with_builder`]).
     ///
     /// Records take sixteen bytes per key, in memory or, in offline mode, on
-    /// disk. In offline mode, besides buffers whose size does not depend on
-    /// the number of keys, construction needs in memory about 0.7 bytes per
+    /// disk. In offline mode, besides buffers whose size depends little on
+    /// the number of keys, construction needs in memory about 0.36 bytes per
     /// key with the default parameters while building the first level (the
-    /// seeds of its buckets, as 16-bit values, and its set of used slots),
-    /// and then little more than the function itself.
+    /// seeds of its buckets, as bytes when they have at most eight bits, and
+    /// its set of used slots), and then little more than the function
+    /// itself.
     pub(super) fn try_build_from_lender<
         K: ?Sized + ToSig<[u64; 1]>,
         D: SeedStoreBuild,
@@ -721,6 +745,54 @@ impl PHastRBuilder {
         let func = self.assemble(num_keys, params0, seeds0, levels, remap);
         log_completion(start, num_keys, pl);
         Ok(func)
+    }
+
+    /// Sweeps the first level of a construction from a lender, with `n`
+    /// keys whose records are in `store`, and collects the records of the
+    /// keys of its bumped buckets; returns its seeds, its free slots, and
+    /// the keys of the following level.
+    fn first_level<T: SweepSeed>(
+        &self,
+        store: Store,
+        geom: &Geometry,
+        weights: &[i64; 7],
+        n: usize,
+        pl: &mut impl ProgressLog,
+    ) -> Result<(Vec<T>, EliasFano<usize>, Keys)> {
+        let Level { seeds, occupied } = sweep_store(&store, geom, weights, 0, pl)?;
+        let num_holes = n - occupied
+            .iter()
+            .map(|w| w.count_ones() as usize)
+            .sum::<usize>();
+        let mut efb = EliasFanoBuilder::new(num_holes, n);
+        for (w, &word) in occupied.iter().enumerate() {
+            let mut free = !word;
+            if n - w * 64 < 64 {
+                free &= (1u64 << (n - w * 64)) - 1;
+            }
+            while free != 0 {
+                efb.push(w * 64 + free.trailing_zeros() as usize);
+                free &= free - 1;
+            }
+        }
+        let holes = efb.build();
+        drop(occupied);
+        pl.info(format_args!(
+            "Level 0: {} keys, {} bumped ({:.3}%)",
+            n,
+            num_holes,
+            100.0 * num_holes as f64 / n as f64
+        ));
+        let cur = collect_bumped(
+            &store,
+            geom,
+            &seeds,
+            num_holes,
+            level_salt(self.seed, 1, 0),
+            self.offline,
+            pl,
+        )?;
+        Ok((seeds, holes, cur))
     }
 
     /// Builds the levels on the keys returned by a lender (see
@@ -777,55 +849,27 @@ impl PHastRBuilder {
         if n == 0 {
             // A single empty level, as in build_levels
             let geom = self.geometry(0, 1, self.bucket_size);
-            let seeds0 = D::from_seeds(&[0], self.seed_bits);
+            let seeds0 = D::from_seeds(&[0u16], self.seed_bits);
             let efb = EliasFanoBuilder::new(0, 1);
             return Ok((0, geom.level(), seeds0, vec![], remap(efb)));
         }
 
-        // The first level
+        // The first level: with at most eight bits per seed, its sweep keeps
+        // a byte per bucket, which storage of bytes takes without copying
         let geom = self.geometry(n, n, self.bucket_size);
-        let Level { seeds, occupied } = sweep_store(&store, &geom, &weights, 0, pl)?;
-        let num_holes = n - occupied
-            .iter()
-            .map(|w| w.count_ones() as usize)
-            .sum::<usize>();
-        let mut efb = EliasFanoBuilder::new(num_holes, n);
-        for (w, &word) in occupied.iter().enumerate() {
-            let mut free = !word;
-            if n - w * 64 < 64 {
-                free &= (1u64 << (n - w * 64)) - 1;
-            }
-            while free != 0 {
-                efb.push(w * 64 + free.trailing_zeros() as usize);
-                free &= free - 1;
-            }
-        }
-        let holes = efb.build();
-        drop(occupied);
-        pl.info(format_args!(
-            "Level 0: {} keys, {} bumped ({:.3}%)",
-            n,
-            num_holes,
-            100.0 * num_holes as f64 / n as f64
-        ));
-        let mut cur = collect_bumped(
-            &store,
-            &geom,
-            &seeds,
-            num_holes,
-            level_salt(self.seed, 1, 0),
-            self.offline,
-            pl,
-        )?;
-        drop(store);
         let params0 = geom.level();
-        let seeds0 = D::from_seeds(&seeds, self.seed_bits);
-        drop(seeds);
+        let (seeds0, holes, mut cur) = if self.seed_bits <= 8 {
+            let (seeds, holes, cur) = self.first_level::<u8>(store, &geom, &weights, n, pl)?;
+            (D::from_byte_seeds(seeds, self.seed_bits), holes, cur)
+        } else {
+            let (seeds, holes, cur) = self.first_level::<u16>(store, &geom, &weights, n, pl)?;
+            (D::from_seeds(&seeds, self.seed_bits), holes, cur)
+        };
 
         // The following levels, as in build_levels, keeping their sets of
         // used slots and their output ranges
         let mut levels: Vec<(LevelParams, Vec<u16>)> = vec![];
-        let mut used: Vec<(Vec<u64>, usize)> = vec![];
+        let mut used: Vec<(UsedSlots, usize)> = vec![];
         let mut offset = 0;
         loop {
             // The index of the level

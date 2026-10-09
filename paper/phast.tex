@@ -955,13 +955,17 @@ Thus, while reading the keys we compute both hashes of every key, and write a
 $16$-byte \emph{record} $(h,h')$ to a temporary file: the keys are no longer
 necessary, and they can be streamed, for example, from a file. The records of
 a level are distributed into $P$ \emph{partitions} by the upper $\lg P$ bits
-of the hash of the key at the level. Each partition is a
-sequence of blocks of $1024$ records: the blocks of all partitions are
-appended to the same file as their buffers fill, and a table with an integer
-per block locates the blocks of each partition. For the first level, whose
-number of keys is not known in advance, $P=2^{14}$: the buffers take
-$256$\,MiB, and partitions contain just a few million keys even on $10^{11}$
-keys. At the following levels, whose number~$k$ of keys is known, $P$ is the
+of the hash of the key at the level. Each partition is a sequence of
+blocks: the blocks of all partitions are appended to the same file as their
+buffers fill, and a table locates the blocks of each partition. A writer
+starts with blocks of $1024$ records, and doubles their length (up to
+$65\,536$ records, that is, $1$\,MiB) whenever it has written on average
+$512$ blocks for each partition: on huge key sets a sweep reads a partition
+with few seeks, and the buffers, a block for each partition, grow slowly
+with the number of keys. For the first level, whose number of keys is not
+known in advance, $P=2^{14}$: the buffers take $256$\,MiB up to about
+$8.6\cdot10^9$ keys, and at most $16$\,GiB, and partitions contain just a
+few million keys even on $10^{11}$ keys. At the following levels, whose number~$k$ of keys is known, $P$ is the
 smallest power of two not smaller than $\sqrt{2k/1024}$: this choice balances
 the memory of a thread writing the file, which buffers a block for each
 partition, and that of a thread sweeping the level, which buffers a few
@@ -999,15 +1003,16 @@ After the sweep of a level, its file is read again, and the records of the
 keys of bumped buckets are written to the file of the following
 level, or kept in memory if they are at most $4096$: the file of the first
 level is written once and read twice, and the following files are much
-smaller. In memory, besides buffers whose size does not depend on the number
-of keys, the sweep of the first level needs its seeds, as $16$-bit values,
-its set of used slots, and, while merging the sets produced by the chunks of a
-parallel sweep, a second copy of it: with $S=8$ and $\lambda=4.25$, about
-$2/4.25+2/8\approx0.72$ bytes per key. Then, the seeds of the first level are
-stored in their final format, its free slots are kept in an Elias--Fano
-sequence, and the remapping is built at the end from the sets of
-used slots of the following levels, which are small: from this point on,
-memory is essentially that of the structure being built.
+smaller. In memory, besides buffers whose size grows slowly with the number
+of keys, the sweep of the first level needs its seeds, as bytes when they
+have at most eight bits, and its set of used slots, which the sweeps of a
+parallel construction update directly, as each sets only the bits of its
+slots: with $S=8$ and $\lambda=4.25$, about $1/4.25+1/8\approx0.36$ bytes
+per key. Then, the seeds of the first level become those of the structure,
+its free slots are kept in an Elias--Fano sequence, and the remapping is
+built at the end from the sets of used slots of the following levels, which
+are small: from this point on, memory is essentially that of the structure
+being built.
 
 \paragraph{Experiments.}
 On $10^9$ keys the offline construction allocates at most $0.74$ bytes per

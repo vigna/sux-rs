@@ -844,8 +844,23 @@ the hardware and need not be rerun. Commands (from `paper/lab`):
    (`tune <keys> 12:12:1:7.5,8,8.5 12:13:1:8,8.5,9`, then `wtune`).
 3. **Scale**: construction keeps 10.7 bytes per key (ph: 9.9); the walk
    finding bumped keys is DRAM-bound at 10⁹ keys (random accesses to a
-   28 MB bit vector). Nothing was run beyond 10⁹ keys. `redo.sh` reruns
-   everything on another machine (results in `results/paper/<host>/`).
+   28 MB bit vector). `redo.sh` reruns everything on another machine
+   (results in `results/paper/<host>/`). An offline construction on 10¹²
+   keys on sexus (October 2026) died after 22 h with 622 GiB allocated
+   (likely a commit limit: RSS was 73 GB): the first sweep kept 16-bit seeds,
+   the used slots and a second copy of them (0.72 B/key, plus partition
+   buffers growing with the number of threads), and it read the 16 TB file
+   at 18.6 MB/s, as partitions were made of 16 KiB blocks scattered in the
+   file (10 days for each of the two passes). Since then: the first level of
+   an offline construction with S ≤ 8 keeps byte seeds (`SweepSeed`,
+   `SeedStoreBuild::from_byte_seeds`, no final copy); the sweeps of a
+   parallel construction add their used slots directly to a shared atomic
+   bit vector (`SharedUsedSlots`, a word at a time when retiring a column),
+   so there is no second copy (also in memory); and the blocks of a writer
+   double (from 1024 up to 65 536 records) whenever it has written on
+   average 512 blocks per partition (`GROWTH`), which changes nothing below
+   ~8.6·10⁹ records. The first sweep now needs 1/λ + 1/8 ≈ 0.36 B/key
+   (measured at 3·10⁸ keys on the M1: 113 MiB against 207–239 MiB).
 4. **Repair cost**: depth-2 repair costs ~50 ns/key more than depth 1, mostly
    in nested repairs of evicted buckets that fail.
 5. **String keys / other MPHFs**: add PHast-R to Beling's `mphf_benchmark`

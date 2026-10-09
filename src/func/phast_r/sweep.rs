@@ -10,6 +10,7 @@ use super::builder::*;
 use super::*;
 use dsi_progress_logger::ConcurrentProgressLog;
 use std::collections::BinaryHeap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// A source of the signatures of the keys of a level, distributed into
 /// *parts* of consecutive buckets, which sweeps load in increasing order
@@ -196,26 +197,119 @@ impl Window {
     }
 }
 
+/// The type of the seeds of a level during its sweep: `u16`, or `u8` for
+/// the first level of an offline construction with at most eight bits per
+/// seed, whose seeds take thus a byte per bucket.
+pub(super) trait SweepSeed: Copy + Default + Send + Sync {
+    /// Returns the given seed as a value of this type.
+    fn from_seed(seed: usize) -> Self;
+    /// Returns the seed represented by this value.
+    fn seed(self) -> usize;
+}
+
+impl SweepSeed for u8 {
+    #[inline(always)]
+    fn from_seed(seed: usize) -> Self {
+        debug_assert!(seed <= u8::MAX as usize);
+        seed as u8
+    }
+
+    #[inline(always)]
+    fn seed(self) -> usize {
+        self as usize
+    }
+}
+
+impl SweepSeed for u16 {
+    #[inline(always)]
+    fn from_seed(seed: usize) -> Self {
+        debug_assert!(seed <= u16::MAX as usize);
+        seed as u16
+    }
+
+    #[inline(always)]
+    fn seed(self) -> usize {
+        self as usize
+    }
+}
+
+/// The set of used slots of a level while its sweeps, which can run in
+/// parallel, update it (see [`UsedSlots`]).
+struct SharedUsedSlots(Box<[AtomicU64]>);
+
+impl SharedUsedSlots {
+    /// Returns an empty set of slots in [0 . . `m`); its memory is zeroed
+    /// lazily by the operating system.
+    fn new(m: usize) -> Self {
+        let words = m.div_ceil(64);
+        if words == 0 {
+            return Self(Box::new([]));
+        }
+        let layout = std::alloc::Layout::array::<AtomicU64>(words).expect("too many slots");
+        // SAFETY: the layout has nonzero size, the zero bit pattern is a
+        // valid AtomicU64, and the box deallocates the slice with the same
+        // layout
+        unsafe {
+            let ptr = std::alloc::alloc_zeroed(layout).cast::<AtomicU64>();
+            if ptr.is_null() {
+                std::alloc::handle_alloc_error(layout);
+            }
+            Self(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                ptr, words,
+            )))
+        }
+    }
+
+    /// Adds to the set the slots of word `w` (that is, from slot 64`w`)
+    /// whose bits are set in `bits`.
+    #[inline(always)]
+    fn add(&self, w: usize, bits: u64) {
+        self.0[w].fetch_or(bits, Ordering::Relaxed);
+    }
+}
+
+/// The set of used slots of a level, as a bit vector: bit *i* of word *w*
+/// is set if slot 64*w* + *i* is used.
+pub(super) struct UsedSlots(Box<[AtomicU64]>);
+
+impl From<SharedUsedSlots> for UsedSlots {
+    fn from(used: SharedUsedSlots) -> Self {
+        Self(used.0)
+    }
+}
+
+impl std::ops::Deref for UsedSlots {
+    type Target = [u64];
+
+    fn deref(&self) -> &[u64] {
+        // SAFETY: AtomicU64 has the same size and bit validity as u64, and
+        // at least its alignment; a UsedSlots is created by consuming the
+        // SharedUsedSlots updated by the sweeps, so there are no concurrent
+        // updates
+        unsafe { std::slice::from_raw_parts(self.0.as_ptr().cast::<u64>(), self.0.len()) }
+    }
+}
+
 /// The result of the sweep of a level.
-pub(super) struct Level {
+pub(super) struct Level<T: SweepSeed = u16> {
     /// The seeds of the buckets.
-    pub(super) seeds: Vec<u16>,
-    /// The used slots, as a set of bits.
-    pub(super) occupied: Vec<u64>,
+    pub(super) seeds: Vec<T>,
+    /// The used slots.
+    pub(super) occupied: UsedSlots,
 }
 
 /// Assigns seeds to the buckets of a level that can bump keys (see
 /// [`sweep_level`]), logging the progress of the sweep, in buckets, on a
 /// concurrent logger obtained from `pl`; `index` is the index of the level
 /// and `k` its number of keys.
-pub(super) fn sweep_bumping_level<S: PartSource>(
+pub(super) fn sweep_bumping_level<S: PartSource, T: SweepSeed>(
     sigs: &S,
     g: &Geometry,
     weights: &[i64; 7],
     index: usize,
     k: usize,
     pl: &mut impl ProgressLog,
-) -> Level {
+) -> Level<T> {
     let mut cpl = pl.concurrent();
     cpl.item_name("bucket");
     cpl.expected_updates(g.buckets);
@@ -236,13 +330,13 @@ pub(super) fn sweep_bumping_level<S: PartSource>(
 ///
 /// Returns `None` if `allow_bump` is false and some bucket could not be
 /// placed.
-pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog>(
+pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog, T: SweepSeed>(
     sigs: &S,
     g: &Geometry,
     weights: &[i64; 7],
     allow_bump: bool,
     pl: &mut P,
-) -> Option<Level> {
+) -> Option<Level<T>> {
     let nb = g.buckets;
     let l = g.l_mask as usize + 1;
 
@@ -258,25 +352,23 @@ pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog>(
     let threads = 1;
     let chunks = threads.min(nb / (64 * gap).max(4096)).max(1);
 
-    let mut seeds = vec![0u16; nb];
-    let mut occupied = vec![0u64; g.m.div_ceil(64)];
-    // Each sweep returns the slots it used (and those marked as used)
-    let mut merge = |swept: Swept| {
-        let occupied = occupied.iter_mut().skip(swept.occupied_begin / 64);
-        for (occupied, word) in occupied.zip(&swept.occupied) {
-            *occupied |= word;
-        }
-    };
+    let mut seeds = vec![T::default(); nb];
+    // Each sweep adds to the set the slots it uses (and those marked as
+    // used beforehand)
+    let occupied = SharedUsedSlots::new(g.m);
 
     if chunks == 1 {
-        merge(Sweep::new(sigs, g, weights, 0, nb, &mut seeds).run(allow_bump, pl.clone())?);
-        return Some(Level { seeds, occupied });
+        Sweep::new(sigs, g, weights, 0, nb, &mut seeds, &occupied).run(allow_bump, pl.clone())?;
+        return Some(Level {
+            seeds,
+            occupied: occupied.into(),
+        });
     }
 
     // Chunk boundaries; chunk i processes [bounds[i], bounds[i + 1] - gap),
     // except for the last one, which processes everything.
     let bounds: Vec<usize> = (0..=chunks).map(|i| i * nb / chunks).collect();
-    let mut parts: Vec<&mut [u16]> = Vec::with_capacity(chunks);
+    let mut parts: Vec<&mut [T]> = Vec::with_capacity(chunks);
     let mut rest = &mut seeds[..];
     for i in 0..chunks {
         let (a, r) = rest.split_at_mut(bounds[i + 1] - bounds[i]);
@@ -284,34 +376,35 @@ pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog>(
         rest = r;
     }
     let pl = &*pl;
-    let run_chunk = |(i, part): (usize, &mut &mut [u16])| {
+    let run_chunk = |(i, part): (usize, &mut &mut [T])| {
         let lo = bounds[i];
         let hi = if i + 1 == chunks {
             bounds[i + 1]
         } else {
             bounds[i + 1] - gap
         };
-        Sweep::new(sigs, g, weights, lo, hi, &mut part[..hi - lo]).run(allow_bump, pl.clone())
+        Sweep::new(sigs, g, weights, lo, hi, &mut part[..hi - lo], &occupied)
+            .run(allow_bump, pl.clone())
     };
     #[cfg(feature = "rayon")]
-    let swept: Vec<Option<Swept>> = {
+    let swept: Vec<Option<()>> = {
         use rayon::prelude::*;
         parts.par_iter_mut().enumerate().map(run_chunk).collect()
     };
     #[cfg(not(feature = "rayon"))]
-    let swept: Vec<Option<Swept>> = parts.iter_mut().enumerate().map(run_chunk).collect();
+    let swept: Vec<Option<()>> = parts.iter_mut().enumerate().map(run_chunk).collect();
     drop(parts);
     for swept in swept {
-        merge(swept?);
+        swept?;
     }
 
     // Gaps: the seeds of the neighboring buckets are now known, and the
     // slots they use are marked.
-    let run_gap = |i: usize| -> (Vec<u16>, Option<Swept>) {
+    let run_gap = |i: usize| -> (Vec<T>, Option<()>) {
         let lo = bounds[i + 1] - gap;
         let hi = bounds[i + 1];
-        let mut gap_seeds = vec![0u16; hi - lo];
-        let mut sw = Sweep::new(sigs, g, weights, lo, hi, &mut gap_seeds);
+        let mut gap_seeds = vec![T::default(); hi - lo];
+        let mut sw = Sweep::new(sigs, g, weights, lo, hi, &mut gap_seeds, &occupied);
         let before = lo.saturating_sub(gap).max(bounds[i]);
         let after = (hi + gap).min(bounds[i + 2]);
         let first = g.first_slice(lo);
@@ -320,7 +413,7 @@ pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog>(
         for b in (before..lo).chain(hi..after) {
             parts.ensure(sigs, g, b);
             for &x in parts.keys(sigs, b) {
-                let s = seeds[g.bucket(x)] as usize;
+                let s = seeds[g.bucket(x)].seed();
                 if s != 0 {
                     let p = g.pos(x, s);
                     if p >= first {
@@ -333,17 +426,20 @@ pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog>(
         (gap_seeds, swept)
     };
     #[cfg(feature = "rayon")]
-    let gaps: Vec<(Vec<u16>, Option<Swept>)> = {
+    let gaps: Vec<(Vec<T>, Option<()>)> = {
         use rayon::prelude::*;
         (0..chunks - 1).into_par_iter().map(run_gap).collect()
     };
     #[cfg(not(feature = "rayon"))]
-    let gaps: Vec<(Vec<u16>, Option<Swept>)> = (0..chunks - 1).map(run_gap).collect();
+    let gaps: Vec<(Vec<T>, Option<()>)> = (0..chunks - 1).map(run_gap).collect();
     for (i, (gap_seeds, swept)) in gaps.into_iter().enumerate() {
-        merge(swept?);
+        swept?;
         seeds[bounds[i + 1] - gap..bounds[i + 1]].copy_from_slice(&gap_seeds);
     }
-    Some(Level { seeds, occupied })
+    Some(Level {
+        seeds,
+        occupied: occupied.into(),
+    })
 }
 
 /// Returns whether slot `p` is used, given the bit vector of used slots.
@@ -582,7 +678,7 @@ const LOG2_FRACTION: u32 = 24;
 /// with a bitwise OR (see [`Rings`]).
 ///
 /// [cost]: Self::cost
-struct Sweep<'a, S: PartSource> {
+struct Sweep<'a, S: PartSource, T: SweepSeed> {
     /// The signatures of the keys of the level.
     sigs: &'a S,
     g: &'a Geometry,
@@ -592,17 +688,21 @@ struct Sweep<'a, S: PartSource> {
     /// End of the range.
     hi: usize,
     /// Seeds of the buckets in the range.
-    seeds: &'a mut [u16],
+    seeds: &'a mut [T],
     /// Cyclic bit set of used slots (see [`Rings`]).
     used: Box<[u64]>,
     rings: Rings,
     /// The first slot of the first column of the set of used slots; slots
     /// before this one are no longer reachable.
     first_slot: usize,
-    /// The used slots that are no longer reachable, as a set of bits
-    /// starting from slot `occupied_begin` (a multiple of 64).
-    occupied: Vec<u64>,
-    occupied_begin: usize,
+    /// The set of used slots of the level, to which the slots that are no
+    /// longer reachable are added.
+    occupied: &'a SharedUsedSlots,
+    /// A buffer for the words of the set of used slots of the level
+    /// corresponding to a column (see [`retire_column`]).
+    ///
+    /// [`retire_column`]: Self::retire_column
+    column: Box<[u64]>,
     /// For each layout, the free rotations of the bucket being searched,
     /// which map no key to a used slot (limited to rotations smaller than
     /// the length of a ring).
@@ -621,16 +721,17 @@ struct Sweep<'a, S: PartSource> {
     back: Vec<u32>,
 }
 
-impl<'a, S: PartSource> Sweep<'a, S> {
+impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
     fn new(
         sigs: &'a S,
         g: &'a Geometry,
         weights: &'a [i64; 7],
         lo: usize,
         hi: usize,
-        seeds: &'a mut [u16],
+        seeds: &'a mut [T],
+        occupied: &'a SharedUsedSlots,
     ) -> Self {
-        debug_assert_eq!(<[u16]>::len(seeds), hi - lo);
+        debug_assert_eq!(<[T]>::len(seeds), hi - lo);
         let rings = Rings::new(g);
         let free_words = rings.layouts * rings.len.div_ceil(64);
         // Columns contain 64 strides
@@ -649,8 +750,8 @@ impl<'a, S: PartSource> Sweep<'a, S> {
             used: vec![0; rings.word_mask + 1].into_boxed_slice(),
             rings,
             first_slot,
-            occupied: vec![],
-            occupied_begin: first_slot,
+            occupied,
+            column: vec![0; 1 << rings.log2_stride].into_boxed_slice(),
             free: Vec::with_capacity(free_words),
             nonzero: vec![(0, 0); free_words],
             ring_keys: Vec::with_capacity(64 * rings.layouts),
@@ -667,23 +768,31 @@ impl<'a, S: PartSource> Sweep<'a, S> {
         self.used[self.rings.word(p)] |= 1 << ((p >> self.rings.log2_stride) % 64);
     }
 
-    /// Removes the first column from the set of used slots, recording its
-    /// slots in `occupied`: the bits of the column will be associated with
-    /// the slots following those of the last column.
+    /// Removes the first column from the set of used slots, adding its
+    /// slots to the set of used slots of the level: the bits of the column
+    /// will be associated with the slots following those of the last column.
+    ///
+    /// A column contains a word for each row, and its slots correspond to
+    /// as many consecutive words of the set of used slots of the level,
+    /// which we fill in a buffer, so that the set is updated a word at a
+    /// time.
     #[inline(always)]
     fn retire_column(&mut self, rings: &Rings) {
         let t = rings.log2_stride;
         let w = rings.word(self.first_slot);
-        let begin = (self.first_slot - self.occupied_begin) / 64;
-        // A column contains a word for each row
-        self.occupied.resize(begin + (1 << t), 0);
-        let occupied = &mut self.occupied[begin..];
         for (row, word) in self.used[w..w + (1 << t)].iter_mut().enumerate() {
             let mut word = std::mem::take(word);
             while word != 0 {
                 let p = ((word.trailing_zeros() as usize) << t) + row;
-                occupied[p / 64] |= 1 << (p % 64);
+                self.column[p / 64] |= 1 << (p % 64);
                 word &= word - 1;
+            }
+        }
+        // Columns start at multiples of 64 strides
+        let first_word = self.first_slot / 64;
+        for (i, word) in self.column.iter_mut().enumerate() {
+            if *word != 0 {
+                self.occupied.add(first_word + i, std::mem::take(word));
             }
         }
         self.first_slot += 64 << t;
@@ -938,7 +1047,7 @@ impl<'a, S: PartSource> Sweep<'a, S> {
     /// Processes the buckets of the range, logging them on `pl`; returns
     /// `None` if `allow_bump` is false and some bucket could not be placed
     /// (in which case the sweep stops immediately).
-    fn run(self, allow_bump: bool, pl: impl ProgressLog) -> Option<Swept> {
+    fn run(self, allow_bump: bool, pl: impl ProgressLog) -> Option<()> {
         let rings = self.rings;
         // The parameters of the rings are used as shift amounts and masks
         // in the innermost loops: we compile a version of the sweep in
@@ -955,7 +1064,7 @@ impl<'a, S: PartSource> Sweep<'a, S> {
     }
 
     #[inline(always)]
-    fn sweep(mut self, rings: &Rings, allow_bump: bool, pl: impl ProgressLog) -> Option<Swept> {
+    fn sweep(mut self, rings: &Rings, allow_bump: bool, pl: impl ProgressLog) -> Option<()> {
         let (lo, hi) = (self.lo, self.hi);
         let (sigs, g) = (self.sigs, self.g);
         let mut window = Window::new(self.weights);
@@ -988,7 +1097,7 @@ impl<'a, S: PartSource> Sweep<'a, S> {
         }
         while let Some(b) = window.pop(span_begin) {
             let seed = self.search(rings, parts.keys(sigs, b), b);
-            self.seeds[b - lo] = seed as u16;
+            self.seeds[b - lo] = T::from_seed(seed);
             if seed == 0 && !allow_bump {
                 return None;
             }
@@ -1027,10 +1136,7 @@ impl<'a, S: PartSource> Sweep<'a, S> {
         for _ in 0..=rings.word_mask >> rings.log2_stride {
             self.retire_column(rings);
         }
-        Some(Swept {
-            occupied_begin: self.occupied_begin,
-            occupied: self.occupied,
-        })
+        Some(())
     }
 }
 
@@ -1150,15 +1256,6 @@ impl<S: PartSource, P: ProgressLog> Parts<S, P> {
         let i = b - part.first_bucket;
         &part.sigs[part.begin[i]..part.begin[i + 1]]
     }
-}
-
-/// The result of a [`Sweep`].
-struct Swept {
-    /// The slots used by the buckets of the range, and those marked as
-    /// used beforehand, as a set of bits starting from slot
-    /// `occupied_begin` (a multiple of 64).
-    occupied: Vec<u64>,
-    occupied_begin: usize,
 }
 
 /// Returns the index of the first bit set in `bits` in the range
