@@ -4,69 +4,76 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-//! PHast-R: bucket-placement minimal perfect hashing with rings of patterns.
+//! PHast-R: bucket-placement minimal perfect hashing with rings of layouts.
 //!
 //! PHast-R is a minimal perfect hash function based on *bucket placement*:
 //! keys are hashed to buckets, and each bucket stores a fixed-width *seed*
-//! that places the keys of the bucket in the output range so that no two keys
-//! collide. For almost all keys, a query needs just a hash and the access to
-//! a seed.
+//! that maps each key of the bucket to a *slot* of the output range so that no
+//! two keys collide. For almost all keys, a query needs just a hash and the
+//! access to a seed.
 //!
 //! The bucket of a key is a linear function of its 64-bit hash, and the seed
-//! of a bucket places each of its keys inside the *slice* of the key, a small
-//! range of consecutive slots whose start grows linearly with the hash. A seed
-//! is *feasible* for a bucket if it maps its keys to distinct free slots.
-//! Buckets are processed by a sweep that favors large buckets, and each
-//! bucket gets the feasible seed minimizing the sum of the slots of its keys.
-//! Buckets for which no seed is feasible are *bumped* to the next level, and
-//! an [Elias–Fano] sequence maps the outputs of the following levels to the
-//! free slots of the first one. Bumped keys cost space and make queries
-//! slower, so the quality of a placement is measured by how few keys it
-//! bumps.
+//! of a bucket maps each of its keys to a slot of the *slice* of the key, a
+//! small interval of consecutive slots whose start grows linearly with the
+//! hash. A slot is *used* if a key has already been mapped to it, and *free*
+//! otherwise; a seed is *feasible* for a bucket if it maps its keys to
+//! distinct free slots. Buckets are processed by a sweep that favors large
+//! buckets, and each bucket gets the feasible seed minimizing the sum of the
+//! slots of its keys. Buckets for which no seed is feasible are *bumped* to
+//! the following levels, and an [Elias–Fano] sequence, the *remapping*, maps
+//! the slots of the following levels to the free slots of the first one.
+//! Bumped keys cost space and make queries slower, so the quality of a
+//! placement scheme is measured by how few keys it bumps.
 //!
-//! PHast-R uses a placement that bumps few keys and makes it possible to find
-//! feasible seeds with bit-parallel operations. Each key has *R* independent
-//! in-slice offsets, one for each of *R* *patterns*. The lowest bits of a
-//! seed choose a pattern, which gives each key of the bucket a *base
-//! position*, and the remaining bits choose a *rotation*, which moves all the
-//! keys of the bucket by the same multiple of a *stride* *T*, wrapping around
-//! the end of their slices. As the rotation varies, a key goes exactly once
-//! through the slots of its slice whose distance from its base position is a
-//! multiple of *T*: we call these slots its *ring*. During construction the
-//! set of used slots is stored by residue classes modulo the stride, so the
-//! bits of the ring of a key are a block of consecutive bits, and the
-//! feasible rotations of a pattern are found by rotating and combining by a
-//! bitwise OR one such block for each key.
+//! PHast-R uses a placement scheme that bumps few keys and makes it possible
+//! to find feasible seeds with bit-parallel operations. There are *R*
+//! *layouts*, each assigning an in-slice *offset* to every key. The lowest
+//! bits of a seed choose a layout, which gives each key of the bucket a
+//! *base slot* (the slot for rotation 0), and the remaining bits choose a
+//! *rotation*, which moves all the keys of the bucket by the same multiple of
+//! a *stride* *T*, wrapping around the end of their slices. As the rotation
+//! varies, a key goes exactly once through the slots of its slice whose
+//! distance from its base slot is a multiple of *T*: we call these slots its
+//! *ring*. During construction the set of used slots is stored by residue
+//! classes modulo the stride, so the *bits of the ring* of a key, which record
+//! whether the slots of its ring are used, are consecutive bits, and the
+//! *free* rotations of a layout, which map every key to a free slot, are
+//! found by cyclically shifting the bits of the ring of each key and
+//! combining them by a bitwise OR.
 //!
-//! Two keys of a bucket with the same base position move together, and thus
-//! collide for (almost) all rotations, but they will not, in general, collide
-//! in the other patterns: such *self-collisions* thus disappear, and the
-//! patterns provide (almost) independent trials.
+//! Two keys of a bucket with the same base slot in a layout move together,
+//! and thus collide for (almost) all its rotations: this is a
+//! *self-collision*. Since the offsets of different layouts use disjoint bits
+//! of the same uniform value (see below), self-collisions happen independently
+//! in each layout, and buckets with a self-collision in every layout are
+//! negligible. Moreover, the seeds of a layout move all the keys of a bucket
+//! by the same amount, so they are strongly correlated, whereas seeds of
+//! different layouts are (almost) independent.
 //!
-//! This placement improves on those of PHast and PHast+ (see the
-//! [references]). PHast uses a pseudorandom placement, which bumps few keys,
-//! but finding a feasible seed requires trying all seeds of the bucket, so
-//! construction is more than ten times slower. PHast+ moves the keys of a
-//! bucket along a single rigid pattern, so feasible seeds can be found with
-//! bit-parallel operations, but self-collisions cannot be avoided: two keys
-//! with the same base position collide for (almost) all seeds, and their
-//! bucket must be bumped. With 8-bit seeds, self-collisions cause almost 40%
-//! of the bumping of PHast+ with wrapping.
+//! This placement scheme improves on those of PHast and PHast+ (see the
+//! [references]). PHast uses a pseudorandom scheme, which bumps few keys, but
+//! finding a feasible seed requires trying all seeds of the bucket, so
+//! construction is more than ten times slower. PHast+ uses an additive
+//! scheme, which moves all the keys of a bucket by the same amount, so
+//! feasible seeds can be found with bit-parallel operations, but
+//! self-collisions cannot be avoided: two keys that collide for one seed
+//! collide for (almost) all seeds, and their bucket must be bumped. With 8-bit
+//! seeds, self-collisions cause almost 40% of the bumping of PHast+ with
+//! wrapping.
 //!
-//! The in-slice offsets of the patterns are consecutive blocks of bits of the
-//! lower half of the product of the hash and the number of buckets, whose
-//! upper half is the bucket: such a value is uniform among the keys of a
-//! bucket, and it is computed anyway. Queries thus need a hash, a seed access,
-//! two multiplications, and a handful of shifts, additions, and masks; a
-//! small fraction of the keys accesses further levels and the Elias–Fano
-//! sequence.
+//! The offsets of the layouts use disjoint bits of the lower half of the
+//! product of the hash and the number of buckets, whose upper half is the
+//! bucket: such a value is uniform among the keys of a bucket, and it is
+//! computed anyway. Queries thus need a hash, a seed access, two
+//! multiplications, and a handful of shifts, additions, and masks; a small
+//! fraction of the keys accesses the following levels and the remapping.
 //!
-//! The signatures of the levels after the first one depend also on a second
-//! hash of the key, so 64-bit signatures suffice for any number of keys: keys
-//! with the same signature are bumped from the first level and separated at
-//! the following ones. Duplicate keys are detected and reported as errors.
+//! The hashes of a key at the following levels depend also on a second hash
+//! of the key, so 64-bit hashes suffice for any number of keys: keys with the
+//! same hash are bumped from the first level and separated at the following
+//! ones. Duplicate keys are detected and reported as errors.
 //!
-//! With the default parameters (8-bit seeds, four patterns, slices of length
+//! With the default parameters (8-bit seeds, four layouts, slices of length
 //! 1024, and an expected bucket size of 4.25 keys) space is about 1.96 bits
 //! per key, essentially the same as PHast+ with wrapping, which however
 //! takes about twice as long to build and has much slower queries; PHast
@@ -131,8 +138,8 @@ const fn mul_hi(a: u64, b: u64) -> u64 {
 }
 
 /// The base-2 logarithm of the distance in bits between the offsets of two
-/// consecutive patterns with the default number of patterns (four).
-const DEFAULT_PATTERN_SHIFT: u32 = 4;
+/// consecutive layouts with the default number of layouts (four).
+const DEFAULT_LAYOUT_SHIFT: u32 = 4;
 
 /// The scale of large levels with the default parameters (8-bit seeds and
 /// slices of length 1024).
@@ -192,8 +199,8 @@ pub struct LevelParams {
     num_slices: u64,
     /// The slice length minus one.
     l_mask: u64,
-    /// The base-2 logarithm of the amount by which a unit increase of the
-    /// seed moves the keys of a bucket.
+    /// The base-2 logarithm of the amount *u* by which a unit increase of
+    /// the seed moves the keys of a bucket.
     scale: u64,
     /// The offset of the outputs of this level in the remapping sequence.
     offset: u64,
@@ -204,7 +211,7 @@ pub struct LevelParams {
     first_seed: u64,
 }
 
-/// A bucket-placement minimal perfect hash function with rings of patterns.
+/// A bucket-placement minimal perfect hash function with rings of layouts.
 ///
 /// A *minimal perfect hash function* maps bijectively a set of *n* keys to
 /// the integers in [0 . . *n*): querying a key outside of the original set
@@ -228,11 +235,11 @@ pub struct LevelParams {
 ///   `Box<[u8]>`, which supports seeds of at most eight bits, and provides
 ///   the fastest queries.
 ///
-/// * `P` - the parameters of the levels after the first one. The default is
+/// * `P` - the parameters of the following levels. The default is
 ///   `Box<[LevelParams]>`.
 ///
-/// * `R` - the sequence remapping the outputs of the levels after the first
-///   one to the free slots of the first one. The default is [`Remap`].
+/// * `R` - the remapping, which maps the slots of the following levels to
+///   the free slots of the first one. The default is [`Remap`].
 ///
 /// The last three parameters make it possible to deserialize with ε-serde
 /// without copying: for example, [`deserialize_eps`] on a `PHastR<K>`
@@ -260,14 +267,14 @@ pub struct PHastR<K: ?Sized, D = Box<[u8]>, P = Box<[LevelParams]>, R = Remap> {
     /// The number of keys.
     num_keys: usize,
     /// The base-2 logarithm of the distance in bits between the offsets of
-    /// two consecutive patterns (i.e., six minus the base-2 logarithm of
-    /// the number of patterns).
-    pattern_shift: u32,
+    /// two consecutive layouts (i.e., six minus the base-2 logarithm of
+    /// the number of layouts).
+    layout_shift: u32,
     /// Whether the shifts of the first level are those of the default
-    /// parameters (see [`DEFAULT_PATTERN_SHIFT`] and [`DEFAULT_SCALE`]), in
+    /// parameters (see [`DEFAULT_LAYOUT_SHIFT`] and [`DEFAULT_SCALE`]), in
     /// which case queries use constants.
     default_shifts: bool,
-    /// The scale of the first level plus one, if there are four patterns
+    /// The scale of the first level plus one, if there are four layouts
     /// and the scale is at most three, in which case queries use constants
     /// even if the shifts are not the default ones; zero otherwise.
     fast_scale: u8,
@@ -279,8 +286,8 @@ pub struct PHastR<K: ?Sized, D = Box<[u8]>, P = Box<[LevelParams]>, R = Remap> {
     params: P,
     /// The seeds of the following levels, concatenated.
     seeds: D,
-    /// Maps outputs of levels after the first one to the free slots of the
-    /// first one.
+    /// The remapping, which maps the slots of the following levels to the
+    /// free slots of the first one.
     remap: R,
     _marker: std::marker::PhantomData<*const K>,
 }
@@ -322,26 +329,19 @@ impl<
     /// Returns the output of a key in the given level, given its hash *h* for
     /// the level, the lower half `lo` of the product of *h* and the number of
     /// buckets (whose upper half is the bucket of the key), the seed of the
-    /// bucket, the base-2 logarithm of the distance in bits between the
-    /// offsets of two consecutive patterns, and the scale of the level.
+    /// bucket, the base-2 logarithm of the width *f* of the field of each
+    /// layout in `lo`, and the base-2 logarithm of the amount *u* by which a
+    /// unit increase of the seed moves a key (the scale of the level).
     ///
-    /// The pattern is given by the lowest bits of the seed, and its in-slice
-    /// offset starts at bit 64*r*/*R* of `lo`, where *r* is the pattern and
-    /// *R* the number of patterns: since shifts are taken modulo 64, shifting
-    /// the seed left by log₂(64/*R*) yields the first bit of the offset
-    /// without extracting the pattern.
+    /// The layout *r* is given by the lowest bits of the seed *s*, and its
+    /// in-slice offset is in field *r* of `lo`, which starts at bit *rf*:
+    /// since *sf* mod 64 = *rf* and shifts are taken modulo 64, shifting `lo`
+    /// right by *sf* yields the offset without extracting the layout.
     #[inline(always)]
-    fn pos(
-        lv: &LevelParams,
-        h: u64,
-        lo: u64,
-        seed: usize,
-        pattern_shift: u32,
-        scale: u32,
-    ) -> usize {
+    fn pos(lv: &LevelParams, h: u64, lo: u64, seed: usize, layout_shift: u32, scale: u32) -> usize {
         let s = seed as u64;
         let offset = lo
-            .wrapping_shr((s << pattern_shift) as u32)
+            .wrapping_shr((s << layout_shift) as u32)
             .wrapping_add(s << scale);
         mul_hi(h, lv.num_slices) as usize + (offset & lv.l_mask) as usize
     }
@@ -353,7 +353,7 @@ impl<
     /// dedicated field because a test on the shifts themselves would be
     /// optimized away; queries in a loop perform it just once). We use
     /// constants also for the other scales that can be fused when there
-    /// are four patterns (e.g., with 10-bit seeds and slices of length
+    /// are four layouts (e.g., with 10-bit seeds and slices of length
     /// 2048), albeit in this case the test is not moved out of loops.
     ///
     /// [`pos`]: Self::pos
@@ -361,13 +361,13 @@ impl<
     fn pos0(&self, h: u64, lo: u64, seed: usize) -> usize {
         let lv = &self.params0;
         if self.default_shifts {
-            return Self::pos(lv, h, lo, seed, DEFAULT_PATTERN_SHIFT, DEFAULT_SCALE);
+            return Self::pos(lv, h, lo, seed, DEFAULT_LAYOUT_SHIFT, DEFAULT_SCALE);
         }
         match self.fast_scale {
-            1 => Self::pos(lv, h, lo, seed, DEFAULT_PATTERN_SHIFT, 0),
-            2 => Self::pos(lv, h, lo, seed, DEFAULT_PATTERN_SHIFT, 1),
-            4 => Self::pos(lv, h, lo, seed, DEFAULT_PATTERN_SHIFT, 3),
-            _ => Self::pos(lv, h, lo, seed, self.pattern_shift, lv.scale as u32),
+            1 => Self::pos(lv, h, lo, seed, DEFAULT_LAYOUT_SHIFT, 0),
+            2 => Self::pos(lv, h, lo, seed, DEFAULT_LAYOUT_SHIFT, 1),
+            4 => Self::pos(lv, h, lo, seed, DEFAULT_LAYOUT_SHIFT, 3),
+            _ => Self::pos(lv, h, lo, seed, self.layout_shift, lv.scale as u32),
         }
     }
 
@@ -446,7 +446,7 @@ impl<
             if s != 0 {
                 // SAFETY: by construction, the remapping sequence contains
                 // one entry for each output of each level after the first
-                let pos = Self::pos(lv, h, p as u64, s, self.pattern_shift, lv.scale as u32);
+                let pos = Self::pos(lv, h, p as u64, s, self.layout_shift, lv.scale as u32);
                 return unsafe { self.remap.get_value_unchecked(lv.offset as usize + pos) };
             }
         }
@@ -673,7 +673,7 @@ impl<K: ?Sized, D: TryIntoUnaligned, P, R: TryIntoUnaligned> TryIntoUnaligned
         Ok(PHastR {
             seed: self.seed,
             num_keys: self.num_keys,
-            pattern_shift: self.pattern_shift,
+            layout_shift: self.layout_shift,
             default_shifts: self.default_shifts,
             fast_scale: self.fast_scale,
             params0: self.params0,
@@ -693,7 +693,7 @@ impl<K: ?Sized, P> From<Unaligned<PHastR<K, BitFieldVec<Box<[usize]>>, P, Remap>
         PHastR {
             seed: f.seed,
             num_keys: f.num_keys,
-            pattern_shift: f.pattern_shift,
+            layout_shift: f.layout_shift,
             default_shifts: f.default_shifts,
             fast_scale: f.fast_scale,
             params0: f.params0,
@@ -733,11 +733,11 @@ mod tests {
         for n in [0, 1, 2, 3, 10, 100, 1000, 5000, 10000] {
             check::<Box<[u8]>>(n, PHastRBuilder::default())?;
             check::<BitFieldVec<Box<[usize]>>>(n, PHastRBuilder::default().seed_bits(10))?;
-            for log2_patterns in 0..=3 {
+            for log2_layouts in 0..=3 {
                 check::<Box<[u8]>>(
                     n,
                     PHastRBuilder::default()
-                        .log2_patterns(log2_patterns)
+                        .log2_layouts(log2_layouts)
                         .log2_slice_len(8),
                 )?;
             }
@@ -757,8 +757,8 @@ mod tests {
                 .log2_slice_len(11)
                 .bucket_size(6.0),
         )?;
-        check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_patterns(1))?;
-        check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_patterns(0))?;
+        check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_layouts(1))?;
+        check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_layouts(0))?;
         check::<Box<[u16]>>(
             300_000,
             PHastRBuilder::default()
@@ -769,7 +769,7 @@ mod tests {
         // Longer slices, and thus a larger stride
         check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_slice_len(12))?;
         check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_slice_len(16))?;
-        // Rings shorter than a word: a pattern has four rotations
+        // Rings shorter than a word: a layout has four rotations
         check::<Box<[u8]>>(
             100_000,
             PHastRBuilder::default()
@@ -786,12 +786,12 @@ mod tests {
     fn test_large_buckets() -> Result<()> {
         // Large buckets (kept in a heap, and with several groups of keys)
         // and very long rings
-        for log2_patterns in [0, 2] {
+        for log2_layouts in [0, 2] {
             check::<Box<[u16]>>(
                 20_000,
                 PHastRBuilder::default()
                     .seed_bits(16)
-                    .log2_patterns(log2_patterns)
+                    .log2_layouts(log2_layouts)
                     .log2_slice_len(16)
                     .bucket_size(70.0),
             )?;
@@ -824,9 +824,9 @@ mod tests {
         };
         // Seeds too large for the storage
         assert!(build(PHastRBuilder::default().seed_bits(10)).is_err());
-        // Too many patterns for the slice length
-        assert!(build(PHastRBuilder::default().log2_patterns(3)).is_err());
-        // Too many patterns for the number of seed bits
+        // Too many layouts for the slice length
+        assert!(build(PHastRBuilder::default().log2_layouts(3)).is_err());
+        // Too many layouts for the number of seed bits
         assert!(build(PHastRBuilder::default().seed_bits(2)).is_err());
         // Offline mode needs a lender
         assert!(build(PHastRBuilder::default().offline(true)).is_err());

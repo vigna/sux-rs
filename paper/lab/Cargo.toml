@@ -22,6 +22,7 @@ gxhash = "3.5"
 value-traits = "0.3.0"
 dsi-progress-logger = "0.8"
 mem_dbg = "0.4"
+rayon = "1.12"
 
 [profile.release]
 opt-level = 3

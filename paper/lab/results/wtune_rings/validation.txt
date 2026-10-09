@@ -1,0 +1,27 @@
+Validation of the weights tuned by wtune (wtune_8_10.txt, wtune_10_11.txt)
+against those of PHast+ with wrapping and multiplier 3 in ph, which were
+the previous defaults. Mean bits/key of single-threaded constructions,
+from wtune --eval (8 key sets of 10^7 keys unless noted; key seed 0 are the
+tuning key sets).
+
+S=8, L=1024, lambda=4.25
+  ph  [-50649, 63792, 110014, 139267, 161285, 176594, 188305]
+  new [-50000, 56315, 103861, 137629, 159944, 178176, 189591]
+                         ph        new
+  key seed 0 (tuning)   1.96094   1.95975
+  key seed 1            1.96129   1.96050
+
+S=10, L=2048, lambda=5.75
+  ph  [-3417, 13564, 81208, 133035, 168506, 198114, 214382]
+  new [42000, 47041, 125806, 178081, 209321, 242846, 258427]
+                         ph        new
+  key seed 0 (tuning)   1.85776   1.85722
+  key seed 1            1.85794   1.85757
+
+Small key sets (key seed 3): old defaults (ph table, depending on the slice
+length of each level) against the new weights used for all slice lengths.
+                         S=8 old   S=8 new   S=10 old  S=10 new
+  n=10^3 (64 sets)      6.49475   6.43050   7.37200   7.35200
+  n=10^4 (64 sets)      2.84775   2.84353   3.20340   3.19530
+  n=10^5 (32 sets)      2.07897   2.07895   2.09960   2.09472
+  n=10^6 (16 sets)      1.97565   1.97453   1.88555   1.88557

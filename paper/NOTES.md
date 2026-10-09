@@ -152,11 +152,11 @@ it is the natural candidate to replace PHast+.
 
 ## Query changes (October 2026)
 
-- Seed *s* encodes *r = s mod R*, *d = ⌊s/R⌋* ((0, 0) excluded), and pattern
+- Seed *s* encodes *r = s mod R*, *d = ⌊s/R⌋* ((0, 0) excluded), and layout
   *r* reads *o* from bit *64r/R*: the query shifts *o* right by
   `s << (6 - log2 R)` (counts are taken modulo 64 by the hardware) and needs
   no decrement, extraction of *r*, or multiplication *r·ℓ*. There are now
-  *2^S/R* shifts per pattern (64 for S = 8), which slightly improves space.
+  *2^S/R* shifts per layout (64 for S = 8), which slightly improves space.
 - `[u64; 1]` signatures: *o = h·c* with *c* odd and < 2³¹ (a single
   `imul $imm32`) instead of a xorshift-multiply.
 - Levels after the first used to remix (h, o) with `next_level`; two
@@ -170,10 +170,10 @@ PHast+ (7.6%) and wrap δ=3 (4.35%); after the `next_level` fix bumped keys
 cost the same as in the reference. The fast path is still ~3 ns (10⁷) to
 ~5 ns (10⁸) slower than PHast+'s: the memory behavior is identical, but in
 this benchmark (key and seed are both cache misses) every instruction
-depending on the loads costs 1.5–3 ns, and selecting a pattern costs at
+depending on the loads costs 1.5–3 ns, and selecting a layout costs at
 least two instructions more than PHast+ (second hash word, variable shift).
 Using the whole seed as displacement saves one instruction but costs 0.08
-bits/key; a compile-time number of patterns gave no gain. The lever left is
+bits/key; a compile-time number of layouts gave no gain. The lever left is
 the bump rate (smaller λ, see above). On this machine use the `performance`
 governor: with `powersave`, HWP down-clocks PHast-R's query loop more than
 the reference's.
@@ -208,7 +208,7 @@ bit-identical output (same space for every configuration), measured with
   kept for simplicity;
 - repair: blockers are resolved lazily, in candidate order (a failed
   eviction restores the state, so the result is the same), candidates are
-  packed in a `u128`, the bases of all patterns are cached, and at the last
+  packed in a `u128`, the bases of all layouts are cached, and at the last
   repair level eviction trials only flip occupancy bits (owners are written
   on success only);
 - the cyclic window of a sweep is sized from the geometry (4(L + D) + 2 ·
@@ -218,7 +218,7 @@ bit-identical output (same space for every configuration), measured with
   atomic `fetch_or`; `mark` reuses the bases of the search.
 
 Tried without gain: branchless `get64`, `extend` instead of `push`, visiting
-patterns in order of base sum (slower), fewer repair candidates (costs space:
+layouts in order of base sum (slower), fewer repair candidates (costs space:
 8 candidates → 1.948 bits/key), ordering candidates by blocker size.
 
 Result (taskset 0-7, `performance` governor), depth 1: 10⁷ keys 144 → 122
@@ -227,8 +227,8 @@ Against the reference at 10⁸ (same conditions): PHast+ 75.5 / 18.0,
 wrap δ=3 131.0 / 25.9, PHast-R 129.9 / 24.9 (1 / 8 threads): construction is
 now on par with PHast+ with wrapping, and 1.4–1.7 times PHast+.
 
-Profile of what remains (single thread): search over four patterns (the
-inherent cost of patterns; PHast+ searches one), eviction trials (1.37M at
+Profile of what remains (single thread): search over four layouts (the
+inherent cost of layouts; PHast+ searches one), eviction trials (1.37M at
 10⁷ keys, 87% failing), the priority queue, and the sort.
 
 ## 64-bit collisions (October 2026, `lab/results/rehash`)
@@ -286,13 +286,13 @@ reference rows in each process; base = d2a9cb35):
 
 - Fast-path anatomy (`qsplit`, diagnostic builds at 10⁷, S=8): PHast-R's
   first-level path was 4.1 ns slower than PHast+'s; removing the variable
-  pattern shift `o >> (s·64/R)` recovers ~3 ns, removing the multiplication
+  layout shift `o >> (s·64/R)` recovers ~3 ns, removing the multiplication
   deriving *o* ~1 ns. PHast-R won overall only because it bumps 2.6% of the
   keys instead of 7.6% (the slow path of PHast+ costs ~54 ns).
 - `PHastRBuilder::wrap(M)`: shifts with wrapping as in PHast+ with wrapping
-  (`slice + ((h + s·M) mod L)`, no patterns, no *o*), with our repair, levels
+  (`slice + ((h + s·M) mod L)`, no layouts, no *o*), with our repair, levels
   and last level. Search and repair scan *segments* of shifts in which no key
-  wraps (as in `ph`); segments play the role of patterns in repair. Default
+  wraps (as in `ph`); segments play the role of layouts in repair. Default
   weights are those of `ph` for wrapping.
 - Without repair, the first level and the following levels reproduce `ph`
   exactly (same bumped keys at each level when built single-threaded); the
@@ -353,13 +353,13 @@ Batched queries (`get_batch`, hidden; `lab/src/bin/batch.rs`): hashing a
 batch of keys and prefetching their first-level seeds before computing the
 outputs. At 10⁷ keys, 24.4 → 16.2 ns (W3) and 28.5 → 15.8 ns (R=4); at 10⁸,
 35.6 → 27.9 and 41.6 → 27.6; 10-bit seeds (unaligned) 28.8–29.9 ns at 10⁸.
-In batch mode the extra operations after the seed load (patterns, unaligned
+In batch mode the extra operations after the seed load (layouts, unaligned
 reads) cost almost nothing, so the configurations differ in space only.
 
 9-bit seeds (8 threads, 3·10⁶): R=4, L=2048, λ=5.5 1.908 b/k at 22.8 ns/key
 (untuned), vs 1.928 b/k at 35.2 ns/key for S=8 W3 and 1.981 for PHast+ w3.
 
-## Second brainstorm: cost model, the floor, ring patterns (October 5–6, 2026)
+## Second brainstorm: cost model, the floor, ring layouts (October 5–6, 2026)
 
 Tools: `lab/src/bin/overload.rs` (single-level statistics through the hidden
 `PHastRBuilder::level_stats`: bumped keys, holes, bump rate and feasible
@@ -383,20 +383,20 @@ entry (~6.8 bits), a bumped key its share of the next level (~1.9 bits).
 - **Self-collisions**: with wrapping, two keys of a bucket with the same base
   position collide for all seeds (probability C(k,2)/L per bucket): 1.70% of
   the keys are in such buckets, all bumped — 39% of the bumped keys without
-  repair, 46–47% with repair, which cannot fix them. Patterns (R = 4) bump
-  only 0.13% for this reason, but pack worse (64 shifts per pattern, no
+  repair, 46–47% with repair, which cannot fix them. Layouts (R = 4) bump
+  only 0.13% for this reason, but pack worse (64 shifts per layout, no
   wrapping).
 
 **The floor.** At S = 8, λ = 5 everything converges to ~3.6% bumped keys:
-W3 + repair 3.68% (depth 1) and 3.59% (depth 2), patterns + repair 3.64%,
-ring patterns 3.72% without repair and 3.63%/3.61% with repair of depth 1/2.
+W3 + repair 3.68% (depth 1) and 3.59% (depth 2), layouts + repair 3.64%,
+ring layouts 3.72% without repair and 3.63%/3.61% with repair of depth 1/2.
 Removing self-collisions does not add up: the freed capacity is taken by
 other failures. Ideas that do not move the floor (3·10⁶ keys):
 - overloading (first level with n/(1+δ) slots, later levels in direct
   ranges, only the final keys remapped onto all holes): each 1% of overload
   removes 0.19–0.28% of holes, break-even is 0.25%;
 - skewed periodic bucket sizes (PHOBIC-like profiles): worse the stronger the
-  skew (4.4% → 6.3–9.6% with W3, 3.7% → 3.8–6.3% with ring patterns); large
+  skew (4.4% → 6.3–9.6% with W3, 3.7% → 3.8–6.3% with ring layouts); large
   buckets fail, as they do not find empty space in a sliding window. With a
   realistic allowance of ~4 feasible shifts even the ideal profile gives
   ~1.92 b/key;
@@ -405,23 +405,23 @@ other failures. Ideas that do not move the floor (3·10⁶ keys):
 - strict largest-first order (larger window, scaled weights): much worse;
 - concave objectives instead of the sum of positions (log, cube root):
   3.72% → 3.65%; convex ones are worse;
-- larger seeds with ring patterns (estimates): S = 10 1.864, S = 12 1.840,
+- larger seeds with ring layouts (estimates): S = 10 1.864, S = 12 1.840,
   S = 14 1.885, S = 16 1.911 (untuned weights): no byte-aligned win.
 
-**Ring patterns** (`PHastRBuilder::ring(R)`, hidden; cmp spec `g<R>` in the
-pattern field). Seed *s* selects pattern *r = s mod R* and the offset
+**Ring layouts** (`PHastRBuilder::ring(R)`, hidden; cmp spec `g<R>` in the
+layout field). Seed *s* selects layout *r = s mod R* and the offset
 ((lo >> 64r/R) + s·2^a) mod L, with L = 2^(S+a) and lo the lower half of the
 product h·B whose upper half is the bucket (free, and uniform within a
-bucket; B is forced to be odd): the seeds of a pattern cycle exactly once
+bucket; B is forced to be odd): the seeds of a layout cycle exactly once
 around the slots of the slice in a residue class modulo R·2^a.
 - No self-collisions, so the floor is reached without repair.
 - Query: shift, variable shift, scaled add, mask, add after the seed load
   (one operation more than PHast+ with wrapping).
 - Construction: the set of used slots is stored by residue classes, so the
-  feasibility of the 64 seeds of a pattern for a key is a 64-bit read and a
+  feasibility of the 64 seeds of a layout for a key is a 64-bit read and a
   rotation; only free indices are evaluated.
 - R = 4, L = 1024 is the best configuration found; R = 2 is slightly worse,
-  more patterns need more hash bits than the 64 of lo, and L = 4096 would
+  more layouts need more hash bits than the 64 of lo, and L = 4096 would
   need new weights.
 
 Results (`lab/results/ring/run.txt`; 10⁸ keys, GxHash, single thread unless
@@ -439,19 +439,19 @@ So G4 at λ = 4.75 has the space of wrapping with repair, builds 18% faster
 than PHast+ w3 (15% with 8 threads), and its queries take the same time as
 those of PHast+ w3: the additional operation (~1 ns, see λ = 5) is paid by
 the smaller number of bumped keys. Wrapping with repair remains the fastest
-at query time. Using the seed as shift count (64 patterns of 4 seeds,
+at query time. Using the seed as shift count (64 layouts of 4 seeds,
 `g64`) would have the same operations as PHast+ w3, but it bumps 4.7% of the
 keys at λ = 5 (64 bits do not provide enough independent offsets).
 
-Open issues: for fewer than ~10⁵ keys both wrapping and ring patterns use
+Open issues: for fewer than ~10⁵ keys both wrapping and ring layouts use
 more space than PHast+ w3 (e.g., 2.79–2.84 vs 2.70 b/key at 10⁴ keys): the
-geometry of small levels was tuned only for patterns without wrapping. The
+geometry of small levels was tuned only for layouts without wrapping. The
 experimental options and the diagnostics should be removed or moved out of
 `phast_r.rs` once a design is chosen.
 
 ## Rings only: cleanup and engineering (October 5, 2026)
 
-The design chosen is rings of patterns without repair (R = 4 and L = 1024
+The design chosen is rings of layouts without repair (R = 4 and L = 1024
 for 8-bit seeds; the default λ was 4.75, and it is 4.5 since the evening of
 October 5, as query speed comes first: see the end of this section). `phast_r.rs` was rewritten around it (commit
 `59f22b47`): wrapping, repair, the experimental options and the diagnostics
@@ -463,13 +463,13 @@ sections above describe.
 with identical seeds at each step, which makes the space a regression check).
 `perf` top-down on the first version showed 25% of the cycles in bad
 speculation (about 10 mispredicted branches per bucket) and a scan loop of
-54 instructions per key and pattern, mostly stack spills. In order of
+54 instructions per key and layout, mostly stack spills. In order of
 effect:
 
 - constant parameters for the default configuration (`Rings::DEFAULT`):
   the sweep is compiled twice, and in one version shifts and masks are
-  immediates and the loop over patterns is unrolled (96 → 83 ns/key);
-- one pass over the keys of a bucket, with patterns in the inner loop, and a
+  immediates and the loop over layouts is unrolled (96 → 83 ns/key);
+- one pass over the keys of a bucket, with layouts in the inner loop, and a
   single loop over all free seeds whose only branch is the exit; the sum of
   the slots of a seed is computed on packed ring indices with a population
   count (branch mispredictions per key: 2.1 → 0.75; 78 → 69);
@@ -480,7 +480,7 @@ effect:
   of the set of used slots (62 → 60), contiguous search state (−2.5%),
   occupancy and bumped keys collected by the sweep (−2.5%).
 
-Things that did *not* work: scanning patterns in the outer loop (more
+Things that did *not* work: scanning layouts in the outer loop (more
 instructions), removing bounds checks from that version (LLVM vectorizes
 the loop with gathers, which are slower), a `match` on several constant
 scales in the sweep or in queries (it becomes a jump table inside the loop,
@@ -489,7 +489,7 @@ zeroing a prefix of the search state of constant size (no gain, and the
 cold paths read the stale suffix).
 
 What is left in the sweep (62% of the time at 10⁷ keys, one thread): the scan
-is about 30 instructions per key and pattern, close to what the formulation
+is about 30 instructions per key and layout, close to what the formulation
 requires; grouping is 21%, and it is limited by memory bandwidth and page
 faults when run in parallel.
 
@@ -726,7 +726,7 @@ abstract, in the conclusions, and in the memory estimate of Section 5
   the only lever is the bump rate β.
 - 38.5% of PHast+ bumped buckets are self-collisions (2.6% ≈ λ²/2L of the
   buckets); seeds are incompressible (7.71 bits of entropy).
-- Independent offset patterns fix the rigidity; repair (half adder +
+- Independent offset layouts fix the rigidity; repair (half adder +
   eviction) recovers PHast's space.
 
 ## Implementation notes
@@ -760,7 +760,7 @@ abstract, in the conclusions, and in the memory estimate of Section 5
   was a real bug, covered by `test_many_chunks`), sweeps chunks in parallel,
   then gaps in parallel with the slots of the neighboring buckets marked as
   used. Each `Sweep` returns the slots it used.
-- `Sweep::search` scans the keys of a bucket once: for each pattern it
+- `Sweep::search` scans the keys of a bucket once: for each layout it
   rotates the ring of the key and accumulates the blocked seeds, the sum of
   the slots for the first seed, and the ring indices packed into 8/16/32-bit
   fields. Free seeds are then evaluated in a single loop (`Sweep::sum`: one
@@ -778,7 +778,7 @@ abstract, in the conclusions, and in the memory estimate of Section 5
   binary heap.
 - `Sweep::run` calls `sweep` with either the actual `Rings` or the constant
   `Rings::DEFAULT` (8-bit seeds, R = 4, L = 1024): in the second case shifts
-  and masks are constants and the loop over the patterns is unrolled.
+  and masks are constants and the loop over the layouts is unrolled.
 - Levels after the first: the signature is `level_sig(h, h', salt)`, where
   h is the first-level signature, h' = `to_sig(key, seed ^ SECOND_HASH)` and
   `salt` is `LevelParams::salt`. The last level (≤ 4096 keys) does not bump
@@ -789,8 +789,14 @@ abstract, in the conclusions, and in the memory estimate of Section 5
 - Queries: `get` inlines the first level; `get_slow(h, h')` is cold and out
   of line. `fast_scale`/`default_shifts` select constant shifts (see
   `pos0`).
-- Priority weights are those of PHast+ with wrapping (δ = 3) in Beling's
-  implementation (`default_weights`); they have not been retuned for rings.
+- Priority weights (`default_weights`) are tuned for rings by `wtune`
+  (grid search on w(1) = −d, w(k) = a ln k, then coordinate descent; space of
+  single-threaded constructions on 8 key sets of 10⁷ keys): one set for
+  S ≤ 8 (tuned with S = 8, L = 1024, λ = 4.25), one for S > 8 (tuned with
+  S = 10, L = 2048, λ = 5.75), used for all slice lengths. On independent key
+  sets they save 0.0008 (S = 8) and 0.0004 (S = 10) bits/key with respect to
+  the previous defaults, the weights of PHast+ with wrapping (δ = 3) in `ph`,
+  and they are not worse on small key sets (`results/wtune_rings`).
 
 ## Limits of repair (Section 5 of the paper)
 
@@ -830,10 +836,9 @@ the hardware and need not be rerun. Commands (from `paper/lab`):
    the standard workload (random strings of 10–50 bytes).
 6. **Paper**: author line is empty; the tables are generated by
    `lab/results/paper/tables.py` from the output of `run.sh`; the new entry
-   for PHOBIC in `biblio.bib` should be checked; `lean/README.md` cites line
-   numbers of `phast.tex`, which change with every edit above Section 5.
-   The priority weights have not been retuned for rings (`wtune`), and for
-   fewer than about 10⁵ keys PHast-R uses more space than PHast+ with
+   for PHOBIC in `biblio.bib` should be checked (`lean/README.md` now refers
+   to sections and statements of `phast.tex`, not to line numbers).
+   For fewer than about 10⁵ keys PHast-R uses more space than PHast+ with
    wrapping (fixed overhead and geometry of small levels).
 7. **The log₂e + O(log λ/λ) conjecture** of the PHast paper: for reference
    PHast, the excess over log₂e divided by ln λ/λ is ≈ 1.5 for λ in

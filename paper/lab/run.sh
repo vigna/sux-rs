@@ -9,8 +9,8 @@
 #   N2       number of keys for the large experiments  (default 100000000)
 #   THREADS  threads for multithreaded construction    (default: all cores)
 #   CORE     on Linux, core used to pin single-threaded runs (default 2)
-#   NTUNE    number of keys (per key set, two key sets) for weight tuning
-#            (default 4000000)
+#   NTUNE    number of keys (per key set, eight key sets) for weight tuning
+#            (default 10000000)
 #   OUT      output directory (default results/<hostname>-<date>)
 #
 # Each step writes <step>.txt (human-readable output) and, for the
@@ -28,7 +28,7 @@ else
 	THREADS=${THREADS:-$(sysctl -n hw.ncpu)}
 fi
 CORE=${CORE:-2}
-NTUNE=${NTUNE:-4000000}
+NTUNE=${NTUNE:-10000000}
 OUT=${OUT:-results/$(hostname -s)-$(date +%Y%m%d)}
 mkdir -p "$OUT"
 
@@ -106,10 +106,11 @@ step_anatomy() {
 	pin "$BIN/anatomy" -n "$N1" -s 8 -l 5.25 | tee "$OUT/anatomy.txt"
 }
 
-# Coordinate-descent tuning of the bucket-priority weights.
+# Tuning of the bucket-priority weights of the default configurations (the
+# key sets are built concurrently, so the tuner is not pinned).
 step_tune() {
-	pin "$BIN/wtune" 8 9 1 5.0 "$NTUNE" | tee "$OUT/wtune_8_9_1.txt"
-	pin "$BIN/wtune" 10 11 1 6.0 "$NTUNE" | tee "$OUT/wtune_10_11_1.txt"
+	"$BIN/wtune" 8 10 4.25 -n "$NTUNE" | tee "$OUT/wtune_8_10.txt"
+	"$BIN/wtune" 10 11 5.75 -n "$NTUNE" | tee "$OUT/wtune_10_11.txt"
 }
 
 steps=("$@")

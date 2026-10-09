@@ -137,7 +137,7 @@ fn read_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
     }
 }
 
-/// The index of the blocks of the partitions of a [`Store`] kept in a file.
+/// The table of the blocks of the partitions of a [`Store`] kept in a file.
 ///
 /// Each block occupies [`BLOCK`] records of the file, so blocks are
 /// identified by their index in the file. All blocks are full, except for
@@ -745,7 +745,7 @@ impl PHastRBuilder {
         + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         pl: &mut impl ProgressLog,
     ) -> Result<(usize, LevelParams, D, Vec<(LevelParams, Vec<u16>)>, Remap)> {
-        let weights = |g: &Geometry| self.priority_weights(g);
+        let weights = self.priority_weights();
 
         pl.item_name("key");
         pl.expected_updates(None);
@@ -784,7 +784,7 @@ impl PHastRBuilder {
 
         // The first level
         let geom = self.geometry(n, n, self.bucket_size);
-        let Level { seeds, occupied } = sweep_store(&store, &geom, &weights(&geom), 0, pl)?;
+        let Level { seeds, occupied } = sweep_store(&store, &geom, &weights, 0, pl)?;
         let num_holes = n - occupied
             .iter()
             .map(|w| w.count_ones() as usize)
@@ -838,7 +838,7 @@ impl PHastRBuilder {
                     if has_duplicates(&store, pl)? {
                         bail!("Duplicate keys");
                     }
-                    let out = sweep_store(&store, &geom, &weights(&geom), index, pl)?;
+                    let out = sweep_store(&store, &geom, &weights, index, pl)?;
                     let used: usize = out.occupied.iter().map(|w| w.count_ones() as usize).sum();
                     let next = collect_bumped(
                         &store,
@@ -870,8 +870,7 @@ impl PHastRBuilder {
                         }
                         let sigs =
                             group(k, |i| level_sig(records[i][0], records[i][1], salt), &geom);
-                        if let Some(out) =
-                            sweep_level(&sigs, &geom, &weights(&geom), false, no_logging![])
+                        if let Some(out) = sweep_level(&sigs, &geom, &weights, false, no_logging![])
                         {
                             let mut level = geom.level();
                             level.salt = salt;
@@ -947,7 +946,7 @@ mod tests {
                 (
                     f.seed,
                     f.num_keys,
-                    f.pattern_shift,
+                    f.layout_shift,
                     f.default_shifts,
                     f.fast_scale,
                     f.params0,
@@ -1019,11 +1018,11 @@ mod tests {
     fn test_parameters() -> Result<()> {
         for n in [1000, 100_000] {
             check_u64::<BitFieldVec<Box<[usize]>>>(n, PHastRBuilder::default().seed_bits(10))?;
-            for log2_patterns in 0..=3 {
+            for log2_layouts in 0..=3 {
                 check_u64::<Box<[u8]>>(
                     n,
                     PHastRBuilder::default()
-                        .log2_patterns(log2_patterns)
+                        .log2_layouts(log2_layouts)
                         .log2_slice_len(8),
                 )?;
             }

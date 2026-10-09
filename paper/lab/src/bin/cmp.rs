@@ -9,7 +9,7 @@
 //!
 //! - `r:<S>:<log2 L>:<lambda>[:<log2 R>[:<storage>]]` for PHast-R (bits per
 //!   seed, base-2 logarithm of the slice length, expected bucket size, base-2
-//!   logarithm of the number of patterns, 2 by default), where `<storage>`
+//!   logarithm of the number of layouts, 2 by default), where `<storage>`
 //!   is `u8`, `u16`, `bfv`, or `bfvu` (a `BitFieldVec` with unaligned reads;
 //!   default: `u8` if S <= 8, `bfv` otherwise).
 //!

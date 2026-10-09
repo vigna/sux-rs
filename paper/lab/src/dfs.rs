@@ -36,7 +36,7 @@ pub fn mix64(mut z: u64) -> u64 {
 #[derive(Clone, Copy, Debug)]
 pub struct DfsConf {
     pub seed_bits: u32,
-    pub log2_patterns: u32,
+    pub log2_layouts: u32,
     pub log2_slice_len: u32,
     pub lambda: f64,
     /// Number of previous seeds hashed into H (0: no chaining).
@@ -240,7 +240,7 @@ impl<'a> Search<'a> {
         let a = self.keys.layer_begin[j];
         let k = self.t.len();
         self.cands.clear();
-        for r in 0..(1u32 << self.c.log2_patterns) {
+        for r in 0..(1u32 << self.c.log2_layouts) {
             self.bases.clear();
             let mut sum = 0;
             for i in 0..k {
@@ -306,7 +306,7 @@ impl<'a> Search<'a> {
 pub fn run(keys: &Keys, c: &DfsConf) -> (DfsStats, Vec<u32>) {
     let start = Instant::now();
     let layers = keys.layers();
-    let shifts = (1usize << c.seed_bits) >> c.log2_patterns;
+    let shifts = (1usize << c.seed_bits) >> c.log2_layouts;
     let l = 1usize << c.log2_slice_len;
     let mut s = Search {
         keys,
@@ -392,7 +392,7 @@ pub fn run(keys: &Keys, c: &DfsConf) -> (DfsStats, Vec<u32>) {
 /// Verifies that the seeds define a bijection.
 pub fn verify(keys: &Keys, c: &DfsConf, seeds: &[u32]) -> bool {
     let layers = keys.layers();
-    let shifts = (1usize << c.seed_bits) >> c.log2_patterns;
+    let shifts = (1usize << c.seed_bits) >> c.log2_layouts;
     let l = 1usize << c.log2_slice_len;
     let mut s = Search {
         keys,

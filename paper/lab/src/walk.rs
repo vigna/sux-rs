@@ -16,7 +16,7 @@ use std::time::Instant;
 #[derive(Clone, Copy, Debug)]
 pub struct WalkConf {
     pub seed_bits: u32,
-    pub log2_patterns: u32,
+    pub log2_layouts: u32,
     pub log2_slice_len: u32,
     /// Process buckets by PHast-R priority in a window of 256 buckets
     /// (otherwise, in index order).
@@ -120,7 +120,7 @@ impl<'a> State<'a> {
         self.seeds[j] = NONE;
     }
 
-    /// Loads the bases of pattern r; returns their sum, or None if two keys
+    /// Loads the bases of layout r; returns their sum, or None if two keys
     /// collide.
     fn load(&mut self, j: usize, r: u32) -> Option<usize> {
         self.bases.clear();
@@ -140,7 +140,7 @@ impl<'a> State<'a> {
     fn search(&mut self, j: usize) -> Option<u32> {
         let k = self.size(j);
         let mut best = (usize::MAX, NONE);
-        for r in 0..(1u32 << self.c.log2_patterns) {
+        for r in 0..(1u32 << self.c.log2_layouts) {
             let Some(sum) = self.load(j, r) else { continue };
             let mut chunk = 0;
             while chunk < self.shifts {
@@ -172,7 +172,7 @@ impl<'a> State<'a> {
         let k = self.size(j);
         let mut best = (u64::MAX, NONE);
         let mut owners: Vec<u32> = Vec::with_capacity(k);
-        for r in 0..(1u32 << self.c.log2_patterns) {
+        for r in 0..(1u32 << self.c.log2_layouts) {
             if self.load(j, r).is_none() {
                 continue;
             }
@@ -281,7 +281,7 @@ impl<'a> State<'a> {
             }
             let seed = self.evict_seed(b);
             if seed == NONE {
-                // Self-colliding on every pattern
+                // Self-colliding on every layout
                 st.bumped_keys += self.size(b);
                 continue;
             }
@@ -352,7 +352,7 @@ fn priority(size: usize, b: usize) -> i64 {
 pub fn run(keys: &Keys, c: &WalkConf) -> WalkStats {
     let start = Instant::now();
     let layers = keys.layers();
-    let shifts = (1usize << c.seed_bits) >> c.log2_patterns;
+    let shifts = (1usize << c.seed_bits) >> c.log2_layouts;
     let mut s = State {
         keys,
         c: *c,

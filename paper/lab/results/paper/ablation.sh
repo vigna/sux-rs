@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Ablation of patterns: PHast-R with the default expected bucket size and 1,
-# 2 or 4 patterns (A8 and A10 in configs.sh), with the same settings as the
+# Ablation of layouts: PHast-R with the default expected bucket size and 1,
+# 2 or 4 layouts (A8 and A10 in configs.sh), with the same settings as the
 # single-threaded runs of run.sh; the configurations of each seed width are
 # built and queried by the same process, so their query times are
 # interleaved. About twenty minutes on a c7i.metal-24xl.

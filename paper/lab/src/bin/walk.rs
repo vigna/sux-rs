@@ -22,7 +22,7 @@ fn main() {
         let c = WalkConf {
             seed_bits: p[0].parse().unwrap(),
             log2_slice_len: p[1].parse().unwrap(),
-            log2_patterns: p[2].parse().unwrap(),
+            log2_layouts: p[2].parse().unwrap(),
             priority: p[5..].contains(&"prio"),
             cap,
             age_cost: p[5..]
@@ -41,7 +41,7 @@ fn main() {
         };
         let lambda: f64 = p[3].parse().unwrap();
         let alpha: f64 = p[4].parse().unwrap();
-        let w = (1usize << c.log2_slice_len) + ((1usize << c.seed_bits) >> c.log2_patterns) - 1;
+        let w = (1usize << c.log2_slice_len) + ((1usize << c.seed_bits) >> c.log2_layouts) - 1;
         let mut tot = WalkStats::default();
         let (mut keys_tot, mut range_max, mut range_sum, mut failed) = (0usize, 0usize, 0usize, 0);
         let mut bits = 0.0;

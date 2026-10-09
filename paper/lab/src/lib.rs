@@ -25,7 +25,7 @@ pub fn phast_r_bits_per_key(keys: &[u64], b: &sux::func::PHastRBuilder, seed_bit
 
 /// Parses a PHast-R configuration `<S>:<log2 L>:<lambda>[:<log2 R>]`: bits
 /// per seed, base-2 logarithm of the slice length, expected bucket size,
-/// and base-2 logarithm of the number of patterns (2 if missing). Returns
+/// and base-2 logarithm of the number of layouts (2 if missing). Returns
 /// the builder, the number of bits per seed, and a description.
 pub fn parse_config(fields: &[&str]) -> (sux::func::PHastRBuilder, u32, String) {
     let s: u32 = fields[0].parse().unwrap();
@@ -37,7 +37,7 @@ pub fn parse_config(fields: &[&str]) -> (sux::func::PHastRBuilder, u32, String) 
             .seed_bits(s)
             .log2_slice_len(ll)
             .bucket_size(lam)
-            .log2_patterns(lr),
+            .log2_layouts(lr),
         s,
         format!("PHast-R S={s} L={} R={} l={lam}", 1 << ll, 1 << lr),
     )

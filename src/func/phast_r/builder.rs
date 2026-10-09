@@ -25,7 +25,7 @@ pub(super) const LAST_LEVEL_THRESHOLD: usize = 4096;
 /// [`try_par_new_with_builder`], and its fields can be set using the
 /// methods of the same name.
 ///
-/// The defaults use 8-bit seeds, four patterns, slices of length 1024, and
+/// The defaults use 8-bit seeds, four layouts, slices of length 1024, and
 /// an expected bucket size of 4.25 keys: a larger size (e.g., 4.5) reduces
 /// space slightly, but more keys are bumped from the first level, and
 /// queries for such keys are slower; a smaller size makes queries slightly
@@ -49,19 +49,19 @@ pub struct PHastRBuilder {
     #[setters(generate = true)]
     pub(super) seed_bits: u32,
 
-    /// The base-2 logarithm of the number of patterns.
+    /// The base-2 logarithm of the number of layouts.
     ///
-    /// The default is 2. The in-slice offsets of the patterns are taken from
-    /// disjoint blocks of bits of a 64-bit value, so the number of patterns
-    /// times the base-2 logarithm of the slice length must be at most 64.
+    /// The default is 2. The in-slice offsets of the layouts use disjoint
+    /// bits of a 64-bit value, so the number of layouts times the base-2
+    /// logarithm of the slice length must be at most 64.
     #[setters(generate = true)]
-    pub(super) log2_patterns: u32,
+    pub(super) log2_layouts: u32,
 
     /// The base-2 logarithm of the slice length.
     ///
     /// The default is 10. This is a maximum, as small levels use shorter
     /// slices. Slices should have at least as many slots as there are seeds,
-    /// as otherwise different rotations of a pattern map the keys of a
+    /// as otherwise different rotations of a layout map the keys of a
     /// bucket to the same slots.
     #[setters(generate = true)]
     pub(super) log2_slice_len: u32,
@@ -81,8 +81,8 @@ pub struct PHastRBuilder {
     /// The size-dependent components of the priority of a bucket, for sizes
     /// from one to seven (larger sizes are extrapolated linearly).
     ///
-    /// By default, the weights depend on the number of bits of a seed and on
-    /// the slice length.
+    /// By default, the weights depend only on the number of bits of a seed:
+    /// they were tuned for 8-bit seeds and for 10-bit seeds.
     #[setters(generate = true, strip_option)]
     pub(super) weights: Option<[i64; 7]>,
 
@@ -130,14 +130,14 @@ impl PHastRBuilder {
                 D::MAX_BITS
             );
         }
-        if self.log2_patterns >= self.seed_bits {
-            bail!("Too many patterns for the given number of seed bits");
+        if self.log2_layouts >= self.seed_bits {
+            bail!("Too many layouts for the given number of seed bits");
         }
         if self.log2_slice_len > 16 {
             bail!("The slice length must be at most 65536");
         }
-        if self.log2_patterns > 6 || (self.log2_slice_len << self.log2_patterns) > 64 {
-            bail!("Too many patterns for the given slice length");
+        if self.log2_layouts > 6 || (self.log2_slice_len << self.log2_layouts) > 64 {
+            bail!("Too many layouts for the given slice length");
         }
         Ok(())
     }
@@ -145,9 +145,9 @@ impl PHastRBuilder {
     /// Logs the parameters of the construction.
     pub(super) fn log_params(&self, pl: &mut impl ProgressLog) {
         pl.info(format_args!(
-            "Seed bits: {}; patterns: {}; maximum slice length: {}; expected bucket size: {}",
+            "Seed bits: {}; layouts: {}; maximum slice length: {}; expected bucket size: {}",
             self.seed_bits,
-            1 << self.log2_patterns,
+            1 << self.log2_layouts,
             1 << self.log2_slice_len,
             self.bucket_size
         ));
@@ -175,10 +175,10 @@ impl PHastRBuilder {
         PHastR {
             seed,
             num_keys,
-            pattern_shift: 6 - self.log2_patterns,
-            default_shifts: 6 - self.log2_patterns == DEFAULT_PATTERN_SHIFT
+            layout_shift: 6 - self.log2_layouts,
+            default_shifts: 6 - self.log2_layouts == DEFAULT_LAYOUT_SHIFT
                 && params0.scale == DEFAULT_SCALE as u64,
-            fast_scale: if 6 - self.log2_patterns == DEFAULT_PATTERN_SHIFT && params0.scale <= 3 {
+            fast_scale: if 6 - self.log2_layouts == DEFAULT_LAYOUT_SHIFT && params0.scale <= 3 {
                 params0.scale as u8 + 1
             } else {
                 0
@@ -204,7 +204,7 @@ impl PHastRBuilder {
         let n = keys.len();
         let mut levels: Vec<(LevelParams, Vec<u16>)> = vec![];
         let mut entries: Vec<usize> = vec![];
-        let weights = |g: &Geometry| self.priority_weights(g);
+        let weights = self.priority_weights();
 
         if n == 0 {
             // A single empty level, so that queries need no special case
@@ -227,7 +227,7 @@ impl PHastRBuilder {
         let sigs = group(n, |i| hash(i, self.seed), &geom);
         pl.done_with_count(n);
         log_signatures(start, n, pl);
-        let out = sweep_bumping_level(&sigs, &geom, &weights(&geom), 0, n, pl);
+        let out = sweep_bumping_level(&sigs, &geom, &weights, 0, n, pl);
         // The indices of the keys of the next level
         let mut cur = bumped(&sigs, &out.seeds, &geom);
         drop(sigs);
@@ -301,7 +301,7 @@ impl PHastRBuilder {
                 if duplicates(&sigs, &cur, &geom) {
                     bail!("Duplicate keys");
                 }
-                let out = sweep_bumping_level(&sigs, &geom, &weights(&geom), levels.len(), k, pl);
+                let out = sweep_bumping_level(&sigs, &geom, &weights, levels.len(), k, pl);
                 let next: Vec<usize> = bumped(&sigs, &out.seeds, &geom)
                     .into_iter()
                     .map(|i| cur[i])
@@ -321,9 +321,7 @@ impl PHastRBuilder {
                     if attempt == 0 && duplicates(&sigs, &cur, &geom) {
                         bail!("Duplicate keys");
                     }
-                    if let Some(out) =
-                        sweep_level(&sigs, &geom, &weights(&geom), false, no_logging![])
-                    {
+                    if let Some(out) = sweep_level(&sigs, &geom, &weights, false, no_logging![]) {
                         let mut level = geom.level();
                         level.salt = salt;
                         break (level, out.seeds, out.occupied, vec![], geom.m);
@@ -364,12 +362,11 @@ impl PHastRBuilder {
         Ok((levels, remap(efb)))
     }
 
-    /// Returns the size-dependent components of the priority of a bucket for
-    /// a level of the given geometry: the default ones depend on the slice
-    /// length, which can be smaller for small levels.
-    pub(super) fn priority_weights(&self, g: &Geometry) -> [i64; 7] {
+    /// Returns the size-dependent components of the priority of a bucket:
+    /// the default ones depend only on the number of bits of a seed.
+    pub(super) fn priority_weights(&self) -> [i64; 7] {
         self.weights
-            .unwrap_or_else(|| default_weights(self.seed_bits, g.l_mask as usize + 1))
+            .unwrap_or_else(|| default_weights(self.seed_bits))
     }
 
     /// Computes the geometry of a level with `k` keys and output range `m`.
@@ -391,7 +388,7 @@ impl PHastRBuilder {
             // With slices having fewer slots than there are seeds, the seed
             // is not shifted, and rotations are redundant
             scale: l.ilog2().saturating_sub(self.seed_bits),
-            log2_patterns: self.log2_patterns,
+            log2_layouts: self.log2_layouts,
             seed_bits: self.seed_bits,
             m,
         }
@@ -402,7 +399,7 @@ impl Default for PHastRBuilder {
     fn default() -> Self {
         Self {
             seed_bits: 8,
-            log2_patterns: 2,
+            log2_layouts: 2,
             log2_slice_len: 10,
             bucket_size: 4.25,
             seed: 0,
@@ -423,11 +420,11 @@ pub(super) struct Geometry {
     pub(super) num_slices: u64,
     /// The slice length minus one.
     pub(super) l_mask: u64,
-    /// The base-2 logarithm of the amount by which a unit increase of the
-    /// seed moves the keys of a bucket.
+    /// The base-2 logarithm of the amount *u* by which a unit increase of
+    /// the seed moves the keys of a bucket.
     pub(super) scale: u32,
-    /// The base-2 logarithm of the number of patterns.
-    pub(super) log2_patterns: u32,
+    /// The base-2 logarithm of the number of layouts.
+    pub(super) log2_layouts: u32,
     /// The number of bits of a seed.
     pub(super) seed_bits: u32,
     /// The output range.
@@ -456,7 +453,7 @@ impl Geometry {
         mul_hi(b as u64 * self.bucket_width, self.num_slices) as usize
     }
 
-    /// Returns the value providing the in-slice offsets of the patterns:
+    /// Returns the value providing the in-slice offsets of the layouts:
     /// the lower half of the product of the signature and the number of
     /// buckets, whose upper half is the bucket (it is thus uniform among
     /// the keys of a bucket).
@@ -469,8 +466,8 @@ impl Geometry {
     /// has the given seed (see [`PHastR::pos`]).
     #[inline(always)]
     pub(super) fn pos(&self, h: u64, seed: usize) -> usize {
-        let r = seed & ((1 << self.log2_patterns) - 1);
-        let offset = (self.offsets(h) >> (r as u32 * (64 >> self.log2_patterns)))
+        let r = seed & ((1 << self.log2_layouts) - 1);
+        let offset = (self.offsets(h) >> (r as u32 * (64 >> self.log2_layouts)))
             .wrapping_add((seed as u64) << self.scale);
         self.slice_begin(h) + (offset & self.l_mask) as usize
     }
@@ -491,32 +488,20 @@ impl Geometry {
     }
 }
 
-/// Default size-dependent priority weights: those of PHast+ with wrapping
-/// and multiplier 3 in the implementation by Piotr Beling.
-#[rustfmt::skip]
-fn default_weights(seed_bits: u32, slice_len: usize) -> [i64; 7] {
-    let w: [i32; 7] = match (seed_bits, slice_len) {
-        (_, ..=64) => [-81342, 97738, 103193, 106305, 108524, 109876, 112382],
-        (_, ..=128) => [-82883, 89250, 99246, 105030, 108983, 111224, 117058],
-        (..=6, ..=256) => [-143420, 70364, 89794, 100431, 107778, 113842, 253543],
-        (..=6, ..=512) => [-118906, 41451, 83177, 104570, 119520, 131788, 197543],
-        (_, ..=256) => [-82828, 77192, 94710, 105243, 112716, 118768, 136225],
-        (7, ..=512) => [-11540, 68580, 98218, 115370, 128607, 139118, 145832],
-        (_, ..=512) => [25100, 89361, 117113, 134755, 147369, 154606, 172378],
-        (8, ..=1024) => [-50649, 63792, 110014, 139267, 161285, 176594, 188305],
-        (..=8, ..=2048) => [-3427, 10388, 90470, 141895, 179413, 208576, 232553],
-        (9, ..=1024) => [-41757, 60279, 113069, 143467, 162892, 179091, 188139],
-        (..=9, ..=2048) => [-3753, 11840, 77702, 132696, 169641, 200687, 218764],
-        (10, ..=1024) => [-2394, 29640, 81921, 108732, 126229, 141102, 150457],
-        (..=10, ..=2048) => [-3417, 13564, 81208, 133035, 168506, 198114, 214382],
-        (11, ..=1024) => [-1555, 25982, 126717, 155711, 174202, 191358, 198247],
-        (11, ..=2048) => [-2229, 21208, 88554, 137643, 169905, 200075, 213746],
-        (11, _) => [-3267, 25041, 24325, 40786, 100528, 155125, 182822],
-        (_, ..=1024) => [-2206, 33628, 110901, 143147, 161228, 177559, 183794],
-        (_, ..=2048) => [-2665, 16252, 98048, 149519, 183487, 214959, 227347],
-        (_, _) => [-3356, 26074, 26278, 44692, 94747, 143426, 168599],
-    };
-    w.map(|x| x as i64)
+/// Default size-dependent priority weights, used for all slice lengths.
+///
+/// The weights were tuned for PHast-R with four layouts by coordinate
+/// descent on the space of single-threaded constructions on 10⁷ keys: the
+/// weights for seeds of at most eight bits with 8-bit seeds, slices of length
+/// 1024 and an expected bucket size of 4.25, and the weights for longer seeds
+/// with 10-bit seeds, slices of length 2048 and an expected bucket size of
+/// 5.75.
+const fn default_weights(seed_bits: u32) -> [i64; 7] {
+    if seed_bits <= 8 {
+        [-50000, 56315, 103861, 137629, 159944, 178176, 189591]
+    } else {
+        [42000, 47041, 125806, 178081, 209321, 242846, 258427]
+    }
 }
 
 /// Returns the salt of a level after the first one (see [`level_sig`]): a

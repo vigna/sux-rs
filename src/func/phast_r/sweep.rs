@@ -346,19 +346,19 @@ pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog>(
     Some(Level { seeds, occupied })
 }
 
-/// Returns whether position `p` is set in the occupancy bitmap.
+/// Returns whether slot `p` is used, given the bit vector of used slots.
 #[inline(always)]
 pub(super) fn is_occupied(bits: &[u64], p: usize) -> bool {
     bits[p / 64] >> (p % 64) & 1 != 0
 }
 
-/// Returns the positions in [0 . . m) that are not set in the occupancy
-/// bitmap, in increasing order.
+/// Returns the free slots in [0 . . m), given the bit vector of used slots, in
+/// increasing order.
 pub(super) fn holes(bits: &[u64], m: usize) -> Vec<usize> {
     /// Number of words scanned by a parallel task.
     #[cfg(feature = "rayon")]
     const CHUNK: usize = 1 << 12;
-    // Appends to out the free positions of the words starting at word first
+    // Appends to out the free slots of the words starting at word first
     let scan = |first: usize, words: &[u64], out: &mut Vec<usize>| {
         for (i, &word) in words.iter().enumerate() {
             let w = first + i;
@@ -396,15 +396,15 @@ pub(super) fn holes(bits: &[u64], m: usize) -> Vec<usize> {
 /// a sweep.
 ///
 /// The lowest log₂*R* bits of the seed of a bucket, where *R* is the number
-/// of patterns, choose a *pattern* *r*, and the remaining bits a *rotation*
-/// *j*. Once the pattern is chosen, each key of the bucket has a *base
-/// position*, its slot for rotation 0, and rotation *j* moves all the keys
+/// of layouts, choose a *layout* *r*, and the remaining bits a *rotation*
+/// *j*. Once the layout is chosen, each key of the bucket has a *base
+/// slot*, its slot for rotation 0, and rotation *j* moves all the keys
 /// of the bucket by *j* *strides*, wrapping around the end of their slices
-/// (the stride is the number of patterns times the amount by which a unit
-/// increase of the seed moves a key). As the rotation varies, a key goes
+/// (the stride *T* is the number of layouts times the amount *u* by which a
+/// unit increase of the seed moves a key). As the rotation varies, a key goes
 /// through the slots of its *ring*: the slots of its slice whose distance
-/// from its base position is a multiple of the stride. When slices have
-/// fewer slots than there are seeds, a pattern has more rotations than a
+/// from its base slot is a multiple of the stride. When slices have
+/// fewer slots than there are seeds, a layout has more rotations than a
 /// ring has slots, and rotations that differ by the length of a ring map the
 /// keys of a bucket to the same slots (rotations are *redundant*).
 ///
@@ -412,30 +412,31 @@ pub(super) fn holes(bits: &[u64], m: usize) -> Vec<usize> {
 /// (*rows*), 64 slots of each row at a time (*columns*): bit *i* of word
 /// *c* · 2^`log2_stride` + *ϱ* is associated with slot
 /// (64*c* + *i*) · 2^`log2_stride` + *ϱ* (the number of columns is a power
-/// of two, and columns are used cyclically). The bits of a ring are thus a
-/// block of consecutive bits of a row, starting from the bit of the *first
-/// slot* of the ring (the one closest to the beginning of the slice), and
-/// rotation *j* maps a key to the bit of index *x* + *j* of the block,
-/// modulo the length of the ring, where *x* is the index of its base
-/// position.
+/// of two, and columns are used cyclically). The *bits of the ring* of a key,
+/// which record whether the slots of its ring are used, are thus consecutive
+/// bits of a row, starting from the bit of the *first slot* of the ring (the
+/// one closest to the beginning of the slice). The slots of a ring are
+/// numbered from 0 in increasing order, and the *index* of a key is the
+/// number *x* of its base slot: rotation *j* maps the key to slot *x* + *j* of
+/// its ring, modulo the length of the ring.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Rings {
     /// The slice length minus one.
     l_mask: u64,
-    /// The base-2 logarithm of the amount by which a unit increase of the
-    /// seed moves the keys of a bucket.
+    /// The base-2 logarithm of the amount *u* by which a unit increase of
+    /// the seed moves the keys of a bucket.
     scale: u32,
-    /// The number of patterns.
-    patterns: usize,
-    /// The distance in bits between the offsets of two consecutive
-    /// patterns.
-    pattern_bits: u32,
+    /// The number of layouts.
+    layouts: usize,
+    /// The width *f* of the field of each layout in the value providing the
+    /// offsets (64 divided by the number of layouts).
+    layout_bits: u32,
     /// The base-2 logarithm of the stride (at most that of the slice
     /// length).
     log2_stride: u32,
     /// The number of slots of a ring.
     len: usize,
-    /// The number of rotations of a pattern (at least the length of a ring;
+    /// The number of rotations of a layout (at least the length of a ring;
     /// if it is larger, rotations are redundant).
     rotations: usize,
     /// The number of words of the set of used slots, minus one.
@@ -444,13 +445,13 @@ struct Rings {
 
 impl Rings {
     /// The rings of the levels of a function with default parameters
-    /// (8-bit seeds, four patterns, and slices of 1024 slots), except for
+    /// (8-bit seeds, four layouts, and slices of 1024 slots), except for
     /// the size of the set of used slots.
     const DEFAULT: Rings = Rings {
         l_mask: 1023,
         scale: DEFAULT_SCALE,
-        patterns: 4,
-        pattern_bits: 16,
+        layouts: 4,
+        layout_bits: 16,
         log2_stride: 4,
         len: 64,
         rotations: 64,
@@ -460,7 +461,7 @@ impl Rings {
     fn new(g: &Geometry) -> Self {
         let l = g.l_mask as usize + 1;
         // With slices shorter than the stride, a ring is a single slot
-        let log2_stride = (g.log2_patterns + g.scale).min(l.ilog2());
+        let log2_stride = (g.log2_layouts + g.scale).min(l.ilog2());
         // The cyclic set must contain the slots reachable from the buckets
         // in the window (WINDOW buckets, whose slices begin about
         // num_slices / buckets slots apart) plus a slice; gap sweeps need
@@ -473,26 +474,26 @@ impl Rings {
         Self {
             l_mask: g.l_mask,
             scale: g.scale,
-            patterns: 1 << g.log2_patterns,
-            pattern_bits: 64 >> g.log2_patterns,
+            layouts: 1 << g.log2_layouts,
+            layout_bits: 64 >> g.log2_layouts,
             log2_stride,
             len: l >> log2_stride,
-            rotations: (1usize << g.seed_bits) >> g.log2_patterns,
+            rotations: (1usize << g.seed_bits) >> g.log2_layouts,
             word_mask: slots / 64 - 1,
         }
     }
 
-    /// Returns the offset in its slice of the base position of a key in
-    /// pattern `r`, given the value providing its offsets.
+    /// Returns the offset in its slice of the base slot of a key in layout
+    /// `r`, given the value providing its offsets.
     #[inline(always)]
     fn offset(&self, offsets: u64, r: usize) -> usize {
-        ((offsets >> (r as u32 * self.pattern_bits)).wrapping_add((r as u64) << self.scale)
+        ((offsets >> (r as u32 * self.layout_bits)).wrapping_add((r as u64) << self.scale)
             & self.l_mask) as usize
     }
 
-    /// Returns the first slot of the ring of a key in a pattern and the
-    /// index in the ring of its base position, given the beginning of the
-    /// slice of the key and the [offset] of its base position.
+    /// Returns the first slot of the ring of a key in a layout and the
+    /// index of the key, given the beginning of the slice of the key and the
+    /// [offset] of its base slot.
     ///
     /// [offset]: Self::offset
     #[inline(always)]
@@ -503,9 +504,8 @@ impl Rings {
         )
     }
 
-    /// Returns the slot of a key for rotation `j` of a pattern, given the
-    /// first slot of its ring and the index of its base position (see
-    /// [`ring`]).
+    /// Returns the slot of a key for rotation `j` of a layout, given the
+    /// first slot of its ring and the index of the key (see [`ring`]).
     ///
     /// [`ring`]: Self::ring
     #[inline(always)]
@@ -513,18 +513,18 @@ impl Rings {
         first + (((index + j) & (self.len - 1)) << self.log2_stride)
     }
 
-    /// Returns the seed choosing pattern `r` and rotation `j`.
+    /// Returns the seed choosing layout `r` and rotation `j`.
     ///
-    /// Rotation 0 of pattern 0 is seed zero, which marks bumped buckets; if
+    /// Rotation 0 of layout 0 is seed zero, which marks bumped buckets; if
     /// rotations are redundant we use instead the rotation equal to the
     /// length of a ring, which maps the keys to the same slots.
     #[inline(always)]
     fn seed(&self, r: usize, j: usize) -> usize {
         if r == 0 && j == 0 {
             debug_assert!(self.len < self.rotations);
-            self.len * self.patterns
+            self.len * self.layouts
         } else {
-            j * self.patterns + r
+            j * self.layouts + r
         }
     }
 
@@ -578,12 +578,13 @@ const MAX_FREE: u32 = 32;
 
 /// The state of a sweep over a range of buckets.
 ///
-/// Buckets are processed in order of priority inside a window sliding over
-/// the range, as in PHast: for each bucket we look for the seed minimizing
-/// the sum of the slots of its keys. The rotations of a pattern for which
-/// no key of a bucket is mapped to a used slot are obtained by rotating the
-/// ring of each key by the index of its base position and combining the
-/// results with a bitwise OR (see [`Rings`]).
+/// Buckets enter, in order of index, a priority queue holding a few buckets
+/// at a time (the [`Window`]), as in PHast, and the bucket of highest
+/// priority gets the feasible seed minimizing the sum of the slots of its
+/// keys. The free rotations of a layout, which map every key of the bucket
+/// to a free slot, are obtained by cyclically shifting the bits of the ring
+/// of each key by the index of the key and combining the results with a
+/// bitwise OR (see [`Rings`]).
 struct Sweep<'a, S: PartSource> {
     /// The signatures of the keys of the level.
     sigs: &'a S,
@@ -628,7 +629,7 @@ impl<'a, S: PartSource> Sweep<'a, S> {
     ) -> Self {
         debug_assert_eq!(<[u16]>::len(seeds), hi - lo);
         let rings = Rings::new(g);
-        let free_words = rings.patterns * rings.len.div_ceil(64);
+        let free_words = rings.layouts * rings.len.div_ceil(64);
         // Columns contain 64 strides
         let first_slot = g.first_slice(lo) >> (rings.log2_stride + 6) << (rings.log2_stride + 6);
         Self {
@@ -643,7 +644,7 @@ impl<'a, S: PartSource> Sweep<'a, S> {
             first_slot,
             occupied: vec![],
             occupied_begin: first_slot,
-            state: Vec::with_capacity(free_words + rings.patterns * 3),
+            state: Vec::with_capacity(free_words + rings.layouts * 3),
             nonzero: vec![(0, 0); free_words],
             back: Vec::with_capacity(64),
         }
@@ -658,16 +659,16 @@ impl<'a, S: PartSource> Sweep<'a, S> {
     /// Returns the parts of the state of the search for the seed of a
     /// bucket:
     ///
-    /// - for each pattern, the *free* rotations, for which no key of the
+    /// - for each layout, the *free* rotations, for which no key of the
     ///   bucket is mapped to a used slot (limited to rotations smaller than
     ///   the length of a ring);
     ///
-    /// - for each pattern, the sum of the slots of the keys of the bucket
+    /// - for each layout, the sum of the slots of the keys of the bucket
     ///   for rotation 0;
     ///
-    /// - for each pattern, the indices in their rings of the base positions
-    ///   of the keys of the bucket, packed into words (see [`sum`]): a word
-    ///   for each pattern contains the indices of a group of keys.
+    /// - for each layout, the indices of the keys of the bucket, packed into
+    ///   words (see [`sum`]): a word
+    ///   for each layout contains the indices of a group of keys.
     ///
     /// The parts are stored contiguously, so that in the innermost loops
     /// they are accessed through a single pointer.
@@ -678,8 +679,8 @@ impl<'a, S: PartSource> Sweep<'a, S> {
         rings: &Rings,
         state: &'b mut [u64],
     ) -> (&'b mut [u64], &'b mut [u64], &'b mut [u64]) {
-        let (free, state) = state.split_at_mut(rings.patterns * rings.len.div_ceil(64));
-        let (sums, indices) = state.split_at_mut(rings.patterns);
+        let (free, state) = state.split_at_mut(rings.layouts * rings.len.div_ceil(64));
+        let (sums, indices) = state.split_at_mut(rings.layouts);
         (free, sums, indices)
     }
 
@@ -706,14 +707,13 @@ impl<'a, S: PartSource> Sweep<'a, S> {
     }
 
     /// Returns the sum of the slots of the keys of a bucket of the given
-    /// size for rotation `j` of pattern `r`, given the sum for rotation 0
-    /// of each pattern and the packed indices of the base positions of the
-    /// keys.
+    /// size for rotation `j` of layout `r`, given the sum for rotation 0
+    /// of each layout and the packed indices of the keys.
     ///
     /// Rotation `j` moves each key `j` strides forward, and then a slice
     /// length backward if the key wraps around the end of its slice, that
-    /// is, if the index of its base position plus `j` is at least the
-    /// length of the ring: since indices are packed into fields that can
+    /// is, if the index of the key plus `j` is at least the length of the
+    /// ring: since indices are packed into fields that can
     /// contain the sum of two indices, we can count such keys a word at a
     /// time.
     #[inline(always)]
@@ -722,10 +722,10 @@ impl<'a, S: PartSource> Sweep<'a, S> {
         let ones = u64::MAX / (u64::MAX >> (64 - (1 << rings.log2_field())));
         let (j_in_fields, len_in_fields) = (j as u64 * ones, rings.len as u64 * ones);
         // Almost all buckets have a single group of keys
-        let (first, others) = indices.split_at(rings.patterns);
+        let (first, others) = indices.split_at(rings.layouts);
         let mut back = ((first[r] + j_in_fields) & len_in_fields).count_ones() as usize;
         if !others.is_empty() {
-            back += Self::back_others(others, rings.patterns, r, j_in_fields, len_in_fields);
+            back += Self::back_others(others, rings.layouts, r, j_in_fields, len_in_fields);
         }
         (sums[r] as usize + ((size * j) << rings.log2_stride))
             .wrapping_sub(back * (rings.l_mask as usize + 1))
@@ -739,13 +739,13 @@ impl<'a, S: PartSource> Sweep<'a, S> {
     #[inline(never)]
     fn back_others(
         others: &[u64],
-        patterns: usize,
+        layouts: usize,
         r: usize,
         j_in_fields: u64,
         len_in_fields: u64,
     ) -> usize {
         others
-            .chunks_exact(patterns)
+            .chunks_exact(layouts)
             .map(|group| ((group[r] + j_in_fields) & len_in_fields).count_ones() as usize)
             .sum()
     }
@@ -757,8 +757,8 @@ impl<'a, S: PartSource> Sweep<'a, S> {
     fn search(&mut self, rings: &Rings, keys: &[u64]) -> usize {
         let g = *self.g;
         let size = keys.len();
-        let (n, patterns) = (rings.len, rings.patterns);
-        // The number of words of the free rotations of a pattern
+        let (n, layouts) = (rings.len, rings.layouts);
+        // The number of words of the free rotations of a layout
         let words = n.div_ceil(64);
         let ring_mask = if n < 64 { (1u64 << n) - 1 } else { !0 };
         // Indices are packed in groups filling a word
@@ -772,27 +772,27 @@ impl<'a, S: PartSource> Sweep<'a, S> {
             ..
         } = self;
         state.clear();
-        state.resize(patterns * (words + 1 + size.div_ceil(1 << log2_group)), 0);
+        state.resize(layouts * (words + 1 + size.div_ceil(1 << log2_group)), 0);
         // Slices, so that pointers and lengths are loop invariants
         let (free, sums, indices) = Self::state(rings, state);
-        let (used, nonzero) = (&used[..], &mut nonzero[..patterns * words]);
+        let (used, nonzero) = (&used[..], &mut nonzero[..layouts * words]);
 
-        // For each pattern we rotate the ring of each key by the index of
-        // its base position, so that the bit of index j is associated with
-        // the slot of the key for rotation j, and combine the results: we
-        // obtain the rotations for which some key is mapped to a used slot
+        // For each layout we cyclically shift the bits of the ring of each
+        // key by the index of the key, so that bit j is associated with the
+        // slot of the key for rotation j, and combine the results: we obtain
+        // the rotations for which some key is mapped to a used slot
         for (k, &key) in keys.iter().enumerate() {
             let (slice_begin, offsets) = (g.slice_begin(key), g.offsets(key));
-            let indices = &mut indices[(k >> log2_group) * patterns..][..patterns];
+            let indices = &mut indices[(k >> log2_group) * layouts..][..layouts];
             let field = (k as u32 % (1 << log2_group)) << log2_field;
-            for r in 0..patterns {
+            for r in 0..layouts {
                 let offset = rings.offset(offsets, r);
                 let (first, x) = rings.ring(slice_begin, offset);
                 sums[r] += (slice_begin + offset) as u64;
                 indices[r] |= (x as u64) << field;
                 if words == 1 {
                     // Rings of at most a word (e.g., 8-bit seeds and four
-                    // patterns)
+                    // layouts)
                     let ring = rings.row64(used, first) & ring_mask;
                     free[r] |= (ring >> x) | (ring << ((n - x) % 64));
                 } else {
@@ -817,7 +817,7 @@ impl<'a, S: PartSource> Sweep<'a, S> {
                 }
             }
         }
-        // Rotation 0 of pattern 0 is seed zero, which marks bumped buckets,
+        // Rotation 0 of layout 0 is seed zero, which marks bumped buckets,
         // unless rotations are redundant (see Rings::seed)
         if n == rings.rotations {
             free[0] |= 1;
@@ -878,7 +878,7 @@ impl<'a, S: PartSource> Sweep<'a, S> {
     /// Returns the best free seed of the bucket being searched, as
     /// [`search`] does, when there are many free seeds.
     ///
-    /// In a pattern the sum of the slots increases with the rotation, except
+    /// In a layout the sum of the slots increases with the rotation, except
     /// at the rotations at which some key wraps around the end of its slice:
     /// between two such rotations only the first free one can be the best
     /// one.
@@ -891,7 +891,7 @@ impl<'a, S: PartSource> Sweep<'a, S> {
         let words = n.div_ceil(64);
         let mut best = (usize::MAX, 0);
         let (free, sums, indices) = Self::state(&rings, &mut self.state);
-        for r in 0..rings.patterns {
+        for r in 0..rings.layouts {
             let free = &free[r * words..][..words];
             self.back.clear();
             self.back.extend(
@@ -919,7 +919,7 @@ impl<'a, S: PartSource> Sweep<'a, S> {
     }
 
     /// Marks as used the slots of the given keys for rotation `j` of
-    /// pattern `r`, which must be free, unless two keys are mapped to
+    /// layout `r`, which must be free, unless two keys are mapped to
     /// the same slot, in which case nothing happens and the method returns
     /// `false`.
     #[inline(always)]

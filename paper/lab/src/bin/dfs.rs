@@ -18,7 +18,7 @@ fn main() {
         let c = DfsConf {
             seed_bits: p[0].parse().unwrap(),
             log2_slice_len: p[1].parse().unwrap(),
-            log2_patterns: p[2].parse().unwrap(),
+            log2_layouts: p[2].parse().unwrap(),
             lambda: p[3].parse().unwrap(),
             chain: p[4].parse().unwrap(),
             min_sum: !p[5..].contains(&"seed"),

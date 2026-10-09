@@ -25,9 +25,9 @@ struct Args {
     /// The number of bits per seed (byte seeds are used for 8 bits or less).
     #[arg(short, long, default_value_t = 8)]
     seed_bits: u32,
-    /// The base-2 logarithm of the number of patterns.
+    /// The base-2 logarithm of the number of layouts.
     #[arg(short = 'R', long, default_value_t = 2)]
-    log2_patterns: u32,
+    log2_layouts: u32,
     /// The base-2 logarithm of the slice length.
     #[arg(short = 'L', long, default_value_t = 10)]
     log2_slice_len: u32,
@@ -39,7 +39,7 @@ struct Args {
 fn run<D: SeedStoreBuild + SeedStore + MemSize + mem_dbg::FlatType>(args: &Args, keys: &[u64]) {
     let builder = PHastRBuilder::default()
         .seed_bits(args.seed_bits)
-        .log2_patterns(args.log2_patterns)
+        .log2_layouts(args.log2_layouts)
         .log2_slice_len(args.log2_slice_len)
         .bucket_size(args.bucket_size);
     let start = Instant::now();
