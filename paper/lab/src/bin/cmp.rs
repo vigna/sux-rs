@@ -5,7 +5,10 @@
 //!
 //! - `ref:<chooser>:<S>:<lambda>` for the reference implementation, where
 //!   `<chooser>` is `plus` (PHast+), `w1`/`w2`/`w3` (PHast+ with wrapping and
-//!   multiplier 1/2/3), or `phast` (regular PHast);
+//!   multiplier 1/2/3, choosing the seed minimizing the sum of the values of
+//!   the keys), `w1p`/`w2p`/`w3p` (the same, minimizing their product),
+//!   `phast` (regular PHast, minimizing the product, the default of `ph`), or
+//!   `phastsum` (regular PHast, minimizing the sum);
 //!
 //! - `r:<S>:<log2 L>:<lambda>[:<log2 R>[:<storage>]]` for PHast-R (bits per
 //!   seed, base-2 logarithm of the slice length, expected bucket size, base-2
@@ -29,8 +32,8 @@ use dsi_progress_logger::no_logging;
 use lab::GxKey;
 use mem_dbg::{FlatType, MemSize, SizeFlags};
 use ph::phast::{
-    DefaultCompressedArray, Function2, Generic, GenericCore, SeedChooser, SeedOnly, ShiftOnly,
-    ShiftOnlyWrapped,
+    Conf, DefaultCompressedArray, Function2, GenericCore, ProdOfValues, SeedChooserConf, SeedOnly,
+    ShiftOnly, ShiftOnlyProdWrapped, ShiftOnlyWrapped, SumOfValues,
 };
 use ph::seedable_hash::BuildGxHash;
 use ph::seeds::{Bits8, BitsFast, SeedSize};
@@ -207,7 +210,7 @@ fn report(e: &Entry, q: [f64; 3]) {
     );
 }
 
-fn ref_run<'a, SC: SeedChooser + 'a, SS: SeedSize + 'a>(
+fn ref_run<'a, SC: SeedChooserConf + Clone + 'a, SS: SeedSize + 'a>(
     keys: &'a [u64],
     ss: SS,
     lam: f64,
@@ -224,7 +227,7 @@ fn ref_run<'a, SC: SeedChooser + 'a, SS: SeedSize + 'a>(
 
 fn ref_run_h<
     'a,
-    SC: SeedChooser + Copy + 'a,
+    SC: SeedChooserConf + Clone + 'a,
     SS: SeedSize + 'a,
     H: BuildSeededHasher + Sync + Copy + 'a,
 >(
@@ -236,15 +239,16 @@ fn ref_run_h<
     name: &str,
     hasher: H,
 ) -> Entry<'a> {
-    let params = Generic::new(ss, (lam * 100.0).round() as u16);
+    let bs100 = (lam * 100.0).round() as u32;
     let (f, build) = timed_builds(
         a.builds,
         keys.len(),
-        || -> Function2<GenericCore, SS, SC, DefaultCompressedArray, H> {
+        || -> Function2<GenericCore, SS, SC::Core, DefaultCompressedArray, H> {
+            let conf = Conf::generic_with_hash(ss, bs100, hasher);
             if a.threads > 1 {
-                Function2::with_slice_p_threads_hash_sc(keys, &params, a.threads, hasher, sc)
+                Function2::with_slice_conf_threads_sc(keys, conf, a.threads, sc.clone())
             } else {
-                Function2::with_slice_p_hash_sc(keys, &params, hasher, sc)
+                Function2::with_slice_conf_sc(keys, conf, sc.clone())
             }
         },
     );
@@ -280,7 +284,11 @@ fn ref_dispatch<'a, SS: SeedSize + 'a>(
         "w1" => ref_run(keys, ss, lam, ShiftOnlyWrapped::<1>, a, name),
         "w2" => ref_run(keys, ss, lam, ShiftOnlyWrapped::<2>, a, name),
         "w3" => ref_run(keys, ss, lam, ShiftOnlyWrapped::<3>, a, name),
-        "phast" => ref_run(keys, ss, lam, SeedOnly, a, name),
+        "phast" => ref_run(keys, ss, lam, SeedOnly(ProdOfValues), a, name),
+        "phastsum" => ref_run(keys, ss, lam, SeedOnly(SumOfValues), a, name),
+        "w1p" => ref_run(keys, ss, lam, ShiftOnlyProdWrapped::<1>, a, name),
+        "w2p" => ref_run(keys, ss, lam, ShiftOnlyProdWrapped::<2>, a, name),
+        "w3p" => ref_run(keys, ss, lam, ShiftOnlyProdWrapped::<3>, a, name),
         _ => panic!("unknown chooser {chooser}"),
     }
 }

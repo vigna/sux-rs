@@ -789,14 +789,31 @@ abstract, in the conclusions, and in the memory estimate of Section 5
 - Queries: `get` inlines the first level; `get_slow(h, h')` is cold and out
   of line. `fast_scale`/`default_shifts` select constant shifts (see
   `pos0`).
-- Priority weights (`default_weights`) are tuned for rings by `wtune`
+- Seed choice (October 2026, from `ph` of October 8, 2026, whose PHast
+  now uses the `ProdOfValues` evaluator): among the free rotations, the
+  sweep chooses the one minimizing the product of the distances of the slots
+  of the keys from the *base* of the bucket, 95 slots before its first slice
+  (`Sweep::cost`), computed as a sum of fixed-point logarithms read from a
+  table, so that it does not depend on the order of the keys (offline and in
+  memory build the same structure). With respect to the sum of the slots it
+  saves 0.017 (S = 8, λ = 4.25) and 0.034 (S = 10, λ = 5.75) bits/key and
+  bumps 25–35% fewer keys, but costs about 5 ns/key more on the M1 (a table
+  lookup per key and free rotation; median ten free rotations per bucket).
+  The packed-index trick computing the sum in constant time is gone.
+- Priority weights (`default_weights`) are tuned by `wtune` for the product
   (grid search on w(1) = −d, w(k) = a ln k, then coordinate descent; space of
   single-threaded constructions on 8 key sets of 10⁷ keys): one set for
   S ≤ 8 (tuned with S = 8, L = 1024, λ = 4.25), one for S > 8 (tuned with
-  S = 10, L = 2048, λ = 5.75), used for all slice lengths. On independent key
-  sets they save 0.0008 (S = 8) and 0.0004 (S = 10) bits/key with respect to
-  the previous defaults, the weights of PHast+ with wrapping (δ = 3) in `ph`,
-  and they are not worse on small key sets (`results/wtune_rings`).
+  S = 10, L = 2048, λ = 5.75), used for all slice lengths
+  (`results/wtune_rings`; the `*_sum` files are the tuning for the sum).
+- Reference implementation: `ph` of October 8, 2026 (upstream aa497a8, fork
+  commit a7ba1f3 with the analysis accessors). PHast with the product
+  evaluator: 1.887 (S = 8, λ = 4.5) and 1.814 (S = 10, λ = 5.8) bits/key at
+  10⁷; PHast+ with wrapping and the product (`ShiftOnlyProdWrapped`, lab
+  choosers w1p/w2p/w3p) saves 0.01–0.05 bits/key with respect to the sum
+  (best: S = 8 w3p λ = 5 1.956; S = 10 w2p λ = 6.25 1.852, w3p λ = 6 1.852).
+  PHast-R with the product: S = 8 λ = 4.25/4.5/4.75 1.943/1.903/1.900
+  (bumped 0.51/1.19/2.28%), S = 10 λ = 5.75/6 1.824/1.823.
 
 ## Limits of repair (Section 5 of the paper)
 

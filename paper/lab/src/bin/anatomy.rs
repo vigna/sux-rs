@@ -11,8 +11,8 @@
 
 use clap::Parser;
 use ph::phast::{
-    Core, DefaultCompressedArray, Function2, Generic, GenericCore, SeedChooser, ShiftOnly,
-    ShiftOnlyWrapped,
+    Conf, Core, DefaultCompressedArray, Function2, GenericCore, SeedChooserConf, SeedChooserCore,
+    ShiftOnly, ShiftOnlyWrapped,
 };
 use ph::seedable_hash::BuildGxHash;
 use ph::seeds::{Bits8, BitsFast, SeedSize};
@@ -35,11 +35,12 @@ struct Args {
     key_seed: u64,
 }
 
-fn analyze<SS: SeedSize, SC: SeedChooser>(keys: &[u64], ss: SS, sc: SC, a: &Args) {
+fn analyze<SS: SeedSize, SC: SeedChooserConf>(keys: &[u64], ss: SS, sc: SC, a: &Args) {
     let n = keys.len();
-    let params = Generic::new(ss, (a.l * 100.0).round() as u16);
-    let f: Function2<GenericCore, SS, SC, DefaultCompressedArray, BuildGxHash> =
-        Function2::with_slice_p_hash_sc(keys, &params, BuildGxHash, sc);
+    let core = sc.core();
+    let conf = Conf::generic_with_hash(ss, (a.l * 100.0).round() as u32, BuildGxHash);
+    let f: Function2<GenericCore, SS, SC::Core, DefaultCompressedArray, BuildGxHash> =
+        Function2::with_slice_conf_sc(keys, conf, sc);
     let bits = |bytes: usize| bytes as f64 * 8.0 / n as f64;
     let total = bits(f.size_bytes());
     let (l0, remap, further) = f.component_sizes();
@@ -92,7 +93,7 @@ fn analyze<SS: SeedSize, SC: SeedChooser>(keys: &[u64], ss: SS, sc: SC, a: &Args
         // the first seed (and thus for all seeds, or, with wrapping, for all
         // seeds but those for which exactly one of the two has wrapped)
         bases.clear();
-        bases.extend(hb[start..i].iter().map(|&(_, h)| sc.f(h, 1, &conf)));
+        bases.extend(hb[start..i].iter().map(|&(_, h)| core.f(h, 1, &conf)));
         bases.sort_unstable();
         let sc = bases.windows(2).any(|w| w[0] == w[1]);
         if sc {

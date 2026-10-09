@@ -9,7 +9,9 @@ use dsi_progress_logger::no_logging;
 use lab::GxKey;
 use mem_dbg::{DbgFlags, MemDbg};
 use ph::GetSize;
-use ph::phast::{DefaultCompressedArray, Function2, Generic, GenericCore, ShiftOnlyWrapped};
+use ph::phast::{
+    Conf, DefaultCompressedArray, Function2, GenericCore, ShiftOnlyWrapped, ShiftWrappedCore,
+};
 use ph::seedable_hash::BuildGxHash;
 use ph::seeds::Bits8;
 use sux::func::{PHastR, PHastRBuilder};
@@ -31,9 +33,9 @@ fn main() {
         .map(|i| i.wrapping_mul(0x9e3779b97f4a7c15) ^ 0x1234567)
         .collect();
     let bits = |bytes: usize| bytes as f64 * 8.0 / a.n as f64;
-    let params = Generic::new(Bits8, (a.l * 100.0).round() as u16);
-    let f: Function2<GenericCore, Bits8, ShiftOnlyWrapped<3>, DefaultCompressedArray, BuildGxHash> =
-        Function2::with_slice_p_hash_sc(&keys, &params, BuildGxHash, ShiftOnlyWrapped::<3>);
+    let conf = Conf::generic_with_hash(Bits8, (a.l * 100.0).round() as u32, BuildGxHash);
+    let f: Function2<GenericCore, Bits8, ShiftWrappedCore<3>, DefaultCompressedArray, BuildGxHash> =
+        Function2::with_slice_conf_sc(&keys, conf, ShiftOnlyWrapped::<3>);
     let (l0, remap, further) = f.component_sizes();
     {
         let conf = *f.level0_conf();

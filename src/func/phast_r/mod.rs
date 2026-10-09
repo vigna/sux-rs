@@ -18,8 +18,10 @@
 //! hash. A slot is *used* if a key has already been mapped to it, and *free*
 //! otherwise; a seed is *feasible* for a bucket if it maps its keys to
 //! distinct free slots. Buckets are processed by a sweep that favors large
-//! buckets, and each bucket gets the feasible seed minimizing the sum of the
-//! slots of its keys. Buckets for which no seed is feasible are *bumped* to
+//! buckets, and each bucket gets the feasible seed minimizing the product of
+//! the distances of the slots of its keys from a point slightly before its
+//! first slice, as in the current implementation of PHast by Piotr Beling.
+//! Buckets for which no seed is feasible are *bumped* to
 //! the following levels, and an [Elias–Fano] sequence, the *remapping*, maps
 //! the slots of the following levels to the free slots of the first one.
 //! Bumped keys cost space and make queries slower, so the quality of a

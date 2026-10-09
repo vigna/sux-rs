@@ -4,7 +4,7 @@
 //! as `std::hash::Hash` feeds a `str` to a hasher) for both.
 //!
 //! Configurations are as in `cmp` (`ref:<chooser>:<S>:<lambda>`, with chooser
-//! `plus`, `w3` or `phast`, and `r:<S>:<log2 L>:<lambda>[:<log2 R>]`, byte
+//! `plus`, `w3`, `w3p` or `phast`, and `r:<S>:<log2 L>:<lambda>[:<log2 R>]`, byte
 //! seeds); query times are medians of interleaved rounds, with queries in
 //! random or sequential order as in `cmp`.
 
@@ -13,8 +13,8 @@ use dsi_progress_logger::no_logging;
 use mem_dbg::{MemSize, SizeFlags};
 use ph::GetSize;
 use ph::phast::{
-    DefaultCompressedArray, Function2, Generic, GenericCore, SeedChooser, SeedOnly, ShiftOnly,
-    ShiftOnlyWrapped,
+    Conf, DefaultCompressedArray, Function2, GenericCore, ProdOfValues, SeedChooserConf, SeedOnly,
+    ShiftOnly, ShiftOnlyProdWrapped, ShiftOnlyWrapped,
 };
 use ph::seedable_hash::BuildGxHash;
 use ph::seeds::Bits8;
@@ -107,7 +107,7 @@ fn batch<'a>(
     t.elapsed().as_secs_f64() * 1e9 / q as f64
 }
 
-fn reference<'a, SC: SeedChooser + 'a>(
+fn reference<'a, SC: SeedChooserConf + 'a>(
     keys: &'a [GxStr],
     lam: f64,
     sc: SC,
@@ -115,9 +115,9 @@ fn reference<'a, SC: SeedChooser + 'a>(
     sequential: bool,
 ) -> Entry<'a> {
     let t = Instant::now();
-    let params = Generic::new(Bits8, (lam * 100.0).round() as u16);
-    let f: Function2<GenericCore, Bits8, SC, DefaultCompressedArray, BuildGxHash> =
-        Function2::with_slice_p_hash_sc(keys, &params, BuildGxHash, sc);
+    let conf = Conf::generic_with_hash(Bits8, (lam * 100.0).round() as u32, BuildGxHash);
+    let f: Function2<GenericCore, Bits8, SC::Core, DefaultCompressedArray, BuildGxHash> =
+        Function2::with_slice_conf_sc(keys, conf, sc);
     let build = t.elapsed().as_secs_f64() * 1e9 / keys.len() as f64;
     let bits = f.size_bytes() as f64 * 8.0 / keys.len() as f64;
     Entry {
@@ -185,7 +185,8 @@ fn main() {
                 match p[1] {
                     "plus" => reference(&keys, lam, ShiftOnly, name, sequential),
                     "w3" => reference(&keys, lam, ShiftOnlyWrapped::<3>, name, sequential),
-                    "phast" => reference(&keys, lam, SeedOnly, name, sequential),
+                    "w3p" => reference(&keys, lam, ShiftOnlyProdWrapped::<3>, name, sequential),
+                    "phast" => reference(&keys, lam, SeedOnly(ProdOfValues), name, sequential),
                     c => panic!("unknown chooser {c}"),
                 }
             }

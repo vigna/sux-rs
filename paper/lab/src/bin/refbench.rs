@@ -1,7 +1,7 @@
 use clap::Parser;
 use ph::phast::{
-    DefaultCompressedArray, Function2, Generic, GenericCore, SeedChooser, SeedOnly, ShiftOnly,
-    ShiftOnlyWrapped,
+    Conf, DefaultCompressedArray, Function2, GenericCore, ProdOfValues, SeedChooserConf, SeedOnly,
+    ShiftOnly, ShiftOnlyProdWrapped, ShiftOnlyWrapped, SumOfValues,
 };
 use ph::seeds::{Bits8, BitsFast, SeedSize};
 use ph::{BuildDefaultSeededHasher, GetSize};
@@ -22,19 +22,18 @@ struct Args {
     queries: usize,
 }
 
-fn run<SC: SeedChooser, SS: SeedSize>(
+fn run<SC: SeedChooserConf, SS: SeedSize>(
     keys: &[u64],
     ss: SS,
-    b100: u16,
+    b100: u32,
     sc: SC,
     queries: usize,
 ) -> (f64, f64, f64) {
     let t = Instant::now();
-    let f: Function2<GenericCore, SS, SC, DefaultCompressedArray, BuildDefaultSeededHasher> =
-        Function2::with_slice_p_hash_sc(
+    let f: Function2<GenericCore, SS, SC::Core, DefaultCompressedArray, BuildDefaultSeededHasher> =
+        Function2::with_slice_conf_sc(
             keys,
-            &Generic::new(ss, b100),
-            BuildDefaultSeededHasher::default(),
+            Conf::generic_with_hash(ss, b100, BuildDefaultSeededHasher::default()),
             sc,
         );
     let build = t.elapsed().as_secs_f64() * 1e9 / keys.len() as f64;
@@ -63,7 +62,7 @@ fn main() {
         .collect();
     for v in &a.variant {
         for &lambda in &a.lambda {
-            let b100 = (lambda * 100.0).round() as u16;
+            let b100 = (lambda * 100.0).round() as u32;
             macro_rules! go {
                 ($sc:expr) => {
                     if a.s == 8 {
@@ -74,11 +73,15 @@ fn main() {
                 };
             }
             let (bits, build, q) = match v.as_str() {
-                "phast" => go!(SeedOnly),
+                "phast" => go!(SeedOnly(ProdOfValues)),
+                "phastsum" => go!(SeedOnly(SumOfValues)),
                 "plus" => go!(ShiftOnly),
                 "w1" => go!(ShiftOnlyWrapped::<1>),
                 "w2" => go!(ShiftOnlyWrapped::<2>),
                 "w3" => go!(ShiftOnlyWrapped::<3>),
+                "w1p" => go!(ShiftOnlyProdWrapped::<1>),
+                "w2p" => go!(ShiftOnlyProdWrapped::<2>),
+                "w3p" => go!(ShiftOnlyProdWrapped::<3>),
                 _ => panic!(),
             };
             println!(

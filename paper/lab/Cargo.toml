@@ -10,9 +10,9 @@ name = "lab"
 
 [dependencies]
 # Reference implementation of PHast/PHast+ (Beling), from the fork with hidden
-# analysis accessors (commit 8d722ff of vigna/bsuccinct-rs, branch sux, on top
-# of 7d18454). TODO: once 8d722ff is pushed, replace the path with
-# git = "https://github.com/vigna/bsuccinct-rs", rev = "8d722ff..."
+# analysis accessors (commit a7ba1f3 of vigna/bsuccinct-rs, branch sux, on top
+# of upstream aa497a8 of October 8, 2026). TODO: replace the path with
+# git = "https://github.com/vigna/bsuccinct-rs", rev = "a7ba1f3..."
 ph = { path = "../../../bsuccinct-rs/ph", features = ["wyhash", "gxhash"] }
 # cli provides init_env_logger
 sux = { path = "../..", features = ["epserde", "cli"] }

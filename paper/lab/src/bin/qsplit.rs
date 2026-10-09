@@ -4,7 +4,7 @@
 //!
 //! Configurations are `<S>:<log2 L>:<lambda>[:<log2 R>]` for PHast-R (with
 //! S > 8, seeds are stored as `u16`, in a `BitFieldVec`, and in a
-//! `BitFieldVec` with unaligned reads), or `ref:<plus|w3|phast>:<S>:<lambda>` for
+//! `BitFieldVec` with unaligned reads), or `ref:<plus|w3|w3p|phast>:<S>:<lambda>` for
 //! the reference implementation, whose bumped keys are those whose bucket of
 //! the first level has seed 0.
 //!
@@ -15,8 +15,8 @@ use dsi_progress_logger::no_logging;
 use lab::GxKey;
 use ph::BuildSeededHasher;
 use ph::phast::{
-    DefaultCompressedArray, Function2, Generic, GenericCore, SeedChooser, SeedOnly, ShiftOnly,
-    ShiftOnlyWrapped,
+    Conf, DefaultCompressedArray, Function2, GenericCore, ProdOfValues, SeedChooserConf, SeedOnly,
+    ShiftOnly, ShiftOnlyProdWrapped, ShiftOnlyWrapped,
 };
 use ph::seedable_hash::BuildGxHash;
 use ph::seeds::{Bits8, BitsFast, SeedSize};
@@ -133,7 +133,7 @@ fn run_u<'a>(keys: &'a [GxKey], b: PHastRBuilder, name: &str, sequential: bool) 
     entry(keys, bumped, placed, name, sequential, move |k| f.get(k))
 }
 
-fn run_ref<'a, SS: SeedSize + 'static, SC: SeedChooser + 'static>(
+fn run_ref<'a, SS: SeedSize + 'static, SC: SeedChooserConf + 'static>(
     keys: &'a [GxKey],
     ss: SS,
     sc: SC,
@@ -144,9 +144,9 @@ fn run_ref<'a, SS: SeedSize + 'static, SC: SeedChooser + 'static>(
     // SAFETY: GxKey is a transparent wrapper around u64, and ph hashes u64
     // keys as sux hashes GxKey
     let keys: &[u64] = unsafe { std::slice::from_raw_parts(keys.as_ptr().cast(), keys.len()) };
-    let params = Generic::new(ss, (lam * 100.0).round() as u16);
-    let f: Function2<GenericCore, SS, SC, DefaultCompressedArray, BuildGxHash> =
-        Function2::with_slice_p_hash_sc(keys, &params, BuildGxHash, sc);
+    let conf = Conf::generic_with_hash(ss, (lam * 100.0).round() as u32, BuildGxHash);
+    let f: Function2<GenericCore, SS, SC::Core, DefaultCompressedArray, BuildGxHash> =
+        Function2::with_slice_conf_sc(keys, conf, sc);
     let conf = *f.level0_conf();
     let (bumped, placed): (Vec<u64>, Vec<u64>) = keys
         .iter()
@@ -175,10 +175,12 @@ fn main() {
             entries.push(match (p[1], sbits) {
                 ("plus", 8) => run_ref(&keys, Bits8, ShiftOnly, lam, v, sq),
                 ("plus", s) => run_ref(&keys, BitsFast(s), ShiftOnly, lam, v, sq),
-                ("phast", 8) => run_ref(&keys, Bits8, SeedOnly, lam, v, sq),
-                ("phast", s) => run_ref(&keys, BitsFast(s), SeedOnly, lam, v, sq),
+                ("phast", 8) => run_ref(&keys, Bits8, SeedOnly(ProdOfValues), lam, v, sq),
+                ("phast", s) => run_ref(&keys, BitsFast(s), SeedOnly(ProdOfValues), lam, v, sq),
                 ("w3", 8) => run_ref(&keys, Bits8, ShiftOnlyWrapped::<3>, lam, v, sq),
                 ("w3", s) => run_ref(&keys, BitsFast(s), ShiftOnlyWrapped::<3>, lam, v, sq),
+                ("w3p", 8) => run_ref(&keys, Bits8, ShiftOnlyProdWrapped::<3>, lam, v, sq),
+                ("w3p", s) => run_ref(&keys, BitsFast(s), ShiftOnlyProdWrapped::<3>, lam, v, sq),
                 (c, _) => panic!("unknown chooser {c}"),
             });
             continue;
