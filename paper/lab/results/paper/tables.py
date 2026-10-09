@@ -14,7 +14,7 @@ import sys, re, collections, statistics
 # The configurations of the tables (T8 and T10 in configs.sh), as (chooser or
 # PHast-R, seed bits, expected bucket size)
 TABLE = [('plus', 8, 5.25), ('w1', 8, 5.25), ('w2', 8, 5.0), ('w3', 8, 5.0), ('phast', 8, 4.5),
-         ('r', 8, 4.5), ('r', 8, 4.75), ('r', 8, 5.0),
+         ('r', 8, 4.25), ('r', 8, 4.5), ('r', 8, 4.75),
          ('plus', 10, 5.15), ('w1', 10, 6.2), ('w2', 10, 5.9), ('w3', 10, 6.0), ('phast', 10, 6.05),
          ('r', 10, 5.75), ('r', 10, 6.0), ('r', 10, 6.25)]
 

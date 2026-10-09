@@ -31,12 +31,12 @@ mkdir -p $O
 # Query time of first-level and bumped keys
 for n in $SIZES; do
   pin $CPU1 env RAYON_NUM_THREADS=1 $B/qsplit -n $n -q 4000000 -r 9 --order sequential \
-    -v ref:w3:8:5.0,ref:phast:8:4.5,8:10:4.5,8:10:4.75 | sed "s/^/$n /"
+    -v ref:w3:8:5.0,ref:phast:8:4.5,8:10:4.25,8:10:4.5 | sed "s/^/$n /"
 done > $O/qsplit.txt
 
 # Thread scaling of the construction: powers of two up to the number of
 # cores, and then all hardware threads
-S8=ref:plus:8:5.25,ref:w3:8:5.0,ref:phast:8:4.5,r:8:10:4.5
+S8=ref:plus:8:5.25,ref:w3:8:5.0,ref:phast:8:4.5,r:8:10:4.25
 scale() {
   pin $2 env RAYON_NUM_THREADS=$1 $B/cmp -n $n -t $1 -q 1000 --interleave 1 --builds $(builds $n) -v $S8 2>&1 >/dev/null \
     | grep '^CSV' | sed "s/^/$n $1 /"
@@ -55,7 +55,7 @@ done > $O/scaling.txt
 # is a bijection using n more bytes
 CPUS=$(cpus $THREADS)
 for n in $LARGE; do
-  peak $(pinning $CPUS) env RAYON_NUM_THREADS=$THREADS $B/btime -n $n -r 1 -v 8:10:4.5 \
+  peak $(pinning $CPUS) env RAYON_NUM_THREADS=$THREADS $B/btime -n $n -r 1 -v 8:10:4.25 \
     | grep -E "bits|Maximum resident" | sed "s/^/$n PHast-R /"
   for v in ref:w3:8:5.0 ref:plus:8:5.25 ref:phast:8:4.5; do
     peak $(pinning $CPUS) env RAYON_NUM_THREADS=$THREADS $B/cmp -n $n -t $THREADS -q 1000 --interleave 1 -v $v \

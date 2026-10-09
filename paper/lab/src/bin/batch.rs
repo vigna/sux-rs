@@ -21,7 +21,7 @@ struct Args {
     queries: usize,
     #[arg(short, long, default_value_t = 5)]
     rounds: usize,
-    #[arg(short, long, value_delimiter = ',', default_value = "8:10:4.5")]
+    #[arg(short, long, value_delimiter = ',', default_value = "8:10:4.25")]
     variant: Vec<String>,
 }
 

@@ -11,7 +11,8 @@
 # Output lines: <keys> <threads> <online|offline> <bits/key> <ns/key>
 # <allocated MiB> <resident KiB>
 # Usage: offline.sh <directory of the binaries> <output file>
-# Environment: CPU1, CPUS, THREADS, SIZES; see redo.sh.
+# Environment: CPU1, CPUS, THREADS, SIZES; see redo.sh. The configuration is
+# that of PHast-R with 8-bit seeds and the default expected bucket size.
 . "$(dirname "$0")/configs.sh"
 B=${1:-../../target/release}
 O=${2:-offline.txt}
@@ -19,6 +20,7 @@ CPU1=${CPU1:-2}
 CPUS=${CPUS:-0-7}
 THREADS=${THREADS:-8}
 SIZES=${SIZES:-"10000000 100000000 1000000000"}
+V=8:10:4.25
 LARGE=$(echo $SIZES | tr ' ' '\n' | grep -v '^10000000$' | tr '\n' ' ')
 # Free space in TMPDIR, in GB
 free_disk() { df -Pk "${TMPDIR:-/tmp}" | awk 'NR == 2 { print int($4 / 1048576) }'; }
@@ -35,7 +37,7 @@ peak() {
 run() {
   local cores=$CPU1
   [ $2 -gt 1 ] && cores=$CPUS
-  peak $(pinning $cores) env RAYON_NUM_THREADS=$2 $B/offline -n $1 -m $3 |
+  peak $(pinning $cores) env RAYON_NUM_THREADS=$2 $B/offline -n $1 -m $3 -v $V |
     awk -v n=$1 -v t=$2 -v m=$3 '
       /bits\/key/ { for (i = 1; i <= NF; i++) { if ($i == "bits/key") bits = $(i - 1); if ($i == "ns/key") ns = $(i - 1) } }
       /peak allocated memory/ { alloc = $4 }
@@ -54,6 +56,6 @@ run() {
     for t in 1 $THREADS; do run 10000000000 $t offline; done
   fi
   n=$(echo $LARGE | tr ' ' '\n' | tail -1)
-  pin $CPUS env RAYON_NUM_THREADS=$THREADS $B/offline -n $n -m both | grep -q '^identical$' &&
+  pin $CPUS env RAYON_NUM_THREADS=$THREADS $B/offline -n $n -m both -v $V | grep -q '^identical$' &&
     echo "$n identical" || echo "$n DIFFERENT"
 } > $O

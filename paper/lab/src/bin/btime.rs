@@ -17,7 +17,7 @@ struct Args {
     n: usize,
     #[arg(short, long, default_value_t = 5)]
     repeats: usize,
-    #[arg(short, long, value_delimiter = ',', default_value = "8:10:4.5")]
+    #[arg(short, long, value_delimiter = ',', default_value = "8:10:4.25")]
     variant: Vec<String>,
 }
 

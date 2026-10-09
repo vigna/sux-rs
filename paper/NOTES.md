@@ -672,6 +672,53 @@ four and a half, two of them building PHast with S = 10 on 10⁹ keys;
 `large.sh` one; `spread.sh` and `offline.sh` ten minutes each, plus half an
 hour for the offline construction on 10¹⁰ keys); peak memory about 60 GB.
 
+Third run (October 8, 2026; the data now in the paper: `run.csv`, `large/`,
+`spread.csv`, `offline.txt`). Space unchanged. Queries are much faster than
+in the previous runs because they read consecutive keys (no cache miss on
+the array of keys); ns at 10⁷/10⁸/10⁹: PHast-R λ=4.5 4.6/11.0/20.4, PHast+
+w3 5.9/13.5/26.2 (−22/−19/−22%), PHast λ=4.5 4.8/11.5/21.6, plain PHast+
+7.6/16.2/32.3; S=10: PHast-R λ=5.75 5.5/12.7/24.6 vs w3 λ=6 6.6/14.9/28.5,
+now faster than every other structure with 10-bit seeds. Construction
+(ns/key, 1 thread): PHast-R 44/50/54 vs w3 86/93/98, PHast 641–652; S=10
+85/90/93 vs 133/139/148 (64%). 8 threads at 10⁸/10⁹: 7.6/8.2 vs 17.1/18.0
+(S=10: 12.7/13.6 vs 22.5/24.0), PHast 85.6/86.3; 96 threads at 10⁹: 2.8 vs
+7.6. Memory 10.8 vs 9.9 bytes/key. First-level query time is the same for
+all structures; a bumped key costs about 45 ns more at 10⁷, 120–230 at 10⁸,
+230–380 at 10⁹, so each percent of bumped keys costs about 0.5/1/2 ns.
+Pareto (space, query, build) at 10⁹: no configuration of PHast+ survives;
+PHast λ=4.25/4.5 survive by less than 1 ns or 0.007 bits at twelve times the
+construction time; at 10⁷/10⁸ also PHast+ w1 with S=10 (up to 5% faster to
+build, at least 0.02 bits/key more). Offline construction at 10⁹: 0.71/0.74
+bytes/key allocated with 1/8 threads vs 10.0/11.7 in memory, 53.8/17.4
+ns/key vs 53.4/8.4 (with 8 threads the single-threaded first phase, which
+reads the keys and writes the records, dominates).
+
+## Default bucket size (October 9, 2026)
+
+The defaults of the builder must give the fastest queries. In PHast-R query
+time decreases with λ, as fewer keys are bumped, so the question is where to
+stop. On the c7i (`run.csv`, S=8): λ=4.25 1.959 bits/key, 4.3/10.4/18.9 ns,
+build 56.8 ns/key at 10⁹, 0.69% bumped, against 1.927, 4.6/11.0/20.4, 53.8,
+1.47% for λ=4.5. Local sweep below 4.25 (M1 Max, `cmp`, one thread, PHast-R
+only; raw output not kept), λ = 4/4.25/4.5/4.75: 2.041/1.959/1.927/1.919
+bits/key, 0.33/0.69/1.47/2.54% bumped, queries 5.8/6.1/6.9/8.1 ns at 10⁸ and
+9.6/10.6/12.6/15.0 at 10⁹, build 49.2/42.7/40.1/39.4 ns/key at 10⁹; at 10⁸
+queries flatten at λ=4 (λ=3.75: 6.0 ns, 2.163 bits/key). S=10, λ =
+5.25/5.5/5.75/6: 1.934/1.878/1.854/1.848 bits/key, 0.23/0.52/1.10/1.89%
+bumped, 17.5/18.5/20.0/22.3 ns at 10⁹, build 97.0/86.1/79.5/76.6.
+
+Agreed with Sebastiano: λ=4 is not worth it (2.04 bits/key, more than the
+1.97 of PHast+ with wrapping); λ=4.25 is the fastest configuration that does
+not use more space than PHast+ with wrapping (1.959 vs 1.968, that is, the
+same space). With S=10 the same rule gives λ=5.75 (λ=5.5 uses 1.878 bits/key,
+more than the 1.869 of w3). Done: the default of the builder is 4.25 (its
+documentation suggests 5.75 for S=10), and so is that of `bench_phast_r`.
+Still to do: rerun on the c7i with λ=4.25 in the table configurations, in
+`large.sh` and in the offline construction (the single-threaded sweeps of
+`run.csv` already contain it), and then present λ=4.25 in Section 4, in the
+abstract, in the conclusions, and in the memory estimate of Section 5
+(2/λ + 2/8 bytes per key).
+
 ## Key findings (see Section 2 of the paper; reference implementation)
 
 - With output range m = n, holes = bumped keys; each hole costs about

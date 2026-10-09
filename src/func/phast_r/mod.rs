@@ -4,62 +4,75 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-//! PHast-R: minimal perfect hashing with additive placement over rings of
-//! patterns.
+//! PHast-R: bucket-placement minimal perfect hashing with rings of patterns.
 //!
-//! This structure is a variant of PHast+ (see the [references]). As in
-//! PHast+, keys are hashed to buckets
-//! using a linear function of their hash, each bucket stores a fixed-width
-//! seed, and the keys of a bucket are mapped inside a small *slice* of the
-//! output range to an in-slice offset that depends on the key, moved by an
-//! amount that depends on the seed only, so that feasible seeds can be found
-//! with bit-parallel operations. Buckets for which no seed is found are
-//! *bumped* to the next level, and an [Elias–Fano] sequence maps the outputs
-//! of the following levels to the free slots of the first one.
+//! PHast-R is a minimal perfect hash function based on *bucket placement*:
+//! keys are hashed to buckets, and each bucket stores a fixed-width *seed*
+//! that places the keys of the bucket in the output range so that no two keys
+//! collide. For almost all keys, a query needs just a hash and the access to
+//! a seed.
 //!
-//! In PHast+ all seeds move the keys of a bucket by the same amount (modulo
-//! the slice length, in the variant with wrapping): thus, two keys of a
-//! bucket that are mapped to the same slot by a seed are mapped to the same
-//! slot by all seeds, and their bucket must be bumped. With the parameters
-//! suggested for 8-bit seeds this *self-collision* happens to buckets
-//! containing 1.7% of the keys, that is, to almost 40% of the bumped keys.
+//! The bucket of a key is a linear function of its 64-bit hash, and the seed
+//! of a bucket places each of its keys inside the *slice* of the key, a small
+//! range of consecutive slots whose start grows linearly with the hash. A seed
+//! is *feasible* for a bucket if it maps its keys to distinct free slots.
+//! Buckets are processed by a sweep that favors large buckets, and each
+//! bucket gets the feasible seed minimizing the sum of the slots of its keys.
+//! Buckets for which no seed is feasible are *bumped* to the next level, and
+//! an [Elias–Fano] sequence maps the outputs of the following levels to the
+//! free slots of the first one. Bumped keys cost space and make queries
+//! slower, so the quality of a placement is measured by how few keys it
+//! bumps.
 //!
-//! In PHast-R the lowest bits of a seed *s* select one of *R* *patterns*,
-//! that is, one of *R* independent in-slice offsets for each key, and the
-//! offset is moved by *s* · *L* / 2<sup>*S*</sup> modulo *L*, where *L* is
-//! the slice length and *S* the number of bits of a seed. Since the seeds of
-//! a pattern differ by multiples of *R*, they move a key by multiples of the
-//! *stride* *T* = *RL* / 2<sup>*S*</sup>, and as they vary the key goes
-//! exactly once through the slots of the slice that are congruent to its
-//! first slot modulo *T*: we call such slots a *ring*. Two keys of a bucket
-//! colliding in a pattern will not, in general, collide in the others, so
-//! self-collisions disappear, and the patterns provide (almost) independent
-//! trials.
+//! PHast-R uses a placement that bumps few keys and makes it possible to find
+//! feasible seeds with bit-parallel operations. Each key has *R* independent
+//! in-slice offsets, one for each of *R* *patterns*. The lowest bits of a
+//! seed choose a pattern, which gives each key of the bucket a *base
+//! position*, and the remaining bits choose a *rotation*, which moves all the
+//! keys of the bucket by the same multiple of a *stride* *T*, wrapping around
+//! the end of their slices. As the rotation varies, a key goes exactly once
+//! through the slots of its slice whose distance from its base position is a
+//! multiple of *T*: we call these slots its *ring*. During construction the
+//! set of used slots is stored by residue classes modulo the stride, so the
+//! bits of the ring of a key are a block of consecutive bits, and the
+//! feasible rotations of a pattern are found by rotating and combining by a
+//! bitwise OR one such block for each key.
+//!
+//! Two keys of a bucket with the same base position move together, and thus
+//! collide for (almost) all rotations, but they will not, in general, collide
+//! in the other patterns: such *self-collisions* thus disappear, and the
+//! patterns provide (almost) independent trials.
+//!
+//! This placement improves on those of PHast and PHast+ (see the
+//! [references]). PHast uses a pseudorandom placement, which bumps few keys,
+//! but finding a feasible seed requires trying all seeds of the bucket, so
+//! construction is more than ten times slower. PHast+ moves the keys of a
+//! bucket along a single rigid pattern, so feasible seeds can be found with
+//! bit-parallel operations, but self-collisions cannot be avoided: two keys
+//! with the same base position collide for (almost) all seeds, and their
+//! bucket must be bumped. With 8-bit seeds, self-collisions cause almost 40%
+//! of the bumping of PHast+ with wrapping.
 //!
 //! The in-slice offsets of the patterns are consecutive blocks of bits of the
 //! lower half of the product of the hash and the number of buckets, whose
 //! upper half is the bucket: such a value is uniform among the keys of a
 //! bucket, and it is computed anyway. Queries thus need a hash, a seed access,
-//! two multiplications, and a handful of shifts, additions, and masks—just
-//! two shifts more than PHast+ with wrapping; a small fraction of the keys
-//! accesses further levels and the Elias–Fano sequence.
-//!
-//! During construction the set of used slots is stored by residue classes
-//! modulo the stride, so the ring of a key is a block of consecutive bits:
-//! the seeds of a pattern that are feasible for a bucket are obtained by
-//! rotating and combining one such block for each key.
+//! two multiplications, and a handful of shifts, additions, and masks; a
+//! small fraction of the keys accesses further levels and the Elias–Fano
+//! sequence.
 //!
 //! The signatures of the levels after the first one depend also on a second
-//! hash of the key, so, as in PHast+, 64-bit signatures suffice for any
-//! number of keys: keys with the same signature are bumped from the first
-//! level and separated at the following ones. Duplicate keys are detected
-//! and reported as errors.
+//! hash of the key, so 64-bit signatures suffice for any number of keys: keys
+//! with the same signature are bumped from the first level and separated at
+//! the following ones. Duplicate keys are detected and reported as errors.
 //!
 //! With the default parameters (8-bit seeds, four patterns, slices of length
-//! 1024) space is about 1.93 bits per key, against the 1.97 bits per key of
-//! PHast+ with wrapping, construction is about twice as fast, and queries
-//! are slightly faster. With 10-bit seeds stored in a [`BitFieldVec`] (see
-//! [`PHastRBuilder::seed_bits`]) space is about 1.86 bits per key; in this
+//! 1024, and an expected bucket size of 4.25 keys) space is about 1.96 bits
+//! per key, essentially the same as PHast+ with wrapping, which however
+//! takes about twice as long to build and has much slower queries; PHast
+//! uses 1.92 bits per key, but it takes more than ten times as long to build
+//! and has slower queries. With 10-bit seeds stored in a [`BitFieldVec`]
+//! (see [`PHastRBuilder::seed_bits`]) space is about 1.85 bits per key; in this
 //! case, queries are faster after converting the function with
 //! [`TryIntoUnaligned::try_into_unaligned`], so that seeds are accessed with
 //! [unaligned reads].
@@ -191,7 +204,7 @@ pub struct LevelParams {
     first_seed: u64,
 }
 
-/// A minimal perfect hash function based on PHast+ with rings of patterns.
+/// A bucket-placement minimal perfect hash function with rings of patterns.
 ///
 /// A *minimal perfect hash function* maps bijectively a set of *n* keys to
 /// the integers in [0 . . *n*): querying a key outside of the original set
@@ -756,7 +769,7 @@ mod tests {
         // Longer slices, and thus a larger stride
         check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_slice_len(12))?;
         check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_slice_len(16))?;
-        // Rings shorter than a word: a pattern has four seeds
+        // Rings shorter than a word: a pattern has four rotations
         check::<Box<[u8]>>(
             100_000,
             PHastRBuilder::default()
@@ -764,7 +777,8 @@ mod tests {
                 .log2_slice_len(8)
                 .bucket_size(2.0),
         )?;
-        // Slices shorter than the number of seeds: seeds are redundant
+        // Slices with fewer slots than there are seeds: rotations are
+        // redundant
         check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_slice_len(6))
     }
 

@@ -18,6 +18,9 @@
 \newcommand{\PHastP}{PHast$^+$\xspace}
 \newcommand{\PHastR}{PHast-R\xspace}
 \newcommand{\hi}{\operatorname{hi}}
+% Shifts as binary operators
+\DeclareMathSymbol{\ll}{\mathbin}{symbols}{"1C}
+\DeclareMathSymbol{\gg}{\mathbin}{symbols}{"1D}
 \newtheorem{proposition}{Proposition}
 
 \title{\PHastR: Bit--Parallel Perfect Hashing\\with Rings of Patterns}
@@ -30,18 +33,19 @@
 
 \begin{abstract}
 We present \PHastR, a minimal perfect hash function of the \PHast family. Like
-its fast-to-build variant \PHastP, \PHastR finds feasible seeds with
-bit-parallel operations, as its seeds move keys along \emph{rings} of slots
-that are scanned by rotating a word per key; but it avoids
-\emph{self-collisions}, pairs of keys that collide for (almost) all seeds of
-their bucket, which account for almost $40\%$ of the keys bumped by \PHastP
-with wrapping. With 8-bit seeds, \PHastR uses $1.93$ bits per key against the
+\PHastP, the fast-to-build variant of \PHast, \PHastR finds feasible seeds with
+bit-parallel operations: its seeds move keys along \emph{rings} of slots, and
+to evaluate the seeds of a bucket it rotates, for each key, a word recording
+which slots of its ring are used. Unlike \PHastP, however, it avoids
+\emph{self-collisions}, which make two keys of a bucket collide for (almost)
+all its seeds, and cause almost $40\%$ of the bumping of \PHastP with
+wrapping. With 8-bit seeds, \PHastR uses $1.93$ bits per key against the
 $1.97$ of \PHastP with wrapping, it is built in half the time, and its queries
 are faster; its space and its query time are close to those of \PHast, which
 takes more than ten times as long to build. With 10-bit seeds it uses $1.85$
-bits per key against $1.87$. Finally, we prove that when keys can move only
-within windows of $W$ slots no placement of $n$ keys on $n$ slots, however
-found, can avoid bumping about $\sqrt{\pi n/2}-W$ keys.
+bits per key against $1.87$. Finally, we prove that when each key can be
+placed only within a window of $W$ slots, every placement of $n$ random keys
+on $n$ slots, however found, bumps on average at least about $\sqrt{\pi n/2}-W$ keys.
 \end{abstract}
 
 \section{Introduction}
@@ -52,6 +56,10 @@ bits per key (we use $\lg$ for the binary logarithm and $\ln$ for the natural
 logarithm). Among the many practical constructions, \emph{bucket placement}
 gives the fastest queries: keys are hashed to buckets, and a per-bucket seed
 chooses positions for the keys of the bucket so that no two keys collide.
+The idea goes back to FCH~\cite{FCHFACMPHF}, whose construction, however,
+was slow and needed a lot of space; the idea received little attention until
+PTHash~\cite{PTPRFMPH} brought it back, followed by many others, such as PHOBIC~\cite{HLPPPHOBSIC}
+and PtrHash~\cite{RagPTR}.
 
 \PHast~\cite{BeSPHast} pushes this approach to its limit: the seeds are
 stored in a plain array of fixed-width values, each seed places the keys of
@@ -67,23 +75,24 @@ In this paper we present \PHastR, a structure of the same family with the
 space and the query time of \PHast and a construction faster than that of
 \PHastP. This paper makes four contributions:
 \begin{itemize}
-\item \PHastR, a structure in which the lowest bits of the seed choose one of
-$R$ independent patterns, obtained at no cost from the computation of the
-bucket, and the seeds of a pattern move a key through a ring of slots; rings
-make it possible to find all feasible seeds of a pattern by rotating blocks of
-bits (Section~\ref{sec:phastr});
-\item an analysis of the differences with \PHast and \PHastP, showing that
+\item \PHastR, a structure in which the lowest bits of the seed of a bucket
+choose one of $R$ independent patterns, and the remaining bits a rotation,
+which moves each key of the bucket along a ring of slots; rings make it
+possible to find all the rotations of a pattern that map no key to a used
+slot by rotating blocks of bits (Section~\ref{sec:phastr});
+\item an analysis of the differences from \PHast and \PHastP, showing that
 the excess space of \PHastP, with and without wrapping, comes from bumping,
 that a large part of the bumping is caused by self-collisions inherent to
-additive placement, and that patterns make them disappear
+additive placement, and that patterns make their effect negligible
 (Section~\ref{sec:differences});
 \item an implementation in the Rust crate \texttt{sux}, an experimental
 comparison with the reference implementation of \PHast and \PHastP
 (Section~\ref{sec:experiments}), and an offline construction that reads the
 keys just once, needs less than a byte per key of memory, and builds the same
-structure (Section~\ref{sec:offline});
+structure as the construction in memory (Section~\ref{sec:offline});
 \item a lower bound on the number of bumped keys that holds for every placement
-in which keys move within windows of fixed length, which implies that on large
+in which each key can be placed only within a window of fixed length, which
+implies that on large
 key sets no search can produce a first level free of bumping
 (Section~\ref{sec:limits}).
 \end{itemize}
@@ -102,16 +111,19 @@ slots. Buckets for which no seed is feasible are \emph{bumped} (seed~$0$),
 and their keys are handled by further levels. The first level has output
 range $m=n$, so every bumped key leaves a free slot (a \emph{hole}) in the
 first level, and an Elias--Fano sequence~\cite{EliESRCASF,FanNBRISM} maps the
-outputs of the further levels to the holes. A query thus reads a single seed
-for almost all keys. Seeds are assigned by a sweep over the buckets that keeps
-a small window of buckets in a priority queue, favoring large buckets, and
-chooses for each bucket the feasible seed that minimizes the sum of the
-positions of its keys.
+outputs of the further levels to the holes. Since bumped keys are few, a query
+reads a single seed for almost all keys. Seeds are assigned by a sweep over
+the buckets, which keeps a small window of buckets in a priority queue that
+favors large buckets, and chooses for each bucket the feasible seed
+minimizing the sum of the slots of its keys.
 
 Each hole costs about $2+\lg(1/\beta)$ bits in the Elias--Fano remapping,
-where $\beta$ is the fraction of bumped keys, and each bumped key must be
-placed again by the following levels. With $S$-bit seeds and expected bucket
-size $\lambda=n/B$ the space is thus approximately
+where $\beta$ is the fraction of bumped keys, and the bumped keys must be
+placed again by the following levels, which in turn bump a fraction $\beta$
+of their keys, so that overall the levels place about
+$n(1+\beta+\beta^2+\cdots)=n/(1-\beta)$ keys. With $S$-bit seeds and expected
+bucket size $\lambda=n/B$ the seeds take $S/\lambda$ bits for each key placed,
+and the space in bits per key is thus approximately
 \begin{equation}
 \label{eq:space}
 \frac{S}{\lambda(1-\beta)} + \beta\Bigl(2+\lg\frac1\beta\Bigr),
@@ -159,63 +171,85 @@ bit-parallel operations.
 \caption{\label{fig:placement}The slots of the three keys $x_1$, $x_2$, $x_3$
 of a bucket for each seed, with $3$-bit seeds, $R=2$ patterns, and slices of
 length $L=16$ (for simplicity, the three slices coincide). Even seeds (gray)
-select pattern $0$, odd seeds (white) pattern $1$, and seed $s$ moves a key by
-$2s$ slots, modulo $16$, from the offset of its pattern: the seeds of a
-pattern thus move a key by multiples of the stride $T=4$ through a ring of
-four slots. In pattern $0$ the keys $x_1$ and $x_2$ have the same offset, so
-they collide for all even seeds; in pattern~$1$ they do not. The last row
-shows the slots that are already used: the only feasible seed is $5$.}
+choose pattern $0$, odd seeds (white) pattern $1$: seed $s=2j+r$ chooses
+pattern $r$ and rotation $j$, which moves the keys by $jT$ slots from their
+base positions, where $T=4$ is the stride, so in each pattern a key goes
+through the four slots of its ring (only three of them in pattern $0$, as
+seed $0$ is not available). In pattern $0$ the keys $x_1$ and $x_2$ have the same base
+position, so they collide for all even seeds; in pattern~$1$ they do not. The
+last row shows the slots that are already used: the only feasible seed is
+$5$.}
 \end{figure}
 
 \paragraph{Placement.}
-Let $h$ be the hash of a key: its $64$ bits fill a machine word. We require
-the number $B$ of buckets to be odd,
-and denote with $\hi(x)$ and $\operatorname{lo}(x)$ the upper and lower $64$
-bits of a $128$-bit product. The bucket of a key is $\hi(hB)$, and the start
-of its slice is $\sigma(h)=\hi(h(m-L+1))$. Let moreover $R=2^\rho$ be the
-number of \emph{patterns}, and $L=2^\ell$ the slice length, with $R\ell\le 64$
-and, for the time being, $\ell\geq S$. We let $o=\operatorname{lo}(hB)$: the
-$r$-th pattern assigns to the key the in-slice offset
+We denote with $\hi(x)$ and $\operatorname{lo}(x)$ the upper and lower $64$
+bits of a $128$-bit product. Let $h$ be the hash of a key, and let
+$\alpha=h/2^{64}\in[0\..1)$. The bucket of the key is $\lfloor\alpha
+B\rfloor$, which in fixed-point arithmetic is just $\hi(hB)$, and the start of
+its slice is $\sigma(h)=\lfloor\alpha(m-L+1)\rfloor$, which is
+$\hi(h(m-L+1))$; the slice length is $L=2^\ell$. Moreover, the key has
+$R=2^\rho$ independent in-slice offsets, which define $R$ \emph{patterns} of
+offsets for the keys of a bucket: letting $o=\operatorname{lo}(hB)$, the
+offset of the key in pattern $r\in[0\..R)$ is
 \[
-\omega_r(o)=\bigl\lfloor o/2^{64r/R}\bigr\rfloor \bmod L,
+\omega_r(o)=(o\gg 64r/R) \bmod L,
 \]
-that is, the $\ell$ bits of $o$ starting at bit $64r/R$. A seed
-$s\in[1\..2^S)$ selects the pattern $r=s\bmod R$, and the key is mapped to
-\[
-\sigma(h)+\bigl(\omega_r(o)+s\cdot 2^{\ell-S}\bigr)\bmod L.
-\]
+that is, the $\ell$ bits of $o$ starting at bit $64r/R$. We require
+$R\ell\le 64$, so that the offsets of different patterns are disjoint blocks
+of bits of $o$.
 
-The seeds of pattern $r$ are $r$, $r+R$, $r+2R$,~\dots, so they move a key by
-multiples of the \emph{stride} $T=RL/2^S$: as the seed varies, the key goes
-exactly once through the $2^S/R=L/T$ slots of its slice that are congruent to
-$\sigma(h)+\omega_r(o)+r2^{\ell-S}$ modulo $T$. We call these slots a
-\emph{ring} (Figure~\ref{fig:placement}). In other words, the seed first
-chooses among $R$ patterns, and then moves the keys along the rings of the
-chosen one. Two keys of a bucket collide for all seeds of a pattern if they
-are mapped to the same slot by the first one (a \emph{self-collision}), but
-since the offsets of different patterns are disjoint blocks of bits of $o$,
-this happens independently in each pattern: a bucket of size $k$ has no usable
-pattern with probability about $(k(k-1)/2L)^R$, which is negligible already
-for $R=2$. Moreover, different patterns provide (almost) independent trials.
+The seed $s\in[1\..2^S)$ of a bucket has two parts: its lowest $\rho$ bits,
+$r=s\bmod R$, choose a pattern, and its remaining bits,
+$j=s\gg\rho\in[0\..2^{S-\rho})$, a \emph{rotation}. Assuming for the
+time being that $\ell\geq S$, the seed maps each key of the bucket to the slot
+\[
+\sigma(h)+\bigl(\omega_r(o)+(s\ll(\ell-S))\bigr)\bmod L
+=\sigma(h)+\bigl(\omega_r(o)+(r\ll(\ell-S))+jT\bigr)\bmod L,
+\]
+where $T=2^{\ell-S+\rho}$ is the \emph{stride}; the two forms are equal
+because $s=jR+r$, and queries compute the first one. In words: once the
+pattern is chosen, each key of the bucket has a \emph{base position}, the slot
+for rotation $0$ (as offsets are uniform, the constant $r\ll(\ell-S)$ is
+immaterial), and rotation~$j$ moves all the keys of the bucket by $jT$ slots,
+wrapping around the end of their slices. As the rotation varies, a key goes
+exactly once through the $2^{S-\rho}=L/T$ slots of its slice whose distance from
+its base position is a multiple of $T$: we call these slots its \emph{ring}
+in pattern~$r$ (Figure~\ref{fig:placement}). Seed $0$, that is, pattern $0$
+with rotation $0$, marks bumped buckets, so pattern $0$ has one rotation less.
+
+Two keys of a bucket with the same base position in a pattern move together,
+so they collide for all rotations but the few for which exactly one of them
+wraps around (the slices of the keys of a bucket can start a few slots
+apart): this is a \emph{self-collision}. Since the offsets of different
+patterns are disjoint blocks of bits of $o$, self-collisions happen
+independently in each pattern: a bucket of size $k$ has a self-collision in
+every pattern with probability about $(k(k-1)/2L)^R$, which is negligible
+already for $R=2$. Moreover, whereas the rotations of a pattern move a fixed
+arrangement of the keys, and are thus strongly correlated attempts at placing
+the bucket, different patterns are (almost) independent attempts.
 
 The value $o$ costs nothing, as it is the other half of the product that
 yields the bucket, and it is a good source of offsets: for the keys of bucket
 $b$ we have $hB=b\cdot2^{64}+o$, so $o$ is the position of $h$ in the interval
 of hashes of the bucket, scaled to $64$ bits, and it is uniformly distributed
-if $h$ is. (Since $B$ is odd, also the lowest bits of $o$ depend bijectively
-on those of $h$.) In particular, the offsets of the keys of a bucket are
-independent of each other for every pattern, which would not be true of
-blocks of bits of $h$, as the keys of a bucket share the upper
-${\approx}\lg B$ bits of $h$.
+if $h$ is. Moreover, the offsets of the keys of a bucket are independent of
+each other for every pattern, which would not be true of the upper blocks of
+bits of $h$, as the keys of a bucket share the upper ${\approx}\lg B$ bits of
+$h$. We require the number $B$ of buckets to be odd: if $2^t$ divides $B$, the
+$t$ lowest bits of $o$ are zero, and so are the $\min(t,\ell)$ lowest bits of
+the offset of pattern~$0$, whereas with $B$ odd, for every $t$, the $t$
+lowest bits of $o$ are a bijective function of the $t$ lowest bits of $h$.
 
 \paragraph{Queries.}
 A query computes $hB$, reads the seed $s$ of bucket $\hi(hB)$, and, unless
-$s=0$, computes the formula above. There is no need to extract $r$: since
-$(s\cdot 64/R)\bmod 64=r\cdot 64/R$, the offset $\omega_r(o)$ is obtained by
-shifting $o$ right by $s\cdot 64/R$ modulo $64$, and the lower bits of the
-result are extracted by the reduction modulo $L$ that follows the addition of
-$s\cdot2^{\ell-S}$. Since $o$ fills a word, the reduction modulo $64$ costs
-nothing: processors perform it on shift amounts anyway.
+$s=0$, computes the first form of the formula above. There is no need to
+extract $r$: since $(s\ll(6-\rho))\bmod 64=64r/R$, the query computes
+\[
+\sigma(h)+\Bigl(\bigl(o\gg((s\ll(6-\rho))\bmod 64)\bigr)+(s\ll(\ell-S))\Bigr)\bmod L,
+\]
+where a single reduction modulo $L$ both extracts the offset $\omega_r(o)$
+from the shifted $o$ and wraps the sum around the end of the slice. Since $o$ fills a word, the reduction modulo $64$ costs nothing:
+processors perform it on shift amounts anyway.
 
 \begin{figure}[t]
 \centering
@@ -237,7 +271,7 @@ nothing: processors perform it on shift amounts anyway.
 \bits{row $3$}{0}{0}{1,0,0,1}
 \foreach \y/\l in {3.6/{0, 4, 8, 12},2.4/{1, 5, 9, 13},1.2/{2, 6, 10, 14},0/{3, 7, 11, 15}}
   \node[right,font=\tiny] at (4.2,\y+.5) {slots \l};
-% (b) Pattern 1: rings rotated by the index of the first seed
+% (b) Pattern 1: rings rotated by the index of the base position
 \begin{scope}[xshift=76mm]
 \node[anchor=west] at (-4.4,6.4) {(b)};
 \node[font=\tiny] at (2,5.6) {seed};
@@ -252,134 +286,143 @@ nothing: processors perform it on shift amounts anyway.
   \node[right,font=\tiny] at (4.2,\y+.5) {\l};
 \end{scope}
 \end{tikzpicture}
-\caption{\label{fig:search}Searching for the seeds of pattern $1$ that are
-feasible for the bucket of Figure~\ref{fig:placement}. (a) The set of used
+\caption{\label{fig:search}Finding the free rotations of pattern $1$ for the
+bucket of Figure~\ref{fig:placement}. (a) The set of used
 slots is stored by residue classes modulo the stride $T=4$: bit $q$ of row
-$\varrho$ is associated with slot $qT+\varrho$. (b) The ring of a key is a
-row (in general, a block of consecutive bits of a row), and the seeds of the
-pattern go through its bits cyclically, starting from the index of the slot of
-the first seed: for example, seed $1$ maps $x_1$ to slot $15$, which has
-index $3$ in row $3$. The bits of the rings, rotated by these indices, are
-combined by a bitwise \textsc{or}: the zeros of the result are the feasible
-seeds.}
+$\varrho$ records whether slot $qT+\varrho$ is used. (b) The bits of the ring
+of a key form a row (in general, a block of consecutive bits of a row), and
+the rotations go through them cyclically, starting from the index of the base position of
+the key: for example, the base position of $x_1$ is slot $15$ (seed $1$),
+which has index $3$ in row $3$. The bits of the rings, rotated by these
+indices, are combined by a bitwise \textsc{or}: the zeros of the result are
+the free rotations (here, only rotation $2$, that is, seed $5$).}
 \end{figure}
 
 \paragraph{Search.}
-The positions of a key for the seeds of a pattern are $T$ slots apart, but
-since $T$ is a power of two and it divides $L$ we can make them adjacent: we
-store the set of used slots by residue classes modulo $T$, that is, as $T$
-\emph{rows} in which bit $q$ of row $\varrho$ is associated with slot
-$qT+\varrho$. The ring of a key is then a block of $L/T$ consecutive bits of a
-row, and the seed of index $j$ of a pattern (i.e., $jR+r$) maps the key to the
-bit of its ring of index $(x+j)\bmod (L/T)$, where $x$ is the index for the
-first seed. Thus, the bits telling which seeds of a pattern map a key to a
-used slot are the bits of its ring rotated by $x$, and combining them for all
+In a bitmap of the used slots, the bits of the slots of a ring would be $T$
+bits apart. We make them adjacent by storing the set of used slots by residue
+classes modulo $T$, that is, as $T$ \emph{rows} in which bit $q$ of row
+$\varrho$ records whether slot $qT+\varrho$ is used. All the slots of a ring
+have the same residue modulo $T$ (wrapping around the end of a slice does not
+change it, as $T$ divides $L$), so the bits of the ring of a key are a block
+of $L/T$ consecutive bits of a row, and rotation $j$ maps the key to the bit
+of the block of index $(x+j)\bmod(L/T)$, where $x$ is the index in the block
+of the bit of its base position. Thus, rotating the block cyclically so that
+its bit $x$ becomes bit $0$ we obtain a block whose bit $j$ tells whether
+rotation $j$ maps the key to a used slot, and combining these blocks for all
 the keys of the bucket by a bitwise \textsc{or} we obtain a block whose zeros
-are the feasible seeds (Figure~\ref{fig:search}). For $S=8$ and $R=4$ a ring
-has $2^S/R=64$ slots whatever the slice length, so it fills a word: each
-pattern requires just reading and rotating a word for each key. Note that in
-the first pattern the first seed is $0$, which is not available.
+are the \emph{free} rotations, which map no key to a used slot
+(Figure~\ref{fig:search}). A free rotation $j$ yields the feasible seed $jR+r$
+unless two keys of the bucket are mapped to the same slot, which is rare. For
+$S=8$ and $R=4$ a ring has $2^{S-\rho}=64$ slots whatever the slice length, so
+its bits fill a word: each
+pattern requires just reading and rotating a word for each key. Note that
+rotation $0$ of pattern $0$ (seed $0$) is not available.
 
-Among feasible seeds we choose, as in \PHast, the one minimizing the sum of
-the slots of the keys. For a bucket of size $k$, the sum for the seed of index
-$j$ of a pattern is the sum for the first seed of the pattern plus $kjT$,
-minus $L$ for each key that has gone past the end of its ring, that is, for
-each key such that $x+j\geq L/T$. To count such keys we pack the indices $x$ of
-the keys of the bucket into fields of a word that are large enough to contain
-the sum of two indices (for $S=8$ and $R=4$, eight fields of eight bits):
+Among the free rotations of all patterns we choose, as in \PHast, the one
+minimizing the sum of the slots of the keys. For a bucket of size $k$, the sum for rotation $j$ of a
+pattern is the sum for rotation $0$ plus $kjT$,
+minus $L$ for each key that has wrapped around the end of its slice, that is,
+for each key such that $x+j\geq L/T$. To count such keys we pack the indices
+$x$ of the base positions of the keys of the bucket into fields of a word
+that are large enough to contain the sum of two indices (for $S=8$ and $R=4$, eight fields of eight bits):
 after adding $j$ to all fields with a single addition, the bit of weight $L/T$
-of each field tells whether the corresponding key has gone past the end of its
-ring, and counting such bits gives the number of keys. Evaluating a seed thus
-requires a number of operations that does not depend on the size of the
-bucket (for buckets with at most eight keys, in the case above), and since
-buckets have usually just a few feasible seeds (on average $4.5$ with
-$\lambda=5$) we
-evaluate all of them, with a single loop over the zeros of the blocks of all
-patterns that contains no other branch. When there are many feasible seeds
-(e.g., at the beginning of a sweep) we use instead the fact that in a pattern
-the sum increases with the index of the seed, except at the indices at which
-some key goes back to the first slot of its ring: thus, we need to consider
-only the first feasible index and, for each key, the first feasible index
-after the key went back, that is, at most $k+1$ candidates per pattern.
-Finally, when marking the slots of the best candidate as used we check that
-no two keys of the bucket are mapped to the same slot, and otherwise we move
-to the next candidate.
+of each field tells whether the corresponding key has wrapped around, and
+counting such bits gives the number of keys that have wrapped around.
+Evaluating a seed thus requires a number of operations that does not depend
+on the size of the bucket (for buckets with at most eight keys, in the case
+above), and since buckets have usually just a few free rotations (on average
+$4.5$ with $\lambda=5$) we evaluate all of them, with a single loop over the
+zeros of the blocks of all patterns that contains no other branch. When there
+are many free rotations (e.g., at the beginning of a sweep) we use instead the
+fact that in a pattern the sum increases with the rotation, except at the
+rotations at which some key wraps around: thus, we need to consider only the
+first free rotation and, for each key, the first free rotation not smaller
+than the one at which the key wraps around, that is, at most $k+1$ candidates
+per pattern. Finally, when marking the slots of the best free rotation as used
+we check that no two keys of the bucket are mapped to the same slot, and
+otherwise we move to the next best one.
 
 \paragraph{Grouping and scheduling.}
 The sweep needs the hashes of the keys of each bucket, but in no particular
 order, and we do not want to keep more than one copy of them. Thus, we
-distribute them into at most $256$ \emph{parts} made of a power of two of
-consecutive buckets: each thread computes the hashes of a chunk of the keys,
-and writes each of them at the end of the \emph{region} of its part, in the
-order of the keys. Regions are sized before computing the hashes, assuming
-that hashes are uniform, with a slack of six standard deviations: the few
-hashes that do not fit their region, if any, are kept separately. A part is
-distributed into buckets only when a sweep needs it, into a buffer of the
-sweep (the part is distributed first into smaller parts that fit the cache,
-and then each smaller part into its buckets), so regions are never modified:
-after the sweep, the keys of bumped buckets, which must be passed to the next
-level, are found by walking the keys of each chunk in order with a byte per
-key recording its part, and reading their hashes from the regions. Writing to
-at most $256$ regions at a time and working on parts of about $150$\,KB is
+distribute them into at most $256$ \emph{parts}, each made of a power-of-two
+number of consecutive buckets: each thread computes the hashes of a chunk of
+the keys, and appends each hash to the \emph{region} associated with the
+chunk and with the part of the hash, recording the part in a byte; the hashes
+in a region are thus in the order of the keys. Regions are sized before
+computing the hashes, assuming that hashes are uniform, with a slack of six
+standard deviations: the few hashes that do not fit their region, if any, are
+kept separately. A part is distributed into buckets only when a sweep needs
+it, into a buffer of the sweep (the part is distributed first into smaller
+parts that fit the cache, and then each smaller part into its buckets), so
+regions are never modified. After the sweep, the keys of bumped buckets, which
+must be passed to the next level, are found by walking again the keys of each
+chunk in order: the byte of a key gives its part, its hash is the next unread
+hash of the region of the chunk for that part, and a bit vector with a bit
+per bucket tells whether the bucket of the hash has been bumped. Writing to
+at most $256$ regions at a time and working on smaller parts of about
+$150$\,KB is
 efficient on any current architecture, and the construction needs, besides
 the hashes, just a byte per key: about $11$ bytes per key overall.
 
-The priority of a bucket depends on its size and decreases with its index,
-and buckets enter the window of the sweep in order of index: thus, the
+The priority of a bucket has the same form as in \PHast: a weight depending
+on the size of the bucket (we use the weights of \PHastP with wrapping,
+extrapolated linearly beyond size $7$), minus $1024$ times the index of the
+bucket. Since buckets enter the window of the sweep in order of index, the
 buckets of each size in the window form a queue, and the bucket with the
 highest priority is the first bucket of one of the queues. Instead of a
 priority queue we keep a queue for each size: extracting the next bucket
 requires scanning the first elements of a few queues, and adding a bucket
 takes constant time. Finally, the set of used slots of the level, which is
-necessary to build the following levels, is a byproduct of the sweep: the
-bits of the slots that are no longer reachable are copied to the bitmap of
-the level when their part of the set of used slots is recycled.
+needed to build the Elias--Fano sequence remapping the outputs of the
+following levels, is a byproduct of the sweep: the sweep keeps in a cyclic
+buffer only the bits of the slots that the buckets still to be placed can
+reach, and copies the bits of the slots that are no longer reachable to the
+bitmap of the level when their space in the buffer is recycled.
 
 \paragraph{Slice length.}
 The slice length of a level with output range $m$ is the smallest power of two
 larger than $m/2$, up to a maximum, which is a parameter: we use $L=1024$ for
 $S=8$ and $L=2048$ for $S=10$, as \PHastP with wrapping does. The slices of
-small levels can thus be shorter than the number of seeds, that is, $\ell<S$:
-in this case seed $s$ moves a key by $s$, so the stride is $R$, rings have
-$L/R$ slots (a single slot if $L<R$), and different seeds of a pattern map
-the keys of a bucket to the same slots. The priority of a bucket has the same
-form as in \PHast (a weight depending on the size of the bucket, extrapolated
-linearly beyond size $7$, minus $1024$ times the index of the bucket), and we
-use the weights of \PHastP with wrapping.
+small levels can thus have fewer slots than there are seeds, that is,
+$\ell<S$: in this case the slot of a key is
+$\sigma(h)+\bigl(\omega_r(o)+s\bigr)\bmod L$, so the stride is $R$, rings
+have $L/R$ slots (a single slot if $L<R$), and rotations $j$ and $j'$ map the
+keys of a bucket to the same slots whenever $L$ divides $(j-j')R$.
 
 \paragraph{Levels.}
 Levels after the first use the same scheme with range equal to their number of
 keys, and an Elias--Fano sequence maps their outputs to the holes of the first
-level. A bumped key is hashed again just once, with a different seed: if $h'$
+level. A bumped key is hashed again just once, with a different hash seed: if $h'$
 is this second hash, the value playing the role of $h$ at level $i>1$ is
 \[
 \hi\bigl((h\oplus z_i)(h'\oplus c)\bigr)\oplus\operatorname{lo}\bigl((h\oplus z_i)(h'\oplus c)\bigr),
 \]
 where $z_i$ is a \emph{salt} associated with the level and $c$ is a constant.
-Thus, after a bumped bucket is detected and the second hash is computed the
-key is no longer necessary: the levels after the first are accessed by code
-that depends just on two integers, which can be kept separate from the code
-accessing the first level without the need of preserving the key.
+Thus, the levels after the first depend only on $h$ and $h'$: once $h'$ has
+been computed the key is no longer needed, and the code accessing the
+following levels, which takes just two integers, can be kept separate from
+that accessing the first level.
 
-\paragraph{Colliding signatures.}
+\paragraph{Colliding hashes.}
 Keys with the same $64$-bit hash at the first level have the same slice and
 the same offsets in all patterns, so they collide for every seed and their
-bucket is bumped; at the following levels their values depend also on the
-second hash, and thus they are separated. Since about $n^2/2^{65}$ pairs of
+bucket is bumped; at the following levels the values playing the role of $h$
+depend also on the second hash, and thus they are separated. Since about $n^2/2^{65}$ pairs of
 keys have the same hash (about three for $n=10^{10}$), the keys bumped in this
 way are negligible with respect to the $\beta n$ keys that are bumped anyway.
-Hence, $64$-bit hashes are
-sufficient for any number of keys, and no larger signature is
-necessary. Construction would fail only if two keys had the same pair of
+Hence, $64$-bit hashes are sufficient for any number of keys. Construction would fail only if two keys had the same pair of
 hashes, which happens in practice only for duplicate keys. Since duplicate
 keys are always bumped from the first level, to report them we examine the
 buckets of the following levels: keys of a bucket with the same value are
-hashed with a third seed, and keys whose hashes coincide again are considered
+hashed with a third hash seed, and keys whose hashes coincide again are considered
 duplicates.
 
 \paragraph{Last level.}
-When at most $4096$ keys are left, a last level uses the same placement
-scheme with a range larger by $25\%$ plus $16$ slots, expected bucket size $\min(\lambda,3)$, and
+When at most $4096$ keys are left, a last level with $k$ keys uses the same
+placement scheme with a range of $\lfloor 5k/4\rfloor+16$ slots, expected
+bucket size $\min(\lambda,3)$, and
 no bumping, changing the salt (and, every eight
 attempts, enlarging the range) in the unlikely case of failure.
 
@@ -388,119 +431,70 @@ As in \PHast, buckets are split into chunks separated by gaps of
 \[
 \left\lfloor \frac{LB}{m-L+1}\right\rfloor+1
 \]
-buckets: the slice of bucket $b$ starts at about $b(m-L+1)/B$, and the
-positions of a key lie at most $L-1$ slots after the start of its slice, so
-(considering the rounding of slice starts) the positions of different chunks
-cannot overlap. Chunks are swept in parallel, and then all gaps are swept in
-parallel, each with a new sweep in which the positions of the buckets of the
-neighboring chunks (on both sides) are marked as used.
+buckets: the slice of bucket $b$ starts at about $b(m-L+1)/B$, and the slot
+of a key lies at most $L-1$ slots after the start of its slice, so
+(considering the rounding of slice starts) the keys of different chunks
+cannot reach the same slots. Chunks are swept in parallel, and then all gaps
+are swept in parallel, each with a new sweep in which the slots used by the
+keys of the neighboring chunks (on both sides) are marked as used.
 
 \section{Differences from \PHast and \PHastP}
 \label{sec:differences}
 
 In \PHast~\cite{BeSPHast}, in its variant \PHastP, and in \PHastR the bucket
 of a key with hash $h$ is $\hi(hB)$, and the seed $s$ of the bucket places the
-key at $\sigma(h)+p(s,h)$, where $\sigma(h)=\hi(h(m-L+1))$ is the start of its
-slice: the three structures differ mainly in the in-slice position $p(s,h)$.
-In \PHast, $p(s,h)$ is a pseudorandom function, so finding the best seed means
-trying all $2^S-1$ of them; construction takes hundreds of nanoseconds per
-key. \PHastP uses instead the additive placement $p(s,h)=(h \bmod L)+s-1$:
-the feasibility of $64$ consecutive seeds of a bucket is the complement of the
-bitwise \textsc{or} of $64$-bit windows of the occupancy bitmap, one per key,
-and the best seed is the first feasible one. Construction becomes an order of
-magnitude faster, but with 8-bit seeds space grows from $1.92$ to $2.12$ bits
-per key. \PHastP \emph{with wrapping} uses $p(s,h)=(h+\delta s)\bmod L$ for a
-small multiplier $\delta$, so that keys do not leave their slice, and reduces
-space to $1.97$ bits per key ($\delta=3$) at the cost of a slower
-construction. In \PHastR, $p(s,h)=\bigl(\omega_r(o)+s\cdot 2^{\ell-S}\bigr)\bmod
-L$, where $r=s\bmod R$ and $o=\operatorname{lo}(hB)$.
-
-The measurements of the next two paragraphs refer to $10^7$ random keys and
-8-bit seeds, with the space-optimal configurations of \PHastP (expected bucket
-size $\lambda=5.25$ and slice length $L=512$) and of \PHastP with wrapping
-($\delta=3$, $\lambda=5$, $L=1024$). They have been obtained on the
-reference implementation (the \texttt{ph} crate, using GxHash as
-hash function), whose first level we inspect through read-only accessors.
-
-\paragraph{Holes are bumped keys.}
-As in \PHastR, the first level of \PHastP has output range $m=n$, so its holes
-are exactly its bumped keys, and its space is approximately given
-by~(\ref{eq:space}). Without wrapping $\beta=7.6\%$, and bumping costs $0.59$
-of the $2.12$ bits per key ($0.47$ for Elias--Fano, $0.13$ for the further
-levels); with wrapping $\beta=4.3\%$, and bumping costs $0.37$ of the $1.97$
-bits per key ($0.30$ and $0.07$).
+key at $\sigma(h)+p(s,h)$, where $\sigma(h)$ is the start of its slice: the
+three structures differ mainly in the in-slice position $p(s,h)$. In \PHast,
+$p(s,h)$ is a pseudorandom function, so finding the best seed requires trying
+all seeds. \PHastP uses instead the additive placement $p(s,h)=(h\bmod
+L)+s-1$, so that feasible seeds can be found by combining windows of the
+bitmap of used slots, but it needs more space than \PHast; \PHastP
+\emph{with wrapping} uses $p(s,h)=(h+\delta s)\bmod L$ for a small multiplier
+$\delta$, so that keys do not leave their slice, and needs less space than
+\PHastP without wrapping, but it is slower to build. In \PHastR, $p(s,h)=\bigl(\omega_r(o)+(s\ll(\ell-S))\bigr)\bmod L$,
+where $r=s\bmod R$ and $o=\operatorname{lo}(hB)$.
 
 \paragraph{Additive placement is rigid.}
-Additive placement translates a fixed pattern: two keys of a bucket whose base
-positions coincide collide for every seed. For a bucket of size $k$ this
-happens with probability about $k(k-1)/(2L)$, so without wrapping a fraction
-$\lambda^2/(2L)\approx 2.7\%$ of the buckets cannot be placed at all
-(we measure $2.6\%$); they are $38.5\%$ of the bumped buckets and contain
-about $(\lambda^2+2\lambda)/(2L)\approx 3.7\%$ of the keys (we measure
-$3.6\%$). Wrapping does not change the picture: two keys with the same base
-position are moved together around their slices, and collide for all seeds
-but the few for which exactly one of them has wrapped. The slices of the
-variant with wrapping are longer, so these \emph{self-collisions} are half as
-frequent, but so is bumping: they happen in $1.2\%$ of the buckets, which
-contain $1.7\%$ of the keys, that is, $39\%$ of the bumped keys. Moreover,
-consecutive seeds are strongly correlated trials. Seeds, on the other hand,
-are almost incompressible: their empirical entropy is $7.71$ bits without
-wrapping and $7.89$ bits with wrapping.
+As in \PHastR, the first level of \PHastP has output range $m=n$, so its holes
+are exactly its bumped keys, and by~(\ref{eq:space}) its excess space comes
+from bumping. Additive placement, however, moves all the keys of a bucket by
+the same amount: two keys of a bucket that collide for one seed, which
+happens with probability about $k(k-1)/(2L)$ for a bucket of size $k$,
+collide for every seed. Wrapping does not change the picture, as two such keys move
+together around their slices, and collide for all seeds but the few for
+which exactly one of them has wrapped. Inspecting the first level of the
+reference implementation, we found that these self-collisions cause a large
+part of the bumping (almost $40\%$ with wrapping). Moreover, consecutive
+seeds move a fixed arrangement of the keys of a bucket, and are thus strongly
+correlated attempts at placing it, and the excess space cannot be
+recovered by compressing the seeds, which are almost incompressible.
 
 \paragraph{Patterns instead of a rigid pattern.}
-In \PHastP, with or without wrapping, all seeds move the same rigid pattern of
-base positions. In \PHastR the seed first chooses among $R$ patterns, whose
-offsets are taken from disjoint blocks of bits of the lower half of the
-product yielding the bucket, rather than from the hash, and then moves the
-keys along the rings of the chosen pattern, using as multiplier the power of
-two $L/2^S$ rather than a small odd number. Since self-collisions happen
-independently in each pattern (Section~\ref{sec:phastr}), they disappear
-already for $R=2$. In Figure~\ref{fig:placement}, for example, the keys $x_1$
-and $x_2$ would collide for all seeds in \PHastP, whereas in \PHastR they
-collide just for the seeds of pattern~$0$. Moreover, different patterns
-provide (almost) independent trials. With $R=1$ and $\delta=2^{\ell-S}$,
-\PHastR is essentially \PHastP with wrapping (which, however, uses odd
-multipliers).
-
-\paragraph{Queries and search.}
-After reading the seed, \PHastP with wrapping multiplies it by $\delta$, adds
-the hash, reduces the result modulo $L$, and adds $\sigma(h)$; \PHastR
-performs the same operations, with a shift in place of the multiplication and
-$o$ in place of the hash, after computing $s\cdot 64/R$ and shifting $o$: two
-shifts more. In \PHastP the positions of a key for consecutive seeds are
-consecutive slots, so the seeds that are feasible for a bucket are found by
-combining windows of the bitmap of used slots; with wrapping, however, the
-range of seeds must be split at the points at which some key wraps, and with
-$\delta>1$ only one bit out of $\delta$ of each window is meaningful. In
-\PHastR the positions of a key for the seeds of a pattern are adjacent bits of
-a row of the set of used slots, and the wrapping of a ring is taken care of by
-a rotation.
+In \PHastR the seed first chooses among $R$ patterns, whose offsets come from
+disjoint blocks of bits of $o$, and then a rotation, which moves the keys
+along their rings. Since self-collisions happen independently in each
+pattern, buckets with a self-collision in every pattern are negligible
+already for $R=2$ (in Figure~\ref{fig:placement}, the keys $x_1$ and $x_2$
+would collide for all seeds in \PHastP, but in \PHastR they collide only for
+the seeds choosing pattern~$0$), and different patterns are (almost)
+independent attempts at placing a bucket. Queries need just two shifts
+more than in \PHastP with wrapping, and wrapping does not complicate the
+search: in \PHastP with wrapping the range of seeds must be split at the
+points at which some key wraps, and with $\delta>1$ only one bit out of
+$\delta$ of each window of the bitmap is meaningful, whereas in \PHastR the
+bits recording the slots of a key for the rotations of a pattern are adjacent
+bits of a row, and wrapping is taken care of by the rotation of the block.
 
 \paragraph{Construction.}
 The construction of \PHastR differs from that of the reference implementation
-of \PHast and \PHastP also in several engineering aspects
-(Section~\ref{sec:phastr}). The reference implementation sorts the hashes in
-place, and hashes all keys again to find those of bumped buckets; \PHastR
-distributes the hashes into parts, which are distributed into buckets only
-when a sweep needs them, and finds the keys of bumped buckets by walking the
-keys, using about $11$ bytes per key against $10$. The priority queue of the
-sweep is replaced by a queue for each bucket size, and the set of used slots
-of a level is a byproduct of the sweep. In \PHastP the keys of bumped buckets
-are hashed again at each following level with a different seed, and the new
-hash determines their bucket, their slice, and their offsets; in \PHastR they
-are hashed again just once. When at most $8192$ keys are left ($4096$ for the
-variants with wrapping), \PHastP builds a level of regular \PHast
-(pseudorandom placement, all $256$ seeds of $8$ bits tried for each bucket,
-expected bucket size $4$, no bumping) with range $1.2(k+10)$, where $k$ is the
-number of keys, rehashing all keys with a new seed in case of failure; the last
-level of \PHastR uses instead the same scheme as the other levels. Finally,
-\PHast processes the gaps between the chunks of a parallel construction
-serially, continuing for each gap the sweep of the previous chunk (whose
-state, including the priority queue, is preserved) after adding to its
-occupancy the positions of the first buckets of the following chunk, whereas
-\PHastR sweeps all gaps in parallel. Slice lengths and bucket priorities are
-those of \PHastP with wrapping; the suggested expected bucket size for 8-bit
-seeds is $4.5$ instead of $5$.
+also in several engineering aspects (Section~\ref{sec:phastr}): hashes are
+distributed into parts rather than sorted, the priority queue is replaced by
+a queue for each bucket size, bumped keys are hashed again just once rather
+than at each level, the last level uses the same scheme as the other levels
+rather than the pseudorandom placement of \PHast, and the gaps between the
+chunks of a parallel construction are swept in parallel rather than
+serially. Slice lengths and bucket priorities are those of \PHastP with
+wrapping, but the expected bucket size is smaller.
 
 \section{Experiments}
 \label{sec:experiments}
@@ -513,7 +507,7 @@ implementation is the \texttt{ph} crate by Beling (\texttt{Function2} with
 the \texttt{ShiftOnly}, \texttt{ShiftOnlyWrapped<$\delta$>} and
 \texttt{SeedOnly} seed choosers for \PHastP, \PHastP with wrapping and \PHast,
 respectively). To make query times comparable we fed both implementations the
-same hash function, GxHash with a seed, as in the experiments of the \PHast
+same hash function, GxHash with a hash seed, as in the experiments of the \PHast
 paper. Construction times are single-threaded unless otherwise noted and
 include hashing; query times are medians over nine rounds of $2\cdot10^6$
 queries of consecutive keys of the set, and the rounds of the different
@@ -562,8 +556,8 @@ in half the time (it is faster to build even than \PHastP without wrapping).
 Its queries are faster than those of all variants of \PHastP ($22\%$ faster
 than those of the variant using the least space), and slightly faster than
 those of \PHast, which uses $0.4\%$ less space but takes fifteen times as
-long to build. The speed of queries is due to bumping: \PHastR bumps just
-$1.5\%$ of the keys from the first level, against the $4.3\%$ of \PHastP with
+long to build. Queries are fast because \PHastR bumps few keys: just $1.5\%$
+of the keys from the first level, against the $4.3\%$ of \PHastP with
 wrapping and $\delta=3$, and queries for bumped keys are much slower than the
 others. The expected bucket size thus trades space for query time: with
 $\lambda=4.75$ \PHastR bumps $2.5\%$ of the keys, and it has the space of
@@ -607,9 +601,9 @@ Table~\ref{tab:1e8} shows that the picture does not change on $10^8$ keys,
 where queries are dominated by cache misses: with 8-bit seeds and
 $\lambda=4.5$ \PHastR is built in $54\%$ of the time of \PHastP with
 wrapping, and its queries are $19\%$ faster; they are also slightly faster
-than those of \PHast. With 8 threads \PHastR builds in $44\%$ of the time of
-\PHastP with wrapping with 8-bit seeds, and in $56\%$ of the time with 10-bit
-seeds.
+than those of \PHast. With 8 threads \PHastR is built in $44\%$ of the time of
+\PHastP with wrapping when seeds have 8 bits, and in $56\%$ of the time when
+they have 10 bits.
 
 \subsection{Large Key Sets}
 \label{sec:large}
@@ -647,8 +641,8 @@ on the number of keys, and the relative performance of the structures is the
 same as on smaller key sets: with 8-bit seeds \PHastR is built in $55\%$ of
 the time of \PHastP with wrapping with one thread, and in less than half the
 time with eight, its queries are $22\%$ faster, and they are slightly faster
-than those of \PHast. At this scale, however, some phenomena become more visible, and we
-used them to tune the structure.
+than those of \PHast. At this scale, however, the cost of bumped keys becomes
+more visible, and we used it to choose the suggested expected bucket size.
 
 \begin{table}[t]
 \centering
@@ -788,7 +782,8 @@ Figure~\ref{fig:pareto} shows what happens when the expected bucket size
 varies around the configurations of the tables. Space has a minimum, query
 time grows with $\lambda$, as more keys are bumped, and construction time
 varies by less than $15\%$. The curves of \PHast and \PHastR are close in
-space, but more than a decade apart in construction time; with 10-bit seeds
+space, but their construction times differ by more than a factor of ten; with
+10-bit seeds
 \PHastR has also faster queries. The curves of \PHastP with wrapping are to
 the right of both. Considering the three dimensions at once,
 on $10^9$ keys no configuration of \PHastP, with or without wrapping, is
@@ -799,10 +794,9 @@ and $\lambda=4.25$ and $\lambda=4.5$, which win by less than $1$\,ns in query
 time or by $0.007$ bits per key in space at twelve times the construction
 time. The same happens on $10^7$ and $10^8$ keys (on $10^8$ keys, the
 configuration of \PHast with $\lambda=4.25$ is dominated too), except that the
-configurations of \PHastP with wrapping, $\delta=1$ and 10-bit seeds (not
-plotted) are not dominated either, as they are built up to $5\%$ faster than
-all configurations of \PHastR with 10-bit seeds, using at least $0.02$ bits
-per key more.
+10-bit configurations of \PHastP with wrapping and $\delta=1$ (not plotted)
+are not dominated either: they are built faster (by up to $5\%$) than every
+10-bit configuration of \PHastR, but use at least $0.02$ bits per key more.
 
 \paragraph{Bumped keys.}
 Table~\ref{tab:split} shows the time of queries for the keys of the first
@@ -815,7 +809,8 @@ first level on $10^7$ keys, $120$--$230$\,ns more on $10^8$ keys, and
 $230$--$380$\,ns more on $10^9$ keys: besides accessing another level and
 the Elias--Fano sequence, a bumped key causes the misprediction of the test
 on the seed, which interrupts the overlapped execution of the following
-queries. Thus, each percent of bumped keys costs about half a nanosecond on
+queries. Thus, each percent of bumped keys costs on average about half a
+nanosecond per query on
 $10^7$ keys, more than $1$\,ns on $10^8$ keys, and more than $2$\,ns on
 $10^9$ keys: the larger the key set, the more a small expected bucket size
 is convenient. This is the reason why we
@@ -846,13 +841,13 @@ Structure & 1 & 2 & 4 & 8 & 96 & speedup & bytes/key \\
 The construction time per key of \PHastR grows slowly with the number of
 keys ($44$, $50$ and $54$\,ns with one thread on $10^7$, $10^8$ and $10^9$
 keys, respectively), as parts are distributed into smaller parts that fit
-the cache whatever their size (Section~\ref{sec:phastr}); the growth is due
-to the walk finding bumped keys, which accesses randomly a bit vector with a
-bit per bucket. Table~\ref{tab:threads} shows how construction scales with
+the cache whatever the number of keys (Section~\ref{sec:phastr}); the growth
+is due to the walk finding the keys of bumped buckets, which accesses
+randomly the bit vector of bumped buckets. Table~\ref{tab:threads} shows how construction scales with
 the number of threads: the speedup with eight threads is limited by the
 phases that are bound by memory bandwidth and latency, that is, hashing, the
 distribution into parts, and the walk; with all the hardware threads of the
-machine, $10^9$ keys are built in less than $3$\,ns per key, $2.7$ times
+machine, the structure on $10^9$ keys is built in less than $3$\,ns per key, $2.7$ times
 faster than \PHastP with wrapping. The peak memory usage is close to that of
 the reference implementation of \PHastP, which sorts hashes in place and
 hashes all keys again to find those of bumped buckets.
@@ -865,7 +860,12 @@ keys and, as bumped keys are hashed again, the keys themselves: about $11$
 bytes per key besides the keys. To build structures on hundreds of billions
 of keys, \PHastR has also an offline construction, which reads the keys just
 once, keeps their hashes on disk, needs in memory less than a byte per key,
-and builds exactly the same structure.
+and builds exactly the same structure. The external-memory construction of
+PTHash~\cite{PTPEMCMPHFP} also builds the same structure as its construction
+in memory, but since PTHash processes buckets in order of decreasing size, it
+must sort the hashes by bucket on disk and group the buckets by size; in \PHastR, instead,
+buckets enter the sweep in order of index, so it is sufficient to distribute
+the hashes into partitions.
 
 \paragraph{Records.}
 The value playing the role of the hash at every level depends only on the
@@ -879,30 +879,31 @@ sequence of blocks of $1024$ records: the blocks of all partitions are
 appended to the same file as their buffers fill, and an index with an integer
 per block locates the blocks of each partition. For the first level, whose
 number of keys is not known in advance, $P=2^{14}$: the buffers take
-$256$\,MiB, and partitions contain a few million keys even on $10^{11}$ keys.
-At the following levels, whose number~$k$ of keys is known, $P$ is the
-smallest power of two not smaller than $\sqrt{2k/1024}$, which balances the
-memory used by each thread writing the file, which buffers a block for each
-partition, and that used by each thread sweeping the level, which buffers a
-few partitions.
+$256$\,MiB, and partitions contain just a few million keys even on $10^{11}$
+keys. At the following levels, whose number~$k$ of keys is known, $P$ is the
+smallest power of two not smaller than $\sqrt{2k/1024}$: this choice balances
+the memory of a thread writing the file, which buffers a block for each
+partition, and that of a thread sweeping the level, which buffers a few
+partitions.
 
 \paragraph{Parts.}
-Since $\hi(hB)$ is a nondecreasing function of $h$, a partition contains the
-keys of an interval of buckets, except that the bucket of the first value of
-a partition can contain also keys of the previous partition. Offline, the
-parts that sweeps load in increasing order (Section~\ref{sec:phastr}) are
-made of consecutive partitions containing at least $512$ buckets, and a
-bucket whose keys lie in two parts belongs to the second one. When a sweep
-loads a part, it passes to the following part the keys of its first bucket
-found in the part: thus, each partition is read once by each sweep, except
-at the beginning of a sweep, where the previous part might need to be read
-too.
+Since $\hi(hB)$ is a nondecreasing function of $h$, the keys of a partition
+belong to consecutive buckets, and only the first and the last of these
+buckets can contain also keys of other partitions. Offline, the parts
+(Section~\ref{sec:phastr}), which sweeps load in increasing order, are made
+of consecutive partitions containing together at least $512$ buckets, and a
+bucket whose keys lie in two parts belongs to the second one: when a sweep
+loads a part, it sets aside the keys found in the part that belong to the
+first bucket of the following part, and adds them to that part when it loads
+it. Thus, each partition is read once by each sweep, except at the beginning
+of a sweep, where the previous part might need to be read too.
 
 \paragraph{Same structure.}
-The seed chosen for a bucket depends on the set of the hashes of its keys,
-but not on their order: feasible seeds are computed by a bitwise
-\textsc{or}, the sum of the slots does not depend on the order of the keys,
-and ties are broken by the index of the seed. Since the sweeps see the same
+Given the slots already used, the seed chosen for a bucket depends only on
+the set of the hashes of its keys, and not on their order: free rotations are
+computed by a bitwise \textsc{or}, the sum of the slots does not depend on the order of the keys,
+and ties are broken in favor of the first pattern and, within a pattern, of
+the first rotation. Since the sweeps see the same
 buckets in the same order, the structure built offline is identical to that
 built in memory, provided that the number of threads is the same (it
 determines the chunks of a parallel construction). The only difference is in
@@ -914,7 +915,7 @@ constructions fail.
 
 \paragraph{Following levels and memory.}
 After the sweep of a level, its file is read again, and the records of the
-keys of buckets without a seed are written to the file of the following
+keys of bumped buckets are written to the file of the following
 level, or kept in memory if they are at most $4096$: the file of the first
 level is written once and read twice, and the following files are much
 smaller. In memory, besides buffers whose size does not depend on the number
@@ -944,7 +945,7 @@ besides the keys.
 \label{sec:limits}
 
 The first level of \PHastR still bumps a few percent of the keys, and bumping
-is where space goes: it is natural to ask whether a more flexible placement, or
+is where the excess space goes: it is natural to ask whether a more flexible placement, or
 a more powerful search, could get rid of it. In this section we show that the
 answer is negative, for a structural reason that applies to every placement
 scheme of the \PHast family: on large key sets, no placement of the keys,
@@ -954,7 +955,7 @@ In all structures of the \PHast family a key whose slice starts at $\sigma$ can
 be placed only in the \emph{window} $[\sigma\..\sigma+W)$, where $W=L$ for
 \PHast, for \PHastP with wrapping, and for \PHastR, and $W=L+2^S-2$ for \PHastP
 without wrapping. The seed of a
-bucket chooses positions within the windows of its keys, but the windows
+bucket chooses the slots of its keys within their windows, but the windows
 themselves depend only on the hashes of the keys. This simple constraint is
 sufficient to force bumping.
 
@@ -965,89 +966,93 @@ $x$ can be placed only in the slots $[\sigma_x\..\sigma_x+W)$. Let
 \[
 X(t) = t - \bigl|\{\,x \mid \sigma_x < t\,\}\bigr|\qquad (0\leq t\leq n),
 \]
-and let $R=\max_t X(t)-\min_t X(t)$ be the range of $X$. Then, every injective
-placement of a subset of the keys leaves at least $R-W+1$ keys unplaced.
+and let $D=\max_t X(t)-\min_t X(t)$ be the range of $X$. Then, every injective
+placement of a subset of the keys leaves at least $D-W+1$ keys unplaced.
 \end{proposition}
 
 \begin{proof}
-For $0\leq s\leq t\leq n$ the number of keys $x$ with $s\leq\sigma_x<t$ is
-$t-s-\bigl(X(t)-X(s)\bigr)$. Only these keys can occupy the $t-s-W+1$ slots
-in $[s+W-1\..t)$, so at least $X(t)-X(s)-W+1$ of these slots are empty.
-Symmetrically, these keys can occupy only the at most $t-s+W-1$ slots in
-$[s\..t+W-1)$, so at least $X(s)-X(t)-W+1$ of them are unplaced. Since there
+For $0\leq u\leq v\leq n$ the number of keys $x$ with $u\leq\sigma_x<v$ is
+$v-u-\bigl(X(v)-X(u)\bigr)$. Only these keys can occupy the $v-u-W+1$ slots
+in $[u+W-1\..v)$, so at least $X(v)-X(u)-W+1$ of these slots are empty.
+Symmetrically, these keys can occupy only the at most $v-u+W-1$ slots in
+$[u\..v+W-1)$, so at least $X(u)-X(v)-W+1$ of them are unplaced. Since there
 are as many keys as slots, the number of unplaced keys is equal to the number
-of empty slots, and it is thus at least $\bigl|X(t)-X(s)\bigr|-W+1$ for all
-$s\leq t$. Choosing as $s$ and $t$ the points at which $X$ attains its minimum
+of empty slots, and it is thus at least $\bigl|X(v)-X(u)\bigr|-W+1$ for all
+$u\leq v$. Choosing as $u$ and $v$ the points at which $X$ attains its minimum
 and its maximum, in the appropriate order, completes the proof.
 \end{proof}
 
 The proposition is a quantitative version of the (easy) necessity of Hall's
-condition~\cite{HalORS} for the bipartite graph connecting keys and slots. In
-the \PHast family slice starts are computed from a hash by inversion in
+condition~\cite{HalORS} for the bipartite graph connecting each key to the
+slots of its window. In
+the \PHast family slice starts are computed from a hash by a multiplication in
 fixed-point arithmetic, so we can model them as independent and uniformly
 distributed. If the $\sigma_x$ are independent and uniform in $[0\..n)$, then
-$R=nV_n$, where $V_n$ is Kuiper's statistic~\cite{KuiTCRPC} of the values
+$D=nV_n$, where $V_n$ is Kuiper's statistic~\cite{KuiTCRPC} of the values
 $\sigma_x/n$, that is, the sum of the maximum positive and negative deviations
 of their empirical distribution from the uniform distribution (the compression
-of slice starts into $[0\..n-W+1)$ changes $R$ by at most $W-1$). By Donsker's
-theorem~\cite{BilCPM} and the continuity of the range, $R/\sqrt n$ converges in
+of slice starts into $[0\..n-W+1)$ changes $D$ by at most $W-1$). By Donsker's
+theorem~\cite{BilCPM} and the continuity of the range, $D/\sqrt n$ converges in
 distribution to the range of a standard Brownian bridge, which by Vervaat's
 transformation~\cite{VerRBBBE} has the same distribution as the maximum of a
 standard Brownian excursion, whose mean is $\sqrt{\pi/2}$~\cite{KenDMBE}. Since
-the Dvoretzky--Kiefer--Wolfowitz inequality~\cite{MasTCDKWI} gives $R/\sqrt n$
-exponentially decreasing tails, the convergence extends to expectations, and
+the Dvoretzky--Kiefer--Wolfowitz inequality~\cite{MasTCDKWI} shows that $D/\sqrt n$
+has exponentially decreasing tails, the convergence extends to expectations, and
 we conclude that
 \[
-\mathbf E[R]=\sqrt{\frac{\pi n}2}\bigl(1+o(1)\bigr).
+\mathbf E[D]=\sqrt{\frac{\pi n}2}\bigl(1+o(1)\bigr).
 \]
 We verified the estimate experimentally: over $200$ random sets of $2^{12}$,
 $2^{16}$, and $2^{20}$ keys, the average range is within $1\%$ of
 $\sqrt{\pi n/2}$.
 
-The bound is irrelevant in terms of space. For \PHastR with $S=8$ and $L=1024$
+In terms of space the bound is negligible. For \PHastR with $S=8$ and $L=1024$
 we have $W=1024$, so on $10^7$ keys at least about $2900$ keys ($0.03\%$) must
 be bumped, and on $10^9$ keys about $38\,600$ ($0.004\%$), whereas the first
 level of \PHastR bumps a few percent of the keys. Its
 importance lies in the fact that it applies to \emph{every} placement: as soon
 as $\sqrt{\pi n/2}$ is significantly larger than $W$, that is, beyond a few
-hundred thousand keys, no amount of search can make a first level with $m=n$
+million keys, no amount of search can make a first level with $m=n$
 free of bumping. In particular, it rules out the possibility of obtaining a
 bump-free version of \PHastR, whose space would be just $S/\lambda$ bits per
 key, by a backtracking search in the style of
 CONSENSUS~\cite{LSWCSESAMPH}, which combines the search and the encoding of
 seeds to get arbitrarily close to the lower bound for MPHFs. For such a search
 to succeed, keys should be first split into parts of exactly known size $C$,
-with $\sqrt{\pi C/2}$ significantly smaller than $W$, as it happens (albeit for
+with $\sqrt{\pi C/2}$ significantly smaller than $W$, as happens (albeit for
 different reasons) in Bucketed CONSENSUS-RecSplit, whose first step is a minimal
 $k$-perfect hash function.
 
-Even within such parts, however, a second obstacle appears. Under the
-minimum-sum rule, whether a slot will be occupied is decided by buckets whose
-slices start up to $W$ slots before it, that is, about $W/\lambda$ buckets
-before the slot becomes unreachable, so a depth-first search that detects a
-failure when a slot becomes unreachable must exhaust the alternatives of all
-such buckets before it can change the culprit. In a prototype using chained
+Even within such parts, however, a second obstacle appears. Whether a slot
+is occupied depends on the buckets whose
+slices start at most $W$ slots before it, that is, on about $W/\lambda$
+consecutive buckets, and the slot becomes unreachable only after all of them
+have been placed. Thus, a depth-first search that detects a failure when an
+empty slot becomes unreachable must exhaust the alternatives of about
+$W/\lambda$ buckets before it can change the choice that caused the failure. In a prototype using chained
 seeds as in CONSENSUS (the offsets of a bucket depend on the seeds of the
 previous buckets, so that backtracking rerandomizes the following ones), a
 cyclic output range to avoid boundary effects, and a check that all unreachable
-slots are occupied, the search never placed more than $160$ buckets, even with
-more than two bits of slack per bucket and a budget of thousands of placements
+slots are occupied, the search never got past the first $160$ buckets, even
+with seeds more than two bits longer than the information-theoretic minimum
+for a bucket ($S=8$ and $\lambda=4$) and a budget of thousands of placements
 per bucket.
 
 \section{Conclusions}
 
 In \PHastR the lowest bits of the seed select one of a few independent
 patterns, whose offsets come for free with the computation of the bucket, and
-moving the keys along rings preserves bit-parallelism, as feasible seeds are
-found by rotating blocks of bits of a set of used slots stored by residue
-classes. Patterns remove, at the cost of two shifts per query, the rigidity
+moving the keys along rings preserves bit-parallelism, as the free rotations
+of a pattern are found by rotating blocks of bits of the set of used slots,
+which is stored by residue classes. Patterns remove, at the cost of two shifts per query, the rigidity
 of the additive placement of \PHastP, which, even with wrapping, causes a
 large part of its bumping, and thus of its excess space. As a result, \PHastR
 uses less space than \PHastP with wrapping, is built in half the time, and
 has faster queries; its space and its query time are close to those of
-\PHast, which takes more than ten times as long to build. Bumping has, however,
-intrinsic limits: no placement in which keys move within windows of $W$ slots
-can avoid bumping about $\sqrt{\pi n/2}-W$ keys. Finally, an offline
+\PHast, which takes more than ten times as long to build. There are, however,
+intrinsic limits to how few keys can be bumped: every placement of random
+keys in which each key can be placed only within a window of $W$ slots bumps
+on average at least about $\sqrt{\pi n/2}-W$ keys. Finally, an offline
 construction builds the same structure keeping the hashes of the keys on disk,
 with less than a byte per key of memory.
 

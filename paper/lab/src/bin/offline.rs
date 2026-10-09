@@ -59,7 +59,7 @@ struct Args {
     n: usize,
     #[arg(short, long, default_value = "both")]
     mode: String,
-    #[arg(short, long, default_value = "8:10:4.5")]
+    #[arg(short, long, default_value = "8:10:4.25")]
     variant: String,
     /// Prints the allocated memory every 50 ms on standard error​
     #[arg(long)]

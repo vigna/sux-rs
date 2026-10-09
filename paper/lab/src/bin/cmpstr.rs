@@ -3,16 +3,17 @@
 //! with the same hash function (GxHash on the bytes of the string, exactly
 //! as `std::hash::Hash` feeds a `str` to a hasher) for both.
 //!
-//! Configurations are as in `cmp` (`ref:<chooser>:<S>:<lambda>` and
-//! `r:<S>:<log2 L>:<lambda>[:<log2 R>]`, byte seeds); query times are medians of
-//! interleaved rounds.
+//! Configurations are as in `cmp` (`ref:<chooser>:<S>:<lambda>`, with chooser
+//! `plus`, `w3` or `phast`, and `r:<S>:<log2 L>:<lambda>[:<log2 R>]`, byte
+//! seeds); query times are medians of interleaved rounds, with queries in
+//! random or sequential order as in `cmp`.
 
 use clap::Parser;
 use dsi_progress_logger::no_logging;
 use mem_dbg::{MemSize, SizeFlags};
 use ph::GetSize;
 use ph::phast::{
-    DefaultCompressedArray, Function2, Generic, GenericCore, SeedChooser, ShiftOnly,
+    DefaultCompressedArray, Function2, Generic, GenericCore, SeedChooser, SeedOnly, ShiftOnly,
     ShiftOnlyWrapped,
 };
 use ph::seedable_hash::BuildGxHash;
@@ -34,6 +35,10 @@ struct Args {
     variant: Vec<String>,
     #[arg(long, default_value_t = 0)]
     key_seed: u64,
+    /// The order of queries: random (keys chosen uniformly at random) or
+    /// sequential (consecutive keys of the set, as in `cmp`).​
+    #[arg(long, default_value = "random")]
+    order: String,
 }
 
 /// A string key hashed with GxHash exactly as `ph` hashes it.
@@ -63,17 +68,40 @@ struct Entry<'a> {
     bench: Box<dyn Fn(usize, u64) -> f64 + 'a>,
 }
 
+/// Runs a batch of queries and returns ns per query, as `query_batch` in
+/// `cmp`: sequential queries read the keys of the set in order, starting from
+/// position `round * q` (modulo the number of keys).
 #[inline(always)]
-fn batch<'a>(keys: &'a [GxStr], q: usize, round: u64, f: impl Fn(&'a GxStr) -> usize) -> f64 {
-    let n = keys.len() as u64;
-    let mut x = 0x9e3779b97f4a7c15u64 ^ round.wrapping_mul(0xd6e8_feb8_6659_fd93);
+fn batch<'a>(
+    keys: &'a [GxStr],
+    q: usize,
+    round: u64,
+    sequential: bool,
+    f: impl Fn(&'a GxStr) -> usize,
+) -> f64 {
+    let n = keys.len();
     let mut acc = 0usize;
-    let t = Instant::now();
-    for _ in 0..q {
-        x = x
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        acc = acc.wrapping_add(f(&keys[(((x >> 32) * n) >> 32) as usize]));
+    let t;
+    if sequential {
+        let mut i = ((round as u128 * q as u128) % n as u128) as usize;
+        t = Instant::now();
+        for _ in 0..q {
+            acc = acc.wrapping_add(f(&keys[i]));
+            i += 1;
+            if i == n {
+                i = 0;
+            }
+        }
+    } else {
+        let n = n as u64;
+        let mut x = 0x9e3779b97f4a7c15u64 ^ round.wrapping_mul(0xd6e8_feb8_6659_fd93);
+        t = Instant::now();
+        for _ in 0..q {
+            x = x
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            acc = acc.wrapping_add(f(&keys[(((x >> 32) * n) >> 32) as usize]));
+        }
     }
     std::hint::black_box(acc);
     t.elapsed().as_secs_f64() * 1e9 / q as f64
@@ -84,6 +112,7 @@ fn reference<'a, SC: SeedChooser + 'a>(
     lam: f64,
     sc: SC,
     name: String,
+    sequential: bool,
 ) -> Entry<'a> {
     let t = Instant::now();
     let params = Generic::new(Bits8, (lam * 100.0).round() as u16);
@@ -95,11 +124,11 @@ fn reference<'a, SC: SeedChooser + 'a>(
         name,
         bits,
         build,
-        bench: Box::new(move |q, r| batch(keys, q, r, |k| f.get(k))),
+        bench: Box::new(move |q, r| batch(keys, q, r, sequential, |k| f.get(k))),
     }
 }
 
-fn phast_r<'a>(keys: &'a [GxStr], b: PHastRBuilder, name: String) -> Entry<'a> {
+fn phast_r<'a>(keys: &'a [GxStr], b: PHastRBuilder, name: String, sequential: bool) -> Entry<'a> {
     let t = Instant::now();
     let f: PHastR<GxStr, Box<[u8]>> =
         PHastR::try_par_new_with_builder(keys, b.clone(), no_logging![]).unwrap();
@@ -115,12 +144,18 @@ fn phast_r<'a>(keys: &'a [GxStr], b: PHastRBuilder, name: String) -> Entry<'a> {
         name,
         bits,
         build,
-        bench: Box::new(move |q, r| batch(keys, q, r, |k| f.get(k))),
+        bench: Box::new(move |q, r| batch(keys, q, r, sequential, |k| f.get(k))),
     }
 }
 
 fn main() {
     let a = Args::parse();
+    assert!(
+        a.order == "random" || a.order == "sequential",
+        "unknown order {}",
+        a.order
+    );
+    let sequential = a.order == "sequential";
     // Random strings of 10 to 50 printable bytes, made distinct by a prefix
     // encoding the index
     let mut x = 0x1234_5678_9abc_def1u64 ^ a.key_seed.wrapping_mul(0x9e37_79b9_7f4a_7c15);
@@ -148,15 +183,16 @@ fn main() {
                 let lam: f64 = p[3].parse().unwrap();
                 let name = format!("ref {} S=8 l={lam}", p[1]);
                 match p[1] {
-                    "plus" => reference(&keys, lam, ShiftOnly, name),
-                    "w3" => reference(&keys, lam, ShiftOnlyWrapped::<3>, name),
+                    "plus" => reference(&keys, lam, ShiftOnly, name, sequential),
+                    "w3" => reference(&keys, lam, ShiftOnlyWrapped::<3>, name, sequential),
+                    "phast" => reference(&keys, lam, SeedOnly, name, sequential),
                     c => panic!("unknown chooser {c}"),
                 }
             }
             "r" => {
                 let (b, sbits, desc) = lab::parse_config(&p[1..]);
                 assert!(sbits <= 8, "byte seeds only");
-                phast_r(&keys, b, desc)
+                phast_r(&keys, b, desc, sequential)
             }
             _ => panic!("unknown variant {v}"),
         });

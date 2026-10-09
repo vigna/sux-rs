@@ -32,7 +32,7 @@ struct Args {
     #[arg(short = 'L', long, default_value_t = 10)]
     log2_slice_len: u32,
     /// The expected number of keys per bucket.
-    #[arg(short = 'l', long, default_value_t = 4.5)]
+    #[arg(short = 'l', long, default_value_t = 4.25)]
     bucket_size: f64,
 }
 

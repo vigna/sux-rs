@@ -26,12 +26,13 @@ pub(super) const LAST_LEVEL_THRESHOLD: usize = 4096;
 /// methods of the same name.
 ///
 /// The defaults use 8-bit seeds, four patterns, slices of length 1024, and
-/// an expected bucket size of 4.5 keys: a larger size (e.g., 4.75) reduces
+/// an expected bucket size of 4.25 keys: a larger size (e.g., 4.5) reduces
 /// space slightly, but more keys are bumped from the first level, and
-/// queries for such keys are slower.
+/// queries for such keys are slower; a smaller size makes queries slightly
+/// faster, but it increases space significantly.
 ///
 /// For 10-bit seeds, good parameters are slices of length 2048 and an
-/// expected bucket size of 6 keys; seeds must then be stored in a
+/// expected bucket size of 5.75 keys; seeds must then be stored in a
 /// [`BitFieldVec`], and the function should be converted with
 /// [`TryIntoUnaligned::try_into_unaligned`] to use unaligned reads.
 ///
@@ -59,15 +60,15 @@ pub struct PHastRBuilder {
     /// The base-2 logarithm of the slice length.
     ///
     /// The default is 10. This is a maximum, as small levels use shorter
-    /// slices. Slices should be at least as long as the number of seeds, as
-    /// otherwise different seeds of a pattern map the keys of a bucket to the
-    /// same slots.
+    /// slices. Slices should have at least as many slots as there are seeds,
+    /// as otherwise different rotations of a pattern map the keys of a
+    /// bucket to the same slots.
     #[setters(generate = true)]
     pub(super) log2_slice_len: u32,
 
     /// The expected number of keys of a bucket.
     ///
-    /// The default is 4.5.
+    /// The default is 4.25.
     #[setters(generate = true)]
     pub(super) bucket_size: f64,
 
@@ -387,8 +388,8 @@ impl PHastRBuilder {
             bucket_width: u64::MAX / buckets as u64,
             num_slices: (m + 1 - l) as u64,
             l_mask: l as u64 - 1,
-            // With slices shorter than the number of seeds, seeds are
-            // redundant
+            // With slices having fewer slots than there are seeds, the seed
+            // is not shifted, and rotations are redundant
             scale: l.ilog2().saturating_sub(self.seed_bits),
             log2_patterns: self.log2_patterns,
             seed_bits: self.seed_bits,
@@ -403,7 +404,7 @@ impl Default for PHastRBuilder {
             seed_bits: 8,
             log2_patterns: 2,
             log2_slice_len: 10,
-            bucket_size: 4.5,
+            bucket_size: 4.25,
             seed: 0,
             weights: None,
             offline: false,
