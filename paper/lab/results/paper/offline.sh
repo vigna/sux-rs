@@ -56,6 +56,6 @@ run() {
     for t in 1 $THREADS; do run 10000000000 $t offline; done
   fi
   n=$(echo $LARGE | tr ' ' '\n' | tail -1)
-  pin $CPUS env RAYON_NUM_THREADS=$THREADS $B/offline -n $n -m both -v $V | grep -q '^identical$' &&
+  pin $CPUS env RAYON_NUM_THREADS=$THREADS $B/offline -n $n -m both -v $V | grep '^identical$' >/dev/null &&
     echo "$n identical" || echo "$n DIFFERENT"
 } > $O
