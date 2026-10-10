@@ -35,19 +35,23 @@ for n in $SIZES; do
 done > $O/qsplit.txt
 
 # Thread scaling of the construction: powers of two up to the number of
-# cores, and then all hardware threads
+# distinct cores (not up to THREADS), and then all hardware threads, if they
+# are more
 S8=ref:plus:8:5.25,ref:w3p:8:5.0,ref:phast:8:4.5,r:8:10:4.25
 scale() {
   pin $2 env RAYON_NUM_THREADS=$1 $B/cmp -n $n -t $1 -q 1000 --interleave 1 --builds $(builds $n) -v $S8 2>&1 >/dev/null \
     | grep '^CSV' | sed "s/^/$n $1 /"
 }
 NPROC=$(nthreads)
+NCORES=$(echo $CORES | wc -w)
 for n in $LARGE; do
-  for t in 1 2 4 8 16 32 64; do
-    [ $t -gt $THREADS ] && break
+  last=0
+  for t in 1 2 4 8 16 32 64 128 256; do
+    [ $t -gt $NCORES ] && break
     scale $t $(cpus $t)
+    last=$t
   done
-  [ $NPROC -gt $THREADS ] && scale $NPROC 0-$(($NPROC - 1))
+  [ $NPROC -gt $last ] && scale $NPROC 0-$(($NPROC - 1))
 done > $O/scaling.txt
 
 # Peak memory of a multithreaded construction (it includes 8 bytes per key

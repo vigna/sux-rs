@@ -807,7 +807,13 @@ abstract, in the conclusions, and in the memory estimate of Section 5
   S = 10, L = 2048, λ = 5.75), used for all slice lengths
   (`results/wtune_rings`; the `*_sum` files are the tuning for the sum).
 - Reference implementation: `ph` of October 8, 2026 (upstream aa497a8, fork
-  commit a7ba1f3 with the analysis accessors). PHast with the product
+  commit d0954d2 with the analysis accessors and a fix of the multithreaded
+  construction: threads passed their local bucket indices to the seed
+  evaluators, so the base of the product was wrong for all threads but the
+  first, and space grew with the number of threads, e.g., PHast S = 8,
+  λ = 4.5 on 10⁸ keys: 1.885/1.898/1.909/1.912 bits/key with 1/2/8/20
+  threads on blew; fixed, 8 threads cost 0.003–0.007 bits/key at 10⁷, the
+  gaps between threads). PHast with the product
   evaluator: 1.887 (S = 8, λ = 4.5) and 1.814 (S = 10, λ = 5.8) bits/key at
   10⁷; PHast+ with wrapping and the product (`ShiftOnlyProdWrapped`, lab
   choosers w1p/w2p/w3p) saves 0.01–0.05 bits/key with respect to the sum
