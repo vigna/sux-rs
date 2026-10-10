@@ -60,8 +60,8 @@
 //! feasible seeds can be found with bit-parallel operations, but
 //! self-collisions cannot be avoided: two keys that collide for one seed
 //! collide for (almost) all seeds, and their bucket must be bumped. With 8-bit
-//! seeds, self-collisions cause almost 40% of the bumping of PHast+ with
-//! wrapping.
+//! seeds, a third of the buckets bumped by the best variant of PHast+ with
+//! wrapping contain a self-collision.
 //!
 //! The offsets of the layouts use disjoint bits of the lower half of the
 //! product of the hash and the number of buckets, whose upper half is the
@@ -76,15 +76,15 @@
 //! ones. Duplicate keys are detected and reported as errors.
 //!
 //! With the default parameters (8-bit seeds, four layouts, slices of length
-//! 1024, and an expected bucket size of 4.25 keys) space is about 1.96 bits
-//! per key, essentially the same as PHast+ with wrapping, which however
-//! takes about twice as long to build and has much slower queries; PHast
-//! uses 1.92 bits per key, but it takes more than ten times as long to build
-//! and has slower queries. With 10-bit seeds stored in a [`BitFieldVec`]
-//! (see [`PHastRBuilder::seed_bits`]) space is about 1.85 bits per key; in this
-//! case, queries are faster after converting the function with
-//! [`TryIntoUnaligned::try_into_unaligned`], so that seeds are accessed with
-//! [unaligned reads].
+//! 1024, and an expected bucket size of 4.25 keys) space is about 1.94 bits
+//! per key, slightly less than the best variant of PHast+ with wrapping, which
+//! however takes two thirds more time to build and has much slower queries;
+//! PHast uses 1.89 bits per key, but it takes more than ten times as long to
+//! build and has slower queries. With 10-bit seeds stored in a
+//! [`BitFieldVec`] (see [`PHastRBuilder::seed_bits`]) space is about 1.82
+//! bits per key; in this case, queries are faster after converting the
+//! function with [`TryIntoUnaligned::try_into_unaligned`], so that seeds are
+//! accessed with [unaligned reads].
 //!
 //! Functions are built by [`PHastR::try_new`], which reads the keys once
 //! from a lender, and by [`PHastR::try_par_new`], which computes the hashes of

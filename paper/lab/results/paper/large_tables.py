@@ -61,8 +61,9 @@ for line in open(f'{d}/memory.txt'):
 if scaling:
     n = max(k[0] for v in scaling.values() for k in v)
     threads = sorted({k[1] for v in scaling.values() for k in v if k[0] == n})
-    # The speedup refers to eight threads (the number of cores), if present
-    ref = 8 if 8 in threads else threads[-1]
+    # The speedup refers to the largest power of two, which is the largest
+    # number of threads running on distinct cores (see large.sh)
+    ref = max(t for t in threads if t & (t - 1) == 0)
     print(f'% TABLE5: build ns/key at {n} with {threads} threads; speedup with {ref} threads; bytes/key')
     for name, v in scaling.items():
         cells = [f'{v[(n, t)]:.1f}' if (n, t) in v else '--' for t in threads]

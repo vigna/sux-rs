@@ -1,16 +1,16 @@
-100000000 PHast-R 8:10:4.25        1.9604 bits/key  build min    8.0 median    8.0 ns/key
-100000000 PHast-R 	Maximum resident set size (kbytes): 1863428
-100000000 ref:w3:8:5.0 CSV,ref w3 S=8 l=5,100000000,1.9686,16.6,55.1,55.1,55.1,16.6,16.6,4.34
-100000000 ref:w3:8:5.0 	Maximum resident set size (kbytes): 1755896
-100000000 ref:plus:8:5.25 CSV,ref plus S=8 l=5.25,100000000,2.1155,11.9,65.3,65.3,65.3,11.9,11.9,7.61
-100000000 ref:plus:8:5.25 	Maximum resident set size (kbytes): 1746328
-100000000 ref:phast:8:4.5 CSV,ref phast S=8 l=4.5,100000000,1.9208,85.2,50.6,50.6,50.6,85.2,85.2,1.40
-100000000 ref:phast:8:4.5 	Maximum resident set size (kbytes): 1774952
-1000000000 PHast-R 8:10:4.25        1.9595 bits/key  build min    8.3 median    8.3 ns/key
-1000000000 PHast-R 	Maximum resident set size (kbytes): 18222468
-1000000000 ref:w3:8:5.0 CSV,ref w3 S=8 l=5,1000000000,1.9679,17.7,74.6,74.6,74.6,17.7,17.7,4.33
-1000000000 ref:w3:8:5.0 	Maximum resident set size (kbytes): 17518540
-1000000000 ref:plus:8:5.25 CSV,ref plus S=8 l=5.25,1000000000,2.1149,12.6,95.2,95.2,95.2,12.6,12.6,7.60
-1000000000 ref:plus:8:5.25 	Maximum resident set size (kbytes): 17432232
-1000000000 ref:phast:8:4.5 CSV,ref phast S=8 l=4.5,1000000000,1.9203,84.5,68.4,68.4,68.4,84.5,84.5,1.40
-1000000000 ref:phast:8:4.5 	Maximum resident set size (kbytes): 17712416
+100000000 PHast-R 8:10:4.25        1.9427 bits/key  build min    8.8 median    8.8 ns/key
+100000000 PHast-R 	Maximum resident set size (kbytes): 1861916
+100000000 ref:w3p:8:5.0 CSV,ref w3p S=8 l=5,100000000,1.9554,16.2,52.9,52.9,52.9,16.2,16.2,4.16
+100000000 ref:w3p:8:5.0 	Maximum resident set size (kbytes): 1755232
+100000000 ref:plus:8:5.25 CSV,ref plus S=8 l=5.25,100000000,2.1156,12.9,65.6,65.6,65.6,12.9,12.9,7.61
+100000000 ref:plus:8:5.25 	Maximum resident set size (kbytes): 1747864
+100000000 ref:phast:8:4.5 CSV,ref phast S=8 l=4.5,100000000,1.8859,93.7,47.6,47.6,47.6,93.7,93.7,1.02
+100000000 ref:phast:8:4.5 	Maximum resident set size (kbytes): 1775700
+1000000000 PHast-R 8:10:4.25        1.9418 bits/key  build min    9.3 median    9.3 ns/key
+1000000000 PHast-R 	Maximum resident set size (kbytes): 18220372
+1000000000 ref:w3p:8:5.0 CSV,ref w3p S=8 l=5,1000000000,1.9547,17.4,95.5,95.5,95.5,17.4,17.4,4.15
+1000000000 ref:w3p:8:5.0 	Maximum resident set size (kbytes): 17516668
+1000000000 ref:plus:8:5.25 CSV,ref plus S=8 l=5.25,1000000000,2.1149,12.5,104.5,104.5,104.5,12.5,12.5,7.60
+1000000000 ref:plus:8:5.25 	Maximum resident set size (kbytes): 17430800
+1000000000 ref:phast:8:4.5 CSV,ref phast S=8 l=4.5,1000000000,1.8847,90.5,68.3,68.3,68.3,90.5,90.5,1.01
+1000000000 ref:phast:8:4.5 	Maximum resident set size (kbytes): 17710932

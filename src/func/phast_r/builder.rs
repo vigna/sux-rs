@@ -27,9 +27,9 @@ pub(super) const LAST_LEVEL_THRESHOLD: usize = 4096;
 ///
 /// The defaults use 8-bit seeds, four layouts, slices of length 1024, and
 /// an expected bucket size of 4.25 keys: a larger size (e.g., 4.5) reduces
-/// space slightly, but more keys are bumped from the first level, and
-/// queries for such keys are slower; a smaller size makes queries slightly
-/// faster, but it increases space significantly.
+/// space (by about 0.04 bits per key with 4.5), but more keys are bumped
+/// from the first level, and queries for such keys are slower; a smaller
+/// size makes queries slightly faster, but it increases space significantly.
 ///
 /// For 10-bit seeds, good parameters are slices of length 2048 and an
 /// expected bucket size of 5.75 keys; seeds must then be stored in a

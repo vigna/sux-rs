@@ -1,25 +1,28 @@
 # PHast-R: handoff notes
 
-State of the work on PHast-R as of 2026-10-05, written to continue it on
+State of the work on PHast-R as of 2026-10-10, written to continue it on
 other hardware (possibly in a new Claude Code session, which will not have
 the context of the original one: point it to this file).
 
 ## What is here
 
-- `src/func/phast_r.rs`: the implementation (`PHastR`, `PHastRBuilder`,
-  `SeedStore`/`SeedStoreBuild`), with unit tests.
+- `src/func/phast_r/`: the implementation (`mod.rs`: `PHastR`, queries and
+  constructors; `builder.rs`: `PHastRBuilder`; `seeds.rs`: `SeedStore`/
+  `SeedStoreBuild`; `sigs.rs`, `sweep.rs`, `stream.rs`: signatures, sweeps
+  and offline construction), with unit tests.
 - `examples/bench_phast_r.rs`: quick benchmark of PHast-R alone
   (`cargo run --release --example bench_phast_r -- 10000000`).
-- `paper/phast.tex`: the paper (11 pages, `latexmk -pdf phast.tex`; references in `paper/biblio.bib`).
+- `paper/phast.tex`: the paper (17 pages, `latexmk -pdf phast.tex`; references in `paper/biblio.bib`).
 - `paper/lean/`: Lean 4 + Mathlib formalization of Proposition 1
   (`cd paper/lean && lake build`; see its README; `.lake/` is not tracked,
   `lake exe cache get` fetches Mathlib).
 - `paper/lab/`: the experimental harness, a standalone crate depending on sux
   (by path) and on the reference implementation `ph` (currently by path on
-  a local clone of the fork vigna/bsuccinct-rs, branch `sux`, commit 8d722ff,
-  which adds hidden analysis accessors to `Function2`; switch to the git
+  a local clone of the fork vigna/bsuccinct-rs, branch `sux`, commit d0954d2
+  on top of upstream aa497a8, which adds hidden analysis accessors to
+  `Function2` and fixes the multithreaded construction; switch to the git
   revision once it is pushed). It contains the comparison driver, the
-  anatomy of PHast+ (Section 2), and the tuning tools. The lab
+  anatomy of PHast+ (Section 3), and the tuning tools. The lab
   re-implementation of PHast+ and the prototypes of the negative results
   have been removed (October 2026): everything now uses the reference
   implementation.
@@ -34,15 +37,22 @@ AWS, `paper/aws.sh` installs everything and starts it), which writes
 sweeps of λ for every structure and both seed widths, which contain the
 configurations of the tables, then the configurations of the tables with
 `THREADS` threads); `large/` (`large.sh`: `qsplit.txt`, `scaling.txt`,
-`memory.txt`); `spread.csv` (`spread.sh`: space and bumped keys over ten key
+`memory.txt`; the thread scaling uses 1, 2, 4, … threads up to the number
+of distinct cores, one thread per core, and then all hardware threads);
+`spread.csv` (`spread.sh`: space and bumped keys over ten key
 sets of 10⁷ keys); `offline.txt` (`offline.sh`: time and peak memory of
 PHast-R built in memory and offline, with 1 and `THREADS` threads, offline
 also on 10¹⁰ keys if `TMPDIR` has 170 GB free, and a check that the two
 constructions give the same structure). The configurations are in
 `configs.sh`. Tables and
 figure: `tables.py run.csv spread.csv` (main table), `large_tables.py
-large/` (Section 4.1), `plot_pareto.py run.csv` (the trade-off figure: query and
-construction time against space, a row for each key set).
+large/` (Section 4.1; the speedup refers to the largest power of two of the
+thread counts, that is, to the most threads on distinct cores),
+`plot_pareto.py run.csv` (the trade-off figure: query and construction time
+against space, a row for each key set). Note that the paper has one table per
+key set (Tables 1–3), whereas `tables.py` formats a single main table: the
+rows of the October 10 tables were formatted by a scratch script from the
+same `run.csv`.
 The lines of `cmp` are `CSV,<name>,<n>,<bits/key>,<build>,<query>,<query
 min>,<query max>,<build min>,<build max>,<bumped %>` (prefixed by the number
 of threads, or by the key seed in `spread.csv`). The scripts run unpinned
@@ -55,7 +65,7 @@ The older harness below (`lab/run.sh`) predates the paper experiments.
 git clone git@github.com:vigna/sux-rs.git && cd sux-rs && git checkout phast-r
 cd paper/lab
 ./run.sh                      # env + tables (10-15 minutes, ~4 GiB of RAM)
-./run.sh anatomy              # Section 2 (on the reference implementation)
+./run.sh anatomy              # Section 3 (on the reference implementation; see also anatomy -p)
 ./run.sh tune                 # weight tuning (space only, hardware-independent)
 ```
 
@@ -672,7 +682,7 @@ four and a half, two of them building PHast with S = 10 on 10⁹ keys;
 `large.sh` one; `spread.sh` and `offline.sh` ten minutes each, plus half an
 hour for the offline construction on 10¹⁰ keys); peak memory about 60 GB.
 
-Third run (October 8, 2026; the data now in the paper: `run.csv`, `large/`,
+Third run (October 8, 2026; superseded by the fourth run below: `run.csv`, `large/`,
 `spread.csv`, `offline.txt`). Space unchanged. Queries are much faster than
 in the previous runs because they read consecutive keys (no cache miss on
 the array of keys); ns at 10⁷/10⁸/10⁹: PHast-R λ=4.5 4.6/11.0/20.4, PHast+
@@ -713,11 +723,61 @@ not use more space than PHast+ with wrapping (1.959 vs 1.968, that is, the
 same space). With S=10 the same rule gives λ=5.75 (λ=5.5 uses 1.878 bits/key,
 more than the 1.869 of w3). Done: the default of the builder is 4.25 (its
 documentation suggests 5.75 for S=10), and so is that of `bench_phast_r`.
-Still to do: rerun on the c7i with λ=4.25 in the table configurations, in
-`large.sh` and in the offline construction (the single-threaded sweeps of
-`run.csv` already contain it), and then present λ=4.25 in Section 4, in the
-abstract, in the conclusions, and in the memory estimate of Section 5
-(2/λ + 2/8 bytes per key).
+Done in the fourth run (October 10, below): λ=4.25 is in the table
+configurations, in `large.sh` and in the offline construction, and the paper
+presents it. The rule gives the same values with the product: λ=4.25 uses
+1.942 bits/key against the 1.955 of w3p (λ=4: 2.034), and with S=10 λ=5.5
+uses 1.853 against 1.846.
+
+## Fourth run: product scoring and fixed `ph` (October 10, 2026)
+
+The data now in the paper (`results/paper/c7i/`): `redo.sh` on a
+c7i.metal-24xl (rustc 1.99, sux 52b87803, `ph` fork d0954d2), 6 h 47 min; no
+offline construction on 10¹⁰ keys (`TMPDIR` had less than 170 GB free). All
+structures but PHast+ without wrapping (`ShiftOnly`, which takes the first
+feasible seed) now choose seeds by the product (PHast-R, PHast with
+`SeedOnly(ProdOfValues)`, PHast+ with wrapping with `ShiftOnlyProdWrapped`).
+blew (i7-12700KF; 60 GB free, so only 10⁷ and 10⁸ keys; `results/paper/blew/`)
+gives the same space to the bit and agrees, except that there PHast+ without
+wrapping builds faster than PHast-R with one thread at every λ (59 against
+62–71 ns/key at 10⁸).
+
+- Space at 10⁹ (bits/key): PHast-R S=8 λ=4.25/4.5/4.75 1.942/1.902/1.897
+  (bumped 0.51/1.20/2.27%), S=10 λ=5.75/6 1.819/1.818; PHast 1.885 (S=8
+  λ=4.5) and 1.810 (S=10 λ=5.8); w3p 1.955 (S=8) and 1.846 (S=10); PHast+
+  2.115 (unchanged). With respect to the third run PHast-R saves 0.018–0.025
+  (S=8) and 0.025–0.035 (S=10) bits/key, PHast 0.027–0.036 and 0.036–0.049,
+  w3p 0.007–0.017 (S=8): PHast gains the most, so it is now about 0.01
+  bits/key smaller than PHast-R (0.012 with S=8, 0.009 with S=10).
+- Queries (ns, 10⁷/10⁸/10⁹): PHast-R λ=4.25 4.2/10.3/18.8, w3p 5.8/13.4/26.2,
+  PHast 4.7/11.3/21.2, PHast+ 7.7/16.3/32.5; S=10: PHast-R λ=5.75
+  5.3/12.3/24.0, w3p 6.4/14.7/28.4, PHast 6.4/14.6/28.0. A bumped key costs
+  30–50 ns more at 10⁷, 130–410 at 10⁸, 240–680 at 10⁹.
+- Construction (ns/key, one thread, 10⁷/10⁸/10⁹): PHast-R λ=4.25 56/60/63
+  (λ=4.5 48/55/58), PHast+ 53/58/66, w3p 92/98/105, PHast 680/686/693; S=10:
+  PHast-R λ=5.75 91/98/102, w3p 114/121/128, PHast 2102/2109/2117. The
+  product costs PHast-R 6–19% (S=8) and 4–9% (S=10) with respect to the sum
+  of the third run (a table lookup per key and free rotation). 8 threads at
+  10⁹: PHast-R 9.2, PHast+ 12.5, w3p 17.3, PHast 90.5.
+- Thread scaling at 10⁹ (S=8; 1/8/16/32/96 threads): PHast-R
+  64.0/9.4/5.2/3.2/2.6 (20.0× with 32), PHast+ 67.8/12.3/8.8/7.3/7.2 (9.3×),
+  w3p 107.2/17.3/11.1/8.5/7.5 (12.6×), PHast 695/90.7/47.7/27.6/17.0
+  (25.2×). Peak memory with 8 threads, excluding the keys: 10.7 against
+  9.8–10.1 bytes/key.
+- Pareto (space, query, build, all structures together): at every size each
+  configuration of PHast+ without wrapping or with δ=2, 3 is strictly
+  dominated by one of PHast-R; w1p S=10 λ=5.95/6.2 survive at 10⁷ and 10⁸
+  (less than 3% faster to build, at least 0.035 bits/key more), not at 10⁹;
+  PHast survives by at most 0.012 bits/key or less than 1 ns at more than ten
+  times the construction time.
+- Self-collisions (`anatomy -p`, 10⁷ keys, S=8): 34.6% of the bumped buckets
+  of w3p λ=5 (`results/anatomy-w3p.txt`), 29.1% for w2p, 46.8–52.5% for w1p;
+  seed entropy 7.90 bits.
+- Offline at 10⁹: 0.38/0.41 bytes/key allocated with 1/8 threads, against
+  9.9/11.4 in memory (excluding the keys); 64.2/18.6 against 62.7/9.1 ns/key;
+  identical structures.
+- Strings (10⁸, S=8, λ=4.25): PHast-R 71 ns/key against 87 (PHast+), 120
+  (w3p) and 714 (PHast); queries 25.7 against 34.2, 29.3 and 27.0 ns.
 
 ## Key findings (see Section 2 of the paper; reference implementation)
 
@@ -725,7 +785,8 @@ abstract, in the conclusions, and in the memory estimate of Section 5
   log₂(1/β) + 2 bits in Elias–Fano, close to the entropy of the hole set, so
   the only lever is the bump rate β.
 - 38.5% of PHast+ bumped buckets are self-collisions (2.6% ≈ λ²/2L of the
-  buckets); seeds are incompressible (7.71 bits of entropy).
+  buckets); seeds are incompressible (7.71 bits of entropy). With wrapping,
+  δ=3 and the product, 34.6% (seed entropy 7.90 bits).
 - Independent offset layouts fix the rigidity; repair (half adder +
   eviction) recovers PHast's space.
 
@@ -761,12 +822,12 @@ abstract, in the conclusions, and in the memory estimate of Section 5
   then gaps in parallel with the slots of the neighboring buckets marked as
   used. Each `Sweep` returns the slots it used.
 - `Sweep::search` scans the keys of a bucket once: for each layout it
-  rotates the ring of the key and accumulates the blocked seeds, the sum of
-  the slots for the first seed, and the ring indices packed into 8/16/32-bit
-  fields. Free seeds are then evaluated in a single loop (`Sweep::sum`: one
-  addition, one mask and one population count per group of keys); with more
-  than `MAX_FREE` = 32 free seeds `search_many` considers only the first
-  free seed after each wrap point. `place` marks the slots and detects two
+  rotates the ring of the key and accumulates the blocked seeds, and records
+  for each key the first slot of its ring, relative to the base of the
+  bucket, and its index (`ring_keys`). Free seeds are then evaluated in a
+  single loop (`Sweep::cost`: a lookup in the table of fixed-point
+  logarithms for each key); with more than `MAX_FREE` = 32 free seeds
+  `search_many` considers only the first free seed after each wrap point. `place` marks the slots and detects two
   keys of the bucket on the same slot (then `search_distinct` tries the
   other candidates in order).
 - The set of used slots is stored by rows (residues modulo the stride) and
@@ -840,9 +901,9 @@ the hardware and need not be rerun. Commands (from `paper/lab`):
 
 ## Open issues and next steps
 
-1. **Queries**: at 10⁸ keys PHast (λ = 4.5) is 2% faster than PHast-R with
+1. **Queries**: at 10⁸ keys PHast (λ = 4.5) is 3% faster than PHast-R with
    λ = 4.75, because it bumps fewer keys; λ = 4.5 reverses the result with
-   0.4% more space. Possible further steps: with λ = 5 the slice of a key
+   0.017 bits/key more (October 10 run). Possible further steps: with λ = 5 the slice of a key
    could be 5 times its bucket (one `lea` instead of a multiplication, about
    1 ns), but the larger bump rate cancels the gain; bit-packed seeds
    (S > 8) cost about 4 ns per query on x86 whatever the structure.
@@ -872,8 +933,8 @@ the hardware and need not be rerun. Commands (from `paper/lab`):
 5. **String keys / other MPHFs**: add PHast-R to Beling's `mphf_benchmark`
    or to Lehmann's MPHF-Experiments to compare with PtrHash, PHOBIC, etc. on
    the standard workload (random strings of 10–50 bytes).
-6. **Paper**: author line is empty; the tables are generated by
-   `lab/results/paper/tables.py` from the output of `run.sh`; the new entry
+6. **Paper**: the tables come from the output of `run.sh` (`tables.py`
+   formats a single main table, which the paper does not use: see above); the new entry
    for PHOBIC in `biblio.bib` should be checked (`lean/README.md` now refers
    to sections and statements of `phast.tex`, not to line numbers).
    For fewer than about 10⁵ keys PHast-R uses more space than PHast+ with

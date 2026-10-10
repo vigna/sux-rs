@@ -7,12 +7,12 @@
 //! coinciding base positions (self-collisions, which no shift can resolve),
 //! and the empirical entropy of the seeds of the first level.
 //!
-//! Usage: anatomy [-n keys] [-s seed bits] [-l lambda] [-w multiplier]
+//! Usage: anatomy [-n keys] [-s seed bits] [-l lambda] [-w multiplier] [-p]
 
 use clap::Parser;
 use ph::phast::{
     Conf, Core, DefaultCompressedArray, Function2, GenericCore, SeedChooserConf, SeedChooserCore,
-    ShiftOnly, ShiftOnlyWrapped,
+    ShiftOnly, ShiftOnlyProdWrapped, ShiftOnlyWrapped,
 };
 use ph::seedable_hash::BuildGxHash;
 use ph::seeds::{Bits8, BitsFast, SeedSize};
@@ -30,6 +30,11 @@ struct Args {
     /// wrapping).
     #[arg(short, default_value_t = 0)]
     w: u8,
+    /// With wrapping, chooses among the feasible seeds the one minimizing
+    /// the product of the values, as in the experiments of the paper
+    /// (ShiftOnlyProdWrapped instead of ShiftOnlyWrapped).
+    #[arg(short)]
+    p: bool,
     /// Generates a different key set.
     #[arg(long, default_value_t = 0)]
     key_seed: u64,
@@ -46,11 +51,12 @@ fn analyze<SS: SeedSize, SC: SeedChooserConf>(keys: &[u64], ss: SS, sc: SC, a: &
     let (l0, remap, further) = f.component_sizes();
     let conf = *f.level0_conf();
     println!(
-        "PHast+ S={} lambda={} wrap={} L={} n={n}: {total:.4} bits/key \
+        "PHast+ S={} lambda={} wrap={}{} L={} n={n}: {total:.4} bits/key \
          (first level {:.4}, remapping {:.4}, further levels {:.4}, other {:.4})",
         a.s,
         a.l,
         a.w,
+        if a.p { " (product)" } else { "" },
         conf.slice_len(),
         bits(l0),
         bits(remap),
@@ -153,15 +159,21 @@ fn main() {
             (i + a.key_seed.wrapping_mul(1 << 40)).wrapping_mul(0x9e3779b97f4a7c15) ^ 0x1234567
         })
         .collect();
-    match (a.s, a.w) {
-        (8, 0) => analyze(&keys, Bits8, ShiftOnly, &a),
-        (8, 1) => analyze(&keys, Bits8, ShiftOnlyWrapped::<1>, &a),
-        (8, 2) => analyze(&keys, Bits8, ShiftOnlyWrapped::<2>, &a),
-        (8, 3) => analyze(&keys, Bits8, ShiftOnlyWrapped::<3>, &a),
-        (s, 0) => analyze(&keys, BitsFast(s), ShiftOnly, &a),
-        (s, 1) => analyze(&keys, BitsFast(s), ShiftOnlyWrapped::<1>, &a),
-        (s, 2) => analyze(&keys, BitsFast(s), ShiftOnlyWrapped::<2>, &a),
-        (s, 3) => analyze(&keys, BitsFast(s), ShiftOnlyWrapped::<3>, &a),
+    match (a.s, a.w, a.p) {
+        (8, 0, _) => analyze(&keys, Bits8, ShiftOnly, &a),
+        (8, 1, false) => analyze(&keys, Bits8, ShiftOnlyWrapped::<1>, &a),
+        (8, 2, false) => analyze(&keys, Bits8, ShiftOnlyWrapped::<2>, &a),
+        (8, 3, false) => analyze(&keys, Bits8, ShiftOnlyWrapped::<3>, &a),
+        (8, 1, true) => analyze(&keys, Bits8, ShiftOnlyProdWrapped::<1>, &a),
+        (8, 2, true) => analyze(&keys, Bits8, ShiftOnlyProdWrapped::<2>, &a),
+        (8, 3, true) => analyze(&keys, Bits8, ShiftOnlyProdWrapped::<3>, &a),
+        (s, 0, _) => analyze(&keys, BitsFast(s), ShiftOnly, &a),
+        (s, 1, false) => analyze(&keys, BitsFast(s), ShiftOnlyWrapped::<1>, &a),
+        (s, 2, false) => analyze(&keys, BitsFast(s), ShiftOnlyWrapped::<2>, &a),
+        (s, 3, false) => analyze(&keys, BitsFast(s), ShiftOnlyWrapped::<3>, &a),
+        (s, 1, true) => analyze(&keys, BitsFast(s), ShiftOnlyProdWrapped::<1>, &a),
+        (s, 2, true) => analyze(&keys, BitsFast(s), ShiftOnlyProdWrapped::<2>, &a),
+        (s, 3, true) => analyze(&keys, BitsFast(s), ShiftOnlyProdWrapped::<3>, &a),
         _ => panic!("unsupported multiplier"),
     }
 }
