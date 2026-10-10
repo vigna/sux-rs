@@ -37,7 +37,7 @@ done > $O/qsplit.txt
 # Thread scaling of the construction: powers of two up to the number of
 # distinct cores (not up to THREADS), and then all hardware threads, if they
 # are more
-S8=ref:plus:8:5.25,ref:w3p:8:5.0,ref:phast:8:4.5,r:8:10:4.25
+S8=ref:plus:8:5.25,ref:w3p:8:5.0,ref:phast:8:4.5,r:8:10:4.25,ptr:default,ptr:compact
 scale() {
   pin $2 env RAYON_NUM_THREADS=$1 $B/cmp -n $n -t $1 -q 1000 --interleave 1 --builds $(builds $n) -v $S8 2>&1 >/dev/null \
     | grep '^CSV' | sed "s/^/$n $1 /"

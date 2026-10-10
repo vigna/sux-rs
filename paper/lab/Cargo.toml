@@ -15,6 +15,9 @@ name = "lab"
 # October 8, 2026). TODO: replace the path with
 # git = "https://github.com/vigna/bsuccinct-rs", rev = "d0954d2..."
 ph = { path = "../../../bsuccinct-rs/ph", features = ["wyhash", "gxhash"] }
+# PtrHash (Groot Koerkamp), from a local clone (v2.1.2); TODO: replace the
+# path with the corresponding git revision
+ptr_hash = { path = "../../../PTRHash" }
 # cli provides init_env_logger
 sux = { path = "../..", features = ["epserde", "cli"] }
 clap = { version = "4", features = ["derive"] }

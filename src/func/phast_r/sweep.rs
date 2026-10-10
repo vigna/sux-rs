@@ -506,15 +506,15 @@ pub(super) fn holes(bits: &[u64], m: usize) -> Vec<usize> {
 ///
 /// The set of used slots is stored by residue classes modulo the stride
 /// (*rows*), 64 slots of each row at a time (*columns*): bit *i* of word
-/// *c* · 2^`log2_stride` + *ϱ* is associated with slot
-/// (64*c* + *i*) · 2^`log2_stride` + *ϱ* (the number of columns is a power
+/// *c* · 2^`log2_stride` + *τ* is associated with slot
+/// (64*c* + *i*) · 2^`log2_stride` + *τ* (the number of columns is a power
 /// of two, and columns are used cyclically). The *bits of the ring* of a key,
 /// which record whether the slots of its ring are used, are thus consecutive
 /// bits of a row, starting from the bit of the *first slot* of the ring (the
 /// one closest to the beginning of the slice). The slots of a ring are
-/// numbered from 0 in increasing order, and the *index* of a key is the
-/// number *x* of its base slot: rotation *j* maps the key to slot *x* + *j* of
-/// its ring, modulo the length of the ring.
+/// numbered from 0 in order of position in the slice, and the *ring
+/// position* of a key is the number *y* of its base slot: rotation *j* maps
+/// the key to slot *y* + *j* of its ring, modulo the length of the ring.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Rings {
     /// The slice length minus one.
@@ -587,8 +587,8 @@ impl Rings {
             & self.l_mask) as usize
     }
 
-    /// Returns the first slot of the ring of a key in a layout and the
-    /// index of the key, given the beginning of the slice of the key and the
+    /// Returns the first slot of the ring of a key in a layout and the ring
+    /// position of the key, given the beginning of the slice of the key and the
     /// [offset] of its base slot.
     ///
     /// [offset]: Self::offset
@@ -601,7 +601,8 @@ impl Rings {
     }
 
     /// Returns the slot of a key for rotation `j` of a layout, given the
-    /// first slot of its ring and the index of the key (see [`ring`]).
+    /// first slot of its ring and the ring position of the key (see
+    /// [`ring`]).
     ///
     /// [`ring`]: Self::ring
     #[inline(always)]
@@ -658,9 +659,9 @@ impl Rings {
 /// exhaustively when looking for the best seed.
 const MAX_FREE: u32 = 32;
 
-/// The distance of the *base* of a bucket from the beginning of its first
+/// The distance of the *origin* of a bucket from the beginning of its first
 /// slice (see [`Sweep::cost`]).
-const BASE_OFFSET: usize = 95;
+const ORIGIN_OFFSET: usize = 95;
 
 /// The number of fractional bits of the base-2 logarithms of
 /// [`Sweep::cost`].
@@ -710,10 +711,10 @@ struct Sweep<'a, S: PartSource, T: SweepSeed> {
     /// The nonzero words of `free`, each with its index.
     nonzero: Vec<(u64, u32)>,
     /// For each key of the bucket being searched and each layout, the first
-    /// slot of the ring of the key minus the base of the bucket (upper 32
-    /// bits) and the index of the key (lower 32 bits).
+    /// slot of the ring of the key minus the origin of the bucket (upper 32
+    /// bits) and the ring position of the key (lower 32 bits).
     ring_keys: Vec<u64>,
-    /// The base-2 logarithms of the distances of slots from the base of
+    /// The base-2 logarithms of the distances of slots from the origin of
     /// their bucket, with [`LOG2_FRACTION`] fractional bits.
     log2: Box<[u32]>,
     /// The rotations at which some key of the bucket being searched wraps
@@ -739,7 +740,7 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
         // The slices of the keys of a bucket begin at most num_slices /
         // buckets + 1 slots after its first slice
         let max_distance =
-            BASE_OFFSET + (g.num_slices as usize).div_ceil(g.buckets) + 1 + g.l_mask as usize;
+            ORIGIN_OFFSET + (g.num_slices as usize).div_ceil(g.buckets) + 1 + g.l_mask as usize;
         Self {
             sigs,
             g,
@@ -800,8 +801,8 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
 
     /// Returns the cost of rotation `j` of layout `r` for the bucket being
     /// searched, given its [`ring_keys`]: the sum of the base-2 logarithms
-    /// of the distances of the slots of its keys from the *base* of the
-    /// bucket, which lies [`BASE_OFFSET`] slots before the beginning of its
+    /// of the distances of the slots of its keys from the *origin* of the
+    /// bucket, which lies [`ORIGIN_OFFSET`] slots before the beginning of its
     /// first slice, that is, the logarithm of the product of the distances.
     ///
     /// The logarithms are in fixed point and are read from a table, so the
@@ -832,7 +833,7 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
         // The number of words of the free rotations of a layout
         let words = n.div_ceil(64);
         let ring_mask = if n < 64 { (1u64 << n) - 1 } else { !0 };
-        let base = g.first_slice(b).wrapping_sub(BASE_OFFSET);
+        let origin = g.first_slice(b).wrapping_sub(ORIGIN_OFFSET);
 
         let Self {
             used,
@@ -851,15 +852,15 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
         let (free, ring_keys) = (&mut free[..], &mut ring_keys[..]);
 
         // For each layout we cyclically shift the bits of the ring of each
-        // key by the index of the key, so that bit j is associated with the
-        // slot of the key for rotation j, and combine the results: we obtain
-        // the rotations for which some key is mapped to a used slot
+        // key by the ring position of the key, so that bit j is associated
+        // with the slot of the key for rotation j, and combine the results: we
+        // obtain the rotations for which some key is mapped to a used slot
         for (&key, ring_key) in keys.iter().zip(ring_keys.chunks_exact_mut(layouts)) {
             let (slice_begin, offsets) = (g.slice_begin(key), g.offsets(key));
             for r in 0..layouts {
                 let offset = rings.offset(offsets, r);
                 let (first, x) = rings.ring(slice_begin, offset);
-                ring_key[r] = ((first.wrapping_sub(base) as u64) << 32) | x as u64;
+                ring_key[r] = ((first.wrapping_sub(origin) as u64) << 32) | x as u64;
                 if words == 1 {
                     // Rings of at most a word (e.g., 8-bit seeds and four
                     // layouts)

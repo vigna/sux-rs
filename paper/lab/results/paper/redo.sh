@@ -3,13 +3,14 @@
 # (in a target directory of its own, as the code is optimized for the local
 # CPU), detects cores and memory, and writes the results to
 # results/paper/<hostname>/ (env.txt, run.csv, large/, spread.csv,
-# offline.txt, ablation.csv, strings.csv). The reference implementation must
-# be in ../../../bsuccinct-rs (see lab/Cargo.toml).
+# offline.txt, ablation.csv, ablation-generic.csv, strings.csv). The
+# reference implementation and PtrHash must be in ../../../bsuccinct-rs and
+# ../../../PTRHash (see lab/Cargo.toml).
 # Usage: redo.sh [max keys]      (default: 10^9 if there are 64 GB free)
-# It takes about six hours and a half on a c7i.metal-24xl (run.sh four hours
-# and a half, large.sh one hour, spread.sh and offline.sh ten minutes each,
-# plus half an hour for offline.sh if TMPDIR has 170 GB free for an offline
-# construction on 10^10 keys, ablation.sh twenty minutes, strings.sh ten
+# It takes about eight hours on a c7i.metal-24xl (run.sh five hours and a
+# half, large.sh one hour, spread.sh and offline.sh ten minutes each, plus
+# half an hour for offline.sh if TMPDIR has 170 GB free for an offline
+# construction on 10^10 keys, ablation.sh forty minutes, strings.sh ten
 # minutes): run it under nohup or in a terminal multiplexer. Experiments on 10^10 keys must be requested explicitly
 # (redo.sh 10000000000): they need 250 GB of free memory and about twenty
 # more hours, most of them spent building the PHast structures. Setting

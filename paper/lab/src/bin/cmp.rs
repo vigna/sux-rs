@@ -7,17 +7,25 @@
 //!   `<chooser>` is `plus` (PHast+), `w1`/`w2`/`w3` (PHast+ with wrapping and
 //!   multiplier 1/2/3, choosing the seed minimizing the sum of the values of
 //!   the keys), `w1p`/`w2p`/`w3p` (the same, minimizing their product),
-//!   `phast` (regular PHast, minimizing the product, the default of `ph`), or
-//!   `phastsum` (regular PHast, minimizing the sum);
+//!   `phast` (regular PHast, minimizing the product, the default of `ph`),
+//!   `phastsum` (regular PHast, minimizing the sum), or `w<d>p` for
+//!   d = 4, 5, 6, 7, 8, 9, 11 (PHast+ with wrapping and multiplier d, for which
+//!   `ph` uses the priority weights of multiplier 3);
 //!
 //! - `r:<S>:<log2 L>:<lambda>[:<log2 R>[:<storage>]]` for PHast-R (bits per
 //!   seed, base-2 logarithm of the slice length, expected bucket size, base-2
 //!   logarithm of the number of layouts, 2 by default), where `<storage>`
 //!   is `u8`, `u16`, `bfv`, or `bfvu` (a `BitFieldVec` with unaligned reads;
-//!   default: `u8` if S <= 8, `bfv` otherwise).
+//!   default: `u8` if S <= 8, `bfv` otherwise);
+//!
+//! - `ptr:<variant>[:<lambda>]` for PtrHash, where `<variant>` is `default`
+//!   (`DefaultPtrHash` with `PtrHashParams::default()`) or `compact`
+//!   (`CompactPtrHash` with `PtrHashParams::default_compact()`), optionally
+//!   with a different expected bucket size.
 //!
 //! Keys are hashed with GxHash (as in the experiments of the PHast paper) or,
-//! with `--hash xxh3`, with XXH3-64; both implementations use the same hash.
+//! with `--hash xxh3`, with XXH3-64; all implementations use the same hash
+//! (PtrHash supports only GxHash).
 //!
 //! Human-readable results go to stdout; machine-readable lines
 //! `CSV,<name>,<n>,<bits/key>,<build ns/key>,<query ns>,<query min>,<query
@@ -118,6 +126,11 @@ struct Args {
     /// sequential (consecutive keys of the set, see `query_batch`).
     #[arg(long, default_value = "random")]
     order: String,
+    /// Queries PHast-R with the generic code, rather than with the code with
+    /// constant shifts used with four layouts (so that all numbers of
+    /// layouts are queried by the same code).
+    #[arg(long)]
+    generic_queries: bool,
 }
 
 /// A built structure: name, statistics, and a function running a batch of
@@ -289,7 +302,72 @@ fn ref_dispatch<'a, SS: SeedSize + 'a>(
         "w1p" => ref_run(keys, ss, lam, ShiftOnlyProdWrapped::<1>, a, name),
         "w2p" => ref_run(keys, ss, lam, ShiftOnlyProdWrapped::<2>, a, name),
         "w3p" => ref_run(keys, ss, lam, ShiftOnlyProdWrapped::<3>, a, name),
+        "w4p" => ref_run(keys, ss, lam, ShiftOnlyProdWrapped::<4>, a, name),
+        "w5p" => ref_run(keys, ss, lam, ShiftOnlyProdWrapped::<5>, a, name),
+        "w6p" => ref_run(keys, ss, lam, ShiftOnlyProdWrapped::<6>, a, name),
+        "w7p" => ref_run(keys, ss, lam, ShiftOnlyProdWrapped::<7>, a, name),
+        "w8p" => ref_run(keys, ss, lam, ShiftOnlyProdWrapped::<8>, a, name),
+        "w9p" => ref_run(keys, ss, lam, ShiftOnlyProdWrapped::<9>, a, name),
+        "w11p" => ref_run(keys, ss, lam, ShiftOnlyProdWrapped::<11>, a, name),
         _ => panic!("unknown chooser {chooser}"),
+    }
+}
+
+/// GxHash with seed on a u64, exactly as [`GxKey`] and `ph::BuildGxHash`, so
+/// that PtrHash pays the same hashing cost as the other structures.
+#[derive(Clone, Copy)]
+struct PtrGx;
+
+impl ptr_hash::hash::KeyHasher<u64> for PtrGx {
+    type H = u64;
+    #[inline(always)]
+    fn hash(x: &u64, seed: u64) -> u64 {
+        let mut h = gxhash::GxHasher::with_seed(seed as i64);
+        h.write_u64(*x);
+        h.finish()
+    }
+}
+
+/// Builds PtrHash (see the module documentation for the variants).
+fn ptr_run<'a>(keys: &'a [u64], variant: &str, lam: Option<f64>, a: &Args, name: &str) -> Entry<'a> {
+    assert_eq!(a.hash, "gx", "PtrHash is supported only with GxHash");
+    macro_rules! go {
+        ($ty:ty, $params:expr) => {{
+            let mut params = $params;
+            if let Some(lam) = lam {
+                params.lambda = lam;
+            }
+            let (f, build) = timed_builds(a.builds, keys.len(), || <$ty>::new(keys, params));
+            // Pilots and remapping (the Elias-Fano remapping does not
+            // implement MemSize; the other fields take a few bytes)
+            let (pilots, remap) = f.bits_per_element();
+            let bits = pilots + remap;
+            // PtrHash does not bump; we report the keys remapped from the
+            // slots beyond n, which need an access to the remapping
+            let n = keys.len();
+            let remapped = keys.iter().filter(|k| f.index_no_remap(k) >= n).count();
+            let sequential = a.order == "sequential";
+            Entry {
+                name: name.to_string(),
+                n,
+                bits,
+                build,
+                bumped: 0.0,
+                extra: format!("  remapped {:.2}%", 100.0 * remapped as f64 / n as f64),
+                bench: Box::new(move |q, r| query_batch(keys, q, r, sequential, |k| f.index(&k))),
+            }
+        }};
+    }
+    match variant {
+        "default" => go!(
+            ptr_hash::DefaultPtrHash<PtrGx, u64>,
+            ptr_hash::PtrHashParams::default()
+        ),
+        "compact" => go!(
+            ptr_hash::CompactPtrHash<PtrGx, u64>,
+            ptr_hash::PtrHashParams::default_compact()
+        ),
+        _ => panic!("unknown PtrHash variant {variant}"),
     }
 }
 
@@ -363,6 +441,7 @@ fn sux_run_k<
     let (f, build) = timed_builds(a.builds, keys.len(), || -> PHastR<K, D> {
         PHastR::try_par_new_with_builder(keys, b.clone(), no_logging![]).unwrap()
     });
+    let f = if a.generic_queries { f.generic_queries() } else { f };
     sux_entry!(keys, f, build, a, name)
 }
 
@@ -377,6 +456,7 @@ fn sux_run_k_u<'a, K: ToSig<[u64; 1]> + Copy + Sync + 'a>(
             PHastR::try_par_new_with_builder(keys, b.clone(), no_logging![]).unwrap();
         f.try_into_unaligned().unwrap()
     });
+    let f = if a.generic_queries { f.generic_queries() } else { f };
     sux_entry!(keys, f, build, a, name)
 }
 
@@ -432,6 +512,14 @@ fn main() {
                     "bfvu" => sux_run_u(&keys, b, &a, &name),
                     _ => panic!("unknown storage {storage}"),
                 }
+            }
+            "ptr" => {
+                let lam: Option<f64> = p.get(2).map(|x| x.parse().unwrap());
+                let name = match lam {
+                    Some(lam) => format!("PtrHash {} l={lam}", p[1]),
+                    None => format!("PtrHash {}", p[1]),
+                };
+                ptr_run(&keys, p[1], lam, &a, &name)
             }
             _ => panic!("unknown variant {v}"),
         };

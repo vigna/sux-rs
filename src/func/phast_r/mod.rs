@@ -60,8 +60,8 @@
 //! feasible seeds can be found with bit-parallel operations, but
 //! self-collisions cannot be avoided: two keys that collide for one seed
 //! collide for (almost) all seeds, and their bucket must be bumped. With 8-bit
-//! seeds, a third of the buckets bumped by the best variant of PHast+ with
-//! wrapping contain a self-collision.
+//! seeds, a third of the buckets bumped by PHast+ with wrapping and
+//! multiplier 3 contain a self-collision.
 //!
 //! The offsets of the layouts use disjoint bits of the lower half of the
 //! product of the hash and the number of buckets, whose upper half is the
@@ -77,8 +77,8 @@
 //!
 //! With the default parameters (8-bit seeds, four layouts, slices of length
 //! 1024, and an expected bucket size of 4.25 keys) space is about 1.94 bits
-//! per key, slightly less than the best variant of PHast+ with wrapping, which
-//! however takes two thirds more time to build and has much slower queries;
+//! per key, the same as the most compact variants of PHast+ with wrapping,
+//! which however take much longer to build and have much slower queries;
 //! PHast uses 1.89 bits per key, but it takes more than ten times as long to
 //! build and has slower queries. With 10-bit seeds stored in a
 //! [`BitFieldVec`] (see [`PHastRBuilder::seed_bits`]) space is about 1.82
@@ -91,7 +91,8 @@
 //! the keys of a slice in parallel; their variants with a builder make it
 //! possible to configure the construction using a [`PHastRBuilder`]. In
 //! particular, in [offline mode] the hashes of the keys are kept on disk, and
-//! construction needs in memory less than one byte per key. The function
+//! on large key sets construction needs in memory less than half a byte per
+//! key (besides 256 MiB of buffers). The function
 //! built does not depend on the constructor, provided that the current
 //! [rayon] pool has the same number of threads.
 //!
@@ -318,6 +319,17 @@ impl<K: ?Sized, D, P: AsRef<[LevelParams]>, R> PHastR<K, D, P, R> {
     /// Returns the number of levels.
     pub fn num_levels(&self) -> usize {
         self.params.as_ref().len() + 1
+    }
+
+    /// Makes queries use the generic code, rather than the code with
+    /// constant shifts used with four layouts (for benchmarking, so that
+    /// structures with different numbers of layouts are queried by the
+    /// same code).
+    #[doc(hidden)]
+    pub fn generic_queries(mut self) -> Self {
+        self.default_shifts = false;
+        self.fast_scale = 0;
+        self
     }
 }
 

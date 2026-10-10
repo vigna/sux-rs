@@ -779,6 +779,70 @@ wrapping builds faster than PHast-R with one thread at every λ (59 against
 - Strings (10⁸, S=8, λ=4.25): PHast-R 71 ns/key against 87 (PHast+), 120
   (w3p) and 714 (PHast); queries 25.7 against 34.2, 29.3 and 27.0 ns.
 
+## Simulated review and fifth run (October 10, 2026)
+
+A simulated review (five reviewers, all Major Revision; reports and the
+editorial synthesis were kept outside the repository) led to the following
+changes, decided with Sebastiano: Section 6 rewritten around the exact floor;
+CHD credited for bringing back hash-and-displace (FCH → Pagh → CHD →
+PTHash) and a Related Work section; credits to Beling and Sanders (residue
+classes, seed-independent self-collision test, parallel gaps); "window" in
+§6 renamed *reach* (the window is the queue of 256 buckets of §2);
+reproducibility details (compiler flags, `ph` commits, key generator, tuning
+protocol, weights, chunk rule); single-thread parity with PHast+ no longer in
+the abstract (it fails on blew); PtrHash and the ablation added for the next
+AWS run. Not pursued (Sebastiano): dispersion, controlled-cache queries at
+10⁸, out-of-core offline runs, latency-mode queries.
+
+Local, hardware-independent results (M1 Max, 10⁷ keys unless noted):
+
+- Floor (`floor`, the minimum number of bumped keys given the slice starts,
+  by earliest-deadline-first, FIFO for equal reaches) on the actual hashes
+  of the first level with W = L = 1024: 0.046% (10⁷), 0.053% (10⁸), 0.050%
+  (10⁹), against D − W + 1 = 0.023/0.013/0.003% and n/(2W) = 0.049%; PHast-R
+  with λ = 4.25 bumps 0.51%, about ten times the floor. A rigorous bound
+  summing Proposition 1 over disjoint blocks of about 2.7W² slots gives about
+  0.1·n/W.
+- PHast+ with wrapping and larger multipliers (`cmp` choosers `w4p`…`w11p`;
+  `ph` uses the weights of multiplier 3 for them): with S = 8 and λ = 5,
+  δ = 3/4/5/6/7/9/11 give 1.9564/1.9570/1.9426/1.9454/1.9403/1.9402/1.9400
+  bits/key (odd multipliers are better, the space stops decreasing at about
+  δ = 7), with construction growing linearly with δ (M1: 76/83/97/109/119/
+  140/170 ns/key, against 45 for PHast-R) and 3.9–4.2% bumped keys; with
+  S = 10 and λ = 6, δ = 5/7/9/11 give 1.8421/1.8411/1.8398/1.8394 (PHast-R
+  λ = 6: 1.8231), at 156–333 ns/key. So PHast-R λ = 4.25 (1.9432) has the
+  same space as the best variants with wrapping, not "slightly less": the
+  text must be revised after the fifth run (configs.sh now has w5p and w7p).
+- Self-collisions of PHast-R (`floor --layouts 0,1,2`, S = 8, λ = 4.25): with
+  R = 1, buckets with a self-collision hold 1.28% of the keys (estimate
+  λ(λ+2)/(2L) = 1.30%) and 71% of the bumped keys (1.79% bumped); with R = 2,
+  buckets self-colliding in both layouts hold 0.03% of the keys (0.62%
+  bumped); with R = 4, none (0.51% bumped).
+- Ablation at each R's optimum (λ sweeps): S = 8, R = 1/2/4 minimize space at
+  λ = 5/4.75/4.75 (1.9545/1.9088/1.8998); S = 10 at λ = 6.25/6/6 (1.8528/
+  1.8255/1.8231). Retuning the weights for R = 1 changes space by 0.0002
+  (S = 8) and 0.0009 (S = 10) bits/key. With four layouts queries use
+  constant shifts (`default_shifts`, `fast_scale`), and so does the sweep
+  (`Rings::DEFAULT`); `PHastR::generic_queries` (hidden) and `cmp
+  --generic-queries` make all R use the same query code. `ablation.sh` now
+  also writes `ablation-generic.csv` (A8, A8OPT, A10, A10OPT, generic code).
+- PtrHash (fork vigna/PTRHash, v2.1.2, `cmp` variants `ptr:default` and
+  `ptr:compact`, same GxHash hasher): on 10⁷ keys (M1) DefaultPtrHash 2.99
+  bits/key, 80 ns/key, 2.5 ns per query; CompactPtrHash 2.14, 138, 4.6;
+  PHast-R λ = 4.25 1.94, 45, 3.0. On 10⁸: DefaultPtrHash 6.6 ns, 140 ns/key;
+  CompactPtrHash 11.1 ns, 134 ns/key; PHast-R 6.5 ns, 47 ns/key. Space is
+  computed by `bits_per_element` (pilots and remapping), as its Elias–Fano
+  remapping does not implement `MemSize`.
+
+The fifth run (`redo.sh`, about eight hours) adds w5p/w7p and PtrHash to
+the sweeps and to the tables (configs.sh), PtrHash to the thread scaling
+(large.sh), and the generic-code ablation; `aws.sh` clones the PtrHash fork
+next to `bsuccinct-rs`. After it, the paper needs: Tables 1–3 with δ = 5, 7
+and PtrHash, Figure 3 (`plot_pareto.py` now plots δ = 7 and PtrHash), the
+thread table, the layout table with the generic code and the optima, and
+the claims about the best variant with wrapping in the abstract,
+introduction, Section 4 and conclusions.
+
 ## Key findings (see Section 2 of the paper; reference implementation)
 
 - With output range m = n, holes = bumped keys; each hole costs about
@@ -853,7 +917,7 @@ wrapping builds faster than PHast-R with one thread at every λ (59 against
 - Seed choice (October 2026, from `ph` of October 8, 2026, whose PHast
   now uses the `ProdOfValues` evaluator): among the free rotations, the
   sweep chooses the one minimizing the product of the distances of the slots
-  of the keys from the *base* of the bucket, 95 slots before its first slice
+  of the keys from the *origin* of the bucket, 95 slots before its first slice
   (`Sweep::cost`), computed as a sum of fixed-point logarithms read from a
   table, so that it does not depend on the order of the keys (offline and in
   memory build the same structure). With respect to the sum of the slots it

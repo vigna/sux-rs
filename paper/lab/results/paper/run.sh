@@ -11,9 +11,9 @@
 # medians of BUILDS constructions (by default 3 up to 10^8 keys and 1 above).
 # Above 10^9 keys only the configurations of the tables are built.
 #
-# On a c7i.metal-24xl this takes about four hours and a half, two of them
+# On a c7i.metal-24xl this takes about five hours and a half, two of them
 # spent building PHast with 10-bit seeds on 10^9 keys; the peak memory usage
-# on 10^9 keys is about 30 GB.
+# on 10^9 keys is about 40 GB.
 # Usage: run.sh <cmp binary> <output prefix>
 # Environment: CPU1 (the core for single-threaded runs), CPUS (the cores
 # for multithreaded runs, as a taskset list), THREADS (their number), SIZES

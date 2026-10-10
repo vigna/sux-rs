@@ -10,6 +10,8 @@ d = sys.argv[1]
 
 def label(name):
     name = name.replace(' u8', '')
+    if name.startswith('PtrHash'):
+        return 'PtrHash' if name.endswith('default') else 'PtrHash compact'
     m = re.match(r'ref[: ](\w+)(?:[: ]|\s+S=)(\d+)(?:[: ]|\s+l=)([\d.]+)', name)
     if m:
         c, s, l = m.groups()

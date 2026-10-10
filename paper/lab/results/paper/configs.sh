@@ -15,18 +15,22 @@ sweep() {
 # The configurations of the tables: for each structure, the expected bucket
 # size that minimizes space (PHast-R: the default size and the next two);
 # PHast+ with wrapping chooses seeds by the product of the values of the keys
-# (w1p, w2p, w3p), as PHast does by default
-T8=ref:plus:8:5.25,ref:w1p:8:5.25,ref:w2p:8:5.0,ref:w3p:8:5.0,ref:phast:8:4.5,r:8:10:4.25,r:8:10:4.5,r:8:10:4.75
-T10=ref:plus:10:5.15,ref:w1p:10:6.2,ref:w2p:10:6.25,ref:w3p:10:6.0,ref:phast:10:5.8,r:10:11:5.75:2:bfvu,r:10:11:6.0:2:bfvu,r:10:11:6.25:2:bfvu
+# (w1p, w2p, w3p, and the larger multipliers w5p and w7p, beyond which space
+# does not decrease), as PHast does by default; PtrHash (default and compact
+# variants) does not depend on the seed width, and it is in T8 only
+T8=ref:plus:8:5.25,ref:w1p:8:5.25,ref:w2p:8:5.0,ref:w3p:8:5.0,ref:w5p:8:5.0,ref:w7p:8:5.0,ref:phast:8:4.5,r:8:10:4.25,r:8:10:4.5,r:8:10:4.75,ptr:default,ptr:compact
+T10=ref:plus:10:5.15,ref:w1p:10:6.2,ref:w2p:10:6.25,ref:w3p:10:6.0,ref:w5p:10:6.0,ref:w7p:10:6.0,ref:phast:10:5.8,r:10:11:5.75:2:bfvu,r:10:11:6.0:2:bfvu,r:10:11:6.25:2:bfvu
 
 # The sweeps of the trade-off figure, which contain the configurations of
 # the tables
 G8=$(sweep ref:plus:8 '' 5.0 5.25 5.5)$(sweep ref:w1p:8 '' 5.0 5.25 5.5)$(sweep ref:w2p:8 '' 4.75 5.0 5.25)
 G8=$G8$(sweep ref:w3p:8 '' 4.5 4.75 5.0 5.25 5.5)$(sweep ref:phast:8 '' 4.25 4.5 4.75)
-G8=$G8$(sweep r:8:10 '' 4.0 4.25 4.5 4.75 5.0)
+G8=$G8$(sweep ref:w5p:8 '' 4.75 5.0 5.25)$(sweep ref:w7p:8 '' 4.75 5.0 5.25)
+G8=$G8$(sweep r:8:10 '' 4.0 4.25 4.5 4.75 5.0)ptr:default,ptr:compact
 G8=${G8%,}
 G10=$(sweep ref:plus:10 '' 4.9 5.15 5.4)$(sweep ref:w1p:10 '' 5.95 6.2 6.45)$(sweep ref:w2p:10 '' 6.0 6.25 6.5)
 G10=$G10$(sweep ref:w3p:10 '' 5.5 5.75 6.0 6.25 6.5)$(sweep ref:phast:10 '' 5.55 5.8 6.05)
+G10=$G10$(sweep ref:w5p:10 '' 5.75 6.0 6.25)$(sweep ref:w7p:10 '' 5.75 6.0 6.25)
 G10=$G10$(sweep r:10:11 :2:bfvu 5.5 5.75 6.0 6.25 6.5)
 G10=${G10%,}
 
@@ -34,6 +38,11 @@ G10=${G10%,}
 # 1, 2 or 4 layouts
 A8=r:8:10:4.25:0,r:8:10:4.25:1,r:8:10:4.25:2
 A10=r:10:11:5.75:0:bfvu,r:10:11:5.75:1:bfvu,r:10:11:5.75:2:bfvu
+# The same, each with the expected bucket size that minimizes its space
+# (found on 10^7 keys; retuning the priority weights for 1 and 2 layouts
+# changes space by less than 0.001 bits per key)
+A8OPT=r:8:10:5.0:0,r:8:10:4.75:1,r:8:10:4.75:2
+A10OPT=r:10:11:6.25:0:bfvu,r:10:11:6.0:1:bfvu,r:10:11:6.0:2:bfvu
 
 # The configurations for string keys (cmpstr supports only byte seeds and the
 # plus, w3, w3p and phast choosers)
