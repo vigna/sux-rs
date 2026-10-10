@@ -1216,9 +1216,9 @@ scheme, or a more powerful search, such as the backtracking and the local
 search suggested by Beling and Sanders~\cite{BeSPHast}, could reduce it. In
 this section we show that bumping cannot be avoided, for a structural reason
 that applies to every placement scheme of the \PHast family, and we compute
-how many keys must be bumped: on large key sets, a fraction of about
-$1/(2W)$ of the keys, where $W$ is the number of slots in which a key can be
-placed. For \PHastR this is about one tenth of the keys that it bumps.
+how many keys must be bumped: on large key sets, about $n/(2W)$, that is,
+a fraction $1/(2W)$ of the keys, where $W$ is the number of slots in which a
+key can be placed. For \PHastR this is about one tenth of the keys that it bumps.
 
 In all structures of the \PHast family a key whose slice starts at $\sigma$
 can be placed only in its \emph{reach} $[\sigma\..\sigma+W)$, where $W=L$ for
@@ -1282,7 +1282,8 @@ extends to expectations, and we conclude that
 \caption{Percentage of keys that every placement must bump when each key can
 be placed only in the $W=1024$ slots of its slice, for the slice starts of the
 first level of \PHastR with $S=8$ on our key sets: the bound $D-W+1$ of
-Proposition~\ref{prop:bump}, the minimum (computed by the greedy assignment),
+Proposition~\ref{prop:bump}, the minimum (computed by the greedy placement of
+Proposition~\ref{prop:greedy}),
 and the estimate $n/(2W)$, compared with the keys bumped by \PHastR with
 $\lambda=4.25$.}
 \label{tab:floor}
@@ -1312,26 +1313,48 @@ since there are as many free slots as bumped keys, at least
 keys are bumped. The increment of $X$ on an interval of $\ell$ slots is
 asymptotically normal with mean zero and variance $\ell$, so applying the
 bound to consecutive intervals of about $2.7W^2$ slots shows that, for large
-$W$, at least about $0.1\,n/W$ keys are bumped on average: a constant
-fraction of the keys, however large the key set.
+$W$, the expected number of bumped keys is at least about
+\[
+0.1\,\frac nW,
+\]
+a constant fraction of the keys, however large the key set.
 
-The minimum number of bumped keys can actually be computed exactly. Since
-reaches are intervals, the bipartite graph of the proposition is convex, and
-a maximum matching can be found by assigning each slot, in increasing order,
-to the unplaced key with the earliest deadline among those whose reach
-contains it~\cite{GloMMCBG}; as all reaches have the same length, this is the
-key with the smallest slice start. This greedy assignment is a queue that at
-each slot receives the keys whose slice starts there, places the oldest
-waiting key, and bumps the keys that have waited $W$ slots. On average one
-key arrives at each slot, so the length of the queue behaves like a random
-walk with no drift and unit variance per step, reflected at zero and at $W$.
-In the stationary regime the variance added by the arrivals must be balanced
-by the losses at $W$, which reduce the second moment of the length by about
-$2W$ each: thus, keys are lost at a rate of about $1/(2W)$ per slot, and
-about $n/(2W)$ keys are bumped. Table~\ref{tab:floor} shows that this
-estimate is accurate on the slice starts of our key sets: on $10^9$ keys the
-minimum is $0.050\%$ of the keys, whereas Proposition~\ref{prop:bump}
-guarantees $0.003\%$.
+The minimum number of bumped keys can actually be computed exactly:
+
+\begin{proposition}
+\label{prop:greedy}
+Under the assumptions of Proposition~\ref{prop:bump}, the minimum number of
+keys bumped by an injective placement is the number of keys bumped by the
+following greedy placement: for each slot, in increasing order, place in the
+slot the unplaced key with the smallest $\sigma_x$ among those whose
+interval contains the slot, if any.
+\end{proposition}
+
+\begin{proof}
+Since the keys can be placed in intervals of slots, the bipartite graph
+connecting each key to its slots is convex, and assigning each slot, in
+increasing order, to the unassigned key whose interval ends first among those
+containing the slot yields a maximum matching~\cite{GloMMCBG}. As all
+intervals have the same length, the interval that ends first is the one that
+starts first.
+\end{proof}
+
+The greedy placement is a queue that at each slot receives the keys whose
+slice starts there, places the oldest waiting key, and bumps the keys that
+have waited $W$ slots. On average one key arrives at each slot, so the length
+of the queue behaves like a random walk with no drift and unit variance per
+step, reflected at zero and at $W$. In the stationary regime the variance
+added by the arrivals must be balanced by the losses at $W$, each of which
+reduces the second moment of the length by about $2W$: thus, keys are lost at
+a rate of about $1/(2W)$ per slot, and on large key sets the minimum number
+of bumped keys is about
+\[
+\frac n{2W},
+\]
+that is, $0.049\%$ of the keys when $W=1024$. Table~\ref{tab:floor} shows
+that this estimate is accurate on the slice starts of our key sets: on
+$10^9$ keys the minimum computed by the greedy placement is $0.050\%$ of the
+keys, whereas Proposition~\ref{prop:bump} guarantees $0.003\%$.
 
 In terms of space, this floor is negligible: by~(\ref{eq:space}), bumping a
 fraction $\beta\approx1/(2W)$ of the keys costs about
