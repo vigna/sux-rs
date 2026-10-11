@@ -66,10 +66,10 @@ struct Args {
     #[arg(long)]
     geometric: bool,
     /// Generate values with a Zipf distribution (exponent 1) over
-    /// [0 . . K).​
+    /// [0 . . K).​
     #[arg(long)]
     zipf: Option<NonZeroUsize>,
-    /// Generate values uniformly distributed in [0 . . K).​
+    /// Generate values uniformly distributed in [0 . . K).​
     #[arg(long)]
     uniform: Option<NonZeroUsize>,
     /// Save the structure in unaligned form (faster, if available).​
