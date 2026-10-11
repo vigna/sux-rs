@@ -153,7 +153,7 @@ functions of the key with coefficients depending on the seed), so that different
 seeds place the keys of a bucket independently; seeds are tried one at a time,
 in order, and then compressed. PTHash~\cite{PTPRFMPH} revisited FCH with a
 careful engineering of the encoding of the seeds (its \emph{pilots}) and of the
-distribution of the keys into buckets, and it was followed by
+distribution of the keys into buckets; it was followed by
 PHOBIC~\cite{HLPPPHOBSIC}, which optimizes the bucket sizes and interleaves the
 encoding of the pilots, and by PtrHash~\cite{RagPTR}, which stores the pilots in
 bytes and replaces the greedy placement of the buckets with a cuckoo-like search
@@ -182,12 +182,14 @@ whose start grows linearly with the hash. Each bucket has a seed, stored in a
 plain array of $S$-bit values; the seed maps each key of the bucket to a slot
 of its slice. A slot is \emph{used} if a key has already been mapped to it, and
 \emph{free} otherwise; a seed is \emph{feasible} for a bucket if it maps its
-keys to distinct free slots. The structure is a sequence of \emph{levels}
+keys to distinct free slots.
+
+The structure is a sequence of \emph{levels}
 using the same scheme: buckets for which no seed is feasible are
 \emph{bumped} (seed~$0$), and their keys are handled by the following
 levels. The first level has $m=n$, so every bumped key leaves a
 free slot (a \emph{hole}) in the first level, and an Elias--Fano
-sequence~\cite{EliESRCASF,FanNBRISM}, the \emph{remapping}, maps the slots of
+sequence~\cite{EliESRCASF,FanNBRISM,VigBIRSQ}, the \emph{remapping}, maps the slots of
 the following levels, in order, to the holes. Since bumped keys are few, a query reads a
 single seed for almost all keys. Seeds are assigned by a \emph{sweep} over
 the buckets: buckets enter, in order of index, a priority queue that favors
@@ -316,14 +318,14 @@ We denote with $\hi(x)$ and $\operatorname{lo}(x)$ the upper and lower $64$
 bits of a $128$-bit product. Consider a level with output range $[0\..m)$ and
 $B$ buckets, whose slices have length $L=2^\ell$ (slice lengths are powers of
 two; we discuss their choice below). Let $h$ be the hash of a key, and let
-$\alpha=h/2^{64}\in[0,1)$. The bucket of the key is $\lfloor\alpha
+$\alpha=h/2^{64}\in[0\..1)$. The bucket of the key is $\lfloor\alpha
 B\rfloor$, which in fixed-point arithmetic is just $\hi(hB)$, and the start of
 its slice is $\sigma(h)=\lfloor\alpha(m-L+1)\rfloor$, which is
 $\hi(h(m-L+1))$, so that slices lie within the output range
-(Figure~\ref{fig:geometry}). The assignment of buckets by a fixed-point
+(Figure~\ref{fig:geometry}).\footnote{The assignment of buckets by a fixed-point
 multiplication, which makes each bucket an interval of hashes, was introduced
 by Genuzio, Ottaviano and Vigna for the offline bucketing of
-GOV~\cite{GOVFSCCSMPHF}. Moreover, there
+GOV~\cite{GOVFSCCSMPHF}.} Moreover, there
 are $R$ \emph{layouts}, where $R=2^\rho$ is a power of two, each assigning
 an in-slice offset to every key:
 letting $o=\operatorname{lo}(hB)$, we divide $o$ into $R$ fields of
@@ -334,9 +336,9 @@ $f=64/R$ bits, and layout $r\in[0\..R)$ assigns to the key the offset
 that is, the $\ell$ lowest bits of field $r$. We require $\ell\le f$, so
 that the offsets of different layouts use disjoint bits of $o$.
 
-The seed $s\in[1\..2^S)$ of a bucket has two parts: its lowest $\rho$ bits,
+The seed $s\in\bigl[1\..2^S\bigr)$ of a bucket has two parts: its lowest $\rho$ bits,
 $r=s\bmod R$, choose a layout, and its remaining bits,
-$j=s\gg\rho\in[0\..2^{S-\rho})$, a \emph{rotation}. Assuming for the
+$j=s\gg\rho\in\bigl[0\..2^{S-\rho}\bigr)$, a \emph{rotation}. Assuming for the
 time being that $\ell\geq S$, let $u=2^{\ell-S}$: the seed maps each key of
 the bucket to the slot
 \[
@@ -344,7 +346,9 @@ the bucket to the slot
 =\sigma(h)+\bigl(\omega_r(o)+ru+jT\bigr)\bmod L,
 \]
 where $T=Ru$ is the \emph{stride}; the two forms are equal because $s=jR+r$,
-and queries compute the first one. In words: once the layout is chosen, each
+and queries compute the first one.
+
+In words: once the layout is chosen, each
 key of the bucket has a \emph{base slot}, the slot for rotation $0$ (as
 offsets are uniform, the constant $ru$ is immaterial), and rotation~$j$ moves
 all the keys of the bucket by $jT$ slots, wrapping around the end of their
@@ -372,7 +376,9 @@ part of $\alpha B$, which is uniformly distributed if $h$ is. Moreover, the
 offsets of the keys of a bucket are independent of each other for every
 layout, which would not be true of offsets taken from the upper bits of $h$,
 as the keys of a bucket share the upper ${\approx}\lg B$ bits of
-$h$. We require the number $B$ of buckets to be odd: if $B$ is even, the
+$h$.
+
+We require the number $B$ of buckets to be odd: if $B$ is even, the
 lowest bit of $o$, and thus of the offset of layout~$0$, is always zero,
 whereas if $B$ is odd the lowest bits of $o$ are a bijective function of the
 lowest bits of $h$.
@@ -441,10 +447,10 @@ in red).}
 \end{figure}
 
 \paragraph{Search.}
-In a bit vector of the used slots, the bits of the slots of a ring would be
+In a bit vector marking the used slots, the bits of the slots of a ring would be
 $T$ bits apart. We make them adjacent by storing the set of used slots by
-residue classes modulo $T$, as suggested by Beling and Sanders~\cite{BeSPHast}
-for \PHastP with wrapping, that is, as $T$ \emph{rows} in which bit $q$ of
+residue classes modulo $T$, similarly to what happens
+for \PHastP with wrapping~\cite{BeSPHast}, that is, as $T$ \emph{rows} in which bit $q$ of
 row $\tau$ records whether slot $qT+\tau$ is used. All the slots of a
 ring have the same residue modulo $T$ (wrapping around the end of a slice
 does not change it, as $T$ divides $L$), so the \emph{bits of the ring} of a
@@ -469,9 +475,7 @@ of the reference implementation of \PHast~\cite{BelBRLPFSDS}, the one
 minimizing the product of the distances of the slots of the keys from the
 \emph{origin} of the bucket, which lies $95$ slots before the start of the
 leftmost slice that a key of the bucket can have
-(Figure~\ref{fig:geometry}). With respect to the sum of
-the slots, which \PHast used originally~\cite{BeSPHast}, the product saves
-about $0.02$ bits per key with 8-bit seeds and $0.03$ with 10-bit seeds. We
+(Figure~\ref{fig:geometry}). We
 compute the logarithm of the product, that is, the sum of the base-2
 logarithms of the distances, which we read, in fixed point with $24$
 fractional bits, from a table: since it is a sum of integers, the cost of a
@@ -626,8 +630,7 @@ distributed into parts rather than sorted, the priority queue is replaced by
 a queue for each bucket size, bumped keys are hashed again just once rather
 than at each level, the last level uses the same scheme as the other levels
 rather than the pseudorandom scheme of \PHast, and the gaps between the
-chunks of a parallel construction are swept in parallel, as suggested by
-Beling and Sanders~\cite{BeSPHast}, rather than serially. Slice lengths are those of \PHastP
+chunks of a parallel construction are swept in parallel, rather than serially. Slice lengths are those of \PHastP
 with wrapping, but the expected bucket size is smaller, and the weights of
 the bucket priorities are tuned for \PHastR.
 
@@ -723,6 +726,7 @@ $38\%$ of the time, and its queries are $27\%$ faster; with $\delta=3$,
 \PHastP with wrapping uses $0.013$ bits per key more, and it still takes
 $1.7$ times as long to build. The queries of \PHastR are $9\%$ faster also
 than those of \PHast, which takes thirteen times as long to build.
+
 Queries are fast because \PHastR bumps few keys: just $0.5\%$ of the keys
 from the first level, against about $4\%$ for \PHastP with wrapping and the
 $1.0\%$ of \PHast (with the same expected bucket size,
@@ -734,7 +738,9 @@ queries; with $\lambda=4.75$ it bumps $2.3\%$ of the keys, its space exceeds
 that of \PHast by $0.013$ bits per key, and its queries are slightly slower.
 With these two expected bucket sizes \PHastR is also faster to build than
 \PHastP without wrapping, which instead is slightly faster to build than
-\PHastR with $\lambda=4.25$. PtrHash, in its default configuration, has
+\PHastR with $\lambda=4.25$. 
+
+PtrHash, in its default configuration, has
 queries almost as fast as those of \PHastR with $\lambda=4.25$, but it uses
 more than one bit per key more, and it takes twice as long to build; its
 compact configuration uses $0.2$ bits per key more than \PHastR, and it is
@@ -1020,7 +1026,9 @@ slower as $\lambda$ decreases (by up to $34\%$). The curves of \PHastR are
 slightly to the right of those of \PHast (their minima differ by about
 $0.01$ bits per key), but their construction times differ by more than a
 factor of ten, and the curves of \PHastR are below those of \PHast: at about
-the same space, \PHastR has faster queries. The curves of \PHastP with
+the same space, \PHastR has faster queries. 
+
+The curves of \PHastP with
 wrapping are to the right of both, even with $\delta=7$. Considering the
 three dimensions at once, no configuration of \PHastP without wrapping, or
 with wrapping and $\delta\geq2$, is Pareto-optimal: each is dominated by a
@@ -1109,6 +1117,7 @@ reduction is smaller (from $1.4\%$ to $0.7\%$ of bumped keys, saving $0.06$
 bits per key, and $0.03$ when each number of layouts uses its best expected
 bucket size), and the construction with four layouts is $6$--$7\%$ slower
 than with two.
+
 Self-collisions explain most of the reduction: with $S=8$ and a single
 layout, the buckets containing a self-collision hold $1.28\%$ of the keys, in
 agreement with the first-order estimate $\lambda(\lambda+2)/(2L)\approx
@@ -1150,7 +1159,9 @@ keys ($54$, $60$ and $63$\,ns with one thread on $10^7$, $10^8$ and $10^9$
 keys, respectively), as parts are distributed into smaller parts that fit
 the cache whatever the number of keys (Section~\ref{sec:phastr}); the growth
 is due to the walk finding the keys of bumped buckets, which accesses
-randomly the bit vector of bumped buckets. Table~\ref{tab:threads} shows how
+randomly the bit vector of bumped buckets.
+
+Table~\ref{tab:threads} shows how
 construction scales with the number of threads: with $32$ threads \PHastR is
 built $20$ times faster than with one, whereas \PHastP is built $9$ times
 faster, and \PHastP with wrapping $13$ times faster; the construction of
@@ -1167,17 +1178,6 @@ bandwidth and latency, that is, hashing, the distribution into parts, and
 the walk. The peak memory usage is close to that of
 the reference implementation of \PHastP, which sorts hashes in place and
 hashes all keys again to find those of bumped buckets.
-
-\paragraph{String keys.}
-On random strings of $10$ to $50$ bytes, hashed with GxHash by both
-implementations, hashing takes a larger part of the time, and since the
-reference implementation hashes all keys again to find those of bumped
-buckets, \PHastR is built faster than \PHastP also with one thread; otherwise,
-the relative performance of the structures does not change, and neither does
-space: on $10^8$ keys, with 8-bit seeds and $\lambda=4.25$, \PHastR is built
-in $72$\,ns per key, against the $86$, $119$ and $705$\,ns of \PHastP,
-\PHastP with wrapping and $\delta=3$, and \PHast, and its queries take
-$25.5$\,ns, against $34.1$, $29.3$ and $26.9$\,ns.
 
 \section{Offline Construction}
 \label{sec:offline}
@@ -1214,21 +1214,7 @@ a level are distributed into $P$ \emph{partitions} by the upper $\lg P$ bits
 of the hash of the key at the level. Each partition is a sequence of
 blocks, which are appended as their buffers fill to one of at most $16$ files,
 each containing the blocks of a range of consecutive partitions, and a table
-locates the blocks of each partition. Since the standard library of Rust has
-no portable positional read, threads reading the same file take turns, but
-threads sweeping different chunks of a level read different files. A writer
-starts with blocks of $1024$ records, and doubles their length (up to
-$65\,536$ records, that is, $1$\,MiB) whenever it has written on average
-$512$ blocks for each partition: on huge key sets a sweep reads a partition
-with few seeks, and the buffers, a block for each partition, never take more
-than the initial ones or a sixteenth of a byte per key. For the first level, whose number of keys is not
-known in advance, $P=2^{14}$: the buffers take $256$\,MiB up to about
-$8.6\cdot10^9$ keys, and at most $16$\,GiB, and partitions contain just a
-few million keys even on $10^{11}$ keys. At the following levels, whose number~$n'$ of keys is known, $P$ is the
-smallest power of two not smaller than $\sqrt{2n'/1024}$: this choice balances
-the memory of a thread writing the files, which buffers a block for each
-partition, and that of a thread sweeping the level, which buffers a few
-partitions.
+locates the blocks of each partition.
 
 \paragraph{Parts.}
 Since $\hi(hB)$ is a nondecreasing function of $h$, the keys of a partition
@@ -1548,6 +1534,7 @@ $W$, as happens (albeit for different reasons) in Bucketed
 CONSENSUS-RecSplit~\cite{LSWCSESAMPH}, whose first step is a minimal
 $k$-perfect hash function.
 
+\iffalse 
 Even within such parts, however, a second obstacle appears. Whether a slot
 is used depends on the buckets whose slices start at most $W$ slots before
 it, that is, on about $W/\lambda$ consecutive buckets, and the slot becomes
@@ -1563,6 +1550,7 @@ check that all unreachable slots are used, the search never got past the
 first $160$ buckets, even with seeds more than two bits longer than the
 information-theoretic minimum for a bucket ($S=8$, $L=512$, $R=4$, and
 $\lambda=4$) and a budget of $2000$ seeds tried per bucket.
+\fi
 
 \section{Conclusions}
 
@@ -1580,7 +1568,9 @@ cause a large part of the bumping of \PHastP; and
 bumping is where both the excess space and the slow queries come from:
 queries for the keys of the first level take the same time in \PHastR and in
 \PHastP with wrapping, and the whole difference is due to bumped keys
-(Table~\ref{tab:split}). As a result, with the same space as the best
+(Table~\ref{tab:split}).
+
+As a result, with the same space as the best
 variant of \PHastP with wrapping, \PHastR is built in $42\%$ of the time, and
 its queries are $28\%$ faster on $10^9$ keys
 (Tables~\ref{tab:1e7}--\ref{tab:1e9}); they are about as fast as those of
@@ -1592,7 +1582,9 @@ threads it is built almost three times faster than \PHastP
 (Table~\ref{tab:threads}); and every configuration of \PHastP in
 Figure~\ref{fig:pareto} is dominated by one of \PHastR (only an unplotted
 configuration with $\delta=1$ and 10-bit seeds is not, on $10^7$ and $10^8$
-keys). There are, however, intrinsic limits to how few keys can be
+keys). 
+
+There are, however, intrinsic limits to how few keys can be
 bumped: when each key can be placed only within a range of $W$ slots, every
 placement of random keys must bump a fraction of about $1/(2W)$ of the keys
 on large key sets, although this floor is about ten times lower than the
