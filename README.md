@@ -23,6 +23,11 @@ from [the DSI Utilities] and new structures.
   prefix omission].
 - new state-of-the-art structures for [static functions] and [static filters],
   scaling to trillions of keys, and providing very fast queries;
+- [compressed static functions], which store values using a prefix-free code,
+  and [two-step static functions], which handle frequent values separately:
+  both use less space when the distribution of values is skewed;
+- a [minimal perfect hash function] with very fast construction and queries,
+  using less than two bits per key;
 - [monotone minimal perfect hash functions] based on longest common prefixes,
   which are [the fastest available] (using less than log₂*n* space);
 - support for [signed minimal perfect hash functions];
@@ -225,6 +230,9 @@ Union nor the Italian MUR can be held responsible for them.
 [`SelectSmall`]: https://docs.rs/sux/latest/sux/rank_sel/struct.SelectSmall.html
 [`SelectAdapt`]: https://docs.rs/sux/latest/sux/rank_sel/select_adapt/struct.SelectAdapt.html
 [static functions]: https://docs.rs/sux/latest/sux/func/struct.VFunc.html
+[compressed static functions]: https://docs.rs/sux/latest/sux/func/struct.CompVFunc.html
+[two-step static functions]: https://docs.rs/sux/latest/sux/func/struct.VFunc2.html
+[minimal perfect hash function]: https://docs.rs/sux/latest/sux/func/phast_r/struct.PHastR.html
 [monotone minimal perfect hash functions]: https://docs.rs/sux/latest/sux/func/lcp_mmphf/index.html
 [static filters]: https://docs.rs/sux/latest/sux/dict/vfilter/struct.VFilter.html
 [partial arrays]: https://docs.rs/sux/latest/sux/array/struct.PartialArray.html

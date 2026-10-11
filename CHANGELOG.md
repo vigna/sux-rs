@@ -4,6 +4,12 @@
 
 ### New
 
+- New `PHastR` minimal perfect hash function, based on bucket placement with
+  rotated layouts, providing very fast construction and queries using less
+  than two bits per key. It can be built from a slice (hashing keys in
+  parallel) or from a lender, in memory or offline (keeping the hashes of
+  the keys in temporary files).
+
 - New `VFunc2` and `Lcp2Mmphf` structures analogous to `VFunc` and `LcpMmphf`,
   but performing compression by storing frequent values using less bits.
 
