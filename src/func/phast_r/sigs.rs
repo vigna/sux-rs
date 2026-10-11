@@ -135,18 +135,21 @@ fn group_with(
     let batches = n.div_ceil(batch_len);
 
     // The size of a region is the expected number of signatures of its
-    // batch falling in its part, plus some standard deviations
-    let capacity = |batch: usize| {
+    // batch falling in its part, which is proportional to the number of
+    // buckets of the part (all parts but the last have 2^shift buckets),
+    // plus some standard deviations
+    let capacity = |batch: usize, p: usize| {
         let len = ((batch + 1) * batch_len).min(n) - batch * batch_len;
-        let mean = len as f64 / num_parts as f64;
+        let buckets = (nb - (p << shift)).min(1 << shift);
+        let mean = len as f64 * buckets as f64 / nb as f64;
         (mean + slack * mean.sqrt()).ceil() as usize + 32
     };
     let mut region_begin = Vec::with_capacity(num_parts * batches + 1);
     let mut end = 0;
-    for _ in 0..num_parts {
+    for p in 0..num_parts {
         for batch in 0..batches {
             region_begin.push(end);
-            end += capacity(batch);
+            end += capacity(batch, p);
         }
     }
     region_begin.push(end);
@@ -435,12 +438,14 @@ pub(super) fn distribute(
     }
     // The smaller parts are made of 2^sub_shift consecutive buckets,
     // starting from the first bucket of the range; as for regions, we
-    // reserve for each of them its expected size plus some slack, and
-    // we keep separately the signatures that do not fit
+    // reserve for each of them its expected size plus some slack (all
+    // smaller parts but the last have 2^sub_shift buckets, so we reserve
+    // the size of a full one), and we keep separately the signatures that
+    // do not fit
     let sub_shift = (buckets.ilog2() + 1).saturating_sub(log2_subparts + 1);
     let subparts = ((buckets - 1) >> sub_shift) + 1;
     let subpart = |h: u64| (g.bucket(h) - first_bucket) >> sub_shift;
-    let mean = len as f64 / subparts as f64;
+    let mean = len as f64 * (1usize << sub_shift).min(buckets) as f64 / buckets as f64;
     let capacity = (mean + SLACK * mean.sqrt()).ceil() as usize + 32;
     if sigs.len() < subparts * capacity {
         sigs.resize(subparts * capacity, 0);

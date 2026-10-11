@@ -320,8 +320,8 @@ impl PHastRBuilder {
         // seed, so they are bumped, and separated by the signatures of the
         // following levels, which depend on a second hash, unless the keys
         // are equal: since equal keys are bumped from the first level, we
-        // detect them in the following levels, hashing with a third seed
-        // the keys of a bucket with the same signature.
+        // detect them in the second level, hashing with a third seed the
+        // keys of a bucket with the same signature.
         let duplicates = |sigs: &Signatures, cur: &[usize], g: &Geometry| {
             let (mut part, mut begin, mut temp) = (vec![], vec![], vec![]);
             let mut bucket = vec![];
@@ -371,7 +371,7 @@ impl PHastRBuilder {
                 let salt = level_salt(self.seed, levels.len(), 0);
                 let geom = self.geometry(k, k, self.bucket_size);
                 let sigs = group(salt, &geom);
-                if duplicates(&sigs, &cur, &geom) {
+                if levels.len() == 1 && duplicates(&sigs, &cur, &geom) {
                     bail!("Duplicate keys");
                 }
                 let out = sweep_bumping_level(&sigs, &geom, &weights, levels.len(), k, pl);
@@ -392,7 +392,7 @@ impl PHastRBuilder {
                     let geom = self.geometry(k, m, self.bucket_size.min(3.0));
                     let salt = level_salt(self.seed, levels.len(), attempt);
                     let sigs = group(salt, &geom);
-                    if attempt == 0 && duplicates(&sigs, &cur, &geom) {
+                    if levels.len() == 1 && attempt == 0 && duplicates(&sigs, &cur, &geom) {
                         bail!("Duplicate keys");
                     }
                     if let Some(out) = sweep_level(&sigs, &geom, &weights, false, no_logging![]) {

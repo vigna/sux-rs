@@ -906,7 +906,9 @@ impl PHastRBuilder {
                     let k = store.len;
                     let salt = level_salt(self.seed, index, 0);
                     let geom = self.geometry(k, k, self.bucket_size);
-                    if has_duplicates(&store, pl)? {
+                    // Equal keys are bumped from the first level, so they
+                    // are all in the second one
+                    if index == 1 && has_duplicates(&store, pl)? {
                         bail!("Duplicate keys");
                     }
                     let out = sweep_store(&store, &geom, &weights, index, pl)?;
@@ -942,7 +944,7 @@ impl PHastRBuilder {
                         let m = k + k / 4 + 16 + (attempt as usize / 8) * (k / 8 + 8);
                         let geom = self.geometry(k, m, self.bucket_size.min(3.0));
                         let salt = level_salt(self.seed, index, attempt);
-                        if attempt == 0 && has_duplicates_in_memory(&records) {
+                        if index == 1 && attempt == 0 && has_duplicates_in_memory(&records) {
                             bail!("Duplicate keys");
                         }
                         let sigs =
