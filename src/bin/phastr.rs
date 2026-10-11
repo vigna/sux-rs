@@ -9,16 +9,17 @@ use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
+use num_primitive::PrimitiveNumberAs;
 use sux::bits::BitFieldVec;
-use sux::cli::{read_concat_lines, str_slice_from_offsets};
+use sux::cli::{HashTypes, read_concat_lines, str_slice_from_offsets};
 use sux::func::phast_r::SeedStoreBuild;
-use sux::func::{PHastR, PHastRBuilder};
+use sux::func::{PHastR, PHastRBuilder, SignedFunc};
 use sux::init_env_logger;
-use sux::traits::TryIntoUnaligned;
-use sux::utils::{DekoBufLineLender, FromCloneableIntoIterator};
+use sux::traits::{TryIntoUnaligned, Word};
+use sux::utils::{DekoBufLineLender, FromCloneableIntoIterator, FromIntoFallibleLenderFactory};
 
 #[derive(Parser, Debug)]
-#[command(about = "Creates a PHastR minimal perfect hash function on a set of keys and serializes it with ε-serde.", long_about = None, next_line_help = true, max_term_width = 100)]
+#[command(about = "Creates a (possibly signed) PHastR minimal perfect hash function on a set of keys and serializes it with ε-serde.", long_about = None, next_line_help = true, max_term_width = 100)]
 #[clap(group(
             ArgGroup::new("input")
                 .required(true)
@@ -38,6 +39,9 @@ struct Args {
     unaligned: bool,
     /// A name for the ε-serde serialized function.​
     func: Option<String>,
+    /// Sign the function using hashes of this type.​
+    #[arg(long)]
+    hash_type: Option<HashTypes>,
     /// Hashes keys sequentially without loading them in RAM.​
     #[arg(short, long)]
     sequential: bool,
@@ -91,13 +95,24 @@ fn main() -> Result<()> {
         builder = builder.seed(seed);
     }
 
+    macro_rules! build_with_seeds {
+        ($d:ty) => {
+            match args.hash_type {
+                None => build::<$d>(&args, builder.clone()),
+                Some(HashTypes::U8) => build_signed::<$d, u8>(&args, builder.clone()),
+                Some(HashTypes::U16) => build_signed::<$d, u16>(&args, builder.clone()),
+                Some(HashTypes::U32) => build_signed::<$d, u32>(&args, builder.clone()),
+                Some(HashTypes::U64) => build_signed::<$d, u64>(&args, builder.clone()),
+            }
+        };
+    }
     // The default number of bits of a seed is at most 8, so seeds are
     // stored in bytes unless more bits are requested
     let build = || {
         if args.seed_bits.is_some_and(|b| b > 8) {
-            main_with_types::<BitFieldVec<Box<[usize]>>>(&args, builder.clone())
+            build_with_seeds!(BitFieldVec<Box<[usize]>>)
         } else {
-            main_with_types::<Box<[u8]>>(&args, builder.clone())
+            build_with_seeds!(Box<[u8]>)
         }
     };
     match args.threads {
@@ -125,7 +140,26 @@ fn store<F: Serialize + TryIntoUnaligned<Unaligned: Serialize>>(
     Ok(())
 }
 
-fn main_with_types<D: SeedStoreBuild + TryIntoUnaligned + Send + Sync>(
+/// Reads all the keys of a file into a single concatenated buffer, returning
+/// the buffer and the offsets of the keys, so that the caller can build a
+/// `Vec<&str>` of slices into it for cache-friendly access during hashing;
+/// at most `n` keys are read, and if `n` is provided exactly `n` keys must
+/// be read.
+fn read_keys(filename: &str, n: Option<usize>) -> Result<(String, Vec<usize>)> {
+    let (buffer, offsets) = read_concat_lines(filename, n.unwrap_or(usize::MAX))?;
+    if let Some(n) = n {
+        if offsets.len() - 1 != n {
+            bail!(
+                "key count mismatch: read {} keys, expected {n}",
+                offsets.len() - 1
+            );
+        }
+    }
+    Ok((buffer, offsets))
+}
+
+/// Builds a function with seeds stored in `D`.
+fn build<D: SeedStoreBuild + TryIntoUnaligned + Send + Sync>(
     args: &Args,
     builder: PHastRBuilder,
 ) -> Result<()>
@@ -137,28 +171,16 @@ where
     pl.log_interval(args.log.log_interval);
 
     if let Some(filename) = &args.filename {
-        let n = args.n.unwrap_or(usize::MAX);
         if args.sequential {
             let func = <PHastR<str, D>>::try_new_with_builder(
-                DekoBufLineLender::from_path(filename)?.take(n),
+                DekoBufLineLender::from_path(filename)?.take(args.n.unwrap_or(usize::MAX)),
                 builder,
                 &mut pl,
             )?;
             store(func, &args.func, args.unaligned)
         } else {
-            // Read all keys into a single concatenated buffer, then build
-            // a Vec<&str> of slices into it for cache-friendly access
-            // during hashing
-            let (buffer, offsets) = read_concat_lines(filename, n)?;
+            let (buffer, offsets) = read_keys(filename, args.n)?;
             let keys = str_slice_from_offsets(&buffer, &offsets);
-            if let Some(n_hint) = args.n {
-                if keys.len() != n_hint {
-                    bail!(
-                        "key count mismatch: read {} keys, expected {n_hint}",
-                        keys.len()
-                    );
-                }
-            }
             let func = <PHastR<str, D>>::try_par_new_with_builder(&keys, builder, &mut pl)?;
             store(func, &args.func, args.unaligned)
         }
@@ -174,6 +196,58 @@ where
         } else {
             let keys: Vec<usize> = (0..n).collect();
             let func = <PHastR<usize, D>>::try_par_new_with_builder(&keys, builder, &mut pl)?;
+            store(func, &args.func, args.unaligned)
+        }
+    }
+}
+
+/// Builds a function with seeds stored in `D`, signed with hashes of type `W`.
+fn build_signed<D: SeedStoreBuild + TryIntoUnaligned + Send + Sync, W: Word + Send + Sync>(
+    args: &Args,
+    builder: PHastRBuilder,
+) -> Result<()>
+where
+    u64: PrimitiveNumberAs<W>,
+    SignedFunc<PHastR<str, D>, Box<[W]>>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    SignedFunc<PHastR<usize, D>, Box<[W]>>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+{
+    let mut pl = ProgressLogger::default();
+    pl.log_interval(args.log.log_interval);
+
+    if let Some(filename) = &args.filename {
+        if args.sequential {
+            // The keys are read twice: to build the function, and to sign it
+            let n = args.n.unwrap_or(usize::MAX);
+            let func = <SignedFunc<PHastR<str, D>, Box<[W]>>>::try_new_with_builder(
+                FromIntoFallibleLenderFactory::new(|| {
+                    DekoBufLineLender::from_path(filename).map(|keys| keys.take(n))
+                })?,
+                builder,
+                &mut pl,
+            )?;
+            store(func, &args.func, args.unaligned)
+        } else {
+            let (buffer, offsets) = read_keys(filename, args.n)?;
+            let keys = str_slice_from_offsets(&buffer, &offsets);
+            let func = <SignedFunc<PHastR<str, D>, Box<[W]>>>::try_par_new_with_builder(
+                &keys, builder, &mut pl,
+            )?;
+            store(func, &args.func, args.unaligned)
+        }
+    } else {
+        let n = args.n.unwrap();
+        if args.sequential {
+            let func = <SignedFunc<PHastR<usize, D>, Box<[W]>>>::try_new_with_builder(
+                FromCloneableIntoIterator::new(0..n),
+                builder,
+                &mut pl,
+            )?;
+            store(func, &args.func, args.unaligned)
+        } else {
+            let keys: Vec<usize> = (0..n).collect();
+            let func = <SignedFunc<PHastR<usize, D>, Box<[W]>>>::try_par_new_with_builder(
+                &keys, builder, &mut pl,
+            )?;
             store(func, &args.func, args.unaligned)
         }
     }

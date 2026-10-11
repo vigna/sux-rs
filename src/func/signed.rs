@@ -24,19 +24,23 @@
 //! false positives). Per-inner-type `get` methods are provided via
 //! monomorphized `impl` blocks.
 //!
-//! Use concrete types directly, like `SignedFunc<LcpMmphfStr, Box<[u64]>>` or
-//! `SignedFunc<LcpMmphfInt<u64>, BitFieldVec<Box<[usize]>>>`. For each such
-//! concrete type, this module provides `try_new`/`try_par_new` constructors
-//! (and their `_with_builder` variants), plus `get` and `get_by_sig` methods;
+//! Use concrete types directly, like `SignedFunc<LcpMmphfStr, Box<[u64]>>`,
+//! `SignedFunc<LcpMmphfInt<u64>, BitFieldVec<Box<[usize]>>>`, or
+//! `SignedFunc<PHastR<str>, Box<[u16]>>`. For each such concrete type, this
+//! module provides `try_new`/`try_par_new` constructors (and their
+//! `_with_builder` variants), plus `get` and (except for [`PHastR`])
+//! `get_by_sig` methods;
 //! [`SignedFunc::from_parts`] assembles an instance from an inner function
 //! and a hash store. All `try_*` constructors require the `rayon` feature.
 
 use std::borrow::Borrow;
 
 use crate::bits::{BitFieldVec, BitFieldVecU};
+use crate::func::PHastR;
 use crate::func::VFunc;
 use crate::func::lcp_mmphf::{BitPrefix, IntBitPrefix, LcpMmphf, LcpMmphfInt};
 use crate::func::lcp2_mmphf::{Lcp2Mmphf, Lcp2MmphfInt};
+use crate::func::phast_r::{LevelParams, SeedStore};
 use crate::func::shard_edge::ShardEdge;
 use crate::traits::Backend;
 use crate::utils::*;
@@ -115,21 +119,22 @@ where
 ///
 /// This trait is not intended to be implemented by users; it is an internal
 /// abstraction to allow the signed wrappers to work with different static
-/// functions. It provides access to the seed, [signature type],
-/// [`ShardEdge`], and key count, so that [`SignedFunc`] can verify hashes
-/// without knowing which specific type of function it wraps.
+/// functions. It provides access to the seed, [signature type], verification
+/// hash, and key count, so that [`SignedFunc`] can verify hashes without
+/// knowing which specific type of function it wraps.
 ///
 /// [signature type]: Sig
 pub trait SignableFunc {
     /// The signature type used by the inner function (e.g., `[u64; 2]`).
     type Sig: Sig;
-    /// The [`ShardEdge`] used by the inner function.
-    type Edge: ShardEdge<Self::Sig, 3>;
 
     /// Returns the seed used to hash keys into signatures.
     fn seed(&self) -> u64;
-    /// Returns a reference to the [`ShardEdge`] used by the inner function.
-    fn shard_edge(&self) -> &Self::Edge;
+    /// Returns the verification hash of a signature.
+    ///
+    /// Functions using a [`ShardEdge`] return its
+    /// [remixed hash](ShardEdge::remixed_hash).
+    fn remixed_hash(&self, sig: Self::Sig) -> u64;
     /// Returns the number of keys stored in the function.
     fn len(&self) -> usize;
     /// Returns whether the function contains no keys.
@@ -149,15 +154,14 @@ impl<
 > SignableFunc for LcpMmphfInt<K, D, S0, E0, S1, E1>
 {
     type Sig = S0;
-    type Edge = E0;
 
     #[inline(always)]
     fn seed(&self) -> u64 {
         self.lcp_len_offset.seed
     }
     #[inline(always)]
-    fn shard_edge(&self) -> &E0 {
-        &self.lcp_len_offset.shard_edge
+    fn remixed_hash(&self, sig: S0) -> u64 {
+        self.lcp_len_offset.shard_edge.remixed_hash(sig)
     }
     #[inline(always)]
     fn len(&self) -> usize {
@@ -175,15 +179,14 @@ impl<
 > SignableFunc for LcpMmphf<K, D, S0, E0, S1, E1>
 {
     type Sig = S0;
-    type Edge = E0;
 
     #[inline(always)]
     fn seed(&self) -> u64 {
         self.lcp_len_offset.seed
     }
     #[inline(always)]
-    fn shard_edge(&self) -> &E0 {
-        &self.lcp_len_offset.shard_edge
+    fn remixed_hash(&self, sig: S0) -> u64 {
+        self.lcp_len_offset.shard_edge.remixed_hash(sig)
     }
     #[inline(always)]
     fn len(&self) -> usize {
@@ -202,15 +205,14 @@ impl<
 > SignableFunc for Lcp2MmphfInt<K, D, S0, E0, F0, S1, E1>
 {
     type Sig = S0;
-    type Edge = E0;
 
     #[inline(always)]
     fn seed(&self) -> u64 {
         self.lcp_freq_len_offset.seed
     }
     #[inline(always)]
-    fn shard_edge(&self) -> &E0 {
-        &self.lcp_freq_len_offset.shard_edge
+    fn remixed_hash(&self, sig: S0) -> u64 {
+        self.lcp_freq_len_offset.shard_edge.remixed_hash(sig)
     }
     #[inline(always)]
     fn len(&self) -> usize {
@@ -229,15 +231,14 @@ impl<
 > SignableFunc for Lcp2Mmphf<K, D, S0, E0, F0, S1, E1>
 {
     type Sig = S0;
-    type Edge = E0;
 
     #[inline(always)]
     fn seed(&self) -> u64 {
         self.lcp_freq_len_offset.seed
     }
     #[inline(always)]
-    fn shard_edge(&self) -> &E0 {
-        &self.lcp_freq_len_offset.shard_edge
+    fn remixed_hash(&self, sig: S0) -> u64 {
+        self.lcp_freq_len_offset.shard_edge.remixed_hash(sig)
     }
     #[inline(always)]
     fn len(&self) -> usize {
@@ -247,19 +248,42 @@ impl<
 
 impl<K: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableFunc for VFunc<K, D, S, E> {
     type Sig = S;
-    type Edge = E;
 
     #[inline(always)]
     fn seed(&self) -> u64 {
         self.seed
     }
     #[inline(always)]
-    fn shard_edge(&self) -> &E {
-        &self.shard_edge
+    fn remixed_hash(&self, sig: S) -> u64 {
+        self.shard_edge.remixed_hash(sig)
     }
     #[inline(always)]
     fn len(&self) -> usize {
         self.num_keys
+    }
+}
+
+impl<K: ?Sized, D, P, R> SignableFunc for PHastR<K, D, P, R> {
+    type Sig = [u64; 1];
+
+    #[inline(always)]
+    fn seed(&self) -> u64 {
+        self.seed
+    }
+    /// Returns a remix of the signature.
+    ///
+    /// The signature determines the output of a key of the first level (its
+    /// upper bits select the bucket and the slice, its lower bits the offset
+    /// in the slice), so a key outside the original set that is mapped to
+    /// the output of a key tends to agree with its signature on those bits:
+    /// storing the signature itself would increase the false-positive rate.
+    #[inline(always)]
+    fn remixed_hash(&self, sig: [u64; 1]) -> u64 {
+        crate::func::mix64(sig[0])
+    }
+    #[inline(always)]
+    fn len(&self) -> usize {
+        PHastR::len(self)
     }
 }
 
@@ -279,7 +303,10 @@ impl<K: ?Sized, D: SliceByValue, S: Sig, E: ShardEdge<S, 3>> SignableFunc for VF
 /// no larger hash width can remove. `FuseLge3FullSigs` computes the edge from
 /// the other signature word as well, so keys sharing the hash word usually land
 /// in different slots, avoiding that collision (the verification hash itself
-/// stays 64-bit either way).
+/// stays 64-bit either way). For a [`PHastR`], the verification hash is
+/// `mix64` of the 64-bit signature that determines the output of the keys of
+/// the first level, so the same irreducible false positive happens for keys
+/// sharing the signature.
 ///
 /// Instances of this structure are immutable; they are built using [`try_new`]
 /// or one of its variants, and can be serialized using [ε-serde] or [`serde`].
@@ -326,9 +353,7 @@ impl<F: SignableFunc, H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::
     /// given index and signature.
     #[inline(always)]
     fn verify<V: PrimitiveNumber>(&self, index: V, sig: F::Sig) -> Option<V> {
-        let expected = self
-            .hashes
-            .truncate_hash(self.func.shard_edge().remixed_hash(sig));
+        let expected = self.hashes.truncate_hash(self.func.remixed_hash(sig));
         let stored = self.hashes.get_value(index.as_to::<usize>())?;
         if stored == expected {
             Some(index)
@@ -482,6 +507,28 @@ where
     }
 }
 
+// ── PHastR get ────────────────────────────────────────────────
+
+impl<
+    K: ?Sized + ToSig<[u64; 1]>,
+    D: SeedStore,
+    P: AsRef<[LevelParams]>,
+    R: SliceByValue<Value = usize>,
+    H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::Value>,
+> SignedFunc<PHastR<K, D, P, R>, H>
+{
+    /// Returns the value associated with the given key, if the key was in
+    /// the list provided at construction time; otherwise, returns `None`.
+    ///
+    /// False positives happen with probability defined at construction time.
+    #[inline(always)]
+    pub fn get(&self, key: impl Borrow<K>) -> Option<usize> {
+        let key = key.borrow();
+        let sig = K::to_sig(key, self.func.seed);
+        self.verify(self.func.get_by_sig(key, sig), sig)
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Constructors: helper functions
 // (type aliases section removed: use SignedFunc<LcpMmphfStr, Box<[u64]>> etc. directly)
@@ -491,8 +538,10 @@ where
 mod build {
     use super::*;
     use crate::func::VBuilder;
+    use crate::func::phast_r::{PHastRBuilder, SeedStoreBuild};
     use crate::utils::FallibleRewindableLender;
     use anyhow::Result;
+    use atomic_primitive::{AtomicPrimitive, PrimitiveAtomicUnsigned};
     use core::error::Error;
     use dsi_progress_logger::ProgressLog;
     use lender::*;
@@ -504,14 +553,15 @@ mod build {
     ///
     /// Iterates the first `n` elements of `keys`, converting each borrowed
     /// key to a signature via the `to_sig` closure and then computing the
-    /// remixed hash through `shard_edge`. The resulting full-width hashes
-    /// are stored in a newly allocated boxed slice.
+    /// [verification hash](SignableFunc::remixed_hash) through `func`. The
+    /// resulting full-width hashes are stored in a newly allocated boxed
+    /// slice.
     ///
     /// # Errors
     ///
     /// Returns an error if the lender yields fewer than `n` elements.
-    fn fill_hashes<W, S, E, L>(
-        shard_edge: &E,
+    fn fill_hashes<W, S, F, L>(
+        func: &F,
         seed: u64,
         n: usize,
         mut keys: L,
@@ -521,7 +571,7 @@ mod build {
     where
         W: Word,
         S: Sig,
-        E: ShardEdge<S, 3>,
+        F: SignableFunc<Sig = S>,
         u64: PrimitiveNumberAs<W>,
         L: FallibleLender<Error: std::error::Error + Send + Sync + 'static>,
         for<'lend> L: FallibleLending<'lend>,
@@ -535,7 +585,7 @@ mod build {
             let key = keys.next()?.ok_or_else(|| {
                 anyhow::anyhow!("expected {n} keys while signing, but got {index}")
             })?;
-            *hash = shard_edge.remixed_hash(to_sig(&key, seed)).as_to::<W>();
+            *hash = func.remixed_hash(to_sig(&key, seed)).as_to::<W>();
             pl.light_update();
         }
         pl.done();
@@ -547,17 +597,17 @@ mod build {
     ///
     /// Iterates the first `n` elements of `keys`, converting each borrowed
     /// key to a signature via the `to_sig` closure and then computing the
-    /// remixed hash through `shard_edge`. The hash is truncated using the
-    /// [`BitFieldVec`]'s stored mask and stored in a [`BitFieldVec`] of the
-    /// given `hash_width`.
+    /// [verification hash](SignableFunc::remixed_hash) through `func`. The
+    /// hash is truncated using the [`BitFieldVec`]'s stored mask and stored
+    /// in a [`BitFieldVec`] of the given `hash_width`.
     ///
     /// # Errors
     ///
     /// Returns an error if the lender yields fewer than `n` elements.
     ///
     /// [`BitFieldVec<Box<[H]>>`]: BitFieldVec
-    fn fill_bit_hashes<H, S, E, L>(
-        shard_edge: &E,
+    fn fill_bit_hashes<H, S, F, L>(
+        func: &F,
         seed: u64,
         n: usize,
         hash_width: usize,
@@ -568,7 +618,7 @@ mod build {
     where
         H: Word,
         S: Sig,
-        E: ShardEdge<S, 3>,
+        F: SignableFunc<Sig = S>,
         u64: PrimitiveNumberAs<H>,
         L: FallibleLender<Error: std::error::Error + Send + Sync + 'static>,
         for<'lend> L: FallibleLending<'lend>,
@@ -582,7 +632,7 @@ mod build {
             let key = keys.next()?.ok_or_else(|| {
                 anyhow::anyhow!("expected {n} keys while signing, but got {index}")
             })?;
-            let h = hashes.truncate_hash(shard_edge.remixed_hash(to_sig(&key, seed)));
+            let h = hashes.truncate_hash(func.remixed_hash(to_sig(&key, seed)));
             hashes.set_value(index, h);
             pl.light_update();
         }
@@ -593,15 +643,15 @@ mod build {
     /// Fills a `Box<[W]>` hash array from a key slice.
     ///
     /// Iterates the first `n` elements of `keys`, converting each key to a
-    /// signature via [`ToSig::to_sig`] and then computing the remixed hash
-    /// through `shard_edge`. The resulting full-width hashes are stored in a
-    /// newly allocated boxed slice.
+    /// signature via [`ToSig::to_sig`] and then computing the [verification
+    /// hash](SignableFunc::remixed_hash) through `func`. The resulting
+    /// full-width hashes are stored in a newly allocated boxed slice.
     ///
     /// # Panics
     ///
     /// Panics if `keys.len() < n`.
-    fn fill_hashes_from_slice<B, K, W, S, E>(
-        shard_edge: &E,
+    fn fill_hashes_from_slice<B, K, W, S, F>(
+        func: &F,
         seed: u64,
         n: usize,
         keys: &[B],
@@ -612,7 +662,7 @@ mod build {
         K: ?Sized + ToSig<S>,
         W: Word + Send + Sync,
         S: Sig,
-        E: ShardEdge<S, 3> + Sync,
+        F: SignableFunc<Sig = S> + Sync,
         u64: PrimitiveNumberAs<W>,
     {
         use rayon::prelude::*;
@@ -628,8 +678,7 @@ mod build {
             .enumerate()
             .for_each(|(i, key)| unsafe {
                 sync_hashes[i].set(
-                    shard_edge
-                        .remixed_hash(K::to_sig(key.borrow(), seed))
+                    func.remixed_hash(K::to_sig(key.borrow(), seed))
                         .as_to::<W>(),
                 );
             });
@@ -642,17 +691,18 @@ mod build {
     /// slice.
     ///
     /// Iterates the first `n` elements of `keys`, converting each key to a
-    /// signature via [`ToSig::to_sig`] and then computing the remixed hash
-    /// through `shard_edge`. The hash is truncated using the [`BitFieldVec`]'s
-    /// stored mask and stored in a [`BitFieldVec`] of the given `hash_width`.
+    /// signature via [`ToSig::to_sig`] and then computing the [verification
+    /// hash](SignableFunc::remixed_hash) through `func`. The hash is
+    /// truncated using the [`BitFieldVec`]'s stored mask and stored in a
+    /// [`BitFieldVec`] of the given `hash_width`.
     ///
     /// # Panics
     ///
     /// Panics if `keys.len() < n`.
     ///
     /// [`BitFieldVec<Box<[H]>>`]: BitFieldVec
-    fn fill_bit_hashes_from_slice<B, K, H, S, E>(
-        shard_edge: &E,
+    fn fill_bit_hashes_from_slice<B, K, H, S, F>(
+        func: &F,
         seed: u64,
         n: usize,
         hash_width: usize,
@@ -664,7 +714,7 @@ mod build {
         K: ?Sized + ToSig<S>,
         H: Word,
         S: Sig,
-        E: ShardEdge<S, 3>,
+        F: SignableFunc<Sig = S>,
         u64: PrimitiveNumberAs<H>,
     {
         pl.item_name("key");
@@ -673,7 +723,7 @@ mod build {
         pl.start("Signing keys...");
         let mut hashes = BitFieldVec::<Box<[H]>>::new_padded(hash_width, n);
         for (i, key) in keys[..n].iter().enumerate() {
-            let h = hashes.truncate_hash(shard_edge.remixed_hash(K::to_sig(key.borrow(), seed)));
+            let h = hashes.truncate_hash(func.remixed_hash(K::to_sig(key.borrow(), seed)));
             hashes.set_value(i, h);
             pl.light_update();
         }
@@ -825,7 +875,7 @@ mod build {
                 shard_pl.log_level(log::Level::Info);
                 shard_pl.start("Signing shards...");
                 let sync_hashes = hashes.as_sync_slice();
-                let shard_edge = func.shard_edge();
+                let shard_edge = &func.shard_edge;
                 shards.into_par_iter().for_each(|shard| {
                     for sig_val in shard.iter() {
                         unsafe {
@@ -948,8 +998,7 @@ mod build {
                 keys, &values, builder, pl,
             )?;
             pl.push_log_target(" ▸ hashes");
-            let hashes =
-                fill_hashes_from_slice(func.shard_edge(), func.seed(), func.len(), keys, pl);
+            let hashes = fill_hashes_from_slice(&func, func.seed(), func.len(), keys, pl);
             pl.pop_log_target();
             Ok(SignedFunc { func, hashes })
         }
@@ -1103,7 +1152,7 @@ mod build {
             let num_keys = func.len();
 
             pl.push_log_target(" ▸ hashes");
-            let num_shards = 1usize << func.shard_edge().shard_high_bits();
+            let num_shards = 1usize << func.shard_edge.shard_high_bits();
             pl.item_name("shard");
             pl.expected_updates(Some(num_shards));
             pl.log_level(log::Level::Info);
@@ -1113,7 +1162,7 @@ mod build {
             for shard in store.iter() {
                 for sig_val in shard.iter() {
                     let pos = sig_val.val;
-                    let hash = hashes.truncate_hash(func.shard_edge().remixed_hash(sig_val.sig));
+                    let hash = hashes.truncate_hash(func.shard_edge.remixed_hash(sig_val.sig));
                     hashes.set_value(pos, hash);
                 }
                 pl.update();
@@ -1234,14 +1283,8 @@ mod build {
                 keys, &values, builder, pl,
             )?;
             pl.push_log_target(" ▸ hashes");
-            let hashes = fill_bit_hashes_from_slice(
-                func.shard_edge(),
-                func.seed(),
-                func.len(),
-                hash_width,
-                keys,
-                pl,
-            );
+            let hashes =
+                fill_bit_hashes_from_slice(&func, func.seed(), func.len(), hash_width, keys, pl);
             pl.pop_log_target();
             Ok(SignedFunc { func, hashes })
         }
@@ -1339,7 +1382,7 @@ mod build {
             let mut keys = keys.rewind()?;
             pl.push_log_target(" ▸ hashes");
             let hashes = fill_hashes(
-                func.shard_edge(),
+                &func,
                 func.seed(),
                 n,
                 &mut keys,
@@ -1429,13 +1472,8 @@ mod build {
         ) -> Result<Self> {
             let func = LcpMmphfInt::try_par_new_inner(keys, builder, pl)?;
             pl.push_log_target(" ▸ hashes");
-            let hashes = fill_hashes_from_slice::<K, K, W, S0, E0>(
-                func.shard_edge(),
-                func.seed(),
-                keys.len(),
-                keys,
-                pl,
-            );
+            let hashes =
+                fill_hashes_from_slice::<K, K, W, S0, _>(&func, func.seed(), keys.len(), keys, pl);
             pl.pop_log_target();
             Ok(Self { func, hashes })
         }
@@ -1535,7 +1573,7 @@ mod build {
             let mut keys = keys.rewind()?;
             pl.push_log_target(" ▸ hashes");
             let hashes = fill_hashes(
-                func.shard_edge(),
+                &func,
                 func.seed(),
                 n,
                 &mut keys,
@@ -1634,13 +1672,8 @@ mod build {
         {
             let func = LcpMmphf::try_par_new_inner(keys, builder, pl)?;
             pl.push_log_target(" ▸ hashes");
-            let hashes = fill_hashes_from_slice::<B, K, W, S0, E0>(
-                func.shard_edge(),
-                func.seed(),
-                keys.len(),
-                keys,
-                pl,
-            );
+            let hashes =
+                fill_hashes_from_slice::<B, K, W, S0, _>(&func, func.seed(), keys.len(), keys, pl);
             pl.pop_log_target();
             Ok(Self { func, hashes })
         }
@@ -1743,7 +1776,7 @@ mod build {
             let mut keys = keys.rewind()?;
             pl.push_log_target(" ▸ hashes");
             let hashes = fill_hashes(
-                func.shard_edge(),
+                &func,
                 func.seed(),
                 n,
                 &mut keys,
@@ -1834,13 +1867,8 @@ mod build {
         ) -> Result<Self> {
             let func = Lcp2MmphfInt::try_par_new_inner(keys, builder, pl)?;
             pl.push_log_target(" ▸ hashes");
-            let hashes = fill_hashes_from_slice::<K, K, W, S0, E0>(
-                func.shard_edge(),
-                func.seed(),
-                keys.len(),
-                keys,
-                pl,
-            );
+            let hashes =
+                fill_hashes_from_slice::<K, K, W, S0, _>(&func, func.seed(), keys.len(), keys, pl);
             pl.pop_log_target();
             Ok(Self { func, hashes })
         }
@@ -1945,7 +1973,7 @@ mod build {
             let mut keys = keys.rewind()?;
             pl.push_log_target(" ▸ hashes");
             let hashes = fill_hashes(
-                func.shard_edge(),
+                &func,
                 func.seed(),
                 n,
                 &mut keys,
@@ -2044,13 +2072,8 @@ mod build {
         {
             let func = Lcp2Mmphf::try_par_new_inner(keys, builder, pl)?;
             pl.push_log_target(" ▸ hashes");
-            let hashes = fill_hashes_from_slice::<B, K, W, S0, E0>(
-                func.shard_edge(),
-                func.seed(),
-                keys.len(),
-                keys,
-                pl,
-            );
+            let hashes =
+                fill_hashes_from_slice::<B, K, W, S0, _>(&func, func.seed(), keys.len(), keys, pl);
             pl.pop_log_target();
             Ok(Self { func, hashes })
         }
@@ -2154,7 +2177,7 @@ mod build {
             let mut keys = keys.rewind()?;
             pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes(
-                func.shard_edge(),
+                &func,
                 func.seed(),
                 n,
                 hash_width,
@@ -2254,8 +2277,8 @@ mod build {
             validate_hash_width::<H>(hash_width)?;
             let func = LcpMmphfInt::try_par_new_inner(keys, builder, pl)?;
             pl.push_log_target(" ▸ hashes");
-            let hashes = fill_bit_hashes_from_slice::<K, K, H, S0, E0>(
-                func.shard_edge(),
+            let hashes = fill_bit_hashes_from_slice::<K, K, H, S0, _>(
+                &func,
                 func.seed(),
                 keys.len(),
                 hash_width,
@@ -2370,7 +2393,7 @@ mod build {
             let mut keys = keys.rewind()?;
             pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes(
-                func.shard_edge(),
+                &func,
                 func.seed(),
                 n,
                 hash_width,
@@ -2482,8 +2505,8 @@ mod build {
             validate_hash_width::<H>(hash_width)?;
             let func = LcpMmphf::try_par_new_inner(keys, builder, pl)?;
             pl.push_log_target(" ▸ hashes");
-            let hashes = fill_bit_hashes_from_slice::<B, K, H, S0, E0>(
-                func.shard_edge(),
+            let hashes = fill_bit_hashes_from_slice::<B, K, H, S0, _>(
+                &func,
                 func.seed(),
                 keys.len(),
                 hash_width,
@@ -2601,7 +2624,7 @@ mod build {
             let mut keys = keys.rewind()?;
             pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes(
-                func.shard_edge(),
+                &func,
                 func.seed(),
                 n,
                 hash_width,
@@ -2697,8 +2720,8 @@ mod build {
             validate_hash_width::<H>(hash_width)?;
             let func = Lcp2MmphfInt::try_par_new_inner(keys, builder, pl)?;
             pl.push_log_target(" ▸ hashes");
-            let hashes = fill_bit_hashes_from_slice::<K, K, H, S0, E0>(
-                func.shard_edge(),
+            let hashes = fill_bit_hashes_from_slice::<K, K, H, S0, _>(
+                &func,
                 func.seed(),
                 keys.len(),
                 hash_width,
@@ -2816,7 +2839,7 @@ mod build {
             let mut keys = keys.rewind()?;
             pl.push_log_target(" ▸ hashes");
             let hashes = fill_bit_hashes(
-                func.shard_edge(),
+                &func,
                 func.seed(),
                 n,
                 hash_width,
@@ -2922,8 +2945,8 @@ mod build {
             validate_hash_width::<H>(hash_width)?;
             let func = Lcp2Mmphf::try_par_new_inner(keys, builder, pl)?;
             pl.push_log_target(" ▸ hashes");
-            let hashes = fill_bit_hashes_from_slice::<B, K, H, S0, E0>(
-                func.shard_edge(),
+            let hashes = fill_bit_hashes_from_slice::<B, K, H, S0, _>(
+                &func,
                 func.seed(),
                 keys.len(),
                 hash_width,
@@ -2932,6 +2955,446 @@ mod build {
             );
             pl.pop_log_target();
             Ok(Self { func, hashes })
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Constructors: SignedFunc<PHastR<...>>
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// Signs the keys of a lender for a [`PHastR`], passing to `set` the
+    /// output of each key and the verification hash of its signature.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the lender yields fewer keys than the function
+    /// contains.
+    fn sign_phast_r<K, D, B, L>(
+        func: &PHastR<K, D>,
+        mut keys: L,
+        mut set: impl FnMut(usize, u64),
+        pl: &mut impl ProgressLog,
+    ) -> Result<()>
+    where
+        K: ?Sized + ToSig<[u64; 1]>,
+        D: SeedStore,
+        B: ?Sized + Borrow<K>,
+        L: FallibleLender<Error: Error + Send + Sync + 'static>
+            + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+    {
+        let n = func.len();
+        pl.item_name("key");
+        pl.expected_updates(Some(n));
+        pl.log_level(log::Level::Info);
+        pl.start("Signing keys...");
+        for index in 0..n {
+            let key = keys.next()?.ok_or_else(|| {
+                anyhow::anyhow!("expected {n} keys while signing, but got {index}")
+            })?;
+            let key: &K = key.borrow();
+            let sig = K::to_sig(key, func.seed());
+            set(func.get_by_sig(key, sig), func.remixed_hash(sig));
+            pl.light_update();
+        }
+        pl.done();
+        Ok(())
+    }
+
+    /// Signs the keys of a slice for a [`PHastR`] in parallel, passing to
+    /// `set` the output of each key and the verification hash of its
+    /// signature.
+    ///
+    /// The outputs of the keys are distinct, so `set` can write them
+    /// concurrently.
+    fn par_sign_phast_r<K, D, B>(
+        func: &PHastR<K, D>,
+        keys: &[B],
+        set: impl Fn(usize, u64) + Sync,
+        pl: &mut impl ProgressLog,
+    ) where
+        K: ?Sized + ToSig<[u64; 1]> + Sync,
+        D: SeedStore + Sync,
+        B: Borrow<K> + Sync,
+    {
+        use rayon::prelude::*;
+        pl.item_name("key");
+        pl.expected_updates(Some(keys.len()));
+        pl.log_level(log::Level::Info);
+        pl.start("Signing keys...");
+        keys.par_iter().for_each(|key| {
+            let key: &K = key.borrow();
+            let sig = K::to_sig(key, func.seed());
+            set(func.get_by_sig(key, sig), func.remixed_hash(sig));
+        });
+        pl.update_with_count(keys.len());
+        pl.done();
+    }
+
+    impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild, W: Word> SignedFunc<PHastR<K, D>, Box<[W]>>
+    where
+        u64: PrimitiveNumberAs<W>,
+    {
+        /// Builds a [`SignedFunc`] wrapping a [`PHastR`] from keys using
+        /// default [`PHastRBuilder`] settings.
+        ///
+        /// Full-word hashes are stored for verification, giving a
+        /// false-positive rate of 2<sup>−min(`W::BITS`, 64)</sup>.
+        ///
+        /// This is a convenience wrapper around [`try_new_with_builder`]
+        /// with `PHastRBuilder::default()`.
+        ///
+        /// If keys are available as a slice, [`try_par_new`] parallelizes
+        /// the construction.
+        ///
+        /// * `keys` - a [`FallibleRewindableLender`]. The [`lenders`]
+        ///   module provides easy ways to build such lenders.
+        ///
+        /// # Examples
+        ///
+        /// ```rust
+        /// # #[cfg(feature = "rayon")]
+        /// # fn main() -> anyhow::Result<()> {
+        /// # use dsi_progress_logger::no_logging;
+        /// # use sux::utils::FromCloneableIntoIterator;
+        /// use sux::func::{PHastR, SignedFunc};
+        /// type SFunc = SignedFunc<PHastR<usize>, Box<[u16]>>;
+        /// let func = SFunc::try_new(FromCloneableIntoIterator::new(0..100_usize), no_logging![])?;
+        ///
+        /// let mut seen = vec![false; 100];
+        /// for i in 0..100 {
+        ///     let v = func.get(i).unwrap();
+        ///     assert!(!seen[v]);
+        ///     seen[v] = true;
+        /// }
+        /// # Ok(())
+        /// # }
+        /// # #[cfg(not(feature = "rayon"))]
+        /// # fn main() {}
+        /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
+        /// [`lenders`]: crate::utils::lenders
+        pub fn try_new<B: ?Sized + Borrow<K>>(
+            keys: impl FallibleRewindableLender<
+                RewindError: Error + Send + Sync + 'static,
+                Error: Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+            pl: &mut impl ProgressLog,
+        ) -> Result<Self> {
+            Self::try_new_with_builder(keys, PHastRBuilder::default(), pl)
+        }
+
+        /// Builds a [`SignedFunc`] wrapping a [`PHastR`] from keys using the
+        /// given [`PHastRBuilder`] configuration.
+        ///
+        /// Full-word hashes are stored for verification, giving a
+        /// false-positive rate of 2<sup>−min(`W::BITS`, 64)</sup>.
+        ///
+        /// After building the function, the lender is rewound, and the keys
+        /// are read again to compute their hashes. The builder controls
+        /// construction parameters such as [offline mode].
+        ///
+        /// See also [`try_par_new_with_builder`] for parallel construction
+        /// from slices.
+        ///
+        /// * `keys` - a [`FallibleRewindableLender`]. The [`lenders`]
+        ///   module provides easy ways to build such lenders.
+        ///
+        /// [offline mode]: PHastRBuilder::offline
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`lenders`]: crate::utils::lenders
+        pub fn try_new_with_builder<B: ?Sized + Borrow<K>>(
+            mut keys: impl FallibleRewindableLender<
+                RewindError: Error + Send + Sync + 'static,
+                Error: Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+            builder: PHastRBuilder,
+            pl: &mut impl ProgressLog,
+        ) -> Result<Self> {
+            let func = <PHastR<K, D>>::try_new_with_builder(&mut keys, builder, pl)?;
+            let keys = keys.rewind()?;
+            let mut hashes = vec![W::ZERO; func.len()].into_boxed_slice();
+            pl.push_log_target(" ▸ hashes");
+            sign_phast_r(&func, keys, |i, h| hashes[i] = h.as_to::<W>(), pl)?;
+            pl.pop_log_target();
+            Ok(SignedFunc { func, hashes })
+        }
+
+        /// Builds a [`SignedFunc`] wrapping a [`PHastR`] from in-memory key
+        /// slices, parallelizing construction and signing with rayon, using
+        /// default [`PHastRBuilder`] settings.
+        ///
+        /// Full-word hashes are stored for verification, giving a
+        /// false-positive rate of 2<sup>−min(`W::BITS`, 64)</sup>.
+        ///
+        /// This is a convenience wrapper around
+        /// [`try_par_new_with_builder`] with `PHastRBuilder::default()`.
+        ///
+        /// If keys are produced sequentially (e.g., from a file), use
+        /// [`try_new`] instead.
+        ///
+        /// # Examples
+        ///
+        /// ```rust
+        /// # #[cfg(feature = "rayon")]
+        /// # fn main() -> anyhow::Result<()> {
+        /// # use dsi_progress_logger::no_logging;
+        /// use sux::func::{PHastR, SignedFunc};
+        /// type SFunc = SignedFunc<PHastR<usize>, Box<[u16]>>;
+        /// let keys: Vec<usize> = (0..100).collect();
+        /// let func = SFunc::try_par_new(&keys, no_logging![])?;
+        ///
+        /// let mut seen = vec![false; 100];
+        /// for i in 0..100 {
+        ///     let v = func.get(i).unwrap();
+        ///     assert!(!seen[v]);
+        ///     seen[v] = true;
+        /// }
+        /// # Ok(())
+        /// # }
+        /// # #[cfg(not(feature = "rayon"))]
+        /// # fn main() {}
+        /// ```
+        ///
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`try_new`]: Self::try_new
+        pub fn try_par_new<B: Borrow<K> + Sync>(
+            keys: &[B],
+            pl: &mut impl ProgressLog,
+        ) -> Result<Self>
+        where
+            K: Sync,
+            D: Sync,
+            W: Send + Sync,
+        {
+            Self::try_par_new_with_builder(keys, PHastRBuilder::default(), pl)
+        }
+
+        /// Builds a [`SignedFunc`] wrapping a [`PHastR`] from in-memory key
+        /// slices, parallelizing construction and signing with rayon, using
+        /// the given [`PHastRBuilder`] configuration.
+        ///
+        /// Full-word hashes are stored for verification, giving a
+        /// false-positive rate of 2<sup>−min(`W::BITS`, 64)</sup>.
+        ///
+        /// If keys are produced sequentially (e.g., from a file), use
+        /// [`try_new_with_builder`] instead.
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        pub fn try_par_new_with_builder<B: Borrow<K> + Sync>(
+            keys: &[B],
+            builder: PHastRBuilder,
+            pl: &mut impl ProgressLog,
+        ) -> Result<Self>
+        where
+            K: Sync,
+            D: Sync,
+            W: Send + Sync,
+        {
+            use sync_cell_slice::SyncSlice;
+            let func = <PHastR<K, D>>::try_par_new_with_builder(keys, builder, pl)?;
+            let mut hashes = vec![W::ZERO; func.len()];
+            let sync_hashes = hashes.as_sync_slice();
+            pl.push_log_target(" ▸ hashes");
+            // SAFETY: the outputs of the keys are distinct, so each cell is
+            // written by a single thread
+            par_sign_phast_r(
+                &func,
+                keys,
+                |i, h| unsafe { sync_hashes[i].set(h.as_to::<W>()) },
+                pl,
+            );
+            pl.pop_log_target();
+            Ok(SignedFunc {
+                func,
+                hashes: hashes.into_boxed_slice(),
+            })
+        }
+    }
+
+    impl<
+        K: ?Sized + ToSig<[u64; 1]>,
+        D: SeedStoreBuild,
+        H: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned<Value = H>>,
+    > SignedFunc<PHastR<K, D>, BitFieldVec<Box<[H]>>>
+    where
+        u64: PrimitiveNumberAs<H>,
+    {
+        /// Builds a [`SignedFunc`] wrapping a [`PHastR`] from keys using
+        /// default [`PHastRBuilder`] settings.
+        ///
+        /// `hash_width`-bit hashes are stored for verification, giving a
+        /// false-positive rate of 2<sup>−`hash_width`</sup>.
+        ///
+        /// This is a convenience wrapper around [`try_new_with_builder`]
+        /// with `PHastRBuilder::default()`.
+        ///
+        /// If keys are available as a slice, [`try_par_new`] parallelizes
+        /// the construction.
+        ///
+        /// * `keys` - a [`FallibleRewindableLender`]. The [`lenders`]
+        ///   module provides easy ways to build such lenders.
+        /// * `hash_width` - the number of hash bits per key
+        ///   (`1..=min(H::BITS, 64)`).
+        ///
+        /// # Examples
+        ///
+        /// ```rust
+        /// # #[cfg(feature = "rayon")]
+        /// # fn main() -> anyhow::Result<()> {
+        /// # use dsi_progress_logger::no_logging;
+        /// # use sux::utils::FromCloneableIntoIterator;
+        /// use sux::bits::BitFieldVec;
+        /// use sux::func::{PHastR, SignedFunc};
+        /// type BSFunc = SignedFunc<PHastR<usize>, BitFieldVec<Box<[usize]>>>;
+        /// let func = BSFunc::try_new(FromCloneableIntoIterator::new(0..100_usize), 12, no_logging![])?;
+        ///
+        /// let mut seen = vec![false; 100];
+        /// for i in 0..100 {
+        ///     let v = func.get(i).unwrap();
+        ///     assert!(!seen[v]);
+        ///     seen[v] = true;
+        /// }
+        /// # Ok(())
+        /// # }
+        /// # #[cfg(not(feature = "rayon"))]
+        /// # fn main() {}
+        /// ```
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        /// [`try_par_new`]: Self::try_par_new
+        /// [`lenders`]: crate::utils::lenders
+        pub fn try_new<B: ?Sized + Borrow<K>>(
+            keys: impl FallibleRewindableLender<
+                RewindError: Error + Send + Sync + 'static,
+                Error: Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+            hash_width: usize,
+            pl: &mut impl ProgressLog,
+        ) -> Result<Self> {
+            Self::try_new_with_builder(keys, hash_width, PHastRBuilder::default(), pl)
+        }
+
+        /// Builds a [`SignedFunc`] wrapping a [`PHastR`] from keys using the
+        /// given [`PHastRBuilder`] configuration.
+        ///
+        /// `hash_width`-bit hashes are stored for verification, giving a
+        /// false-positive rate of 2<sup>−`hash_width`</sup>.
+        ///
+        /// After building the function, the lender is rewound, and the keys
+        /// are read again to compute their hashes. The builder controls
+        /// construction parameters such as [offline mode].
+        ///
+        /// See also [`try_par_new_with_builder`] for parallel construction
+        /// from slices.
+        ///
+        /// * `keys` - a [`FallibleRewindableLender`]. The [`lenders`]
+        ///   module provides easy ways to build such lenders.
+        /// * `hash_width` - the number of hash bits per key
+        ///   (`1..=min(H::BITS, 64)`).
+        ///
+        /// [offline mode]: PHastRBuilder::offline
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`lenders`]: crate::utils::lenders
+        pub fn try_new_with_builder<B: ?Sized + Borrow<K>>(
+            mut keys: impl FallibleRewindableLender<
+                RewindError: Error + Send + Sync + 'static,
+                Error: Error + Send + Sync + 'static,
+            > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+            hash_width: usize,
+            builder: PHastRBuilder,
+            pl: &mut impl ProgressLog,
+        ) -> Result<Self> {
+            validate_hash_width::<H>(hash_width)?;
+            let func = <PHastR<K, D>>::try_new_with_builder(&mut keys, builder, pl)?;
+            let keys = keys.rewind()?;
+            let mut hashes = BitFieldVec::<Box<[H]>>::new_padded(hash_width, func.len());
+            pl.push_log_target(" ▸ hashes");
+            sign_phast_r(
+                &func,
+                keys,
+                |i, h| {
+                    let h = hashes.truncate_hash(h);
+                    hashes.set_value(i, h)
+                },
+                pl,
+            )?;
+            pl.pop_log_target();
+            Ok(SignedFunc { func, hashes })
+        }
+
+        /// Builds a [`SignedFunc`] wrapping a [`PHastR`] from in-memory key
+        /// slices, parallelizing construction and signing with rayon, using
+        /// default [`PHastRBuilder`] settings.
+        ///
+        /// `hash_width`-bit hashes are stored for verification, giving a
+        /// false-positive rate of 2<sup>−`hash_width`</sup>.
+        ///
+        /// This is a convenience wrapper around
+        /// [`try_par_new_with_builder`] with `PHastRBuilder::default()`.
+        ///
+        /// If keys are produced sequentially (e.g., from a file), use
+        /// [`try_new`] instead.
+        ///
+        /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
+        /// [`try_new`]: Self::try_new
+        pub fn try_par_new<B: Borrow<K> + Sync>(
+            keys: &[B],
+            hash_width: usize,
+            pl: &mut impl ProgressLog,
+        ) -> Result<Self>
+        where
+            K: Sync,
+            D: Sync,
+        {
+            Self::try_par_new_with_builder(keys, hash_width, PHastRBuilder::default(), pl)
+        }
+
+        /// Builds a [`SignedFunc`] wrapping a [`PHastR`] from in-memory key
+        /// slices, parallelizing construction and signing with rayon, using
+        /// the given [`PHastRBuilder`] configuration.
+        ///
+        /// `hash_width`-bit hashes are stored for verification, giving a
+        /// false-positive rate of 2<sup>−`hash_width`</sup>.
+        ///
+        /// If keys are produced sequentially (e.g., from a file), use
+        /// [`try_new_with_builder`] instead.
+        ///
+        /// [`try_new_with_builder`]: Self::try_new_with_builder
+        pub fn try_par_new_with_builder<B: Borrow<K> + Sync>(
+            keys: &[B],
+            hash_width: usize,
+            builder: PHastRBuilder,
+            pl: &mut impl ProgressLog,
+        ) -> Result<Self>
+        where
+            K: Sync,
+            D: Sync,
+        {
+            use crate::bits::AtomicBitFieldVec;
+            use crate::traits::AtomicBitFieldSlice;
+            use std::sync::atomic::Ordering;
+            validate_hash_width::<H>(hash_width)?;
+            let func = <PHastR<K, D>>::try_par_new_with_builder(keys, builder, pl)?;
+            let mut hashes = BitFieldVec::<Box<[H]>>::new_padded(hash_width, func.len());
+            let mask = hashes.mask();
+            {
+                // The outputs of the keys are distinct, but the fields of
+                // different outputs may share a word: we write atomically
+                let atomic_hashes = AtomicBitFieldVec::<&mut [H::Atomic]>::try_from(
+                    BitFieldVec::<&mut [H]>::from(&mut hashes),
+                )?;
+                pl.push_log_target(" ▸ hashes");
+                par_sign_phast_r(
+                    &func,
+                    keys,
+                    |i, h| atomic_hashes.set_atomic(i, h.as_to::<H>() & mask, Ordering::Relaxed),
+                    pl,
+                );
+                pl.pop_log_target();
+            }
+            Ok(SignedFunc { func, hashes })
         }
     }
 } // mod build
@@ -2961,6 +3424,24 @@ where
     H: From<H::Unaligned>,
 {
     fn from(f: Unaligned<SignedFunc<VFunc<K, BitFieldVec<Box<[W]>>, S, E>, H>>) -> Self {
+        SignedFunc {
+            func: f.func.into(),
+            hashes: f.hashes.into(),
+        }
+    }
+}
+
+impl<
+    K: ?Sized,
+    D: crate::func::phast_r::SeedStoreBuild + TryIntoUnaligned + From<Unaligned<D>>,
+    P,
+    H: TryIntoUnaligned,
+> From<Unaligned<SignedFunc<PHastR<K, D, P, crate::func::phast_r::Remap>, H>>>
+    for SignedFunc<PHastR<K, D, P, crate::func::phast_r::Remap>, H>
+where
+    H: From<H::Unaligned>,
+{
+    fn from(f: Unaligned<SignedFunc<PHastR<K, D, P, crate::func::phast_r::Remap>, H>>) -> Self {
         SignedFunc {
             func: f.func.into(),
             hashes: f.hashes.into(),

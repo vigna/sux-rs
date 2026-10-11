@@ -10,6 +10,10 @@
   parallel) or from a lender, in memory or offline (keeping the hashes of
   the keys in temporary files).
 
+- `SignedFunc` can wrap a `PHastR`, storing as verification hash a remix of
+  the signature of each key; the new `phastr` CLI utility builds (possibly
+  signed) `PHastR` functions.
+
 - New `VFunc2` and `Lcp2Mmphf` structures analogous to `VFunc` and `LcpMmphf`,
   but performing compression by storing frequent values using less bits.
 
@@ -137,6 +141,10 @@
   and verification instead of hashing byte-sequence keys twice.
 
 ### Changed
+
+- `SignableFunc` provides the verification hash of a signature
+  (`remixed_hash`) instead of the shard edge, so that functions without a
+  shard edge can be signed.
 
 - Field naming and logging have been reorganized. Serialized structures
   will be incompatible.

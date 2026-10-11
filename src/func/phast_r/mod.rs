@@ -130,11 +130,12 @@ pub struct LevelParams {
 ///
 /// [`PHastR`] is a *minimal perfect hash function*, which maps bijectively a
 /// set of *n* keys to the integers in [0 . . *n*): querying a key outside of
-/// the original set will lead to an arbitrary result. Like [PHast], it is
-/// based on *bucket placement*: keys are hashed to buckets, and each bucket
-/// stores a fixed-width *seed* that maps each key of the bucket to a slot of
-/// the output range so that no two keys collide. For almost all keys, a query
-/// needs just a hash and the access to a seed.
+/// the original set will lead to an arbitrary result (wrap the function in
+/// a [`SignedFunc`] to detect such keys with high probability). Like
+/// [PHast], it is based on *bucket placement*: keys are hashed to buckets,
+/// and each bucket stores a fixed-width *seed* that maps each key of the
+/// bucket to a slot of the output range so that no two keys collide. For
+/// almost all keys, a query needs just a hash and the access to a seed.
 ///
 /// With the default parameters (8-bit seeds, four layouts, slices of length
 /// 1024, and an expected bucket size of 4.25 keys) space is about 1.94 bits per
@@ -227,6 +228,7 @@ pub struct LevelParams {
 /// See [`try_new`] and [`try_par_new`].
 ///
 /// [PHast]: https://doi.org/10.1137/1.9781611978957.1
+/// [`SignedFunc`]: crate::func::SignedFunc
 /// [lender]: crate::utils::lenders
 /// [rayon]: https://docs.rs/rayon
 /// [offline mode]: PHastRBuilder::offline
@@ -244,7 +246,7 @@ pub struct LevelParams {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PHastR<K: ?Sized, D = Box<[u8]>, P = Box<[LevelParams]>, R = Remap> {
     /// The seed used to compute signatures.
-    seed: u64,
+    pub(crate) seed: u64,
     /// The number of keys.
     num_keys: usize,
     /// The base-2 logarithm of the distance in bits between the offsets of
@@ -415,6 +417,27 @@ impl<
     pub fn get(&self, key: impl Borrow<K>) -> usize {
         let key = key.borrow();
         let h = K::to_sig(key, self.seed)[0];
+        let lv = &self.params0;
+        let p = h as u128 * lv.buckets as u128;
+        // SAFETY: the upper half of the product is smaller than the number
+        // of buckets, which is the number of seeds
+        let s = unsafe { self.seeds0.get_seed((p >> 64) as usize) };
+        if s != 0 {
+            return self.pos0(h, p as u64, s);
+        }
+        self.get_slow(h, K::to_sig(key, self.seed ^ SECOND_HASH)[0])
+    }
+
+    /// Returns the value associated with the given key, given its signature
+    /// (which must be `K::to_sig(key, self.seed)`), as [`get`] does.
+    ///
+    /// [`SignedFunc`] uses the signature also to verify the key.
+    ///
+    /// [`get`]: Self::get
+    /// [`SignedFunc`]: crate::func::SignedFunc
+    #[inline(always)]
+    pub(crate) fn get_by_sig(&self, key: &K, sig: [u64; 1]) -> usize {
+        let h = sig[0];
         let lv = &self.params0;
         let p = h as u128 * lv.buckets as u128;
         // SAFETY: the upper half of the product is smaller than the number

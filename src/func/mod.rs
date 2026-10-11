@@ -37,11 +37,11 @@
 //!   keys to their number in an arbitrary order, with fast construction and
 //!   queries.
 //!
-//! - [`SignedFunc`] wraps a [`VFunc`], [`LcpMmphfInt`]/[`LcpMmphf`], or
-//!   [`Lcp2MmphfInt`]/[`Lcp2Mmphf`] (but not [`VFunc2`]) with per-key
-//!   verification hashes, returning `None` for keys outside the original set.
-//!   Use `Box<[W]>` for full-width hashes or [`BitFieldVec`] for
-//!   sub-word-width hashes. Use concrete types like
+//! - [`SignedFunc`] wraps a [`VFunc`], a [`PHastR`],
+//!   [`LcpMmphfInt`]/[`LcpMmphf`], or [`Lcp2MmphfInt`]/[`Lcp2Mmphf`] (but not
+//!   [`VFunc2`]) with per-key verification hashes, returning `None` for keys
+//!   outside the original set. Use `Box<[W]>` for full-width hashes or
+//!   [`BitFieldVec`] for sub-word-width hashes. Use concrete types like
 //!   `SignedFunc<LcpMmphfStr, Box<[u64]>>`.
 //!
 //! Most structures implement the [`TryIntoUnaligned`] trait, allowing them
