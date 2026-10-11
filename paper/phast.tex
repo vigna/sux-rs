@@ -509,7 +509,10 @@ modified. After the sweep, the keys of bumped buckets, which must be passed to
 the next level, are found by walking again the keys of each batch in order:
 the byte of a key gives its part, its hash is the next unread hash of the
 region of the batch for that part, and a bit vector with a bit per bucket
-tells whether the bucket of the hash has been bumped. Writing to at most $256$
+tells whether the bucket of the hash has been bumped. Since a batch reads up
+to $256$ regions at the same time, too many sequential streams for the
+hardware prefetchers, the walk prefetches each region two cache lines ahead.
+Writing to at most $256$
 regions at a time and working on smaller parts of about $150$\,KB is
 efficient on any current architecture, and the construction needs, besides
 the hashes, little more than a byte per key: in our experiments, about $11$
@@ -1205,22 +1208,25 @@ the one built in memory.
 The hash $h_i$ of a key at every level depends only on its hash~$h$ and on
 its second hash~$h'$ (Section~\ref{sec:phastr}).
 Thus, while reading the keys we compute both hashes of every key, and write a
-$16$-byte \emph{record} $(h,h')$ to a temporary file: the keys are no longer
+$16$-byte \emph{record} $(h,h')$ to temporary files: the keys are no longer
 necessary, and they can be streamed, for example, from a file. The records of
 a level are distributed into $P$ \emph{partitions} by the upper $\lg P$ bits
 of the hash of the key at the level. Each partition is a sequence of
-blocks: the blocks of all partitions are appended to the same file as their
-buffers fill, and a table locates the blocks of each partition. A writer
+blocks, which are appended as their buffers fill to one of at most $16$ files,
+each containing the blocks of a range of consecutive partitions, and a table
+locates the blocks of each partition. Since the standard library of Rust has
+no portable positional read, threads reading the same file take turns, but
+threads sweeping different chunks of a level read different files. A writer
 starts with blocks of $1024$ records, and doubles their length (up to
 $65\,536$ records, that is, $1$\,MiB) whenever it has written on average
 $512$ blocks for each partition: on huge key sets a sweep reads a partition
-with few seeks, and the buffers, a block for each partition, grow slowly
-with the number of keys. For the first level, whose number of keys is not
+with few seeks, and the buffers, a block for each partition, never take more
+than the initial ones or a sixteenth of a byte per key. For the first level, whose number of keys is not
 known in advance, $P=2^{14}$: the buffers take $256$\,MiB up to about
 $8.6\cdot10^9$ keys, and at most $16$\,GiB, and partitions contain just a
 few million keys even on $10^{11}$ keys. At the following levels, whose number~$n'$ of keys is known, $P$ is the
 smallest power of two not smaller than $\sqrt{2n'/1024}$: this choice balances
-the memory of a thread writing the file, which buffers a block for each
+the memory of a thread writing the files, which buffers a block for each
 partition, and that of a thread sweeping the level, which buffers a few
 partitions.
 
@@ -1252,12 +1258,11 @@ distinct keys with the same $128$ bits of hashes, in which case both
 constructions fail.
 
 \paragraph{Following levels and memory.}
-After the sweep of a level, its file is read again, and the records of the
-keys of bumped buckets are written to the file of the following
-level, or kept in memory if they are at most $4096$: the file of the first
-level is written once and read twice, and the following files are much
-smaller. In memory, besides buffers whose size grows slowly with the number
-of keys, the sweep of the first level needs its seeds, as bytes when they
+After the sweep of a level, its files are read again, and the records of the
+keys of bumped buckets are written to the files of the following
+level, or kept in memory if they are at most $4096$: the files of the first
+level are written once and read twice, and the following ones are much
+smaller. In memory, besides the buffers, the sweep of the first level needs its seeds, as bytes when they
 have at most eight bits, and its set of used slots, which the sweeps of a
 parallel construction update directly, as each sets only the bits of its
 slots: with $S=8$ and $\lambda=4.25$, about $1/4.25+1/8\approx0.36$ bytes
