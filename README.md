@@ -125,7 +125,8 @@ usage and debugging memory-related issues. For example, this is the output of
 ## Binaries
 
 Several binaries build and serialize structures with ε-serde (for example,
-`rcl`, `vfunc`, and `vfilter`); enable the `cli` feature to build them.
+`rcl`, `vfunc`, `vfilter`, and `phastr`); enable the `cli` feature to build
+them.
 Benchmarking examples declare their own required features in `Cargo.toml`.
 
 ## Features

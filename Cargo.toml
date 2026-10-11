@@ -129,6 +129,10 @@ name = "vfilter"
 required-features = ["cli", "epserde", "deko", "rayon"]
 
 [[bin]]
+name = "phastr"
+required-features = ["cli", "epserde", "deko", "rayon"]
+
+[[bin]]
 name = "mem_usage"
 required-features = ["clap"]
 
