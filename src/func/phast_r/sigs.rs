@@ -84,6 +84,9 @@ const MAX_LOG2_SUBPARTS: u32 = 9;
 /// The number of standard deviations of slack in the size of a region: the
 /// probability that a region overflows is about 10<sup>-9</sup>.
 const SLACK: f64 = 6.0;
+/// How many signatures ahead [`Signatures::walk`] prefetches each region (two
+/// cache lines).
+const WALK_PREFETCH: usize = 16;
 
 /// Computes the signatures of the keys of a level and distributes them into
 /// parts (see [`Signatures`]); the signature of the key of index *i* in the
@@ -338,6 +341,9 @@ impl Signatures {
             let p = p as usize;
             let (next, end) = &mut region[p];
             let h = if *next < *end {
+                // The regions are read at the same time, too many for
+                // the hardware prefetchers
+                crate::utils::prefetch_index(&self.sigs, *next + WALK_PREFETCH);
                 *next += 1;
                 self.sigs[*next - 1]
             } else {

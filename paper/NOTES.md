@@ -902,6 +902,80 @@ fifth run remain valid:
   `mod.rs`).
 - The structure is called PHastR everywhere except in the lab CSV labels.
 
+## Performance counters on c7i (October 11, 2026)
+
+Method (the support code, a lab driver enabling the counters of `perf stat`
+only around the timed rounds through `--control fifo:...`, and hidden query
+variants injecting µops or ablating the slow path, was removed afterwards):
+PHastR λ = 4.25 built with one thread, sequential queries, CPU 2,
+`performance` governor, turbo on, 4 KiB pages; comparisons of variants
+interleave their rounds, each variant on its own copy of the structure.
+
+**Fast path** (first-level keys; 27 instructions and 26 µops per query, of
+which about 16 on the chain from the key to the result):
+
+- 10⁷: 3.7 ns = 14 cycles; seeds hit L2 70% and L3 30% of the time, the
+  STLB always; 69% of the issue slots are backend bound but only 13% memory
+  bound, no port is saturated, 2.9 L1 misses outstanding on average.
+- 10⁹: 15.9 ns = 60 cycles; seeds come from DRAM 59% and from L3 41% of the
+  time (in steady state), and every query walks the page tables (44 cycles
+  per walk); 5.9 L1 misses outstanding, ~357 cycles per miss.
+- The cost of a query is set by the number of µops on its dependency chain,
+  not by their latency: each one, before or after the seed load, costs
+  ~0.75 cycles at 10⁷ and ~2.2 cycles at 10⁹ (adding k `not`s or k `imul`s,
+  1 or 3 cycles each, costs the same), whereas µops off the chain are free
+  (up to 8 NOPs; up to 4 µops waiting on the seed). The earlier "1.5–3 ns per
+  dependent instruction" (nexus) is the same law. Removing the 44-cycle page
+  walk (THP) gains only 5.6% at 10⁹. The five µops after the seed load
+  (`shl`, `shrx`, `lea`, `and`, `add`) are the minimum for the formula, and
+  the rest is GxHash, so there is nothing left to trim without changing the
+  hash.
+
+**Bumped keys** (interleaved; per query, all keys): at 10⁷ 4.07 ns
+against 4.00 for first-level keys only (~12 ns per bumped key); at 10⁹ 17.92
+against 17.08 (~165 ns per bumped key): ~0 for the misprediction of the test
+on the seed (a slow path returning at once is even slightly faster than the
+first-level keys alone), ~45 ns for the seed of level 1, ~140 ns for the
+dependent misses of the remapping (inventory, then high bits). Run alone,
+the slow path executes 150 instructions, with 1.05 mispredictions, 90% of
+them at the exit of the linear scan of `select_hinted`. Denser inventories
+make the slow path alone 9–29% faster but are never faster on all keys
+(`EfSeq`: +0.11 ns at 10⁹, 0/21 rounds faster; one entry every 1024 ones:
++0.26 ns), as their larger inventory misses the cache more often; sparser
+ones (2¹³ ones, 8 words) save 0.0004 bits/key at the same speed, sparser
+still are slower. Unaligned reads of the low bits: within noise. Note that
+these per-bumped-key costs are much smaller than those implied by Table 4
+(14.9 → 18.4 ns at 10⁹): in `qsplit` the first-level round of a structure
+follows its all-keys round on almost the same keys, so it probably runs
+with a warmer cache (not verified with `qsplit` itself).
+
+**Construction** (`btime`, 10⁸ keys, one thread, before the change below):
+sweep 61% (IPC 3.5–3.65, 700 instructions per key overall, 0.88
+mispredictions per key; the evaluation of the free rotations in `cost` is
+~13% of the total), `bumped` 20%, `distribute` 9%, `group_with` 7% (a
+fifth of it is GxHash). `bumped` was latency bound on the signatures: `walk`
+reads 256 regions at the same time, too many streams for the hardware
+prefetchers. Now `walk` prefetches each region 16 signatures ahead (two
+lines; 8–32 are equivalent), which also speeds up the duplicate check of the
+following levels. Same structures, tests pass; build ns/key:
+
+| | before | after |
+|---|---|---|
+| 10⁷, 1 thread | 52.8–53.6 | 49.5–50.5 |
+| 10⁸, 1 thread | 59.3 | 52.9–53.3 |
+| 10⁹, 1 thread | 63.3 | 58.4 |
+| 10⁸, 8 threads | 8.4–8.7 | 7.6–7.9 |
+| 10⁹, 8 threads | 8.9–9.4 | 8.1–8.3 |
+
+Also prefetching the word of the bit vector of each bucket and checking it
+32 keys later gains another 4% at 10⁹ with one thread (the bit vector is
+29 MB) and nothing at 10⁸: not kept. With 32 threads at 10⁹ instructions are
+the same as with one, the threads are evenly loaded, and the loss with
+respect to linear scaling comes from the all-core clock (3.48 → 3.14 GHz),
+memory contention (IPC 3.44 → 3.25) and kernel time (5.4 → 8.6 s of CPU
+time for page faults: even with one thread first touches cost ~5–10% of
+the construction; only huge pages would remove them).
+
 ## Key findings (see Section 2 of the paper; reference implementation)
 
 - With output range m = n, holes = bumped keys; each hole costs about
