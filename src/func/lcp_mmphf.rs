@@ -567,7 +567,6 @@ mod build {
             // -- Sequential pass: compute bit-level LCPs --
 
             let mut lcp_bit_lens: Vec<usize> = Vec::with_capacity(num_buckets);
-            let mut bucket_first_keys: Vec<K> = Vec::with_capacity(num_buckets);
 
             let mut prev_key: Option<K> = None;
             let mut curr_lcp_bits: usize = 0;
@@ -589,7 +588,6 @@ mod build {
                     if i > 0 {
                         lcp_bit_lens.push(curr_lcp_bits);
                     }
-                    bucket_first_keys.push(key);
                     curr_lcp_bits = K::BITS as usize;
                 } else {
                     curr_lcp_bits = curr_lcp_bits.min(lcp_bits(key, prev_key.unwrap()));
@@ -640,9 +638,11 @@ mod build {
             pl.info(format_args!("Building LCP → bucket function..."));
             let lcp_to_bucket =
                 <VFunc<IntBitPrefix<K>, BitFieldVec<Box<[usize]>>, S1, E1>>::try_new_with_builder(
-                    FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
-                        IntBitPrefix::new(bucket_first_keys[b] ^ K::MIN, lcp_bit_lens[b])
-                    })),
+                    FromCloneableIntoIterator::new(
+                        (0..num_buckets).map(|b| {
+                            IntBitPrefix::new(keys[b << log2_bs] ^ K::MIN, lcp_bit_lens[b])
+                        }),
+                    ),
                     FromCloneableIntoIterator::new(0..num_buckets),
                     lcp_to_bucket_builder,
                     pl,
@@ -879,7 +879,14 @@ mod build {
             // value is the bit-length of the first key (+ virtual NUL).
 
             let mut lcp_bit_lens: Vec<usize> = Vec::with_capacity(num_buckets);
-            let mut bucket_first_keys: Vec<Vec<u8>> = Vec::with_capacity(num_buckets);
+            // First key of each bucket (plus virtual NUL), truncated to the
+            // bytes covered by the bucket's LCP once the bucket is closed, and
+            // packed in a single arena: bucket b is
+            // first_keys_arena[first_keys_bounds[b]..first_keys_bounds[b + 1]].
+            let mut first_keys_arena: Vec<u8> = Vec::new();
+            let mut first_keys_bounds: Vec<usize> = Vec::with_capacity(num_buckets + 1);
+            first_keys_bounds.push(0);
+            let mut curr_start = 0usize;
 
             let mut prev_key: Vec<u8> = Vec::new();
             let mut curr_lcp_bits: usize = 0;
@@ -906,8 +913,12 @@ mod build {
                     // First key of a new bucket.
                     if i > 0 {
                         lcp_bit_lens.push(curr_lcp_bits);
+                        first_keys_arena.truncate(curr_start + curr_lcp_bits.div_ceil(8));
+                        first_keys_bounds.push(first_keys_arena.len());
                     }
-                    bucket_first_keys.push(key_bytes.to_vec());
+                    curr_start = first_keys_arena.len();
+                    first_keys_arena.extend_from_slice(key_bytes);
+                    first_keys_arena.push(0x00);
                     // Initialize to full key bit-length (including virtual NUL).
                     curr_lcp_bits = full_key_bits;
                 } else {
@@ -922,6 +933,11 @@ mod build {
 
             anyhow::ensure!(i == n, "Expected {n} keys but got {i}");
             lcp_bit_lens.push(curr_lcp_bits);
+            first_keys_arena.truncate(curr_start + curr_lcp_bits.div_ceil(8));
+            first_keys_bounds.push(first_keys_arena.len());
+            // Vec growth is geometric, so the arena can hold up to ~2x its
+            // live bytes; release the slack before the large VFunc builds.
+            first_keys_arena.shrink_to_fit();
             assert_eq!(lcp_bit_lens.len(), num_buckets);
 
             // -- Build lcp_len_offset VFunc --
@@ -955,23 +971,15 @@ mod build {
 
             pl.push_log_target(" ▸ lcp_to_bucket");
             pl.info(format_args!("Building LCP → bucket function..."));
-            let extended_first_keys: Vec<Vec<u8>> = bucket_first_keys
-                .iter()
-                .map(|k| {
-                    let mut v = Vec::with_capacity(k.len() + 1);
-                    v.extend_from_slice(k);
-                    v.push(0x00);
-                    v
-                })
-                .collect();
-
             // Sequential: num_buckets is small and we avoid materializing the key set
             let lcp_to_bucket =
                 <VFunc<BitPrefix, BitFieldVec<Box<[usize]>>, S1, E1>>::try_new_with_builder(
-                    FromCloneableIntoIterator::new(
-                        (0..num_buckets)
-                            .map(|b| BitPrefix::new(&extended_first_keys[b], lcp_bit_lens[b])),
-                    ),
+                    FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
+                        BitPrefix::new(
+                            &first_keys_arena[first_keys_bounds[b]..first_keys_bounds[b + 1]],
+                            lcp_bit_lens[b],
+                        )
+                    })),
                     FromCloneableIntoIterator::new(0..num_buckets),
                     lcp_to_bucket_builder,
                     pl,
@@ -1123,7 +1131,6 @@ mod build {
             // -- Sequential pass: compute bit-level LCPs --
 
             let mut lcp_bit_lens: Vec<usize> = Vec::with_capacity(num_buckets);
-            let mut bucket_first_keys: Vec<Vec<u8>> = Vec::with_capacity(num_buckets);
 
             let mut prev_key: Vec<u8> = Vec::new();
             let mut curr_lcp_bits: usize = 0;
@@ -1150,7 +1157,6 @@ mod build {
                     if i > 0 {
                         lcp_bit_lens.push(curr_lcp_bits);
                     }
-                    bucket_first_keys.push(key_bytes.to_vec());
                     curr_lcp_bits = full_key_bits;
                 } else {
                     curr_lcp_bits = curr_lcp_bits.min(lcp_bits_nul::<true>(key_bytes, &prev_key));
@@ -1200,23 +1206,24 @@ mod build {
             // -- Build lcp_to_bucket VFunc (sequential, small) --
             pl.push_log_target(" ▸ lcp_to_bucket");
             pl.info(format_args!("Building LCP → bucket function..."));
-            let extended_first_keys: Vec<Vec<u8>> = bucket_first_keys
-                .iter()
-                .map(|k| {
-                    let mut v = Vec::with_capacity(k.len() + 1);
-                    v.extend_from_slice(k);
-                    v.push(0x00);
-                    v
-                })
-                .collect();
-
             // Sequential: num_buckets is small and we avoid materializing the key set
             let lcp_to_bucket =
                 <VFunc<BitPrefix, BitFieldVec<Box<[usize]>>, S1, E1>>::try_new_with_builder(
-                    FromCloneableIntoIterator::new(
-                        (0..num_buckets)
-                            .map(|b| BitPrefix::new(&extended_first_keys[b], lcp_bit_lens[b])),
-                    ),
+                    FromCloneableIntoIterator::new((0..num_buckets).map(|b| {
+                        // The first key of bucket b is keys[b << log2_bs]: no
+                        // copy is needed unless the LCP extends into the
+                        // virtual NUL.
+                        let key: &[u8] = keys[b << log2_bs].as_ref();
+                        let lcp = lcp_bit_lens[b];
+                        if lcp <= key.len() * 8 {
+                            BitPrefix::new(key, lcp)
+                        } else {
+                            let mut v = Vec::with_capacity(key.len() + 1);
+                            v.extend_from_slice(key);
+                            v.push(0x00);
+                            BitPrefix::new(&v, lcp)
+                        }
+                    })),
                     FromCloneableIntoIterator::new(0..num_buckets),
                     lcp_to_bucket_builder,
                     pl,
