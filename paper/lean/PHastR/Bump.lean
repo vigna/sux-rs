@@ -4,15 +4,15 @@ import Mathlib
 # A lower bound on bumping (Proposition 1 of `phast.tex`)
 
 We consider `n` keys (the elements of `Fin n`) and the `n` slots `0`, …,
-`n - 1`. Each key `x` can be placed only in the slots of its *window*
+`n - 1`. Each key `x` can be placed only in the slots of its *reach*
 `[σ x . . σ x + W)`. A *placement* puts a subset of the keys into distinct
-slots of their windows; the other keys are *bumped*.
+slots of their reaches; the other keys are *bumped*.
 
 Let `X t = t - |{x | σ x < t}|` for `0 ≤ t ≤ n`, and let `D` be the range of
 `X`. Proposition 1 states that, if `W ≥ 1`, every placement bumps at least
 `D - W + 1` keys.
 
-The proof follows the paper. For `t ≤ t'`, only keys whose window starts in
+The proof follows the paper. For `t ≤ t'`, only keys whose reach starts in
 `[t . . t')` can be placed in the slots in `[t + W - 1 . . t')`, so at least
 `X t' - X t - W + 1` of those slots are free (`deficit`); symmetrically, these
 keys can be placed only in the slots in `[t . . t' + W - 1)`, so at least
@@ -35,8 +35,8 @@ structure Placement (n W : ℕ) (σ : Fin n → ℕ) where
   inj : Set.InjOn pos placed
   /-- Slots are in `[0 . . n)`. -/
   lt_n : ∀ x ∈ placed, pos x < n
-  /-- A placed key lies in its window. -/
-  window : ∀ x ∈ placed, σ x ≤ pos x ∧ pos x < σ x + W
+  /-- A placed key lies in its reach. -/
+  reach : ∀ x ∈ placed, σ x ≤ pos x ∧ pos x < σ x + W
 
 variable {n W : ℕ} {σ : Fin n → ℕ}
 
@@ -48,7 +48,7 @@ def Placement.bumped (P : Placement n W σ) : ℕ :=
 def X (σ : Fin n → ℕ) (t : ℕ) : ℤ :=
   (t : ℤ) - ((univ.filter fun x => σ x < t).card : ℤ)
 
-/-- The number of keys whose window starts in `[t . . t')`. -/
+/-- The number of keys whose reach starts in `[t . . t')`. -/
 def N (σ : Fin n → ℕ) (t t' : ℕ) : ℕ :=
   (univ.filter fun x => t ≤ σ x ∧ σ x < t').card
 
@@ -66,7 +66,7 @@ lemma card_lt_eq (σ : Fin n → ℕ) {t t' : ℕ} (h : t ≤ t') :
     omega
 
 /-- For `t ≤ t'`, `X t' - X t` is the length of `[t . . t')` minus the number
-of keys whose window starts in `[t . . t')`. -/
+of keys whose reach starts in `[t . . t')`. -/
 lemma X_sub (σ : Fin n → ℕ) {t t' : ℕ} (h : t ≤ t') :
     X σ t' - X σ t = (t' : ℤ) - t - N σ t t' := by
   unfold X
@@ -74,7 +74,7 @@ lemma X_sub (σ : Fin n → ℕ) {t t' : ℕ} (h : t ≤ t') :
   push_cast
   ring
 
-/-- Only keys whose window starts in `[t . . t')` can be placed in the slots
+/-- Only keys whose reach starts in `[t . . t')` can be placed in the slots
 in `[t + W - 1 . . t')`, and every free slot corresponds to a bumped key. -/
 lemma deficit (P : Placement n W σ) {t t' : ℕ} (htn : t' ≤ n) :
     t' - (t + W - 1) ≤ P.bumped + N σ t t' := by
@@ -85,14 +85,14 @@ lemma deficit (P : Placement n W σ) {t t' : ℕ} (htn : t' ≤ n) :
     obtain ⟨x, hx, rfl⟩ := mem_image.1 hq
     exact mem_range.2 (P.lt_n x hx)
   set J := Ico (t + W - 1) t'
-  -- The used slots of J are used by keys whose window starts in [t . . t')
+  -- The used slots of J are used by keys whose reach starts in [t . . t')
   have h1 : J ∩ used ⊆
       (P.placed.filter fun x => t ≤ σ x ∧ σ x < t').image P.pos := by
     intro q hq
     obtain ⟨hqJ, hqo⟩ := mem_inter.1 hq
     obtain ⟨hq1, hq2⟩ := mem_Ico.1 hqJ
     obtain ⟨x, hx, rfl⟩ := mem_image.1 hqo
-    have hw := P.window x hx
+    have hw := P.reach x hx
     exact mem_image.2 ⟨x, mem_filter.2 ⟨hx, by omega, by omega⟩, rfl⟩
   have h2 : (J ∩ used).card ≤ N σ t t' :=
     calc (J ∩ used).card
@@ -112,7 +112,7 @@ lemma deficit (P : Placement n W σ) {t t' : ℕ} (htn : t' ≤ n) :
   unfold Placement.bumped
   omega
 
-/-- Keys whose window starts in `[t . . t')` can be placed only in the slots
+/-- Keys whose reach starts in `[t . . t')` can be placed only in the slots
 in `[t . . t' + W - 1)`, so the excess must be bumped. -/
 lemma excess (P : Placement n W σ) (t t' : ℕ) :
     N σ t t' ≤ P.bumped + (t' + W - 1 - t) := by
@@ -122,14 +122,14 @@ lemma excess (P : Placement n W σ) (t t' : ℕ) :
       intro q hq
       obtain ⟨x, hx, rfl⟩ := mem_image.1 hq
       obtain ⟨hxp, ht, ht'⟩ := mem_filter.1 hx
-      have hw := P.window x hxp
+      have hw := P.reach x hxp
       exact mem_Ico.2 ⟨by omega, by omega⟩
     have hinj : Set.InjOn P.pos K :=
       P.inj.mono (fun x hx => (mem_filter.1 (mem_coe.1 hx)).1)
     calc K.card = (K.image P.pos).card := (card_image_of_injOn hinj).symm
       _ ≤ (Ico t (t' + W - 1)).card := card_le_card himg
       _ = t' + W - 1 - t := Nat.card_Ico _ _
-  -- Each key whose window starts in [t . . t') is either in K or bumped
+  -- Each key whose reach starts in [t . . t') is either in K or bumped
   have hsplit : N σ t t' ≤ K.card + (univ \ P.placed).card := by
     unfold N
     calc (univ.filter fun x => t ≤ σ x ∧ σ x < t').card
@@ -184,10 +184,10 @@ end PHastR
 
 namespace PHastR
 
-/-- One key whose window starts at `1`. -/
+/-- One key whose reach starts at `1`. -/
 def σ₁ : Fin 1 → ℕ := fun _ => 1
 
-/-- The hypothesis `0 < W` of `prop1` is necessary: with one key whose window
+/-- The hypothesis `0 < W` of `prop1` is necessary: with one key whose reach
 starts at `1` and `W = 0`, the range of `X` is `1`, so the bound would be `2`,
 but a placement bumps a single key. -/
 theorem prop1_needs_W_pos :
