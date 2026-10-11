@@ -39,10 +39,14 @@ pub trait SeedStore {
 ///
 /// The storage returned by [`from_seeds`] and [`from_byte_seeds`] must
 /// contain all the given seeds: queries call [`SeedStore::get_seed`] on
-/// every index smaller than the number of seeds.
+/// every index smaller than the number of seeds. Moreover, if the storage
+/// implements [`TryIntoUnaligned`], the converted storage must contain the
+/// same seeds, and if it implements [`From`] for its converted storage, the
+/// storage obtained in this way must contain the same seeds, too.
 ///
 /// [`from_seeds`]: Self::from_seeds
 /// [`from_byte_seeds`]: Self::from_byte_seeds
+/// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 pub unsafe trait SeedStoreBuild: SeedStore + Sized {
     /// The maximum number of bits per seed supported (seeds have at most 16
     /// bits during construction, so larger values have no effect).

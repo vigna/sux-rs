@@ -155,13 +155,14 @@ pub struct LevelParams {
 /// with one thread, and about 12 with eight threads. Construction from a
 /// lender keeps instead a *record* of sixteen bytes for each key, containing
 /// two 64-bit hashes of the key from which its hashes for all levels are
-/// computed: in memory, construction needs about 22 bytes per key, as
-/// records are collected in growing vectors; in [offline mode], records are
-/// kept in temporary files, which take about sixteen bytes per key of disk
-/// space, and on large key sets construction needs in memory less than half
-/// a byte per key with a few threads, besides buffers that take 256 MiB up to
-/// about 8.6 · 10⁹ keys, and then about a sixteenth of a byte per key (at
-/// most 16 GiB). With one thread offline construction is only slightly
+/// computed: in memory, construction needs between 16 and 32 bytes per key,
+/// depending on the number of keys, as records are collected in vectors
+/// whose capacity doubles (plus the overhead of the allocator); in [offline
+/// mode], records are kept in temporary files, which take about sixteen
+/// bytes per key of disk space, and on large key sets construction needs in
+/// memory less than half a byte per key with a few threads, besides buffers
+/// that take 256 MiB (whatever the number of keys) up to about 8.6 · 10⁹
+/// keys, and then about a sixteenth of a byte per key (at most 16 GiB). With one thread offline construction is only slightly
 /// slower than construction in memory, but it does not scale as well with
 /// the number of threads.
 ///
@@ -179,8 +180,8 @@ pub struct LevelParams {
 ///
 /// # Changing the defaults
 ///
-/// The defaults are an excellent choice for basically all uses, but you might want to
-/// change:
+/// The defaults are an excellent choice for basically all uses, but you
+/// might want to change:
 ///
 /// - the [number of bits of a seed]: for example, with 10-bit seeds stored in a
 ///   [`BitFieldVec`], slices of length 2048, and an expected bucket size of
@@ -408,7 +409,8 @@ impl<
     /// The returned value is in the range [0 . . *n*), where *n* is the
     /// number of keys, and different keys of the original set are mapped to
     /// different values. If the key was not in the original set, the result
-    /// is arbitrary.
+    /// is arbitrary (but still in [0 . . *n*), unless the function is
+    /// empty, in which case it is zero).
     #[inline(always)]
     pub fn get(&self, key: impl Borrow<K>) -> usize {
         let key = key.borrow();
@@ -508,9 +510,8 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     ///
     /// # Errors
     ///
-    /// Returns an error if the parameters of the builder are not valid, if
-    /// there are duplicate keys, if the lender returns an error, or if an I/O
-    /// error occurs in offline mode.
+    /// Returns an error if there are duplicate keys, if the lender returns
+    /// an error, or if there are too many keys for the platform.
     ///
     /// # Examples
     ///
@@ -571,8 +572,11 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     /// # Errors
     ///
     /// Returns an error if the parameters of the builder are not valid, if
-    /// there are duplicate keys, if the lender returns an error, or if an I/O
-    /// error occurs in offline mode.
+    /// there are duplicate keys, if the lender returns an error, if an I/O
+    /// error occurs in offline mode, if there are too many keys for the
+    /// platform, or if construction fails with the given parameters (which
+    /// can happen only with very few bits per seed, very short slices, or
+    /// very large buckets).
     ///
     /// # Examples
     ///
@@ -630,8 +634,8 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     ///
     /// # Errors
     ///
-    /// Returns an error if the parameters of the builder are not valid (in
-    /// particular, if offline mode is set), or if there are duplicate keys.
+    /// Returns an error if there are duplicate keys, or if there are too many
+    /// keys for the platform.
     ///
     /// # Examples
     ///
@@ -687,7 +691,10 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     /// # Errors
     ///
     /// Returns an error if the parameters of the builder are not valid (in
-    /// particular, if offline mode is set), or if there are duplicate keys.
+    /// particular, if offline mode is set), if there are duplicate keys, if
+    /// there are too many keys for the platform, or if construction fails
+    /// with the given parameters (which can happen only with very few bits
+    /// per seed, very short slices, or very large buckets).
     ///
     /// # Examples
     ///
@@ -744,8 +751,11 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
 /// slices of bytes are left unchanged, and the remapping sequence is
 /// accessed only for keys bumped from the first level.
 ///
+/// The seed storage must implement [`SeedStoreBuild`], whose safety
+/// contract guarantees that the converted storage contains the same seeds.
+///
 /// [unaligned reads]: BitFieldVec::get_unaligned
-impl<K: ?Sized, D: TryIntoUnaligned, P, R: TryIntoUnaligned> TryIntoUnaligned
+impl<K: ?Sized, D: SeedStoreBuild + TryIntoUnaligned, P, R: TryIntoUnaligned> TryIntoUnaligned
     for PHastR<K, D, P, R>
 {
     type Unaligned = PHastR<K, Unaligned<D>, P, Unaligned<R>>;
@@ -769,9 +779,13 @@ impl<K: ?Sized, D: TryIntoUnaligned, P, R: TryIntoUnaligned> TryIntoUnaligned
 
 /// Converts back a function using [unaligned reads].
 ///
+/// The seed storage must implement [`SeedStoreBuild`], whose safety
+/// contract guarantees that the storage obtained by conversion contains the
+/// same seeds.
+///
 /// [unaligned reads]: BitFieldVec::get_unaligned
-impl<K: ?Sized, D: TryIntoUnaligned + From<Unaligned<D>>, P> From<Unaligned<PHastR<K, D, P, Remap>>>
-    for PHastR<K, D, P, Remap>
+impl<K: ?Sized, D: SeedStoreBuild + TryIntoUnaligned + From<Unaligned<D>>, P>
+    From<Unaligned<PHastR<K, D, P, Remap>>> for PHastR<K, D, P, Remap>
 {
     fn from(f: Unaligned<PHastR<K, D, P, Remap>>) -> Self {
         PHastR {

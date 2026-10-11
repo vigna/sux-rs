@@ -115,7 +115,10 @@ impl Window {
     /// Returns the priority weight of the buckets of the given size:
     /// weights are given for the first seven sizes, and extrapolated
     /// linearly for the following ones, as in the `ph` crate (up to
-    /// ±2⁴⁰, so that keys do not overflow).
+    /// ±2⁴⁰, so that [keys] do not overflow for fewer than about 2⁴³
+    /// buckets).
+    ///
+    /// [keys]: Self::key
     fn weight(weights: &[i64; 7], size: usize) -> i64 {
         if size <= 7 {
             weights[size.max(1) - 1]
@@ -369,7 +372,10 @@ pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog, T: SweepSeed>
     let threads = rayon::current_num_threads();
     #[cfg(not(feature = "rayon"))]
     let threads = 1;
-    let chunks = threads.min(nb / (64 * gap).max(4096)).max(1);
+    // In 64 bits, as the gap of small levels can be very large
+    let chunks = threads
+        .min((nb as u64 / (64 * gap).max(4096)) as usize)
+        .max(1);
 
     let mut seeds = vec![T::default(); nb];
     // Each sweep adds to the set the slots it uses (and those marked as
@@ -383,6 +389,8 @@ pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog, T: SweepSeed>
             occupied: occupied.into(),
         });
     }
+    // With several chunks, the gap is at most the number of buckets
+    let gap = gap as usize;
 
     // Chunk boundaries; chunk i processes [bounds[i], bounds[i + 1] - gap),
     // except for the last one, which processes everything.
@@ -1058,6 +1066,15 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
     #[cold]
     #[inline(never)]
     fn search_distinct(&mut self, keys: &[u64]) -> usize {
+        // Keys with the same signature are mapped to the same slot by every
+        // seed, so the bucket must be bumped: we return at once, rather than
+        // trying all free rotations (e.g., duplicate keys yield large
+        // buckets of this kind)
+        let mut sorted = keys.to_vec();
+        sorted.sort_unstable();
+        if sorted.windows(2).any(|w| w[0] == w[1]) {
+            return 0;
+        }
         let rings = self.rings;
         let ring_bits = 64 * rings.len.div_ceil(64);
         let mut candidates = vec![];

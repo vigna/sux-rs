@@ -22,6 +22,10 @@ pub(super) const LAST_LEVEL_THRESHOLD: usize = 4096;
 /// The maximum number of attempts at building the last level.
 pub(super) const LAST_LEVEL_ATTEMPTS: u64 = 1000;
 
+/// The maximum number of keys: on 32-bit platforms, the indices of the
+/// slots used during a sweep can overflow on almost 2³² keys.
+pub(super) const MAX_KEYS: usize = usize::MAX / 2;
+
 /// Returns an error if a level with `k` keys bumped all of them, as then the
 /// following levels would do the same.
 pub(super) fn check_progress(
@@ -71,8 +75,10 @@ pub struct PHastRBuilder {
     ///
     /// The default is 8. Seeds stored in a `Box<[u8]>` can have at most 8
     /// bits, and seeds stored in a [`BitFieldVec`] at most 16 bits (see
-    /// [`SeedStoreBuild::MAX_BITS`]). The number of bits of a seed must be
-    /// larger than the [base-2 logarithm of the number of layouts].
+    /// [`SeedStoreBuild::MAX_BITS`]). The number of bits of a seed must be at
+    /// least two, and larger than the [base-2 logarithm of the number of
+    /// layouts]; with fewer than five bits, construction might fail,
+    /// in particular with a single layout.
     ///
     /// [base-2 logarithm of the number of layouts]: Self::log2_layouts
     #[setters(generate = true)]
@@ -88,10 +94,12 @@ pub struct PHastRBuilder {
 
     /// The base-2 logarithm of the slice length.
     ///
-    /// The default is 10, and the maximum is 16. This is a maximum, as small
-    /// levels use shorter slices. Slices should have at least as many slots
-    /// as there are seeds, as otherwise different rotations of a layout map
-    /// the keys of a bucket to the same slots.
+    /// The default is 10, the minimum is 3, and the maximum is 16. This is a
+    /// maximum, as small levels use shorter slices. Slices should have at
+    /// least as many slots as there are seeds, as otherwise different
+    /// rotations of a layout map the keys of a bucket to the same slots;
+    /// with slices shorter than 64, construction might fail, in particular
+    /// with a single layout.
     #[setters(generate = true)]
     pub(super) log2_slice_len: u32,
 
@@ -124,11 +132,14 @@ pub struct PHastRBuilder {
     /// The default is false. Only the constructors reading keys from a
     /// lender honor this setting, and the constructors reading keys from a
     /// slice return an error if it is set. Files are created in the default
-    /// temporary directory (see [`tempfile::tempfile`]; on Unix, the
+    /// temporary directory (see [`tempfile::env::temp_dir`]; on Unix, the
     /// directory specified by the environment variable `TMPDIR`, if set),
     /// which must have about sixteen bytes of free space per key; note that
     /// on some systems the default temporary directory is in memory (e.g.,
     /// a `tmpfs`).
+    ///
+    /// Offline construction uses 256 MiB of buffers whatever the number of
+    /// keys, so it is useful only on large key sets.
     #[setters(generate = true)]
     pub(super) offline: bool,
 }
@@ -146,6 +157,11 @@ impl PHastRBuilder {
             "Offline mode is not supported by the constructors reading keys from a slice; use try_new_with_builder"
         );
         self.check_params::<D>()?;
+        ensure!(
+            keys.len() <= MAX_KEYS,
+            "Too many keys for this platform ({})",
+            keys.len()
+        );
         let start = Instant::now();
         self.log_params(pl);
         let (levels, remap) = self.build_levels::<K>(keys, pl)?;
@@ -162,9 +178,9 @@ impl PHastRBuilder {
     pub(super) fn check_params<D: SeedStoreBuild>(&self) -> Result<()> {
         // Seeds are kept in 16-bit integers during construction
         let max_bits = D::MAX_BITS.min(16);
-        if self.seed_bits == 0 || self.seed_bits > max_bits {
+        if self.seed_bits < 2 || self.seed_bits > max_bits {
             bail!(
-                "The number of seed bits must be in [1..{max_bits}] for this seed storage (got {})",
+                "The number of seed bits must be in [2..{max_bits}] for this seed storage (got {})",
                 self.seed_bits
             );
         }
@@ -175,9 +191,9 @@ impl PHastRBuilder {
                 self.seed_bits
             );
         }
-        if self.log2_slice_len > 16 {
+        if !(3..=16).contains(&self.log2_slice_len) {
             bail!(
-                "The slice length must be at most 65536 (got 2^{})",
+                "The base-2 logarithm of the slice length must be in [3..16] (got {})",
                 self.log2_slice_len
             );
         }
@@ -190,7 +206,7 @@ impl PHastRBuilder {
         }
         // Buckets must be much smaller than slices, as otherwise levels place
         // few buckets, or none
-        let max_bucket_size = (1u64 << self.log2_slice_len).div_ceil(8).min(64) as f64;
+        let max_bucket_size = ((1u64 << self.log2_slice_len) / 8).min(64) as f64;
         if !(1.0..=max_bucket_size).contains(&self.bucket_size) {
             bail!(
                 "The expected bucket size must be in [1..{max_bucket_size}] for slices of length {} (got {})",
@@ -401,7 +417,7 @@ impl PHastRBuilder {
                         break (level, out.seeds, out.occupied, vec![], geom.m);
                     }
                     attempt += 1;
-                    if attempt > LAST_LEVEL_ATTEMPTS {
+                    if attempt == LAST_LEVEL_ATTEMPTS {
                         bail!(last_level_failure(k));
                     }
                 }
@@ -561,9 +577,10 @@ impl Geometry {
     /// considering the rounding of the beginning of the slices it suffices
     /// that the gap times `num_slices` / `buckets` is at least *L*.
     #[inline(always)]
-    pub(super) fn chunk_gap(&self) -> usize {
-        // In 64 bits, as the product overflows on 32-bit platforms
-        ((self.l_mask + 1) * self.buckets as u64 / self.num_slices) as usize + 1
+    pub(super) fn chunk_gap(&self) -> u64 {
+        // In 128 bits, as the product might overflow (in particular, on
+        // 32-bit platforms, it does in 32 bits)
+        ((self.l_mask as u128 + 1) * self.buckets as u128 / self.num_slices as u128) as u64 + 1
     }
 
     /// Returns the value providing the in-slice offsets of the layouts:
@@ -679,10 +696,24 @@ pub(super) fn parallel(len: usize) -> bool {
 #[cfg(feature = "rayon")]
 const PAR_MIN_LEN: usize = 1 << 17;
 
-/// Builds a [`Remap`].
+/// Builds a [`Remap`], whose low bits are padded with a zero word, so that
+/// conversion to [unaligned reads] needs no reallocation (as for the seeds).
+///
+/// [unaligned reads]: TryIntoUnaligned
 pub(super) fn remap(efb: EliasFanoBuilder<usize>) -> Remap {
-    // SAFETY: the selection structure is built on the high bits
-    unsafe { efb.build().map_high_bits(SelectAdaptConst::new) }
+    // SAFETY: the selection structure is built on the high bits, and the
+    // padded low bits contain the same values
+    unsafe {
+        efb.build()
+            .map_high_bits(SelectAdaptConst::new)
+            .map_low_bits(|low| {
+                let (bits, bit_width, len) = low.into_raw_parts();
+                let mut bits = bits.into_vec();
+                bits.reserve_exact(1);
+                bits.push(0);
+                crate::bits::BitFieldVec::from_raw_parts(bits.into_boxed_slice(), bit_width, len)
+            })
+    }
 }
 
 #[cfg(test)]

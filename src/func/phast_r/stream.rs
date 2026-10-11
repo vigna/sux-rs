@@ -39,7 +39,7 @@ use super::sigs::*;
 use super::sweep::*;
 use super::*;
 use crate::dict::elias_fano::{EliasFano, EliasFanoBuilder};
-use anyhow::bail;
+use anyhow::{Context, bail};
 use dsi_progress_logger::no_logging;
 use std::fs::File;
 use std::io::{self, Read, Seek, Write};
@@ -256,7 +256,7 @@ impl StoreWriter {
                                 e.kind(),
                                 format!(
                                     "Could not create a temporary file in {}: {e}",
-                                    std::env::temp_dir().display()
+                                    tempfile::env::temp_dir().display()
                                 ),
                             )
                         })
@@ -317,13 +317,13 @@ impl StoreWriter {
 }
 
 /// The buffers of a thread writing to a [`StoreWriter`]: in offline mode, a
-/// block for each partition, which is appended to the file when full (the
+/// block for each partition, which is appended to its file when full (the
 /// length of the blocks grows with the number of records written, see
 /// [`GROWTH`]); otherwise, the records of each partition, which are moved
 /// to the store at the end.
 struct Buffers<'a> {
     writer: &'a StoreWriter,
-    /// Whether the store is kept in a file.
+    /// Whether the store is kept on disk.
     offline: bool,
     /// In offline mode, a block for each partition.
     blocks: Vec<Record>,
@@ -343,10 +343,10 @@ impl Buffers<'_> {
     #[inline(always)]
     fn push(&mut self, r: Record) -> io::Result<()> {
         let p = partition(self.writer.sig.sig(&r), self.writer.log2_partitions);
-        self.len = self
-            .len
-            .checked_add(1)
-            .ok_or_else(|| io::Error::other("Too many keys for this platform"))?;
+        if self.len == MAX_KEYS {
+            return Err(io::Error::other("Too many keys for this platform"));
+        }
+        self.len += 1;
         if !self.offline {
             self.parts[p].push(r);
             return Ok(());
@@ -632,7 +632,7 @@ fn by_thread<T: Send>(
 }
 
 /// Returns the records of the `k` keys of the bumped buckets, given the
-/// salt of the following level: in a new store (kept in a file if `offline`
+/// salt of the following level: in a new store (kept on disk if `offline`
 /// is true), or in a vector, if the following level is the last one. The
 /// progress of the pass, in records read, is logged on a concurrent logger
 /// obtained from `pl`.
@@ -700,12 +700,12 @@ fn collect_bumped<T: SweepSeed>(
 /// have the same signature for the first level and the same second hash.
 /// The two criteria give different results only with negligible
 /// probability: if two distinct keys have the same 128 bits of hashes, the
-/// construction from a slice would fail anyway (such keys would collide at
-/// every level), unless their hashes with the third seed differ; conversely,
-/// if two distinct keys have the same signature for a level and the same
-/// hash with the third seed (which happens with probability about 2⁻¹²⁸),
-/// the construction from a slice reports duplicates, whereas this
-/// construction succeeds.
+/// construction from a slice fails anyway (such keys collide at every
+/// level), albeit with a different error if their hashes with the third
+/// seed differ; conversely, if two distinct keys have the same signature for
+/// a level and the same hash with the third seed (which happens with
+/// probability about 2⁻¹²⁸), the construction from a slice reports
+/// duplicates, whereas this construction succeeds.
 ///
 /// The progress of the check, in records, is logged on a concurrent logger
 /// obtained from `pl`.
@@ -786,7 +786,8 @@ impl PHastRBuilder {
         n: usize,
         pl: &mut impl ProgressLog,
     ) -> Result<(Vec<T>, EliasFano<usize>, Keys)> {
-        let Level { seeds, occupied } = sweep_store(&store, geom, weights, 0, pl)?;
+        let Level { seeds, occupied } =
+            sweep_store(&store, geom, weights, 0, pl).context("Could not sweep level 0")?;
         let num_holes = n - occupied
             .iter()
             .map(|w| w.count_ones() as usize)
@@ -818,7 +819,8 @@ impl PHastRBuilder {
             level_salt(self.seed, 1, 0),
             self.offline,
             pl,
-        )?;
+        )
+        .context("Could not collect the keys bumped from level 0")?;
         Ok((seeds, holes, cur))
     }
 
@@ -851,7 +853,7 @@ impl PHastRBuilder {
         pl.start(format!(
             "Computing and storing 128-bit signatures sequentially {} using seed 0x{:016x}...",
             if self.offline {
-                format!("on disk ({})", std::env::temp_dir().display())
+                format!("on disk ({})", tempfile::env::temp_dir().display())
             } else {
                 "in RAM".to_owned()
             },
@@ -862,13 +864,17 @@ impl PHastRBuilder {
         let mut buffers = writer.buffers();
         while let Some(key) = keys.next()? {
             let key: &K = key.borrow();
-            buffers.push([
-                K::to_sig(key, self.seed)[0],
-                K::to_sig(key, self.seed ^ SECOND_HASH)[0],
-            ])?;
+            buffers
+                .push([
+                    K::to_sig(key, self.seed)[0],
+                    K::to_sig(key, self.seed ^ SECOND_HASH)[0],
+                ])
+                .context("Could not store the hashes of the keys")?;
             pl.light_update();
         }
-        let n = buffers.finish()?;
+        let n = buffers
+            .finish()
+            .context("Could not store the hashes of the keys")?;
         let store = writer.finish(n);
         pl.done();
         log_signatures(start, n, pl);
@@ -908,11 +914,18 @@ impl PHastRBuilder {
                     let geom = self.geometry(k, k, self.bucket_size);
                     // Equal keys are bumped from the first level, so they
                     // are all in the second one
-                    if index == 1 && has_duplicates(&store, pl)? {
+                    if index == 1
+                        && has_duplicates(&store, pl)
+                            .context("Could not check for duplicate keys")?
+                    {
                         bail!("Duplicate keys");
                     }
-                    let out = sweep_store(&store, &geom, &weights, index, pl)?;
+                    let out = sweep_store(&store, &geom, &weights, index, pl)
+                        .with_context(|| format!("Could not sweep level {index}"))?;
                     let used: usize = out.occupied.iter().map(|w| w.count_ones() as usize).sum();
+                    // Before collecting the bumped keys, which would be all
+                    // keys
+                    check_progress(index, k, k - used, self.bucket_size)?;
                     let next = collect_bumped(
                         &store,
                         &geom,
@@ -921,12 +934,10 @@ impl PHastRBuilder {
                         level_salt(self.seed, index + 1, 0),
                         self.offline,
                         pl,
-                    )?;
-                    let num_bumped = match &next {
-                        Keys::Stored(store) => store.len,
-                        Keys::Last(records) => records.len(),
-                    };
-                    check_progress(index, k, num_bumped, self.bucket_size)?;
+                    )
+                    .with_context(|| {
+                        format!("Could not collect the keys bumped from level {index}")
+                    })?;
                     let mut level = geom.level();
                     level.salt = salt;
                     (level, out.seeds, out.occupied, next, k, geom.m)
@@ -963,7 +974,7 @@ impl PHastRBuilder {
                             );
                         }
                         attempt += 1;
-                        if attempt > LAST_LEVEL_ATTEMPTS {
+                        if attempt == LAST_LEVEL_ATTEMPTS {
                             bail!(last_level_failure(k));
                         }
                     }
@@ -1265,9 +1276,10 @@ mod tests {
 
     #[test]
     fn test_logging() -> Result<()> {
-        // With half a million keys the second level can bump keys, so all
-        // phases are logged; logging does not change the function
-        let keys: Vec<u64> = (0..500_000).collect();
+        // With a million keys the second level is not the last one (even
+        // with one thread), so all phases are logged; logging does not
+        // change the function
+        let keys: Vec<u64> = (0..1_000_000).collect();
         let builder = PHastRBuilder::default();
         let quiet = <PHastR<u64>>::try_par_new_with_builder(&keys, builder.clone(), no_logging![])?;
         // Without a logger, log macros do not format their arguments

@@ -15,9 +15,9 @@ use super::*;
 /// [`group`]).
 ///
 /// Parts are made of a power of two of consecutive buckets. For each part
-/// and for each *batch* of consecutive keys (one per thread), a *region* contains
-/// the signatures of the keys of the batch whose bucket is in the part, in
-/// the order of the keys. Regions are sized before computing the
+/// and for each *batch* of consecutive keys (one per thread), a *region*
+/// contains the signatures of the keys of the batch whose bucket is in the
+/// part, in the order of the keys. Regions are sized before computing the
 /// signatures, assuming that they are uniform, and they have some slack:
 /// the few signatures that do not fit their region, if any, are kept
 /// separately.

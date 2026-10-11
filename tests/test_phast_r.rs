@@ -51,7 +51,8 @@ fn test_small() -> Result<()> {
 fn test_medium() -> Result<()> {
     check::<Box<[u8]>>(1_000_000, PHastRBuilder::default())?;
     check::<Box<[u8]>>(300_000, PHastRBuilder::default().bucket_size(5.0))?;
-    // Rings of four, two and one words
+    // Rings of four words (10-bit seeds, or a single layout) and two words
+    // (two layouts); with the default parameters rings have one word
     check::<BitFieldVec<Box<[usize]>>>(
         300_000,
         PHastRBuilder::default()
@@ -129,6 +130,8 @@ fn test_parameter_checks() {
     assert!(build(PHastRBuilder::default().log2_layouts(3)).is_err());
     // Too many layouts for the number of seed bits
     assert!(build(PHastRBuilder::default().seed_bits(2)).is_err());
+    // Too few seed bits
+    assert!(build(PHastRBuilder::default().seed_bits(1).log2_layouts(0)).is_err());
     // Offline mode needs a lender
     assert!(build(PHastRBuilder::default().offline(true)).is_err());
     // Expected bucket sizes out of range (at most an eighth of the slice
@@ -145,7 +148,97 @@ fn test_parameter_checks() {
 }
 
 #[test]
+fn test_construction_failures() {
+    // Construction can fail with very short slices or very large buckets
+    let keys: Vec<u64> = (0..20_000).collect();
+    let err = <PHastR<u64>>::try_par_new_with_builder(
+        &keys,
+        PHastRBuilder::default()
+            .log2_layouts(0)
+            .log2_slice_len(4)
+            .bucket_size(2.0),
+        no_logging![],
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("Could not build the last level"),
+        "{err}"
+    );
+    let keys: Vec<u64> = (0..100_000).collect();
+    let err = <PHastR<u64>>::try_par_new_with_builder(
+        &keys,
+        PHastRBuilder::default()
+            .seed_bits(2)
+            .log2_layouts(0)
+            .log2_slice_len(9)
+            .bucket_size(64.0),
+        no_logging![],
+    )
+    .unwrap_err();
+    assert!(err.to_string().contains("could be placed"), "{err}");
+}
+
+#[test]
+fn test_weights_and_generic_queries() -> Result<()> {
+    // Explicit default weights give the same function, and the generic
+    // query code gives the same outputs as the code with constant shifts
+    let keys: Vec<u64> = (0..300_000).collect();
+    let phf = <PHastR<u64>>::try_par_new(&keys, no_logging![])?;
+    let weighted = <PHastR<u64>>::try_par_new_with_builder(
+        &keys,
+        PHastRBuilder::default().weights([-52000, 53315, 105861, 138629, 156944, 175176, 186591]),
+        no_logging![],
+    )?;
+    assert_eq!(format!("{weighted:?}"), format!("{phf:?}"));
+    // Other weights give a valid function
+    let other = <PHastR<u64>>::try_par_new_with_builder(
+        &keys,
+        PHastRBuilder::default().weights([0, 1 << 16, 2 << 16, 3 << 16, 4 << 16, 5 << 16, 6 << 16]),
+        no_logging![],
+    )?;
+    let generic = phf.clone().generic_queries();
+    let mut seen = vec![false; keys.len()];
+    for key in &keys {
+        assert_eq!(generic.get(key), phf.get(key));
+        let v = other.get(key);
+        assert!(!seen[v]);
+        seen[v] = true;
+    }
+    Ok(())
+}
+
+/// Serialization with serde and deserialization give the same function.
+#[cfg(feature = "serde")]
+#[test]
+fn test_serde() -> Result<()> {
+    fn round_trip<T: serde::Serialize + serde::de::DeserializeOwned + std::fmt::Debug>(
+        t: &T,
+    ) -> Result<()> {
+        let json = serde_json::to_string(t)?;
+        let back: T = serde_json::from_str(&json)?;
+        assert_eq!(format!("{back:?}"), format!("{t:?}"));
+        Ok(())
+    }
+    let keys: Vec<u64> = (0..100_000).collect();
+    round_trip(&<PHastR<u64>>::try_par_new(&keys, no_logging![])?)?;
+    let phf = <PHastR<u64, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
+        &keys,
+        PHastRBuilder::default().seed_bits(10).log2_slice_len(11),
+        no_logging![],
+    )?;
+    round_trip(&phf)?;
+    round_trip(&phf.try_into_unaligned()?)?;
+    let keys: Vec<String> = (0..10_000).map(|i| format!("key{i}")).collect();
+    round_trip(&<PHastR<str>>::try_par_new(&keys, no_logging![])?)?;
+    Ok(())
+}
+
+#[test]
 fn test_clone_unsized() -> Result<()> {
+    // Functions are Send and Sync whatever the type of the keys
+    fn send_sync<T: Send + Sync>() {}
+    send_sync::<PHastR<str>>();
+    send_sync::<PHastR<u64, BitFieldVec<Box<[usize]>>>>();
     // Clone and Debug do not require the type of the keys to implement them
     let keys = ["a", "b", "c"];
     let phf = <PHastR<str>>::try_par_new(&keys, no_logging![])?;
@@ -159,12 +252,12 @@ fn test_clone_unsized() -> Result<()> {
 
 #[test]
 fn test_unaligned_round_trip() -> Result<()> {
-    // Conversion to unaligned reads and back, for both seed storages (the
-    // backends might keep the padding of unaligned reads, so we compare
-    // outputs)
+    // Conversion to unaligned reads and back, for both seed storages (seeds
+    // and remapping sequence are already padded, so nothing changes)
     let keys: Vec<u64> = (0..100_000).collect();
     let phf = <PHastR<u64>>::try_par_new(&keys, no_logging![])?;
     let back: PHastR<u64> = phf.clone().try_into_unaligned()?.into();
+    assert_eq!(format!("{back:?}"), format!("{phf:?}"));
     for key in &keys {
         assert_eq!(back.get(key), phf.get(key));
     }
@@ -174,6 +267,7 @@ fn test_unaligned_round_trip() -> Result<()> {
         no_logging![],
     )?;
     let back: PHastR<u64, BitFieldVec<Box<[usize]>>> = phf.clone().try_into_unaligned()?.into();
+    assert_eq!(format!("{back:?}"), format!("{phf:?}"));
     for key in &keys {
         assert_eq!(back.get(key), phf.get(key));
     }

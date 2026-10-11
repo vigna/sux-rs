@@ -58,7 +58,7 @@ fn build<D: SeedStoreBuild + MemSize + mem_dbg::FlatType>(
     phf
 }
 
-/// Checks that `get` maps the keys bijectively to their indices, and
+/// Checks that `get` maps the keys to distinct values, and
 /// reports the time of queries running through the keys in sequence (each
 /// query hashes its key, so accesses to the function are random anyway).
 fn query(get: impl Fn(&u64) -> usize, keys: &[u64], queries: usize) {
