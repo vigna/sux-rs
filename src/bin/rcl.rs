@@ -3,14 +3,18 @@
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
-use std::{borrow::Borrow, io::BufRead, num::NonZeroUsize};
+use std::{borrow::Borrow, io::Read, num::NonZeroUsize};
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
-use sux::{init_env_logger, prelude::*, utils::DekoBufLineLender};
+use sux::{
+    cli::{AnyLineLender, Decompression},
+    init_env_logger,
+    prelude::*,
+};
 
 /// Macro to handle the repeated pattern of checking args.unsorted
 /// and calling a function with the appropriate const generic parameter.
@@ -38,7 +42,7 @@ macro_rules! call_with_sorted {
 #[derive(Parser, Debug)]
 #[command(about = "Builds a rear-coded list starting from a list of UTF-8 encoded strings.", long_about = None, next_line_help = true, max_term_width = 100)]
 struct Args {
-    /// A file containing UTF-8 strings, one per line, or - for standard input; it can be compressed with any format supported by the deko crate.​
+    /// A file containing UTF-8 strings, one per line, or - for standard input.​
     source: String,
     /// A name for the ε-serde serialized rear-coded list.​
     dest: String,
@@ -52,10 +56,13 @@ struct Args {
     /// Use the slower direct-to-disk construction algorithm, which uses very little memory (cannot be used with stdin input).​
     #[arg(long)]
     low_mem: bool,
+    /// Decompress the input using this format (by default, it is read as is).​
+    #[arg(long, value_enum)]
+    decompress: Option<Decompression>,
 }
 
-fn compress<R: BufRead, const SORTED: bool>(
-    mut lender: DekoBufLineLender<R>,
+fn compress<R: Read, const SORTED: bool>(
+    mut lender: AnyLineLender<R>,
     dest: impl Borrow<str>,
     ratio: usize,
 ) -> Result<()> {
@@ -121,7 +128,7 @@ fn main() -> Result<()> {
                 );
             }
         }
-        let lender = DekoBufLineLender::from_path(&args.source)?;
+        let lender = AnyLineLender::from_path(&args.source, args.decompress)?;
         call_with_sorted!(
             args.unsorted,
             rear_coded_list::store_str,
@@ -130,10 +137,10 @@ fn main() -> Result<()> {
             args.dest
         )?;
     } else if args.source == "-" {
-        let stdin = DekoBufLineLender::new(std::io::BufReader::new(std::io::stdin().lock()))?;
+        let stdin = AnyLineLender::new(std::io::stdin().lock(), args.decompress)?;
         call_with_sorted!(args.unsorted, compress, stdin, args.dest, args.ratio.get())?;
     } else {
-        let lender = DekoBufLineLender::from_path(&args.source)?;
+        let lender = AnyLineLender::from_path(&args.source, args.decompress)?;
         call_with_sorted!(args.unsorted, compress, lender, args.dest, args.ratio.get())?;
     }
 

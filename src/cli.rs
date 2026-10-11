@@ -7,28 +7,113 @@
 //! Shared CLI utilities for binaries and example benchmarks.
 
 use std::fmt::Display;
+use std::fs::File;
+use std::io::{self, BufReader, Read, Seek};
+use std::path::Path;
 use std::time::Duration;
+
+use lender::{FallibleLend, FallibleLender, FallibleLending, check_covariance_fallible};
 
 use crate::bits::BitFieldVec;
 use crate::func::VBuilder;
 use crate::func::shard_edge::ShardEdge;
+use crate::utils::{
+    DekoBufLineLender, FallibleRewindableLender, GzipLineLender, LineLender, ZstdLineLender,
+};
 
-/// Reads up to `n` lines from `filename` using a [`DekoBufLineLender`] into a
+/// Compression formats of input files.​
+#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+pub enum Decompression {
+    /// Detect the format from the first bytes using the deko crate (gzip,
+    /// zlib, bzip2, xz, zstd, or no compression).​
+    Deko,
+    /// gzip (possibly with multiple members).​
+    Gzip,
+    /// Zstandard.​
+    Zstd,
+}
+
+/// A lender of the lines of a [`Read`], decompressed in a format chosen at
+/// runtime.
+///
+/// Binaries read their input files with this lender, passing the value of
+/// their `--decompress` option: files are not decompressed unless a format is
+/// specified.
+pub enum AnyLineLender<R: Read> {
+    Plain(LineLender<BufReader<R>>),
+    Deko(DekoBufLineLender<BufReader<R>>),
+    Gzip(GzipLineLender<R>),
+    Zstd(ZstdLineLender<R>),
+}
+
+impl<R: Read> AnyLineLender<R> {
+    /// Creates a lender of the lines of `read`, decompressed in the given
+    /// format, or as they are if `decompression` is [`None`].
+    pub fn new(read: R, decompression: Option<Decompression>) -> io::Result<Self> {
+        Ok(match decompression {
+            None => Self::Plain(LineLender::new(BufReader::new(read))),
+            Some(Decompression::Deko) => Self::Deko(DekoBufLineLender::new(BufReader::new(read))?),
+            Some(Decompression::Gzip) => Self::Gzip(GzipLineLender::new(read)?),
+            Some(Decompression::Zstd) => Self::Zstd(ZstdLineLender::new(read)?),
+        })
+    }
+}
+
+impl AnyLineLender<File> {
+    /// Creates a lender of the lines of a file, decompressed in the given
+    /// format, or as they are if `decompression` is [`None`].
+    pub fn from_path(
+        path: impl AsRef<Path>,
+        decompression: Option<Decompression>,
+    ) -> io::Result<Self> {
+        Self::new(File::open(path)?, decompression)
+    }
+}
+
+impl<'lend, R: Read> FallibleLending<'lend> for AnyLineLender<R> {
+    type Lend = &'lend str;
+}
+
+impl<R: Read> FallibleLender for AnyLineLender<R> {
+    check_covariance_fallible!();
+    type Error = io::Error;
+    fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
+        match self {
+            Self::Plain(lender) => lender.next(),
+            Self::Deko(lender) => lender.next(),
+            Self::Gzip(lender) => lender.next(),
+            Self::Zstd(lender) => lender.next(),
+        }
+    }
+}
+
+impl<R: Read + Seek> FallibleRewindableLender for AnyLineLender<R> {
+    type RewindError = io::Error;
+    fn rewind(self) -> io::Result<Self> {
+        Ok(match self {
+            Self::Plain(lender) => Self::Plain(lender.rewind()?),
+            Self::Deko(lender) => Self::Deko(lender.rewind()?),
+            Self::Gzip(lender) => Self::Gzip(lender.rewind()?),
+            Self::Zstd(lender) => Self::Zstd(lender.rewind()?),
+        })
+    }
+}
+
+/// Reads up to `n` lines from `filename` using an [`AnyLineLender`] into a
 /// single concatenated [`String`] buffer, returning the buffer together with an
 /// `offsets` vector such that line `i` is `&buffer[offsets[i]..offsets[i+1]]`.
-///
-/// [`DekoBufLineLender`]: crate::utils::DekoBufLineLender
-#[cfg(feature = "deko")]
-pub fn read_concat_lines(filename: &str, n: usize) -> anyhow::Result<(String, Vec<usize>)> {
-    use lender::FallibleLender;
-
+pub fn read_concat_lines(
+    filename: &str,
+    n: usize,
+    decompression: Option<Decompression>,
+) -> anyhow::Result<(String, Vec<usize>)> {
     let mut buffer = String::new();
     // Cap the initial capacity hint: the default parallel path passes
     // n = usize::MAX (read until EOF), which would abort with a capacity
     // overflow. The Vec grows naturally past the cap.
     let mut offsets: Vec<usize> = Vec::with_capacity(n.saturating_add(1).min(1 << 20));
     offsets.push(0);
-    let mut lender = crate::utils::DekoBufLineLender::from_path(filename)?;
+    let mut lender = AnyLineLender::from_path(filename, decompression)?;
     let mut count = 0usize;
     while count < n {
         let Some(line) = lender.next()? else {
@@ -47,22 +132,23 @@ pub fn str_slice_from_offsets<'a>(buffer: &'a str, offsets: &[usize]) -> Vec<&'a
     offsets.windows(2).map(|w| &buffer[w[0]..w[1]]).collect()
 }
 
-/// Reservoir-samples up to `n` lines from `filename` using a
-/// [`DekoBufLineLender`]. Each line in the file has equal probability of
+/// Reservoir-samples up to `n` lines from `filename` using an
+/// [`AnyLineLender`]. Each line in the file has equal probability of
 /// appearing in the result. The result is shuffled so that the strings are not
 /// in file order.
-///
-/// [`DekoBufLineLender`]: crate::utils::DekoBufLineLender
-#[cfg(feature = "deko")]
-pub fn reservoir_sample(filename: &str, n: usize, seed: u64) -> anyhow::Result<Vec<String>> {
-    use lender::FallibleLender;
+pub fn reservoir_sample(
+    filename: &str,
+    n: usize,
+    seed: u64,
+    decompression: Option<Decompression>,
+) -> anyhow::Result<Vec<String>> {
     use rand::rngs::SmallRng;
     use rand::seq::SliceRandom;
     use rand::{RngExt, SeedableRng};
 
     let mut rng = SmallRng::seed_from_u64(seed);
     let mut reservoir: Vec<String> = Vec::with_capacity(n);
-    let mut lender = crate::utils::DekoBufLineLender::from_path(filename)?;
+    let mut lender = AnyLineLender::from_path(filename, decompression)?;
     let mut i = 0usize;
     while let Some(line) = lender.next()? {
         if i < n {
@@ -277,7 +363,6 @@ mod tests {
         assert!(parse_duration(&format!("{}s1s", u64::MAX)).is_err());
     }
 
-    #[cfg(feature = "deko")]
     #[test]
     fn concatenated_reader_does_not_read_past_limit() -> anyhow::Result<()> {
         use std::io::Write;
@@ -285,16 +370,62 @@ mod tests {
         let mut file = tempfile::NamedTempFile::new()?;
         file.write_all(b"good\n\xff\n")?;
         let path = file.path().to_str().expect("temporary path is UTF-8");
-        let (buffer, offsets) = read_concat_lines(path, 1)?;
+        let (buffer, offsets) = read_concat_lines(path, 1, None)?;
         assert_eq!(buffer, "good");
         assert_eq!(offsets, [0, 4]);
 
         let mut invalid = tempfile::NamedTempFile::new()?;
         invalid.write_all(b"\xff\n")?;
         let path = invalid.path().to_str().expect("temporary path is UTF-8");
-        let (buffer, offsets) = read_concat_lines(path, 0)?;
+        let (buffer, offsets) = read_concat_lines(path, 0, None)?;
         assert!(buffer.is_empty());
         assert_eq!(offsets, [0]);
+        Ok(())
+    }
+
+    /// Reads all the lines of a lender, twice, rewinding in between.
+    fn read_twice(mut lender: AnyLineLender<File>) -> anyhow::Result<[Vec<String>; 2]> {
+        let mut result = [vec![], vec![]];
+        for lines in &mut result {
+            while let Some(line) = lender.next()? {
+                lines.push(line.to_owned());
+            }
+            lender = lender.rewind()?;
+        }
+        Ok(result)
+    }
+
+    #[test]
+    fn any_line_lender_decompresses_and_rewinds() -> anyhow::Result<()> {
+        use std::io::Write;
+
+        let text = "first\nsecond\r\nthird";
+        let expected = ["first", "second", "third"];
+        let mut plain = tempfile::NamedTempFile::new()?;
+        plain.write_all(text.as_bytes())?;
+        let mut gzip = tempfile::NamedTempFile::new()?;
+        let mut encoder =
+            flate2::write::GzEncoder::new(gzip.as_file_mut(), flate2::Compression::default());
+        encoder.write_all(text.as_bytes())?;
+        encoder.finish()?;
+        let mut zstd = tempfile::NamedTempFile::new()?;
+        zstd::stream::copy_encode(text.as_bytes(), zstd.as_file_mut(), 0)?;
+
+        for (file, decompression) in [
+            (&plain, None),
+            (&plain, Some(Decompression::Deko)),
+            (&gzip, Some(Decompression::Gzip)),
+            (&gzip, Some(Decompression::Deko)),
+            (&zstd, Some(Decompression::Zstd)),
+            (&zstd, Some(Decompression::Deko)),
+        ] {
+            let lines = read_twice(AnyLineLender::from_path(file.path(), decompression)?)?;
+            assert_eq!(lines, [expected, expected], "{decompression:?}");
+        }
+
+        // Without decompression, compressed files are read as they are
+        let lines = read_twice(AnyLineLender::from_path(gzip.path(), None)?);
+        assert!(lines.is_err() || lines?[0] != expected);
         Ok(())
     }
 }

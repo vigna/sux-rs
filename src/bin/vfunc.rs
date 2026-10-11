@@ -15,15 +15,17 @@ use lender::FallibleLender;
 use mem_dbg::{FlatType, MemSize};
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
-use sux::cli::{BuilderArgs, HashTypes, ShardingArgs, read_concat_lines, str_slice_from_offsets};
+use sux::cli::{
+    AnyLineLender, BuilderArgs, Decompression, HashTypes, ShardingArgs, read_concat_lines,
+    str_slice_from_offsets,
+};
 use sux::func::signed::SignedFunc;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
 use sux::prelude::VBuilder;
 use sux::traits::TryIntoUnaligned;
 use sux::utils::{
-    DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, FromIntoFallibleLenderFactory, Sig,
-    SigVal, ToSig,
+    EmptyVal, FromCloneableIntoIterator, FromIntoFallibleLenderFactory, Sig, SigVal, ToSig,
 };
 
 #[derive(Parser, Debug)]
@@ -39,9 +41,13 @@ struct Args {
     /// [0 . . n).​
     #[arg(short, long)]
     n: Option<usize>,
-    /// A file containing UTF-8 keys, one per line (at most N keys will be read); it can be compressed with any format supported by the deko crate.​
+    /// A file containing UTF-8 keys, one per line (at most N keys will be read).​
     #[arg(short, long)]
     filename: Option<String>,
+    /// Decompress the file of keys using this format (by default, it is read
+    /// as is).​
+    #[arg(long, value_enum)]
+    decompress: Option<Decompression>,
     /// Save the structure in unaligned form (faster, if available).​
     #[arg(long, short)]
     unaligned: bool,
@@ -83,11 +89,11 @@ fn main() -> Result<()> {
 // ── Sequential (lender-based) build macros ─────────────────────────
 
 macro_rules! filename_save_sign_seq(
-    ($h: ty, $builder:expr, $filename: expr, $func: expr, $unaligned: expr, $n: expr, $pl: expr) => {{
+    ($h: ty, $builder:expr, $filename: expr, $decompress: expr, $func: expr, $unaligned: expr, $n: expr, $pl: expr) => {{
         let func =
             <SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_new_with_builder(
                 FromIntoFallibleLenderFactory::new(|| {
-                    DekoBufLineLender::from_path($filename).map(|keys| keys.take($n))
+                    AnyLineLender::from_path($filename, $decompress).map(|keys| keys.take($n))
                 })?,
                 $builder,
                 &mut $pl,
@@ -206,7 +212,8 @@ where
                 None => {
                     let func = <VFunc<str, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                         FromIntoFallibleLenderFactory::new(|| {
-                            DekoBufLineLender::from_path(filename).map(|keys| keys.take(n))
+                            AnyLineLender::from_path(filename, args.decompress)
+                                .map(|keys| keys.take(n))
                         })?,
                         FromCloneableIntoIterator::from(0_usize..),
                         builder,
@@ -221,13 +228,23 @@ where
                     }
                 }
                 Some(HashTypes::U8) => {
-                    filename_save_sign_seq!(u8, builder, filename, args.func, args.unaligned, n, pl)
+                    filename_save_sign_seq!(
+                        u8,
+                        builder,
+                        filename,
+                        args.decompress,
+                        args.func,
+                        args.unaligned,
+                        n,
+                        pl
+                    )
                 }
                 Some(HashTypes::U16) => {
                     filename_save_sign_seq!(
                         u16,
                         builder,
                         filename,
+                        args.decompress,
                         args.func,
                         args.unaligned,
                         n,
@@ -239,6 +256,7 @@ where
                         u32,
                         builder,
                         filename,
+                        args.decompress,
                         args.func,
                         args.unaligned,
                         n,
@@ -250,6 +268,7 @@ where
                         u64,
                         builder,
                         filename,
+                        args.decompress,
                         args.func,
                         args.unaligned,
                         n,
@@ -261,7 +280,7 @@ where
             // Parallel: read all keys into a single concatenated
             // buffer, then build a Vec<&str> of slices into it for
             // cache-friendly access during sig hashing.
-            let (buffer, offsets) = read_concat_lines(filename, n)?;
+            let (buffer, offsets) = read_concat_lines(filename, n, args.decompress)?;
             let keys = str_slice_from_offsets(&buffer, &offsets);
             if let Some(n_hint) = args.n {
                 if keys.len() != n_hint {

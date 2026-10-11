@@ -126,7 +126,9 @@ usage and debugging memory-related issues. For example, this is the output of
 
 Several binaries build and serialize structures with ε-serde (for example,
 `rcl`, `vfunc`, `vfilter`, and `phastr`); enable the `cli` feature to build
-them.
+them. Input files are read as they are, unless a compression format is
+specified with `--decompress` (`gzip`, `zstd`, or `deko`, which detects the
+format using the [`deko`] crate).
 Benchmarking examples declare their own required features in `Cargo.toml`.
 
 ## Features
@@ -144,7 +146,8 @@ The crate has the following features:
 - `epserde`: enables support for [ε-serde];
 - `serde`: enables support for [serde];
 - `clap`: enables the `clap` crate for command-line argument parsing;
-- `cli`: builds the binaries (implies `clap`, `epserde`, `deko`);
+- `cli`: builds the binaries (implies `clap`, `epserde`, `rayon`, `flate2`,
+  `zstd`, and `deko`);
 - `mmap`: enables support for memory mapping in ε-serde (implies `epserde`);
 - `fuzz`: enables fuzzing support using the `arbitrary` crate;
 - `mwhc`: compiles the MWHC shard/edge logic (mainly for benchmarking);

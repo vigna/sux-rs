@@ -15,15 +15,17 @@ use lender::FallibleLender;
 use mem_dbg::{FlatType, MemSize};
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
-use sux::cli::{BuilderArgs, ShardingArgs, read_concat_lines, str_slice_from_offsets};
+use sux::cli::{
+    AnyLineLender, BuilderArgs, Decompression, ShardingArgs, read_concat_lines,
+    str_slice_from_offsets,
+};
 use sux::dict::VFilter;
 use sux::func::{shard_edge::*, *};
 use sux::init_env_logger;
 use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSliceMut, TryIntoUnaligned, Word};
 use sux::utils::{
-    BinSafe, DekoBufLineLender, EmptyVal, FromCloneableIntoIterator, FromIntoFallibleLenderFactory,
-    Sig, SigVal, ToSig,
+    BinSafe, EmptyVal, FromCloneableIntoIterator, FromIntoFallibleLenderFactory, Sig, SigVal, ToSig,
 };
 use value_traits::slices::SliceByValueMut;
 
@@ -40,9 +42,13 @@ struct Args {
     /// [0 . . n).​
     #[arg(short, long)]
     n: Option<usize>,
-    /// A file containing UTF-8 keys, one per line (at most N keys will be read); it can be compressed with any format supported by the deko crate.​
+    /// A file containing UTF-8 keys, one per line (at most N keys will be read).​
     #[arg(short, long)]
     filename: Option<String>,
+    /// Decompress the file of keys using this format (by default, it is read
+    /// as is).​
+    #[arg(long, value_enum)]
+    decompress: Option<Decompression>,
     /// Save the structure in unaligned form (faster, if available).​
     #[arg(long, short)]
     unaligned: bool,
@@ -137,7 +143,7 @@ where
         if args.sequential {
             let filter = <VFilter<str, Box<[W]>, S, E>>::try_new_with_builder(
                 FromIntoFallibleLenderFactory::new(|| {
-                    DekoBufLineLender::from_path(filename).map(|keys| keys.take(n))
+                    AnyLineLender::from_path(filename, args.decompress).map(|keys| keys.take(n))
                 })?,
                 builder,
                 &mut pl,
@@ -146,7 +152,7 @@ where
                 unsafe { filter.store(filename) }?;
             }
         } else {
-            let (buffer, offsets) = read_concat_lines(filename, n)?;
+            let (buffer, offsets) = read_concat_lines(filename, n, args.decompress)?;
             let keys = str_slice_from_offsets(&buffer, &offsets);
             if let Some(n_hint) = args.n {
                 if keys.len() != n_hint {
@@ -223,7 +229,7 @@ where
         if args.sequential {
             let filter = <VFilter<str, BitFieldVec<Box<[W]>>, S, E>>::try_new_with_builder(
                 FromIntoFallibleLenderFactory::new(|| {
-                    DekoBufLineLender::from_path(filename).map(|keys| keys.take(n))
+                    AnyLineLender::from_path(filename, args.decompress).map(|keys| keys.take(n))
                 })?,
                 args.bits,
                 builder,
@@ -237,7 +243,7 @@ where
                 }
             }
         } else {
-            let (buffer, offsets) = read_concat_lines(filename, n)?;
+            let (buffer, offsets) = read_concat_lines(filename, n, args.decompress)?;
             let keys = str_slice_from_offsets(&buffer, &offsets);
             if let Some(n_hint) = args.n {
                 if keys.len() != n_hint {

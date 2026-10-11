@@ -12,7 +12,7 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::{
     bits::BitFieldVecU,
-    cli::{pack_strings, reservoir_sample},
+    cli::{Decompression, pack_strings, reservoir_sample},
     func::{lcp_mmphf::*, lcp2_mmphf::*},
 };
 
@@ -70,9 +70,13 @@ struct Args {
     n: usize,
     /// A name for the ε-serde serialized function.​
     func: String,
-    /// A file containing sorted UTF-8 keys, one per line; it can be compressed with any format supported by the deko crate. If not specified, random sorted u64 keys are used.​
+    /// A file containing sorted UTF-8 keys, one per line. If not specified, random sorted u64 keys are used.​
     #[arg(short = 'f', long)]
     filename: Option<String>,
+    /// Decompress the file of keys using this format (by default, it is read
+    /// as is).​
+    #[arg(long, value_enum)]
+    decompress: Option<Decompression>,
     /// The number of repetitions.​
     #[arg(short, long, default_value = "5")]
     repeats: usize,
@@ -101,7 +105,7 @@ fn main_single(args: Args) -> Result<()> {
         if args.unaligned {
             let func = unsafe { <LcpMmphfStr<BitFieldVecU<Box<[usize]>>>>::load_full(&args.func) }?;
             let (packed, packed_offsets) = {
-                let queries = reservoir_sample(filename, args.n, 42)?;
+                let queries = reservoir_sample(filename, args.n, 42, args.decompress)?;
                 pack_strings(&queries, args.n)
             };
             bench(args.n, args.repeats, || {
@@ -117,7 +121,7 @@ fn main_single(args: Args) -> Result<()> {
         } else {
             let func = unsafe { <LcpMmphfStr>::load_full(&args.func) }?;
             let (packed, packed_offsets) = {
-                let queries = reservoir_sample(filename, args.n, 42)?;
+                let queries = reservoir_sample(filename, args.n, 42, args.decompress)?;
                 pack_strings(&queries, args.n)
             };
             bench(args.n, args.repeats, || {
@@ -168,7 +172,7 @@ fn main_two_step(args: Args) -> Result<()> {
             let func =
                 unsafe { <Lcp2MmphfStr<BitFieldVecU<Box<[usize]>>>>::load_full(&args.func) }?;
             let (packed, packed_offsets) = {
-                let queries = reservoir_sample(filename, args.n, 42)?;
+                let queries = reservoir_sample(filename, args.n, 42, args.decompress)?;
                 pack_strings(&queries, args.n)
             };
             bench(args.n, args.repeats, || {
@@ -184,7 +188,7 @@ fn main_two_step(args: Args) -> Result<()> {
         } else {
             let func = unsafe { <Lcp2MmphfStr>::load_full(&args.func) }?;
             let (packed, packed_offsets) = {
-                let queries = reservoir_sample(filename, args.n, 42)?;
+                let queries = reservoir_sample(filename, args.n, 42, args.decompress)?;
                 pack_strings(&queries, args.n)
             };
             bench(args.n, args.repeats, || {

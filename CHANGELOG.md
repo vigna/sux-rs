@@ -142,6 +142,14 @@
 
 ### Changed
 
+- CLI utilities and examples no longer detect compressed input files
+  automatically: files are read as they are, unless a format is specified
+  with `--decompress` (`gzip`, `zstd`, or `deko` for detection using the
+  `deko` crate). The new `cli::AnyLineLender` lends the lines of a file
+  decompressed in a format chosen at runtime, and `cli::read_concat_lines`
+  and `cli::reservoir_sample` take the format as an argument. The `cli`
+  feature now enables the `flate2` and `zstd` features.
+
 - `SignableFunc` provides the verification hash of a signature
   (`remixed_hash`) instead of the shard edge, so that functions without a
   shard edge can be signed.

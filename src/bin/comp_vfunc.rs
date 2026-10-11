@@ -18,16 +18,16 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::num::NonZeroUsize;
 use sux::bits::BitVec;
-use sux::cli::{BuilderArgs, read_concat_lines, str_slice_from_offsets};
+use sux::cli::{
+    AnyLineLender, BuilderArgs, Decompression, read_concat_lines, str_slice_from_offsets,
+};
 use sux::func::codec::HuffmanConf;
 use sux::func::shard_edge::{Fuse3NoShards, Fuse3Shards, ShardEdge};
 use sux::func::{CompVFunc, VBuilder};
 use sux::init_env_logger;
 use sux::traits::TryIntoUnaligned;
 use sux::utils::lenders::FromSlice;
-use sux::utils::{
-    DekoBufLineLender, FromCloneableIntoIterator, FromIntoFallibleLenderFactory, Sig, SigVal, ToSig,
-};
+use sux::utils::{FromCloneableIntoIterator, FromIntoFallibleLenderFactory, Sig, SigVal, ToSig};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -53,10 +53,13 @@ struct Args {
     #[arg(short, long)]
     n: Option<usize>,
     /// A file containing UTF-8 keys, one per line (at most N keys will
-    /// be read); it can be compressed with any format supported by
-    /// the deko crate.​
+    /// be read).​
     #[arg(short, long)]
     filename: Option<String>,
+    /// Decompress the file of keys using this format (by default, it is read
+    /// as is).​
+    #[arg(long, value_enum)]
+    decompress: Option<Decompression>,
     /// A file containing the values, one ASCII decimal integer per
     /// line. The number of values must match the number of keys.​
     #[arg(short, long)]
@@ -210,8 +213,8 @@ fn generate_synthetic_values(args: &Args, n: usize) -> Result<Vec<usize>> {
     }
 }
 
-fn count_keys(filename: &str) -> Result<usize> {
-    let mut lender = DekoBufLineLender::from_path(filename)?;
+fn count_keys(filename: &str, decompression: Option<Decompression>) -> Result<usize> {
+    let mut lender = AnyLineLender::from_path(filename, decompression)?;
     let mut count = 0;
     while lender.next()?.is_some() {
         count += 1;
@@ -244,7 +247,7 @@ where
         } else {
             let n = match args.n {
                 Some(n) => n,
-                None => count_keys(filename)?,
+                None => count_keys(filename, args.decompress)?,
             };
             generate_synthetic_values(&args, n)?
         };
@@ -253,12 +256,12 @@ where
             // Opt-in (--check requires --values): the key count must match the
             // value count exactly, otherwise keys past values.len() would be
             // silently ignored. This costs an extra pass over the key file.
-            let key_count = count_keys(filename)?;
+            let key_count = count_keys(filename, args.decompress)?;
             ensure!(key_count == n, "key count {key_count} != value count {n}");
         }
         if args.sequential {
             let keys = FromIntoFallibleLenderFactory::new(|| {
-                DekoBufLineLender::from_path(filename).map(|keys| keys.take(n))
+                AnyLineLender::from_path(filename, args.decompress).map(|keys| keys.take(n))
             })?;
             let func = <CompVFunc<str, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
                 keys,
@@ -269,7 +272,7 @@ where
             )?;
             maybe_store!(func, args.func, args.unaligned);
         } else {
-            let (buffer, offsets) = read_concat_lines(filename, n)?;
+            let (buffer, offsets) = read_concat_lines(filename, n, args.decompress)?;
             let keys = str_slice_from_offsets(&buffer, &offsets);
             if keys.len() != n {
                 bail!("key count mismatch: read {} keys, expected {n}", keys.len());

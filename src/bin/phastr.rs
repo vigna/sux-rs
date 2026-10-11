@@ -11,12 +11,14 @@ use epserde::ser::Serialize;
 use lender::FallibleLender;
 use num_primitive::PrimitiveNumberAs;
 use sux::bits::BitFieldVec;
-use sux::cli::{HashTypes, read_concat_lines, str_slice_from_offsets};
+use sux::cli::{
+    AnyLineLender, Decompression, HashTypes, read_concat_lines, str_slice_from_offsets,
+};
 use sux::func::phast_r::SeedStoreBuild;
 use sux::func::{PHastR, PHastRBuilder, SignedFunc};
 use sux::init_env_logger;
 use sux::traits::{TryIntoUnaligned, Word};
-use sux::utils::{DekoBufLineLender, FromCloneableIntoIterator, FromIntoFallibleLenderFactory};
+use sux::utils::{FromCloneableIntoIterator, FromIntoFallibleLenderFactory};
 
 #[derive(Parser, Debug)]
 #[command(about = "Creates a (possibly signed) PHastR minimal perfect hash function on a set of keys and serializes it with ε-serde.", long_about = None, next_line_help = true, max_term_width = 100)]
@@ -31,9 +33,13 @@ struct Args {
     /// [0 . . n).​
     #[arg(short, long)]
     n: Option<usize>,
-    /// A file containing UTF-8 keys, one per line (at most N keys will be read); it can be compressed with any format supported by the deko crate.​
+    /// A file containing UTF-8 keys, one per line (at most N keys will be read).​
     #[arg(short, long)]
     filename: Option<String>,
+    /// Decompress the file of keys using this format (by default, it is read
+    /// as is).​
+    #[arg(long, value_enum)]
+    decompress: Option<Decompression>,
     /// Save the structure in unaligned form (faster).​
     #[arg(long, short)]
     unaligned: bool,
@@ -145,8 +151,12 @@ fn store<F: Serialize + TryIntoUnaligned<Unaligned: Serialize>>(
 /// `Vec<&str>` of slices into it for cache-friendly access during hashing;
 /// at most `n` keys are read, and if `n` is provided exactly `n` keys must
 /// be read.
-fn read_keys(filename: &str, n: Option<usize>) -> Result<(String, Vec<usize>)> {
-    let (buffer, offsets) = read_concat_lines(filename, n.unwrap_or(usize::MAX))?;
+fn read_keys(
+    filename: &str,
+    n: Option<usize>,
+    decompression: Option<Decompression>,
+) -> Result<(String, Vec<usize>)> {
+    let (buffer, offsets) = read_concat_lines(filename, n.unwrap_or(usize::MAX), decompression)?;
     if let Some(n) = n {
         if offsets.len() - 1 != n {
             bail!(
@@ -173,13 +183,14 @@ where
     if let Some(filename) = &args.filename {
         if args.sequential {
             let func = <PHastR<str, D>>::try_new_with_builder(
-                DekoBufLineLender::from_path(filename)?.take(args.n.unwrap_or(usize::MAX)),
+                AnyLineLender::from_path(filename, args.decompress)?
+                    .take(args.n.unwrap_or(usize::MAX)),
                 builder,
                 &mut pl,
             )?;
             store(func, &args.func, args.unaligned)
         } else {
-            let (buffer, offsets) = read_keys(filename, args.n)?;
+            let (buffer, offsets) = read_keys(filename, args.n, args.decompress)?;
             let keys = str_slice_from_offsets(&buffer, &offsets);
             let func = <PHastR<str, D>>::try_par_new_with_builder(&keys, builder, &mut pl)?;
             store(func, &args.func, args.unaligned)
@@ -220,14 +231,14 @@ where
             let n = args.n.unwrap_or(usize::MAX);
             let func = <SignedFunc<PHastR<str, D>, Box<[W]>>>::try_new_with_builder(
                 FromIntoFallibleLenderFactory::new(|| {
-                    DekoBufLineLender::from_path(filename).map(|keys| keys.take(n))
+                    AnyLineLender::from_path(filename, args.decompress).map(|keys| keys.take(n))
                 })?,
                 builder,
                 &mut pl,
             )?;
             store(func, &args.func, args.unaligned)
         } else {
-            let (buffer, offsets) = read_keys(filename, args.n)?;
+            let (buffer, offsets) = read_keys(filename, args.n, args.decompress)?;
             let keys = str_slice_from_offsets(&buffer, &offsets);
             let func = <SignedFunc<PHastR<str, D>, Box<[W]>>>::try_par_new_with_builder(
                 &keys, builder, &mut pl,

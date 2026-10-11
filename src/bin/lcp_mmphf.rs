@@ -11,13 +11,15 @@ use epserde::ser::Serialize;
 use lender::FallibleLender;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
-use sux::cli::{BuilderArgs, HashTypes, read_concat_lines, str_slice_from_offsets};
+use sux::cli::{
+    AnyLineLender, BuilderArgs, Decompression, HashTypes, read_concat_lines, str_slice_from_offsets,
+};
 use sux::func::lcp_mmphf::*;
 use sux::func::lcp2_mmphf::*;
 use sux::func::signed::*;
 use sux::init_env_logger;
 use sux::traits::TryIntoUnaligned;
-use sux::utils::{DekoBufLineLender, FromSlice};
+use sux::utils::FromSlice;
 
 #[derive(Parser, Debug)]
 #[command(about = "Creates a (possibly signed) LCP-based monotone minimal perfect hash function \
@@ -33,10 +35,13 @@ struct Args {
     /// [0 . . n).​
     #[arg(short, long)]
     n: Option<usize>,
-    /// A file containing sorted UTF-8 keys, one per line; it can be
-    /// compressed with any format supported by the deko crate.​
+    /// A file containing sorted UTF-8 keys, one per line.​
     #[arg(short, long)]
     filename: Option<String>,
+    /// Decompress the file of keys using this format (by default, it is read
+    /// as is).​
+    #[arg(long, value_enum)]
+    decompress: Option<Decompression>,
     /// Save the structure in unaligned form (faster, if available).​
     #[arg(long, short)]
     unaligned: bool,
@@ -69,7 +74,7 @@ fn main() -> Result<()> {
             n
         } else {
             pl.info(format_args!("Counting keys..."));
-            let mut lender = DekoBufLineLender::from_path(filename)?;
+            let mut lender = AnyLineLender::from_path(filename, args.decompress)?;
             let mut count = 0usize;
             while FallibleLender::next(&mut lender)?.is_some() {
                 count += 1;
@@ -131,12 +136,12 @@ fn build_single(
         match args.hash_type {
             None => {
                 if args.sequential {
-                    let lender = DekoBufLineLender::from_path(filename)?;
+                    let lender = AnyLineLender::from_path(filename, args.decompress)?;
                     let mmphf: LcpMmphfStr =
                         LcpMmphfStr::try_new_with_builder(lender, n, builder, pl)?;
                     maybe_store!(mmphf, args.func, args.unaligned);
                 } else {
-                    let (buffer, offsets) = read_concat_lines(filename, n)?;
+                    let (buffer, offsets) = read_concat_lines(filename, n, args.decompress)?;
                     let keys = str_slice_from_offsets(&buffer, &offsets);
                     if let Some(n_hint) = args.n {
                         if keys.len() != n_hint {
@@ -155,7 +160,7 @@ fn build_single(
                 if args.sequential {
                     macro_rules! build_seq {
                         ($h:ty) => {{
-                            let lender = DekoBufLineLender::from_path(filename)?;
+                            let lender = AnyLineLender::from_path(filename, args.decompress)?;
                             let mmphf: SignedFunc<LcpMmphfStr, Box<[$h]>> =
                                 <SignedFunc<LcpMmphfStr, Box<[$h]>>>::try_new_with_builder(
                                     lender, n, builder, pl,
@@ -170,7 +175,7 @@ fn build_single(
                         HashTypes::U64 => build_seq!(u64),
                     }
                 } else {
-                    let (buffer, offsets) = read_concat_lines(filename, n)?;
+                    let (buffer, offsets) = read_concat_lines(filename, n, args.decompress)?;
                     let keys = str_slice_from_offsets(&buffer, &offsets);
                     if let Some(n_hint) = args.n {
                         if keys.len() != n_hint {
@@ -266,12 +271,12 @@ fn build_two_step(
         match args.hash_type {
             None => {
                 if args.sequential {
-                    let lender = DekoBufLineLender::from_path(filename)?;
+                    let lender = AnyLineLender::from_path(filename, args.decompress)?;
                     let mmphf: Lcp2MmphfStr =
                         Lcp2MmphfStr::try_new_with_builder(lender, n, builder, pl)?;
                     maybe_store!(mmphf, args.func, args.unaligned);
                 } else {
-                    let (buffer, offsets) = read_concat_lines(filename, n)?;
+                    let (buffer, offsets) = read_concat_lines(filename, n, args.decompress)?;
                     let keys = str_slice_from_offsets(&buffer, &offsets);
                     if let Some(n_hint) = args.n {
                         if keys.len() != n_hint {
@@ -290,7 +295,7 @@ fn build_two_step(
                 if args.sequential {
                     macro_rules! build_seq {
                         ($h:ty) => {{
-                            let lender = DekoBufLineLender::from_path(filename)?;
+                            let lender = AnyLineLender::from_path(filename, args.decompress)?;
                             let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =
                                 <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_new_with_builder(
                                     lender, n, builder, pl,
@@ -305,7 +310,7 @@ fn build_two_step(
                         HashTypes::U64 => build_seq!(u64),
                     }
                 } else {
-                    let (buffer, offsets) = read_concat_lines(filename, n)?;
+                    let (buffer, offsets) = read_concat_lines(filename, n, args.decompress)?;
                     let keys = str_slice_from_offsets(&buffer, &offsets);
                     if let Some(n_hint) = args.n {
                         if keys.len() != n_hint {

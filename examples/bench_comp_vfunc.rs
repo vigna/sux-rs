@@ -10,7 +10,7 @@ use clap::Parser;
 use epserde::prelude::*;
 use sux::{
     bits::{BitVec, BitVecU},
-    cli::{pack_strings, reservoir_sample},
+    cli::{Decompression, pack_strings, reservoir_sample},
     func::{shard_edge::*, *},
     utils::{Sig, ToSig},
 };
@@ -46,8 +46,12 @@ struct Args {
     /// A name for the ε-serde serialized function.​
     func: String,
     #[arg(short = 'f', long)]
-    /// A file containing UTF-8 keys, one per line; it can be compressed with any format supported by the deko crate. If not specified, the 64-bit keys [0..n) are used.​
+    /// A file containing UTF-8 keys, one per line. If not specified, the 64-bit keys [0..n) are used.​
     filename: Option<String>,
+    /// Decompress the file of keys using this format (by default, it is read
+    /// as is).​
+    #[arg(long, value_enum)]
+    decompress: Option<Decompression>,
     /// The number of repetitions.​
     #[arg(short, long, default_value = "5")]
     repeats: usize,
@@ -89,7 +93,7 @@ where
 {
     if let Some(ref filename) = args.filename {
         let (packed, packed_offsets) = {
-            let queries = reservoir_sample(filename, args.n, 42)?;
+            let queries = reservoir_sample(filename, args.n, 42, args.decompress)?;
             pack_strings(&queries, args.n)
         };
 
