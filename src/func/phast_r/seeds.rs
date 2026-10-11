@@ -14,8 +14,8 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 /// Storage for the seeds of a level (query side).
 ///
 /// Implementations are provided for `Box<[u8]>` (at most 8 bits per seed,
-/// the fastest option), `Box<[u16]>`, [`BitFieldVec`] (any width up to 16
-/// bits), [`BitFieldVecU`] (the same, with unaligned reads, obtained by
+/// the fastest option), [`BitFieldVec`] (any width up to 16 bits),
+/// [`BitFieldVecU`] (the same, with unaligned reads, obtained by
 /// [`TryIntoUnaligned::try_into_unaligned`]), and for the corresponding
 /// borrowed types obtained by ε-serde deserialization.
 ///
@@ -79,7 +79,6 @@ macro_rules! impl_seed_store_slice {
 }
 
 impl_seed_store_slice!(u8, 8);
-impl_seed_store_slice!(u16, 16);
 
 impl SeedStoreBuild for Box<[u8]> {
     const MAX_BITS: u32 = 8;
@@ -90,14 +89,6 @@ impl SeedStoreBuild for Box<[u8]> {
 
     fn from_byte_seeds(seeds: Vec<u8>, _bits: u32) -> Self {
         seeds.into_boxed_slice()
-    }
-}
-
-impl SeedStoreBuild for Box<[u16]> {
-    const MAX_BITS: u32 = 16;
-
-    fn from_seeds<T: Copy + Into<u16>>(seeds: &[T], _bits: u32) -> Self {
-        seeds.iter().map(|&s| s.into()).collect()
     }
 }
 

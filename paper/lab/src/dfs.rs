@@ -1,4 +1,4 @@
-//! CONSENSUS-style search for bump-free PHast-R placements.
+//! CONSENSUS-style search for bump-free PHastR placements.
 //!
 //! Keys are placed on a cyclic range of m = n slots: a key with hashes (h, o)
 //! has slice beginning sb = ⌊hm / 2⁶⁴⌋, and the seed (r, d) places it at

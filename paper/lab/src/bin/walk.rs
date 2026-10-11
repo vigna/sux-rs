@@ -1,9 +1,9 @@
-//! Runs PHast-R placement with unbounded repair (see `lab::walk`).
+//! Runs PHastR placement with unbounded repair (see `lab::walk`).
 //!
 //! Usage: walk <keys> <cap> <instances> <spec>...
 //!
 //! A spec is `<S>:<log2 L>:<log2 R>:<lambda>:<alpha>[:prio][:a<age cost>]`;
-//! with `prio`, buckets are processed by PHast-R priority instead of in index
+//! with `prio`, buckets are processed by PHastR priority instead of in index
 //! order; `a<age cost>` sets the cost per slot of the age of evicted buckets;
 //! `o<owner cost>` sets the cost per evicted bucket; `z<zone>` forbids
 //! evicting buckets more than `<zone>` slots behind the frontier; `single`

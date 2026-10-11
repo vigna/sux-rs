@@ -1,4 +1,4 @@
-//! Query throughput of PHast-R with single queries and with batches that
+//! Query throughput of PHastR with single queries and with batches that
 //! prefetch the seeds of the first level (`get_batch`), on random keys.
 //!
 //! Usage: batch [-n keys] [-v <S>:<log2 L>:<lambda>[:<log2 R>],...]

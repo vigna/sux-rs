@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-//! Benchmarks construction time, space, and query time of PHast-R on 64-bit
+//! Benchmarks construction time, space, and query time of PHastR on 64-bit
 //! integer keys.
 
 use clap::Parser;
@@ -12,26 +12,27 @@ use dsi_progress_logger::no_logging;
 use mem_dbg::{MemSize, SizeFlags};
 use std::time::Instant;
 use sux::bits::BitFieldVec;
-use sux::func::phast_r::{PHastR, PHastRBuilder, SeedStore, SeedStoreBuild};
+use sux::func::phast_r::{SeedStore, SeedStoreBuild};
+use sux::func::{PHastR, PHastRBuilder};
 
 #[derive(Parser, Debug)]
-#[command(about = "Benchmarks PHast-R on 64-bit integer keys", long_about = None)]
+#[command(about = "Benchmarks PHastR on 64-bit integer keys", long_about = None)]
 struct Args {
-    /// The number of keys.
+    /// The number of keys.​
     n: usize,
-    /// The number of random queries.
+    /// The number of random queries.​
     #[arg(short, long, default_value_t = 10_000_000)]
     queries: usize,
-    /// The number of bits per seed (byte seeds are used for 8 bits or less).
+    /// The number of bits per seed (byte seeds are used for 8 bits or less).​
     #[arg(short, long, default_value_t = 8)]
     seed_bits: u32,
-    /// The base-2 logarithm of the number of layouts.
+    /// The base-2 logarithm of the number of layouts.​
     #[arg(short = 'R', long, default_value_t = 2)]
     log2_layouts: u32,
-    /// The base-2 logarithm of the slice length.
+    /// The base-2 logarithm of the slice length.​
     #[arg(short = 'L', long, default_value_t = 10)]
     log2_slice_len: u32,
-    /// The expected number of keys per bucket.
+    /// The expected number of keys per bucket.​
     #[arg(short = 'l', long, default_value_t = 4.25)]
     bucket_size: f64,
 }

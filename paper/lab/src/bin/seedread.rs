@@ -25,7 +25,6 @@ fn main() {
     let n = 1_666_667usize;
     let seeds: Vec<u16> = (0..n).map(|i| (i * 7919 % 1023) as u16).collect();
     let bfv = <BitFieldVec<Box<[usize]>>>::from_seeds(&seeds, 10);
-    let u16s = <Box<[u16]>>::from_seeds(&seeds, 10);
     // manual packed bytes
     let mut bytes = vec![0u8; n * 10 / 8 + 8];
     for (i, &s) in seeds.iter().enumerate() {
@@ -38,7 +37,6 @@ fn main() {
     }
     let bits = std::hint::black_box(10usize);
     for _ in 0..2 {
-        bench("u16", n, 50_000_000, |i| unsafe { u16s.get_seed(i) });
         bench("bfv", n, 50_000_000, |i| unsafe { bfv.get_seed(i) });
         bench("bytes", n, 50_000_000, |i| unsafe {
             let start = i * bits;

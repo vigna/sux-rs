@@ -3,7 +3,7 @@
 #
 # Configurations are those of cmp: ref:<chooser>:<S>:<lambda> for the
 # reference implementation, r:<S>:<log2 L>:<lambda>[:<log2 R>:<storage>] for
-# PHast-R.
+# PHastR.
 
 # A sweep of the expected bucket size: sweep <prefix> <suffix> <lambda>...
 sweep() {
@@ -13,7 +13,7 @@ sweep() {
 }
 
 # The configurations of the tables: for each structure, the expected bucket
-# size that minimizes space (PHast-R: the default size and the next two);
+# size that minimizes space (PHastR: the default size and the next two);
 # PHast+ with wrapping chooses seeds by the product of the values of the keys
 # (w1p, w2p, w3p, and the larger multipliers w5p and w7p, beyond which space
 # does not decrease), as PHast does by default; PtrHash (default and compact
@@ -34,7 +34,7 @@ G10=$G10$(sweep ref:w5p:10 '' 5.75 6.0 6.25)$(sweep ref:w7p:10 '' 5.75 6.0 6.25)
 G10=$G10$(sweep r:10:11 :2:bfvu 5.5 5.75 6.0 6.25 6.5)
 G10=${G10%,}
 
-# The ablation of layouts: PHast-R with the default expected bucket size and
+# The ablation of layouts: PHastR with the default expected bucket size and
 # 1, 2 or 4 layouts
 A8=r:8:10:4.25:0,r:8:10:4.25:1,r:8:10:4.25:2
 A10=r:10:11:5.75:0:bfvu,r:10:11:5.75:1:bfvu,r:10:11:5.75:2:bfvu

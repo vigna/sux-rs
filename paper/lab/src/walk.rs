@@ -1,7 +1,7 @@
-//! PHast-R placement with unbounded repair.
+//! PHastR placement with unbounded repair.
 //!
 //! Same cyclic model as [`crate::dfs`] (without chaining): buckets are
-//! processed in index order or by PHast-R priority, each bucket takes its
+//! processed in index order or by PHastR priority, each bucket takes its
 //! minimum-sum free seed, and a bucket with no free seed takes the seed
 //! minimizing the sum of the squared sizes of the buckets it collides with
 //! (PtrHash-style), evicting them; evicted buckets are placed in the same way
@@ -18,7 +18,7 @@ pub struct WalkConf {
     pub seed_bits: u32,
     pub log2_layouts: u32,
     pub log2_slice_len: u32,
-    /// Process buckets by PHast-R priority in a window of 256 buckets
+    /// Process buckets by PHastR priority in a window of 256 buckets
     /// (otherwise, in index order).
     pub priority: bool,
     /// Maximum number of evictions per episode.
@@ -337,7 +337,7 @@ impl<'a> State<'a> {
     }
 }
 
-/// Default PHast-R weights for (S = 8, L = 512).
+/// Default PHastR weights for (S = 8, L = 512).
 const WEIGHTS: [i64; 7] = [-48137, 68016, 105189, 121129, 132794, 140850, 145685];
 
 fn priority(size: usize, b: usize) -> i64 {

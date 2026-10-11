@@ -1,6 +1,6 @@
-# PHast-R: handoff notes
+# PHastR: handoff notes
 
-State of the work on PHast-R as of 2026-10-10, written to continue it on
+State of the work on PHastR as of 2026-10-10, written to continue it on
 other hardware (possibly in a new Claude Code session, which will not have
 the context of the original one: point it to this file).
 
@@ -10,7 +10,7 @@ the context of the original one: point it to this file).
   constructors; `builder.rs`: `PHastRBuilder`; `seeds.rs`: `SeedStore`/
   `SeedStoreBuild`; `sigs.rs`, `sweep.rs`, `stream.rs`: signatures, sweeps
   and offline construction), with unit tests.
-- `examples/bench_phast_r.rs`: quick benchmark of PHast-R alone
+- `examples/bench_phast_r.rs`: quick benchmark of PHastR alone
   (`cargo run --release --example bench_phast_r -- 10000000`).
 - `paper/phast.tex`: the paper (20 pages, `latexmk -pdf phast.tex`; references in `paper/biblio.bib`).
 - `paper/lean/`: Lean 4 + Mathlib formalization of Propositions 1 and 2 and
@@ -41,7 +41,7 @@ configurations of the tables, then the configurations of the tables with
 of distinct cores, one thread per core, and then all hardware threads);
 `spread.csv` (`spread.sh`: space and bumped keys over ten key
 sets of 10⁷ keys); `offline.txt` (`offline.sh`: time and peak memory of
-PHast-R built in memory and offline, with 1 and `THREADS` threads, offline
+PHastR built in memory and offline, with 1 and `THREADS` threads, offline
 also on 10¹⁰ keys if `TMPDIR` has 170 GB free, and a check that the two
 constructions give the same structure). The configurations are in
 `configs.sh`. Tables and
@@ -105,11 +105,11 @@ depend also on a second hash of the key.
 
 - `ref:<plus|w1|w2|w3|phast>:<S>:<lambda>` for PHast+, PHast+ with wrapping,
   or PHast (reference implementation);
-- `r:<S>:<log2 L>:<lambda>[:<log2 R>[:<u8|u16|bfv|bfvu>]]` for PHast-R
+- `r:<S>:<log2 L>:<lambda>[:<log2 R>[:<u8|u16|bfv|bfvu>]]` for PHastR
   (`bfvu` is a `BitFieldVec` with unaligned reads).
 
-`-t <threads>` sets the threads of the reference; PHast-R uses rayon
-(`RAYON_NUM_THREADS`). Every PHast-R structure is verified to be a bijection.
+`-t <threads>` sets the threads of the reference; PHastR uses rayon
+(`RAYON_NUM_THREADS`). Every PHastR structure is verified to be a bijection.
 
 `target/release/qsplit -n <keys> -v <spec>,...` (specs
 `<S>:<log2 L>:<lambda>[:<log2 R>]` or `ref:<plus|w3|phast>:<S>:<lambda>`)
@@ -126,14 +126,14 @@ construction only (byte seeds).
 | PHast+ (S=8, λ=5.25) | 2.116 | 40 | 22.8 |
 | PHast+ wrap δ=3 (S=8, λ=5) | 1.970 | 70 | 21.3 |
 | PHast (S=8, λ=4.5) | 1.923 | 562 | 19.9 |
-| **PHast-R** (S=8, λ=5, depth 1, default) | 1.935 | 79 | 21.4 |
-| **PHast-R** (S=8, λ=5, depth 2) | 1.924 | 127 | 21.4 |
+| **PHastR** (S=8, λ=5, depth 1, default) | 1.935 | 79 | 21.4 |
+| **PHastR** (S=8, λ=5, depth 2) | 1.924 | 127 | 21.4 |
 | PHast+ wrap δ=3 (S=10, λ=6) | 1.872 | 121 | 20.1 |
 | PHast (S=10, λ=6.05) | 1.854 | 1646 | 19.9 |
-| **PHast-R** (S=10, L=2048, λ=6, depth 1) | 1.861 | 86 | 23.7 |
-| **PHast-R** (S=10, L=2048, λ=6.25, depth 2) | 1.854 | 137 | 24.0 |
+| **PHastR** (S=10, L=2048, λ=6, depth 1) | 1.861 | 86 | 23.7 |
+| **PHastR** (S=10, L=2048, λ=6.25, depth 2) | 1.854 | 137 | 24.0 |
 
-On 10⁸ keys with 10 threads: PHast-R S=8/d1 13.8 ns/key (wrap3 13.6),
+On 10⁸ keys with 10 threads: PHastR S=8/d1 13.8 ns/key (wrap3 13.6),
 S=10/d1 13.0 ns/key (wrap3 S=10 19.2).
 
 ## Results on Intel Xeon E-2388G (GxHash, after the query changes below)
@@ -147,16 +147,16 @@ rounds (runs 4 and 5, `lab/results/nexus-run4`, `nexus-run5`):
 | PHast+ (S=8, λ=5.25) | 2.116 | 74–75 | 29.2–29.5 |
 | PHast+ wrap δ=3 (S=8, λ=5) | 1.970 | 135–136 | 27.6 |
 | PHast (S=8, λ=4.5) | 1.922 | 915–921 | 26.0–26.3 |
-| **PHast-R** (S=8, λ=5, depth 1, default) | 1.931 | 160–168 | 29.4–29.6 |
-| **PHast-R** (S=8, λ=4.75, depth 2) | 1.930 | 232–233 | 28.5–29.2 |
-| **PHast-R** (S=8, λ=5, depth 2) | 1.920 | 247–249 | 29.6–29.7 |
+| **PHastR** (S=8, λ=5, depth 1, default) | 1.931 | 160–168 | 29.4–29.6 |
+| **PHastR** (S=8, λ=4.75, depth 2) | 1.930 | 232–233 | 28.5–29.2 |
+| **PHastR** (S=8, λ=5, depth 2) | 1.920 | 247–249 | 29.6–29.7 |
 | PHast+ wrap δ=3 (S=10, λ=6) | 1.872 | 274 | 31.4 |
-| **PHast-R** (S=10, λ=6, depth 1) | 1.860 | 175–176 | 33.1–33.5 |
+| **PHastR** (S=10, λ=6, depth 1) | 1.860 | 175–176 | 33.1–33.5 |
 
 10⁸ keys (single-threaded construction): PHast+ 44.7–46.0 ns, wrap3
-41.9–42.7, PHast 37.8–38.6, PHast-R default 44.4–45.3, PHast-R λ=4.75/d2
+41.9–42.7, PHast 37.8–38.6, PHastR default 44.4–45.3, PHastR λ=4.75/d2
 42.7–43.4. With λ = 4.5 and depth 1 (1.964 bits/key, 152 ns/key, 1.9%
-bumped keys) PHast-R queries are faster than PHast+ at both sizes (29.4 vs
+bumped keys) PHastR queries are faster than PHast+ at both sizes (29.4 vs
 30.0 ns at 10⁷, 42.8 vs 47.3 at 10⁸, `qsplit2`) and tie wrap δ=3 at 10⁸:
 it is the natural candidate to replace PHast+.
 
@@ -174,8 +174,8 @@ it is the natural candidate to replace PHast+.
   latency each), making each bumped key ~15 ns slower than in the reference.
   Now keys are hashed again at each level (see "64-bit collisions" below).
 
-Before the changes, on x86 PHast-R queries were 4–8 ns slower than PHast+.
-Bumping works as in the reference, and PHast-R bumps fewer keys (3.7%) than
+Before the changes, on x86 PHastR queries were 4–8 ns slower than PHast+.
+Bumping works as in the reference, and PHastR bumps fewer keys (3.7%) than
 PHast+ (7.6%) and wrap δ=3 (4.35%); after the `next_level` fix bumped keys
 cost the same as in the reference. The fast path is still ~3 ns (10⁷) to
 ~5 ns (10⁸) slower than PHast+'s: the memory behavior is identical, but in
@@ -185,7 +185,7 @@ least two instructions more than PHast+ (second hash word, variable shift).
 Using the whole seed as displacement saves one instruction but costs 0.08
 bits/key; a compile-time number of layouts gave no gain. The lever left is
 the bump rate (smaller λ, see above). On this machine use the `performance`
-governor: with `powersave`, HWP down-clocks PHast-R's query loop more than
+governor: with `powersave`, HWP down-clocks PHastR's query loop more than
 the reference's.
 
 ## Slice length (October 2026, `lab/results/lgrid`)
@@ -234,7 +234,7 @@ layouts in order of base sum (slower), fewer repair candidates (costs space:
 Result (taskset 0-7, `performance` governor), depth 1: 10⁷ keys 144 → 122
 ns/key single-threaded, 28 → 25 with 8 threads; 10⁸ keys 139 → 127 and 27 → 25.
 Against the reference at 10⁸ (same conditions): PHast+ 75.5 / 18.0,
-wrap δ=3 131.0 / 25.9, PHast-R 129.9 / 24.9 (1 / 8 threads): construction is
+wrap δ=3 131.0 / 25.9, PHastR 129.9 / 24.9 (1 / 8 threads): construction is
 now on par with PHast+ with wrapping, and 1.4–1.7 times PHast+.
 
 Profile of what remains (single thread): search over four layouts (the
@@ -245,7 +245,7 @@ inherent cost of layouts; PHast+ searches one), eviction trials (1.37M at
 
 PHast+ needs only 64-bit hashes because keys with the same hash self-collide,
 are bumped, and are separated at the next level, where the key is hashed
-again with a new seed. The previous PHast-R remixed (h, o) at each level, so
+again with a new seed. The previous PHastR remixed (h, o) at each level, so
 equal 64-bit hashes stayed equal and construction failed. Now:
 
 - the first level is unchanged (*h* = 64-bit hash, *o = h·c*);
@@ -282,22 +282,22 @@ reference rows in each process; base = d2a9cb35):
   `#[inline]`, and with the GxHash of a string inlined LLVM did not inline it
   in the query loop, whereas `ph` marks `Function2::get` `#[inline(always)]`.
   With `#[inline(always)]` queries are 0.9–1.7 ns faster up to 10⁷ keys (more
-  at 10⁸), and PHast-R goes from +2.1–2.6 ns to −2.6–+0.9 ns vs PHast+.
+  at 10⁸), and PHastR goes from +2.1–2.6 ns to −2.6–+0.9 ns vs PHast+.
 - Seeds in a `BitFieldVec` (`results/unaligned`): the store used a private
   32-bit unaligned read, relying on the padding added by `from_seeds`. Now a
   `BitFieldVec` uses aligned reads, and `PHastR` implements
   `TryIntoUnaligned` (seeds become a `BitFieldVecU`, and the low bits of the
   Elias–Fano remapping are converted too). Unaligned reads are 2.1–4.4 ns
   faster than aligned ones for 10 and 12 bits, and as fast as the previous
-  32-bit read. PHast-R with S=10 is still 2.7–4.6 ns slower than PHast+ with
+  32-bit read. PHastR with S=10 is still 2.7–4.6 ns slower than PHast+ with
   wrapping at S=10 (to be investigated).
 
 ## Wrapping (October 2026, `lab/results/wrap`)
 
-- Fast-path anatomy (`qsplit`, diagnostic builds at 10⁷, S=8): PHast-R's
+- Fast-path anatomy (`qsplit`, diagnostic builds at 10⁷, S=8): PHastR's
   first-level path was 4.1 ns slower than PHast+'s; removing the variable
   layout shift `o >> (s·64/R)` recovers ~3 ns, removing the multiplication
-  deriving *o* ~1 ns. PHast-R won overall only because it bumps 2.6% of the
+  deriving *o* ~1 ns. PHastR won overall only because it bumps 2.6% of the
   keys instead of 7.6% (the slow path of PHast+ costs ~54 ns).
 - `PHastRBuilder::wrap(M)`: shifts with wrapping as in PHast+ with wrapping
   (`slice + ((h + s·M) mod L)`, no layouts, no *o*), with our repair, levels
@@ -308,22 +308,22 @@ reference rows in each process; base = d2a9cb35):
   exactly (same bumped keys at each level when built single-threaded); the
   residual space difference was the remapping: sux 0.10.3 (used by `ph`) has
   `EfSeq` with a `SelectAdaptConst<_, _, 12, 3>` inventory, current sux 11.
-  PHast-R now uses its own `Remap` type with 12 (−0.0065 b/k at 10⁷,
+  PHastR now uses its own `Remap` type with 12 (−0.0065 b/k at 10⁷,
   +4 ns on the slow path, i.e., +0.1–0.15 ns on average).
-- 10⁸ keys (`pareto.txt`): PHast-R W3 d1 λ=4.75 1.9309 b/k, 33.9 ns, build
+- 10⁸ keys (`pareto.txt`): PHastR W3 d1 λ=4.75 1.9309 b/k, 33.9 ns, build
   165 ns/key; λ=5 1.9183 b/k, 35.0 ns, 186; PHast+ w3 λ=5 1.9681 b/k,
-  36.5 ns, 128; PHast-R R=4 d1 1.9259 b/k, 38.5 ns, 122. Wrapping dominates
+  36.5 ns, 128; PHastR R=4 d1 1.9259 b/k, 38.5 ns, 122. Wrapping dominates
   in space and query time; construction is 30–45% slower than PHast+ w3, as
   89% of eviction trials fail after scanning the whole shift range of the
   evicted bucket (`grid.txt`: fewer candidates trade space for time).
 - With 8 threads (`ph` also on 8 threads) the construction gap shrinks:
-  10⁸ keys, PHast+ w3 λ=5 24.4 ns/key; PHast-R W3 d1 λ=4.75 28.8, λ=5 31.4.
+  10⁸ keys, PHast+ w3 λ=5 24.4 ns/key; PHastR W3 d1 λ=4.75 28.8, λ=5 31.4.
   Scanning shifts by words instead of segments was tried and is slower
   (145 vs 109 ns/key at d0): segments prune much better, as the sum of
   positions grows by k at each shift within a segment.
-- 10-bit seeds (`s10.txt`, unaligned reads, 10⁸ keys): PHast-R W1 d1 λ=6
+- 10-bit seeds (`s10.txt`, unaligned reads, 10⁸ keys): PHastR W1 d1 λ=6
   1.8526 b/k, 140 ns/key, 38.2 ns; PHast+ w3 λ=6 1.8693 b/k, 253 ns/key,
-  38.9 ns; PHast+ w1 1.9073 b/k, 118 ns/key, 37.6 ns; PHast-R R=4 d1
+  38.9 ns; PHast+ w1 1.9073 b/k, 118 ns/key, 37.6 ns; PHastR R=4 d1
   1.8536 b/k, 131 ns/key, 43.2 ns. W1 with repair beats PHast+ w3 in space,
   construction, and query time.
 
@@ -357,7 +357,7 @@ Negative results (3·10⁶ keys unless noted):
 
 Remapping: optimal coding of the holes and of the unused outputs of the
 further levels would take 0.270 instead of 0.297 b/k at 10⁷ (≤ 0.027 b/k for
-both PHast+ and PHast-R).
+both PHast+ and PHastR).
 
 Batched queries (`get_batch`, hidden; `lab/src/bin/batch.rs`): hashing a
 batch of keys and prefetching their first-level seeds before computing the
@@ -512,7 +512,7 @@ all keys, before the fix):
 | PHast+ λ=5.25 | 20.8 | 58.0 | 25.5 | 7.60% |
 | PHast+ wrap δ=3 λ=5 | 21.3 | 44.8 | 24.0 | 4.35% |
 | PHast λ=4.5 | 22.3 | 37.2 | 23.0 | 1.40% |
-| PHast-R λ=4.75 | 22.5 | 41.4 | 23.9 | 2.54% |
+| PHastR λ=4.75 | 22.5 | 41.4 | 23.9 | 2.54% |
 
 - Time for first-level keys grows by about 1 ns for each executed operation
   that depends on the cache-missing loads (probes replacing the position
@@ -520,8 +520,8 @@ all keys, before the fix):
   rings 22.2, PHast's multiplications 23.3); register moves that are
   eliminated at renaming do not count, so sharing the shift count between
   the two shifts of the seed (L = 4096) gains nothing.
-- PHast-R and PHast+ with wrapping execute the same number of operations
-  after reading the seed (five). The deficit of PHast-R came from the
+- PHastR and PHast+ with wrapping execute the same number of operations
+  after reading the seed (five). The deficit of PHastR came from the
   handling of bumped keys: `get_slow` took the key, so the compiler kept the
   key in a general-purpose register and GxHash had to move it to a vector
   register instead of loading it directly (one more dependent operation per
@@ -540,11 +540,11 @@ numbers are in `lab/results/paper/run.csv`, see the next section):
 | PHast+ λ=5.25 | 2.116 | 66 | 23.7 | 2.115 | 69 | 15.8 | 35.8 |
 | PHast+ wrap δ=3 λ=5 | 1.970 | 120 | 22.1 | 1.968 | 126 | 23.2 | 32.9 |
 | PHast λ=4.5 | 1.922 | 819 | 21.0 | 1.921 | 825 | – | 30.5 |
-| PHast-R λ=4.5 | 1.929 | 60 | 20.5 | 1.927 | 63 | 13.1 | 29.9 |
-| PHast-R λ=4.75 | 1.921 | 58 | 21.0 | 1.919 | 62 | 13.5 | 31.0 |
-| PHast-R λ=5 | 1.925 | 59 | 21.7 | 1.924 | 62 | 14.3 | 32.3 |
+| PHastR λ=4.5 | 1.929 | 60 | 20.5 | 1.927 | 63 | 13.1 | 29.9 |
+| PHastR λ=4.75 | 1.921 | 58 | 21.0 | 1.919 | 62 | 13.5 | 31.0 |
+| PHastR λ=5 | 1.925 | 59 | 21.7 | 1.924 | 62 | 14.3 | 32.3 |
 | PHast+ wrap δ=3 S=10 λ=6 | 1.872 | 242 | 25.3 | 1.869 | 248 | 41.3 | 35.8 |
-| PHast-R S=10 L=2048 λ=6 | 1.852 | 123 | 25.0 | 1.849 | 128 | 21.4 | 35.5 |
+| PHastR S=10 L=2048 λ=6 | 1.852 | 123 | 25.0 | 1.849 | 128 | 21.4 | 35.5 |
 
 Expected bucket size (`cmp`, one thread; bits/key, build ns/key, query ns):
 
@@ -597,7 +597,7 @@ Findings (Section 4.1 of the paper):
   0.55–1.5 ns: λ = 4.5 is the right default for large sets.
 - Transparent huge pages (`GLIBC_TUNABLES=glibc.malloc.hugetlb=1`, THP in
   `madvise` mode on this machine) make queries 18% faster at 10⁸ and 40%
-  faster at 10⁹ for every structure (PHast-R 24.6/28.3 ns, PHast 25.2/28.9,
+  faster at 10⁹ for every structure (PHastR 24.6/28.3 ns, PHast 25.2/28.9,
   PHast+ w3 26.9/32.1 at 10⁸/10⁹), and construction 10% faster. Removed
   from the paper and from `large.sh` on October 6 (Sebastiano: "this
   dilutes a bit too much the tests"); the ordering of the structures is
@@ -610,28 +610,28 @@ Findings (Section 4.1 of the paper):
 |---|---|---|---|---|---|---|---|---|---|
 | PHast+ w3 λ=5 | 1.970 | 119 | 22.0 | 1.968 | 129 | 33.1 | 1.968 | 130 | 52.1 |
 | PHast λ=4.5 | 1.922 | 808 | 20.9 | 1.921 | 817 | 30.5 | 1.920 | 818 | 47.6 |
-| PHast-R λ=4.5 | 1.929 | 55 | 20.5 | 1.927 | 59 | 30.0 | 1.927 | 66 | 47.3 |
-| PHast-R λ=4.75 | 1.921 | 54 | 21.1 | 1.919 | 56 | 31.1 | 1.919 | 64 | 48.9 |
+| PHastR λ=4.5 | 1.929 | 55 | 20.5 | 1.927 | 59 | 30.0 | 1.927 | 66 | 47.3 |
+| PHastR λ=4.75 | 1.921 | 54 | 21.1 | 1.919 | 56 | 31.1 | 1.919 | 64 | 48.9 |
 | PHast+ w3 S=10 | 1.872 | 242 | 25.2 | 1.869 | 254 | 35.8 | 1.869 | 252 | 54.2 |
-| PHast-R S=10 | 1.852 | 119 | 24.7 | 1.849 | 121 | 35.3 | 1.848 | 131 | 54.2 |
+| PHastR S=10 | 1.852 | 119 | 24.7 | 1.849 | 121 | 35.3 | 1.848 | 131 | 54.2 |
 
-  With 8 threads (build ns/key): PHast-R 9.2/9.4/10.3, PHast+ w3
+  With 8 threads (build ns/key): PHastR 9.2/9.4/10.3, PHast+ w3
   22.6/23.1/24.9; S=10: 19.2/17.3/19.0 vs 40.7/41.2/43.0.
 
 ## Older hardware (October 6, 2026, `lab/results/paper/sexus/`)
 
 `redo.sh` on a 40-core Xeon E7-4870 (Westmere-EX, 2011: no AVX/BMI2, 256 KB
-L2 per core, 4 sockets, 1 TB; cores 0–7 of `lscpu`, glibc 2.42). Same space to the bit. Queries (ns, 10⁷/10⁸/10⁹): PHast-R λ=4.5
+L2 per core, 4 sockets, 1 TB; cores 0–7 of `lscpu`, glibc 2.42). Same space to the bit. Queries (ns, 10⁷/10⁸/10⁹): PHastR λ=4.5
 93.1/146.7/231.3, PHast+ w3 93.1/151.5/249.4, PHast 130.5/183.6/273.3 (its
 multiplications are slow there), plain PHast+ 98.0/162.1/312.9; S=10:
-PHast-R 135.2/192.5/284.1 vs w3 132.8/187.1/280.2 (1–3% slower: unaligned
-bit-field reads cost more on that generation). First-level path: PHast-R
+PHastR 135.2/192.5/284.1 vs w3 132.8/187.1/280.2 (1–3% slower: unaligned
+bit-field reads cost more on that generation). First-level path: PHastR
 90.2 vs w3 85.4 at 10⁷ (the extra shift costs ~5 ns without BMI2), made up
-by fewer bumped keys. Construction (ns/key, 1 thread): PHast-R
+by fewer bumped keys. Construction (ns/key, 1 thread): PHastR
 160/183/223 vs w3 291/317/353 (55–63%); 8 threads 35/28/35 vs 56/48/62;
 40 threads at 10⁹: 11.4 vs 36.8 (17.8× vs 8.7× scaling). Memory 10.6 vs
 9.9 bytes/key. Huge pages (before their removal from the paper): queries
-−14% at 10⁸, −30% at 10⁹ (PHast-R 125.5/161.6, w3 129.3/172.6, PHast
+−14% at 10⁸, −30% at 10⁹ (PHastR 125.5/161.6, w3 129.3/172.6, PHast
 159.6/175.7 at 10⁸/10⁹), construction −5%.
 
 ## AWS metal instance (October 6, 2026, `lab/results/paper/c7i/`)
@@ -639,13 +639,13 @@ by fewer bumped keys. Construction (ns/key, 1 thread): PHast-R
 `redo.sh` (twice, October 6 and 7) on a `c7i.metal-24xl` (one Xeon Platinum 8488C, Sapphire Rapids:
 48 cores/96 threads, 192 GB, 105 MB L3, 2 MB L2 per core; Amazon Linux
 2023, rustc 1.99). Same space to the bit. Queries (ns, 10⁷/10⁸/10⁹):
-PHast-R λ=4.5 11.0/29.8/40.8, PHast+ w3 12.4/32.3/47.8 (−11/−8/−15%),
+PHastR λ=4.5 11.0/29.8/40.8, PHast+ w3 12.4/32.3/47.8 (−11/−8/−15%),
 PHast 11.3/30.4/41.4, plain PHast+ 16.1/36.0/54.5; at 10⁷ everything (the
 structure and the 4M query keys) sits in the 105 MB L3, so that row is
 L3-bound (first-level and all-keys times coincide within noise). S=10:
-PHast-R λ=6 13.7/35.9/50.1 vs w3 13.5/35.3/49.2 (1.5–2% slower, as on the
+PHastR λ=6 13.7/35.9/50.1 vs w3 13.5/35.3/49.2 (1.5–2% slower, as on the
 Westmere; equal on nexus). Bumped key: ~140/250 ns extra at 10⁸/10⁹.
-Construction (ns/key, 1 thread): PHast-R 45/51/54 vs w3 88/93/100
+Construction (ns/key, 1 thread): PHastR 45/51/54 vs w3 88/93/100
 (51–54%), PHast 640–652; 8 threads 7.7/8.7 vs 16.9/17.8 (10⁸/10⁹); 96
 threads at 10⁹: 2.8 vs 7.7 (19.6× vs 13.3×). Memory 10.7 vs 9.9 bytes/key.
 
@@ -661,14 +661,14 @@ to quote: 1.858 bits/key vs 1.872 (w3), build 62%, queries never slower
 queries. In the 10⁹ sweeps no configuration of PHast+ is Pareto-optimal in
 (space, query, build); PHast λ=4.5/4.75 survive by 0.1 ns or 0.004 bits.
 10¹⁰ keys were not run: keys (80 GB) plus construction state (107 GB for
-PHast-R, 99 for PHast+) do not fit in 192 GB; it would need an
+PHastR, 99 for PHast+) do not fit in 192 GB; it would need an
 m7i.metal-24xl (384 GiB, `redo.sh 10000000000`, ~10 h). Sebastiano decided
 to keep 10⁹ as the largest size.
 
 Third round (set up October 7, to be run from scratch with `redo.sh`), to
 show dominance over the whole trade-off curves rather than at single points:
 `pareto.sh` merged into `run.sh` (sweeps of λ for PHast+ with and without
-wrapping, δ = 1, 2, 3, PHast and PHast-R, S = 8 and 10, at 10⁷, 10⁸, 10⁹;
+wrapping, δ = 1, 2, 3, PHast and PHastR, S = 8 and 10, at 10⁷, 10⁸, 10⁹;
 the table configurations are points of the sweeps, so tables and figure
 come from the same measurements); queries on consecutive keys of the set
 (`cmp --order sequential`: the keys are random, so the accesses to the
@@ -685,11 +685,11 @@ hour for the offline construction on 10¹⁰ keys); peak memory about 60 GB.
 Third run (October 8, 2026; superseded by the fourth run below: `run.csv`, `large/`,
 `spread.csv`, `offline.txt`). Space unchanged. Queries are much faster than
 in the previous runs because they read consecutive keys (no cache miss on
-the array of keys); ns at 10⁷/10⁸/10⁹: PHast-R λ=4.5 4.6/11.0/20.4, PHast+
+the array of keys); ns at 10⁷/10⁸/10⁹: PHastR λ=4.5 4.6/11.0/20.4, PHast+
 w3 5.9/13.5/26.2 (−22/−19/−22%), PHast λ=4.5 4.8/11.5/21.6, plain PHast+
-7.6/16.2/32.3; S=10: PHast-R λ=5.75 5.5/12.7/24.6 vs w3 λ=6 6.6/14.9/28.5,
+7.6/16.2/32.3; S=10: PHastR λ=5.75 5.5/12.7/24.6 vs w3 λ=6 6.6/14.9/28.5,
 now faster than every other structure with 10-bit seeds. Construction
-(ns/key, 1 thread): PHast-R 44/50/54 vs w3 86/93/98, PHast 641–652; S=10
+(ns/key, 1 thread): PHastR 44/50/54 vs w3 86/93/98, PHast 641–652; S=10
 85/90/93 vs 133/139/148 (64%). 8 threads at 10⁸/10⁹: 7.6/8.2 vs 17.1/18.0
 (S=10: 12.7/13.6 vs 22.5/24.0), PHast 85.6/86.3; 96 threads at 10⁹: 2.8 vs
 7.6. Memory 10.8 vs 9.9 bytes/key. First-level query time is the same for
@@ -705,11 +705,11 @@ reads the keys and writes the records, dominates).
 
 ## Default bucket size (October 9, 2026)
 
-The defaults of the builder must give the fastest queries. In PHast-R query
+The defaults of the builder must give the fastest queries. In PHastR query
 time decreases with λ, as fewer keys are bumped, so the question is where to
 stop. On the c7i (`run.csv`, S=8): λ=4.25 1.959 bits/key, 4.3/10.4/18.9 ns,
 build 56.8 ns/key at 10⁹, 0.69% bumped, against 1.927, 4.6/11.0/20.4, 53.8,
-1.47% for λ=4.5. Local sweep below 4.25 (M1 Max, `cmp`, one thread, PHast-R
+1.47% for λ=4.5. Local sweep below 4.25 (M1 Max, `cmp`, one thread, PHastR
 only; raw output not kept), λ = 4/4.25/4.5/4.75: 2.041/1.959/1.927/1.919
 bits/key, 0.33/0.69/1.47/2.54% bumped, queries 5.8/6.1/6.9/8.1 ns at 10⁸ and
 9.6/10.6/12.6/15.0 at 10⁹, build 49.2/42.7/40.1/39.4 ns/key at 10⁹; at 10⁸
@@ -735,38 +735,38 @@ The data now in the paper (`results/paper/c7i/`): `redo.sh` on a
 c7i.metal-24xl (rustc 1.99, sux 52b87803, `ph` fork d0954d2), 6 h 47 min; no
 offline construction on 10¹⁰ keys (`TMPDIR` had less than 170 GB free). All
 structures but PHast+ without wrapping (`ShiftOnly`, which takes the first
-feasible seed) now choose seeds by the product (PHast-R, PHast with
+feasible seed) now choose seeds by the product (PHastR, PHast with
 `SeedOnly(ProdOfValues)`, PHast+ with wrapping with `ShiftOnlyProdWrapped`).
 blew (i7-12700KF; 60 GB free, so only 10⁷ and 10⁸ keys; `results/paper/blew/`)
 gives the same space to the bit and agrees, except that there PHast+ without
-wrapping builds faster than PHast-R with one thread at every λ (59 against
+wrapping builds faster than PHastR with one thread at every λ (59 against
 62–71 ns/key at 10⁸).
 
-- Space at 10⁹ (bits/key): PHast-R S=8 λ=4.25/4.5/4.75 1.942/1.902/1.897
+- Space at 10⁹ (bits/key): PHastR S=8 λ=4.25/4.5/4.75 1.942/1.902/1.897
   (bumped 0.51/1.20/2.27%), S=10 λ=5.75/6 1.819/1.818; PHast 1.885 (S=8
   λ=4.5) and 1.810 (S=10 λ=5.8); w3p 1.955 (S=8) and 1.846 (S=10); PHast+
-  2.115 (unchanged). With respect to the third run PHast-R saves 0.018–0.025
+  2.115 (unchanged). With respect to the third run PHastR saves 0.018–0.025
   (S=8) and 0.025–0.035 (S=10) bits/key, PHast 0.027–0.036 and 0.036–0.049,
   w3p 0.007–0.017 (S=8): PHast gains the most, so it is now about 0.01
-  bits/key smaller than PHast-R (0.012 with S=8, 0.009 with S=10).
-- Queries (ns, 10⁷/10⁸/10⁹): PHast-R λ=4.25 4.2/10.3/18.8, w3p 5.8/13.4/26.2,
-  PHast 4.7/11.3/21.2, PHast+ 7.7/16.3/32.5; S=10: PHast-R λ=5.75
+  bits/key smaller than PHastR (0.012 with S=8, 0.009 with S=10).
+- Queries (ns, 10⁷/10⁸/10⁹): PHastR λ=4.25 4.2/10.3/18.8, w3p 5.8/13.4/26.2,
+  PHast 4.7/11.3/21.2, PHast+ 7.7/16.3/32.5; S=10: PHastR λ=5.75
   5.3/12.3/24.0, w3p 6.4/14.7/28.4, PHast 6.4/14.6/28.0. A bumped key costs
   30–50 ns more at 10⁷, 130–410 at 10⁸, 240–680 at 10⁹.
-- Construction (ns/key, one thread, 10⁷/10⁸/10⁹): PHast-R λ=4.25 56/60/63
+- Construction (ns/key, one thread, 10⁷/10⁸/10⁹): PHastR λ=4.25 56/60/63
   (λ=4.5 48/55/58), PHast+ 53/58/66, w3p 92/98/105, PHast 680/686/693; S=10:
-  PHast-R λ=5.75 91/98/102, w3p 114/121/128, PHast 2102/2109/2117. The
-  product costs PHast-R 6–19% (S=8) and 4–9% (S=10) with respect to the sum
+  PHastR λ=5.75 91/98/102, w3p 114/121/128, PHast 2102/2109/2117. The
+  product costs PHastR 6–19% (S=8) and 4–9% (S=10) with respect to the sum
   of the third run (a table lookup per key and free rotation). 8 threads at
-  10⁹: PHast-R 9.2, PHast+ 12.5, w3p 17.3, PHast 90.5.
-- Thread scaling at 10⁹ (S=8; 1/8/16/32/96 threads): PHast-R
+  10⁹: PHastR 9.2, PHast+ 12.5, w3p 17.3, PHast 90.5.
+- Thread scaling at 10⁹ (S=8; 1/8/16/32/96 threads): PHastR
   64.0/9.4/5.2/3.2/2.6 (20.0× with 32), PHast+ 67.8/12.3/8.8/7.3/7.2 (9.3×),
   w3p 107.2/17.3/11.1/8.5/7.5 (12.6×), PHast 695/90.7/47.7/27.6/17.0
   (25.2×). Peak memory with 8 threads, excluding the keys: 10.7 against
   9.8–10.1 bytes/key.
 - Pareto (space, query, build, all structures together): at every size each
   configuration of PHast+ without wrapping or with δ=2, 3 is strictly
-  dominated by one of PHast-R; w1p S=10 λ=5.95/6.2 survive at 10⁷ and 10⁸
+  dominated by one of PHastR; w1p S=10 λ=5.95/6.2 survive at 10⁷ and 10⁸
   (less than 3% faster to build, at least 0.035 bits/key more), not at 10⁹;
   PHast survives by at most 0.012 bits/key or less than 1 ns at more than ten
   times the construction time.
@@ -776,7 +776,7 @@ wrapping builds faster than PHast-R with one thread at every λ (59 against
 - Offline at 10⁹: 0.38/0.41 bytes/key allocated with 1/8 threads, against
   9.9/11.4 in memory (excluding the keys); 64.2/18.6 against 62.7/9.1 ns/key;
   identical structures.
-- Strings (10⁸, S=8, λ=4.25): PHast-R 71 ns/key against 87 (PHast+), 120
+- Strings (10⁸, S=8, λ=4.25): PHastR 71 ns/key against 87 (PHast+), 120
   (w3p) and 714 (PHast); queries 25.7 against 34.2, 29.3 and 27.0 ns.
 
 ## Simulated review and fifth run (October 10, 2026)
@@ -800,7 +800,7 @@ Local, hardware-independent results (M1 Max, 10⁷ keys unless noted):
 - Floor (`floor`, the minimum number of bumped keys given the slice starts,
   by earliest-deadline-first, FIFO for equal reaches) on the actual hashes
   of the first level with W = L = 1024: 0.046% (10⁷), 0.053% (10⁸), 0.050%
-  (10⁹), against D − W + 1 = 0.023/0.013/0.003% and n/(2W) = 0.049%; PHast-R
+  (10⁹), against D − W + 1 = 0.023/0.013/0.003% and n/(2W) = 0.049%; PHastR
   with λ = 4.25 bumps 0.51%, about ten times the floor. A rigorous bound
   summing Proposition 1 over disjoint blocks of about 2.7W² slots gives about
   0.1·n/W.
@@ -809,12 +809,12 @@ Local, hardware-independent results (M1 Max, 10⁷ keys unless noted):
   δ = 3/4/5/6/7/9/11 give 1.9564/1.9570/1.9426/1.9454/1.9403/1.9402/1.9400
   bits/key (odd multipliers are better, the space stops decreasing at about
   δ = 7), with construction growing linearly with δ (M1: 76/83/97/109/119/
-  140/170 ns/key, against 45 for PHast-R) and 3.9–4.2% bumped keys; with
-  S = 10 and λ = 6, δ = 5/7/9/11 give 1.8421/1.8411/1.8398/1.8394 (PHast-R
-  λ = 6: 1.8231), at 156–333 ns/key. So PHast-R λ = 4.25 (1.9432) has the
+  140/170 ns/key, against 45 for PHastR) and 3.9–4.2% bumped keys; with
+  S = 10 and λ = 6, δ = 5/7/9/11 give 1.8421/1.8411/1.8398/1.8394 (PHastR
+  λ = 6: 1.8231), at 156–333 ns/key. So PHastR λ = 4.25 (1.9432) has the
   same space as the best variants with wrapping, not "slightly less": the
   text must be revised after the fifth run (configs.sh now has w5p and w7p).
-- Self-collisions of PHast-R (`floor --layouts 0,1,2`, S = 8, λ = 4.25): with
+- Self-collisions of PHastR (`floor --layouts 0,1,2`, S = 8, λ = 4.25): with
   R = 1, buckets with a self-collision hold 1.28% of the keys (estimate
   λ(λ+2)/(2L) = 1.30%) and 71% of the bumped keys (1.79% bumped); with R = 2,
   buckets self-colliding in both layouts hold 0.03% of the keys (0.62%
@@ -830,8 +830,8 @@ Local, hardware-independent results (M1 Max, 10⁷ keys unless noted):
 - PtrHash (fork vigna/PTRHash, v2.1.2, `cmp` variants `ptr:default` and
   `ptr:compact`, same GxHash hasher): on 10⁷ keys (M1) DefaultPtrHash 2.99
   bits/key, 80 ns/key, 2.5 ns per query; CompactPtrHash 2.14, 138, 4.6;
-  PHast-R λ = 4.25 1.94, 45, 3.0. On 10⁸: DefaultPtrHash 6.6 ns, 140 ns/key;
-  CompactPtrHash 11.1 ns, 134 ns/key; PHast-R 6.5 ns, 47 ns/key. Space is
+  PHastR λ = 4.25 1.94, 45, 3.0. On 10⁸: DefaultPtrHash 6.6 ns, 140 ns/key;
+  CompactPtrHash 11.1 ns, 134 ns/key; PHastR 6.5 ns, 47 ns/key. Space is
   computed by `bits_per_element` (pilots and remapping), as its Elias–Fano
   remapping does not implement `MemSize`.
 
@@ -860,15 +860,15 @@ introduction, Section 5 and conclusions.
   run (6.5 → 8.3 ns on 10⁷ keys), all other queries are unchanged: probably
   code layout in the new `cmp` binary (not investigated).
 - With S = 8 the best variant with wrapping is now δ = 7 (λ = 5): 1.940/
-  1.939/1.939 bits/key against 1.943/1.942/1.942 for PHast-R λ = 4.25 (the
+  1.939/1.939 bits/key against 1.943/1.942/1.942 for PHastR λ = 4.25 (the
   same space), at 2.4–2.6 times the construction time and with 27–28%
-  slower queries; with S = 10 PHast-R λ = 5.75 is still 0.016 bits/key
+  slower queries; with S = 10 PHastR λ = 5.75 is still 0.016 bits/key
   smaller than δ = 7 and builds in 44–46% of its time.
 - PtrHash: default 2.99 bits/key, 107/197/376 ns/key, queries 4.5/11.7/18.1
-  ns (PHast-R λ = 4.25: 4.3/10.2/18.5), built as a single part (355 ns/key
+  ns (PHastR λ = 4.25: 4.3/10.2/18.5), built as a single part (355 ns/key
   even with 96 threads); compact 2.14 bits/key, 176–186 ns/key, queries
-  7.8/18.0/29.7, 6.3 ns/key with 96 threads (PHast-R 2.6). On 10⁹ keys the
-  default PtrHash is Pareto-optimal (0.1 ns faster queries than PHast-R
+  7.8/18.0/29.7, 6.3 ns/key with 96 threads (PHastR 2.6). On 10⁹ keys the
+  default PtrHash is Pareto-optimal (0.1 ns faster queries than PHastR
   λ = 4, at almost one bit/key more and five times the construction time).
 - Ablation on 10⁹ keys: with the same (generic) query code, four layouts
   are 13% faster than one at λ = 4.25 (21.8 vs 25.0 ns), and the
@@ -876,6 +876,31 @@ introduction, Section 5 and conclusions.
   0.055 bits/key (S = 8) and 0.030 (S = 10) with respect to R = 1. For R = 1
   and R = 2 `generic_queries` changes nothing (the constant shifts are used
   only with four layouts).
+
+## Code changes after the fifth run (October 11, 2026)
+
+These changes do not change the structures built, so the results of the
+fifth run remain valid:
+
+- The remapping stays `Remap` (one inventory entry every 4096 ones instead of
+  the 2048 of `EfSeq`): it is faster than `EfSeq` on c7i, and its fixed
+  parameters keep the serialization format stable (as in webgraph).
+- `Box<[u16]>` seed storage is gone (dominated by `Box<[u8]>` with S = 8);
+  wider seeds use `BitFieldVec`. The lab `cmp` and `qsplit` lost the `u16`
+  storage.
+- The advance of the window in `Sweep::sweep` was rewritten (cursors
+  `oldest` and `next`, `Window::first_in` scanning words of the cyclic set,
+  admission reading sizes directly from the loaded part): the structures
+  are byte-identical to the previous code on 19 configurations (sizes from
+  0 to 3·10⁶, 10-bit seeds, R = 1, 2, short slices, large buckets, lender,
+  offline, 1/3/16 threads); construction time on 10⁷ keys (M1 Max) is the
+  same with one thread (43.3 vs 43.9 ns/key) and slightly better with eight
+  (8.9–9.2 vs 9.4–10.1).
+- Tests using only the public interface moved to `tests/test_phast_r.rs`;
+  those needing private fields or the test-only small parts, partitions and
+  blocks stay in the source (`stream.rs`, `sigs.rs`, the ε-serde test in
+  `mod.rs`).
+- The structure is called PHastR everywhere except in the lab CSV labels.
 
 ## Key findings (see Section 2 of the paper; reference implementation)
 
@@ -977,7 +1002,7 @@ introduction, Section 5 and conclusions.
   10⁷; PHast+ with wrapping and the product (`ShiftOnlyProdWrapped`, lab
   choosers w1p/w2p/w3p) saves 0.01–0.05 bits/key with respect to the sum
   (best: S = 8 w3p λ = 5 1.956; S = 10 w2p λ = 6.25 1.852, w3p λ = 6 1.852).
-  PHast-R with the product: S = 8 λ = 4.25/4.5/4.75 1.943/1.903/1.900
+  PHastR with the product: S = 8 λ = 4.25/4.5/4.75 1.943/1.903/1.900
   (bumped 0.51/1.19/2.28%), S = 10 λ = 5.75/6 1.824/1.823.
 
 ## Limits of repair (Section 5 of the paper)
@@ -999,7 +1024,7 @@ the hardware and need not be rerun. Commands (from `paper/lab`):
 
 ## Open issues and next steps
 
-1. **Queries**: at 10⁸ keys PHast (λ = 4.5) is 3% faster than PHast-R with
+1. **Queries**: at 10⁸ keys PHast (λ = 4.5) is 3% faster than PHastR with
    λ = 4.75, because it bumps fewer keys; λ = 4.5 reverses the result with
    0.017 bits/key more (October 10 run). Possible further steps: with λ = 5 the slice of a key
    could be 5 times its bucket (one `lea` instead of a multiplication, about
@@ -1028,14 +1053,14 @@ the hardware and need not be rerun. Commands (from `paper/lab`):
    (measured at 3·10⁸ keys on the M1: 113 MiB against 207–239 MiB).
 4. **Repair cost**: depth-2 repair costs ~50 ns/key more than depth 1, mostly
    in nested repairs of evicted buckets that fail.
-5. **String keys / other MPHFs**: add PHast-R to Beling's `mphf_benchmark`
+5. **String keys / other MPHFs**: add PHastR to Beling's `mphf_benchmark`
    or to Lehmann's MPHF-Experiments to compare with PtrHash, PHOBIC, etc. on
    the standard workload (random strings of 10–50 bytes).
 6. **Paper**: the tables come from the output of `run.sh` (`tables.py`
    formats a single main table, which the paper does not use: see above); the new entry
    for PHOBIC in `biblio.bib` should be checked (`lean/README.md` now refers
    to sections and statements of `phast.tex`, not to line numbers).
-   For fewer than about 10⁵ keys PHast-R uses more space than PHast+ with
+   For fewer than about 10⁵ keys PHastR uses more space than PHast+ with
    wrapping (fixed overhead and geometry of small levels).
 7. **The log₂e + O(log λ/λ) conjecture** of the PHast paper: for reference
    PHast, the excess over log₂e divided by ln λ/λ is ≈ 1.5 for λ in

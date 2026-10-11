@@ -114,7 +114,7 @@ impl Window {
 
     /// Returns the priority weight of the buckets of the given size:
     /// weights are given for the first seven sizes, and extrapolated
-    /// linearly for the following ones.
+    /// linearly for the following ones, as in the `ph` crate.
     fn weight(weights: &[i64; 7], size: usize) -> i64 {
         if size <= 7 {
             weights[size.max(1) - 1]
@@ -133,10 +133,31 @@ impl Window {
             | (WINDOW_BITS - 1 - b % WINDOW_BITS) as i64
     }
 
-    /// Returns whether bucket `b` is in the window.
+    /// Returns whether the window is empty.
     #[inline(always)]
-    fn contains(&self, b: usize) -> bool {
-        self.buckets[(b % WINDOW_BITS) / 64] >> (b % 64) & 1 != 0
+    fn is_empty(&self) -> bool {
+        self.nonempty == 0 && self.large.is_empty()
+    }
+
+    /// Returns the first bucket of the window in [`begin` . . `end`), if any,
+    /// assuming that all the buckets of the window are in [`end` − [`WINDOW`]
+    /// . . `end`).
+    #[inline(always)]
+    fn first_in(&self, begin: usize, end: usize) -> Option<usize> {
+        let mut b = begin;
+        let mut word = self.buckets[(b % WINDOW_BITS) / 64] >> (b % 64);
+        loop {
+            if word != 0 {
+                let first = b + word.trailing_zeros() as usize;
+                return (first < end).then_some(first);
+            }
+            // The next word of the cyclic set
+            b = (b | 63) + 1;
+            if b >= end {
+                return None;
+            }
+            word = self.buckets[(b % WINDOW_BITS) / 64];
+        }
     }
 
     /// Adds bucket `b`, which must follow all buckets added previously and
@@ -158,9 +179,9 @@ impl Window {
     }
 
     /// Removes and returns the bucket with the highest priority, if any,
-    /// given the first bucket in the window.
+    /// given the oldest bucket in the window.
     #[inline(always)]
-    fn pop(&mut self, span_begin: usize) -> Option<usize> {
+    fn pop(&mut self, oldest: usize) -> Option<usize> {
         let (mut key, mut size) = (i64::MIN, 0);
         let mut nonempty = self.nonempty;
         while nonempty != 0 {
@@ -173,7 +194,7 @@ impl Window {
             };
         }
         // Buckets are identified by the lowest bits of their index
-        let bucket = |low: usize, bits: usize| span_begin + low.wrapping_sub(span_begin) % bits;
+        let bucket = |low: usize, bits: usize| oldest + low.wrapping_sub(oldest) % bits;
         let b = if self.large.peek().is_some_and(|&large| large > key) {
             let key = self.large.pop().unwrap();
             bucket(WINDOW_BITS - 1 - key as usize % WINDOW_BITS, WINDOW_BITS)
@@ -238,7 +259,7 @@ impl SweepSeed for u16 {
 struct SharedUsedSlots(Box<[AtomicU64]>);
 
 impl SharedUsedSlots {
-    /// Returns an empty set of slots in [0 . . `m`); its memory is zeroed
+    /// Returns an empty set of slots in [0 . . `m`); its memory is zeroed
     /// lazily by the operating system.
     fn new(m: usize) -> Self {
         let words = m.div_ceil(64);
@@ -448,7 +469,7 @@ pub(super) fn is_occupied(bits: &[u64], p: usize) -> bool {
     bits[p / 64] >> (p % 64) & 1 != 0
 }
 
-/// Returns the free slots in [0 . . m), given the bit vector of used slots, in
+/// Returns the free slots in [0 . . m), given the bit vector of used slots, in
 /// increasing order.
 pub(super) fn holes(bits: &[u64], m: usize) -> Vec<usize> {
     /// Number of words scanned by a parallel task.
@@ -655,12 +676,14 @@ impl Rings {
     }
 }
 
-/// The maximum number of free seeds of a bucket that are examined
+/// The maximum number of free rotations of a bucket that are examined
 /// exhaustively when looking for the best seed.
 const MAX_FREE: u32 = 32;
 
-/// The distance of the *origin* of a bucket from the beginning of its first
-/// slice (see [`Sweep::cost`]).
+/// The distance of the *origin* of a bucket from the beginning of the
+/// leftmost slice that a key of the bucket can have (see [`Sweep::cost`]);
+/// this is the value used by `ProdOfValues` and `ShiftOnlyProdWrapped` in the
+/// `ph` crate.
 const ORIGIN_OFFSET: usize = 95;
 
 /// The number of fractional bits of the base-2 logarithms of
@@ -672,11 +695,11 @@ const LOG2_FRACTION: u32 = 24;
 /// Buckets enter, in order of index, a priority queue holding a few buckets
 /// at a time (the [`Window`]), as in PHast, and the bucket of highest
 /// priority gets the feasible seed of minimum [cost]: the product of the
-/// distances of the slots of its keys from a point slightly before its
-/// first slice. The free rotations of a layout, which map every key of the
-/// bucket to a free slot, are obtained by cyclically shifting the bits of
-/// the ring of each key by the index of the key and combining the results
-/// with a bitwise OR (see [`Rings`]).
+/// distances of the slots of its keys from its *origin*, a point slightly
+/// before its slices. The free rotations of a layout, which map every key of
+/// the bucket to a free slot, are obtained by cyclically shifting the bits of
+/// the ring of each key by the ring position of the key and combining the
+/// results with a bitwise OR (see [`Rings`]).
 ///
 /// [cost]: Self::cost
 struct Sweep<'a, S: PartSource, T: SweepSeed> {
@@ -802,8 +825,9 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
     /// Returns the cost of rotation `j` of layout `r` for the bucket being
     /// searched, given its [`ring_keys`]: the sum of the base-2 logarithms
     /// of the distances of the slots of its keys from the *origin* of the
-    /// bucket, which lies [`ORIGIN_OFFSET`] slots before the beginning of its
-    /// first slice, that is, the logarithm of the product of the distances.
+    /// bucket, which lies [`ORIGIN_OFFSET`] slots before the beginning of the
+    /// leftmost slice that a key of the bucket can have, that is, the
+    /// logarithm of the product of the distances.
     ///
     /// The logarithms are in fixed point and are read from a table, so the
     /// cost does not depend on the order of the keys.
@@ -908,8 +932,8 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
 
         // The best seed is identified by the index of its bit in free
         let best = if total <= MAX_FREE {
-            // Just a few free seeds (the common case): we consider all of
-            // them, with a single loop that has no other branches
+            // Just a few free rotations (the common case): we consider all
+            // of them, with a single loop that has no other branches
             let (mut best_cost, mut best) = (u64::MAX, 0);
             let mut i = 0;
             for _ in 0..total {
@@ -945,12 +969,14 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
         }
     }
 
-    /// Returns the free seed of minimum cost of the bucket being searched,
-    /// as [`search`] does, when there are many free seeds.
+    /// Returns the seed of minimum cost among the free rotations of the
+    /// bucket being searched, as [`search`] does, when there are many free
+    /// rotations.
     ///
     /// In a layout the cost increases with the rotation, except at the
     /// rotations at which some key wraps around the end of its slice: between
-    /// two such rotations only the first free one can be the best one.
+    /// two such rotations only the first free one can be the best one (the
+    /// same observation is used by `ShiftOnlyProdWrapped` in the `ph` crate).
     ///
     /// [`search`]: Self::search
     #[inline(never)]
@@ -1015,9 +1041,9 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
         collisions == 0
     }
 
-    /// Like [`search`], but considers all free seeds in order of cost until
-    /// one that maps the keys of the bucket to distinct slots is found (this
-    /// happens rarely).
+    /// Like [`search`], but considers all free rotations in order of cost
+    /// until one that maps the keys of the bucket to distinct slots is found
+    /// (this is rarely necessary).
     ///
     /// [`search`]: Self::search
     #[cold]
@@ -1067,70 +1093,53 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
     #[inline(always)]
     fn sweep(mut self, rings: &Rings, allow_bump: bool, pl: impl ProgressLog) -> Option<()> {
         let (lo, hi) = (self.lo, self.hi);
-        let (sigs, g) = (self.sigs, self.g);
-        let mut window = Window::new(self.weights);
+        let (sigs, g, weights) = (self.sigs, self.g, self.weights);
+        let mut window = Window::new(weights);
         // The parts containing the buckets of the window
         let mut parts = Parts::new(sigs, lo..hi, Some(pl));
-        let mut span_begin = lo;
-        loop {
-            if span_begin == hi {
-                break;
-            }
-            if parts.size(sigs, g, span_begin) != 0 {
-                break;
-            }
-            span_begin += 1;
-        }
-        let span_end = |span_begin: usize| (span_begin + WINDOW).min(hi);
         let column = 64usize << rings.log2_stride;
-        if span_begin < hi {
-            // The columns before the first slice in the window contain
+        // The buckets in [lo . . next) have entered the window, which holds
+        // those not yet placed; oldest is the first of them
+        let (mut oldest, mut next) = (lo, lo);
+        loop {
+            if window.is_empty() {
+                // The window restarts from the next nonempty bucket
+                oldest = parts.next_nonempty(sigs, g, next);
+                if oldest == hi {
+                    break;
+                }
+                next = oldest;
+            }
+            // The columns before the first slice of the oldest bucket contain
             // slots that are no longer reachable
-            while self.first_slot + column <= g.first_slice(span_begin) {
+            while self.first_slot + column <= g.first_slice(oldest) {
                 self.retire_column(rings);
             }
-            for b in span_begin..span_end(span_begin) {
-                let size = parts.size(sigs, g, b);
+            // The buckets up to WINDOW buckets after the oldest one enter
+            let end = (oldest + WINDOW).min(hi);
+            parts.for_each_size(sigs, g, next..end, |b, size| {
                 if size != 0 {
-                    window.push(b, size, self.weights);
+                    window.push(b, size, weights);
+                }
+            });
+            next = end;
+            // We place buckets in order of priority until the oldest one is
+            // placed, so that the window can move forward
+            loop {
+                let b = window
+                    .pop(oldest)
+                    .expect("the oldest bucket is in the window");
+                let seed = self.search(rings, parts.keys(sigs, b), b);
+                self.seeds[b - lo] = T::from_seed(seed);
+                if seed == 0 && !allow_bump {
+                    return None;
+                }
+                if b == oldest {
+                    break;
                 }
             }
-        }
-        while let Some(b) = window.pop(span_begin) {
-            let seed = self.search(rings, parts.keys(sigs, b), b);
-            self.seeds[b - lo] = T::from_seed(seed);
-            if seed == 0 && !allow_bump {
-                return None;
-            }
-            if b == span_begin {
-                let old_end = span_end(span_begin);
-                span_begin += 1;
-                while span_begin < old_end && !window.contains(span_begin) {
-                    span_begin += 1;
-                }
-                if span_begin == old_end {
-                    loop {
-                        if span_begin == hi {
-                            break;
-                        }
-                        if parts.size(sigs, g, span_begin) != 0 {
-                            break;
-                        }
-                        span_begin += 1;
-                    }
-                    if span_begin == hi {
-                        break;
-                    }
-                }
-                while self.first_slot + column <= g.first_slice(span_begin) {
-                    self.retire_column(rings);
-                }
-                for b in old_end..span_end(span_begin) {
-                    let size = parts.size(sigs, g, b);
-                    if size != 0 {
-                        window.push(b, size, self.weights);
-                    }
-                }
+            if let Some(b) = window.first_in(oldest + 1, next) {
+                oldest = b;
             }
         }
         // The remaining columns
@@ -1148,6 +1157,8 @@ struct Part {
     index: usize,
     /// The first loaded bucket.
     first_bucket: usize,
+    /// The end of the loaded buckets.
+    end_bucket: usize,
     /// The signatures of the loaded buckets, grouped by bucket.
     sigs: Vec<u64>,
     /// The position in `sigs` of the first signature of each loaded
@@ -1225,6 +1236,7 @@ impl<S: PartSource, P: ProgressLog> Parts<S, P> {
         );
         part.index = p;
         part.first_bucket = first;
+        part.end_bucket = end;
         if let Some(pl) = &mut self.pl {
             pl.update_with_count(end - first);
         }
@@ -1249,6 +1261,38 @@ impl<S: PartSource, P: ProgressLog> Parts<S, P> {
         part.begin[i + 1] - part.begin[i]
     }
 
+    /// Returns the first bucket from `b` on that is not empty, or the end of
+    /// the range, loading parts as necessary.
+    fn next_nonempty(&mut self, sigs: &S, g: &Geometry, mut b: usize) -> usize {
+        while b < self.range.end && self.size(sigs, g, b) == 0 {
+            b += 1;
+        }
+        b
+    }
+
+    /// Calls `f` on each bucket of `range` and its size, loading parts as
+    /// necessary (a part is looked up just once).
+    #[inline(always)]
+    fn for_each_size(
+        &mut self,
+        sigs: &S,
+        g: &Geometry,
+        range: std::ops::Range<usize>,
+        mut f: impl FnMut(usize, usize),
+    ) {
+        let mut b = range.start;
+        while b < range.end {
+            self.ensure(sigs, g, b);
+            let part = self.part(sigs, b);
+            let end = range.end.min(part.end_bucket);
+            let first = part.first_bucket;
+            for (i, w) in part.begin[b - first..=end - first].windows(2).enumerate() {
+                f(b + i, w[1] - w[0]);
+            }
+            b = end;
+        }
+    }
+
     /// Returns the signatures of the keys of bucket `b`, whose part must be
     /// loaded.
     #[inline(always)]
@@ -1260,7 +1304,7 @@ impl<S: PartSource, P: ProgressLog> Parts<S, P> {
 }
 
 /// Returns the index of the first bit set in `bits` in the range
-/// [`begin` . . `end`), if any.
+/// [`begin` . . `end`), if any.
 #[inline(always)]
 fn next_set(bits: &[u64], begin: usize, end: usize) -> Option<usize> {
     let mut w = begin / 64;

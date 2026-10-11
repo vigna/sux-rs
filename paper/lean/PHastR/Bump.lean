@@ -5,7 +5,7 @@ import Mathlib
 
 We consider `n` keys (the elements of `Fin n`) and the `n` slots `0`, …,
 `n - 1`. Each key `x` can be placed only in the slots of its *reach*
-`[σ x . . σ x + W)`. A *placement* puts a subset of the keys into distinct
+`[σ x . . σ x + W)`. A *placement* puts a subset of the keys into distinct
 slots of their reaches; the other keys are *bumped*.
 
 Let `X t = t - |{x | σ x < t}|` for `0 ≤ t ≤ n`, and let `D` be the range of
@@ -13,9 +13,9 @@ Let `X t = t - |{x | σ x < t}|` for `0 ≤ t ≤ n`, and let `D` be the range o
 `D - W + 1` keys.
 
 The proof follows the paper. For `t ≤ t'`, only keys whose reach starts in
-`[t . . t')` can be placed in the slots in `[t + W - 1 . . t')`, so at least
+`[t . . t')` can be placed in the slots in `[t + W - 1 . . t')`, so at least
 `X t' - X t - W + 1` of those slots are free (`deficit`); symmetrically, these
-keys can be placed only in the slots in `[t . . t' + W - 1)`, so at least
+keys can be placed only in the slots in `[t . . t' + W - 1)`, so at least
 `X t - X t' - W + 1` of them are bumped (`excess`). As there are as many keys
 as slots, free slots and bumped keys are equally many.
 -/
@@ -24,8 +24,8 @@ open Finset
 
 namespace PHastR
 
-/-- A placement of the keys `Fin n` into the slots `[0 . . n)`, in which key
-`x` can be placed only in the slots `[σ x . . σ x + W)`. -/
+/-- A placement of the keys `Fin n` into the slots `[0 . . n)`, in which key
+`x` can be placed only in the slots `[σ x . . σ x + W)`. -/
 structure Placement (n W : ℕ) (σ : Fin n → ℕ) where
   /-- The keys that are placed; the other ones are bumped. -/
   placed : Finset (Fin n)
@@ -33,7 +33,7 @@ structure Placement (n W : ℕ) (σ : Fin n → ℕ) where
   pos : Fin n → ℕ
   /-- Placed keys are placed in distinct slots. -/
   inj : Set.InjOn pos placed
-  /-- Slots are in `[0 . . n)`. -/
+  /-- Slots are in `[0 . . n)`. -/
   lt_n : ∀ x ∈ placed, pos x < n
   /-- A placed key lies in its reach. -/
   reach : ∀ x ∈ placed, σ x ≤ pos x ∧ pos x < σ x + W
@@ -48,7 +48,7 @@ def Placement.bumped (P : Placement n W σ) : ℕ :=
 def X (σ : Fin n → ℕ) (t : ℕ) : ℤ :=
   (t : ℤ) - ((univ.filter fun x => σ x < t).card : ℤ)
 
-/-- The number of keys whose reach starts in `[t . . t')`. -/
+/-- The number of keys whose reach starts in `[t . . t')`. -/
 def N (σ : Fin n → ℕ) (t t' : ℕ) : ℕ :=
   (univ.filter fun x => t ≤ σ x ∧ σ x < t').card
 
@@ -65,8 +65,8 @@ lemma card_lt_eq (σ : Fin n → ℕ) {t t' : ℕ} (h : t ≤ t') :
     intro x _ h1 h2
     omega
 
-/-- For `t ≤ t'`, `X t' - X t` is the length of `[t . . t')` minus the number
-of keys whose reach starts in `[t . . t')`. -/
+/-- For `t ≤ t'`, `X t' - X t` is the length of `[t . . t')` minus the number
+of keys whose reach starts in `[t . . t')`. -/
 lemma X_sub (σ : Fin n → ℕ) {t t' : ℕ} (h : t ≤ t') :
     X σ t' - X σ t = (t' : ℤ) - t - N σ t t' := by
   unfold X
@@ -74,8 +74,8 @@ lemma X_sub (σ : Fin n → ℕ) {t t' : ℕ} (h : t ≤ t') :
   push_cast
   ring
 
-/-- Only keys whose reach starts in `[t . . t')` can be placed in the slots
-in `[t + W - 1 . . t')`, and every free slot corresponds to a bumped key. -/
+/-- Only keys whose reach starts in `[t . . t')` can be placed in the slots
+in `[t + W - 1 . . t')`, and every free slot corresponds to a bumped key. -/
 lemma deficit (P : Placement n W σ) {t t' : ℕ} (htn : t' ≤ n) :
     t' - (t + W - 1) ≤ P.bumped + N σ t t' := by
   set used := P.placed.image P.pos
@@ -112,8 +112,8 @@ lemma deficit (P : Placement n W σ) {t t' : ℕ} (htn : t' ≤ n) :
   unfold Placement.bumped
   omega
 
-/-- Keys whose reach starts in `[t . . t')` can be placed only in the slots
-in `[t . . t' + W - 1)`, so the excess must be bumped. -/
+/-- Keys whose reach starts in `[t . . t')` can be placed only in the slots
+in `[t . . t' + W - 1)`, so the excess must be bumped. -/
 lemma excess (P : Placement n W σ) (t t' : ℕ) :
     N σ t t' ≤ P.bumped + (t' + W - 1 - t) := by
   set K := P.placed.filter fun x => t ≤ σ x ∧ σ x < t'
@@ -159,7 +159,7 @@ theorem bumped_ge (P : Placement n W σ) (hW : 0 < W) {a : ℕ} (b : ℕ)
     omega
 
 /-- **Proposition 1.** Every placement bumps at least `D - W + 1` keys, where
-`D` is the range of `X` on `[0 . . n]`. -/
+`D` is the range of `X` on `[0 . . n]`. -/
 theorem prop1 (P : Placement n W σ) (hW : 0 < W) :
     ((range (n + 1)).sup' nonempty_range_add_one (X σ)
         - (range (n + 1)).inf' nonempty_range_add_one (X σ))

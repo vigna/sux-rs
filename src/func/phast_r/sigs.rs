@@ -15,8 +15,8 @@ use super::*;
 /// [`group`]).
 ///
 /// Parts are made of a power of two of consecutive buckets. For each part
-/// and for each *chunk* of the keys (one per thread), a *region* contains
-/// the signatures of the keys of the chunk whose bucket is in the part, in
+/// and for each *batch* of consecutive keys (one per thread), a *region* contains
+/// the signatures of the keys of the batch whose bucket is in the part, in
 /// the order of the keys. Regions are sized before computing the
 /// signatures, assuming that they are uniform, and they have some slack:
 /// the few signatures that do not fit their region, if any, are kept
@@ -33,21 +33,21 @@ use super::*;
 pub(super) struct Signatures {
     /// The regions, in part-major order (see `region_begin`).
     pub(super) sigs: Vec<u64>,
-    /// For each part, and for each chunk, the start of the region of the
-    /// part and the chunk in `sigs`, followed by the length of `sigs`.
+    /// For each part, and for each batch, the start of the region of the
+    /// part and the batch in `sigs`, followed by the length of `sigs`.
     pub(super) region_begin: Vec<usize>,
-    /// For each part, and for each chunk, the number of signatures in the
+    /// For each part, and for each batch, the number of signatures in the
     /// region.
     pub(super) region_len: Vec<usize>,
     /// The part of each key.
     pub(super) parts: Vec<u8>,
-    /// For each chunk, the signatures that did not fit their region, with
+    /// For each batch, the signatures that did not fit their region, with
     /// their part, sorted by part (and thus, by key within a part).
     pub(super) extra: Vec<Vec<(u8, u64)>>,
-    /// The number of keys of a chunk (except the last one).
-    pub(super) chunk_len: usize,
-    /// The number of chunks.
-    pub(super) chunks: usize,
+    /// The number of keys of a batch (except the last one).
+    pub(super) batch_len: usize,
+    /// The number of batches.
+    pub(super) batches: usize,
     /// The number of parts.
     pub(super) num_parts: usize,
     /// The part of a bucket is its index shifted right by this amount.
@@ -89,7 +89,7 @@ const SLACK: f64 = 6.0;
 /// parts (see [`Signatures`]); the signature of the key of index *i* in the
 /// level is `sig(i)`.
 ///
-/// Signatures need not be sorted: the thread processing a chunk of the keys
+/// Signatures need not be sorted: the thread processing a batch of the keys
 /// writes each signature at the end of the region of its part, and parts
 /// (which are at most [`MAX_PARTS`], so a thread writes to a bounded
 /// number of places at the same time) are distributed into buckets later,
@@ -121,54 +121,55 @@ fn group_with(
     #[cfg(feature = "rayon")]
     let par = parallel(n);
     #[cfg(feature = "rayon")]
-    let chunk_len = if par {
+    let batch_len = if par {
         n.div_ceil(rayon::current_num_threads())
     } else {
         n
     };
     #[cfg(not(feature = "rayon"))]
-    let chunk_len = n;
-    let chunk_len = chunk_len.max(1);
-    let chunks = n.div_ceil(chunk_len);
+    let batch_len = n;
+    let batch_len = batch_len.max(1);
+    let batches = n.div_ceil(batch_len);
 
     // The size of a region is the expected number of signatures of its
-    // chunk falling in its part, plus some standard deviations
-    let capacity = |chunk: usize| {
-        let len = ((chunk + 1) * chunk_len).min(n) - chunk * chunk_len;
+    // batch falling in its part, plus some standard deviations
+    let capacity = |batch: usize| {
+        let len = ((batch + 1) * batch_len).min(n) - batch * batch_len;
         let mean = len as f64 / num_parts as f64;
         (mean + slack * mean.sqrt()).ceil() as usize + 32
     };
-    let mut region_begin = Vec::with_capacity(num_parts * chunks + 1);
+    let mut region_begin = Vec::with_capacity(num_parts * batches + 1);
     let mut end = 0;
     for _ in 0..num_parts {
-        for chunk in 0..chunks {
+        for batch in 0..batches {
             region_begin.push(end);
-            end += capacity(chunk);
+            end += capacity(batch);
         }
     }
     region_begin.push(end);
     // Pages of regions that are never written cost nothing
     let mut sigs = vec![0u64; end];
     let mut parts = vec![0u8; n];
-    // The regions of each chunk
-    let mut regions: Vec<Vec<&mut [u64]>> =
-        (0..chunks).map(|_| Vec::with_capacity(num_parts)).collect();
+    // The regions of each batch
+    let mut regions: Vec<Vec<&mut [u64]>> = (0..batches)
+        .map(|_| Vec::with_capacity(num_parts))
+        .collect();
     let mut rest = &mut sigs[..];
     for p in 0..num_parts {
-        for (chunk, regions) in regions.iter_mut().enumerate() {
+        for (batch, regions) in regions.iter_mut().enumerate() {
             let (region, r) = rest.split_at_mut(
-                region_begin[p * chunks + chunk + 1] - region_begin[p * chunks + chunk],
+                region_begin[p * batches + batch + 1] - region_begin[p * batches + batch],
             );
             regions.push(region);
             rest = r;
         }
     }
-    type Chunk<'a, 'b, 'c> = (usize, (&'a mut Vec<&'b mut [u64]>, &'c mut [u8]));
-    let distribute = |(chunk, (regions, parts)): Chunk| -> (Vec<usize>, Vec<(u8, u64)>) {
+    type Batch<'a, 'b, 'c> = (usize, (&'a mut Vec<&'b mut [u64]>, &'c mut [u8]));
+    let distribute = |(batch, (regions, parts)): Batch| -> (Vec<usize>, Vec<(u8, u64)>) {
         let mut len = vec![0usize; num_parts];
         let mut extra = vec![];
         for (k, parts) in parts.iter_mut().enumerate() {
-            let h = sig(chunk * chunk_len + k);
+            let h = sig(batch * batch_len + k);
             let p = part(h);
             *parts = p as u8;
             if let Some(x) = regions[p].get_mut(len[p]) {
@@ -186,14 +187,14 @@ fn group_with(
         use rayon::prelude::*;
         regions
             .par_iter_mut()
-            .zip(parts.par_chunks_mut(chunk_len))
+            .zip(parts.par_chunks_mut(batch_len))
             .enumerate()
             .map(distribute)
             .collect()
     } else {
         regions
             .iter_mut()
-            .zip(parts.chunks_mut(chunk_len))
+            .zip(parts.chunks_mut(batch_len))
             .enumerate()
             .map(distribute)
             .collect()
@@ -201,18 +202,18 @@ fn group_with(
     #[cfg(not(feature = "rayon"))]
     let results: Vec<(Vec<usize>, Vec<(u8, u64)>)> = regions
         .iter_mut()
-        .zip(parts.chunks_mut(chunk_len))
+        .zip(parts.chunks_mut(batch_len))
         .enumerate()
         .map(distribute)
         .collect();
     drop(regions);
-    let mut region_len = vec![0usize; num_parts * chunks];
-    let mut extra = Vec::with_capacity(chunks);
-    for (chunk, (len, chunk_extra)) in results.into_iter().enumerate() {
+    let mut region_len = vec![0usize; num_parts * batches];
+    let mut extra = Vec::with_capacity(batches);
+    for (batch, (len, batch_extra)) in results.into_iter().enumerate() {
         for (p, &len) in len.iter().enumerate() {
-            region_len[p * chunks + chunk] = len;
+            region_len[p * batches + batch] = len;
         }
-        extra.push(chunk_extra);
+        extra.push(batch_extra);
     }
     Signatures {
         sigs,
@@ -220,8 +221,8 @@ fn group_with(
         region_len,
         parts,
         extra,
-        chunk_len,
-        chunks,
+        batch_len,
+        batches,
         num_parts,
         shift,
     }
@@ -245,15 +246,15 @@ impl Signatures {
         (g.buckets - self.first_bucket(p)).min(1 << self.shift)
     }
 
-    /// Returns the region of part `p` and chunk `chunk`.
+    /// Returns the region of part `p` and batch `batch`.
     #[inline(always)]
-    pub(super) fn region(&self, p: usize, chunk: usize) -> &[u64] {
-        let i = p * self.chunks + chunk;
+    pub(super) fn region(&self, p: usize, batch: usize) -> &[u64] {
+        let i = p * self.batches + batch;
         &self.sigs[self.region_begin[i]..][..self.region_len[i]]
     }
 
     /// Returns the signatures of part `p` that did not fit their region, for
-    /// each chunk.
+    /// each batch.
     pub(super) fn extra(&self, p: usize) -> impl Iterator<Item = u64> + '_ {
         self.extra.iter().flat_map(move |extra| {
             let begin = extra.partition_point(|x| (x.0 as usize) < p);
@@ -283,8 +284,8 @@ impl Signatures {
         // The signatures to distribute, as a sequence of runs
         let extra: Vec<u64> = self.extra(p).collect();
         if whole {
-            let mut source: Vec<&[u64]> = (0..self.chunks)
-                .map(|chunk| self.region(p, chunk))
+            let mut source: Vec<&[u64]> = (0..self.batches)
+                .map(|batch| self.region(p, batch))
                 .collect();
             source.push(&extra);
             distribute(&source, g, range, sigs, begin, temp);
@@ -294,9 +295,9 @@ impl Signatures {
             // larger than the current one
             let mut filtered = std::mem::take(temp);
             filtered.clear();
-            for chunk in 0..self.chunks {
+            for batch in 0..self.batches {
                 filtered.extend(
-                    self.region(p, chunk)
+                    self.region(p, batch)
                         .iter()
                         .filter(|&&h| range.contains(&g.bucket(h))),
                 );
@@ -310,13 +311,13 @@ impl Signatures {
     }
 
     /// Calls `f` on the index and the signature of each key of the given
-    /// chunk, in the order of the keys.
-    pub(super) fn walk(&self, chunk: usize, mut f: impl FnMut(usize, u64)) {
+    /// batch, in the order of the keys.
+    pub(super) fn walk(&self, batch: usize, mut f: impl FnMut(usize, u64)) {
         // For each part, the next signature of its region and the end of
         // the region
         let mut region: Vec<(usize, usize)> = (0..self.num_parts)
             .map(|p| {
-                let i = p * self.chunks + chunk;
+                let i = p * self.batches + batch;
                 (
                     self.region_begin[i],
                     self.region_begin[i] + self.region_len[i],
@@ -324,7 +325,7 @@ impl Signatures {
             })
             .collect();
         // For each part, the next signature that did not fit the region
-        let extra = &self.extra[chunk];
+        let extra = &self.extra[batch];
         let mut next_extra = vec![0usize; self.num_parts + 1];
         for x in extra {
             next_extra[x.0 as usize + 1] += 1;
@@ -332,8 +333,8 @@ impl Signatures {
         for p in 0..self.num_parts {
             next_extra[p + 1] += next_extra[p];
         }
-        let first = chunk * self.chunk_len;
-        for (k, &p) in self.parts[first..].iter().take(self.chunk_len).enumerate() {
+        let first = batch * self.batch_len;
+        for (k, &p) in self.parts[first..].iter().take(self.batch_len).enumerate() {
             let p = p as usize;
             let (next, end) = &mut region[p];
             let h = if *next < *end {
@@ -522,7 +523,7 @@ fn into_buckets(
     }
 }
 
-/// Returns the indices of the keys whose bucket has no seed, in increasing
+/// Returns the indices of the keys of the bumped buckets, in increasing
 /// order.
 ///
 /// We scan the signatures in the order of the keys (see
@@ -535,9 +536,9 @@ pub(super) fn bumped(sigs: &Signatures, seeds: &[u16], g: &Geometry) -> Vec<usiz
             .enumerate()
             .fold(0u64, |word, (i, &seed)| word | (((seed == 0) as u64) << i))
     };
-    let scan = |bits: &[u64], chunk: usize| {
+    let scan = |bits: &[u64], batch: usize| {
         let mut out = vec![];
-        sigs.walk(chunk, |i, h| {
+        sigs.walk(batch, |i, h| {
             let b = g.bucket(h);
             if bits[b / 64] >> (b % 64) & 1 != 0 {
                 out.push(i);
@@ -549,15 +550,15 @@ pub(super) fn bumped(sigs: &Signatures, seeds: &[u16], g: &Geometry) -> Vec<usiz
     if parallel(sigs.parts.len()) {
         use rayon::prelude::*;
         let bits: Vec<u64> = seeds.par_chunks(64).map(word).collect();
-        let parts: Vec<Vec<usize>> = (0..sigs.chunks)
+        let parts: Vec<Vec<usize>> = (0..sigs.batches)
             .into_par_iter()
-            .map(|chunk| scan(&bits, chunk))
+            .map(|batch| scan(&bits, batch))
             .collect();
         return parts.concat();
     }
     let bits: Vec<u64> = seeds.chunks(64).map(word).collect();
-    (0..sigs.chunks)
-        .flat_map(|chunk| scan(&bits, chunk))
+    (0..sigs.batches)
+        .flat_map(|batch| scan(&bits, batch))
         .collect()
 }
 
@@ -581,14 +582,14 @@ mod tests {
             for skew in [false, true] {
                 let g = PHastRBuilder::default().geometry(n, n, 4.5);
                 let sig = |i: usize| {
-                    let h = mix(i as u64 + 1, 0x9E37_79B9_7F4A_7C15);
+                    let h = folded_multiply(i as u64 + 1, 0x9E37_79B9_7F4A_7C15);
                     if skew { h >> (i % 8) } else { h }
                 };
                 let sigs = group_with(n, sig, &g, log2_part_keys, max_parts, slack);
                 // Walking the signatures in the order of the keys
                 let mut seen = vec![false; n];
-                for chunk in 0..sigs.chunks {
-                    sigs.walk(chunk, |i, h| {
+                for batch in 0..sigs.batches {
+                    sigs.walk(batch, |i, h| {
                         assert_eq!(h, sig(i));
                         assert!(!std::mem::replace(&mut seen[i], true));
                     });

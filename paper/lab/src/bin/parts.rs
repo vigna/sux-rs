@@ -1,8 +1,8 @@
 //! Space breakdown (first level, remapping, further levels) of PHast+ with
-//! wrapping (reference implementation) and of PHast-R, on the same keys,
+//! wrapping (reference implementation) and of PHastR, on the same keys,
 //! with the empirical entropy of the seeds of the first level of PHast+.
 //!
-//! Usage: parts [-n keys] [-l lambda of PHast+] [-r lambda of PHast-R]
+//! Usage: parts [-n keys] [-l lambda of PHast+] [-r lambda of PHastR]
 
 use clap::Parser;
 use dsi_progress_logger::no_logging;
@@ -22,7 +22,7 @@ struct Args {
     n: usize,
     #[arg(short, default_value_t = 5.0)]
     l: f64,
-    /// Expected bucket size of PHast-R.
+    /// Expected bucket size of PHastR.
     #[arg(short, default_value_t = 4.5)]
     r: f64,
 }

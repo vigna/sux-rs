@@ -1,4 +1,4 @@
-//! Sweeps the expected bucket size of PHast-R configurations.
+//! Sweeps the expected bucket size of PHastR configurations.
 //!
 //! Usage: tune [<keys> [<S>:<log2 L>:<lambda>,<lambda>,...[:<log2 R>]]...]
 //!

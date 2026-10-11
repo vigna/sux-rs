@@ -44,7 +44,7 @@ pub struct PHastRBuilder {
     /// The number of bits of a seed.
     ///
     /// The default is 8. Seeds stored in a `Box<[u8]>` can have at most 8
-    /// bits, and all other seed storages at most 16 bits (see
+    /// bits, and seeds stored in a [`BitFieldVec`] at most 16 bits (see
     /// [`SeedStoreBuild::MAX_BITS`]).
     #[setters(generate = true)]
     pub(super) seed_bits: u32,
@@ -78,8 +78,8 @@ pub struct PHastRBuilder {
     #[setters(generate = true)]
     pub(super) seed: u64,
 
-    /// The size-dependent components of the priority of a bucket, for sizes
-    /// from one to seven (larger sizes are extrapolated linearly).
+    /// The weights of the priority of a bucket, which depend on its size,
+    /// for sizes from one to seven (larger sizes are extrapolated linearly).
     ///
     /// By default, the weights depend only on the number of bits of a seed:
     /// they were tuned for 8-bit seeds and for 10-bit seeds.
@@ -269,8 +269,8 @@ impl PHastRBuilder {
             }
             repeated.sort_unstable();
             let mut other: Vec<(u64, u64)> = vec![];
-            for chunk in 0..sigs.chunks {
-                sigs.walk(chunk, |i, h| {
+            for batch in 0..sigs.batches {
+                sigs.walk(batch, |i, h| {
                     if repeated.binary_search(&h).is_ok() {
                         other.push((h, hash(cur[i], self.seed ^ THIRD_HASH)));
                     }
@@ -310,8 +310,8 @@ impl PHastRBuilder {
                 level.salt = salt;
                 (level, out.seeds, out.occupied, next, geom.m)
             } else {
-                // The last level does not bump: we enlarge the range and
-                // change the salt until we succeed
+                // The last level does not bump: we change the salt until we
+                // succeed, enlarging the output range every eight attempts
                 let mut attempt = 0u64;
                 loop {
                     let m = k + k / 4 + 16 + (attempt as usize / 8) * (k / 8 + 8);
@@ -362,8 +362,8 @@ impl PHastRBuilder {
         Ok((levels, remap(efb)))
     }
 
-    /// Returns the size-dependent components of the priority of a bucket:
-    /// the default ones depend only on the number of bits of a seed.
+    /// Returns the weights of the priority of a bucket, which depend on its
+    /// size: the default ones depend only on the number of bits of a seed.
     pub(super) fn priority_weights(&self) -> [i64; 7] {
         self.weights
             .unwrap_or_else(|| default_weights(self.seed_bits))
@@ -416,7 +416,8 @@ pub(super) struct Geometry {
     pub(super) buckets: usize,
     /// A lower bound for the number of signatures of a bucket.
     pub(super) bucket_width: u64,
-    /// The number of slices.
+    /// The number of possible slice starts (the output range minus the slice
+    /// length, plus one).
     pub(super) num_slices: u64,
     /// The slice length minus one.
     pub(super) l_mask: u64,
@@ -490,7 +491,7 @@ impl Geometry {
 
 /// Default size-dependent priority weights, used for all slice lengths.
 ///
-/// The weights were tuned for PHast-R with four layouts by coordinate
+/// The weights were tuned for PHastR with four layouts by coordinate
 /// descent on the space of single-threaded constructions on 10⁷ keys: the
 /// weights for seeds of at most eight bits with 8-bit seeds, slices of length
 /// 1024 and an expected bucket size of 4.25, and the weights for longer seeds
@@ -509,7 +510,7 @@ const fn default_weights(seed_bits: u32) -> [i64; 7] {
 /// last level, on the attempt.
 #[inline(always)]
 pub(super) const fn level_salt(seed: u64, level: usize, attempt: u64) -> u64 {
-    mix(
+    folded_multiply(
         seed.wrapping_add(level as u64).wrapping_add(attempt << 32) | 1,
         0x9E37_79B9_7F4A_7C15,
     )

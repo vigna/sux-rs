@@ -1,10 +1,10 @@
-//! Lab for PHast-R experiments: comparison with the reference implementation
+//! Lab for PHastR experiments: comparison with the reference implementation
 //! of PHast/PHast+ (`ph`), and helpers.
 
 pub mod dfs;
 pub mod walk;
 
-/// Builds a PHast-R function on the given keys, choosing byte seeds for at
+/// Builds a PHastR function on the given keys, choosing byte seeds for at
 /// most 8 bits per seed and a bit-field vector otherwise, and returns its
 /// space in bits per key.
 pub fn phast_r_bits_per_key(keys: &[u64], b: &sux::func::PHastRBuilder, seed_bits: u32) -> f64 {
@@ -23,7 +23,7 @@ pub fn phast_r_bits_per_key(keys: &[u64], b: &sux::func::PHastRBuilder, seed_bit
     bytes as f64 * 8.0 / keys.len() as f64
 }
 
-/// Parses a PHast-R configuration `<S>:<log2 L>:<lambda>[:<log2 R>]`: bits
+/// Parses a PHastR configuration `<S>:<log2 L>:<lambda>[:<log2 R>]`: bits
 /// per seed, base-2 logarithm of the slice length, expected bucket size,
 /// and base-2 logarithm of the number of layouts (2 if missing). Returns
 /// the builder, the number of bits per seed, and a description.
@@ -45,7 +45,7 @@ pub fn parse_config(fields: &[&str]) -> (sux::func::PHastRBuilder, u32, String) 
 
 /// A 64-bit key hashed by sux with GxHash, exactly as `ph::BuildGxHash`
 /// hashes a `u64` (`GxHasher::with_seed`, `write_u64`, `finish`), so that
-/// PHast-R and the reference implementation pay the same hashing cost.
+/// PHastR and the reference implementation pay the same hashing cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct GxKey(pub u64);

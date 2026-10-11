@@ -4,109 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-//! PHast-R: bucket-placement minimal perfect hashing with rings of layouts.
+//! PHastR: minimal perfect hashing with rotated layouts.
 //!
-//! PHast-R is a minimal perfect hash function based on *bucket placement*:
-//! keys are hashed to buckets, and each bucket stores a fixed-width *seed*
-//! that maps each key of the bucket to a *slot* of the output range so that no
-//! two keys collide. For almost all keys, a query needs just a hash and the
-//! access to a seed.
-//!
-//! The bucket of a key is a linear function of its 64-bit hash, and the seed
-//! of a bucket maps each of its keys to a slot of the *slice* of the key, a
-//! small interval of consecutive slots whose start grows linearly with the
-//! hash. A slot is *used* if a key has already been mapped to it, and *free*
-//! otherwise; a seed is *feasible* for a bucket if it maps its keys to
-//! distinct free slots. Buckets are processed by a sweep that favors large
-//! buckets, and each bucket gets the feasible seed minimizing the product of
-//! the distances of the slots of its keys from a point slightly before its
-//! first slice, as in the current implementation of PHast by Piotr Beling.
-//! Buckets for which no seed is feasible are *bumped* to
-//! the following levels, and an [Elias–Fano] sequence, the *remapping*, maps
-//! the slots of the following levels to the free slots of the first one.
-//! Bumped keys cost space and make queries slower, so the quality of a
-//! placement scheme is measured by how few keys it bumps.
-//!
-//! PHast-R uses a placement scheme that bumps few keys and makes it possible
-//! to find feasible seeds with bit-parallel operations. There are *R*
-//! *layouts*, each assigning an in-slice *offset* to every key. The lowest
-//! bits of a seed choose a layout, which gives each key of the bucket a
-//! *base slot* (the slot for rotation 0), and the remaining bits choose a
-//! *rotation*, which moves all the keys of the bucket by the same multiple of
-//! a *stride* *T*, wrapping around the end of their slices. As the rotation
-//! varies, a key goes exactly once through the slots of its slice whose
-//! distance from its base slot is a multiple of *T*: we call these slots its
-//! *ring*. During construction the set of used slots is stored by residue
-//! classes modulo the stride, so the *bits of the ring* of a key, which record
-//! whether the slots of its ring are used, are consecutive bits, and the
-//! *free* rotations of a layout, which map every key to a free slot, are
-//! found by cyclically shifting the bits of the ring of each key and
-//! combining them by a bitwise OR.
-//!
-//! Two keys of a bucket with the same base slot in a layout move together,
-//! and thus collide for (almost) all its rotations: this is a
-//! *self-collision*. Since the offsets of different layouts use disjoint bits
-//! of the same uniform value (see below), self-collisions happen independently
-//! in each layout, and buckets with a self-collision in every layout are
-//! negligible. Moreover, the seeds of a layout move all the keys of a bucket
-//! by the same amount, so they are strongly correlated, whereas seeds of
-//! different layouts are (almost) independent.
-//!
-//! This placement scheme improves on those of PHast and PHast+ (see the
-//! [references]). PHast uses a pseudorandom scheme, which bumps few keys, but
-//! finding a feasible seed requires trying all seeds of the bucket, so
-//! construction is more than ten times slower. PHast+ uses an additive
-//! scheme, which moves all the keys of a bucket by the same amount, so
-//! feasible seeds can be found with bit-parallel operations, but
-//! self-collisions cannot be avoided: two keys that collide for one seed
-//! collide for (almost) all seeds, and their bucket must be bumped. With 8-bit
-//! seeds, a third of the buckets bumped by PHast+ with wrapping and
-//! multiplier 3 contain a self-collision.
-//!
-//! The offsets of the layouts use disjoint bits of the lower half of the
-//! product of the hash and the number of buckets, whose upper half is the
-//! bucket: such a value is uniform among the keys of a bucket, and it is
-//! computed anyway. Queries thus need a hash, a seed access, two
-//! multiplications, and a handful of shifts, additions, and masks; a small
-//! fraction of the keys accesses the following levels and the remapping.
-//!
-//! The hashes of a key at the following levels depend also on a second hash
-//! of the key, so 64-bit hashes suffice for any number of keys: keys with the
-//! same hash are bumped from the first level and separated at the following
-//! ones. Duplicate keys are detected and reported as errors.
-//!
-//! With the default parameters (8-bit seeds, four layouts, slices of length
-//! 1024, and an expected bucket size of 4.25 keys) space is about 1.94 bits
-//! per key, the same as the most compact variants of PHast+ with wrapping,
-//! which however take much longer to build and have much slower queries;
-//! PHast uses 1.89 bits per key, but it takes more than ten times as long to
-//! build and has slower queries. With 10-bit seeds stored in a
-//! [`BitFieldVec`] (see [`PHastRBuilder::seed_bits`]) space is about 1.82
-//! bits per key; in this case, queries are faster after converting the
-//! function with [`TryIntoUnaligned::try_into_unaligned`], so that seeds are
-//! accessed with [unaligned reads].
-//!
-//! Functions are built by [`PHastR::try_new`], which reads the keys once
-//! from a lender, and by [`PHastR::try_par_new`], which computes the hashes of
-//! the keys of a slice in parallel; their variants with a builder make it
-//! possible to configure the construction using a [`PHastRBuilder`]. In
-//! particular, in [offline mode] the hashes of the keys are kept on disk, and
-//! on large key sets construction needs in memory less than half a byte per
-//! key (besides 256 MiB of buffers). The function
-//! built does not depend on the constructor, provided that the current
-//! [rayon] pool has the same number of threads.
-//!
-//! # References
-//!
-//! Piotr Beling and Peter Sanders. [PHast — Perfect Hashing made fast].
-//! CoRR, abs/2504.17918, 2025.
-//!
-//! [references]: #references
-//! [PHast — Perfect Hashing made fast]: https://arxiv.org/abs/2504.17918
-//! [Elias–Fano]: crate::dict::elias_fano
-//! [unaligned reads]: BitFieldVec::get_unaligned
-//! [offline mode]: PHastRBuilder::offline
-//! [rayon]: https://docs.rs/rayon
+//! See [`PHastR`] for a description of the structure, of its construction,
+//! and of when to change the default parameters.
 
 use core::error::Error;
 use std::borrow::Borrow;
@@ -160,7 +61,7 @@ const THIRD_HASH: u64 = 0xD6E8_FEB8_6659_FD93;
 /// Returns the upper half of the 128-bit product of `a` and `b` xored with
 /// the lower half.
 #[inline(always)]
-const fn mix(a: u64, b: u64) -> u64 {
+const fn folded_multiply(a: u64, b: u64) -> u64 {
     let p = a as u128 * b as u128;
     (p >> 64) as u64 ^ p as u64
 }
@@ -177,13 +78,12 @@ const fn mix(a: u64, b: u64) -> u64 {
 /// around.
 #[inline(always)]
 const fn level_sig(h: u64, second: u64, salt: u64) -> u64 {
-    mix(h ^ salt, second ^ 0xD6E8_FEB8_6659_FD93)
+    folded_multiply(h ^ salt, second ^ 0xD6E8_FEB8_6659_FD93)
 }
 
-/// The default remapping sequence of a [`PHastR`]: an Elias–Fano sequence
-/// whose selection inventory is sparser than that of [`EfSeq`] (one entry
-/// every 4096 ones instead of 2048), as it is accessed only by keys bumped
-/// from the first level.
+/// The default remapping sequence of a [`PHastR`]: an Elias–Fano whose
+/// parameters are fixed, so the serialization format does not depend on the
+/// defaults of [`EfSeq`].
 ///
 /// [`EfSeq`]: crate::dict::elias_fano::EfSeq
 pub type Remap = EliasFano<usize, SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
@@ -197,8 +97,8 @@ pub type Remap = EliasFano<usize, SelectAdaptConst<BitVec<Box<[usize]>>, Box<[us
 pub struct LevelParams {
     /// The number of buckets (always odd).
     buckets: u64,
-    /// The number of slices (the output range minus the slice length, plus
-    /// one).
+    /// The number of possible slice starts (the output range minus the slice
+    /// length, plus one).
     num_slices: u64,
     /// The slice length minus one.
     l_mask: u64,
@@ -214,20 +114,74 @@ pub struct LevelParams {
     first_seed: u64,
 }
 
-/// A bucket-placement minimal perfect hash function with rings of layouts.
+/// A bucket-placement minimal perfect hash function with rotated layouts.
 ///
-/// A *minimal perfect hash function* maps bijectively a set of *n* keys to
-/// the integers in [0 . . *n*): querying a key outside of the original set
-/// will lead to an arbitrary result. Values are retrieved using the [`get`]
-/// method. See the [module documentation] for a description of the
-/// algorithm.
+/// [`PHastR`] is a *minimal perfect hash function*, which maps bijectively a
+/// set of *n* keys to the integers in [0 . . *n*): querying a key outside of
+/// the original set will lead to an arbitrary result. Like [PHast], it is
+/// based on *bucket placement*: keys are hashed to buckets, and each bucket
+/// stores a fixed-width *seed* that maps each key of the bucket to a slot of
+/// the output range so that no two keys collide. For almost all keys, a query
+/// needs just a hash and the access to a seed.
 ///
-/// Instances of this structure are immutable; they are built using
-/// [`try_new`], [`try_par_new`], or one of their variants, and can be
-/// serialized using [ε-serde] or [`serde`].
+/// With the default parameters (8-bit seeds, four layouts, slices of length
+/// 1024, and an expected bucket size of 4.25 keys) space is about 1.94 bits per
+/// key, and PHastR is one of the fastest minimal perfect hash functions
+/// available, both to build and to query.
 ///
-/// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
-/// converted into (usually faster) structures using unaligned access.
+/// If the keys are in a slice, build the function with
+/// [`PHastR::try_par_new`], which computes their hashes in parallel;
+/// otherwise, use [`PHastR::try_new`], which reads the keys just once from a
+/// [lender] (for example, from a file). Their variants
+/// [`PHastR::try_par_new_with_builder`] and [`PHastR::try_new_with_builder`]
+/// make it possible to configure the construction using a [`PHastRBuilder`].
+/// Construction uses the threads of the current [rayon] pool, and the
+/// function built does not depend on the constructor, provided that the pool
+/// has the same number of threads.
+///
+/// Construction from a slice needs about 11 bytes per key besides the keys.
+/// Construction from a lender keeps instead a *record* of sixteen bytes for
+/// each key, containing two 64-bit hashes of the key from which its hashes
+/// for all levels are computed; in [offline mode] records are kept in
+/// temporary files, which take about sixteen bytes per key of disk space, and
+/// on large key sets construction needs in memory less than half a byte per
+/// key (besides 256 MiB of buffers). With one thread offline construction is
+/// about as fast as construction in memory, but it does not scale as well
+/// with the number of threads.
+///
+/// Seeds are stored by default in a `Box<[u8]>`, which provides the fastest
+/// queries; seeds of more than eight bits must be stored in a
+/// [`BitFieldVec`] (see [`SeedStore`]).
+///
+/// [`PHastR`] implements the [`TryIntoUnaligned`] trait, allowing it to be
+/// converted into (usually faster) structures using unaligned access: this is
+/// useful for seeds stored in a [`BitFieldVec`], which are then accessed with
+/// [unaligned reads].
+///
+/// Functions can be serialized with [ε-serde], which makes it possible to map
+/// them in memory, or with [`serde`].
+///
+/// # Changing the defaults
+///
+/// The defaults are an excellent choice for basically all uses, but you might want to
+/// change:
+///
+/// - the [number of bits of a seed]: for example, with 10-bit seeds stored in a
+///   [`BitFieldVec`], slices of length 2048, and an expected bucket size of
+///   5.75, space is about 1.82 bits per key, but construction takes about 60%
+///   more time, and queries are about a quarter slower, even after converting
+///   the function with [`TryIntoUnaligned::try_into_unaligned`] (see
+///   [`PHastR::try_par_new_with_builder`] for an example);
+///
+/// - the [expected bucket size]: a larger size reduces space and makes
+///   construction faster, but more keys are bumped from the first level to
+///   the following ones, and queries for such keys are slower (with 8-bit
+///   seeds and a size of 4.5, space decreases by about 0.04 bits per key, but
+///   queries on large key sets are about 8% slower); a smaller size makes
+///   queries slightly faster, but it increases space significantly;
+///
+/// - the [seed] used to compute the hashes of the keys, if you need different
+///   functions on the same keys.
 ///
 /// # Generics
 ///
@@ -242,7 +196,8 @@ pub struct LevelParams {
 ///   `Box<[LevelParams]>`.
 ///
 /// * `R` - the remapping, which maps the slots of the following levels to
-///   the free slots of the first one. The default is [`Remap`].
+///   the holes of the first one, that is, to the slots left free by its
+///   bumped keys. The default is [`Remap`].
 ///
 /// The last three parameters make it possible to deserialize with ε-serde
 /// without copying: for example, [`deserialize_eps`] on a `PHastR<K>`
@@ -254,12 +209,18 @@ pub struct LevelParams {
 ///
 /// See [`try_new`] and [`try_par_new`].
 ///
-/// [`get`]: PHastR::get
-/// [module documentation]: self
-/// [`try_new`]: PHastR::try_new
-/// [`try_par_new`]: PHastR::try_par_new
+/// [PHast]: https://doi.org/10.1137/1.9781611978957.1
+/// [lender]: crate::utils::lenders
+/// [rayon]: https://docs.rs/rayon
+/// [offline mode]: PHastRBuilder::offline
 /// [ε-serde]: https://crates.io/crates/epserde
 /// [`serde`]: https://crates.io/crates/serde
+/// [number of bits of a seed]: PHastRBuilder::seed_bits
+/// [expected bucket size]: PHastRBuilder::bucket_size
+/// [seed]: PHastRBuilder::seed
+/// [unaligned reads]: BitFieldVec::get_unaligned
+/// [`try_new`]: PHastR::try_new
+/// [`try_par_new`]: PHastR::try_par_new
 /// [`deserialize_eps`]: https://docs.rs/epserde/latest/epserde/deser/trait.Deserialize.html#tymethod.deserialize_eps
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(phantom(K)))]
@@ -290,7 +251,7 @@ pub struct PHastR<K: ?Sized, D = Box<[u8]>, P = Box<[LevelParams]>, R = Remap> {
     /// The seeds of the following levels, concatenated.
     seeds: D,
     /// The remapping, which maps the slots of the following levels to the
-    /// free slots of the first one.
+    /// holes of the first one.
     remap: R,
     _marker: std::marker::PhantomData<*const K>,
 }
@@ -387,7 +348,7 @@ impl<
 
     /// Returns the value associated with the given key.
     ///
-    /// The returned value is in the range [0 . . *n*), where *n* is the
+    /// The returned value is in the range [0 . . *n*), where *n* is the
     /// number of keys, and different keys of the original set are mapped to
     /// different values. If the key was not in the original set, the result
     /// is arbitrary.
@@ -525,9 +486,10 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     /// bits of a seed], the [slice length], the [expected bucket size], and
     /// [offline mode].
     ///
-    /// Hashes are kept in memory, or on disk in offline mode, using sixteen
-    /// bytes per key; in offline mode, construction needs in memory less than
-    /// one byte per key. The function is identical to that built by
+    /// The two hashes of each key are kept in memory, or on disk in offline
+    /// mode, as a record of sixteen bytes; in offline mode, on large key sets
+    /// construction needs in memory less than half a byte per key (besides
+    /// 256 MiB of buffers). The function is identical to that built by
     /// [`try_par_new_with_builder`] with the same builder, provided that the
     /// current [rayon] pool has the same number of threads.
     ///
@@ -620,8 +582,10 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     /// [offline mode] is not supported, and an error is returned if it is
     /// set.
     ///
-    /// The hashes of the keys are kept in memory, using about nine bytes per
-    /// key, and the keys bumped from the first level are hashed again.
+    /// The hashes of the keys are kept in memory, together with a byte per
+    /// key recording their part, and the keys bumped from the first level are
+    /// hashed again: construction needs about 11 bytes per key besides the
+    /// keys.
     ///
     /// If keys are produced sequentially (e.g., from a file), use
     /// [`try_new_with_builder`] instead.
@@ -675,7 +639,7 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
 
 /// Converts the seed storage and the remapping sequence to [unaligned
 /// reads]; this is useful only for seeds stored in a [`BitFieldVec`], as
-/// slices of bytes or of 16-bit values are left unchanged.
+/// slices of bytes are left unchanged.
 ///
 /// [unaligned reads]: BitFieldVec::get_unaligned
 impl<K: ?Sized, D: TryIntoUnaligned, P, R: TryIntoUnaligned> TryIntoUnaligned
@@ -720,252 +684,16 @@ impl<K: ?Sized, P> From<Unaligned<PHastR<K, BitFieldVec<Box<[usize]>>, P, Remap>
     }
 }
 
-#[cfg(test)]
+// The other tests that use only the public interface are in
+// tests/test_phast_r.rs; this one needs the private fields
+#[cfg(all(test, feature = "epserde"))]
 mod tests {
     use super::*;
-    use crate::utils::FromSlice;
     use dsi_progress_logger::no_logging;
-
-    /// Builds a function on the first `n` integers from a slice, and checks
-    /// that it is a minimal perfect hash function.
-    fn check<D: SeedStoreBuild>(n: usize, builder: PHastRBuilder) -> Result<()> {
-        let keys: Vec<u64> = (0..n as u64).collect();
-        let phf = <PHastR<u64, D>>::try_par_new_with_builder(&keys, builder, no_logging![])?;
-        assert_eq!(phf.len(), n);
-        let mut seen = vec![false; n];
-        for key in &keys {
-            let v = phf.get(key);
-            assert!(v < n, "{v} >= {n}");
-            assert!(!seen[v], "duplicate output {v}");
-            seen[v] = true;
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn test_small() -> Result<()> {
-        for n in [0, 1, 2, 3, 10, 100, 1000, 5000, 10000] {
-            check::<Box<[u8]>>(n, PHastRBuilder::default())?;
-            check::<BitFieldVec<Box<[usize]>>>(n, PHastRBuilder::default().seed_bits(10))?;
-            for log2_layouts in 0..=3 {
-                check::<Box<[u8]>>(
-                    n,
-                    PHastRBuilder::default()
-                        .log2_layouts(log2_layouts)
-                        .log2_slice_len(8),
-                )?;
-            }
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn test_medium() -> Result<()> {
-        check::<Box<[u8]>>(1_000_000, PHastRBuilder::default())?;
-        check::<Box<[u8]>>(300_000, PHastRBuilder::default().bucket_size(5.0))?;
-        // Rings of four, two and one words
-        check::<BitFieldVec<Box<[usize]>>>(
-            300_000,
-            PHastRBuilder::default()
-                .seed_bits(10)
-                .log2_slice_len(11)
-                .bucket_size(6.0),
-        )?;
-        check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_layouts(1))?;
-        check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_layouts(0))?;
-        check::<Box<[u16]>>(
-            300_000,
-            PHastRBuilder::default()
-                .seed_bits(11)
-                .log2_slice_len(12)
-                .bucket_size(6.75),
-        )?;
-        // Longer slices, and thus a larger stride
-        check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_slice_len(12))?;
-        check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_slice_len(16))?;
-        // Rings shorter than a word: a layout has four rotations
-        check::<Box<[u8]>>(
-            100_000,
-            PHastRBuilder::default()
-                .seed_bits(4)
-                .log2_slice_len(8)
-                .bucket_size(2.0),
-        )?;
-        // Slices with fewer slots than there are seeds: rotations are
-        // redundant
-        check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_slice_len(6))
-    }
-
-    #[test]
-    fn test_large_buckets() -> Result<()> {
-        // Large buckets (kept in a heap, and with several groups of keys)
-        // and very long rings
-        for log2_layouts in [0, 2] {
-            check::<Box<[u16]>>(
-                20_000,
-                PHastRBuilder::default()
-                    .seed_bits(16)
-                    .log2_layouts(log2_layouts)
-                    .log2_slice_len(16)
-                    .bucket_size(70.0),
-            )?;
-        }
-        check::<Box<[u8]>>(100_000, PHastRBuilder::default().bucket_size(70.0))
-    }
-
-    #[cfg(feature = "rayon")]
-    #[test]
-    fn test_many_chunks() -> Result<()> {
-        // Many threads, and hence many chunks and gaps, with long slices
-        let pool = rayon::ThreadPoolBuilder::new().num_threads(16).build()?;
-        pool.install(|| {
-            check::<BitFieldVec<Box<[usize]>>>(
-                2_000_000,
-                PHastRBuilder::default()
-                    .seed_bits(10)
-                    .log2_slice_len(11)
-                    .bucket_size(6.0),
-            )?;
-            check::<Box<[u8]>>(2_000_000, PHastRBuilder::default())
-        })
-    }
-
-    #[test]
-    fn test_parameter_checks() {
-        let keys: Vec<u64> = (0..1000).collect();
-        let build = |builder: PHastRBuilder| {
-            <PHastR<u64>>::try_par_new_with_builder(&keys, builder, no_logging![])
-        };
-        // Seeds too large for the storage
-        assert!(build(PHastRBuilder::default().seed_bits(10)).is_err());
-        // Too many layouts for the slice length
-        assert!(build(PHastRBuilder::default().log2_layouts(3)).is_err());
-        // Too many layouts for the number of seed bits
-        assert!(build(PHastRBuilder::default().seed_bits(2)).is_err());
-        // Offline mode needs a lender
-        assert!(build(PHastRBuilder::default().offline(true)).is_err());
-    }
-
-    #[test]
-    fn test_lender() -> Result<()> {
-        // The constructors reading keys from a lender, in memory and offline
-        let keys: Vec<u64> = (0..100_000).collect();
-        for builder in [
-            PHastRBuilder::default(),
-            PHastRBuilder::default().offline(true),
-        ] {
-            let phf =
-                <PHastR<u64>>::try_new_with_builder(FromSlice::new(&keys), builder, no_logging![])?;
-            assert_eq!(phf.len(), keys.len());
-            let mut seen = vec![false; keys.len()];
-            for key in &keys {
-                let v = phf.get(key);
-                assert!(!seen[v], "duplicate output {v}");
-                seen[v] = true;
-            }
-        }
-        let phf = <PHastR<u64>>::try_new(FromSlice::new(&keys), no_logging![])?;
-        assert_eq!(phf.len(), keys.len());
-        Ok(())
-    }
-
-    #[test]
-    fn test_unaligned() -> Result<()> {
-        for (bits, log2_slice_len, n) in [
-            (10, 11, 300_000),
-            (12, 12, 300_000),
-            (16, 12, 10_000),
-            (10, 11, 0),
-        ] {
-            let keys: Vec<u64> = (0..n as u64).collect();
-            let phf = <PHastR<u64, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
-                &keys,
-                PHastRBuilder::default()
-                    .seed_bits(bits)
-                    .log2_slice_len(log2_slice_len)
-                    .bucket_size(6.0),
-                no_logging![],
-            )?;
-            let expected: Vec<usize> = keys.iter().map(|k| phf.get(k)).collect();
-            let phf = phf.try_into_unaligned()?;
-            for (k, &e) in keys.iter().zip(&expected) {
-                assert_eq!(phf.get(k), e);
-            }
-            let phf: PHastR<u64, BitFieldVec<Box<[usize]>>> = phf.into();
-            for (k, &e) in keys.iter().zip(&expected) {
-                assert_eq!(phf.get(k), e);
-            }
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn test_batch() -> Result<()> {
-        let keys: Vec<u64> = (0..100_000).collect();
-        let phf = <PHastR<u64>>::try_par_new(&keys, no_logging![])?;
-        for chunk in keys.chunks_exact(8) {
-            let batch: [&u64; 8] = std::array::from_fn(|i| &chunk[i]);
-            let values = phf.get_batch(batch);
-            for (key, value) in chunk.iter().zip(values) {
-                assert_eq!(value, phf.get(key));
-            }
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn test_duplicates() {
-        let keys: Vec<u64> = vec![1, 2, 3, 2];
-        assert!(<PHastR<u64>>::try_par_new(&keys, no_logging![]).is_err());
-    }
-
-    /// A key whose 64-bit signature with seed 0 collides with that of another
-    /// key for the first 2 · `COLLIDING` keys (pairs 2*i*, 2*i* + 1); other
-    /// seeds give independent signatures.
-    #[derive(Clone, Copy)]
-    pub(super) struct CollidingKey(pub(super) u64);
-    const COLLIDING: u64 = 2000;
-
-    impl ToSig<[u64; 1]> for CollidingKey {
-        fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
-            let k = key.borrow().0;
-            if seed == 0 && k < 2 * COLLIDING {
-                <u64 as ToSig<[u64; 1]>>::to_sig(k / 2, 0)
-            } else {
-                <u64 as ToSig<[u64; 1]>>::to_sig(k, seed)
-            }
-        }
-    }
-
-    #[test]
-    fn test_signature_collisions() -> Result<()> {
-        // Colliding signatures are bumped and separated by the signatures of
-        // the following levels, with all configurations of the following
-        // levels (in particular, with only the last level)
-        for n in [5_000u64, 300_000] {
-            let keys: Vec<CollidingKey> = (0..n).map(CollidingKey).collect();
-            let phf = <PHastR<CollidingKey>>::try_par_new(&keys, no_logging![])?;
-            let mut seen = vec![false; keys.len()];
-            for &key in &keys {
-                if key.0 < 2 * COLLIDING {
-                    assert!(phf.is_bumped(key));
-                }
-                let v = phf.get(key);
-                assert!(!seen[v], "duplicate output {v}");
-                seen[v] = true;
-            }
-        }
-        // Equal keys are still detected
-        let mut keys: Vec<CollidingKey> = (0..100_000).map(CollidingKey).collect();
-        keys.push(CollidingKey(50_000));
-        assert!(<PHastR<CollidingKey>>::try_par_new(&keys, no_logging![]).is_err());
-        Ok(())
-    }
 
     /// Serializes, deserializes zero-copy (checking at compile time that
     /// seeds, level parameters, and the remapping sequence are borrowed),
     /// and compares outputs.
-    #[cfg(feature = "epserde")]
     macro_rules! check_epserde {
         ($d:ty, $deser_d:ty, $builder:expr) => {{
             use epserde::prelude::*;
@@ -999,44 +727,9 @@ mod tests {
     /// with the default flags mem_dbg does not follow references, so it
     /// counts only the fields of the structure, whereas following references
     /// it must count the same data as the original.
-    #[cfg(feature = "mmap")]
-    #[test]
-    fn test_mmap_mem_size() -> Result<()> {
-        use epserde::prelude::*;
-        let keys: Vec<u64> = (0..1_000_000).collect();
-        let phf = <PHastR<u64>>::try_par_new(&keys, no_logging![])?;
-        let file = tempfile::NamedTempFile::new()?;
-        // SAFETY: phf was built by its constructor
-        unsafe { phf.store(file.path()) }?;
-        // SAFETY: we just stored a valid structure into the file
-        let case = unsafe { <PHastR<u64>>::mmap(file.path(), Flags::empty()) }?;
-        let mapped = case.uncase();
-        let owned_size = phf.mem_size(SizeFlags::default());
-        let mapped_size = mapped.mem_size(SizeFlags::default());
-        let mapped_followed = mapped.mem_size(SizeFlags::FOLLOW_REFS);
-        assert!(
-            mapped_size < 1024,
-            "mapped structure takes {mapped_size} bytes"
-        );
-        assert!(
-            mapped_followed >= owned_size - 1024 && mapped_followed <= owned_size + 1024,
-            "owned {owned_size} bytes, mapped following references {mapped_followed} bytes"
-        );
-        for key in &keys {
-            assert_eq!(mapped.get(key), phf.get(key));
-        }
-        Ok(())
-    }
-
-    #[cfg(feature = "epserde")]
     #[test]
     fn test_epserde() -> Result<()> {
         check_epserde!(Box<[u8]>, &[u8], PHastRBuilder::default());
-        check_epserde!(
-            Box<[u16]>,
-            &[u16],
-            PHastRBuilder::default().seed_bits(11).log2_slice_len(12)
-        );
         check_epserde!(
             BitFieldVec<Box<[usize]>>,
             BitFieldVec<&[usize]>,
@@ -1065,20 +758,6 @@ mod tests {
         let _: &BitFieldVecU<&[usize]> = &des.seeds0;
         for key in &keys {
             assert_eq!(des.get(key), phf.get(key));
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn test_strings() -> Result<()> {
-        let keys: Vec<String> = (0..200_000).map(|i| format!("key{i}")).collect();
-        let refs: Vec<&str> = keys.iter().map(|s| s.as_str()).collect();
-        let phf = <PHastR<str>>::try_par_new(&refs, no_logging![])?;
-        let mut seen = vec![false; keys.len()];
-        for key in &keys {
-            let v = phf.get(key.as_str());
-            assert!(!seen[v], "duplicate output {v}");
-            seen[v] = true;
         }
         Ok(())
     }

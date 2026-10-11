@@ -1,4 +1,4 @@
-//! Compares PHast-R (sux) with the reference PHast/PHast+ implementation (ph)
+//! Compares PHastR (sux) with the reference PHast/PHast+ implementation (ph)
 //! on 64-bit integer keys, using the same hash function for both.
 //!
 //! Configurations are given as comma-separated specs:
@@ -12,10 +12,10 @@
 //!   d = 4, 5, 6, 7, 8, 9, 11 (PHast+ with wrapping and multiplier d, for which
 //!   `ph` uses the priority weights of multiplier 3);
 //!
-//! - `r:<S>:<log2 L>:<lambda>[:<log2 R>[:<storage>]]` for PHast-R (bits per
+//! - `r:<S>:<log2 L>:<lambda>[:<log2 R>[:<storage>]]` for PHastR (bits per
 //!   seed, base-2 logarithm of the slice length, expected bucket size, base-2
 //!   logarithm of the number of layouts, 2 by default), where `<storage>`
-//!   is `u8`, `u16`, `bfv`, or `bfvu` (a `BitFieldVec` with unaligned reads;
+//!   is `u8`, `bfv`, or `bfvu` (a `BitFieldVec` with unaligned reads;
 //!   default: `u8` if S <= 8, `bfv` otherwise);
 //!
 //! - `ptr:<variant>[:<lambda>]` for PtrHash, where `<variant>` is `default`
@@ -88,7 +88,7 @@ impl BuildSeededHasher for BuildX {
 }
 
 #[derive(Parser)]
-#[command(about = "Compares PHast-R with the reference PHast/PHast+ implementation")]
+#[command(about = "Compares PHastR with the reference PHast/PHast+ implementation")]
 struct Args {
     /// The number of keys.
     #[arg(short, default_value_t = 10_000_000)]
@@ -102,7 +102,7 @@ struct Args {
     /// The number of query repetitions (the best is reported).
     #[arg(short, long, default_value_t = 3)]
     repeats: usize,
-    /// The number of threads for the reference construction (PHast-R uses
+    /// The number of threads for the reference construction (PHastR uses
     /// the rayon pool; set RAYON_NUM_THREADS).
     #[arg(short, long, default_value_t = 1)]
     threads: usize,
@@ -126,7 +126,7 @@ struct Args {
     /// sequential (consecutive keys of the set, see `query_batch`).
     #[arg(long, default_value = "random")]
     order: String,
-    /// Queries PHast-R with the generic code, rather than with the code with
+    /// Queries PHastR with the generic code, rather than with the code with
     /// constant shifts used with four layouts (so that all numbers of
     /// layouts are queried by the same code).
     #[arg(long)]
@@ -507,7 +507,6 @@ fn main() {
                 let name = format!("{desc} {storage}");
                 match storage {
                     "u8" => sux_run::<Box<[u8]>>(&keys, b, &a, &name),
-                    "u16" => sux_run::<Box<[u16]>>(&keys, b, &a, &name),
                     "bfv" => sux_run::<BitFieldVec<Box<[usize]>>>(&keys, b, &a, &name),
                     "bfvu" => sux_run_u(&keys, b, &a, &name),
                     _ => panic!("unknown storage {storage}"),

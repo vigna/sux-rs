@@ -16,7 +16,7 @@
 
 \newcommand{\PHast}{PHast\xspace}
 \newcommand{\PHastP}{PHast$^+$\xspace}
-\newcommand{\PHastR}{PHast-R\xspace}
+\newcommand{\PHastR}{PHastR\xspace}
 \newcommand{\hi}{\operatorname{hi}}
 % Shifts as binary operators
 \DeclareMathSymbol{\ll}{\mathbin}{symbols}{"1C}
@@ -108,11 +108,9 @@ This paper makes four contributions:
 layout that map no key to a used slot by cyclically shifting, for each key,
 the bits recording which slots of its ring are used
 (Section~\ref{sec:phastr});
-\item an analysis of the differences from \PHast and \PHastP, showing that
-the excess space of \PHastP, with and without wrapping, comes from bumping,
-that a large part of the bumping is caused by self-collisions inherent to
-the additive scheme of \PHastP, and that layouts make their effect
-negligible
+\item a comparison with \PHast and \PHastP, showing that a large part of the
+bumping of \PHastP is caused by self-collisions inherent to its additive
+scheme, and that layouts make their effect negligible
 (Section~\ref{sec:differences});
 \item an implementation in the Rust crate \texttt{sux}, an experimental
 comparison with the reference implementation of \PHast and \PHastP and with
@@ -605,47 +603,20 @@ combining, for each key, a word of the bit vector of used slots, but it needs
 more space than \PHast; \PHastP
 \emph{with wrapping} uses $p(s,h)=(h+\delta s)\bmod L$ for a small multiplier
 $\delta$, so that keys do not leave their slice, and needs less space than
-\PHastP without wrapping, but it is slower to build. In \PHastR,
+\PHastP without wrapping, but it is slower to build.
+
+In \PHastR,
 $p(s,h)=\bigl(\omega_r(o)+su\bigr)\bmod L$, where $r=s\bmod R$ and
-$o=\operatorname{lo}(hB)$.
+$o=\operatorname{lo}(hB)$. Within a layout the scheme of \PHastR is thus
+additive, like that of \PHastP with wrapping, so the free rotations of a
+layout can be found with bit-parallel operations. In an additive scheme,
+however, two keys of a bucket that collide for one seed collide for (almost)
+all seeds: in the first level of the reference implementation of \PHastP with
+8-bit seeds, wrapping and $\delta=3$, $35\%$ of the bumped buckets contain
+such a self-collision. In \PHastR, instead, self-collisions happen
+independently in each layout, and buckets with a self-collision in every
+layout are negligible.
 
-\paragraph{The additive scheme is rigid.}
-As in \PHastR, the first level of \PHastP has output range $m=n$, so its holes
-are exactly its bumped keys, and by~(\ref{eq:space}) its excess space comes
-from bumping. The additive scheme, however, moves all the keys of a bucket by
-the same amount: two keys of a bucket that collide for one seed, which
-happens with probability about $k(k-1)/(2L)$ for a bucket of size $k$,
-collide for every seed (Beling and Sanders observe that in \PHastP the test for
-self-collisions can thus be performed just once~\cite{BeSPHast}). Wrapping
-does not change the picture, as two such keys move
-together around their slices, and collide for all seeds but the few for
-which exactly one of them has wrapped. Inspecting the first level of the
-reference implementation, we found that these self-collisions cause a large
-part of the bumping: with 8-bit seeds, wrapping and $\delta=3$, $35\%$ of the
-bumped buckets contain one. Moreover, since each seed
-moves all the keys of a bucket by the same amount, the seeds of a bucket are
-strongly correlated; and the excess space cannot be recovered by compressing
-the seeds, which are almost incompressible (the empirical entropy of the
-8-bit seeds of the first level is $7.9$ bits).
-
-\paragraph{Layouts.}
-In \PHastR the seed first chooses among $R$ layouts, and then a rotation:
-as self-collisions happen independently in each layout
-(Section~\ref{sec:phastr}), buckets with a self-collision in every layout
-are negligible (in Figure~\ref{fig:placement}, the keys $x_1$ and $x_2$
-would collide for all seeds in \PHastP, but in \PHastR they collide only for
-the seeds choosing layout~$0$). Queries need just two shifts
-more than in \PHastP with wrapping, and wrapping does not complicate the
-search: in \PHastP with wrapping the seeds must be split into intervals at
-the points at which some key wraps, and with $\delta>1$ only one bit out of
-$\delta$ of each word read from the bit vector is meaningful (Beling and
-Sanders~\cite{BeSPHast} suggest that storing separately the slots with
-different residues modulo $\delta$ could recover the lost parallelism),
-whereas in
-\PHastR the bits of the ring of a key are adjacent bits of a row, and
-wrapping is taken care of by the cyclic shift.
-
-\paragraph{Construction.}
 The construction of \PHastR differs from that of the reference implementation
 also in several engineering aspects (Section~\ref{sec:phastr}): hashes are
 distributed into parts rather than sorted, the priority queue is replaced by
@@ -1383,15 +1354,6 @@ extends to expectations, and we conclude that
 \]
 
 \begin{table}[t]
-\centering
-\caption{Percentage of keys that every placement must bump when each key can
-be placed only in the $W=1024$ slots of its slice, for the slice starts of the
-first level of \PHastR with $S=8$ on our key sets: the bound $D-W+1$ of
-Proposition~\ref{prop:bump}, the minimum (computed by the greedy placement of
-Proposition~\ref{prop:greedy}),
-and the estimate $n/(2W)$, compared with the keys bumped by \PHastR with
-$\lambda=4.25$.}
-\label{tab:floor}
 \small
 \begin{tabular}{lrrrr}
 \toprule
@@ -1402,6 +1364,15 @@ $10^8$ & 0.013 & 0.053 & 0.049 & 0.51 \\
 $10^9$ & 0.003 & 0.050 & 0.049 & 0.51 \\
 \bottomrule
 \end{tabular}
+\centering
+\caption{Percentage of keys that every placement must bump when each key can
+be placed only in the $W=1024$ slots of its slice, for the slice starts of the
+first level of \PHastR with $S=8$ on our key sets: the bound $D-W+1$ of
+Proposition~\ref{prop:bump}, the minimum (computed by the greedy placement of
+Proposition~\ref{prop:greedy}),
+and the estimate $n/(2W)$, compared with the keys bumped by \PHastR with
+$\lambda=4.25$.}
+\label{tab:floor}
 \end{table}
 
 \begin{figure}[t]

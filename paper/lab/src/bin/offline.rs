@@ -1,4 +1,4 @@
-//! Offline construction of PHast-R: builds a function online, offline, or
+//! Offline construction of PHastR: builds a function online, offline, or
 //! both, reporting construction times; in the latter case, it checks that
 //! the two functions are identical (comparing their debug representations,
 //! which contain all their data) and that queries agree. In offline mode keys are generated on the fly, and

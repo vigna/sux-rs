@@ -1,8 +1,8 @@
-//! Splits the query time of PHast-R between keys placed in the first level
+//! Splits the query time of PHastR between keys placed in the first level
 //! (fast path) and bumped keys (slow path), and compares with the
 //! reference PHast+ on the same keys.
 //!
-//! Configurations are `<S>:<log2 L>:<lambda>[:<log2 R>]` for PHast-R (with
+//! Configurations are `<S>:<log2 L>:<lambda>[:<log2 R>]` for PHastR (with
 //! S > 8, seeds are stored as `u16`, in a `BitFieldVec`, and in a
 //! `BitFieldVec` with unaligned reads), or `ref:<plus|w3|w3p|phast>:<S>:<lambda>` for
 //! the reference implementation, whose bumped keys are those whose bucket of
@@ -189,7 +189,6 @@ fn main() {
         if s <= 8 {
             entries.push(run::<Box<[u8]>>(&keys, b, &format!("{v} u8"), sq));
         } else {
-            entries.push(run::<Box<[u16]>>(&keys, b.clone(), &format!("{v} u16"), sq));
             entries.push(run_u(&keys, b, &format!("{v} bfvu"), sq));
         }
     }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Offline construction (Section 4 of the paper): time and peak memory of
-# PHast-R built in memory and offline, with one and with THREADS threads, on
+# PHastR built in memory and offline, with one and with THREADS threads, on
 # each key set of SIZES above 10^7, and offline only on 10^10 keys if TMPDIR
 # has enough free space (the offline construction writes 16 bytes per key in
 # TMPDIR). Memory is reported as the peak of the memory allocated by the
@@ -12,7 +12,7 @@
 # <allocated MiB> <resident KiB>
 # Usage: offline.sh <directory of the binaries> <output file>
 # Environment: CPU1, CPUS, THREADS, SIZES; see redo.sh. The configuration is
-# that of PHast-R with 8-bit seeds and the default expected bucket size.
+# that of PHastR with 8-bit seeds and the default expected bucket size.
 . "$(dirname "$0")/configs.sh"
 B=${1:-../../target/release}
 O=${2:-offline.txt}

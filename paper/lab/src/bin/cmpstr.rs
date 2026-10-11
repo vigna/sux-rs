@@ -1,4 +1,4 @@
-//! Compares PHast-R with the reference PHast/PHast+ implementation (ph) on
+//! Compares PHastR with the reference PHast/PHast+ implementation (ph) on
 //! random strings of 10 to 50 bytes (the standard MPHF benchmark workload),
 //! with the same hash function (GxHash on the bytes of the string, exactly
 //! as `std::hash::Hash` feeds a `str` to a hasher) for both.

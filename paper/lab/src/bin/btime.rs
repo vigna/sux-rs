@@ -1,4 +1,4 @@
-//! Construction time of PHast-R alone: builds the structure several times
+//! Construction time of PHastR alone: builds the structure several times
 //! and reports the minimum and median time per key, and the space (which
 //! must not change when optimizing construction).
 //!

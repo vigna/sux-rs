@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Experiments of the paper: PHast, PHast+ (with and without wrapping) and
-# PHast-R on u64 keys with GxHash.
+# PHastR on u64 keys with GxHash.
 #
 # Single-threaded runs, pinned to a core: for each number of keys and each
 # seed width, one process builds the sweeps of the expected bucket size of

@@ -55,7 +55,7 @@ for n in $LARGE; do
 done > $O/scaling.txt
 
 # Peak memory of a multithreaded construction (it includes 8 bytes per key
-# for the keys); PHast-R is built by btime, as cmp checks that the function
+# for the keys); PHastR is built by btime, as cmp checks that the function
 # is a bijection using n more bytes
 CPUS=$(cpus $THREADS)
 for n in $LARGE; do

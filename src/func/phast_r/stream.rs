@@ -608,7 +608,7 @@ fn by_thread<T: Send>(
     }
 }
 
-/// Returns the records of the `k` keys whose bucket has no seed, given the
+/// Returns the records of the `k` keys of the bumped buckets, given the
 /// salt of the following level: in a new store (kept in a file if `offline`
 /// is true), or in a vector, if the following level is the last one. The
 /// progress of the pass, in records read, is logged on a concurrent logger
@@ -902,8 +902,9 @@ impl PHastRBuilder {
                         break;
                     }
                     let k = records.len();
-                    // The last level does not bump: we enlarge the range and
-                    // change the salt until we succeed
+                    // The last level does not bump: we change the salt until
+                    // we succeed, enlarging the output range every eight
+                    // attempts
                     let mut attempt = 0u64;
                     loop {
                         let m = k + k / 4 + 16 + (attempt as usize / 8) * (k / 8 + 8);
@@ -977,10 +978,27 @@ impl PHastRBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::CollidingKey;
     use super::*;
     use crate::utils::FromSlice;
     use dsi_progress_logger::{ProgressLogger, no_logging};
+
+    /// A key whose 64-bit signature with seed 0 collides with that of another
+    /// key for the first 2 · `COLLIDING` keys (pairs 2*i*, 2*i* + 1); other
+    /// seeds give independent signatures.
+    #[derive(Clone, Copy)]
+    struct CollidingKey(u64);
+    const COLLIDING: u64 = 2000;
+
+    impl ToSig<[u64; 1]> for CollidingKey {
+        fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
+            let k = key.borrow().0;
+            if seed == 0 && k < 2 * COLLIDING {
+                <u64 as ToSig<[u64; 1]>>::to_sig(k / 2, 0)
+            } else {
+                <u64 as ToSig<[u64; 1]>>::to_sig(k, seed)
+            }
+        }
+    }
 
     /// Asserts that two functions are identical.
     fn assert_same<K: ?Sized, D: SeedStore>(a: &PHastR<K, D>, b: &PHastR<K, D>) {
@@ -1078,7 +1096,7 @@ mod tests {
                 .log2_slice_len(11)
                 .bucket_size(6.0),
         )?;
-        check_u64::<Box<[u16]>>(
+        check_u64::<BitFieldVec<Box<[usize]>>>(
             300_000,
             PHastRBuilder::default()
                 .seed_bits(11)
@@ -1094,7 +1112,7 @@ mod tests {
                 .bucket_size(2.0),
         )?;
         check_u64::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_slice_len(6))?;
-        check_u64::<Box<[u16]>>(
+        check_u64::<BitFieldVec<Box<[usize]>>>(
             20_000,
             PHastRBuilder::default()
                 .seed_bits(16)
@@ -1214,7 +1232,7 @@ mod tests {
                 let g = PHastRBuilder::default().geometry(n, n, 4.5);
                 let writer = StoreWriter::new(SigFn(None), MAX_LOG2_PARTITIONS, offline)?;
                 let mut buffers = writer.buffers();
-                let sig = |i: usize| mix(i as u64 + 1, 0x9E37_79B9_7F4A_7C15);
+                let sig = |i: usize| folded_multiply(i as u64 + 1, 0x9E37_79B9_7F4A_7C15);
                 for i in 0..n {
                     buffers.push([sig(i), i as u64])?;
                 }

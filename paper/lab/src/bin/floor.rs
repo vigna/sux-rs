@@ -1,4 +1,4 @@
-//! Window floor and self-collisions of the first level of PHast-R (Sections
+//! Window floor and self-collisions of the first level of PHastR (Sections
 //! 3 and 6 of the paper), on the same keys and hashes as `cmp`.
 //!
 //! The *floor* is the minimum number of keys that every placement of the
@@ -9,7 +9,7 @@
 //! slice (earliest deadline first). The tool also prints the bound D − L + 1
 //! of Proposition 1 and the estimate n/(2L) of the paper.
 //!
-//! With `--layouts`, it builds PHast-R single-threaded with the given numbers
+//! With `--layouts`, it builds PHastR single-threaded with the given numbers
 //! of layouts (as base-2 logarithms) and reports, for the buckets of the first
 //! level, how many have a self-collision (two keys with the same base slot) in
 //! every layout, and how many of the bumped buckets do.

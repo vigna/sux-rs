@@ -1,4 +1,4 @@
-//! Tuning of the size-dependent priority weights of the buckets of PHast-R.
+//! Tuning of the size-dependent priority weights of the buckets of PHastR.
 //!
 //! The objective is the mean space in bits per key of single-threaded
 //! constructions on a few key sets, which are built concurrently. Space does
