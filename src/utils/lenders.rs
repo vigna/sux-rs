@@ -704,7 +704,7 @@ where
     &'a I: IntoIterator,
 {
     pub fn new(iterable: &'a I) -> Self {
-        FromIntoIterator {
+        Self {
             iterable,
             iter: iterable.into_iter(),
             item: None,
@@ -747,7 +747,7 @@ where
     &'a I: IntoIterator,
 {
     fn from(iterable: &'a I) -> Self {
-        FromIntoIterator::new(iterable)
+        Self::new(iterable)
     }
 }
 

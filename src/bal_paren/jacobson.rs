@@ -476,7 +476,7 @@ impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B> {
     pub fn new(paren: B) -> Self {
         let (ef_positions, matches) = build_pioneers(&paren);
         let min_offset = matches.iter().copied().min().unwrap_or(0);
-        let offsets = CompIntList::new(min_offset, &matches);
+        let offsets = CompIntList::new::<Vec<usize>>(min_offset, &matches);
 
         JacobsonBalParen {
             paren,
@@ -547,7 +547,7 @@ impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B, EfDict<usize>, PrefixSum
     #[must_use]
     pub fn new_with_prefix_sum(paren: B) -> Self {
         let (ef_positions, matches) = build_pioneers(&paren);
-        let offsets = PrefixSumIntList::new(&matches);
+        let offsets = PrefixSumIntList::new::<Vec<usize>>(&matches);
 
         JacobsonBalParen {
             paren,

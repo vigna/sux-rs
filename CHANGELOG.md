@@ -57,6 +57,11 @@
 
 ### Fixed
 
+- `FromIntoIterator` and `JacobsonBalParen` no longer fail to compile with
+  an overflow evaluating `&_: IntoIterator` when the `objc2` crate is in the
+  dependency graph (e.g., through `sysinfo` 0.39 on macOS), as their type
+  parameters are now fixed before trait selection.
+
 - Unsound reference-based `From` implementations between `BitVec`,
   `AtomicBitVec`, etc. have been removed.
 
