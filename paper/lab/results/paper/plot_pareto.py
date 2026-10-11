@@ -4,10 +4,12 @@ pgfplots code of a figure with the single-threaded rows and a row of two
 panels for each key set, space vs query time and space vs construction
 time, with one shared legend (leg:pareto). The configurations of each
 structure are joined along their sweep of expected bucket sizes; PHast+
-with wrapping is plotted only with multipliers 3 and 7, and the compact
-variant of PtrHash, which does not depend on the seed width, is a single
-point (the default variant, at about 3 bits per key, would squeeze the
-other curves, so it is not plotted). The configurations that
+with wrapping is plotted only with multipliers 3 and 7, and the two variants
+of PtrHash, which do not depend on the seed width, are single points. The
+space axis is broken after OFF_BREAK bits per key: the points with more space
+(the default variant of PtrHash, at about 3 bits per key) are drawn at
+OFF_X, beyond a dashed line, with their space as tick labels. The
+configurations that
 are Pareto-optimal in space, query time and construction time at once on
 each key set, considering all structures, are listed in comments.
 With a second argument, the same figure is also rendered with matplotlib
@@ -19,7 +21,10 @@ csv = sys.argv[1]
 
 # The variants that are plotted
 PLOTTED = ['PHast+', 'PHast+ wrap delta=3', 'PHast+ wrap delta=7', 'PHast', 'PHast-R',
-           'PtrHash compact']
+           'PtrHash default', 'PtrHash compact']
+# The broken space axis: limits, position of the break, and position of the
+# points beyond it
+XMIN, XMAX, OFF_BREAK, OFF_X = 1.78, 2.25, 2.19, 2.22
 # The seed width assigned to PtrHash (so that it comes last)
 PTR = 99
 
@@ -49,7 +54,7 @@ def macro(variant):
     if m:
         return rf'\PHastP wrap $\delta={m.group(1)}$'
     return {'PHast+': r'\PHastP', 'PHast': r'\PHast', 'PHast-R': r'\PHastR',
-            'PtrHash default': 'PtrHash', 'PtrHash compact': 'PtrHash compact'}[variant]
+            'PtrHash default': 'PtrHash default', 'PtrHash compact': 'PtrHash compact'}[variant]
 def label(variant, s):
     return macro(variant) if s == PTR else f'{macro(variant)} ($S={s}$)'
 def mark(variant, s):
@@ -74,7 +79,7 @@ def addplots(n, idx):
         style = f'mark={mark(variant, s)}, color={color(variant)}, mark size=1.8pt'
         if len(v) == 1:
             style = 'only marks, ' + style
-        coords = ' '.join(f'({x[1]:.3f},{x[idx]})' for x in v)
+        coords = ' '.join(f'({min(x[1], OFF_X) if x[1] > OFF_BREAK else x[1]:.3f},{x[idx]})' for x in v)
         out.append(f'\\addplot[{style}] coordinates {{ {coords} }};')
     return '\n'.join(out)
 
@@ -98,9 +103,14 @@ for i, (n, idx, ylabel, extra) in enumerate(panels):
     print(r'\begin{axis}[')
     print(r'  width=0.49\textwidth, height=0.34\textwidth, title style={font=\small},')
     print(f'  title={{({chr(ord("a") + i)}) {what}, {keys(n)} keys}},')
-    print(f'  xlabel={{space [bits/key]}}, ylabel={{{ylabel}}}, {extra}enlargelimits=0.08,')
+    off = sorted({x[1] for k in order(n) for x in series[n][k] if x[1] > OFF_BREAK})
+    ticks = ''.join(f', extra x ticks={{{OFF_X}}}, extra x tick labels={{${b:.2f}$}}' for b in off[:1])
+    print(f'  xlabel={{space [bits/key]}}, ylabel={{{ylabel}}}, {extra}xmin={XMIN}, xmax={XMAX}, '
+          f'enlarge x limits=false, enlarge y limits=0.08, xtick={{1.8,1.9,2,2.1}}{ticks},')
     print(f'  grid=major, grid style={{gray!20}}{leg}]')
     print(addplots(n, idx))
+    r = (OFF_BREAK - XMIN) / (XMAX - XMIN)
+    print(rf'\draw[densely dashed, gray] (rel axis cs:{r:.4f},0) -- (rel axis cs:{r:.4f},1);')
     if i == 0:
         print(f'\\legend{{{legend}}}')
     print(r'\end{axis}')

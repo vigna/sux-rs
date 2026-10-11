@@ -897,7 +897,7 @@ Structure & bumped & first & all & first & all & first & all \\
 \begin{axis}[
   width=0.49\textwidth, height=0.34\textwidth, title style={font=\small},
   title={(a) queries, $10^{7}$ keys},
-  xlabel={space [bits/key]}, ylabel={query time [ns]}, enlargelimits=0.08,
+  xlabel={space [bits/key]}, ylabel={query time [ns]}, xmin=1.78, xmax=2.25, enlarge x limits=false, enlarge y limits=0.08, xtick={1.8,1.9,2,2.1}, extra x ticks={2.22}, extra x tick labels={$2.99$},
   grid=major, grid style={gray!20}, legend to name=leg:pareto, legend columns=3, legend cell align=left, legend style={font=\small, /tikz/every even column/.append style={column sep=0.3em}}]
 \addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.123,7.4) (2.117,7.8) (2.121,8.4) };
 \addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (1.986,5.1) (1.964,5.5) (1.956,6.0) (1.966,6.5) (1.979,7.3) };
@@ -909,15 +909,17 @@ Structure & bumped & first & all & first & all & first & all \\
 \addplot[mark=star, color=black, mark size=1.8pt] coordinates { (1.845,6.1) (1.841,6.5) (1.852,6.9) };
 \addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.836,6.3) (1.814,6.5) (1.821,6.8) };
 \addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.856,5.2) (1.824,5.4) (1.823,5.8) (1.833,6.2) (1.849,6.7) };
+\addplot[only marks, mark=pentagon*, color=green!50!black, mark size=1.8pt] coordinates { (2.220,4.5) };
 \addplot[only marks, mark=pentagon, color=green!50!black, mark size=1.8pt] coordinates { (2.143,7.8) };
-\legend{\PHastP ($S=8$), \PHastP wrap $\delta=3$ ($S=8$), \PHastP wrap $\delta=7$ ($S=8$), \PHast ($S=8$), \PHastR ($S=8$), \PHastP ($S=10$), \PHastP wrap $\delta=3$ ($S=10$), \PHastP wrap $\delta=7$ ($S=10$), \PHast ($S=10$), \PHastR ($S=10$), PtrHash compact}
+\draw[densely dashed, gray] (rel axis cs:0.8723,0) -- (rel axis cs:0.8723,1);
+\legend{\PHastP ($S=8$), \PHastP wrap $\delta=3$ ($S=8$), \PHastP wrap $\delta=7$ ($S=8$), \PHast ($S=8$), \PHastR ($S=8$), \PHastP ($S=10$), \PHastP wrap $\delta=3$ ($S=10$), \PHastP wrap $\delta=7$ ($S=10$), \PHast ($S=10$), \PHastR ($S=10$), PtrHash default, PtrHash compact}
 \end{axis}
 \end{tikzpicture}%
 \begin{tikzpicture}
 \begin{axis}[
   width=0.49\textwidth, height=0.34\textwidth, title style={font=\small},
   title={(b) construction, $10^{7}$ keys},
-  xlabel={space [bits/key]}, ylabel={construction time [ns/key]}, ymode=log, log ticks with fixed point, ytick={20,50,100,200,500,1000,2000}, enlargelimits=0.08,
+  xlabel={space [bits/key]}, ylabel={construction time [ns/key]}, ymode=log, log ticks with fixed point, ytick={20,50,100,200,500,1000,2000}, xmin=1.78, xmax=2.25, enlarge x limits=false, enlarge y limits=0.08, xtick={1.8,1.9,2,2.1}, extra x ticks={2.22}, extra x tick labels={$2.99$},
   grid=major, grid style={gray!20}]
 \addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.123,52.0) (2.117,52.4) (2.121,52.6) };
 \addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (1.986,91.3) (1.964,91.1) (1.956,91.6) (1.966,92.6) (1.979,94.3) };
@@ -929,14 +931,16 @@ Structure & bumped & first & all & first & all & first & all \\
 \addplot[mark=star, color=black, mark size=1.8pt] coordinates { (1.845,201.6) (1.841,205.6) (1.852,209.2) };
 \addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.836,2256.3) (1.814,2085.2) (1.821,1977.2) };
 \addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.856,102.7) (1.824,90.1) (1.823,84.6) (1.833,83.3) (1.849,82.7) };
+\addplot[only marks, mark=pentagon*, color=green!50!black, mark size=1.8pt] coordinates { (2.220,106.5) };
 \addplot[only marks, mark=pentagon, color=green!50!black, mark size=1.8pt] coordinates { (2.143,176.4) };
+\draw[densely dashed, gray] (rel axis cs:0.8723,0) -- (rel axis cs:0.8723,1);
 \end{axis}
 \end{tikzpicture}\\[1ex]
 \begin{tikzpicture}
 \begin{axis}[
   width=0.49\textwidth, height=0.34\textwidth, title style={font=\small},
   title={(c) queries, $10^{8}$ keys},
-  xlabel={space [bits/key]}, ylabel={query time [ns]}, enlargelimits=0.08,
+  xlabel={space [bits/key]}, ylabel={query time [ns]}, xmin=1.78, xmax=2.25, enlarge x limits=false, enlarge y limits=0.08, xtick={1.8,1.9,2,2.1}, extra x ticks={2.22}, extra x tick labels={$2.99$},
   grid=major, grid style={gray!20}]
 \addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.123,15.8) (2.116,16.2) (2.120,17.2) };
 \addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (1.985,11.9) (1.962,12.6) (1.955,13.4) (1.964,14.3) (1.978,15.4) };
@@ -948,14 +952,16 @@ Structure & bumped & first & all & first & all & first & all \\
 \addplot[mark=star, color=black, mark size=1.8pt] coordinates { (1.840,13.8) (1.836,14.5) (1.846,15.3) };
 \addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.834,14.2) (1.810,14.6) (1.816,15.3) };
 \addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.853,12.0) (1.820,12.3) (1.819,13.0) (1.829,13.8) (1.846,14.9) };
+\addplot[only marks, mark=pentagon*, color=green!50!black, mark size=1.8pt] coordinates { (2.220,11.7) };
 \addplot[only marks, mark=pentagon, color=green!50!black, mark size=1.8pt] coordinates { (2.143,18.0) };
+\draw[densely dashed, gray] (rel axis cs:0.8723,0) -- (rel axis cs:0.8723,1);
 \end{axis}
 \end{tikzpicture}%
 \begin{tikzpicture}
 \begin{axis}[
   width=0.49\textwidth, height=0.34\textwidth, title style={font=\small},
   title={(d) construction, $10^{8}$ keys},
-  xlabel={space [bits/key]}, ylabel={construction time [ns/key]}, ymode=log, log ticks with fixed point, ytick={20,50,100,200,500,1000,2000}, enlargelimits=0.08,
+  xlabel={space [bits/key]}, ylabel={construction time [ns/key]}, ymode=log, log ticks with fixed point, ytick={20,50,100,200,500,1000,2000}, xmin=1.78, xmax=2.25, enlarge x limits=false, enlarge y limits=0.08, xtick={1.8,1.9,2,2.1}, extra x ticks={2.22}, extra x tick labels={$2.99$},
   grid=major, grid style={gray!20}]
 \addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.123,57.8) (2.116,58.1) (2.120,58.6) };
 \addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (1.985,96.9) (1.962,97.2) (1.955,97.7) (1.964,98.6) (1.978,100.0) };
@@ -967,14 +973,16 @@ Structure & bumped & first & all & first & all & first & all \\
 \addplot[mark=star, color=black, mark size=1.8pt] coordinates { (1.840,206.7) (1.836,211.2) (1.846,214.6) };
 \addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.834,2270.9) (1.810,2091.9) (1.816,1983.2) };
 \addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.853,110.8) (1.820,97.3) (1.819,91.8) (1.829,89.5) (1.846,89.1) };
+\addplot[only marks, mark=pentagon*, color=green!50!black, mark size=1.8pt] coordinates { (2.220,197.2) };
 \addplot[only marks, mark=pentagon, color=green!50!black, mark size=1.8pt] coordinates { (2.143,180.5) };
+\draw[densely dashed, gray] (rel axis cs:0.8723,0) -- (rel axis cs:0.8723,1);
 \end{axis}
 \end{tikzpicture}\\[1ex]
 \begin{tikzpicture}
 \begin{axis}[
   width=0.49\textwidth, height=0.34\textwidth, title style={font=\small},
   title={(e) queries, $10^{9}$ keys},
-  xlabel={space [bits/key]}, ylabel={query time [ns]}, enlargelimits=0.08,
+  xlabel={space [bits/key]}, ylabel={query time [ns]}, xmin=1.78, xmax=2.25, enlarge x limits=false, enlarge y limits=0.08, xtick={1.8,1.9,2,2.1}, extra x ticks={2.22}, extra x tick labels={$2.99$},
   grid=major, grid style={gray!20}]
 \addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.122,31.1) (2.115,32.6) (2.120,34.4) };
 \addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (1.984,22.5) (1.962,24.2) (1.955,26.0) (1.964,28.0) (1.978,30.8) };
@@ -986,14 +994,16 @@ Structure & bumped & first & all & first & all & first & all \\
 \addplot[mark=star, color=black, mark size=1.8pt] coordinates { (1.840,26.0) (1.835,27.7) (1.845,29.7) };
 \addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.833,26.5) (1.810,27.6) (1.816,29.7) };
 \addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.853,22.8) (1.819,23.7) (1.818,25.4) (1.829,27.4) (1.846,29.8) };
+\addplot[only marks, mark=pentagon*, color=green!50!black, mark size=1.8pt] coordinates { (2.220,18.1) };
 \addplot[only marks, mark=pentagon, color=green!50!black, mark size=1.8pt] coordinates { (2.143,29.7) };
+\draw[densely dashed, gray] (rel axis cs:0.8723,0) -- (rel axis cs:0.8723,1);
 \end{axis}
 \end{tikzpicture}%
 \begin{tikzpicture}
 \begin{axis}[
   width=0.49\textwidth, height=0.34\textwidth, title style={font=\small},
   title={(f) construction, $10^{9}$ keys},
-  xlabel={space [bits/key]}, ylabel={construction time [ns/key]}, ymode=log, log ticks with fixed point, ytick={20,50,100,200,500,1000,2000}, enlargelimits=0.08,
+  xlabel={space [bits/key]}, ylabel={construction time [ns/key]}, ymode=log, log ticks with fixed point, ytick={20,50,100,200,500,1000,2000}, xmin=1.78, xmax=2.25, enlarge x limits=false, enlarge y limits=0.08, xtick={1.8,1.9,2,2.1}, extra x ticks={2.22}, extra x tick labels={$2.99$},
   grid=major, grid style={gray!20}]
 \addplot[mark=*, color=black, mark size=1.8pt] coordinates { (2.122,65.0) (2.115,65.3) (2.120,65.4) };
 \addplot[mark=diamond*, color=black, mark size=1.8pt] coordinates { (1.984,103.9) (1.962,104.0) (1.955,104.5) (1.964,105.4) (1.978,106.7) };
@@ -1005,7 +1015,9 @@ Structure & bumped & first & all & first & all & first & all \\
 \addplot[mark=star, color=black, mark size=1.8pt] coordinates { (1.840,214.3) (1.835,218.7) (1.845,222.3) };
 \addplot[mark=square, color=blue!70!black, mark size=1.8pt] coordinates { (1.833,2280.7) (1.810,2100.9) (1.816,1989.2) };
 \addplot[mark=triangle, color=red!70!black, mark size=1.8pt] coordinates { (1.853,114.3) (1.819,101.2) (1.818,95.6) (1.829,94.2) (1.846,93.8) };
+\addplot[only marks, mark=pentagon*, color=green!50!black, mark size=1.8pt] coordinates { (2.220,375.8) };
 \addplot[only marks, mark=pentagon, color=green!50!black, mark size=1.8pt] coordinates { (2.143,186.3) };
+\draw[densely dashed, gray] (rel axis cs:0.8723,0) -- (rel axis cs:0.8723,1);
 \end{axis}
 \end{tikzpicture}\\[1ex]
 \ref{leg:pareto}
@@ -1017,10 +1029,11 @@ Table~\ref{tab:1e7}: from $4$ to $5$ (\PHastR), from $4.5$ to $5.5$
 seeds, and from $5.5$ to $6.5$ (\PHastR and \PHastP wrap $\delta=3$) and by
 $0.25$ on each side (the others) with 10-bit seeds; the configurations of
 each structure are joined in order of expected bucket size. \PHastP with
-wrapping is shown only with $\delta=3$ and $\delta=7$, and PtrHash only in
-its compact configuration (a single point), as the default one, which uses
-$2.99$ bits per key, would squeeze the other curves. Each point is a
-configuration: lower and further to the left is better.}
+wrapping is shown only with $\delta=3$ and $\delta=7$, and the two
+configurations of PtrHash are single points; the space axis is broken at the
+dashed line, beyond which the default configuration of PtrHash, which uses
+$2.99$ bits per key, is drawn. Each point is a configuration: lower and
+further to the left is better.}
 \label{fig:pareto}
 \end{figure}
 
