@@ -30,7 +30,7 @@ use sux::utils::{DekoBufLineLender, FromSlice};
 ))]
 struct Args {
     /// The number of keys; if no filename is provided, use the 64-bit keys
-    /// [0 . . n).​
+    /// [0 . . n).​
     #[arg(short, long)]
     n: Option<usize>,
     /// A file containing sorted UTF-8 keys, one per line; it can be

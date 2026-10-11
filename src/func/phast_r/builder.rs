@@ -19,6 +19,32 @@ use std::time::Instant;
 /// bumping.
 pub(super) const LAST_LEVEL_THRESHOLD: usize = 4096;
 
+/// The maximum number of attempts at building the last level.
+pub(super) const LAST_LEVEL_ATTEMPTS: u64 = 1000;
+
+/// Returns an error if a level with `k` keys bumped all of them, as then the
+/// following levels would do the same.
+pub(super) fn check_progress(
+    level: usize,
+    k: usize,
+    bumped: usize,
+    bucket_size: f64,
+) -> Result<()> {
+    ensure!(
+        bumped < k,
+        "No bucket of level {level} ({k} keys) could be placed: the expected bucket size ({bucket_size}) is too large for the slice length"
+    );
+    Ok(())
+}
+
+/// Returns the message of the error returned when the last level, with `k`
+/// keys, cannot be built.
+pub(super) fn last_level_failure(k: usize) -> String {
+    format!(
+        "Could not build the last level ({k} keys) in {LAST_LEVEL_ATTEMPTS} attempts: the slice length or the number of bits of a seed is probably too small"
+    )
+}
+
 /// A builder for [`PHastR`].
 ///
 /// The builder is passed to the constructors [`try_new_with_builder`] and
@@ -45,30 +71,35 @@ pub struct PHastRBuilder {
     ///
     /// The default is 8. Seeds stored in a `Box<[u8]>` can have at most 8
     /// bits, and seeds stored in a [`BitFieldVec`] at most 16 bits (see
-    /// [`SeedStoreBuild::MAX_BITS`]).
+    /// [`SeedStoreBuild::MAX_BITS`]). The number of bits of a seed must be
+    /// larger than the [base-2 logarithm of the number of layouts].
+    ///
+    /// [base-2 logarithm of the number of layouts]: Self::log2_layouts
     #[setters(generate = true)]
     pub(super) seed_bits: u32,
 
     /// The base-2 logarithm of the number of layouts.
     ///
-    /// The default is 2. The in-slice offsets of the layouts use disjoint
-    /// bits of a 64-bit value, so the number of layouts times the base-2
-    /// logarithm of the slice length must be at most 64.
+    /// The default is 2, and the maximum is 6. The in-slice offsets of the
+    /// layouts use disjoint bits of a 64-bit value, so the number of layouts
+    /// times the base-2 logarithm of the slice length must be at most 64.
     #[setters(generate = true)]
     pub(super) log2_layouts: u32,
 
     /// The base-2 logarithm of the slice length.
     ///
-    /// The default is 10. This is a maximum, as small levels use shorter
-    /// slices. Slices should have at least as many slots as there are seeds,
-    /// as otherwise different rotations of a layout map the keys of a
-    /// bucket to the same slots.
+    /// The default is 10, and the maximum is 16. This is a maximum, as small
+    /// levels use shorter slices. Slices should have at least as many slots
+    /// as there are seeds, as otherwise different rotations of a layout map
+    /// the keys of a bucket to the same slots.
     #[setters(generate = true)]
     pub(super) log2_slice_len: u32,
 
     /// The expected number of keys of a bucket.
     ///
-    /// The default is 4.25.
+    /// The default is 4.25. The size must be in [1 . . 64], and at most
+    /// one eighth of the slice length; construction fails if a level cannot
+    /// place any bucket.
     #[setters(generate = true)]
     pub(super) bucket_size: f64,
 
@@ -82,7 +113,8 @@ pub struct PHastRBuilder {
     /// for sizes from one to seven (larger sizes are extrapolated linearly).
     ///
     /// By default, the weights depend only on the number of bits of a seed:
-    /// they were tuned for 8-bit seeds and for 10-bit seeds.
+    /// they were tuned for 8-bit seeds and for 10-bit seeds. Weights must
+    /// be in [−2³² . . 2³²].
     #[setters(generate = true, strip_option)]
     pub(super) weights: Option<[i64; 7]>,
 
@@ -91,9 +123,12 @@ pub struct PHastRBuilder {
     ///
     /// The default is false. Only the constructors reading keys from a
     /// lender honor this setting, and the constructors reading keys from a
-    /// slice return an error if it is set. Files are created in the
-    /// directory specified by the environment variable `TMPDIR`, if set (see
-    /// [`tempfile::tempfile`]).
+    /// slice return an error if it is set. Files are created in the default
+    /// temporary directory (see [`tempfile::tempfile`]; on Unix, the
+    /// directory specified by the environment variable `TMPDIR`, if set),
+    /// which must have about sixteen bytes of free space per key; note that
+    /// on some systems the default temporary directory is in memory (e.g.,
+    /// a `tmpfs`).
     #[setters(generate = true)]
     pub(super) offline: bool,
 }
@@ -122,22 +157,51 @@ impl PHastRBuilder {
         Ok(func)
     }
 
-    /// Checks that the parameters are compatible with the seed storage.
+    /// Checks that the parameters are valid and compatible with the seed
+    /// storage.
     pub(super) fn check_params<D: SeedStoreBuild>(&self) -> Result<()> {
-        if self.seed_bits == 0 || self.seed_bits > D::MAX_BITS {
+        // Seeds are kept in 16-bit integers during construction
+        let max_bits = D::MAX_BITS.min(16);
+        if self.seed_bits == 0 || self.seed_bits > max_bits {
             bail!(
-                "The number of seed bits must be in [1 . . {}] for this seed storage",
-                D::MAX_BITS
+                "The number of seed bits must be in [1..{max_bits}] for this seed storage (got {})",
+                self.seed_bits
             );
         }
         if self.log2_layouts >= self.seed_bits {
-            bail!("Too many layouts for the given number of seed bits");
+            bail!(
+                "Too many layouts ({}) for {}-bit seeds",
+                1u64 << self.log2_layouts.min(63),
+                self.seed_bits
+            );
         }
         if self.log2_slice_len > 16 {
-            bail!("The slice length must be at most 65536");
+            bail!(
+                "The slice length must be at most 65536 (got 2^{})",
+                self.log2_slice_len
+            );
         }
         if self.log2_layouts > 6 || (self.log2_slice_len << self.log2_layouts) > 64 {
-            bail!("Too many layouts for the given slice length");
+            bail!(
+                "Too many layouts ({}) for slices of length {}",
+                1u64 << self.log2_layouts.min(63),
+                1 << self.log2_slice_len
+            );
+        }
+        // Buckets must be much smaller than slices, as otherwise levels place
+        // few buckets, or none
+        let max_bucket_size = (1u64 << self.log2_slice_len).div_ceil(8).min(64) as f64;
+        if !(1.0..=max_bucket_size).contains(&self.bucket_size) {
+            bail!(
+                "The expected bucket size must be in [1..{max_bucket_size}] for slices of length {} (got {})",
+                1 << self.log2_slice_len,
+                self.bucket_size
+            );
+        }
+        if let Some(weights) = self.weights {
+            if weights.iter().any(|w| w.unsigned_abs() > 1 << 32) {
+                bail!("The weights must be in [-2^32..2^32] (got {weights:?})");
+            }
         }
         Ok(())
     }
@@ -217,9 +281,18 @@ impl PHastRBuilder {
         // The first level
         pl.item_name("key");
         pl.expected_updates(n);
+        // As in group
+        #[cfg(feature = "rayon")]
+        let par = parallel(n);
+        #[cfg(not(feature = "rayon"))]
+        let par = false;
         pl.start(format!(
-            "Computing and distributing 64-bit signatures in parallel ({} threads) in RAM using seed 0x{:016x}...",
-            num_threads(),
+            "Computing and distributing 64-bit signatures {} in RAM using seed 0x{:016x}...",
+            if par {
+                format!("in parallel ({} threads)", num_threads())
+            } else {
+                "sequentially".to_owned()
+            },
             self.seed
         ));
         let start = Instant::now();
@@ -306,6 +379,7 @@ impl PHastRBuilder {
                     .into_iter()
                     .map(|i| cur[i])
                     .collect();
+                check_progress(levels.len(), k, next.len(), self.bucket_size)?;
                 let mut level = geom.level();
                 level.salt = salt;
                 (level, out.seeds, out.occupied, next, geom.m)
@@ -327,8 +401,8 @@ impl PHastRBuilder {
                         break (level, out.seeds, out.occupied, vec![], geom.m);
                     }
                     attempt += 1;
-                    if attempt > 1000 {
-                        bail!("Could not build the last level");
+                    if attempt > LAST_LEVEL_ATTEMPTS {
+                        bail!(last_level_failure(k));
                     }
                 }
             };
@@ -380,10 +454,11 @@ impl PHastRBuilder {
         // The number of buckets must be odd, as offsets are taken from the
         // product of the signature and the number of buckets
         let buckets = (k as f64 / bucket_size).round().max(1.0) as usize | 1;
+        let num_slices = (m + 1 - l) as u64;
         Geometry {
             buckets,
-            bucket_width: u64::MAX / buckets as u64,
-            num_slices: (m + 1 - l) as u64,
+            slices_per_bucket: ((num_slices as u128) << 64) / buckets as u128,
+            num_slices,
             l_mask: l as u64 - 1,
             // With slices having fewer slots than there are seeds, the seed
             // is not shifted, and rotations are redundant
@@ -414,8 +489,9 @@ impl Default for PHastRBuilder {
 pub(super) struct Geometry {
     /// The number of buckets (always odd).
     pub(super) buckets: usize,
-    /// A lower bound for the number of signatures of a bucket.
-    pub(super) bucket_width: u64,
+    /// The number of possible slice starts divided by the number of buckets,
+    /// in 64.64 fixed point (rounded down).
+    pub(super) slices_per_bucket: u128,
     /// The number of possible slice starts (the output range minus the slice
     /// length, plus one).
     pub(super) num_slices: u64,
@@ -447,11 +523,47 @@ impl Geometry {
     }
 
     /// Returns a lower bound for the beginning of the slices of the keys
-    /// of bucket `b` and of the following buckets.
+    /// of bucket `b` and of the following buckets; the slices of the keys
+    /// of bucket `b` begin at most [`max_slice_distance`] slots after it.
+    ///
+    /// [`max_slice_distance`]: Self::max_slice_distance
     #[inline(always)]
     pub(super) fn first_slice(&self, b: usize) -> usize {
-        // The signatures of bucket b are at least b · 2⁶⁴ / buckets
-        mul_hi(b as u64 * self.bucket_width, self.num_slices) as usize
+        // We return ⌊b · slices_per_bucket / 2⁶⁴⌋. The signatures of bucket b
+        // are at least b · 2⁶⁴ / buckets, so their slices begin at least at
+        // ⌊b · num_slices / buckets⌋, which is at least our value, and at
+        // most one more, as the error of slices_per_bucket is less than one
+        let (hi, lo) = (
+            (self.slices_per_bucket >> 64) as u64,
+            self.slices_per_bucket as u64,
+        );
+        (b as u64 * hi + mul_hi(b as u64, lo)) as usize
+    }
+
+    /// Returns the maximum distance between the [first slice] of bucket `b`
+    /// and the beginning of the slice of a key of bucket `b`.
+    ///
+    /// The signatures of bucket `b` are less than (`b` + 1) · 2⁶⁴ /
+    /// `buckets`, so their slices begin at most at ⌊`b` · `num_slices` /
+    /// `buckets`⌋ + ⌈`num_slices` / `buckets`⌉, and the first slice of
+    /// bucket `b` is at least ⌊`b` · `num_slices` / `buckets`⌋ − 1.
+    ///
+    /// [first slice]: Self::first_slice
+    #[inline(always)]
+    pub(super) fn max_slice_distance(&self) -> usize {
+        (self.num_slices as usize).div_ceil(self.buckets) + 1
+    }
+
+    /// Returns the number of buckets between chunks of a parallel sweep
+    /// whose slots cannot overlap (as in PHast): the beginning of the slice
+    /// grows by `num_slices` / `buckets` per bucket, and the slots of a key
+    /// lie at most *L* − 1 slots after the beginning of its slice, so
+    /// considering the rounding of the beginning of the slices it suffices
+    /// that the gap times `num_slices` / `buckets` is at least *L*.
+    #[inline(always)]
+    pub(super) fn chunk_gap(&self) -> usize {
+        // In 64 bits, as the product overflows on 32-bit platforms
+        ((self.l_mask + 1) * self.buckets as u64 / self.num_slices) as usize + 1
     }
 
     /// Returns the value providing the in-slice offsets of the layouts:
@@ -511,7 +623,7 @@ const fn default_weights(seed_bits: u32) -> [i64; 7] {
 #[inline(always)]
 pub(super) const fn level_salt(seed: u64, level: usize, attempt: u64) -> u64 {
     folded_multiply(
-        seed.wrapping_add(level as u64).wrapping_add(attempt << 32) | 1,
+        seed.wrapping_add(level as u64).wrapping_add(attempt << 32),
         0x9E37_79B9_7F4A_7C15,
     )
 }
@@ -571,4 +683,102 @@ const PAR_MIN_LEN: usize = 1 << 17;
 pub(super) fn remap(efb: EliasFanoBuilder<usize>) -> Remap {
     // SAFETY: the selection structure is built on the high bits
     unsafe { efb.build().map_high_bits(SelectAdaptConst::new) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The geometries of levels with `n` keys, for the values of `n` that
+    /// fit a `usize`, and some expected bucket sizes and slice lengths.
+    fn geometries(sizes: &[u64]) -> impl Iterator<Item = Geometry> + '_ {
+        sizes
+            .iter()
+            .filter_map(|&n| usize::try_from(n).ok())
+            .flat_map(|n| {
+                [(4.25, 10), (5.75, 11), (1.0, 3), (64.0, 16)]
+                    .into_iter()
+                    .map(move |(bucket_size, log2_slice_len)| {
+                        PHastRBuilder::default()
+                            .log2_slice_len(log2_slice_len)
+                            .geometry(n, n, bucket_size)
+                    })
+            })
+    }
+
+    const SIZES: [u64; 9] = [
+        1,
+        10,
+        4097,
+        20_000_000,
+        1 << 32,
+        20_000_000_000,
+        100_000_000_000,
+        1_000_000_000_000,
+        1 << 50,
+    ];
+
+    #[test]
+    fn test_first_slice() {
+        // The first slice of a bucket is at most the beginning of the
+        // slice of its smallest signature, and at most max_slice_distance
+        // slots before that of its largest signature (sweeps size their
+        // tables accordingly), even on huge levels
+        for g in geometries(&SIZES) {
+            let nb = g.buckets as u128;
+            let mut buckets = vec![
+                0,
+                1,
+                2,
+                nb / 2,
+                nb.saturating_sub(3),
+                nb.saturating_sub(2),
+                nb - 1,
+            ];
+            buckets.retain(|&b| b < nb);
+            for b in buckets {
+                let first = ((b << 64).div_ceil(nb)) as u64;
+                let last = if b == nb - 1 {
+                    u64::MAX
+                } else {
+                    (((b + 1) << 64).div_ceil(nb) - 1) as u64
+                };
+                let b = b as usize;
+                assert_eq!(g.bucket(first), b);
+                assert_eq!(g.bucket(last), b);
+                assert!(g.first_slice(b) <= g.slice_begin(first));
+                assert!(
+                    g.slice_begin(last) - g.first_slice(b) <= g.max_slice_distance(),
+                    "bucket {b} of {nb}: {} - {} > {}",
+                    g.slice_begin(last),
+                    g.first_slice(b),
+                    g.max_slice_distance()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_chunk_gap() {
+        // The gap is computed without overflow on 32-bit platforms
+        for g in geometries(&SIZES) {
+            let expected = (g.l_mask as u128 + 1) * g.buckets as u128 / g.num_slices as u128 + 1;
+            assert_eq!(g.chunk_gap() as u128, expected);
+        }
+    }
+
+    #[test]
+    fn test_level_salt() {
+        // Different levels and attempts have different salts
+        for seed in [0, 1, u64::MAX] {
+            let mut salts: Vec<u64> = (1..1000)
+                .map(|level| level_salt(seed, level, 0))
+                .chain((1..1000).map(|attempt| level_salt(seed, 5, attempt)))
+                .collect();
+            let len = salts.len();
+            salts.sort_unstable();
+            salts.dedup();
+            assert_eq!(salts.len(), len);
+        }
+    }
 }

@@ -34,8 +34,18 @@ pub trait SeedStore {
 }
 
 /// Storage for the seeds of a level (construction side).
-pub trait SeedStoreBuild: SeedStore + Sized {
-    /// The maximum number of bits per seed supported.
+///
+/// # Safety
+///
+/// The storage returned by [`from_seeds`] and [`from_byte_seeds`] must
+/// contain all the given seeds: queries call [`SeedStore::get_seed`] on
+/// every index smaller than the number of seeds.
+///
+/// [`from_seeds`]: Self::from_seeds
+/// [`from_byte_seeds`]: Self::from_byte_seeds
+pub unsafe trait SeedStoreBuild: SeedStore + Sized {
+    /// The maximum number of bits per seed supported (seeds have at most 16
+    /// bits during construction, so larger values have no effect).
     const MAX_BITS: u32;
 
     /// Builds the storage from the given seeds, which use at most `bits` bits.
@@ -54,7 +64,7 @@ pub trait SeedStoreBuild: SeedStore + Sized {
 }
 
 macro_rules! impl_seed_store_slice {
-    ($ty:ty, $bits:expr) => {
+    ($ty:ty) => {
         impl SeedStore for Box<[$ty]> {
             #[inline(always)]
             unsafe fn get_seed(&self, i: usize) -> usize {
@@ -74,17 +84,29 @@ macro_rules! impl_seed_store_slice {
                 // SAFETY: by the contract of this method
                 unsafe { *<[$ty]>::get_unchecked(self, i) as usize }
             }
+
+            #[inline(always)]
+            fn prefetch_seed(&self, i: usize) {
+                crate::utils::prefetch_index(self, i);
+            }
         }
     };
 }
 
-impl_seed_store_slice!(u8, 8);
+impl_seed_store_slice!(u8);
 
-impl SeedStoreBuild for Box<[u8]> {
+// SAFETY: the storage contains all the given seeds
+unsafe impl SeedStoreBuild for Box<[u8]> {
     const MAX_BITS: u32 = 8;
 
     fn from_seeds<T: Copy + Into<u16>>(seeds: &[T], _bits: u32) -> Self {
-        seeds.iter().map(|&s| s.into() as u8).collect()
+        seeds
+            .iter()
+            .map(|&s| {
+                debug_assert!(s.into() <= u8::MAX as u16);
+                s.into() as u8
+            })
+            .collect()
     }
 
     fn from_byte_seeds(seeds: Vec<u8>, _bits: u32) -> Self {
@@ -120,7 +142,8 @@ impl<B: crate::traits::Backend<Word = usize> + AsRef<[usize]>> SeedStore for Bit
     }
 }
 
-impl SeedStoreBuild for BitFieldVec<Box<[usize]>> {
+// SAFETY: the storage contains all the given seeds
+unsafe impl SeedStoreBuild for BitFieldVec<Box<[usize]>> {
     const MAX_BITS: u32 = 16;
 
     fn from_seeds<T: Copy + Into<u16>>(seeds: &[T], bits: u32) -> Self {

@@ -17,9 +17,11 @@
 //! signature for the level. Since the bucket of a key is a nondecreasing
 //! function of its signature, a partition contains the keys of a range of
 //! consecutive buckets, except that the first and the last bucket of the
-//! range can have keys in the adjacent partitions: sweeps read partitions in
-//! increasing order, passing the keys of the last bucket of a partition to
-//! the following one. In a file, each partition is a sequence of blocks.
+//! range can have keys in the adjacent partitions. Sweeps load *parts* made
+//! of consecutive partitions (see [`Partitioned`]) in increasing order,
+//! passing the keys of the last bucket of a part to the following one. On
+//! disk, each partition is a sequence of blocks in a temporary file (see
+//! [`LOG2_FILES`]).
 //!
 //! The function built is identical to that built by
 //! [`PHastR::try_par_new_with_builder`] with the same builder, provided that
@@ -40,7 +42,7 @@ use crate::dict::elias_fano::{EliasFano, EliasFanoBuilder};
 use anyhow::bail;
 use dsi_progress_logger::no_logging;
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::{self, Read, Seek, Write};
 use std::sync::Mutex;
 use std::time::Instant;
 use zerocopy::IntoBytes;
@@ -74,11 +76,23 @@ const MAX_BLOCK: usize = 64;
 /// when it has written on average this number of blocks for each
 /// partition: on huge key sets blocks become large, so that reading a
 /// partition from a disk requires few seeks, whereas the memory used by the
-/// buffers, a block for each partition, grows sublinearly.
+/// buffers, a block for each partition, is at most a sixteenth of a byte
+/// per record written, besides the initial blocks.
 #[cfg(not(test))]
 const GROWTH: usize = 512;
 #[cfg(test)]
 const GROWTH: usize = 2;
+
+/// Returns whether a writer that has written `len` records, using blocks of
+/// `block` records for each of `partitions` partitions, has written on
+/// average at least `growth` blocks for each partition (see [`GROWTH`]).
+///
+/// We divide, rather than multiply, as the product of the last three
+/// arguments overflows on 32-bit platforms.
+#[inline(always)]
+const fn grows(len: usize, partitions: usize, block: usize, growth: usize) -> bool {
+    len / (partitions * block) >= growth
+}
 
 /// Returns the base-2 logarithm of the number of partitions of the store of
 /// a level after the first one with `k` keys.
@@ -120,54 +134,38 @@ const fn partition(sig: u64, log2_partitions: u32) -> usize {
     (sig >> 1 >> (63 - log2_partitions)) as usize
 }
 
-/// Reads exactly `buf.len()` bytes of `file` starting at `offset`, without
-/// changing the current position (so that several threads can read at the
-/// same time).
-fn read_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::FileExt;
-        file.read_exact_at(buf, offset)
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::FileExt;
-        let (mut buf, mut offset) = (buf, offset);
-        while !buf.is_empty() {
-            match file.seek_read(buf, offset) {
-                Ok(0) => return Err(io::ErrorKind::UnexpectedEof.into()),
-                Ok(n) => {
-                    buf = &mut buf[n..];
-                    offset += n as u64;
-                }
-                Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-                Err(e) => return Err(e),
-            }
-        }
-        Ok(())
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = (file, buf, offset);
-        Err(io::ErrorKind::Unsupported.into())
-    }
-}
+/// The base-2 logarithm of the maximum number of temporary files of a
+/// [`Store`] kept on disk.
+///
+/// Each file contains the blocks of a range of consecutive partitions. Since
+/// a read moves the current position of its file, threads reading the same
+/// file take turns; however, threads sweeping different chunks of a level,
+/// or scanning different ranges of partitions, read different files.
+#[cfg(not(test))]
+const LOG2_FILES: u32 = 4;
+#[cfg(test)]
+const LOG2_FILES: u32 = 2;
 
-/// The table of the blocks of the partitions of a [`Store`] kept in a file.
+/// The table of the blocks of the partitions of a [`Store`] kept on disk.
 ///
 /// Blocks have different lengths (see [`GROWTH`]), and are identified by
-/// their position in the file and their length, both in records.
+/// their position in the file of their partition and their length, both in
+/// records.
 struct Blocks {
     /// For each partition, the position and the length of its blocks.
     blocks: Vec<Vec<(u64, u32)>>,
-    /// The number of records of the file.
-    len: u64,
+    /// The number of records of each file.
+    lens: Vec<u64>,
+    /// The file of a partition is given by its index shifted right by this
+    /// amount.
+    shift: u32,
 }
 
 /// The storage of the records of a [`Store`].
 enum Storage {
-    /// A temporary file, containing the blocks of all partitions.
-    File(File, Blocks),
+    /// Temporary files, each containing the blocks of a range of
+    /// consecutive partitions (see [`LOG2_FILES`]).
+    Files(Vec<Mutex<File>>, Blocks),
     /// A vector for each partition.
     Memory(Vec<Vec<Record>>),
 }
@@ -193,7 +191,7 @@ impl Store {
     /// Returns the number of records of partition `p`.
     fn partition_len(&self, p: usize) -> usize {
         match &self.storage {
-            Storage::File(_, blocks) => blocks.blocks[p]
+            Storage::Files(_, blocks) => blocks.blocks[p]
                 .iter()
                 .map(|&(_, len)| len as usize)
                 .sum::<usize>(),
@@ -209,11 +207,14 @@ impl Store {
         mut f: impl FnMut(&Record) -> io::Result<()>,
     ) -> io::Result<()> {
         match &self.storage {
-            Storage::File(file, blocks) => {
+            Storage::Files(files, blocks) => {
                 for &(pos, len) in &blocks.blocks[p] {
                     buf.resize(len as usize, [0; 2]);
-                    let pos = pos * size_of::<Record>() as u64;
-                    read_at(file, buf.as_mut_bytes(), pos)?;
+                    {
+                        let mut file = files[p >> blocks.shift].lock().unwrap();
+                        file.seek(io::SeekFrom::Start(pos * size_of::<Record>() as u64))?;
+                        file.read_exact(buf.as_mut_bytes())?;
+                    }
                     for r in buf.iter() {
                         f(r)?;
                     }
@@ -239,19 +240,34 @@ struct StoreWriter {
 
 impl StoreWriter {
     /// Creates a writer for a store with the given signature function and
-    /// number of partitions, kept in an anonymous temporary file if
-    /// `offline` is true, and in memory otherwise.
+    /// number of partitions, kept in anonymous temporary files if `offline`
+    /// is true, and in memory otherwise.
     fn new(sig: SigFn, log2_partitions: u32, offline: bool) -> io::Result<Self> {
         let partitions = 1 << log2_partitions;
         Ok(Self {
             sig,
             log2_partitions,
             storage: Mutex::new(if offline {
-                Storage::File(
-                    tempfile::tempfile()?,
+                let log2_files = log2_partitions.min(LOG2_FILES);
+                let files = (0..1 << log2_files)
+                    .map(|_| {
+                        tempfile::tempfile().map(Mutex::new).map_err(|e| {
+                            io::Error::new(
+                                e.kind(),
+                                format!(
+                                    "Could not create a temporary file in {}: {e}",
+                                    std::env::temp_dir().display()
+                                ),
+                            )
+                        })
+                    })
+                    .collect::<io::Result<Vec<_>>>()?;
+                Storage::Files(
+                    files,
                     Blocks {
                         blocks: vec![vec![]; partitions],
-                        len: 0,
+                        lens: vec![0; 1 << log2_files],
+                        shift: log2_partitions - log2_files,
                     },
                 )
             } else {
@@ -263,7 +279,7 @@ impl StoreWriter {
     /// Returns a set of buffers writing to this store.
     fn buffers(&self) -> Buffers<'_> {
         let partitions = 1 << self.log2_partitions;
-        let offline = matches!(*self.storage.lock().unwrap(), Storage::File(..));
+        let offline = matches!(*self.storage.lock().unwrap(), Storage::Files(..));
         Buffers {
             writer: self,
             offline,
@@ -327,7 +343,10 @@ impl Buffers<'_> {
     #[inline(always)]
     fn push(&mut self, r: Record) -> io::Result<()> {
         let p = partition(self.writer.sig.sig(&r), self.writer.log2_partitions);
-        self.len += 1;
+        self.len = self
+            .len
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("Too many keys for this platform"))?;
         if !self.offline {
             self.parts[p].push(r);
             return Ok(());
@@ -337,23 +356,27 @@ impl Buffers<'_> {
         *len += 1;
         if *len as usize == self.block {
             self.flush(p)?;
-            if self.block < MAX_BLOCK && self.len >= self.lens.len() * self.block * GROWTH {
+            if self.block < MAX_BLOCK && grows(self.len, self.lens.len(), self.block, GROWTH) {
                 self.grow()?;
             }
         }
         Ok(())
     }
 
-    /// Appends the records in the block of partition `p` to the file.
+    /// Appends the records in the block of partition `p` to its file.
     fn flush(&mut self, p: usize) -> io::Result<()> {
         let len = self.lens[p];
         let mut storage = self.writer.storage.lock().unwrap();
-        let Storage::File(file, blocks) = &mut *storage else {
+        let Storage::Files(files, blocks) = &mut *storage else {
             unreachable!("blocks are written only to files")
         };
-        file.write_all(self.blocks[p * self.block..][..len as usize].as_bytes())?;
-        blocks.blocks[p].push((blocks.len, len));
-        blocks.len += len as u64;
+        let f = p >> blocks.shift;
+        files[f]
+            .get_mut()
+            .unwrap()
+            .write_all(self.blocks[p * self.block..][..len as usize].as_bytes())?;
+        blocks.blocks[p].push((blocks.lens[f], len));
+        blocks.lens[f] += len as u64;
         self.lens[p] = 0;
         Ok(())
     }
@@ -675,10 +698,14 @@ fn collect_bumped<T: SweepSeed>(
 /// the same signature for a level and the same hash with a third seed; here,
 /// as keys are no longer available, we consider two keys duplicates if they
 /// have the same signature for the first level and the same second hash.
-/// The two criteria give different results only if there are two distinct
-/// keys with the same 128 bits of hashes; in this case, the construction
-/// from a slice would fail anyway (such keys would collide at every level),
-/// unless their hashes with the third seed coincide, too.
+/// The two criteria give different results only with negligible
+/// probability: if two distinct keys have the same 128 bits of hashes, the
+/// construction from a slice would fail anyway (such keys would collide at
+/// every level), unless their hashes with the third seed differ; conversely,
+/// if two distinct keys have the same signature for a level and the same
+/// hash with the third seed (which happens with probability about 2⁻¹²⁸),
+/// the construction from a slice reports duplicates, whereas this
+/// construction succeeds.
 ///
 /// The progress of the check, in records, is logged on a concurrent logger
 /// obtained from `pl`.
@@ -893,6 +920,11 @@ impl PHastRBuilder {
                         self.offline,
                         pl,
                     )?;
+                    let num_bumped = match &next {
+                        Keys::Stored(store) => store.len,
+                        Keys::Last(records) => records.len(),
+                    };
+                    check_progress(index, k, num_bumped, self.bucket_size)?;
                     let mut level = geom.level();
                     level.salt = salt;
                     (level, out.seeds, out.occupied, next, k, geom.m)
@@ -929,8 +961,8 @@ impl PHastRBuilder {
                             );
                         }
                         attempt += 1;
-                        if attempt > 1000 {
-                            bail!("Could not build the last level");
+                        if attempt > LAST_LEVEL_ATTEMPTS {
+                            bail!(last_level_failure(k));
                         }
                     }
                 }
@@ -1067,6 +1099,27 @@ mod tests {
     }
 
     #[test]
+    fn test_grows() {
+        // With the constants of the writer of the first level, the test
+        // gives the same result as exact arithmetic, even on 32-bit
+        // platforms, where the product of its arguments overflows
+        let (partitions, growth) = (1usize << 14, 512usize);
+        for block in [1usize << 10, 1 << 16] {
+            let threshold = partitions as u128 * block as u128 * growth as u128;
+            for len in [0, 1 << 20, usize::MAX / 2, usize::MAX] {
+                assert_eq!(
+                    grows(len, partitions, block, growth),
+                    len as u128 >= threshold
+                );
+            }
+            if let Ok(len) = usize::try_from(threshold) {
+                assert!(!grows(len - 1, partitions, block, growth));
+                assert!(grows(len, partitions, block, growth));
+            }
+        }
+    }
+
+    #[test]
     fn test_sizes() -> Result<()> {
         for n in [
             0, 1, 2, 3, 10, 100, 1000, 4096, 4097, 5000, 10_000, 100_000, 1_000_000,
@@ -1117,24 +1170,30 @@ mod tests {
             PHastRBuilder::default()
                 .seed_bits(16)
                 .log2_slice_len(16)
-                .bucket_size(70.0),
+                .bucket_size(64.0),
         )?;
-        check_u64::<Box<[u8]>>(100_000, PHastRBuilder::default().bucket_size(70.0))?;
+        check_u64::<Box<[u8]>>(100_000, PHastRBuilder::default().bucket_size(64.0))?;
         check_u64::<Box<[u8]>>(100_000, PHastRBuilder::default().seed(42))
     }
 
     #[cfg(feature = "rayon")]
     #[test]
     fn test_threads() -> Result<()> {
-        // Chunks and gaps depend on the number of threads
-        for threads in [1, 2, 3, 8, 16] {
+        // Chunks and gaps depend on the number of threads; without slow
+        // tests, the key sets are just large enough for three chunks
+        let (threads, n8, n10): (&[usize], _, _) = if cfg!(feature = "slow_tests") {
+            (&[1, 2, 3, 8, 16], 2_000_000, 1_000_000)
+        } else {
+            (&[1, 3], 400_000, 500_000)
+        };
+        for &threads in threads {
             let pool = rayon::ThreadPoolBuilder::new()
                 .num_threads(threads)
                 .build()?;
             pool.install(|| {
-                check_u64::<Box<[u8]>>(2_000_000, PHastRBuilder::default())?;
+                check_u64::<Box<[u8]>>(n8, PHastRBuilder::default())?;
                 check_u64::<BitFieldVec<Box<[usize]>>>(
-                    1_000_000,
+                    n10,
                     PHastRBuilder::default()
                         .seed_bits(10)
                         .log2_slice_len(11)
@@ -1209,6 +1268,11 @@ mod tests {
         let keys: Vec<u64> = (0..500_000).collect();
         let builder = PHastRBuilder::default();
         let quiet = <PHastR<u64>>::try_par_new_with_builder(&keys, builder.clone(), no_logging![])?;
+        // Without a logger, log macros do not format their arguments
+        let _ = env_logger::builder()
+            .is_test(true)
+            .filter_level(log::LevelFilter::Info)
+            .try_init();
         let mut pl = ProgressLogger::default();
         let par = <PHastR<u64>>::try_par_new_with_builder(&keys, builder.clone(), &mut pl)?;
         assert_same(&par, &quiet);

@@ -18,7 +18,10 @@ use lender::{FallibleLender, FallibleLending};
 use mem_dbg::*;
 use value_traits::slices::SliceByValue;
 
-use crate::bits::{BitFieldVec, BitVec};
+use crate::bits::BitVec;
+// For documentation and tests
+#[cfg(any(doc, test))]
+use crate::bits::BitFieldVec;
 use crate::dict::elias_fano::EliasFano;
 use crate::rank_sel::SelectAdaptConst;
 use crate::traits::{TryIntoUnaligned, Unaligned, UnalignedConversionError};
@@ -58,6 +61,10 @@ const SECOND_HASH: u64 = 0x5851_F42D_4C95_7F2D;
 /// duplicates.
 const THIRD_HASH: u64 = 0xD6E8_FEB8_6659_FD93;
 
+/// The value combined with the second hash of a key to obtain the multiplier
+/// of [`level_sig`].
+const LEVEL_SIG: u64 = 0xE703_7ED1_A0B4_28DB;
+
 /// Returns the upper half of the 128-bit product of `a` and `b` xored with
 /// the lower half.
 #[inline(always)]
@@ -70,15 +77,16 @@ const fn folded_multiply(a: u64, b: u64) -> u64 {
 /// its signature for the first level, a second hash of the key, and the salt
 /// of the level.
 ///
-/// Keys with the same signature for the first level have different
-/// signatures for the following ones, as the second hash is independent
-/// from the first one; on the other hand, the key itself is not necessary
+/// Keys with the same signature for the first level have, with high
+/// probability, different signatures for the following ones, as the second
+/// hash is independent from the first one; on the other hand, the key
+/// itself is not necessary
 /// after computing the two hashes, and this makes it possible to handle the
 /// keys bumped from the first level out of line without keeping the key
 /// around.
 #[inline(always)]
 const fn level_sig(h: u64, second: u64, salt: u64) -> u64 {
-    folded_multiply(h ^ salt, second ^ 0xD6E8_FEB8_6659_FD93)
+    folded_multiply(h ^ salt, second ^ LEVEL_SIG)
 }
 
 /// The default remapping sequence of a [`PHastR`]: an Elias–Fano whose
@@ -89,6 +97,10 @@ const fn level_sig(h: u64, second: u64, salt: u64) -> u64 {
 pub type Remap = EliasFano<usize, SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>, 12, 3>>;
 
 /// The parameters of a level.
+///
+/// This type is opaque: it is public only because it appears in the type
+/// parameter `P` of [`PHastR`] (e.g., `&[LevelParams]` after ε-serde
+/// deserialization).
 #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
 #[mem_size(flat)]
 #[repr(C)]
@@ -139,15 +151,19 @@ pub struct LevelParams {
 /// function built does not depend on the constructor, provided that the pool
 /// has the same number of threads.
 ///
-/// Construction from a slice needs about 11 bytes per key besides the keys.
-/// Construction from a lender keeps instead a *record* of sixteen bytes for
-/// each key, containing two 64-bit hashes of the key from which its hashes
-/// for all levels are computed; in [offline mode] records are kept in
-/// temporary files, which take about sixteen bytes per key of disk space, and
-/// on large key sets construction needs in memory less than half a byte per
-/// key (besides 256 MiB of buffers). With one thread offline construction is
-/// about as fast as construction in memory, but it does not scale as well
-/// with the number of threads.
+/// Construction from a slice needs about 10 bytes per key besides the keys
+/// with one thread, and about 12 with eight threads. Construction from a
+/// lender keeps instead a *record* of sixteen bytes for each key, containing
+/// two 64-bit hashes of the key from which its hashes for all levels are
+/// computed: in memory, construction needs about 22 bytes per key, as
+/// records are collected in growing vectors; in [offline mode], records are
+/// kept in temporary files, which take about sixteen bytes per key of disk
+/// space, and on large key sets construction needs in memory less than half
+/// a byte per key with a few threads, besides buffers that take 256 MiB up to
+/// about 8.6 · 10⁹ keys, and then about a sixteenth of a byte per key (at
+/// most 16 GiB). With one thread offline construction is only slightly
+/// slower than construction in memory, but it does not scale as well with
+/// the number of threads.
 ///
 /// Seeds are stored by default in a `Box<[u8]>`, which provides the fastest
 /// queries; seeds of more than eight bits must be stored in a
@@ -222,7 +238,7 @@ pub struct LevelParams {
 /// [`try_new`]: PHastR::try_new
 /// [`try_par_new`]: PHastR::try_par_new
 /// [`deserialize_eps`]: https://docs.rs/epserde/latest/epserde/deser/trait.Deserialize.html#tymethod.deserialize_eps
-#[derive(Debug, Clone, MemSize, MemDbg)]
+#[derive(MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(phantom(K)))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PHastR<K: ?Sized, D = Box<[u8]>, P = Box<[LevelParams]>, R = Remap> {
@@ -262,7 +278,48 @@ pub struct PHastR<K: ?Sized, D = Box<[u8]>, P = Box<[LevelParams]>, R = Remap> {
 // not a pointer we own; without these impls its !Send/!Sync-ness would
 // propagate to PHastR and to everything containing it.
 unsafe impl<K: ?Sized, D: Send, P: Send, R: Send> Send for PHastR<K, D, P, R> {}
+// SAFETY: as for Send
 unsafe impl<K: ?Sized, D: Sync, P: Sync, R: Sync> Sync for PHastR<K, D, P, R> {}
+
+// Clone and Debug are implemented by hand, as derived implementations would
+// require K to implement them, too (e.g., str is not Clone)
+
+impl<K: ?Sized, D: Clone, P: Clone, R: Clone> Clone for PHastR<K, D, P, R> {
+    fn clone(&self) -> Self {
+        Self {
+            seed: self.seed,
+            num_keys: self.num_keys,
+            layout_shift: self.layout_shift,
+            default_shifts: self.default_shifts,
+            fast_scale: self.fast_scale,
+            params0: self.params0,
+            seeds0: self.seeds0.clone(),
+            params: self.params.clone(),
+            seeds: self.seeds.clone(),
+            remap: self.remap.clone(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<K: ?Sized, D: core::fmt::Debug, P: core::fmt::Debug, R: core::fmt::Debug> core::fmt::Debug
+    for PHastR<K, D, P, R>
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("PHastR")
+            .field("seed", &self.seed)
+            .field("num_keys", &self.num_keys)
+            .field("layout_shift", &self.layout_shift)
+            .field("default_shifts", &self.default_shifts)
+            .field("fast_scale", &self.fast_scale)
+            .field("params0", &self.params0)
+            .field("seeds0", &self.seeds0)
+            .field("params", &self.params)
+            .field("seeds", &self.seeds)
+            .field("remap", &self.remap)
+            .finish()
+    }
+}
 
 impl<K: ?Sized, D, P, R> PHastR<K, D, P, R> {
     /// Returns the number of keys.
@@ -419,9 +476,9 @@ impl<
                     .get_seed(lv.first_seed as usize + (p >> 64) as usize)
             };
             if s != 0 {
+                let pos = Self::pos(lv, h, p as u64, s, self.layout_shift, lv.scale as u32);
                 // SAFETY: by construction, the remapping sequence contains
                 // one entry for each output of each level after the first
-                let pos = Self::pos(lv, h, p as u64, s, self.layout_shift, lv.scale as u32);
                 return unsafe { self.remap.get_value_unchecked(lv.offset as usize + pos) };
             }
         }
@@ -445,6 +502,15 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     /// * `keys` - a [`FallibleLender`] returning the keys, which is read just
     ///   once. The [`lenders`] module provides easy ways to build such
     ///   lenders.
+    ///
+    /// * `pl` - a progress logger, which logs the parameters and the phases
+    ///   of the construction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the parameters of the builder are not valid, if
+    /// there are duplicate keys, if the lender returns an error, or if an I/O
+    /// error occurs in offline mode.
     ///
     /// # Examples
     ///
@@ -487,15 +553,26 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     /// [offline mode].
     ///
     /// The two hashes of each key are kept in memory, or on disk in offline
-    /// mode, as a record of sixteen bytes; in offline mode, on large key sets
-    /// construction needs in memory less than half a byte per key (besides
-    /// 256 MiB of buffers). The function is identical to that built by
-    /// [`try_par_new_with_builder`] with the same builder, provided that the
+    /// mode, as a record of sixteen bytes (see [`PHastR`] for the memory
+    /// used). The function is identical to that built by
+    /// [`try_par_new_with_builder`] with the same builder (apart from offline
+    /// mode, which that constructor does not support), provided that the
     /// current [rayon] pool has the same number of threads.
     ///
     /// * `keys` - a [`FallibleLender`] returning the keys, which is read just
     ///   once. The [`lenders`] module provides easy ways to build such
     ///   lenders: for example, a [`LineLender`] reads the keys from a file.
+    ///
+    /// * `builder` - the configuration of the construction.
+    ///
+    /// * `pl` - a progress logger, which logs the parameters and the phases
+    ///   of the construction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the parameters of the builder are not valid, if
+    /// there are duplicate keys, if the lender returns an error, or if an I/O
+    /// error occurs in offline mode.
     ///
     /// # Examples
     ///
@@ -546,6 +623,16 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     /// If keys are produced sequentially (e.g., from a file), use
     /// [`try_new`] instead.
     ///
+    /// * `keys` - the keys.
+    ///
+    /// * `pl` - a progress logger, which logs the parameters and the phases
+    ///   of the construction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the parameters of the builder are not valid (in
+    /// particular, if offline mode is set), or if there are duplicate keys.
+    ///
     /// # Examples
     ///
     /// ```rust
@@ -584,11 +671,23 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     ///
     /// The hashes of the keys are kept in memory, together with a byte per
     /// key recording their part, and the keys bumped from the first level are
-    /// hashed again: construction needs about 11 bytes per key besides the
-    /// keys.
+    /// hashed again: construction needs about 10 bytes per key besides the
+    /// keys with one thread, and about 12 with eight threads.
     ///
     /// If keys are produced sequentially (e.g., from a file), use
     /// [`try_new_with_builder`] instead.
+    ///
+    /// * `keys` - the keys.
+    ///
+    /// * `builder` - the configuration of the construction.
+    ///
+    /// * `pl` - a progress logger, which logs the parameters and the phases
+    ///   of the construction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the parameters of the builder are not valid (in
+    /// particular, if offline mode is set), or if there are duplicate keys.
     ///
     /// # Examples
     ///
@@ -596,6 +695,7 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{PHastR, PHastRBuilder};
     /// # use sux::bits::BitFieldVec;
+    /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys: Vec<u64> = (0..100_000).collect();
     /// // 10-bit seeds
@@ -604,9 +704,11 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     ///     PHastRBuilder::default()
     ///         .seed_bits(10)
     ///         .log2_slice_len(11)
-    ///         .bucket_size(6.0),
+    ///         .bucket_size(5.75),
     ///     no_logging![],
     /// )?;
+    /// // Faster queries using unaligned reads
+    /// let phf = phf.try_into_unaligned()?;
     ///
     /// let mut seen = vec![false; keys.len()];
     /// for key in &keys {
@@ -638,8 +740,9 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
 // ── Aligned ↔ Unaligned conversions ─────────────────────────────────
 
 /// Converts the seed storage and the remapping sequence to [unaligned
-/// reads]; this is useful only for seeds stored in a [`BitFieldVec`], as
-/// slices of bytes are left unchanged.
+/// reads]; this is useful mainly for seeds stored in a [`BitFieldVec`], as
+/// slices of bytes are left unchanged, and the remapping sequence is
+/// accessed only for keys bumped from the first level.
 ///
 /// [unaligned reads]: BitFieldVec::get_unaligned
 impl<K: ?Sized, D: TryIntoUnaligned, P, R: TryIntoUnaligned> TryIntoUnaligned
@@ -664,10 +767,13 @@ impl<K: ?Sized, D: TryIntoUnaligned, P, R: TryIntoUnaligned> TryIntoUnaligned
     }
 }
 
-impl<K: ?Sized, P> From<Unaligned<PHastR<K, BitFieldVec<Box<[usize]>>, P, Remap>>>
-    for PHastR<K, BitFieldVec<Box<[usize]>>, P, Remap>
+/// Converts back a function using [unaligned reads].
+///
+/// [unaligned reads]: BitFieldVec::get_unaligned
+impl<K: ?Sized, D: TryIntoUnaligned + From<Unaligned<D>>, P> From<Unaligned<PHastR<K, D, P, Remap>>>
+    for PHastR<K, D, P, Remap>
 {
-    fn from(f: Unaligned<PHastR<K, BitFieldVec<Box<[usize]>>, P, Remap>>) -> Self {
+    fn from(f: Unaligned<PHastR<K, D, P, Remap>>) -> Self {
         PHastR {
             seed: f.seed,
             num_keys: f.num_keys,
@@ -723,10 +829,9 @@ mod tests {
         }};
     }
 
-    /// A memory-mapped function must take little memory beyond the mapping:
-    /// with the default flags mem_dbg does not follow references, so it
-    /// counts only the fields of the structure, whereas following references
-    /// it must count the same data as the original.
+    /// Functions with seeds stored in bytes, in bit-field vectors, and in
+    /// bit-field vectors with unaligned reads are deserialized zero-copy,
+    /// and give the same outputs.
     #[test]
     fn test_epserde() -> Result<()> {
         check_epserde!(Box<[u8]>, &[u8], PHastRBuilder::default());

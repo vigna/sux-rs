@@ -1942,7 +1942,6 @@ dependencies = [
  "thiserror 2.0.21",
  "thread-priority",
  "value-traits 0.3.1",
- "voracious_radix_sort",
  "xxhash-rust",
  "zerocopy",
  "zstd",

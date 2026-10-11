@@ -205,7 +205,7 @@ pub fn find_near_close(word: usize) -> usize {
 /// # Panics
 ///
 /// Panics if the requested far close does not exist. A `k` outside
-/// [0 . . `usize::BITS`) is caught by a debug assertion in debug builds; in
+/// [0 . . `usize::BITS`) is caught by a debug assertion in debug builds; in
 /// release builds it still panics, but with an unrelated table-index
 /// out-of-bounds message.
 #[inline]

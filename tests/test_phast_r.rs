@@ -94,10 +94,10 @@ fn test_large_buckets() -> Result<()> {
                 .seed_bits(16)
                 .log2_layouts(log2_layouts)
                 .log2_slice_len(16)
-                .bucket_size(70.0),
+                .bucket_size(64.0),
         )?;
     }
-    check::<Box<[u8]>>(100_000, PHastRBuilder::default().bucket_size(70.0))
+    check::<Box<[u8]>>(100_000, PHastRBuilder::default().bucket_size(64.0))
 }
 
 #[cfg(feature = "rayon")]
@@ -131,6 +131,53 @@ fn test_parameter_checks() {
     assert!(build(PHastRBuilder::default().seed_bits(2)).is_err());
     // Offline mode needs a lender
     assert!(build(PHastRBuilder::default().offline(true)).is_err());
+    // Expected bucket sizes out of range (at most an eighth of the slice
+    // length, and at most 64)
+    for bucket_size in [f64::NAN, f64::INFINITY, -1.0, 0.0, 0.5, 64.5, 1000.0] {
+        assert!(build(PHastRBuilder::default().bucket_size(bucket_size)).is_err());
+    }
+    assert!(build(PHastRBuilder::default().log2_slice_len(8).bucket_size(33.0)).is_err());
+    assert!(build(PHastRBuilder::default().log2_slice_len(2)).is_err());
+    assert!(build(PHastRBuilder::default().bucket_size(1.0)).is_ok());
+    assert!(build(PHastRBuilder::default().bucket_size(64.0)).is_ok());
+    // Weights out of range
+    assert!(build(PHastRBuilder::default().weights([1 << 33, 0, 0, 0, 0, 0, 0])).is_err());
+}
+
+#[test]
+fn test_clone_unsized() -> Result<()> {
+    // Clone and Debug do not require the type of the keys to implement them
+    let keys = ["a", "b", "c"];
+    let phf = <PHastR<str>>::try_par_new(&keys, no_logging![])?;
+    let clone = phf.clone();
+    assert_eq!(format!("{phf:?}"), format!("{clone:?}"));
+    for key in keys {
+        assert_eq!(clone.get(key), phf.get(key));
+    }
+    Ok(())
+}
+
+#[test]
+fn test_unaligned_round_trip() -> Result<()> {
+    // Conversion to unaligned reads and back, for both seed storages (the
+    // backends might keep the padding of unaligned reads, so we compare
+    // outputs)
+    let keys: Vec<u64> = (0..100_000).collect();
+    let phf = <PHastR<u64>>::try_par_new(&keys, no_logging![])?;
+    let back: PHastR<u64> = phf.clone().try_into_unaligned()?.into();
+    for key in &keys {
+        assert_eq!(back.get(key), phf.get(key));
+    }
+    let phf = <PHastR<u64, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
+        &keys,
+        PHastRBuilder::default().seed_bits(10).log2_slice_len(11),
+        no_logging![],
+    )?;
+    let back: PHastR<u64, BitFieldVec<Box<[usize]>>> = phf.clone().try_into_unaligned()?.into();
+    for key in &keys {
+        assert_eq!(back.get(key), phf.get(key));
+    }
+    Ok(())
 }
 
 #[test]

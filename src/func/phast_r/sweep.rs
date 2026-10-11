@@ -114,19 +114,24 @@ impl Window {
 
     /// Returns the priority weight of the buckets of the given size:
     /// weights are given for the first seven sizes, and extrapolated
-    /// linearly for the following ones, as in the `ph` crate.
+    /// linearly for the following ones, as in the `ph` crate (up to
+    /// ±2⁴⁰, so that keys do not overflow).
     fn weight(weights: &[i64; 7], size: usize) -> i64 {
         if size <= 7 {
             weights[size.max(1) - 1]
         } else {
-            weights[6] + (weights[6] - weights[5]) * (size - 7) as i64
+            (weights[6] - weights[5])
+                .saturating_mul((size - 7) as i64)
+                .saturating_add(weights[6])
+                .clamp(-(1 << 40), 1 << 40)
         }
     }
 
     /// Returns the key of a bucket: its priority and, in the lowest bits,
-    /// the complement of the lowest bits of its index, which give
-    /// precedence to the first bucket in case of equal priorities (and
-    /// identify the bucket inside the window).
+    /// the complement of the lowest bits of its index, which identify the
+    /// bucket inside the window and, in case of equal priorities, give
+    /// precedence to the bucket whose index is smaller modulo
+    /// [`WINDOW_BITS`] (usually, the first one).
     #[inline(always)]
     fn key(weight: i64, b: usize) -> i64 {
         ((weight - 1024 * b as i64) << WINDOW_BITS.ilog2())
@@ -139,9 +144,9 @@ impl Window {
         self.nonempty == 0 && self.large.is_empty()
     }
 
-    /// Returns the first bucket of the window in [`begin` . . `end`), if any,
-    /// assuming that all the buckets of the window are in [`end` − [`WINDOW`]
-    /// . . `end`).
+    /// Returns the first bucket of the window in
+    /// [`begin` . . `end`), if any, assuming that all the buckets of the
+    /// window are in [`end` − [`WINDOW`] . . `end`).
     #[inline(always)]
     fn first_in(&self, begin: usize, end: usize) -> Option<usize> {
         let mut b = begin;
@@ -359,14 +364,7 @@ pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog, T: SweepSeed>
     pl: &mut P,
 ) -> Option<Level<T>> {
     let nb = g.buckets;
-    let l = g.l_mask as usize + 1;
-
-    // Number of buckets between chunks whose slots cannot overlap (as in
-    // PHast): the beginning of the slice grows by num_slices / nb per
-    // bucket, and the slots of a key lie at most L - 1 slots after the
-    // beginning of its slice, so considering the rounding of the beginning
-    // of the slices it suffices that gap * num_slices / nb >= L.
-    let gap = l * nb / g.num_slices as usize + 1;
+    let gap = g.chunk_gap();
     #[cfg(feature = "rayon")]
     let threads = rayon::current_num_threads();
     #[cfg(not(feature = "rayon"))]
@@ -388,7 +386,9 @@ pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog, T: SweepSeed>
 
     // Chunk boundaries; chunk i processes [bounds[i], bounds[i + 1] - gap),
     // except for the last one, which processes everything.
-    let bounds: Vec<usize> = (0..=chunks).map(|i| i * nb / chunks).collect();
+    let bounds: Vec<usize> = (0..=chunks)
+        .map(|i| (i as u64 * nb as u64 / chunks as u64) as usize)
+        .collect();
     let mut parts: Vec<&mut [T]> = Vec::with_capacity(chunks);
     let mut rest = &mut seeds[..];
     for i in 0..chunks {
@@ -657,14 +657,19 @@ impl Rings {
 
     /// Returns the bits of the 64 slots of the row of slot `p` starting
     /// from `p` (that is, bit *i* is associated with the slot `p` plus *i*
-    /// strides).
+    /// strides) in the cyclic set of used slots `used`.
+    ///
+    /// # Safety
+    ///
+    /// `used` must have `word_mask` + 1 words.
     #[inline(always)]
-    fn row64(&self, used: &[u64], p: usize) -> u64 {
+    unsafe fn row64(&self, used: &[u64], p: usize) -> u64 {
         let t = self.log2_stride;
         let w = self.word(p);
         // The next word of the row is in the next column
         debug_assert_eq!(used.len(), self.word_mask + 1);
-        // SAFETY: the indices are at most word_mask
+        // SAFETY: the indices are at most word_mask, and used has word_mask
+        // + 1 words
         let (lo, hi) = unsafe {
             (
                 *used.get_unchecked(w),
@@ -760,10 +765,7 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
         let free_words = rings.layouts * rings.len.div_ceil(64);
         // Columns contain 64 strides
         let first_slot = g.first_slice(lo) >> (rings.log2_stride + 6) << (rings.log2_stride + 6);
-        // The slices of the keys of a bucket begin at most num_slices /
-        // buckets + 1 slots after its first slice
-        let max_distance =
-            ORIGIN_OFFSET + (g.num_slices as usize).div_ceil(g.buckets) + 1 + g.l_mask as usize;
+        let max_distance = ORIGIN_OFFSET + g.max_slice_distance() + g.l_mask as usize;
         Self {
             sigs,
             g,
@@ -779,6 +781,9 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
             free: Vec::with_capacity(free_words),
             nonzero: vec![(0, 0); free_words],
             ring_keys: Vec::with_capacity(64 * rings.layouts),
+            // For distances smaller than 2^18, the exact values are at least
+            // 10^-5 away from the midpoints between integers, so the table
+            // does not depend on the accuracy of log2
             log2: (0..=max_distance)
                 .map(|d| ((d.max(1) as f64).log2() * (1u64 << LOG2_FRACTION) as f64).round() as u32)
                 .collect(),
@@ -888,11 +893,15 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
                 if words == 1 {
                     // Rings of at most a word (e.g., 8-bit seeds and four
                     // layouts)
-                    let ring = rings.row64(used, first) & ring_mask;
+                    // SAFETY: the set of used slots of a sweep has
+                    // word_mask + 1 words (see Sweep::new)
+                    let ring = unsafe { rings.row64(used, first) } & ring_mask;
                     free[r] |= (ring >> x) | (ring << ((n - x) % 64));
                 } else {
                     // Rings are sequences of whole words
-                    let word = |w: usize| {
+                    // SAFETY: the set of used slots of a sweep has
+                    // word_mask + 1 words (see Sweep::new)
+                    let word = |w: usize| unsafe {
                         rings.row64(
                             used,
                             first + ((64 * (w & (words - 1))) << rings.log2_stride),
@@ -1098,7 +1107,7 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
         // The parts containing the buckets of the window
         let mut parts = Parts::new(sigs, lo..hi, Some(pl));
         let column = 64usize << rings.log2_stride;
-        // The buckets in [lo . . next) have entered the window, which holds
+        // The buckets in [lo..next) have entered the window, which holds
         // those not yet placed; oldest is the first of them
         let (mut oldest, mut next) = (lo, lo);
         loop {
