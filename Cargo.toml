@@ -62,9 +62,6 @@ env_logger = "0.11.0"
 rand_distr = "0.6"
 serde_json = "1.0.151"
 
-[target.'cfg(target_pointer_width = "64")'.dev-dependencies]
-ph = "0.11.0"
-
 [features]
 default = ["rayon", "flate2", "zstd"]
 clap = ["dep:clap"]
@@ -157,51 +154,11 @@ name = "bench_lcp_mmphf"
 required-features = ["cli"]
 
 [[example]]
-name = "bench_phast"
-required-features = ["cli"]
-
-[[example]]
-name = "comp_vfunc_stress"
-required-features = ["cli"]
-
-[[example]]
-name = "bench_comp_vfunc_data"
-required-features = ["cli"]
- 
-[[example]]
 name = "example_vfunc"
 required-features = ["rayon"]
 
 [[example]]
 name = "example_vfilter"
-required-features = ["rayon"]
-
-[[example]]
-name = "bench_shard_exp"
-required-features = ["rayon"]
-
-[[example]]
-name = "bench_solve_system"
-required-features = ["rayon"]
-
-[[example]]
-name = "corr_peel_sweep"
-required-features = ["rayon"]
-
-[[example]]
-name = "find_min_c"
-required-features = ["rayon"]
-
-[[example]]
-name = "prof_comp_vfunc"
-required-features = ["rayon"]
-
-[[example]]
-name = "profile_comp_vfunc"
-required-features = ["rayon"]
-
-[[example]]
-name = "sweep_c"
 required-features = ["rayon"]
 
 [[bench]]
