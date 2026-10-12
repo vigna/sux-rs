@@ -370,17 +370,10 @@ pub struct PHastR<K: ?Sized, D = Box<[u8]>, P = Box<[LevelParams]>, R = Remap> {
     /// The remapping, which maps the slots of the following levels to the
     /// holes of the first one.
     remap: R,
-    _marker: std::marker::PhantomData<*const K>,
+    // A function-pointer marker does not own K, so the auto traits depend
+    // only on the other fields, and it works for unsized K
+    _marker: std::marker::PhantomData<fn() -> K>,
 }
-
-// SAFETY: K occurs only inside _marker, so no value of this type is ever
-// stored: the auto traits depend just on the remaining fields. The *const K
-// in the marker is a Sized placeholder standing in for a possibly unsized K,
-// not a pointer we own; without these impls its !Send/!Sync-ness would
-// propagate to PHastR and to everything containing it.
-unsafe impl<K: ?Sized, D: Send, P: Send, R: Send> Send for PHastR<K, D, P, R> {}
-// SAFETY: as for Send
-unsafe impl<K: ?Sized, D: Sync, P: Sync, R: Sync> Sync for PHastR<K, D, P, R> {}
 
 // Clone and Debug are implemented by hand, as derived implementations would
 // require K to implement them, too (e.g., str is not Clone)

@@ -64,14 +64,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 enum ShardEdgeKind {
-    /// Use the `FuseLge3*Shards`/`FuseLge3*NoShards` c & log2_seg_size formulas.
+    /// Use the `FuseLge3*Shards`/`FuseLge3*NoShards` c & log2_seg_size formulas.​
     Fuselge3,
-    /// Use the `Fuse3*NoShards` (no-LGE) c & log2_seg_size formulas.
+    /// Use the `Fuse3*NoShards` (no-LGE) c & log2_seg_size formulas.​
     Fuse3,
     /// Use `max(fuse3_log2_seg_size(n), fuselge3_log2_seg_size(n))`,
     /// i.e. never shrink segments below what plain Fuse3 picks but
     /// expand to FuseLge3's ε-cost formula when that's larger. Used
-    /// only via `--seg-formula`; `c` stays from `--shard-edge`.
+    /// only via `--seg-formula`; `c` stays from `--shard-edge`.​
     Maxseg,
 }
 
@@ -79,31 +79,31 @@ enum ShardEdgeKind {
 enum Variant {
     /// Both `c` and `log2_seg_size` keyed at edge count `s * w`.
     /// "Treat multi-edges as fresh equations." This is what
-    /// CompVFunc currently does in production.
+    /// CompVFunc currently does in production.​
     A,
     /// Both `c` and `log2_seg_size` keyed at key count `s`.
     /// "Ignore multi-edges entirely." Tends to break because the
-    /// segment count is sized for too few edges.
+    /// segment count is sized for too few edges.​
     B,
     /// `c` keyed at key count `s` but `log2_seg_size` keyed at
     /// edge count `s * w`. Isolates the *c-as-vertex-multiplier*
     /// effect from the segment-density effect: more vertices per
     /// edge (key-based c is larger) without distorting the band
-    /// structure (edge-based segments are correctly sized).
+    /// structure (edge-based segments are correctly sized).​
     C,
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
 enum DistKind {
-    /// Each key contributes `w` edges (constant).
+    /// Each key contributes `w` edges (constant).​
     Uniform,
-    /// Each key contributes `Geometric(0.5) + 1` edges.
+    /// Each key contributes `Geometric(0.5) + 1` edges.​
     Geom,
-    /// Each key contributes `Geometric(0.5) + w` edges.
+    /// Each key contributes `Geometric(0.5) + w` edges.​
     ShiftedGeom,
     /// Each key contributes the Huffman codeword length for a value
     /// drawn from `Zipf(zipf_s, zipf_n)`. Simulates the realistic
-    /// CompVFunc per-key edge count when values follow a Zipf law.
+    /// CompVFunc per-key edge count when values follow a Zipf law.​
     Zipf,
 }
 
@@ -206,9 +206,9 @@ struct Args {
 //
 // Two flavors:
 //
-// * `fuselge3_*`: piecewise-constant c, with LGE assumed for the
+// * fuselge3_*: piecewise-constant c, with LGE assumed for the
 //   small (≤ 800K) and intermediate (≤ 20M) regimes.
-// * `fuse3_*`:    continuous c (binary fuse filters paper), no LGE
+// * fuse3_*:    continuous c (binary fuse filters paper), no LGE
 //   anywhere.
 
 const MAX_LIN_SIZE: usize = 800_000;
@@ -308,12 +308,12 @@ fn baseline_log2_seg(seg_kind: ShardEdgeKind, formula_input: usize) -> u32 {
 
 // ── Zipf precomputation ────────────────────────────────────────────
 //
-// For `DistKind::Zipf` we precompute, once per run, two things:
+// For DistKind::Zipf we precompute, once per run, two things:
 //
-// 1. A CDF table over ranks `1..=n`, used to inverse-transform-
+// 1. A CDF table over ranks 1..=n, used to inverse-transform-
 //    sample a rank in O(log n).
-// 2. The Huffman codeword length `len[rank]` for each rank, computed
-//    by feeding a Zipf frequency table into `sux::func::codec::Huffman`.
+// 2. The Huffman codeword length len[rank] for each rank, computed
+//    by feeding a Zipf frequency table into sux::func::codec::Huffman.
 //    This gives the per-key edge count corresponding to "encoding a
 //    Zipf-distributed value with the same Huffman code CompVFunc
 //    would build at construction time".
@@ -358,9 +358,9 @@ fn build_zipf(s: f64, n: usize) -> ZipfData {
 }
 
 fn sample_zipf_rank(cdf: &[f64], rng: &mut SmallRng) -> usize {
-    // Inverse-CDF sampler. `partition_point` returns the smallest
-    // index `i` for which `cdf[i] >= u`, which corresponds to rank
-    // `i + 1`.
+    // Inverse-CDF sampler. partition_point returns the smallest
+    // index i for which cdf[i] >= u, which corresponds to rank
+    // i + 1.
     let u: f64 = (rng.random::<u64>() >> 11) as f64 / ((1u64 << 53) as f64);
     cdf.partition_point(|&p| p < u) + 1
 }
@@ -562,8 +562,8 @@ fn run_trial(args: &Args, zipf: Option<&ZipfData>, cell: &Cell) -> TrialResult {
         estimate_total_edges(s, args.distribution, w_param, zipf, seed);
 
     // For Variants A and B, both c and log2_seg are keyed at the
-    // same input. For Variant C, c is keyed at `s` (key count) but
-    // log2_seg is keyed at `num_edges` (edge count).
+    // same input. For Variant C, c is keyed at s (key count) but
+    // log2_seg is keyed at num_edges (edge count).
     let (formula_input_c, formula_input_seg) = match args.variant {
         Variant::A => (num_edges_est, num_edges_est),
         Variant::B => (s, s),
@@ -571,8 +571,8 @@ fn run_trial(args: &Args, zipf: Option<&ZipfData>, cell: &Cell) -> TrialResult {
     };
     let formula_input = formula_input_c; // recorded for the CSV
 
-    // c comes from `--shard-edge`, log2_seg from `--seg-formula`
-    // (defaults to `--shard-edge`). Letting these differ lets us
+    // c comes from --shard-edge, log2_seg from --seg-formula
+    // (defaults to --shard-edge). Letting these differ lets us
     // probe hybrid configurations like "Fuse3 c with FuseLge3 seg".
     let seg_kind = args.seg_formula.unwrap_or(args.shard_edge);
     let (base_c, expected_lge) = baseline_c(args.shard_edge, formula_input_c);
@@ -581,7 +581,7 @@ fn run_trial(args: &Args, zipf: Option<&ZipfData>, cell: &Cell) -> TrialResult {
     let log2_seg = ((base_log2_seg as i32) + log2_seg_delta).max(1) as u32;
 
     // Pad needs to cover the maximum per-key edge count we might
-    // see. For uniform that's just `w_param`; for geom/shifted we
+    // see. For uniform that's just w_param; for geom/shifted we
     // use a generous upper bound (w_param + 64) and verify after
     // generation.
     let pad = match args.distribution {
@@ -670,9 +670,9 @@ fn build_cells(args: &Args) -> Vec<Cell> {
         None => vec![0.0, 0.01, 0.05, 0.10],
     };
 
-    // For `geom` and `zipf` we don't sweep `w_param`. For `uniform`
-    // and `shifted-geom`, we sweep either `--w-list` (if set) or
-    // `w_min..=w_max`.
+    // For geom and zipf we don't sweep w_param. For uniform
+    // and shifted-geom, we sweep either --w-list (if set) or
+    // w_min..=w_max.
     let w_params: Vec<usize> = match args.distribution {
         DistKind::Geom | DistKind::Zipf => vec![0],
         DistKind::Uniform | DistKind::ShiftedGeom => match &args.w_list {
@@ -812,8 +812,8 @@ fn main() {
         out.flush().unwrap();
     }
 
-    // Mutex around stdout for incremental output. `parking_lot`
-    // would be faster but `std::sync::Mutex` is fine — we lock
+    // Mutex around stdout for incremental output. parking_lot
+    // would be faster but std::sync::Mutex is fine — we lock
     // briefly per row.
     let stdout_mutex = Mutex::new(std::io::stdout());
 

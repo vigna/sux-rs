@@ -43,29 +43,29 @@ use sux::func::{CompVFunc, VBuilder};
 
 #[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
 enum ShardEdgeKind {
-    /// `Fuse3Shards` with `[u64; 2]`.
+    /// `Fuse3Shards` with `[u64; 2]`.​
     Fuse3Shards,
-    /// `Fuse3NoShards` with `[u64; 2]`.
+    /// `Fuse3NoShards` with `[u64; 2]`.​
     Fuse3NoShards2,
-    /// `Fuse3NoShards` with `[u64; 1]`.
+    /// `Fuse3NoShards` with `[u64; 1]`.​
     Fuse3NoShards1,
-    /// `Mwhc3Shards` with `[u64; 2]` (requires `mwhc` feature).
+    /// `Mwhc3Shards` with `[u64; 2]` (requires `mwhc` feature).​
     #[cfg(feature = "mwhc")]
     Mwhc3Shards,
-    /// `Mwhc3NoShards` with `[u64; 2]` (requires `mwhc` feature).
+    /// `Mwhc3NoShards` with `[u64; 2]` (requires `mwhc` feature).​
     #[cfg(feature = "mwhc")]
     Mwhc3NoShards,
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
 enum DistKind {
-    /// All keys map to a single value (degenerate).
+    /// All keys map to a single value (degenerate).​
     Constant,
-    /// Each key gets a value uniformly sampled from `0..max_value`.
+    /// Each key gets a value uniformly sampled from `0..max_value`.​
     Uniform,
-    /// Each key gets `Geometric(0.5)` (mean ≈ 2, low entropy).
+    /// Each key gets `Geometric(0.5)` (mean ≈ 2, low entropy).​
     Geom,
-    /// Each key gets a value sampled from `Zipf(zipf_s, zipf_n)`.
+    /// Each key gets a value sampled from `Zipf(zipf_s, zipf_n)`.​
     Zipf,
 }
 

@@ -127,7 +127,12 @@ use crate::{debug_assert_bounds, panic_if_out_of_bounds};
 #[autoimpl(for<T: trait + ?Sized> &T, &mut T, Box<T>)]
 #[delegatable_trait(inline = "always")]
 pub trait Types {
+    /// The type of the values passed to the methods of the dictionary (e.g.,
+    /// [`IndexedDict::index_of`] or [`Succ::succ`]), which are borrowed as
+    /// `impl Borrow<Self::Input>`.
     type Input: for<'a> PartialEq<Self::Output<'a>> + PartialEq + ?Sized;
+    /// The type of the values returned by the methods of the dictionary
+    /// (e.g., [`IndexedSeq::get`] or [`Succ::succ`]).
     type Output<'a>: PartialEq<Self::Input> + PartialEq;
 }
 
@@ -161,7 +166,7 @@ pub trait IndexedSeq: Types {
     ///
     /// # Panics
     ///
-    /// May panic if the index is not in [0..[len]).
+    /// May panic if the index is not in [0 . . [len]).
     ///
     /// [len]: IndexedSeq::len
     #[inline]
@@ -174,7 +179,7 @@ pub trait IndexedSeq: Types {
     ///
     /// # Safety
     ///
-    /// `index` must be in [0..[len]). No bounds checking
+    /// `index` must be in [0 . . [len]). No bounds checking
     /// is performed.
     ///
     /// [len]: IndexedSeq::len

@@ -110,8 +110,9 @@ use std::hash::Hash;
 ///   [`BitVec<Box<[usize]>>`](crate::bits::BitVec). Note that codeword
 ///   lengths are limited to min(`D::Word::BITS` − 7, `usize::BITS` − 2)
 ///   bits, so a narrow word type limits the number of distinct values that
-///   can be represented (with `u8` words, at most two distinct values plus
-///   escapes); construction returns an error when the limit is exceeded.
+///   can be represented (with `u8` words codewords have a single bit, so
+///   there can be at most two distinct values, or one value and escaped
+///   values); construction returns an error when the limit is exceeded.
 ///
 /// * `S` - the signature type; defaults to `[u64; 2]` (see [`VFunc`] for
 ///   details).
@@ -156,7 +157,7 @@ use std::hash::Hash;
 /// [`D::Word`]: Backend::Word
 /// [`branchless`]: Self::branchless
 /// [Huffman code]: crate::func::codec::HuffmanConf
-#[derive(Debug, Clone, MemSize, MemDbg)]
+#[derive(Debug, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(
     feature = "epserde",
@@ -181,18 +182,31 @@ pub struct CompVFunc<K: ?Sized, D: Backend = BitVec<Box<[usize]>>, S = [u64; 2],
     pub(crate) codeword_mask: D::Word,
     pub(crate) data: D,
     pub(crate) decoder: HuffmanDecoder<D::Word>,
-    pub(crate) _marker: PhantomData<(*const K, S)>,
+    // A function-pointer marker does not own K and S, so the auto traits
+    // depend only on the other fields, and it works for unsized K
+    pub(crate) _marker: PhantomData<(fn() -> K, fn() -> S)>,
 }
 
-// SAFETY: K and S occur only inside _marker, so no value of either type is
-// ever stored: the auto traits depend just on the remaining fields, whence the
-// bounds on D, D::Word (which is also the word type of decoder) and E. The
-// *const K in the marker is a Sized placeholder standing in for a possibly
-// unsized K (only the last element of a tuple may be unsized), not a pointer
-// we own; without these impls its !Send/!Sync-ness would propagate to
-// CompVFunc.
-unsafe impl<K: ?Sized, D: Backend<Word: Send> + Send, S, E: Send> Send for CompVFunc<K, D, S, E> {}
-unsafe impl<K: ?Sized, D: Backend<Word: Sync> + Sync, S, E: Sync> Sync for CompVFunc<K, D, S, E> {}
+// Clone is implemented by hand, as a derived implementation would require K
+// to implement Clone, too (e.g., str is not Clone)
+impl<K: ?Sized, D: Backend + Clone, S, E: Clone> Clone for CompVFunc<K, D, S, E>
+where
+    D::Word: Clone,
+    HuffmanDecoder<D::Word>: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            shard_edge: self.shard_edge.clone(),
+            seed: self.seed,
+            num_keys: self.num_keys,
+            shard_size: self.shard_size,
+            codeword_mask: self.codeword_mask.clone(),
+            data: self.data.clone(),
+            decoder: self.decoder.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
 
 // ── Query path ──────────────────────────────────────────────────────
 
@@ -532,6 +546,9 @@ where
     let escaped_symbol_length = coder.escaped_symbols_len();
     let w = max_codeword_len + escaped_symbol_length;
     let escape_codeword = coder.escape_codeword();
+    // Number of previous attempts that failed because a shard was
+    // unsolvable: each failure makes the next graph sparser
+    let mut num_failures: usize = 0;
 
     let encode_val = move |v: W| -> (W, usize, u32) {
         match coder.encode(v) {
@@ -556,27 +573,38 @@ where
           _state: &mut ()| {
         // Compute per-shard sums of codeword lengths and key counts. The
         // ShardEdge has to be resized against the actual edge count and key
-        // count.
+        // count. We also compute the largest per-shard ratio between the sum
+        // of the squared codeword lengths and the sum of the codeword lengths,
+        // which measures how much edges are correlated.
         let mut total_edges: usize = 0;
         let mut max_shard_edges: usize = 0;
         let mut max_shard_keys: usize = 0;
+        let mut clump: f64 = 0.0;
         for shard in store.iter() {
             let mut edges_in_shard: usize = 0;
+            let mut squares_in_shard: u64 = 0;
             let keys_in_shard = shard.len();
             for sv in shard.iter() {
-                edges_in_shard += coder.encoded_len(sv.val) as usize;
+                let len = coder.encoded_len(sv.val);
+                edges_in_shard += len as usize;
+                squares_in_shard += len as u64 * len as u64;
             }
             total_edges += edges_in_shard;
             max_shard_edges = max_shard_edges.max(edges_in_shard);
             max_shard_keys = max_shard_keys.max(keys_in_shard);
+            clump = clump.max(squares_in_shard as f64 / edges_in_shard.max(1) as f64);
         }
 
         // Correlated-graph setup: the first argument is the total key count
         // (the regime selector, analogous to n in set_up_graphs), followed
         // by the largest per-shard key count and per-shard edge count.
-        let (c, lge) = vb
-            .shard_edge
-            .set_up_corr_graphs(num_keys, max_shard_keys, max_shard_edges);
+        let (c, lge) = vb.shard_edge.set_up_corr_graphs(
+            num_keys,
+            max_shard_keys,
+            max_shard_edges,
+            clump,
+            num_failures,
+        );
         // This should never really happen--we have static checks
         assert!(!lge, "CompVFunc does not support LGE");
         vb.c = c;
@@ -776,6 +804,9 @@ where
         // Restore the log level on the error path, too, or retries would
         // log at trace level.
         pl.log_level(log::Level::Info);
+        if matches!(solve_result, Err(SolveError::UnsolvableShard)) {
+            num_failures += 1;
+        }
         solve_result.map_err(anyhow::Error::from)?;
 
         Ok((data, attempt_seed, stride))

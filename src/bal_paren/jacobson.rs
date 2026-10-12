@@ -501,6 +501,8 @@ impl<B: AsRef<[usize]> + BitLength> JacobsonBalParen<B, EfDict<usize>, BitFieldV
         let num_pioneers = opening_pioneer_matches.len();
         let mut offsets = BitFieldVec::new(bit_width, num_pioneers);
         for (i, &off) in opening_pioneer_matches.iter().enumerate() {
+            // SAFETY: i < num_pioneers, which is the length of offsets, and
+            // off <= max_offset fits in bit_width bits by construction.
             unsafe { offsets.set_value_unchecked(i, off) };
         }
 
@@ -628,9 +630,15 @@ impl<
         }
 
         // Far match: look up the pioneer using predecessor query
+        // SAFETY: pos is a far open parenthesis, and the first far open
+        // parenthesis of each word is a pioneer, so a pioneer at most pos
+        // exists; moreover, pos < len, so pos is at most the upper bound
+        // len - 1 of the pioneer positions.
         let (pioneer_index, pioneer) =
             unsafe { self.pioneer_positions.pred_unchecked::<false>(pos) };
 
+        // SAFETY: pioneer_index is the index of a pioneer, and there is a
+        // match offset for each pioneer.
         let match_pos = pioneer
             + unsafe {
                 self.pioneer_match_offsets
@@ -893,6 +901,7 @@ mod tests {
         // Word 0: bits 0-3 = 1111 (4 opens), bits 4-63 = 01 repeated 30 times
         //   = 0x5555_5555_5555_555F
         // Word 1: bits 0-3 = 0000 (4 closes). Length = 68.
+        // SAFETY: two words contain at least 68 bits.
         let bp = JacobsonBalParen::new(unsafe {
             BitVec::from_raw_parts(
                 vec![0x5555_5555_5555_555Fusize, 0x0000_0000_0000_0000usize].into_boxed_slice(),
@@ -989,6 +998,7 @@ mod tests {
     fn test_find_close_all_nested() {
         // ((((...))))  - 32 opens then 32 closes, fits in one word
         let word = [0x0000_0000_FFFF_FFFFusize];
+        // SAFETY: a word contains WORD_BITS bits.
         let bp = JacobsonBalParen::new(unsafe { BitVec::from_raw_parts(&word, WORD_BITS) });
         for i in 0..32 {
             assert_eq!(bp.find_close(i), Some(63 - i), "pos={i}");
@@ -1000,6 +1010,7 @@ mod tests {
     fn test_find_close_all_nested() {
         // ((((...))))  - 16 opens then 16 closes, fits in one word
         let word = [0x0000_FFFFusize];
+        // SAFETY: a word contains WORD_BITS bits.
         let bp = JacobsonBalParen::new(unsafe { BitVec::from_raw_parts(&word, WORD_BITS) });
         for i in 0..16 {
             assert_eq!(bp.find_close(i), Some(31 - i), "pos={i}");

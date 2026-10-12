@@ -128,7 +128,9 @@ impl Sig for [u64; 1] {
 /// A signature and a value.
 #[derive(Debug, Clone, Copy, Default, MemSize, MemDbg)]
 pub struct SigVal<S: BinSafe + Sig, V: BinSafe> {
+    /// The signature.
     pub sig: S,
+    /// The value.
     pub val: V,
 }
 
@@ -254,6 +256,7 @@ impl<V: BinSafe + BitXorAssign> BitXorAssign<SigVal<[u64; 2], V>> for SigVal<[u6
 /// queried on a machine with the same endianness of the machine that built
 /// it.
 pub trait ToSig<S> {
+    /// Returns the signature of `key` computed using the given seed.
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> S;
 }
 
@@ -377,11 +380,15 @@ to_sig_slice!(
 /// [`SigStoreImpl`], but it is implemented only for certain combinations of
 /// type parameters. Having this trait greatly simplifies the type signatures.
 pub trait SigStore<S: Sig + BinSafe, V: BinSafe> {
+    /// The type of the errors returned by the store.
     type Error: std::error::Error + Send + Sync + 'static;
 
     /// Tries to add a new signature/value pair to the store.
     fn try_push(&mut self, sig_val: SigVal<S, V>) -> Result<(), Self::Error>;
 
+    /// The type of the [`ShardStore`] returned by [`into_shard_store`].
+    ///
+    /// [`into_shard_store`]: SigStore::into_shard_store
     type ShardStore: ShardStore<S, V> + Send + Sync;
     /// Turns this store into a [`ShardStore`] whose shards are defined by the
     /// `shard_high_bits` high bits of the signatures.
@@ -773,6 +780,10 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe + Send + Sync>
     /// Returns the maximum value seen (for bit-width computation). Since the
     /// maximum is accumulated starting from [`V::default()`](Default), it is
     /// meaningful for unsigned value types only.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the panic is propagated to the caller.
     ///
     /// [`merge_from`]: SigStore::merge_from
     pub fn par_populate(

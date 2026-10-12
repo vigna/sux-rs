@@ -3,12 +3,17 @@
  *
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
+
+//! Fuzzing harness for selection structures.
+
 use crate::prelude::*;
 use crate::traits::BitVecOps;
 use crate::traits::BitVecOpsMut;
 use arbitrary::Arbitrary;
 use std::collections::BTreeSet;
 
+/// The input of [`harness`]: the length of a bit vector and the positions of
+/// its ones.
 #[derive(Arbitrary, Debug)]
 pub struct Data {
     /// (the positions of the bits to set to 1) % len

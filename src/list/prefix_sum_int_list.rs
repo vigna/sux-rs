@@ -148,11 +148,11 @@ impl PrefixSumIntList {
     }
 }
 
-/// Creates a `PrefixSumIntList` from an existing Elias--Fano structure.
+/// Creates a `PrefixSumIntList` from an existing Elias–Fano structure.
 ///
 /// # Panics
 ///
-/// Panics if the Elias--Fano sequence is not a valid prefix-sum sequence, i.e.
+/// Panics if the Elias–Fano sequence is not a valid prefix-sum sequence, i.e.
 /// if it is empty, its first element is not zero, or its values are not
 /// nondecreasing. Use `try_from_prefix_sums` to handle those cases without
 /// panicking.

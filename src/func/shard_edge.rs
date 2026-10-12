@@ -25,8 +25,10 @@
 //!   parallel and scalable on large key sets.
 //!
 //! - Use [`Fuse3Shards`] if construction time on small key sets matters more
-//!   than space; it is also the default of [`CompVFunc`], which does not
-//!   support lazy Gaussian elimination.
+//!   than space: below 800000 keys [`FuseLge3Shards`] uses lazy Gaussian
+//!   elimination, which is slower and often needs more than one construction
+//!   attempt. [`Fuse3Shards`] is also the default of [`CompVFunc`], which does
+//!   not support lazy Gaussian elimination.
 //!
 //! - Use [`FuseLge3FullSigs`] if the construction of a function fails with
 //!   [`BuildError::DuplicateLocalSignatures`], which might happen with more
@@ -49,10 +51,12 @@
 //! - [`FuseLge3Shards`] with 128-bit signatures and 64-bit local signatures:
 //!   this is the default choice. It shards keys using ε-cost sharding and
 //!   generates edges from 64-bit local signatures using a fuse 3-hypergraph
-//!   with a 10.5% (ε = 0.001) space overhead for key sets above a few million
-//!   keys. Below 800000 keys, it switches to [lazy Gaussian elimination], which
-//!   increases construction time but still contains space overhead to 12.5%
-//!   (23% below 5000 keys).
+//!   with a space overhead of about 11% (ε = 0.001) for key sets above a
+//!   hundred million keys, and of 11–13% for key sets above a million keys.
+//!   Below 800000 keys, it switches to [lazy Gaussian elimination], which
+//!   increases construction time (also because construction attempts fail
+//!   more often) but still contains space overhead to about 13% (25% below
+//!   5000 keys).
 //!   Sharding makes parallelism possible above a few dozen million keys.
 //!   Depending on the amount of sharding, functions with more than a few dozen
 //!   billion keys might incur in duplicate local signatures, which requires
@@ -193,7 +197,7 @@ pub unsafe trait ShardEdge<S, const K: usize>:
     ///
     /// `retry_prob` is the maximum acceptable probability that a construction
     /// attempt has to be retried because a shard contains duplicate edges
-    /// (or, in an injective regime, duplicate local signatures). Sharded
+    /// (duplicate local signatures are not covered by this bound). Sharded
     /// implementations should limit sharding so that this bound is
     /// satisfied; implementations that do not shard can ignore it.
     ///
@@ -241,6 +245,19 @@ pub unsafe trait ShardEdge<S, const K: usize>:
     ///
     /// * `max_shard_edges` - largest per-shard edge count.
     ///
+    /// * `clump` - the largest per-shard value of Σ *k*ᵢ² / Σ *k*ᵢ, where
+    ///   *k*ᵢ is the number of edges contributed by the *i*-th key of the
+    ///   shard (the average number of edges contributed by the key of a
+    ///   random edge, which is one when each key contributes a single edge);
+    ///   correlated edges raise the peelability threshold proportionally to
+    ///   the square root of this quantity.
+    ///
+    /// * `num_failures` - number of previous construction attempts that
+    ///   failed because a shard was unsolvable; implementations should make
+    ///   the graph sparser at each failure, so that the construction
+    ///   eventually succeeds even on distributions of edges that make the
+    ///   graph harder to peel than expected.
+    ///
     /// Returns `(c, lge)` analogously to [`set_up_graphs`] and stores per-shard
     /// layout in `self`.
     ///
@@ -256,6 +273,8 @@ pub unsafe trait ShardEdge<S, const K: usize>:
         _num_keys: usize,
         _max_shard_keys: usize,
         _max_shard_edges: usize,
+        _clump: f64,
+        _num_failures: usize,
     ) -> (f64, bool) {
         const {
             assert!(
@@ -395,6 +414,28 @@ pub fn sharding_high_bits(n: usize, eps: f64) -> u32 {
     (t.log2() - t.ln().max(1.).log2()).floor() as u32
 }
 
+/// Returns the minimum number of shard high bits such that the shards of a
+/// fuse graph on `n` keys can be indexed by `u32` vertices.
+///
+/// We assume conservatively that the largest shard is at most 10% larger
+/// than the average, and that a shard needs at most 1.18 vertices per key.
+///
+/// # Panics
+///
+/// If the number of high bits needed is larger than [`LOG2_MAX_SHARDS`];
+/// `name` is the name of the [`ShardEdge`] used in the panic message.
+fn min_fuse_high_bits(name: &str, n: usize) -> u32 {
+    let min_high_bits = (n as f64 * 1.1 * 1.18 / (1u64 << 32) as f64)
+        .log2()
+        .ceil()
+        .max(0.0) as u32;
+    assert!(
+        min_high_bits <= LOG2_MAX_SHARDS,
+        "{name} does not support {n} keys: shards would need more than 2^32 vertices"
+    );
+    min_high_bits
+}
+
 /// Returns the number of vertices ⌈`c` · `num_edges`⌉ of a graph with
 /// `num_edges` edges and expansion factor `c`.
 ///
@@ -420,6 +461,87 @@ fn fuse_l(num_vertices: u128, log2_seg_size: u32) -> u128 {
         .div_ceil(1 << log2_seg_size)
         .saturating_sub(2)
         .max(1)
+}
+
+/// The maximum number of edges of the fuse graphs whose number of segments
+/// is adjusted by [`fuse_l_peelable`].
+const PEELABLE_MAX_EDGES: usize = 100_000;
+
+/// Returns the smallest number of segments 𝓁′ ≥ `l` in which the first
+/// vertex of an edge can lie such that a fuse graph with `num_edges` edges
+/// and segments of size *s* = 2<sup>`log2_seg_size`</sup>, sharded into
+/// `num_shards` shards, is peelable with probability at least ≈70%.
+///
+/// The peelability of a fuse graph depends on the density 𝓁 · *s* /
+/// `num_edges` of its first 𝓁 segments. Since 𝓁 is obtained by rounding
+/// the number of vertices to a multiple of *s* and then subtracting the two
+/// final segments, this density can be up to 2*s* / `num_edges` smaller than
+/// the expansion factor. On graphs with a few dozen segments the difference
+/// is large enough to make almost all construction attempts fail at some
+/// sizes, so we compare the density with an empirical threshold law: an
+/// asymptotic threshold, minus a bonus for the lightly loaded end segments
+/// of short graphs, plus a term for the fluctuations of the load of the 𝓁 ·
+/// `num_shards` segments, which decreases with *s*.
+///
+/// On graphs with more than [`PEELABLE_MAX_EDGES`] edges the rounding has
+/// negligible effects and `l` is returned unchanged.
+fn fuse_l_peelable(l: u128, num_edges: usize, log2_seg_size: u32, num_shards: usize) -> u128 {
+    if num_edges > PEELABLE_MAX_EDGES {
+        return l;
+    }
+    // Constants of the threshold law: asymptotic threshold, bonus of the
+    // final segments and its decay, and fluctuation term
+    const C_INF: f64 = 1.0908012824839475;
+    const END_BONUS: f64 = 0.426709947971467;
+    const END_DECAY: f64 = 3.0276193196246166;
+    const FLUCT: f64 = 0.2048487576749646;
+    const FLUCT_SEG_EXP: f64 = 0.44627684139096313;
+    const FLUCT_LOG_EXP: f64 = 0.8862899551924789;
+    let s = (1_u64 << log2_seg_size) as f64;
+    let e = num_edges.max(1) as f64;
+    let threshold = |l: f64| {
+        let segments = (l * num_shards as f64).max(2.0);
+        C_INF - END_BONUS * (-(l - 2.0) / END_DECAY).exp()
+            + FLUCT * s.powf(-FLUCT_SEG_EXP) * segments.ln().powf(FLUCT_LOG_EXP)
+    };
+    let mut peelable_l = 1.0;
+    while peelable_l * s / e < threshold(peelable_l) {
+        peelable_l += 1.0;
+    }
+    l.max(peelable_l as u128)
+}
+
+/// Returns the number of segments in which the first vertex of an edge can
+/// lie for a fuse graph with *correlated* edges, as in
+/// [`CompVFunc`](crate::func::CompVFunc), given the number of segments `l`
+/// obtained from the expansion factor.
+///
+/// The graph has `num_edges` edges and segments of size *s* =
+/// 2<sup>`log2_seg_size`</sup>, and it is sharded into `num_shards`
+/// shards; see [`ShardEdge::set_up_corr_graphs`] for the meaning of `clump`
+/// and `num_failures`.
+///
+/// Correlated edges make the load of segments fluctuate more, raising the
+/// peelability threshold by a quantity proportional to √(`clump` / *s*). The
+/// number of segments is increased, if necessary, so that the density 𝓁 ·
+/// *s* / `num_edges` of the first 𝓁 segments reaches an empirical threshold
+/// law at which ≈70% of the construction attempts succeed. Moreover, each
+/// previous failure increases the density by 0.01, so that the construction
+/// eventually succeeds even if the law underestimates the threshold.
+fn fuse_l_corr(
+    l: u128,
+    num_edges: usize,
+    log2_seg_size: u32,
+    num_shards: usize,
+    clump: f64,
+    num_failures: usize,
+) -> u128 {
+    let s = (1_u64 << log2_seg_size) as f64;
+    let e = num_edges.max(1) as f64;
+    // An estimate of the overall number of segments
+    let est_l = (1.1 * e / s * num_shards as f64).max(3.0);
+    let threshold = 1.0949 + 0.1844 * (clump / s).sqrt() * est_l.ln().powf(1.05735);
+    l.max((threshold * e / s).ceil() as u128) + num_failures as u128 * (0.01 * e / s).ceil() as u128
 }
 
 /// Checks that the vertices of a shard can be represented by a `u32` and
@@ -455,8 +577,9 @@ mod fuse {
     /// This construction uses ε-cost sharding (“[ε-Cost Sharding: Scaling
     /// Hypergraph-Based Static Functions and Filters to Trillions of Keys]”) to
     /// shard keys and then fuse 3-hypergraphs (see “[Dense Peelable Random
-    /// Uniform Hypergraphs]”) on sharded keys, giving a 10.5% space overhead
-    /// for large key sets; smaller key sets have a slightly larger overhead.
+    /// Uniform Hypergraphs]”) on sharded keys, giving a space overhead of
+    /// about 11% for large key sets (above a hundred million keys); smaller
+    /// key sets have a slightly larger overhead (11–13%).
     /// Duplicate edges are possible, which limits the amount of possible
     /// sharding.
     ///
@@ -487,12 +610,19 @@ mod fuse {
     ///
     /// Below a few million keys, fuse graphs have a much higher space overhead.
     /// This construction in that case switches to sharding and [lazy Gaussian
-    /// elimination] to provide a 12.5% overhead (23% below 5000 keys). The
-    /// construction time per keys
-    /// increases by an order of magnitude, but since the number of keys is
-    /// small, the impact is limited. If you need a fast construction, you can
-    /// use [`Fuse3Shards`] instead, trading some space for a faster
-    /// construction.
+    /// elimination] to provide a ≈13% overhead (≈25% below 5000 keys). The
+    /// construction time per key increases by an order of magnitude, but since
+    /// the number of keys is small, the impact is limited.
+    ///
+    /// In this regime segments are small, and a construction attempt often
+    /// fails because of a duplicate edge or of an unsolvable system, in which
+    /// case the construction is retried with a new seed: on average, 1.2
+    /// attempts are necessary between 1000 and 100000 keys, 2.4 between 100000
+    /// and 800000 keys, and up to 25 for some key sets of a few dozen keys. For
+    /// this reason, [`VBuilder`](crate::func::VBuilder) allows up to 1000
+    /// attempts in this regime (instead of 100). If you need a fast
+    /// construction with few retries, you can use [`Fuse3Shards`] instead,
+    /// trading some space for a faster construction.
     ///
     /// When building functions over key sets above a few dozen billion keys
     /// (but this depends on the sharding parameter ε) we suggest to use
@@ -580,6 +710,37 @@ mod fuse {
         fn lin_log2_seg_size(n: usize) -> u32 {
             (0.85 * (n.max(1) as f64).ln()).floor().max(1.) as u32
         }
+
+        /// Implements [`ShardEdge::set_up_graphs`] for this structure and for
+        /// [`FuseLge3FullSigs`]; `name` is used in panic messages.
+        fn set_up_graphs_named(&mut self, name: &str, n: usize, max_shard: usize) -> (f64, bool) {
+            let (c, lge);
+            (c, self.log2_seg_size, lge) = if n <= 5000 {
+                (1.23, Self::lin_log2_seg_size(max_shard), true)
+            } else if n <= Self::MAX_LIN_SIZE {
+                (1.125, Self::lin_log2_seg_size(max_shard), true)
+            } else {
+                (
+                    Fuse3NoShards::c(max_shard),
+                    Fuse3Shards::log2_seg_size(max_shard),
+                    false,
+                )
+            };
+
+            let num_vertices = num_vertices(
+                name,
+                c,
+                max_shard,
+                <Self as ShardEdge<[u64; 2], 3>>::Vertex::MAX as u128,
+            );
+            self.l = fuse_l(num_vertices, self.log2_seg_size).try_into().unwrap();
+            check_total_vertices(
+                name,
+                <Self as ShardEdge<[u64; 2], 3>>::num_vertices(self),
+                <Self as ShardEdge<[u64; 2], 3>>::num_shards(self),
+            );
+            (c, lge)
+        }
     }
 
     /// A newtype for sorting by the second value of a `[u64; 2]` signature.
@@ -621,28 +782,12 @@ mod fuse {
                         .min((n / Self::MIN_FUSE_SHARD).max(1).ilog2())
                         .min(LOG2_MAX_SHARDS);
                     Fuse3Shards::dup_edge_high_bits(n, retry_prob, Some(64), max_high_bits)
+                        .max(min_fuse_high_bits("FuseLge3Shards", n))
                 };
         }
 
         fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
-            let (c, lge);
-            (c, self.log2_seg_size, lge) = if n <= 5000 {
-                (1.23, Self::lin_log2_seg_size(max_shard), true)
-            } else if n <= Self::MAX_LIN_SIZE {
-                (1.125, Self::lin_log2_seg_size(max_shard), true)
-            } else {
-                (
-                    Fuse3NoShards::c(max_shard),
-                    Fuse3Shards::log2_seg_size(max_shard),
-                    false,
-                )
-            };
-
-            let num_vertices =
-                num_vertices("FuseLge3Shards", c, max_shard, Self::Vertex::MAX as u128);
-            self.l = fuse_l(num_vertices, self.log2_seg_size).try_into().unwrap();
-            check_total_vertices("FuseLge3Shards", self.num_vertices(), self.num_shards());
-            (c, lge)
+            self.set_up_graphs_named("FuseLge3Shards", n, max_shard)
         }
 
         #[inline(always)]
@@ -702,6 +847,11 @@ mod fuse {
     /// Table 1 of "[Binary Fuse Filters: Fast and Smaller Than Xor
     /// Filters]". After that, we use an [experimentally derived smaller
     /// factor] that is close to the real peelability threshold (*c* = 1.105).
+    /// Up to 100000 keys, the number of segments is increased, if necessary,
+    /// so that the density of the segments containing the first vertex of
+    /// edges reaches an empirical peelability threshold: otherwise, the
+    /// rounding of the number of segments would make most construction
+    /// attempts fail at some sizes. The same holds for [`Fuse3Shards`].
     ///
     /// We provide also an implementation for 128-bit signatures without these
     /// limitations, but we strongly suggest to use sharding as very large
@@ -752,10 +902,6 @@ mod fuse {
                     + 0.25
                         * (1.0_f64)
                             .max((1e6_f64).ln() / ((n as f64).max(core::f64::consts::E)).ln())
-                    + 0.01
-                        // In these ranges the formula fails (large number of retries)
-                        * ((12318..=12371).contains(&n) || (37435..=37453).contains(&n)) as usize
-                            as f64
             } else if n <= 5_000_000 {
                 1.125
             } else if n <= 10_000_000 {
@@ -802,7 +948,16 @@ mod fuse {
             self.log2_seg_size = Self::log2_seg_size(n).min(18);
 
             let num_vertices = num_vertices("Fuse3NoShards", c, n, max_vertices);
-            self.l = fuse_l(num_vertices, self.log2_seg_size).try_into().unwrap();
+            // The adjustment applies only to small graphs, so the vertex
+            // count stays within bounds
+            self.l = fuse_l_peelable(
+                fuse_l(num_vertices, self.log2_seg_size),
+                n,
+                self.log2_seg_size,
+                1,
+            )
+            .try_into()
+            .unwrap();
 
             (c, false) // false = no Gaussian elimination
         }
@@ -812,13 +967,29 @@ mod fuse {
             _num_keys: usize,
             max_shard_keys: usize,
             max_shard_edges: usize,
+            clump: f64,
+            num_failures: usize,
             max_vertices: u128,
         ) -> (f64, bool) {
             let c = Self::c(max_shard_keys);
             self.log2_seg_size = Self::log2_seg_size(max_shard_edges);
 
             let num_vertices = num_vertices("Fuse3NoShards", c, max_shard_edges, max_vertices);
-            self.l = fuse_l(num_vertices, self.log2_seg_size).try_into().unwrap();
+            let l = fuse_l_corr(
+                fuse_l(num_vertices, self.log2_seg_size),
+                max_shard_edges,
+                self.log2_seg_size,
+                1,
+                clump,
+                num_failures,
+            );
+            let num_vertices = (l + 2) << self.log2_seg_size;
+            assert!(
+                num_vertices <= max_vertices + 1,
+                "Fuse3NoShards does not support more than {} vertices, but you are requesting {num_vertices}",
+                max_vertices + 1
+            );
+            self.l = l.try_into().unwrap();
 
             (c, false)
         }
@@ -842,12 +1013,16 @@ mod fuse {
             num_keys: usize,
             max_shard_keys: usize,
             max_shard_edges: usize,
+            clump: f64,
+            num_failures: usize,
         ) -> (f64, bool) {
             Fuse3NoShards::set_up_corr_graphs(
                 self,
                 num_keys,
                 max_shard_keys,
                 max_shard_edges,
+                clump,
+                num_failures,
                 Self::Vertex::MAX as u128,
             )
         }
@@ -915,12 +1090,16 @@ mod fuse {
             num_keys: usize,
             max_shard_keys: usize,
             max_shard_edges: usize,
+            clump: f64,
+            num_failures: usize,
         ) -> (f64, bool) {
             Fuse3NoShards::set_up_corr_graphs(
                 self,
                 num_keys,
                 max_shard_keys,
                 max_shard_edges,
+                clump,
+                num_failures,
                 Self::Vertex::MAX as u128,
             )
         }
@@ -979,7 +1158,9 @@ mod fuse {
     ///
     /// Compared to [`FuseLge3Shards`], this variant avoids the Gaussian
     /// elimination fallback (which slows down construction) at the cost of
-    /// higher space overhead for small shard sizes (≈+10%).
+    /// higher space overhead for small shard sizes (e.g., ≈28% instead of
+    /// ≈13% at ten thousand keys, and ≈19% instead of ≈13% at a hundred
+    /// thousand keys; the two variants coincide above 800000 keys).
     ///
     /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
     /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
@@ -1031,7 +1212,13 @@ mod fuse {
         /// probability of duplicate edges low.
         const LARGE_SEGMENT_THRESHOLD: usize = 20_000_000;
 
+        /// The multiplicative constant α of the estimate α ln *n* ln ln *n* + β
+        /// of the log₂ of segment size used by
+        /// [`log2_large_seg_size`](Self::log2_large_seg_size).
         pub const A: f64 = 0.41;
+        /// The additive constant β of the estimate α ln *n* ln ln *n* + β of
+        /// the log₂ of segment size used by
+        /// [`log2_large_seg_size`](Self::log2_large_seg_size).
         pub const B: f64 = -3.0;
 
         /// Returns the log₂ of segment size for fuse 3-hypergraphs for large
@@ -1150,6 +1337,7 @@ mod fuse {
                         .min((n / Self::MIN_SHARD).max(1).ilog2())
                         .min(LOG2_MAX_SHARDS);
                     Self::dup_edge_high_bits(n, retry_prob, Some(64), max_high_bits)
+                        .max(min_fuse_high_bits("Fuse3Shards", n))
                 };
         }
 
@@ -1158,7 +1346,14 @@ mod fuse {
             self.log2_seg_size = Self::log2_seg_size(max_shard);
 
             let num_vertices = num_vertices("Fuse3Shards", c, max_shard, Self::Vertex::MAX as u128);
-            self.l = fuse_l(num_vertices, self.log2_seg_size).try_into().unwrap();
+            self.l = fuse_l_peelable(
+                fuse_l(num_vertices, self.log2_seg_size),
+                max_shard,
+                self.log2_seg_size,
+                self.num_shards(),
+            )
+            .try_into()
+            .unwrap();
             check_total_vertices("Fuse3Shards", self.num_vertices(), self.num_shards());
             (c, false) // false = no Gaussian elimination
         }
@@ -1168,13 +1363,24 @@ mod fuse {
             _num_keys: usize,
             max_shard_keys: usize,
             max_shard_edges: usize,
+            clump: f64,
+            num_failures: usize,
         ) -> (f64, bool) {
             let c = Fuse3NoShards::c(max_shard_keys);
             self.log2_seg_size = Fuse3Shards::log2_seg_size(max_shard_edges);
 
             let num_vertices =
                 num_vertices("Fuse3Shards", c, max_shard_edges, Self::Vertex::MAX as u128);
-            self.l = fuse_l(num_vertices, self.log2_seg_size).try_into().unwrap();
+            self.l = fuse_l_corr(
+                fuse_l(num_vertices, self.log2_seg_size),
+                max_shard_edges,
+                self.log2_seg_size,
+                self.num_shards(),
+                clump,
+                num_failures,
+            )
+            .try_into()
+            .unwrap();
             check_total_vertices("Fuse3Shards", self.num_vertices(), self.num_shards());
             (c, false)
         }
@@ -1304,12 +1510,16 @@ mod fuse {
                     let max_high_bits = sharding_high_bits(n, eps)
                         .min((n / FuseLge3Shards::MIN_FUSE_SHARD).max(1).ilog2())
                         .min(LOG2_MAX_SHARDS);
+                    // With full signatures the duplicate-edge bound limits
+                    // sharding at every scale, so on huge key sets it is the
+                    // vertex bound that determines the number of shards
                     Fuse3Shards::dup_edge_high_bits(n, retry_prob, None, max_high_bits)
+                        .max(min_fuse_high_bits("FuseLge3FullSigs", n))
                 };
         }
 
         fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
-            self.0.set_up_graphs(n, max_shard)
+            self.0.set_up_graphs_named("FuseLge3FullSigs", n, max_shard)
         }
 
         #[inline(always)]
@@ -1444,6 +1654,24 @@ mod fuse {
                     <= Fuse3Shards::DUP_EDGE_RETRY_PROB
             );
         }
+
+        #[test]
+        fn test_shards_fit_u32_vertices() {
+            // With full signatures the duplicate-edge bound alone would
+            // allow shards needing more than 2³² vertices.
+            let n = 1_usize << 45;
+            let mut se = FuseLge3FullSigs::default();
+            se.set_up_shards(n, 0.001, Fuse3Shards::DUP_EDGE_RETRY_PROB);
+            let avg_shard = (n >> se.shard_high_bits()) as f64;
+            assert!(avg_shard * 1.1 * 1.18 <= (1_u64 << 32) as f64);
+        }
+
+        #[test]
+        #[should_panic(expected = "does not support")]
+        fn test_too_many_keys_fail_early() {
+            let mut se = FuseLge3FullSigs::default();
+            se.set_up_shards(1_usize << 50, 0.001, Fuse3Shards::DUP_EDGE_RETRY_PROB);
+        }
     }
 }
 
@@ -1454,6 +1682,19 @@ mod mwhc {
     use crate::utils::SigVal;
 
     use super::*;
+
+    /// Returns the number of edges for which a graph must be sized so that,
+    /// with an expansion factor of 1.23, the density of a graph with
+    /// `num_edges` correlated edges increases by 0.01 for each of the
+    /// `num_failures` previous failed construction attempts.
+    ///
+    /// The effect of correlated edges on the peelability of random
+    /// 3-hypergraphs has not been studied, so we do not adjust the initial
+    /// expansion factor, but the increase guarantees that the construction
+    /// eventually succeeds.
+    fn mwhc_corr_edges(num_edges: usize, num_failures: usize) -> usize {
+        (num_edges as f64 * (1.23 + 0.01 * num_failures as f64) / 1.23).ceil() as usize
+    }
 
     /// Unsharded 3-hypergraph [MWHC construction].
     ///
@@ -1486,11 +1727,12 @@ mod mwhc {
         fn set_up_shards(&mut self, _n: usize, _eps: f64, _retry_prob: f64) {}
 
         fn set_up_graphs(&mut self, n: usize, _max_shard: usize) -> (f64, bool) {
-            // The lower bound of one guarantees a nonzero number of vertices
-            // even for an empty key set, mirroring the fuse implementations:
-            // a zero vertex count would make the builder chunk the backing
-            // array with chunk size zero, which panics.
-            self.seg_size = (((n as f64 * 1.23) / 3.).ceil() as usize).max(1);
+            // The lower bound guarantees a nonzero number of vertices even for
+            // an empty key set, mirroring the fuse implementations: a zero
+            // vertex count would make the builder chunk the backing array with
+            // chunk size zero, which panics. Moreover, with segments of size
+            // one all keys would have the same edge.
+            self.seg_size = (((n as f64 * 1.23) / 3.).ceil() as usize).max(2);
             // num_vertices = seg_size * 3 is used directly as the vertex-index bound
             // and must fit usize; the check promotes to u128 (lossless widening) so
             // the multiply cannot overflow, e.g. on 32-bit targets.
@@ -1506,8 +1748,10 @@ mod mwhc {
             _num_keys: usize,
             _max_shard_keys: usize,
             max_shard_edges: usize,
+            _clump: f64,
+            num_failures: usize,
         ) -> (f64, bool) {
-            self.set_up_graphs(max_shard_edges, 0)
+            self.set_up_graphs(mwhc_corr_edges(max_shard_edges, num_failures), 0)
         }
 
         #[inline(always)]
@@ -1546,12 +1790,16 @@ mod mwhc {
 
         fn local_edge(&self, local_sig: Self::LocalSig) -> [usize; 3] {
             // We use fixed-point arithmetic on sig[0] and sig[1] for the first
-            // two vertices. Then, we reuse the two lower halves for the third
-            // vertex.
+            // two vertices. For the third vertex we mix the XOR of the two
+            // words: using the XOR directly would make the high bits that
+            // determine the third vertex the XOR of those determining the
+            // first two, so the edge would depend essentially on two values.
             let seg_size = self.seg_size;
             let v0 = fixed_point_inv_128!(local_sig[0], seg_size);
             let v1 = fixed_point_inv_128!(local_sig[1], seg_size) + seg_size;
-            let v2 = fixed_point_inv_128!(local_sig[0] ^ local_sig[1], seg_size) + 2 * seg_size;
+            let v2 =
+                fixed_point_inv_128!(crate::utils::mix64(local_sig[0] ^ local_sig[1]), seg_size)
+                    + 2 * seg_size;
 
             [v0, v1, v2]
         }
@@ -1567,9 +1815,9 @@ mod mwhc {
     /// This construction uses ε-cost sharding (“[ε-Cost Sharding: Scaling
     /// Hypergraph-Based Static Functions and Filters to Trillions of Keys]”) to
     /// shard keys and then random peelable 3-hypergraphs on sharded keys,
-    /// giving a 23% space overhead. Duplicate edges are not possible, which
-    /// makes it possible to shard keys with a finer grain than with [fuse
-    /// graphs].
+    /// giving a 23% space overhead. Duplicate edges are much less likely than
+    /// with [fuse graphs], which makes it possible to shard keys with a finer
+    /// grain.
     ///
     /// The MWHC construction has mostly been obsoleted by [fuse graphs], but it
     /// is still useful for benchmarking and comparison. It also provides
@@ -1655,8 +1903,8 @@ mod mwhc {
         }
 
         fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> (f64, bool) {
-            // See Mwhc3NoShards::set_up_graphs for the lower bound of one.
-            self.seg_size = (((max_shard as f64 * 1.23) / 3.).ceil() as usize).max(1);
+            // See Mwhc3NoShards::set_up_graphs for the lower bound.
+            self.seg_size = (((max_shard as f64 * 1.23) / 3.).ceil() as usize).max(2);
             if self.shard_high_bits() != 0 {
                 // Round up to a multiple of 128 without checked_next_multiple_of
                 // (Rust 1.87; crate MSRV is 1.85): (n + 127) / 128 * 128, with the
@@ -1693,8 +1941,10 @@ mod mwhc {
             _num_keys: usize,
             _max_shard_keys: usize,
             max_shard_edges: usize,
+            _clump: f64,
+            num_failures: usize,
         ) -> (f64, bool) {
-            self.set_up_graphs(0, max_shard_edges)
+            self.set_up_graphs(0, mwhc_corr_edges(max_shard_edges, num_failures))
         }
 
         #[inline(always)]
@@ -1753,14 +2003,15 @@ mod mwhc {
             // the old seg_size * 3 - 1 bound underflowed usize here, and a
             // zero vertex count would later panic in the builder, which
             // chunks the backing array by the number of vertices. As in the
-            // fuse implementations, empty input now gets a minimum segment.
+            // fuse implementations, empty input now gets a minimum segment
+            // (of two vertices, so that distinct keys can have distinct edges).
             let mut shards = Mwhc3Shards::default();
             shards.set_up_graphs(0, 0);
-            assert_eq!(shards.num_vertices(), 3);
+            assert_eq!(shards.num_vertices(), 6);
 
             let mut no_shards = Mwhc3NoShards { seg_size: 0 };
             no_shards.set_up_graphs(0, 0);
-            assert_eq!(no_shards.num_vertices(), 3);
+            assert_eq!(no_shards.num_vertices(), 6);
         }
 
         #[test]

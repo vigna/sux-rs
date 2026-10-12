@@ -1210,7 +1210,7 @@ mod build {
 /// [`PHastR`]: crate::func::PHastR
 /// [`SignedFunc`]: crate::func::SignedFunc
 #[doc(alias("monotone", "mmphf"))]
-#[derive(Clone, MemSize, MemDbg)]
+#[derive(MemSize, MemDbg)]
 #[cfg_attr(
     feature = "epserde",
     derive(epserde::Epserde),
@@ -1247,6 +1247,24 @@ pub struct Lcp2Mmphf<
     pub(crate) escape: usize,
     /// Maps each LCP bit-prefix to its bucket index.
     pub(crate) lcp_to_bucket: VFunc<BitPrefix, D, S1, E1>,
+}
+
+// Clone is implemented by hand, as a derived implementation would require K
+// to implement Clone, too (e.g., str is not Clone)
+impl<K: ?Sized, D: Clone, S0, E0: Clone, F0: Clone, S1, E1: Clone> Clone
+    for Lcp2Mmphf<K, D, S0, E0, F0, S1, E1>
+{
+    fn clone(&self) -> Self {
+        Self {
+            n: self.n,
+            log2_bucket_size: self.log2_bucket_size,
+            lcp_freq_len_offset: self.lcp_freq_len_offset.clone(),
+            lcp_infreq_len: self.lcp_infreq_len.clone(),
+            remap: self.remap.clone(),
+            escape: self.escape,
+            lcp_to_bucket: self.lcp_to_bucket.clone(),
+        }
+    }
 }
 
 impl<K: ?Sized, D: SliceByValue, S0, E0, F0, S1, E1> std::fmt::Debug

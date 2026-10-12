@@ -223,7 +223,9 @@ impl<
 
                 inventory.push(index as u64);
 
-                next_quantum += Self::ONES_PER_INVENTORY;
+                // Saturating: on 32-bit targets a vector with almost
+                // usize::MAX ones would otherwise overflow
+                next_quantum = next_quantum.saturating_add(Self::ONES_PER_INVENTORY);
             }
             curr_num_ones += ones_in_word;
         }

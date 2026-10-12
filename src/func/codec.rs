@@ -43,6 +43,7 @@ pub struct BlockInfo {
 /// Implementations represent a *family* of codes (e.g. Huffman); the
 /// concrete code is built per data distribution.
 pub trait Codec<W> {
+    /// The type of the coders built by [`build_coder`](Codec::build_coder).
     type Coder: Coder<W>;
     /// Builds a coder for the given symbol → frequency map.
     ///
@@ -57,6 +58,8 @@ pub trait Codec<W> {
 
 /// A prefix-free encoder for `W` symbols.
 pub trait Coder<W> {
+    /// The type of the matching decoder, returned by
+    /// [`into_decoder`](Coder::into_decoder).
     type Decoder: Decoder<W>;
 
     /// Returns the codeword for `symbol`, or `None` if `symbol` must be

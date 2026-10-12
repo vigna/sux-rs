@@ -29,13 +29,13 @@ use value_traits::slices::*;
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks Phast+ + array with strings or 64-bit integers", long_about = None)]
 struct Args {
-    /// The maximum number of strings to read from the file, or the number of 64-bit keys.
+    /// The maximum number of strings to read from the file, or the number of 64-bit keys.​
     n: usize,
-    /// The maximum number of samples to take when testing query speed.
+    /// The maximum number of samples to take when testing query speed.​
     samples: usize,
-    /// Use this number of threads.
+    /// Use this number of threads.​
     threads: usize,
-    /// The number of repetitions.
+    /// The number of repetitions.​
     #[arg(short, long, default_value = "5")]
     repeats: usize,
 }

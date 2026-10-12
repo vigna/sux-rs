@@ -92,7 +92,7 @@ use value_traits::slices::SliceByValue;
 /// [`SignedFunc`]: crate::func::SignedFunc
 /// [`LcpMmphf`]: crate::func::LcpMmphf
 #[doc(alias("bloom", "membership", "filter"))]
-#[derive(Clone, MemSize, MemDbg)]
+#[derive(MemSize, MemDbg)]
 #[cfg_attr(
     feature = "epserde",
     derive(epserde::Epserde),
@@ -117,6 +117,20 @@ pub struct VFilter<K: ?Sized, D: SliceByValue, S = [u64; 2], E = FuseLge3Shards>
     /// Equal to `W::MAX >> (W::BITS - hash_bits)`, where `hash_bits`
     /// is the number of hash bits per key.
     pub(crate) filter_mask: D::Value,
+}
+
+// Clone is implemented by hand, as a derived implementation would require K
+// to implement Clone, too (e.g., str is not Clone)
+impl<K: ?Sized, D: SliceByValue + Clone, S, E: Clone> Clone for VFilter<K, D, S, E>
+where
+    D::Value: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            func: self.func.clone(),
+            filter_mask: self.filter_mask.clone(),
+        }
+    }
 }
 
 impl<K: ?Sized, D: SliceByValue, S, E> std::fmt::Debug for VFilter<K, D, S, E>
@@ -378,7 +392,7 @@ mod build {
         /// This is a convenience wrapper around [`try_new_with_builder`] with
         /// `VBuilder::default()`.
         ///
-        /// If keys and values are available as slices, [`try_par_new`]
+        /// If keys are available as a slice, [`try_par_new`]
         /// parallelizes the hash computation for faster construction.
         ///
         /// * `keys` - a [`FallibleRewindableLender`].
@@ -624,7 +638,7 @@ mod build {
         /// This is a convenience wrapper around
         /// [`try_new_with_builder`] with `VBuilder::default()`.
         ///
-        /// If keys and values are available as slices, [`try_par_new`]
+        /// If keys are available as a slice, [`try_par_new`]
         /// parallelizes the hash computation for faster construction.
         ///
         /// * `keys` - a [`FallibleRewindableLender`].

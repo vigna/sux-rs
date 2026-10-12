@@ -1,3 +1,9 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Sebastiano Vigna
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
+ */
+
 use sux::dict::EliasFanoBuilder;
 use sux::list::prefix_sum_int_list::PrefixSumIntList;
 use value_traits::slices::SliceByValue;

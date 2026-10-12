@@ -1511,7 +1511,7 @@ impl ToSig<[u64; 1]> for BitPrefix {
 /// [`PHastR`]: crate::func::PHastR
 /// [`SignedFunc`]: crate::func::SignedFunc
 #[doc(alias("monotone", "mmphf"))]
-#[derive(Debug, Clone, MemSize, MemDbg)]
+#[derive(Debug, MemSize, MemDbg)]
 #[cfg_attr(
     feature = "epserde",
     derive(epserde::Epserde),
@@ -1541,6 +1541,19 @@ pub struct LcpMmphf<
     pub(crate) lcp_len_offset: VFunc<K, D, S0, E0>,
     /// Maps each LCP bit-prefix to its bucket index.
     pub(crate) lcp_to_bucket: VFunc<BitPrefix, D, S1, E1>,
+}
+
+// Clone is implemented by hand, as a derived implementation would require K
+// to implement Clone, too (e.g., str is not Clone)
+impl<K: ?Sized, D: Clone, S0, E0: Clone, S1, E1: Clone> Clone for LcpMmphf<K, D, S0, E0, S1, E1> {
+    fn clone(&self) -> Self {
+        Self {
+            n: self.n,
+            log2_bucket_size: self.log2_bucket_size,
+            lcp_len_offset: self.lcp_len_offset.clone(),
+            lcp_to_bucket: self.lcp_to_bucket.clone(),
+        }
+    }
 }
 
 /// A [`LcpMmphf`] for `str` keys.

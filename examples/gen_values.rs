@@ -22,11 +22,11 @@ use std::io::{BufWriter, Write};
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 enum Dist {
-    /// Geometric with p=0.5 (entropy ≈ 2 bits).
+    /// Geometric with p=0.5 (entropy ≈ 2 bits).​
     Geometric,
-    /// Zipf with exponent 1.5 over a million-symbol alphabet.
+    /// Zipf with exponent 1.5 over a million-symbol alphabet.​
     Zipf,
-    /// Constant 0 (degenerate; all keys map to the same value).
+    /// Constant 0 (degenerate; all keys map to the same value).​
     Zero,
 }
 

@@ -149,7 +149,7 @@ fn main() -> Result<()> {
     );
 
     // ── Comparison build: flat VFunc on the same keys/values ──
-    // Fits each value in `ceil(log2(max + 1))` bits. Build time
+    // Fits each value in ceil(log2(max + 1)) bits. Build time
     // should be proportional to the peeling work, which is ~ one
     // edge per key — so CompVFunc/VFunc ≈ average codeword length
     // (the empirical entropy of the value distribution, rounded up
@@ -200,7 +200,7 @@ fn main() -> Result<()> {
 
     // Two query streams. The "sequential" stream walks the first
     // NUM_QUERIES keys in file order, matching what the C
-    // `test_csf3_byte_array` harness does. The "random" stream draws
+    // test_csf3_byte_array harness does. The "random" stream draws
     // NUM_QUERIES key positions uniformly at random — same number of
     // queries, but each load goes to an unpredictable element of the
     // input keys array, defeating hardware prefetch on the input.

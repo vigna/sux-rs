@@ -1892,6 +1892,8 @@ impl<'a, V: Word + PrimitiveNumberAs<usize>, H: AsRef<[usize]>, L: SliceByValue<
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = V>,
 {
+    /// Creates a new forward iterator over the values of the given
+    /// Elias–Fano representation, starting from the first value.
     #[inline]
     pub fn new(ef: &'a EliasFano<V, H, L>) -> Self {
         let window = if ef.high_bits.as_ref().is_empty() {
@@ -1919,6 +1921,12 @@ impl<
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = V>,
 {
+    /// Creates a new forward iterator over the values of the given
+    /// Elias–Fano representation, starting from position `start_index`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `start_index` is greater than the length of the sequence.
     #[inline]
     pub fn new_from(ef: &'a EliasFano<V, H, L>, start_index: usize) -> Self {
         if start_index > ef.len() {
@@ -2451,7 +2459,7 @@ impl<V: Word + PrimitiveNumberAs<usize>, A: AsRef<[V]>> From<A>
         let mut prev = V::ZERO;
         for &value in values {
             if value < prev {
-                panic!("The values provided are not monotone");
+                panic!("The values provided are not monotone: {value} < {prev}");
             }
             max = max.max(value);
             prev = value;
@@ -2533,7 +2541,7 @@ impl<V: Word + PrimitiveNumberAs<u128>> EliasFanoBuilder<V> {
             .checked_add(1)
             .unwrap_or_else(|| panic!("n ({n}) is too large"))
             .checked_add(u_high)
-            .unwrap_or_else(|| panic!("n ({n}) and/or u {u} is too large"));
+            .unwrap_or_else(|| panic!("n ({n}) and/or u ({u}) is too large"));
         Self {
             n,
             u,
@@ -2548,24 +2556,33 @@ impl<V: Word + PrimitiveNumberAs<u128>> EliasFanoBuilder<V> {
     /// Adds a new value to the builder.
     ///
     /// # Panics
-    /// May panic if the value is smaller than the last provided
-    /// value, or if too many values are provided.
+    ///
+    /// Panics if `n` values have already been added, if the value is greater
+    /// than `u`, or if the value is smaller than the last provided value.
     #[inline]
     pub fn push(&mut self, value: V) {
         if self.count == self.n {
-            panic!("Too many values");
+            panic!(
+                "Too many values: all {} values have already been added",
+                self.n
+            );
         }
         if value > self.u {
-            panic!("Value too large");
+            panic!("Value too large: {value} > {}", self.u);
         }
         if value < self.last_val {
-            panic!("The values provided are not monotone");
+            panic!(
+                "The values provided are not monotone: {value} < {}",
+                self.last_val
+            );
         }
         unsafe {
             self.push_unchecked(value);
         }
     }
 
+    /// Adds a new value to the builder without checks.
+    ///
     /// # Safety
     ///
     /// Values passed to this function must be smaller than or equal to `u` and must be monotone.
@@ -2601,6 +2618,10 @@ impl<V: Word + PrimitiveNumberAs<u128>> EliasFanoBuilder<V> {
     /// Usually, however, the default implementations returned by the
     /// [`build_with_seq`], [`build_with_dict`], and [`build_with_seq_and_dict`]
     /// methods are more convenient.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the number of values added is not `n`.
     ///
     /// [`build_with_seq_and_dict`]: EliasFanoBuilder::build_with_seq_and_dict
     /// [`build_with_dict`]: EliasFanoBuilder::build_with_dict
@@ -2719,6 +2740,10 @@ where
 {
     /// Creates a concurrent builder for a sequence containing `n` numbers
     /// smaller than or equal to `u`.
+    ///
+    /// # Panics
+    ///
+    /// When any of the underlying structures would exceed `usize` in length.
     #[must_use]
     pub fn new(n: usize, u: V) -> Self {
         let n_u128 = n as u128;
@@ -2791,9 +2816,16 @@ where
     /// [`build_with_seq`], [`build_with_dict`], and [`build_with_seq_and_dict`]
     /// methods are more convenient.
     ///
+    /// # Panics
+    ///
+    /// Panics if the number of high bits set is not `n`, which happens, for
+    /// example, if [`set`] was not called exactly `n` times with distinct
+    /// indices and nondecreasing values.
+    ///
     /// [`build_with_seq_and_dict`]: EliasFanoConcurrentBuilder::build_with_seq_and_dict
     /// [`build_with_dict`]: EliasFanoConcurrentBuilder::build_with_dict
     /// [`build_with_seq`]: EliasFanoConcurrentBuilder::build_with_seq
+    /// [`set`]: EliasFanoConcurrentBuilder::set
     #[must_use]
     pub fn build(self) -> EliasFano<V> {
         // The conversion of the high bits cannot fail because Atomic<usize>

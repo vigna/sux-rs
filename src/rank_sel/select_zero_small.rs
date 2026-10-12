@@ -188,6 +188,10 @@ impl<
 
     /// Creates a new selection structure with a given number of
     /// [`RankSmall`] blocks per inventory on average.
+    ///
+    /// # Panics
+    ///
+    /// If `blocks_per_inv` is zero.
     #[must_use]
     pub fn with_inv(small_counters: C, blocks_per_inv: usize) -> Self {
         assert!(blocks_per_inv > 0, "blocks_per_inv must be positive");
@@ -263,7 +267,9 @@ impl<
                             *last |= (delta as u32) << Self::BLOCK_IDX_BITS;
                         }
                     }
-                    next_quantum += step;
+                    // Saturating: on 32-bit targets a vector with almost
+                    // usize::MAX zeros would otherwise overflow
+                    next_quantum = next_quantum.saturating_add(step);
                 }
 
                 past_ones += ones_in_word;

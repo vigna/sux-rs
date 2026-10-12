@@ -1048,8 +1048,18 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
         // subinventory. This can happen only in extremely sparse vectors, or
         // if a very small value of log2_ones_per_inventory is set directly.
 
-        let log2_words_per_subinventory =
-            max_log2_words_per_subinventory.min(log2_ones_per_inventory.saturating_sub(2));
+        let log2_words_per_subinventory = max_log2_words_per_subinventory
+            .min(log2_ones_per_inventory.saturating_sub(2))
+            // A subinventory never needs more entries than there are
+            // ones: without this cap a very sparse vector with a large
+            // span would allocate a huge, almost empty subinventory
+            .min(
+                num_ones
+                    .max(1)
+                    .next_power_of_two()
+                    .ilog2()
+                    .saturating_sub(2) as usize,
+            );
 
         let log2_ones_per_sub16 = log2_ones_per_inventory
             .saturating_sub(log2_words_per_subinventory + LOG2_U16_PER_USIZE);

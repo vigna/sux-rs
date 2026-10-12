@@ -184,7 +184,7 @@ pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBi
     /// Returns the value at the specified index.
     ///
     /// # Safety
-    /// `index` must be in [0..[len]).
+    /// `index` must be in [0 . . [len]).
     /// No bound or bit-width check is performed.
     ///
     /// [len]: AtomicBitFieldSlice::len
@@ -193,7 +193,7 @@ pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBi
     /// Returns the value at the specified index.
     ///
     /// # Panics
-    /// May panic if the index is not in [0..[len])
+    /// May panic if the index is not in [0 . . [len])
     ///
     /// [len]: AtomicBitFieldSlice::len
     fn get_atomic(&self, index: usize, order: Ordering) -> A::Value {
@@ -204,7 +204,7 @@ pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBi
     /// Sets the element of the slice at the specified index.
     ///
     /// # Safety
-    /// - `index` must be in [0..[len]);
+    /// - `index` must be in [0 . . [len]);
     /// - `value` must fit within [`AtomicBitWidth::atomic_bit_width`] bits.
     ///
     /// No bound or bit-width check is performed.
@@ -215,7 +215,7 @@ pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBi
     /// Sets the element of the slice at the specified index.
     ///
     /// # Panics
-    /// May panic if the index is not in [0..[len])
+    /// May panic if the index is not in [0 . . [len])
     /// or the value does not fit in [`AtomicBitWidth::atomic_bit_width`] bits.
     ///
     /// [len]: AtomicBitFieldSlice::len
@@ -235,6 +235,11 @@ pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBi
     /// This method takes an exclusive reference because usually one needs to
     /// reset a vector to reuse it, and the mutable reference makes it
     /// impossible to have any other reference hanging around.
+    ///
+    /// # Panics
+    ///
+    /// May panic if `order` is [`Ordering::Acquire`] or [`Ordering::AcqRel`],
+    /// as values are written with atomic stores.
     fn reset_atomic(&mut self, order: Ordering);
 
     /// Sets all values to zero using a parallel implementation.
@@ -242,6 +247,11 @@ pub trait AtomicBitFieldSlice<A: PrimitiveAtomicUnsigned<Value: Word>>: AtomicBi
     /// See [`reset_atomic`] for more details.
     ///
     /// [`reset_atomic`]: AtomicBitFieldSlice::reset_atomic
+    ///
+    /// # Panics
+    ///
+    /// May panic if `order` is [`Ordering::Acquire`] or [`Ordering::AcqRel`],
+    /// as values are written with atomic stores.
     #[cfg(feature = "rayon")]
     fn par_reset_atomic(&mut self, order: Ordering);
 }

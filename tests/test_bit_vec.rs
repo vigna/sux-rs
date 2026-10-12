@@ -1150,7 +1150,7 @@ macro_rules! test_value_ops_word_type {
         {
             for width in 1..bpw {
                 let mut bv: BitVec<Vec<$W>> = BitVec::new(0);
-                bv.append_value(!(0 as $W), width); // all bits set, but only `width` should survive
+                bv.append_value(!(0 as $W), width); // all bits set, but only width should survive
                 let mask = ((1 as $W) << width) - (1 as $W);
                 assert_eq!(bv.get_bits(0, width), mask, "masking: width={width}");
             }
@@ -1305,15 +1305,15 @@ fn test_par_count_ones_binds_slice_once() {
 }
 
 #[test]
+#[should_panic(expected = "backing storage is too short")]
 fn test_bit_iter_rejects_short_backing() {
-    assert!(std::panic::catch_unwind(|| BitIter::<usize, _>::new(&[] as &[usize], 1)).is_err());
-    assert!(
-        std::panic::catch_unwind(|| AtomicBitIter::<Atomic<usize>, _>::new(
-            &[] as &[Atomic<usize>],
-            1
-        ))
-        .is_err()
-    );
+    BitIter::<usize, _>::new(&[] as &[usize], 1);
+}
+
+#[test]
+#[should_panic(expected = "backing storage is too short")]
+fn test_atomic_bit_iter_rejects_short_backing() {
+    AtomicBitIter::<Atomic<usize>, _>::new(&[] as &[Atomic<usize>], 1);
 }
 
 #[test]

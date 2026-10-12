@@ -100,7 +100,7 @@ use value_traits::slices::SliceByValue;
 /// [`Lcp2MmphfInt`]: crate::func::Lcp2MmphfInt
 /// [`Lcp2Mmphf`]: crate::func::Lcp2Mmphf
 /// [`SignedFunc`]: crate::func::SignedFunc
-#[derive(Clone, MemSize, MemDbg)]
+#[derive(MemSize, MemDbg)]
 #[cfg_attr(
     feature = "epserde",
     derive(epserde::Epserde),
@@ -139,6 +139,22 @@ pub struct VFunc2<
     /// The escape value (2*ʳ* − 1). When *r* = 0, this value is zero and the
     /// first function always returns zero.
     pub(crate) escape: D::Value,
+}
+
+// Clone is implemented by hand, as a derived implementation would require K
+// to implement Clone, too (e.g., str is not Clone)
+impl<K: ?Sized, D: SliceByValue + Clone, S, E: Clone, F: Clone> Clone for VFunc2<K, D, S, E, F>
+where
+    D::Value: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            first: self.first.clone(),
+            second: self.second.clone(),
+            remap: self.remap.clone(),
+            escape: self.escape.clone(),
+        }
+    }
 }
 
 impl<K: ?Sized, D: SliceByValue, S, E, F> VFunc2<K, D, S, E, F> {

@@ -129,6 +129,8 @@ pub const RAYON_MIN_LEN: usize = 100_000;
 /// [`IndexedParallelIterator`]: rayon::iter::IndexedParallelIterator
 #[cfg(feature = "rayon")]
 pub trait ParallelWithLen: rayon::iter::IndexedParallelIterator + Sized {
+    /// Sets both the minimum and the maximum length of the chunks of this
+    /// iterator to `len`, so that chunks have approximately `len` elements.
     fn with_len(self, len: usize) -> rayon::iter::MaxLen<rayon::iter::MinLen<Self>> {
         use rayon::iter::IndexedParallelIterator;
         self.with_min_len(len).with_max_len(len)

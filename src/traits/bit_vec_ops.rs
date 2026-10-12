@@ -550,6 +550,8 @@ pub struct OnesIter<'a, W: Word, B: ?Sized> {
 }
 
 impl<'a, W: Word, B: ?Sized + AsRef<[W]>> OnesIter<'a, W, B> {
+    /// Creates an iterator over the positions of the ones among the first
+    /// `len` bits of `bits`.
     pub fn new(bits: &'a B, len: usize) -> Self {
         debug_assert!(len <= bits.as_ref().len() * W::BITS as usize);
         let word = if bits.as_ref().is_empty() {
@@ -574,7 +576,13 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for OnesIter<'_, W, B> {
         // find the next word with ones
         while self.word == W::ZERO {
             self.word_idx += 1;
-            if self.word_idx >= self.bits.as_ref().len() {
+            // Words beyond len would yield only indices beyond len
+            if self.word_idx
+                >= self
+                    .len
+                    .div_ceil(bits_per_word)
+                    .min(self.bits.as_ref().len())
+            {
                 return None;
             }
             self.word = unsafe { *self.bits.as_ref().get_unchecked(self.word_idx) };
@@ -605,6 +613,8 @@ pub struct ZerosIter<'a, W: Word, B: ?Sized> {
 }
 
 impl<'a, W: Word, B: ?Sized + AsRef<[W]>> ZerosIter<'a, W, B> {
+    /// Creates an iterator over the positions of the zeros among the first
+    /// `len` bits of `bits`.
     pub fn new(bits: &'a B, len: usize) -> Self {
         debug_assert!(len <= bits.as_ref().len() * W::BITS as usize);
         let word = if bits.as_ref().is_empty() {
@@ -629,7 +639,13 @@ impl<W: Word, B: ?Sized + AsRef<[W]>> Iterator for ZerosIter<'_, W, B> {
         // find the next flipped word with zeros
         while self.word == W::ZERO {
             self.word_idx += 1;
-            if self.word_idx >= self.bits.as_ref().len() {
+            // Words beyond len would yield only indices beyond len
+            if self.word_idx
+                >= self
+                    .len
+                    .div_ceil(bits_per_word)
+                    .min(self.bits.as_ref().len())
+            {
                 return None;
             }
             self.word = unsafe { !*self.bits.as_ref().get_unchecked(self.word_idx) };
@@ -764,6 +780,12 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
     }
 
     /// Sets all bits to the given value.
+    ///
+    /// # Panics
+    ///
+    /// If `ordering` is [`Ordering::Acquire`] or [`Ordering::AcqRel`] and the
+    /// vector contains at least a full word, as full words are written with
+    /// atomic stores.
     fn fill(&mut self, value: bool, ordering: Ordering) {
         let bits_per_word = A::Value::BITS as usize;
         let full_words = self.len() / bits_per_word;
@@ -794,6 +816,12 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
     }
 
     /// Sets all bits to the given value using a parallel implementation.
+    ///
+    /// # Panics
+    ///
+    /// If `ordering` is [`Ordering::Acquire`] or [`Ordering::AcqRel`] and the
+    /// vector contains at least a full word, as full words are written with
+    /// atomic stores.
     #[cfg(feature = "rayon")]
     fn par_fill(&mut self, value: bool, ordering: Ordering) {
         let bits_per_word = A::Value::BITS as usize;
@@ -826,11 +854,23 @@ pub trait AtomicBitVecOps<A: PrimitiveAtomicUnsigned<Value: Word>>: AsRef<[A]> +
     }
 
     /// Sets all bits to zero.
+    ///
+    /// # Panics
+    ///
+    /// If `ordering` is [`Ordering::Acquire`] or [`Ordering::AcqRel`] and the
+    /// vector contains at least a full word, as full words are written with
+    /// atomic stores.
     fn reset(&mut self, ordering: Ordering) {
         self.fill(false, ordering);
     }
 
     /// Sets all bits to zero using a parallel implementation.
+    ///
+    /// # Panics
+    ///
+    /// If `ordering` is [`Ordering::Acquire`] or [`Ordering::AcqRel`] and the
+    /// vector contains at least a full word, as full words are written with
+    /// atomic stores.
     #[cfg(feature = "rayon")]
     fn par_reset(&mut self, ordering: Ordering) {
         self.par_fill(false, ordering);

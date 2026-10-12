@@ -1,3 +1,9 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Sebastiano Vigna
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
+ */
+
 use sux::bal_paren::jacobson::JacobsonBalParen;
 use sux::bit_vec;
 use sux::bits::{BitFieldVec, BitVec};

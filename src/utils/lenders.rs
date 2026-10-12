@@ -192,6 +192,13 @@ pub trait FallibleRewindableLender: Sized + FallibleLender {
     fn rewind(self) -> Result<Self, <Self as FallibleRewindableLender>::RewindError>;
 }
 
+// Opens a file, adding its path to the error message
+fn open_file(path: impl AsRef<Path>) -> io::Result<File> {
+    let path = path.as_ref();
+    File::open(path)
+        .map_err(|e| io::Error::new(e.kind(), format!("Cannot open {}: {e}", path.display())))
+}
+
 // Common next function for all lenders
 fn next<'a>(buf: &mut impl BufRead, line: &'a mut String) -> io::Result<Option<&'a str>> {
     line.clear();
@@ -210,8 +217,8 @@ fn next<'a>(buf: &mut impl BufRead, line: &'a mut String) -> io::Result<Option<&
     }
 }
 
-// Common lending implementations for all line lenders, which have a `buf`
-// field of type `impl BufRead` and a `line` field of type `String`
+// Common lending implementations for all line lenders, which have a buf
+// field of type impl BufRead and a line field of type String
 macro_rules! impl_line_lender {
     ($lender:ident, $bound:path) => {
         impl<'lend, R: $bound> FallibleLending<'lend> for $lender<R> {
@@ -238,6 +245,7 @@ pub struct LineLender<B> {
 }
 
 impl<B> LineLender<B> {
+    /// Creates a new lender of the lines of the given [`BufRead`].
     pub fn new(buf: B) -> Self {
         LineLender {
             buf,
@@ -247,10 +255,12 @@ impl<B> LineLender<B> {
 }
 
 impl LineLender<BufReader<File>> {
+    /// Creates a new lender of the lines of the file at the given path.
     pub fn from_path(path: impl AsRef<Path>) -> io::Result<LineLender<BufReader<File>>> {
-        Ok(LineLender::new(BufReader::new(File::open(path)?)))
+        Ok(LineLender::new(BufReader::new(open_file(path)?)))
     }
 
+    /// Creates a new lender of the lines of the given file.
     pub fn from_file(file: File) -> LineLender<BufReader<File>> {
         LineLender::new(BufReader::new(file))
     }
@@ -285,6 +295,8 @@ mod zstd_lender {
     }
 
     impl<R: Read> ZstdLineLender<R> {
+        /// Creates a new lender of the lines of the given zstd-compressed
+        /// [`Read`].
         pub fn new(read: R) -> io::Result<Self> {
             Ok(ZstdLineLender {
                 buf: BufReader::new(Decoder::new(read)?),
@@ -294,10 +306,14 @@ mod zstd_lender {
     }
 
     impl ZstdLineLender<File> {
+        /// Creates a new lender of the lines of the zstd-compressed file at
+        /// the given path.
         pub fn from_path(path: impl AsRef<Path>) -> io::Result<ZstdLineLender<File>> {
-            ZstdLineLender::new(File::open(path)?)
+            ZstdLineLender::new(open_file(path)?)
         }
 
+        /// Creates a new lender of the lines of the given zstd-compressed
+        /// file.
         pub fn from_file(file: File) -> io::Result<ZstdLineLender<File>> {
             ZstdLineLender::new(file)
         }
@@ -339,6 +355,8 @@ mod flate2_lender {
     }
 
     impl<R: Read> GzipLineLender<R> {
+        /// Creates a new lender of the lines of the given gzip-compressed
+        /// [`Read`].
         pub fn new(read: R) -> io::Result<Self> {
             Ok(GzipLineLender {
                 buf: BufReader::new(MultiGzDecoder::new(read)),
@@ -348,10 +366,14 @@ mod flate2_lender {
     }
 
     impl GzipLineLender<File> {
+        /// Creates a new lender of the lines of the gzip-compressed file at
+        /// the given path.
         pub fn from_path(path: impl AsRef<Path>) -> io::Result<GzipLineLender<File>> {
-            GzipLineLender::new(File::open(path)?)
+            GzipLineLender::new(open_file(path)?)
         }
 
+        /// Creates a new lender of the lines of the given gzip-compressed
+        /// file.
         pub fn from_file(file: File) -> io::Result<GzipLineLender<File>> {
             GzipLineLender::new(file)
         }
@@ -413,6 +435,8 @@ mod deko {
     }
 
     impl<R: Read> DekoLineLender<R> {
+        /// Creates a new lender of the lines of the given compressed
+        /// [`Read`], detecting dynamically its compression format.
         pub fn new(read: R) -> io::Result<Self> {
             Ok(DekoLineLender {
                 buf: BufReader::new(::deko::read::AnyDecoder::new(read)),
@@ -422,6 +446,8 @@ mod deko {
     }
 
     impl<R: BufRead> DekoBufLineLender<R> {
+        /// Creates a new lender of the lines of the given compressed
+        /// [`BufRead`], detecting dynamically its compression format.
         pub fn new(read: R) -> io::Result<Self> {
             Ok(DekoBufLineLender {
                 buf: BufReader::new(::deko::bufread::AnyDecoder::new(read)),
@@ -431,9 +457,13 @@ mod deko {
     }
 
     impl DekoBufLineLender<BufReader<File>> {
+        /// Creates a new lender of the lines of the compressed file at the
+        /// given path, detecting dynamically its compression format.
         pub fn from_path(path: impl AsRef<Path>) -> io::Result<DekoBufLineLender<BufReader<File>>> {
-            Self::from_file(File::open(path)?)
+            Self::from_file(open_file(path)?)
         }
+        /// Creates a new lender of the lines of the given compressed file,
+        /// detecting dynamically its compression format.
         pub fn from_file(file: File) -> io::Result<DekoBufLineLender<BufReader<File>>> {
             DekoBufLineLender::new(BufReader::new(file))
         }
@@ -529,7 +559,7 @@ mod any_line_lender {
             path: impl AsRef<Path>,
             decompression: Option<Decompression>,
         ) -> io::Result<Self> {
-            Self::new(File::open(path)?, decompression)
+            Self::new(open_file(path)?, decompression)
         }
     }
 
@@ -593,6 +623,7 @@ pub struct FromSlice<'a, T> {
 }
 
 impl<'a, T> FromSlice<'a, T> {
+    /// Creates a new lender of the items of the given slice.
     pub fn new(slice: &'a [T]) -> Self {
         FromSlice {
             slice,
@@ -661,6 +692,7 @@ pub struct FromCloneableIntoIterator<I: IntoIterator> {
 }
 
 impl<I: IntoIterator + Clone> FromCloneableIntoIterator<I> {
+    /// Creates a new lender of the items of the given [`IntoIterator`].
     pub fn new(into_iter: I) -> Self {
         FromCloneableIntoIterator {
             into_iter: into_iter.clone(),
@@ -712,6 +744,8 @@ impl<'a, I> FromIntoLender<'a, I>
 where
     &'a I: IntoLender,
 {
+    /// Creates a new lender using the lender returned by
+    /// [`into_lender`](IntoLender::into_lender) on the given reference.
     pub fn new(into_lender: &'a I) -> Self {
         FromIntoLender {
             into_lender,
@@ -777,6 +811,9 @@ impl<'a, I> FromIntoFallibleLender<'a, I>
 where
     &'a I: IntoFallibleLender,
 {
+    /// Creates a new lender using the fallible lender returned by
+    /// [`into_fallible_lender`](IntoFallibleLender::into_fallible_lender) on
+    /// the given reference.
     pub fn new(into_lender: &'a I) -> Self {
         FromIntoFallibleLender {
             into_fallible_lender: into_lender,
@@ -846,6 +883,8 @@ impl<'a, I> FromIntoIterator<'a, I>
 where
     &'a I: IntoIterator,
 {
+    /// Creates a new lender of the items of the iterator returned by
+    /// [`into_iter`](IntoIterator::into_iter) on the given reference.
     pub fn new(iterable: &'a I) -> Self {
         Self {
             iterable,
@@ -913,6 +952,9 @@ impl<'a, I> FromIntoFallibleIterator<'a, I>
 where
     &'a I: IntoFallibleIterator,
 {
+    /// Creates a new lender of the items of the fallible iterator returned by
+    /// [`into_fallible_iter`](IntoFallibleIterator::into_fallible_iter) on the
+    /// given reference.
     pub fn new(iterable: &'a I) -> Self {
         FromIntoFallibleIterator {
             iterable,
@@ -997,6 +1039,10 @@ pub struct FromIntoLenderFactory<L: IntoLender, E, F: FnMut() -> Result<L, E>> {
 }
 
 impl<L: IntoLender, E, F: FnMut() -> Result<L, E>> FromIntoLenderFactory<L, E, F> {
+    /// Creates a new lender using the lender obtained from the result of the
+    /// given function, which will be called again at each rewind.
+    ///
+    /// Returns the error returned by the function, if any.
     pub fn new(mut f: F) -> Result<Self, E> {
         f().map(|lender| FromIntoLenderFactory {
             lender: lender.into_lender(),
@@ -1088,6 +1134,10 @@ pub struct FromIntoFallibleLenderFactory<L: IntoFallibleLender, E, F: FnMut() ->
 }
 
 impl<L: IntoFallibleLender, E, F: FnMut() -> Result<L, E>> FromIntoFallibleLenderFactory<L, E, F> {
+    /// Creates a new lender using the fallible lender obtained from the result
+    /// of the given function, which will be called again at each rewind.
+    ///
+    /// Returns the error returned by the function, if any.
     pub fn new(mut f: F) -> Result<Self, E> {
         let lender = f()?.into_fallible_lender();
         Ok(FromIntoFallibleLenderFactory { lender, f })

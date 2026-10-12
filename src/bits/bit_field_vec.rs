@@ -257,10 +257,12 @@ macro_rules! bit_field_vec {
     };
     (@new [$W:ty] $w:expr => $v:expr; $n:expr) => {
         {
-            let mut bit_field_vec = $crate::bits::BitFieldVec::<Vec<$W>>::with_capacity($w, $n);
+            // Evaluate the length once
+            let n: usize = $n;
+            let mut bit_field_vec = $crate::bits::BitFieldVec::<Vec<$W>>::with_capacity($w, n);
             // Force type
             let v: $W = $v;
-            bit_field_vec.resize($n, v);
+            bit_field_vec.resize(n, v);
             bit_field_vec
         }
     };
@@ -652,8 +654,11 @@ impl<W: Word> BitFieldVec<Vec<W>> {
     ///
     /// # Safety
     ///
-    /// `len * bit_width` must be at most `self.bits.len() * W::BITS as usize`. Note that
-    /// setting the length might result in reading uninitialized data.
+    /// `len * bit_width` must be at most `self.bits.len() * W::BITS as usize`,
+    /// and there must be at least an allocated word when the bit width is zero
+    /// (vectors built by the constructors of this structure always satisfy
+    /// the latter condition). Note that setting the length might result in
+    /// reading uninitialized data.
     pub unsafe fn set_len(&mut self, len: usize) {
         debug_assert!(len * self.bit_width <= self.bits.len() * W::BITS as usize);
         self.len = len;
@@ -695,6 +700,11 @@ impl<W: Word> BitFieldVec<Vec<W>> {
     }
 
     /// Adds a value at the end of the vector.
+    ///
+    /// # Panics
+    ///
+    /// If the value does not fit the bit width, or if the length of the
+    /// vector overflows `usize`.
     pub fn push(&mut self, value: W) {
         panic_if_value!(value, self.mask, self.bit_width);
         let next_len = self
@@ -896,6 +906,10 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> BitFieldVec<B
     /// This inherent method takes precedence over [`SliceByValueMut::copy`]
     /// for same-type copies and is significantly faster than the element-wise
     /// generic implementation.
+    ///
+    /// # Panics
+    ///
+    /// If the bit widths of the two vectors differ.
     pub fn copy(&self, from: usize, dst: &mut Self, to: usize, len: usize) {
         assert_eq!(
             self.bit_width, dst.bit_width,
@@ -1674,10 +1688,13 @@ impl<W: Word> core::iter::Extend<W> for BitFieldVec<Vec<W>> {
 }
 
 impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitFieldVec<B> {
+    /// Returns an iterator over the values of the vector starting from
+    /// position `from`.
     pub fn iter_from(&self, from: usize) -> BitFieldVecIter<'_, B> {
         BitFieldVecIter::new(self, from)
     }
 
+    /// Returns an iterator over the values of the vector.
     pub fn iter(&self) -> BitFieldVecIter<'_, B> {
         self.iter_from(0)
     }
@@ -1719,9 +1736,16 @@ pub struct AtomicBitFieldVec<
 }
 
 impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>>> AtomicBitFieldVec<B> {
+    /// Creates a new atomic vector from the given backend, bit width, and
+    /// length.
+    ///
     /// # Safety
-    /// `len` * `bit_width` must be between 0 (included) and the number of
-    /// bits in `bits` (included).
+    ///
+    /// - `bit_width` can be at most the number of bits of the value type of
+    ///   the atomic words of the backend;
+    /// - `len` * `bit_width` must be between 0 (included) and the number of
+    ///   bits in `bits` (included);
+    /// - there must be at least an allocated word when `bit_width` is zero.
     #[inline(always)]
     #[must_use]
     pub unsafe fn from_raw_parts(bits: B, bit_width: usize, len: usize) -> Self {
@@ -1768,6 +1792,12 @@ impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>>
 }
 
 impl<A: PrimitiveAtomicUnsigned<Value: Word>> AtomicBitFieldVec<Vec<A>> {
+    /// Creates a new zero-initialized atomic vector of given bit width and
+    /// length.
+    ///
+    /// # Panics
+    ///
+    /// If `len` * `bit_width` overflows `usize`.
     #[must_use]
     pub fn new(bit_width: usize, len: usize) -> AtomicBitFieldVec<Vec<A>> {
         // we need at least two words to avoid branches in the gets
@@ -1845,7 +1875,7 @@ impl<B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word]>>
     /// Sets the element of the slice at the specified index.
     ///
     /// # Panics
-    /// May panic if the index is not in [0..[len]) or the value does not
+    /// May panic if the index is not in [0 . . [len]) or the value does not
     /// fit in [`AtomicBitWidth::atomic_bit_width`] bits.
     ///
     /// [len]: crate::traits::bit_field_slice::AtomicBitFieldSlice::len
@@ -2212,8 +2242,8 @@ impl<W: Word> crate::traits::TryIntoUnaligned for BitFieldVec<Box<[W]>> {
     /// # Errors
     ///
     /// Returns an error if the bit width does not satisfy the constraints
-    /// of [`BitFieldVec::get_unaligned_unchecked`]: it must be at most `W::BITS
-    /// - 6`, or exactly `W::BITS - 4`, or exactly `W::BITS`.
+    /// of [`BitFieldVec::get_unaligned_unchecked`]: it must be at most
+    /// `W::BITS - 6`, or exactly `W::BITS - 4`, or exactly `W::BITS`.
     fn try_into_unaligned(
         self,
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {

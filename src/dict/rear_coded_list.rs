@@ -250,7 +250,7 @@ struct Stats {
 /// implementation of [`IndexedDict`].
 ///
 /// [module documentation]: crate::dict::rear_coded_list
-#[derive(Debug, Clone, MemSize, MemDbg)]
+#[derive(Debug, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[doc(alias = "front coding")]
@@ -266,6 +266,23 @@ pub struct RearCodedList<I: ?Sized, O, D = Box<[u8]>, P = Box<[usize]>, const SO
     pointers: P,
     _marker_i: PhantomData<I>,
     _marker_o: PhantomData<O>,
+}
+
+// Clone is implemented by hand, as a derived implementation would require I
+// to implement Clone, too (e.g., str is not Clone)
+impl<I: ?Sized, O, D: Clone, P: Clone, const SORTED: bool> Clone
+    for RearCodedList<I, O, D, P, SORTED>
+{
+    fn clone(&self) -> Self {
+        Self {
+            ratio: self.ratio,
+            len: self.len,
+            data: self.data.clone(),
+            pointers: self.pointers.clone(),
+            _marker_i: PhantomData,
+            _marker_o: PhantomData,
+        }
+    }
 }
 
 /// A rear-coded list of byte sequences, returning `Vec<u8>` on access.
@@ -473,6 +490,10 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool>
 {
     /// Returns in place the string of given index by writing
     /// its bytes into the provided string.
+    ///
+    /// # Panics
+    ///
+    /// If `index` is out of bounds.
     pub fn get_in_place(&self, index: usize, result: &mut String) {
         self.assert_index(index);
         // Reuse the caller's allocation: take its bytes, refill them
@@ -865,6 +886,10 @@ where
 
     /// Creates a new lender over the rear-coded list starting from the given
     /// position.
+    ///
+    /// # Panics
+    ///
+    /// If `from` is greater than the length of the list.
     pub fn new_from(rcl: &'a RearCodedList<I, O, D, P, SORTED>, from: usize) -> Self {
         if from >= rcl.len() {
             assert!(
@@ -982,6 +1007,10 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
 
     /// Prints in a human-readable format the statistics of the
     /// strings currently in the builder.
+    ///
+    /// # Panics
+    ///
+    /// If the number of bytes of the encoded data overflows `usize`.
     pub fn print_stats(&self) {
         fn ratio(numerator: usize, denominator: usize) -> f64 {
             if denominator == 0 {
@@ -1139,8 +1168,8 @@ impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
 
         if SORTED && order == core::cmp::Ordering::Greater {
             panic!(
-                "Strings must be sorted in ascending order when building a sorted RearCodedList. Got '{:?}' after '{}'",
-                string,
+                "Strings must be sorted in ascending order when building a sorted RearCodedList. Got '{}' after '{}'",
+                String::from_utf8_lossy(string),
                 String::from_utf8_lossy(&self.last_str)
             );
         }
@@ -1257,6 +1286,26 @@ impl<I: ?Sized + AsRef<[u8]>, const SORTED: bool> RearCodedListBuilder<I, SORTED
     /// to the last string added.
     pub fn push(&mut self, string: impl Borrow<I>) {
         self.push_impl(string.borrow().as_ref());
+    }
+
+    /// Appends a string to the end of the list, returning an error instead of
+    /// panicking if the order of the strings is wrong.
+    ///
+    /// # Errors
+    ///
+    /// If `SORTED` is `true` and the string is smaller than the last string
+    /// added; in this case, the builder is not modified.
+    pub fn try_push(&mut self, string: impl Borrow<I>) -> anyhow::Result<()> {
+        let string = string.borrow().as_ref();
+        if SORTED && self.last_str.as_slice() > string {
+            anyhow::bail!(
+                "Strings must be sorted in ascending order when building a sorted RearCodedList. Got '{}' after '{}'",
+                String::from_utf8_lossy(string),
+                String::from_utf8_lossy(&self.last_str)
+            );
+        }
+        self.push_impl(string);
+        Ok(())
     }
 
     /// Appends all the elements from a [`Lender`] to the end of the list.
@@ -1405,7 +1454,7 @@ mod epserde_impl {
         let mut builder = RearCodedListBuilder::<I, SORTED>::new(ratio);
         info!("Counting strings...");
         while let Some(s) = lender.next()? {
-            builder.push(s.borrow());
+            builder.try_push(s.borrow())?;
             len += 1;
             byte_len += builder.data.len();
             builder.data.clear();
@@ -1455,9 +1504,16 @@ mod epserde_impl {
         let mut buf_writer = std::io::BufWriter::new(dst_file);
         // Flush explicitly: errors during the implicit flush on drop would be
         // silently discarded, reporting success on a truncated file.
-        let written = serialize(&mut buf_writer)?;
-        std::io::Write::flush(&mut buf_writer)?;
-        Ok(written)
+        let result = serialize(&mut buf_writer).and_then(|written| {
+            std::io::Write::flush(&mut buf_writer)?;
+            Ok(written)
+        });
+        if result.is_err() {
+            // Do not leave a truncated file behind
+            drop(buf_writer);
+            let _ = std::fs::remove_file(filename.as_ref());
+        }
+        result
     }
 
     /// Serializes to a stream a rear-coded list of strings directly from a lender of `AsRef<str>`.
@@ -1961,6 +2017,19 @@ mod tests {
         assert_eq!(rcl.len(), 2);
         assert_eq!(rcl.get(0), b"hello".to_vec());
         assert_eq!(rcl.get(1), b"world".to_vec());
+    }
+
+    #[test]
+    fn test_try_push_rejects_unsorted() {
+        let mut builder = RearCodedListBuilder::<str, true>::new(4);
+        builder.try_push("b").unwrap();
+        assert!(builder.try_push("a").is_err());
+        // The failed push leaves the builder unchanged
+        builder.try_push("c").unwrap();
+        let rcl = builder.build();
+        assert_eq!(rcl.len(), 2);
+        assert_eq!(rcl.get(0), "b");
+        assert_eq!(rcl.get(1), "c");
     }
 
     #[test]

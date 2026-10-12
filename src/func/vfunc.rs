@@ -29,9 +29,10 @@ use std::borrow::Borrow;
 /// This structure is based on “[ε-Cost Sharding: Scaling Hypergraph-Based
 /// Static Functions and Filters to Trillions of Keys]”. Space overhead with
 /// respect to the optimum depends on the [`ShardEdge`] type. The default is
-/// [`FuseLge3Shards`], which provides 10.5% space overhead for large key sets
-/// (above a few million keys), growing up to 12.5% going towards smaller key
-/// sets (and to 23% below 5000 keys). Details on other possible [`ShardEdge`]
+/// [`FuseLge3Shards`], which provides a space overhead of about 11% for large
+/// key sets (above a hundred million keys), growing up to about 13% going
+/// towards smaller key sets (and to about 25% below 5000 keys). Details on
+/// other possible [`ShardEdge`]
 /// implementations can be found in the [`shard_edge`] module documentation.
 ///
 /// Instances of this structure are immutable; they are built using [`try_new`]
@@ -111,7 +112,7 @@ use std::borrow::Borrow;
 /// [`LcpMmphfInt`]: crate::func::LcpMmphfInt
 /// [`LcpMmphf`]: crate::func::LcpMmphf
 #[doc(alias("static", "function", "retrieval"))]
-#[derive(Debug, Clone, MemSize, MemDbg)]
+#[derive(Debug, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(phantom(K, S)))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct VFunc<K: ?Sized, D, S = [u64; 2], E = FuseLge3Shards> {
@@ -119,17 +120,24 @@ pub struct VFunc<K: ?Sized, D, S = [u64; 2], E = FuseLge3Shards> {
     pub(crate) seed: u64,
     pub(crate) num_keys: usize,
     pub(crate) data: D,
-    pub(crate) _marker: std::marker::PhantomData<(*const K, S)>,
+    // A function-pointer marker does not own K and S, so the auto traits
+    // depend only on the other fields, and it works for unsized K
+    pub(crate) _marker: std::marker::PhantomData<(fn() -> K, fn() -> S)>,
 }
 
-// SAFETY: K and S occur only inside _marker, so no value of either type is
-// ever stored: the auto traits depend just on the remaining fields. The
-// *const K in the marker is a Sized placeholder standing in for a possibly
-// unsized K (only the last element of a tuple may be unsized), not a pointer
-// we own; without these impls its !Send/!Sync-ness would propagate to VFunc
-// and to everything containing it.
-unsafe impl<K: ?Sized, D: Send, S, E: Send> Send for VFunc<K, D, S, E> {}
-unsafe impl<K: ?Sized, D: Sync, S, E: Sync> Sync for VFunc<K, D, S, E> {}
+// Clone is implemented by hand, as a derived implementation would require K
+// to implement Clone, too (e.g., str is not Clone)
+impl<K: ?Sized, D: Clone, S, E: Clone> Clone for VFunc<K, D, S, E> {
+    fn clone(&self) -> Self {
+        Self {
+            shard_edge: self.shard_edge.clone(),
+            seed: self.seed,
+            num_keys: self.num_keys,
+            data: self.data.clone(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
 
 impl<K: ?Sized, D, S, E> VFunc<K, D, S, E> {
     /// Returns the number of keys in the function.

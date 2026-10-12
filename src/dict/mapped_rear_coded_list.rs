@@ -191,9 +191,17 @@ use value_traits::slices::SliceByValue;
 /// [`RearCodedListBuilder`]: crate::dict::RearCodedListBuilder
 /// [`from_parts`]: MappedRearCodedList::from_parts
 /// [module documentation]: crate::dict::mapped_rear_coded_list
-#[derive(Debug, Clone, MemSize, MemDbg)]
+#[derive(Debug, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(phantom(I, O)))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+// The default bounds would require I: Deserialize, which fails for I = str
+#[cfg_attr(
+    feature = "serde",
+    serde(bound(
+        serialize = "RearCodedList<I, O, D, P, SORTED>: serde::Serialize, Q: serde::Serialize",
+        deserialize = "RearCodedList<I, O, D, P, SORTED>: serde::Deserialize<'de>, Q: serde::Deserialize<'de>"
+    ))
+)]
 pub struct MappedRearCodedList<
     I: ?Sized,
     O,
@@ -204,6 +212,19 @@ pub struct MappedRearCodedList<
 > {
     rcl: RearCodedList<I, O, D, P, SORTED>,
     map: Q,
+}
+
+// Clone is implemented by hand, as a derived implementation would require I
+// to implement Clone, too (e.g., str is not Clone)
+impl<I: ?Sized, O, D: Clone, P: Clone, Q: Clone, const SORTED: bool> Clone
+    for MappedRearCodedList<I, O, D, P, Q, SORTED>
+{
+    fn clone(&self) -> Self {
+        Self {
+            rcl: self.rcl.clone(),
+            map: self.map.clone(),
+        }
+    }
 }
 
 /// A mapped rear-coded list of byte sequences, returning `Vec<u8>` on access,
@@ -417,6 +438,10 @@ where
 
     /// Creates a new lender over the rear-coded list starting from the given
     /// position.
+    ///
+    /// # Panics
+    ///
+    /// If `from` is greater than the length of the list.
     pub fn new_from(prcl: &'a MappedRearCodedList<I, O, D, P, Q, SORTED>, from: usize) -> Self {
         assert!(
             from <= prcl.len(),

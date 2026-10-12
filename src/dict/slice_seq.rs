@@ -23,6 +23,7 @@ use crate::traits::{IndexedSeq, IntoIteratorFrom, Types};
 pub struct SliceSeq<O: PartialEq + Copy, A: AsRef<[O]>>(A, std::marker::PhantomData<O>);
 
 impl<O: PartialEq + Copy, A: AsRef<[O]>> SliceSeq<O, A> {
+    /// Creates a new indexed sequence exhibiting the given slice.
     #[must_use]
     pub fn new(slice: A) -> Self {
         Self(slice, std::marker::PhantomData)
@@ -71,6 +72,7 @@ impl<O: PartialEq + Copy, A: AsRef<[O]>> IndexedSeq for SliceSeq<O, A> {
 }
 
 impl<O: PartialEq + Copy, A: AsRef<[O]>> SliceSeq<O, A> {
+    /// Returns an iterator over the values of the sequence.
     pub fn iter(&self) -> std::iter::Copied<std::slice::Iter<'_, O>> {
         self.0.as_ref().iter().copied()
     }

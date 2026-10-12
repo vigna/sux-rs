@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-//! Experiment: build CompVFunc across sizes with uniform(0..256)
-//! and Zipf(1, 1_000_000), logging shard/entropy/overhead details.
+//! Experiment: build CompVFunc across sizes with values uniform in
+//! [0 . . 256) and Zipf(1, 1_000_000), logging shard/entropy/overhead
+//! details.
 
 #[cfg(target_pointer_width = "64")]
 use dsi_progress_logger::{ProgressLog, ProgressLogger};

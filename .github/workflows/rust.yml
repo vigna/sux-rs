@@ -20,7 +20,7 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Clippy (no default features)
         run: cargo clippy --all-targets --no-default-features -- -D warnings
-      - name: Clippy (all features except no_logging)
+      - name: Clippy (all stable features)
         run: cargo clippy --all-targets --features rayon,flate2,zstd,clap,cli,fuzz,mwhc,deko,serde,epserde,mmap,slow_tests -- -D warnings
 
   msrv:
@@ -32,7 +32,7 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.85.0
-      - name: Check (MSRV, all features except no_logging)
+      - name: Check (MSRV, all stable features)
         run: cargo check --all-targets --features rayon,flate2,zstd,clap,cli,fuzz,mwhc,deko,serde,epserde,mmap,slow_tests
 
   build:
@@ -88,7 +88,7 @@ jobs:
 
       - name: Generate code coverage
         run: |
-          cargo +nightly tarpaulin --verbose --engine llvm --features rayon,flate2,zstd,clap,cli,fuzz,mwhc,deko,serde,epserde,mmap --workspace --out Lcov
+          cargo +nightly tarpaulin --verbose --engine llvm --timeout 600 --features rayon,flate2,zstd,clap,cli,fuzz,mwhc,deko,serde,epserde,mmap --workspace --out Lcov
 
       - name: Coveralls
         uses: coverallsapp/github-action@v2

@@ -93,7 +93,7 @@ fn bench_query(c: &mut Criterion) {
 
             // Single-shot wall-clock build timing — reported here
             // because Criterion's per-iteration construction harness
-            // is run only at the small size (see `bench_construction`),
+            // is run only at the small size (see bench_construction),
             // and for 100M keys the amortization cost would be
             // impractical.
             let t0 = Instant::now();
@@ -141,7 +141,7 @@ fn bench_construction(c: &mut Criterion) {
         // Criterion timing loop (with ≥10 iterations for statistical
         // stability) is impractical. For the large size we instead
         // report a single-shot wall-clock build time via the eprintln
-        // in `bench_query`.
+        // in bench_query.
         let n = 1_000_000;
         let values = gen_fn(n);
 

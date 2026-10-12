@@ -122,7 +122,7 @@ fn test_sparse_builder_too_many_values() {
 #[should_panic]
 fn test_sparse_builder_too_few_values() {
     // The documented panic on building with fewer values than declared is
-    // enforced indirectly by the Elias-Fano builder.
+    // enforced indirectly by the Elias–Fano builder.
     let mut builder = partial_array::new_sparse(10, 2);
 
     builder.set(2, "only");
@@ -374,7 +374,7 @@ fn test_serialize() {
 }
 
 /// `new_sparse` must panic (rather than silently overflow) when the underlying
-/// Elias-Fano structures would exceed `usize` in length. `usize::MAX` overflows
+/// Elias–Fano structures would exceed `usize` in length. `usize::MAX` overflows
 /// the high-bit length computation before any allocation, so the test is cheap
 /// and portable to 32-bit targets.
 #[test]

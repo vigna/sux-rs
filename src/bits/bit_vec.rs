@@ -634,6 +634,10 @@ impl<W: Word> BitVec<Vec<W>> {
     ///
     /// Unlike [`Vec::append`], `other` is not drained: its contents are
     /// copied into `self`.
+    ///
+    /// # Panics
+    ///
+    /// If the resulting length overflows `usize`.
     pub fn append<B2: AsRef<[W]>>(&mut self, other: &BitVec<B2>) {
         let other_len = other.len;
         if other_len == 0 {
@@ -724,6 +728,8 @@ impl<W: Word> BitVec<Vec<W>> {
         unsafe { BitVec::from_raw_parts(self.bits.into_boxed_slice(), self.len) }
     }
 
+    /// Creates a new zero-initialized bit vector of given length with a
+    /// padding word at the end.
     #[deprecated(note = "Use `BitVec<Box<[W]>>::new_padded` instead")]
     pub fn new_padded(len: usize) -> BitVec<Box<[W]>> {
         let n_of_words = len.div_ceil(W::BITS as usize);
@@ -774,11 +780,14 @@ impl<W: Word> FromIterator<bool> for BitVec<Vec<W>> {
     }
 }
 
-impl<B: ToOwned> BitVec<B> {
-    /// Returns a copy of this bit vector with an owned backend.
-    pub fn to_owned(&self) -> BitVec<<B as ToOwned>::Owned> {
+impl<B: Backend<Word: Word> + AsRef<[B::Word]>> BitVec<B> {
+    /// Returns a copy of this bit vector with a [`Vec`] backend.
+    ///
+    /// This method works with every backend, including borrowed ones: for
+    /// example, it turns a `BitVec<&[usize]>` into a `BitVec<Vec<usize>>`.
+    pub fn to_owned(&self) -> BitVec<Vec<B::Word>> {
         BitVec {
-            bits: self.bits.to_owned(),
+            bits: self.bits.as_ref().to_vec(),
             len: self.len,
         }
     }
@@ -1035,6 +1044,31 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + AsMut<[B::Word]>> SliceByValueM
         // passes a compile-time constant, and ties my hand-rolled
         // branchless form on random-runtime values.
         unsafe { self.set_unchecked(index, value != B::Word::ZERO) }
+    }
+
+    // The default implementations of the following two methods would
+    // silently map any nonzero value to a set bit, as set_value_unchecked
+    // does; as for set_value, we panic as a width-one BitFieldVec would.
+
+    #[inline(always)]
+    fn replace_value(&mut self, index: usize, value: B::Word) -> B::Word {
+        panic_if_out_of_bounds!(index, self.len);
+        panic_if_value!(value, B::Word::ONE, 1);
+        unsafe { self.replace_value_unchecked(index, value) }
+    }
+
+    fn apply_in_place<F>(&mut self, mut f: F)
+    where
+        F: FnMut(Self::Value) -> Self::Value,
+    {
+        for idx in 0..self.len {
+            // SAFETY: idx < self.len
+            let value = unsafe { self.get_value_unchecked(idx) };
+            let new_value = f(value);
+            panic_if_value!(new_value, B::Word::ONE, 1);
+            // SAFETY: idx < self.len
+            unsafe { self.set_value_unchecked(idx, new_value) };
+        }
     }
 
     type ChunksMut<'a>

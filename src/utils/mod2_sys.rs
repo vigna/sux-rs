@@ -115,6 +115,11 @@ impl<W: Word> Modulo2Equation<W> {
         std::mem::swap(&mut self.vars, scratch);
     }
 
+    /// Adds `other` into `self`.
+    ///
+    /// The variables of `self` become the symmetric difference of the
+    /// variables of the two equations, and the constant term becomes the XOR
+    /// of the two constant terms.
     pub fn add(&mut self, other: &Modulo2Equation<W>) {
         let mut scratch = Vec::new();
         self.add_into(other, &mut scratch);
@@ -141,6 +146,7 @@ impl<W: Word> Modulo2Equation<W> {
 }
 
 impl<W: Word> Modulo2System<W> {
+    /// Creates a new system with `num_vars` variables and no equations.
     pub fn new(num_vars: usize) -> Self {
         Modulo2System {
             num_vars,
@@ -148,10 +154,12 @@ impl<W: Word> Modulo2System<W> {
         }
     }
 
+    /// Returns the number of variables.
     pub const fn num_vars(&self) -> usize {
         self.num_vars
     }
 
+    /// Returns the number of equations.
     pub fn num_equations(&self) -> usize {
         self.equations.len()
     }
@@ -188,6 +196,10 @@ impl<W: Word> Modulo2System<W> {
     }
 
     /// Checks if a given solution satisfies the system of equations.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the length of `solution` is not the number of variables.
     pub fn check(&self, solution: &[W]) -> bool {
         assert_eq!(
             solution.len(),
@@ -316,7 +328,14 @@ impl<W: Word> Modulo2System<W> {
 
     /// Solves the system using [lazy Gaussian elimination].
     ///
+    /// # Panics
+    ///
+    /// This method can panic only if the safety requirements of
+    /// [`from_parts`] have been violated (e.g., if an equation contains a
+    /// variable outside the system).
+    ///
     /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
+    /// [`from_parts`]: Modulo2System::from_parts
     pub fn lazy_gaussian_elimination(&mut self) -> Result<Vec<W>> {
         let num_vars = self.num_vars;
         let num_equations = self.equations.len();

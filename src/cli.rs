@@ -45,6 +45,11 @@ pub use crate::utils::lenders::{AnyLineLender, Decompression};
 ///
 /// The default level is `info`; use the `RUST_LOG` environment variable to
 /// change it.
+///
+/// # Panics
+///
+/// Logging panics if the time elapsed since initialization cannot be
+/// represented by a [`jiff::Span`], which in practice never happens.
 pub fn init_env_logger() -> Result<()> {
     use jiff::{
         SpanRound,
@@ -217,6 +222,10 @@ pub fn reservoir_sample(
 ///
 /// If `queries` has fewer than `n` elements, the queries are repeated
 /// in a round-robin fashion so that exactly `n` entries are produced.
+///
+/// # Panics
+///
+/// Panics if `queries` is empty.
 pub fn pack_strings(queries: &[String], n: usize) -> (Vec<u8>, Vec<usize>) {
     assert!(!queries.is_empty(), "no queries to pack");
     let mut packed = Vec::new();
@@ -319,9 +328,13 @@ fn short_type_name<T: ?Sized>() -> String {
 /// Hash types for signed functions.​
 #[derive(clap::ValueEnum, Clone, Debug)]
 pub enum HashTypes {
+    /// 8-bit hashes.​
     U8,
+    /// 16-bit hashes.​
     U16,
+    /// 32-bit hashes.​
     U32,
+    /// 64-bit hashes.​
     U64,
 }
 
@@ -635,6 +648,10 @@ pub const INCR: usize = 0x9e3779b9;
 /// Runs `repeats` times a benchmark performing `n` operations, printing on
 /// standard error the time per operation of each run and, at the end, the
 /// minimum, median, maximum, and average time.
+///
+/// # Panics
+///
+/// Panics if `repeats` is zero.
 pub fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
     let mut timings = Vec::with_capacity(repeats);
     for _ in 0..repeats {

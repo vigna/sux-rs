@@ -1,3 +1,10 @@
+/*
+ * SPDX-FileCopyrightText: 2024 Michele Andreata
+ * SPDX-FileCopyrightText: 2024 Sebastiano Vigna
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
+ */
+
 use std::hint::black_box;
 
 use crate::utils::*;

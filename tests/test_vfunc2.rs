@@ -18,7 +18,7 @@ use sux::func::VFunc2;
 #[test]
 fn test_vfunc2_wide_u128_values() -> Result<()> {
     let low: u128 = 5;
-    let high: u128 = (1u128 << 64) | 5; // same low 64 bits as `low`
+    let high: u128 = (1u128 << 64) | 5; // same low 64 bits as low
     let n = 2000usize;
     let keys: Vec<u64> = (0..n)
         .map(u64::try_from)

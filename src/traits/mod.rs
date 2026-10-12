@@ -116,11 +116,21 @@ pub enum UnalignedConversionError {
     /// The bit width does not satisfy the constraints for single unaligned
     /// reads on a `word_bits`-bit word (it must be at most `word_bits - 6`,
     /// exactly `word_bits - 4`, or exactly `word_bits`).
-    InvalidBitWidth { bit_width: usize, word_bits: u32 },
+    InvalidBitWidth {
+        /// The offending bit width.
+        bit_width: usize,
+        /// The number of bits of the word type.
+        word_bits: u32,
+    },
     /// The bit width does not satisfy the constraints for arbitrary-position
     /// unaligned reads on a `word_bits`-bit word (it must be at most
     /// `word_bits - 7`).
-    InvalidPosition { bit_width: usize, word_bits: u32 },
+    InvalidPosition {
+        /// The offending bit width.
+        bit_width: usize,
+        /// The number of bits of the word type.
+        word_bits: u32,
+    },
     /// A collection contains one or more values whose bit widths do not satisfy
     /// the constraints for unaligned reads.
     MixedBitWidths,
@@ -238,7 +248,9 @@ pub trait TryIntoUnaligned {
 /// [`ZERO`]: Self::ZERO
 /// [`ONE`]: Self::ONE
 pub trait Word: PrimitiveUnsigned {
+    /// The value zero.
     const ZERO: Self;
+    /// The value one.
     const ONE: Self;
 }
 

@@ -337,3 +337,33 @@ fn test_with_inv_oversized_log() {
     let bits: AddNumBits<_> = BitVec::<Vec<usize>>::new(128).into();
     let _ = SelectAdapt::<_>::with_inv(bits, usize::BITS as usize, 0);
 }
+
+/// A very sparse vector with a large inventory span must not allocate a
+/// subinventory sized for the span: the subinventory is capped by the number
+/// of ones. Selection must remain correct.
+#[test]
+fn test_sparse_large_span_subinventory() {
+    use mem_dbg::{MemSize, SizeFlags};
+    let mut rng = SmallRng::seed_from_u64(0);
+    for num_ones in [1, 2, 3, 5, 17, 100] {
+        let len = 1 << 20;
+        let mut bv = BitVec::<Vec<usize>>::new(len);
+        let mut pos: Vec<usize> = (0..num_ones).map(|_| rng.random_range(0..len)).collect();
+        pos.sort();
+        pos.dedup();
+        for &p in &pos {
+            bv.set(p, true);
+        }
+        let bits: AddNumBits<_> = bv.into();
+        // log2_ones_per_inventory = 26 would allow 2^24 words per subinventory
+        let select = SelectAdapt::<_>::with_inv(bits, 26, 24);
+        for (i, &p) in pos.iter().enumerate() {
+            assert_eq!(select.select(i), Some(p));
+        }
+        assert_eq!(select.select(pos.len()), None);
+        // The bit vector is 128 KiB; the selection structure must not add
+        // more than a few words per one
+        let size = select.mem_size(SizeFlags::default());
+        assert!(size < (len / 8) + 4096, "size {size} for {num_ones} ones");
+    }
+}

@@ -14,12 +14,16 @@
   the signature of each key; the new `phastr` CLI utility builds (possibly
   signed) `PHastR` functions.
 
-- New `VFunc2` and `Lcp2Mmphf` structures analogous to `VFunc` and `LcpMmphf`,
-  but performing compression by storing frequent values using less bits.
-
 - New `CompVFunc` compressed static function, using the algorithmic
   ideas of `VFunc` but representing data using the zero-th order entropy
   (i.e., values are represented by a Huffman code).
+
+- New `vfunc2` and `comp_vfunc` CLI utilities, and a `--shard-edge` option
+  of the utilities building functions and filters selecting the
+  `ShardEdge` implementation.
+
+- New `RearCodedListBuilder::try_push` method returning an error, instead of
+  panicking, when the strings of a sorted list are out of order.
 
 - New `VBuilder::retry_prob` setter (and `--retry-prob` CLI option) bounding
   the probability that a construction attempt must be retried because of
@@ -34,9 +38,6 @@
   implemented much more efficiently for `EliasFano`.
 
 - Several new trait implementations for `BitVec`, such as `SliceByValue`.
-
-- Iterator from successors and predecessors in indexed dictionaries have
-  been extracted into separate traits.
 
 - All structures support `MemSize`.
 
@@ -163,6 +164,59 @@
   `BuildError::UnsolvableShard` instead of panicking, and too large shards
   return the new `BuildError::MaxShardTooBig`.
 
+- The construction of functions and filters based on `Fuse3NoShards` and
+  `Fuse3Shards` no longer fails at some sizes below 100,000 keys: the
+  rounding of the number of segments could leave the graph below the
+  peelability threshold, so that almost all attempts failed (e.g., between
+  11,464 and 11,521 keys up to 40% of the constructions returned
+  `BuildError::UnsolvableShard`). The same happened to the default
+  `LcpMmphf` around 184,000 keys, as its second function uses
+  `Fuse3NoShards`. The number of segments is now increased, if necessary,
+  to reach an empirical peelability threshold, and the ad hoc corrections
+  to the expansion factor at 12,318–12,371 and 37,435–37,453 keys have been
+  removed.
+
+- The construction of `CompVFunc` no longer fails on distributions with
+  rare values (e.g., 1% of escaped values at one million keys): as the edges
+  of a key are correlated, the graph is now sized taking into account the
+  distribution of codeword lengths, and each failed attempt makes the next
+  graph sparser, so that construction eventually succeeds.
+
+- Constructions using lazy Gaussian elimination (`FuseLge3Shards` and
+  `FuseLge3FullSigs` below 800,000 keys) allow up to 1000 attempts: on some
+  key sets of a few dozen keys more than 95% of the attempts fail because of
+  duplicate edges, so the limit of 100 attempts was reached in about 1% of
+  the constructions.
+
+- `Mwhc3NoShards` (`mwhc` feature) generated correlated edges, as the third
+  vertex was derived from the XOR of the words generating the first two, and
+  with two keys it always generated duplicate edges, so construction failed.
+
+- The construction of fuse-graph-based structures with huge key sets
+  (e.g., `FuseLge3FullSigs` beyond a few dozen trillion keys) could create
+  shards needing more than 2³² vertices, failing only after hashing all keys;
+  the number of shards is now bounded from below, and construction fails
+  immediately if no admissible number of shards exists.
+
+- Structures with unsized keys, such as `VFunc<str>`, `CompVFunc<str>`,
+  `VFilter<str>`, `LcpMmphfStr`, `Lcp2MmphfStr`, `RearCodedListStr`, and
+  `MappedRearCodedListStr`, implement `Clone`.
+
+- `MappedRearCodedListStr` can be deserialized with serde.
+
+- The construction of `SelectSmall`, `SelectZeroSmall`, and `Select9` no
+  longer overflows on 32-bit targets for bit vectors with almost `usize::MAX`
+  ones (or zeros).
+
+- `SelectAdapt` and `SelectZeroAdapt` no longer allocate huge, almost empty
+  subinventories on very sparse vectors with a large inventory span.
+
+- `bit_field_vec!` evaluates its length argument once.
+
+- The `rcl` CLI utility reports unsorted input as an error instead of
+  panicking, and `RearCodedList` serialization functions writing to a file
+  remove it on error instead of leaving a truncated file.
+
 - `bit_vec!` no longer fails to compile on lists starting with expressions
   such as `*x`, `(…)`, or `unsafe {…}`, and `bit_field_vec!` evaluates each
   element once.
@@ -179,6 +233,12 @@
 ### Improved
 
 - Structured logging for structures with substructures.
+
+- `BitVecOps::iter_ones` and `BitVecOps::iter_zeros` stop at the length of
+  the bit vector rather than scanning the whole backend.
+
+- Error messages of lenders opening files now include the path, and those of
+  the Elias–Fano builders the offending values.
 
 - Signing is parallel, and possibly from the store, when possible; in
   particular, `SignedFunc` constructors with `BitFieldVec` hashes sign in
@@ -212,6 +272,61 @@
   and verification instead of hashing byte-sequence keys twice.
 
 ### Changed
+
+- `ShardEdge::set_up_corr_graphs` has two new arguments: a statistic of the
+  correlation of the edges of each key, and the number of previous failed
+  construction attempts.
+
+- `ShardEdge` is now an unsafe trait, as the builders rely on its
+  implementations to generate indices within bounds and to provide a sort
+  type with the same layout as `SigVal`; `FuseLge3NoShards` has been
+  removed.
+
+- The sequential constructors of `VFunc`, `VFunc2`, `CompVFunc`, `VFilter`,
+  and of the corresponding signed structures no longer take the number of
+  keys as a parameter.
+
+- The `no_logging` feature has been removed.
+
+- The `func::vfunc2` module is now private (`VFunc2` is still re-exported by
+  `func`).
+
+- The functions `transmute_(vec|boxed_slice)_(from|into)_atomic` return an
+  error, rather than copying, when the alignment of the target type cannot be
+  satisfied; since they consume their input, the error (the new generic
+  `DifferentAlignmentError`) returns it, so that the caller can fall back to
+  copying. Correspondingly, most conversion methods on bit(-field) vectors are
+  now fallible (e.g., `TryFrom`). The new error types `InsufficientAlignmentError`
+  and `AlignmentInfo` describe the alignment problem, and
+  `CannotCastToAtomicError` has been removed.
+
+- `CompIntList::into_inner` returns a pair `(B, D)` of backends.
+
+- `BitVec::get_value_unaligned` and `BitVec::get_value_unaligned_unchecked`
+  are now methods of `BitVecOps`.
+
+- Iterators from successors and predecessors in indexed dictionaries have been
+  extracted into the separate traits `SuccIter` and `PredIter`.
+
+- `BitVec::to_owned` returns a `BitVec` with a `Vec` backend for every
+  backend; previously, for borrowed backends it returned a borrowed copy.
+
+- `BitVec::replace_value` and `BitVec::apply_in_place` panic if a value is
+  not zero or one, as `BitVec::set_value` and width-one `BitFieldVec`s do;
+  previously, any nonzero value set the bit.
+
+- `Mwhc3NoShards` (`mwhc` feature) generates edges differently, so
+  structures based on it serialized by previous versions must be rebuilt (see
+  Fixed).
+
+- The `mmap` feature implies `epserde`, and `mem_usage` requires only the
+  `clap` feature.
+
+- Dependencies: `lender` 0.8, `value-traits` 0.3, `epserde` 0.13.2,
+  `serde_arrays` 0.2, and `tempfile` at least 3.11. With `epserde` 0.13.2
+  the phantom key types of `VFunc`, `CompVFunc`, and `PHastR` are
+  function-pointer markers, so their `Send` and `Sync` implementations are
+  derived automatically, rather than being unsafe manual implementations.
 
 - `IntoBackIteratorFrom::into_iter_back_from(from)` now excludes position
   `from`, yielding first the element of position `from` – 1, like
@@ -521,13 +636,9 @@ bit_field_slice::*` to use the traits.
   been replaced by four specific, safe functions
   `transmute_(vec|boxed_slice)_(from|into)_atomic` that take care of the case of
   a transmute from a non-atomic type into an atomic type with strictly greater
-  alignment requirements. The functions return a `Result`, and an error is
-  returned when alignment requirements cannot be satisfied. Correspondingly,
-  most conversion methods on bit(-field) vectors are now fallible (e.g.,
-  `TryFrom`). Since these conversions consume their input, on failure the
-  error returns it in its second field, so no data is lost and the caller can
-  fall back to copying the content: `DifferentAlignmentError` is now generic
-  over the type of the returned input (with default `()`).
+  alignment requirements. In this case, we create a correctly aligned copy. We
+  cannot do the same for references, so in that case what was previously a
+  `From` implementation has been replaced by a `TryFrom` implementation.
 
 - The iterator on atomic bit vectors no longer takes an exclusive reference.
 

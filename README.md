@@ -159,32 +159,40 @@ memory mapping in ε-serde is provided by the `mmap` feature.
 All structures in this crate support serialization with [serde]. Support is
 gated by the feature `serde`.
 
+Note that, both with ε-serde and with serde, the serialized form of some
+structures depends on the endianness and on the pointer width of the platform
+(for example, because of counters packed natively into words of type
+`usize`): serialized data should be read on a platform with the same
+endianness and pointer width.
+
 ## `MemDbg`/`MemSize` support
 
 All structures in this crate support the [`MemDbg`] and [`MemSize`] traits from
 the [`mem_dbg`] crate, which provide convenient facilities for inspecting memory
 usage and debugging memory-related issues. For example, this is the output of
-`mem_dbg()` on an [`EliasFano`] instance:
+`mem_dbg()` on an [`EliasFano`] instance with ten million values:
 
 ```text
-11.15 MB 100.00% ⏺: sux::dict::elias_fano::EliasFano<sux::rank_sel::select_zero_adapt_const::SelectZeroAdaptConst<sux::rank_sel::select_adapt_const::SelectAdaptConst<sux::bits::bit_vec::BitVec<alloc::boxed::Box<[usize]>>>>>
-7.500 MB  67.24% ├╴low_bits: sux::bits::bit_field_vec::BitFieldVec<usize, alloc::boxed::Box<[usize]>>
-7.500 MB  67.24% │ ├╴bits: alloc::boxed::Box<[usize]>
+11.60 MB 100.00% ⏺: sux::dict::elias_fano::EliasFano<usize, sux::rank_sel::select_zero_adapt_const::SelectZeroAdaptConst<sux::rank_sel::select_adapt_const::SelectAdaptConst<sux::bits::bit_vec::BitVec<alloc::boxed::Box<[usize]>>, alloc::boxed::Box<[usize]>, 11, 3>, alloc::boxed::Box<[usize]>, 11, 3>>
+    8  B   0.00% ├╴n: usize
+    8  B   0.00% ├╴u: usize
+    8  B   0.00% ├╴l: usize
+    8  B   0.00% ├╴first_val: usize
+    8  B   0.00% ├╴last_val: usize
+7.500 MB  64.63% ├╴low_bits: sux::bits::bit_field_vec::BitFieldVec<alloc::boxed::Box<[usize]>>
+7.500 MB  64.63% │ ├╴bits: alloc::boxed::Box<[usize]>
     8  B   0.00% │ ├╴bit_width: usize
     8  B   0.00% │ ├╴mask: usize
     8  B   0.00% │ ╰╴len: usize
-3.654 MB  32.76% ├╴high_bits: sux::rank_sel::select_zero_adapt_const::SelectZeroAdaptConst<sux::rank_sel::select_adapt_const::SelectAdaptConst<sux::bits::bit_vec::BitVec<alloc::boxed::Box<[usize]>>>>
-3.379 MB  30.29% │ ├╴bits: sux::rank_sel::select_adapt_const::SelectAdaptConst<sux::bits::bit_vec::BitVec<alloc::boxed::Box<[usize]>>>
-3.203 MB  28.72% │ │ ├╴bits: sux::bits::bit_vec::BitVec<alloc::boxed::Box<[usize]>>
-3.203 MB  28.72% │ │ │ ├╴bits: alloc::boxed::Box<[usize]>
-    8  B   0.00% │ │ │ ╰╴len: usize
-175.8 kB   1.58% │ │ ├╴inventory: alloc::boxed::Box<[usize]>
-   16  B   0.00% │ │ ╰╴spill: alloc::boxed::Box<[usize]>
-274.7 kB   2.46% │ ├╴inventory: alloc::boxed::Box<[usize]>
-   16  B   0.00% │ ╰╴spill: alloc::boxed::Box<[usize]>
-    8  B   0.00% ├╴n: usize
-    8  B   0.00% ├╴u: usize
-    8  B   0.00% ╰╴l: usize
+4.104 MB  35.37% ╰╴high_bits: sux::rank_sel::select_zero_adapt_const::SelectZeroAdaptConst<sux::rank_sel::select_adapt_const::SelectAdaptConst<sux::bits::bit_vec::BitVec<alloc::boxed::Box<[usize]>>, alloc::boxed::Box<[usize]>, 11, 3>, alloc::boxed::Box<[usize]>, 11, 3>
+3.555 MB  30.63%   ├╴bits: sux::rank_sel::select_adapt_const::SelectAdaptConst<sux::bits::bit_vec::BitVec<alloc::boxed::Box<[usize]>>, alloc::boxed::Box<[usize]>, 11, 3>
+3.203 MB  27.60%   │ ├╴bits: sux::bits::bit_vec::BitVec<alloc::boxed::Box<[usize]>>
+3.203 MB  27.60%   │ │ ├╴bits: alloc::boxed::Box<[usize]>
+    8  B   0.00%   │ │ ╰╴len: usize
+351.6 kB   3.03%   │ ├╴inventory: alloc::boxed::Box<[usize]>
+   16  B   0.00%   │ ╰╴spill: alloc::boxed::Box<[usize]>
+549.4 kB   4.73%   ├╴inventory: alloc::boxed::Box<[usize]>
+   16  B   0.00%   ╰╴spill: alloc::boxed::Box<[usize]>
 ```
 
 ## Binaries

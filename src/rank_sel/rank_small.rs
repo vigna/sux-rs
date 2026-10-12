@@ -39,7 +39,12 @@ use std::ops::Index;
 /// [`SelectZeroSmall`]: crate::rank_sel::SelectZeroSmall
 #[delegatable_trait(inline = "always")]
 pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
+    /// Returns the upper counters, that is, the 64-bit absolute cumulative
+    /// counts of ones before each block of 2³² bits.
     fn upper_counts(&self) -> &[u64];
+    /// Returns the block counters, each containing the number of ones before
+    /// the block, relative to the corresponding upper counter, and the
+    /// relative counters of its subblocks.
     fn counts(&self) -> &[Block32Counters<NUM_U32S, COUNTER_WIDTH>];
 }
 
@@ -64,14 +69,14 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 ///   these counters will be very few, their additional space is negligible, and
 ///   they will usually be accessed without cache misses.
 ///
-/// On some recent architecture, variants of this family are almost as fast as
-/// [`Rank9`] (and sometimes faster). An associated family of selection
-/// structures is provided by [`SelectSmall`] and [`SelectZeroSmall`]
+/// On some recent architectures, variants of this family are almost as fast
+/// as [`Rank9`] (and sometimes faster). An associated family of selection
+/// structures is provided by [`SelectSmall`] and [`SelectZeroSmall`].
 ///
 /// The [`RankSmall`] variants are parameterized by the number of 32-bit words
 /// per block and by the size of the relative counters. Only certain
 /// combinations are possible, and to simplify construction we provide a
-/// [`rank_small`] macro that selects the correct combination. usually
+/// [`rank_small`] macro that selects the correct combination. Usually
 /// the default form of the macro is just what you need.
 ///
 /// This structure forwards several traits and [`Deref`]'s to its backend.
@@ -85,7 +90,7 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// `(2, 9)`, which are word-size-specific).
 ///
 /// The type parameter `B` is a bit-based [backend]; the remaining
-/// type parameter are internal and should always have their default values.
+/// type parameters are internal and should always have their default values.
 ///
 /// Presently we support the following combinations for `u64` words:
 ///

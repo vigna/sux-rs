@@ -41,7 +41,7 @@ use std::ops::Index;
 /// further optimization, leading to a speedup of about 5% (but your mileage
 /// may vary). However, the structure is no longer adaptive to the density of
 /// the bit vector, so you must be able to know the density in advance (as it
-/// happens, for example, for the high bits of the [Elias-Fano
+/// happens, for example, for the high bits of the [Elias–Fano
 /// representation of monotone sequences]). Moreover, the const parameter
 /// `LOG2_WORDS_PER_SUBINVENTORY` is no longer a maximum value, but rather
 /// an exact value.
@@ -148,7 +148,7 @@ use std::ops::Index;
 ///
 /// [`SelectAdapt`]: super::SelectAdapt
 /// [`SelectAdapt::with_inv`]: super::SelectAdapt::with_inv
-/// [Elias-Fano representation of monotone sequences]: crate::dict::EliasFano
+/// [Elias–Fano representation of monotone sequences]: crate::dict::EliasFano
 /// [`SelectZeroAdaptConst`]: super::SelectZeroAdaptConst
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]

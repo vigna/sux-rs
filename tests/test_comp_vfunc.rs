@@ -554,6 +554,8 @@ mod corr_graph_regime {
             num_keys: usize,
             max_shard_keys: usize,
             max_shard_edges: usize,
+            clump: f64,
+            num_failures: usize,
         ) -> (f64, bool) {
             assert_eq!(
                 num_keys, N,
@@ -564,6 +566,8 @@ mod corr_graph_regime {
                 num_keys,
                 max_shard_keys,
                 max_shard_edges,
+                clump,
+                num_failures,
             )
         }
         fn shard_high_bits(&self) -> u32 {

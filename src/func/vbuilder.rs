@@ -26,7 +26,6 @@ use rdst::*;
 use std::any::TypeId;
 use std::borrow::{Borrow, Cow};
 use std::marker::PhantomData;
-use std::mem::transmute;
 use std::ops::{BitXor, BitXorAssign};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -223,14 +222,17 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     ///
     /// Sharding is limited so that the probability that a shard contains two
     /// identical hyperedges, which forces a new construction attempt with a
-    /// different seed, is at most this value; in the injective regime of
-    /// [`FuseLge3Shards`] the same bound limits the probability of a
-    /// duplicate local signature. The value must lie in the half-open
-    /// interval (0 . . 1]; constructors return an error otherwise.
+    /// different seed, is at most this value. The bound does not cover
+    /// duplicate local signatures, which can occur only with huge key sets
+    /// and lead to [`BuildError::DuplicateLocalSignatures`] (see
+    /// [`FuseLge3FullSigs`](crate::func::shard_edge::FuseLge3FullSigs)). The
+    /// value must lie in the half-open interval (0 . . 1];
+    /// constructors return an error otherwise.
     ///
     /// The default is 0.05. Setting a larger bound will in general provide
     /// finer shards at the price of a higher probability of retrying the
-    /// construction with a new seed.
+    /// construction with a new seed: with values close to one, construction
+    /// might need many attempts, and fail if it exhausts them.
     #[setters(generate = true)]
     pub(crate) retry_prob: f64,
 
@@ -325,7 +327,8 @@ pub enum BuildError {
     /// help.
     #[error("Max shard too big after multiple attempts: try a larger eps")]
     MaxShardTooBig,
-    /// A shard was unsolvable on 100 construction attempts.
+    /// A shard was unsolvable on 100 construction attempts (1000 when using
+    /// [lazy Gaussian elimination](https://doi.org/10.1016/j.ic.2020.104517)).
     #[error("Unsolvable shard after multiple attempts")]
     UnsolvableShard,
     /// The number of values is different from the number of keys.
@@ -337,7 +340,12 @@ pub enum BuildError {
     /// more values than keys (in particular, it may be infinite), and the
     /// extra values are ignored.
     #[error("Mismatch between number of keys ({num_keys}) and number of values ({num_values})")]
-    MismatchedKeysAndValues { num_keys: usize, num_values: usize },
+    MismatchedKeysAndValues {
+        /// The number of keys.
+        num_keys: usize,
+        /// The number of values.
+        num_values: usize,
+    },
 }
 
 /// Transient error during the build, leading to trying with a different seed.
@@ -656,12 +664,21 @@ impl RetryState {
     /// or a [`SolveError::UnsolvableShard`] becomes fatal.
     const MAX_ATTEMPTS: u32 = 100;
 
+    /// The number of attempts after which a [`SolveError::UnsolvableShard`]
+    /// becomes fatal when using lazy Gaussian elimination.
+    ///
+    /// Lazy Gaussian elimination is used on small shards with small segments,
+    /// where duplicate edges are frequent: on some key sets of a few dozen
+    /// keys more than 95% of the attempts fail.
+    const MAX_LGE_ATTEMPTS: u32 = 1000;
+
     /// Returns the next seed to try.
     fn next_seed(&mut self) -> u64 {
         self.prng.random()
     }
 
-    /// Handles the result of a construction attempt.
+    /// Handles the result of a construction attempt; `lge` tells whether the
+    /// attempt used lazy Gaussian elimination.
     ///
     /// On success, returns `Ok(Some(r))`. On retryable error, logs a
     /// warning and returns `Ok(None)` (the caller should rewind its
@@ -669,6 +686,7 @@ impl RetryState {
     fn handle_solve_result<R>(
         &mut self,
         result: anyhow::Result<R>,
+        lge: bool,
         pl: &mut impl ProgressLog,
     ) -> anyhow::Result<Option<R>> {
         match result {
@@ -713,10 +731,14 @@ impl RetryState {
                     }
                     SolveError::UnsolvableShard => {
                         self.unsolvable_count += 1;
-                        if self.unsolvable_count >= Self::MAX_ATTEMPTS {
+                        let max_attempts = if lge {
+                            Self::MAX_LGE_ATTEMPTS
+                        } else {
+                            Self::MAX_ATTEMPTS
+                        };
+                        if self.unsolvable_count >= max_attempts {
                             pl.error(format_args!(
-                                "A shard was unsolvable on {} attempts",
-                                Self::MAX_ATTEMPTS
+                                "A shard was unsolvable on {max_attempts} attempts"
                             ));
                             return Err(BuildError::UnsolvableShard.into());
                         }
@@ -1081,9 +1103,11 @@ impl<
     /// expected number of keys, this method calls `attempt(self, seed,
     /// &mut state, pl)` with seeds drawn from a generator initialized with
     /// the [builder seed]. Retries continue for [`SolveError::UnsolvableShard`]
-    /// and [`SolveError::MaxShardTooBig`] (up to 100 attempts, after which
-    /// [`BuildError::UnsolvableShard`] or [`BuildError::MaxShardTooBig`],
-    /// respectively, is returned); if the third attempt still finds a
+    /// and [`SolveError::MaxShardTooBig`] (up to 100 attempts, or 1000
+    /// attempts for [`SolveError::UnsolvableShard`] when using lazy Gaussian
+    /// elimination, after which [`BuildError::UnsolvableShard`] or
+    /// [`BuildError::MaxShardTooBig`], respectively, is returned); if the
+    /// third attempt still finds a
     /// duplicate signature, [`BuildError::DuplicateKey`] is returned, and if
     /// it still finds a duplicate local signature,
     /// [`BuildError::DuplicateLocalSignatures`] is returned. Any other error
@@ -1109,7 +1133,8 @@ impl<
             let seed = rs.next_seed();
             let result = attempt(self, seed, &mut state, pl);
 
-            if let Some(r) = rs.handle_solve_result(result, pl)? {
+            // self.lge has been set by the attempt
+            if let Some(r) = rs.handle_solve_result(result, self.lge, pl)? {
                 pl.info(format_args!(
                     "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
                     start.elapsed().as_secs_f64(),
@@ -1899,15 +1924,20 @@ impl<
                                         // so the mutable reference does not violate
                                         // aliasing. The memory layout of SigVal<S, V>
                                         // and E::SortSigVal<V> is guaranteed compatible
-                                        // by the ShardEdge trait.
-                                        let shard = unsafe {
-                                            transmute::<
-                                                &mut Vec<SigVal<S, V>>,
-                                                &mut Vec<E::SortSigVal<V>>,
-                                            >(shard)
+                                        // by the ShardEdge trait, so we can view the
+                                        // elements of the vector as a slice of the
+                                        // latter type (the layout of Vec itself is
+                                        // not guaranteed to be independent of the
+                                        // element type, so we do not transmute it).
+                                        let shard_len = shard.len();
+                                        let sort_shard = unsafe {
+                                            std::slice::from_raw_parts_mut(
+                                                shard.as_mut_ptr() as *mut E::SortSigVal<V>,
+                                                shard_len,
+                                            )
                                         };
 
-                                        let builder = shard.radix_sort_builder();
+                                        let builder = sort_shard.radix_sort_builder();
                                         if self.max_num_threads == 1 {
                                             builder
                                                 .with_single_threaded_tuner()
@@ -1917,8 +1947,18 @@ impl<
                                         }
                                         .sort();
 
-                                        let shard_len = shard.len();
-                                        shard.dedup();
+                                        // In-place deduplication, as in
+                                        // Vec::dedup: the first element of each
+                                        // run of equal elements is moved to the
+                                        // front, and the vector is then truncated
+                                        let mut dedup_len = usize::from(shard_len > 0);
+                                        for i in 1..shard_len {
+                                            if sort_shard[i] != sort_shard[dedup_len - 1] {
+                                                sort_shard.swap(dedup_len, i);
+                                                dedup_len += 1;
+                                            }
+                                        }
+                                        shard.truncate(dedup_len);
 
                                         if TypeId::of::<V>() == TypeId::of::<EmptyVal>() {
                                             // Duplicate local signatures on
@@ -1929,11 +1969,11 @@ impl<
                                             // local signatures.
                                             pl.info(format_args!(
                                                 "Removed signatures: {}",
-                                                shard_len - shard.len()
+                                                shard_len - dedup_len
                                             ));
                                         } else {
                                             // For function, we have to try again
-                                            if shard_len != shard.len() {
+                                            if shard_len != dedup_len {
                                                 let _ = err_send
                                                     .send(SolveError::DuplicateLocalSignature);
                                                 return;
@@ -2635,45 +2675,67 @@ mod retry_state_tests {
 
     /// The `MaxShardTooBig` retry counter is capped: the first 99 occurrences
     /// are retried, the 100th is fatal, so a pathological configuration cannot
-    /// loop forever.
+    /// loop forever. The cap does not depend on lazy Gaussian elimination.
     #[test]
     fn max_shard_too_big_is_bounded() {
-        let mut pl = no_logging![];
-        let mut rs = retry_state();
-        for i in 0..99 {
-            let r =
-                rs.handle_solve_result(Err::<(), _>(SolveError::MaxShardTooBig.into()), &mut pl);
-            assert!(matches!(r, Ok(None)), "attempt {i} should be retried");
+        for lge in [false, true] {
+            let mut pl = no_logging![];
+            let mut rs = retry_state();
+            for i in 0..99 {
+                let r = rs.handle_solve_result(
+                    Err::<(), _>(SolveError::MaxShardTooBig.into()),
+                    lge,
+                    &mut pl,
+                );
+                assert!(matches!(r, Ok(None)), "attempt {i} should be retried");
+            }
+            let r = rs.handle_solve_result(
+                Err::<(), _>(SolveError::MaxShardTooBig.into()),
+                lge,
+                &mut pl,
+            );
+            assert!(
+                matches!(
+                    r.unwrap_err().downcast_ref::<BuildError>(),
+                    Some(BuildError::MaxShardTooBig)
+                ),
+                "the 100th MaxShardTooBig must be fatal"
+            );
         }
-        let r = rs.handle_solve_result(Err::<(), _>(SolveError::MaxShardTooBig.into()), &mut pl);
-        assert!(
-            matches!(
-                r.unwrap_err().downcast_ref::<BuildError>(),
-                Some(BuildError::MaxShardTooBig)
-            ),
-            "the 100th MaxShardTooBig must be fatal"
-        );
     }
 
     /// The `UnsolvableShard` retry counter is capped, too, and the 100th
-    /// failure returns a typed error instead of panicking.
+    /// failure (the 1000th with lazy Gaussian elimination) returns a typed
+    /// error instead of panicking.
     #[test]
     fn unsolvable_shard_is_bounded() {
-        let mut pl = no_logging![];
-        let mut rs = retry_state();
-        for i in 0..99 {
-            let r =
-                rs.handle_solve_result(Err::<(), _>(SolveError::UnsolvableShard.into()), &mut pl);
-            assert!(matches!(r, Ok(None)), "attempt {i} should be retried");
+        for (lge, max_attempts) in [
+            (false, RetryState::MAX_ATTEMPTS),
+            (true, RetryState::MAX_LGE_ATTEMPTS),
+        ] {
+            let mut pl = no_logging![];
+            let mut rs = retry_state();
+            for i in 0..max_attempts - 1 {
+                let r = rs.handle_solve_result(
+                    Err::<(), _>(SolveError::UnsolvableShard.into()),
+                    lge,
+                    &mut pl,
+                );
+                assert!(matches!(r, Ok(None)), "attempt {i} should be retried");
+            }
+            let r = rs.handle_solve_result(
+                Err::<(), _>(SolveError::UnsolvableShard.into()),
+                lge,
+                &mut pl,
+            );
+            assert!(
+                matches!(
+                    r.unwrap_err().downcast_ref::<BuildError>(),
+                    Some(BuildError::UnsolvableShard)
+                ),
+                "the {max_attempts}th UnsolvableShard must be fatal"
+            );
         }
-        let r = rs.handle_solve_result(Err::<(), _>(SolveError::UnsolvableShard.into()), &mut pl);
-        assert!(
-            matches!(
-                r.unwrap_err().downcast_ref::<BuildError>(),
-                Some(BuildError::UnsolvableShard)
-            ),
-            "the 100th UnsolvableShard must be fatal"
-        );
     }
 
     /// The shard-size acceptance threshold is the maximum of the ε-cost

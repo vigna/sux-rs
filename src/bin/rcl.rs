@@ -53,7 +53,8 @@ fn compress<R: Read, const SORTED: bool>(
         match lender.next() {
             Ok(None) => break,
             Ok(Some(line)) => {
-                rclb.push(line);
+                rclb.try_push(line)
+                    .context("the input is not sorted (use --unsorted for unsorted lists)")?;
             }
             Err(e) => {
                 pl.info(format_args!("Error reading line: {}", e));

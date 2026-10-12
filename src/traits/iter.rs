@@ -125,6 +125,7 @@ impl<'a, T: Copy> UncheckedIterator for std::iter::Skip<std::slice::Iter<'a, T>>
 /// [`EliasFanoIter`]: crate::dict::elias_fano::EliasFanoIter
 #[autoimpl(for<T: trait + ?Sized> &mut T, Box<T>)]
 pub trait UncheckedIterator {
+    /// The type of the elements being iterated over.
     type Item;
     /// Returns the next item in the iterator. If there is no next item,
     /// the result is undefined.
@@ -140,7 +141,13 @@ pub trait UncheckedIterator {
 /// Unlike [`IntoIterator`], this trait provides a way
 /// to obtain an iterator starting from a given position.
 pub trait IntoUncheckedIterator: Sized {
+    /// The type of the elements being iterated over.
     type Item;
+    /// The unchecked iterator type returned by [`into_unchecked_iter`] and
+    /// [`into_unchecked_iter_from`].
+    ///
+    /// [`into_unchecked_iter`]: IntoUncheckedIterator::into_unchecked_iter
+    /// [`into_unchecked_iter_from`]: IntoUncheckedIterator::into_unchecked_iter_from
     type IntoUncheckedIter: UncheckedIterator<Item = Self::Item>;
 
     /// Creates an unchecked iterator starting from the first position.
@@ -177,7 +184,13 @@ pub trait IntoUncheckedIterator: Sized {
 /// [`into_unchecked_iter_back`]: IntoUncheckedBackIterator::into_unchecked_iter_back
 /// [`into_unchecked_iter_back_from`]: IntoUncheckedBackIterator::into_unchecked_iter_back_from
 pub trait IntoUncheckedBackIterator: Sized {
+    /// The type of the elements being iterated over.
     type Item;
+    /// The backward unchecked iterator type returned by
+    /// [`into_unchecked_iter_back`] and [`into_unchecked_iter_back_from`].
+    ///
+    /// [`into_unchecked_iter_back`]: IntoUncheckedBackIterator::into_unchecked_iter_back
+    /// [`into_unchecked_iter_back_from`]: IntoUncheckedBackIterator::into_unchecked_iter_back_from
     type IntoUncheckedIterBack: UncheckedIterator<Item = Self::Item>;
 
     /// Creates a backward unchecked iterator starting from the end.
@@ -204,7 +217,11 @@ pub trait IntoUncheckedBackIterator: Sized {
 /// This is the backward counterpart of [`IntoIterator`]. It provides a way to
 /// obtain an iterator that yields elements in backward (decreasing) order.
 pub trait IntoBackIterator: Sized {
+    /// The type of the elements being iterated over.
     type Item;
+    /// The backward iterator type returned by [`into_iter_back`].
+    ///
+    /// [`into_iter_back`]: IntoBackIterator::into_iter_back
     type IntoIterBack: Iterator<Item = Self::Item>;
 
     /// Creates a backward iterator starting from the last element.
@@ -229,6 +246,9 @@ pub trait IntoBackIterator: Sized {
 /// [`into_iter_back_from`]: IntoBackIteratorFrom::into_iter_back_from
 /// [`into_iter_from(from)`]: IntoIteratorFrom::into_iter_from
 pub trait IntoBackIteratorFrom: IntoBackIterator {
+    /// The backward iterator type returned by [`into_iter_back_from`].
+    ///
+    /// [`into_iter_back_from`]: IntoBackIteratorFrom::into_iter_back_from
     type IntoIterBackFrom: Iterator<Item = <Self as IntoBackIterator>::Item>;
 
     /// Creates a backward iterator returning the elements of position
@@ -524,7 +544,11 @@ impl<I: BidiIterator<SwappedIter = SwappedIter<I>> + std::iter::FusedIterator> F
 /// This is the bidirectional counterpart of [`IntoIterator`]. It provides a
 /// way to obtain a bidirectional iterator positioned at the first element.
 pub trait IntoBidiIterator: Sized {
+    /// The type of the elements being iterated over.
     type Item;
+    /// The bidirectional iterator type returned by [`into_iter_bidi`].
+    ///
+    /// [`into_iter_bidi`]: IntoBidiIterator::into_iter_bidi
     type IntoIterBidi: BidiIterator<Item = Self::Item>;
 
     /// Creates a bidirectional iterator positioned at the first element.
@@ -549,6 +573,9 @@ pub trait IntoBidiIterator: Sized {
 /// [`skip`]: Iterator::skip
 /// [`prev()`]: BidiIterator::prev
 pub trait IntoBidiIteratorFrom: IntoBidiIterator {
+    /// The bidirectional iterator type returned by [`into_iter_bidi_from`].
+    ///
+    /// [`into_iter_bidi_from`]: IntoBidiIteratorFrom::into_iter_bidi_from
     type IntoIterBidiFrom: BidiIterator<Item = <Self as IntoBidiIterator>::Item>;
 
     /// Creates a bidirectional iterator positioned at the given index.
