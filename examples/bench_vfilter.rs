@@ -10,35 +10,12 @@ use clap::Parser;
 use epserde::prelude::*;
 use sux::{
     bits::{BitFieldVec, BitFieldVecU},
-    cli::{Decompression, pack_strings, reservoir_sample},
+    cli::{Decompression, INCR, bench, init_env_logger, pack_strings, reservoir_sample},
     dict::VFilter,
     func::shard_edge::*,
     traits::{BitFieldSlice, Word},
     utils::{BinSafe, Sig, ToSig},
 };
-
-#[cfg(target_pointer_width = "64")]
-const INCR: usize = 0x9e3779b97f4a7c15;
-#[cfg(not(target_pointer_width = "64"))]
-const INCR: usize = 0x9e3779b9;
-
-fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
-    let mut timings = Vec::with_capacity(repeats);
-    for _ in 0..repeats {
-        let start = std::time::Instant::now();
-        f();
-        timings.push(start.elapsed().as_nanos() as f64 / n as f64);
-        eprintln!("{} ns/key", timings.last().unwrap());
-    }
-    timings.sort_unstable_by(|a, b| a.total_cmp(b));
-    eprintln!(
-        "Min: {} Median: {} Max: {} Average: {}",
-        timings[0],
-        timings[timings.len() / 2],
-        timings.last().unwrap(),
-        timings.iter().sum::<f64>() / timings.len() as f64
-    );
-}
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks VFilter with strings or 64-bit integers.", long_about = None, next_line_help = true, max_term_width = 100)]
@@ -50,8 +27,11 @@ struct Args {
     /// The number of bits of the hashes used by the filter.​
     #[arg(short, long, default_value_t = 8)]
     bits: usize,
+    /// A file containing UTF-8 keys, one per line, from which queries are
+    /// sampled. If not specified, queries are multiples of a large odd
+    /// constant, and thus mostly not keys of a structure built with -n (but
+    /// queries take the same time on keys and non-keys).​
     #[arg(short = 'f', long)]
-    /// A file containing UTF-8 keys, one per line. If not specified, the 64-bit keys [0..n) are used.​
     filename: Option<String>,
     /// Decompress the file of keys using this format (by default, it is read
     /// as is).​
@@ -63,7 +43,8 @@ struct Args {
     /// Shard/edge type.​
     #[arg(long = "shard-edge", short = 'E', value_enum, default_value_t)]
     shard_edge: sux::cli::ShardEdgeType,
-    /// Use unaligned reads.​
+    /// Use unaligned reads; this option has no effect if the hashes have 8,
+    /// 16, 32, or 64 bits, as they are then stored in a boxed slice.​
     #[arg(long, short)]
     unaligned: bool,
 }
@@ -86,7 +67,7 @@ macro_rules! dispatch_edge {
 }
 
 fn main() -> Result<()> {
-    sux::init_env_logger()?;
+    init_env_logger()?;
 
     let args = Args::parse();
 
@@ -115,7 +96,10 @@ where
     VFilter<str, Box<[W]>, S, E>: Deserialize,
 {
     if args.unaligned {
-        panic!("Unaligned reads are not supported for backend Box<[W]>");
+        log::warn!(
+            "--unaligned has no effect with {}-bit hashes, which are stored in a boxed slice",
+            args.bits
+        );
     }
 
     if let Some(ref filename) = args.filename {

@@ -135,37 +135,13 @@ pub struct LevelParams {
 /// [PHast], it is based on *bucket placement*: keys are hashed to buckets,
 /// and each bucket stores a fixed-width *seed* that maps each key of the
 /// bucket to a slot of the output range so that no two keys collide. For
-/// almost all keys, a query needs just a hash and the access to a seed.
+/// almost all keys, a query needs just the computation of a signature and
+/// the access to a seed.
 ///
 /// With the default parameters (8-bit seeds, four layouts, slices of length
 /// 1024, and an expected bucket size of 4.25 keys) space is about 1.94 bits per
 /// key, and PHastR is one of the fastest minimal perfect hash functions
 /// available, both to build and to query.
-///
-/// If the keys are in a slice, build the function with
-/// [`PHastR::try_par_new`], which computes their hashes in parallel;
-/// otherwise, use [`PHastR::try_new`], which reads the keys just once from a
-/// [lender] (for example, from a file). Their variants
-/// [`PHastR::try_par_new_with_builder`] and [`PHastR::try_new_with_builder`]
-/// make it possible to configure the construction using a [`PHastRBuilder`].
-/// Construction uses the threads of the current [rayon] pool, and the
-/// function built does not depend on the constructor, provided that the pool
-/// has the same number of threads.
-///
-/// Construction from a slice needs about 10 bytes per key besides the keys
-/// with one thread, and about 12 with eight threads. Construction from a
-/// lender keeps instead a *record* of sixteen bytes for each key, containing
-/// two 64-bit hashes of the key from which its hashes for all levels are
-/// computed: in memory, construction needs between 16 and 32 bytes per key,
-/// depending on the number of keys, as records are collected in vectors
-/// whose capacity doubles (plus the overhead of the allocator); in [offline
-/// mode], records are kept in temporary files, which take about sixteen
-/// bytes per key of disk space, and on large key sets construction needs in
-/// memory less than half a byte per key with a few threads, besides buffers
-/// that take 256 MiB (whatever the number of keys) up to about 8.6 · 10⁹
-/// keys, and then about a sixteenth of a byte per key (at most 16 GiB). With one thread offline construction is only slightly
-/// slower than construction in memory, but it does not scale as well with
-/// the number of threads.
 ///
 /// Seeds are stored by default in a `Box<[u8]>`, which provides the fastest
 /// queries; seeds of more than eight bits must be stored in a
@@ -178,6 +154,45 @@ pub struct LevelParams {
 ///
 /// Functions can be serialized with [ε-serde], which makes it possible to map
 /// them in memory, or with [`serde`].
+///
+/// # Structure
+///
+/// Each key is hashed, using the *hash seed*, to a 64-bit *signature*, which
+/// determines its *bucket* and its *slice*, a window of consecutive slots of
+/// the output range (by default, of 1024 slots). The *seed* of a bucket
+/// selects one of the *layouts* (by default, four), which give each key an
+/// offset in its slice, and a rotation of the offsets; seeds are chosen so
+/// that no two keys have the same slot. Seed zero marks the buckets that
+/// could not be placed, whose keys are *bumped* to the following *level*, a
+/// smaller function whose slots are remapped to the free slots of the first
+/// level.
+///
+/// # Construction
+///
+/// To build a function from a slice of keys, use [`PHastR::try_par_new`],
+/// which computes their signatures in parallel; to read the keys from a
+/// [lender] (for example, from a file), use [`PHastR::try_new`], which reads
+/// them just once. Their variants [`PHastR::try_par_new_with_builder`] and
+/// [`PHastR::try_new_with_builder`] make it possible to configure the
+/// construction using a [`PHastRBuilder`]. Construction uses the threads of
+/// the current [rayon] pool, and the function built does not depend on the
+/// constructor, provided that the pool has the same number of threads.
+///
+/// Construction from a slice of keys needs about 10 bytes per key besides
+/// the keys with one thread, and about 12 with eight threads. Construction
+/// from a lender keeps instead a *record* of sixteen bytes for each key,
+/// containing two 64-bit signatures of the key (computed with different hash
+/// seeds) from which its signatures for all levels are computed: in memory,
+/// construction needs between 16 and 32 bytes per key, depending on the
+/// number of keys, as records are collected in vectors whose capacity
+/// doubles (plus the overhead of the allocator); in [offline mode], records
+/// are kept in temporary files, which take about sixteen bytes per key of
+/// disk space, and on large key sets construction needs in memory less than
+/// half a byte per key with a few threads, besides buffers that take
+/// 256 MiB up to about 8.6 · 10⁹ keys, and then about a sixteenth of a byte
+/// per key (at most 16 GiB). With one thread offline construction is only
+/// slightly slower than construction in memory, but it does not scale as
+/// well with the number of threads.
 ///
 /// # Changing the defaults
 ///
@@ -198,8 +213,7 @@ pub struct LevelParams {
 ///   queries on large key sets are about 8% slower); a smaller size makes
 ///   queries slightly faster, but it increases space significantly;
 ///
-/// - the [seed] used to compute the hashes of the keys, if you need different
-///   functions on the same keys.
+/// - the [hash seed], if you need different functions on the same keys.
 ///
 /// # Generics
 ///
@@ -221,14 +235,96 @@ pub struct LevelParams {
 /// without copying: for example, [`deserialize_eps`] on a `PHastR<K>`
 /// returns a structure whose seeds are a `&[u8]`, whose parameters are a
 /// `&[LevelParams]`, and whose remapping sequence is an Elias–Fano sequence
-/// over slices.
+/// whose components are `&[usize]`.
+///
+/// # Command-line utility
+///
+/// The `phastr` binary (feature `cli`) builds a function on the lines of a
+/// file (option `-f`), or on the integers [0 . . *n*) (option `-n` alone),
+/// and stores it with ε-serde. The type to load is `PHastR<str>` in the
+/// first case, and `PHastR<usize>` in the second case; with `--seed-bits`
+/// larger than eight seeds are stored in a bit-field vector (e.g.,
+/// `PHastR<str, BitFieldVec<Box<[usize]>>>`); with `--hash-type`, the
+/// function is signed (e.g., `SignedFunc<PHastR<str>, Box<[u16]>>` with
+/// `--hash-type u16`); and with `--unaligned` the function is stored in
+/// unaligned form (e.g., `Unaligned<PHastR<str>>`; see [`Unaligned`]).
 ///
 /// # Examples
 ///
-/// See [`try_new`] and [`try_par_new`].
+/// We build a function on a slice of strings, we store it, and we map it in
+/// memory using ε-serde (see also [`try_new`] for reading the keys from a
+/// lender):
+///
+/// ```rust
+/// # #[cfg(feature = "mmap")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// use epserde::prelude::*;
+/// use sux::func::PHastR;
+/// use sux::traits::{TryIntoUnaligned, Unaligned};
+///
+/// let keys: Vec<String> = (0..100_000).map(|i| format!("key{i}")).collect();
+/// let phf = <PHastR<str>>::try_par_new(&keys, no_logging![])?;
+///
+/// let mut seen = vec![false; keys.len()];
+/// for key in &keys {
+///     let v = phf.get(key.as_str());
+///     assert!(!seen[v]);
+///     seen[v] = true;
+/// }
+///
+/// let file = tempfile::NamedTempFile::new()?;
+/// // SAFETY: the function was built by its constructor
+/// unsafe { phf.store(file.path()) }?;
+/// // SAFETY: the file contains a serialized PHastR<str>
+/// let mapped = unsafe { <PHastR<str>>::mmap(file.path(), Flags::empty()) }?;
+/// let mapped = mapped.uncase();
+/// for key in &keys {
+///     assert_eq!(mapped.get(key.as_str()), phf.get(key.as_str()));
+/// }
+///
+/// // After conversion to unaligned reads, the type changes
+/// let phf = phf.try_into_unaligned()?;
+/// // SAFETY: the function was built by its constructor
+/// unsafe { phf.store(file.path()) }?;
+/// // SAFETY: the file contains a serialized Unaligned<PHastR<str>>
+/// let loaded = unsafe { <Unaligned<PHastR<str>>>::load_full(file.path()) }?;
+/// for key in &keys {
+///     assert_eq!(loaded.get(key.as_str()), phf.get(key.as_str()));
+/// }
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "mmap"))]
+/// # fn main() {}
+/// ```
+///
+/// To reject keys outside the original set with high probability, wrap the
+/// function in a [`SignedFunc`] using one of the [constructors for
+/// `PHastR`]:
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use dsi_progress_logger::no_logging;
+/// use sux::func::{PHastR, SignedFunc};
+///
+/// let keys: Vec<String> = (0..100_000).map(|i| format!("key{i}")).collect();
+/// // 16-bit verification hashes: false positives happen with probability 2⁻¹⁶
+/// let func = <SignedFunc<PHastR<str>, Box<[u16]>>>::try_par_new(&keys, no_logging![])?;
+///
+/// for key in &keys {
+///     assert!(func.get(key.as_str()).is_some());
+/// }
+/// assert_eq!(func.get("foo"), None);
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 ///
 /// [PHast]: https://doi.org/10.1137/1.9781611978957.1
 /// [`SignedFunc`]: crate::func::SignedFunc
+/// [constructors for `PHastR`]: crate::func::SignedFunc#supported-combinations
 /// [lender]: crate::utils::lenders
 /// [rayon]: https://docs.rs/rayon
 /// [offline mode]: PHastRBuilder::offline
@@ -236,11 +332,13 @@ pub struct LevelParams {
 /// [`serde`]: https://crates.io/crates/serde
 /// [number of bits of a seed]: PHastRBuilder::seed_bits
 /// [expected bucket size]: PHastRBuilder::bucket_size
-/// [seed]: PHastRBuilder::seed
+/// [hash seed]: PHastRBuilder::seed
 /// [unaligned reads]: BitFieldVec::get_unaligned
 /// [`try_new`]: PHastR::try_new
-/// [`try_par_new`]: PHastR::try_par_new
 /// [`deserialize_eps`]: https://docs.rs/epserde/latest/epserde/deser/trait.Deserialize.html#tymethod.deserialize_eps
+#[doc(alias = "mphf")]
+#[doc(alias = "minimal")]
+#[doc(alias = "perfect")]
 #[derive(MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(phantom(K)))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -361,12 +459,13 @@ impl<
     R: SliceByValue<Value = usize>,
 > PHastR<K, D, P, R>
 {
-    /// Returns the output of a key in the given level, given its hash *h* for
-    /// the level, the lower half `lo` of the product of *h* and the number of
-    /// buckets (whose upper half is the bucket of the key), the seed of the
-    /// bucket, the base-2 logarithm of the width *f* of the field of each
-    /// layout in `lo`, and the base-2 logarithm of the amount *u* by which a
-    /// unit increase of the seed moves a key (the scale of the level).
+    /// Returns the output of a key in the given level, given its signature
+    /// *h* for the level, the lower half `lo` of the product of *h* and the
+    /// number of buckets (whose upper half is the bucket of the key), the
+    /// seed of the bucket, the base-2 logarithm of the width *f* of the field
+    /// of each layout in `lo`, and the base-2 logarithm of the amount *u* by
+    /// which a unit increase of the seed moves a key (the scale of the
+    /// level).
     ///
     /// The layout *r* is given by the lowest bits of the seed *s*, and its
     /// in-slice offset is in field *r* of `lo`, which starts at bit *rf*:
@@ -431,7 +530,8 @@ impl<
     /// Returns the value associated with the given key, given its signature
     /// (which must be `K::to_sig(key, self.seed)`), as [`get`] does.
     ///
-    /// [`SignedFunc`] uses the signature also to verify the key.
+    /// [`SignedFunc`] uses the signature also to compute the verification
+    /// hash of the key.
     ///
     /// [`get`]: Self::get
     /// [`SignedFunc`]: crate::func::SignedFunc
@@ -521,8 +621,8 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     /// This is a convenience wrapper around [`try_new_with_builder`] with
     /// `PHastRBuilder::default()`.
     ///
-    /// If keys are available as a slice, [`try_par_new`] parallelizes the
-    /// computation of their hashes for faster construction.
+    /// If you have a slice of keys, [`try_par_new`] computes their
+    /// signatures in parallel for faster construction.
     ///
     /// * `keys` - a [`FallibleLender`] returning the keys, which is read just
     ///   once. The [`lenders`] module provides easy ways to build such
@@ -576,9 +676,9 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     /// bits of a seed], the [slice length], the [expected bucket size], and
     /// [offline mode].
     ///
-    /// The two hashes of each key are kept in memory, or on disk in offline
-    /// mode, as a record of sixteen bytes (see [`PHastR`] for the memory
-    /// used). The function is identical to that built by
+    /// The two signatures of each key are kept in memory, or on disk in
+    /// offline mode, as a record of sixteen bytes (see [`PHastR`] for the
+    /// memory used). The function is identical to that built by
     /// [`try_par_new_with_builder`] with the same builder (apart from offline
     /// mode, which that constructor does not support), provided that the
     /// current [rayon] pool has the same number of threads.
@@ -641,7 +741,7 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
         builder.try_build_from_lender(keys, pl)
     }
 
-    /// Builds a [`PHastR`] from the keys of a slice, computing their hashes
+    /// Builds a [`PHastR`] from a slice of keys, computing their signatures
     /// in parallel, using default [`PHastRBuilder`] settings.
     ///
     /// This is a convenience wrapper around [`try_par_new_with_builder`]
@@ -688,7 +788,7 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
         Self::try_par_new_with_builder(keys, PHastRBuilder::default(), pl)
     }
 
-    /// Builds a [`PHastR`] from the keys of a slice, computing their hashes
+    /// Builds a [`PHastR`] from a slice of keys, computing their signatures
     /// in parallel, using the given [`PHastRBuilder`] configuration.
     ///
     /// The builder controls construction parameters such as the [number of
@@ -696,10 +796,10 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     /// [offline mode] is not supported, and an error is returned if it is
     /// set.
     ///
-    /// The hashes of the keys are kept in memory, together with a byte per
-    /// key recording their part, and the keys bumped from the first level are
-    /// hashed again: construction needs about 10 bytes per key besides the
-    /// keys with one thread, and about 12 with eight threads.
+    /// The signatures of the keys are kept in memory, together with a byte
+    /// per key recording their part, and the keys bumped from the first level
+    /// are hashed again: construction needs about 10 bytes per key besides
+    /// the keys with one thread, and about 12 with eight threads.
     ///
     /// If keys are produced sequentially (e.g., from a file), use
     /// [`try_new_with_builder`] instead.
@@ -728,7 +828,8 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     /// # use sux::traits::TryIntoUnaligned;
     /// # use dsi_progress_logger::no_logging;
     /// let keys: Vec<u64> = (0..100_000).collect();
-    /// // 10-bit seeds
+    /// // 10-bit seeds (see "Changing the defaults" in the documentation of
+    /// // PHastR)
     /// let phf = <PHastR<u64, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
     ///     &keys,
     ///     PHastRBuilder::default()

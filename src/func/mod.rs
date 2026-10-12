@@ -5,7 +5,8 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-//! Static functions.
+//! Static functions, minimal perfect hash functions, and monotone minimal
+//! perfect hash functions.
 //!
 //! Static functions map keys to values, but they do not store the keys:
 //! querying a static function with a key outside of the original set will lead
@@ -14,6 +15,16 @@
 //! In exchange, static functions make it possible to store the association
 //! between keys and values just in the space required by the values, plus
 //! a small overhead.
+//!
+//! # Choosing a structure
+//!
+//! | You need to… | Use |
+//! |---|---|
+//! | associate a value with each key | [`VFunc`]; [`VFunc2`] or [`CompVFunc`] if the distribution of the values is skewed |
+//! | map the keys bijectively to [0 . . *n*), in any order | [`PHastR`] |
+//! | map the keys to their rank in lexicographical order | [`LcpMmphf`]/[`LcpMmphfInt`], or [`Lcp2Mmphf`]/[`Lcp2MmphfInt`] to use less space |
+//! | reject keys outside the original set | a [`SignedFunc`] wrapping one of the above |
+//! | test approximate membership only | a [`VFilter`] |
 //!
 //! - [`VFunc`] is a generic static function.
 //!
@@ -39,18 +50,46 @@
 //!
 //! - [`SignedFunc`] wraps a [`VFunc`], a [`PHastR`],
 //!   [`LcpMmphfInt`]/[`LcpMmphf`], or [`Lcp2MmphfInt`]/[`Lcp2Mmphf`] (but not
-//!   [`VFunc2`]) with per-key verification hashes, returning `None` for keys
-//!   outside the original set. Use `Box<[W]>` for full-width hashes or
-//!   [`BitFieldVec`] for sub-word-width hashes. Use concrete types like
-//!   `SignedFunc<LcpMmphfStr, Box<[u64]>>`.
+//!   [`VFunc2`] or [`CompVFunc`]) with per-key verification hashes, returning
+//!   `None` for keys outside the original set. Use `Box<[W]>` for full-width
+//!   hashes or [`BitFieldVec`] for sub-word-width hashes. Use concrete types
+//!   like `SignedFunc<LcpMmphfStr, Box<[u64]>>`; the [supported
+//!   combinations](SignedFunc#supported-combinations) are listed in the
+//!   documentation of [`SignedFunc`].
+//!
+//! # Construction
+//!
+//! All structures provide four constructors:
+//!
+//! - `try_par_new(keys, …, pl)` builds the structure from slices of keys (and
+//!   values), computing the hashes of the keys in parallel: use it when the
+//!   keys fit in memory;
+//!
+//! - `try_new(keys, …, pl)` reads the keys (and values) from a [rewindable
+//!   lender], such as the lines of a file, without keeping them in memory;
+//!   the [`lenders`] module explains how to obtain one;
+//!
+//! - `try_par_new_with_builder` and `try_new_with_builder` take an additional
+//!   builder that configures the construction: a [`VBuilder`] (offline mode,
+//!   number of threads, sharding overhead, seed) or, for [`PHastR`], a
+//!   [`PHastRBuilder`].
+//!
+//! The functions based on longest common prefixes also need the number of
+//! keys, and their keys must be sorted. Building a structure requires the
+//! `rayon` feature, except for [`PHastR`], which can be built sequentially
+//! without it.
 //!
 //! Most structures implement the [`TryIntoUnaligned`] trait, allowing them
 //! to be converted into (usually faster) structures using unaligned access.
+//! With the `epserde` feature, all structures can be serialized with
+//! [ε-serde], and then loaded or memory-mapped.
 //!
-//! All constructors follow the pattern `try_new(keys, …, pl)` for default
-//! settings, and `try_new_with_builder(keys, …, builder, pl)` to configure
-//! the [`VBuilder`] (offline mode, thread count, sharding overhead, seed) or,
-//! for [`PHastR`], the [`PHastRBuilder`].
+//! # Command-line utilities
+//!
+//! With the `cli` feature, the binaries `vfunc`, `vfunc2`, `comp_vfunc`,
+//! `vfilter`, `lcp_mmphf`, and `phastr` build these structures from files of
+//! keys and serialize them with ε-serde, logging the type of the structure
+//! they store; use `--help` for their options.
 //!
 //! # Type annotations
 //!
@@ -81,6 +120,10 @@
 //!
 //! [`BitFieldVec`]: crate::bits::BitFieldVec
 //! [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
+//! [`VFilter`]: crate::dict::VFilter
+//! [rewindable lender]: crate::utils::FallibleRewindableLender
+//! [`lenders`]: crate::utils::lenders
+//! [ε-serde]: https://crates.io/crates/epserde
 
 mod vfunc;
 pub use vfunc::*;
@@ -97,12 +140,15 @@ mod vbuilder;
 pub use vbuilder::*;
 
 pub mod lcp_mmphf;
+#[doc(inline)]
 pub use lcp_mmphf::*;
 
 pub mod lcp2_mmphf;
+#[doc(inline)]
 pub use lcp2_mmphf::*;
 
 pub mod signed;
+#[doc(inline)]
 pub use signed::*;
 
 pub mod shard_edge;
@@ -113,17 +159,5 @@ mod comp_vfunc;
 pub use comp_vfunc::CompVFunc;
 
 pub mod phast_r;
+#[doc(inline)]
 pub use phast_r::{PHastR, PHastRBuilder};
-
-/// Avalanches bits using the finalization step of Austin Appleby's
-/// [MurmurHash3].
-///
-/// [MurmurHash3]: http://code.google.com/p/smhasher/
-pub(crate) const fn mix64(mut k: u64) -> u64 {
-    k ^= k >> 33;
-    k = k.overflowing_mul(0xff51_afd7_ed55_8ccd).0;
-    k ^= k >> 33;
-    k = k.overflowing_mul(0xc4ce_b9fe_1a85_ec53).0;
-    k ^= k >> 33;
-    k
-}

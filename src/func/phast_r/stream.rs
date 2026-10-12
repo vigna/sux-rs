@@ -40,7 +40,6 @@ use super::sweep::*;
 use super::*;
 use crate::dict::elias_fano::{EliasFano, EliasFanoBuilder};
 use anyhow::{Context, bail};
-use dsi_progress_logger::no_logging;
 use std::fs::File;
 use std::io::{self, Read, Seek, Write};
 use std::sync::Mutex;
@@ -770,7 +769,7 @@ impl PHastRBuilder {
         let (num_keys, params0, seeds0, levels, remap) =
             self.build_levels_from_lender::<K, D, B>(keys, pl)?;
         let func = self.assemble(num_keys, params0, seeds0, levels, remap);
-        log_completion(start, num_keys, pl);
+        log_completion("Construction", start, num_keys, pl);
         Ok(func)
     }
 
@@ -793,24 +792,10 @@ impl PHastRBuilder {
             .map(|w| w.count_ones() as usize)
             .sum::<usize>();
         let mut efb = EliasFanoBuilder::new(num_holes, n);
-        for (w, &word) in occupied.iter().enumerate() {
-            let mut free = !word;
-            if n - w * 64 < 64 {
-                free &= (1u64 << (n - w * 64)) - 1;
-            }
-            while free != 0 {
-                efb.push(w * 64 + free.trailing_zeros() as usize);
-                free &= free - 1;
-            }
-        }
+        for_each_hole(0, &occupied, n, |p| efb.push(p));
         let holes = efb.build();
         drop(occupied);
-        pl.info(format_args!(
-            "Level 0: {} keys, {} bumped ({:.3}%)",
-            n,
-            num_holes,
-            100.0 * num_holes as f64 / n as f64
-        ));
+        log_level(0, n, num_holes, pl);
         let cur = collect_bumped(
             &store,
             geom,
@@ -877,7 +862,7 @@ impl PHastRBuilder {
             .context("Could not store the hashes of the keys")?;
         let store = writer.finish(n);
         pl.done();
-        log_signatures(start, n, pl);
+        log_completion("Computation of signatures from inputs", start, n, pl);
 
         if n == 0 {
             // A single empty level, as in build_levels
@@ -947,37 +932,14 @@ impl PHastRBuilder {
                         break;
                     }
                     let k = records.len();
-                    // The last level does not bump: we change the salt until
-                    // we succeed, enlarging the output range every eight
-                    // attempts
-                    let mut attempt = 0u64;
-                    loop {
-                        let m = k + k / 4 + 16 + (attempt as usize / 8) * (k / 8 + 8);
-                        let geom = self.geometry(k, m, self.bucket_size.min(3.0));
-                        let salt = level_salt(self.seed, index, attempt);
-                        if index == 1 && attempt == 0 && has_duplicates_in_memory(&records) {
-                            bail!("Duplicate keys");
-                        }
-                        let sigs =
-                            group(k, |i| level_sig(records[i][0], records[i][1], salt), &geom);
-                        if let Some(out) = sweep_level(&sigs, &geom, &weights, false, no_logging![])
-                        {
-                            let mut level = geom.level();
-                            level.salt = salt;
-                            break (
-                                level,
-                                out.seeds,
-                                out.occupied,
-                                Keys::Last(vec![]),
-                                k,
-                                geom.m,
-                            );
-                        }
-                        attempt += 1;
-                        if attempt == LAST_LEVEL_ATTEMPTS {
-                            bail!(last_level_failure(k));
-                        }
-                    }
+                    let (level, out, m) = self.last_level(
+                        index,
+                        k,
+                        &weights,
+                        |i, salt| level_sig(records[i][0], records[i][1], salt),
+                        |_, _| has_duplicates_in_memory(&records),
+                    )?;
+                    (level, out.seeds, out.occupied, Keys::Last(vec![]), k, m)
                 }
             };
 
@@ -985,13 +947,7 @@ impl PHastRBuilder {
                 Keys::Stored(store) => store.len,
                 Keys::Last(records) => records.len(),
             };
-            pl.info(format_args!(
-                "Level {}: {} keys, {} bumped ({:.3}%)",
-                index,
-                k,
-                num_bumped,
-                100.0 * num_bumped as f64 / k as f64
-            ));
+            log_level(index, k, num_bumped, pl);
 
             level.offset = offset as u64;
             offset += m;
@@ -1000,24 +956,13 @@ impl PHastRBuilder {
             cur = next;
         }
 
-        // The remapping sequence, as in build_levels: the used slots of the
-        // following levels are mapped, in order, to the free slots of the
-        // first level, and their free slots to the last free slot assigned
-        let mut efb = EliasFanoBuilder::new(offset, n);
-        let mut holes = holes.iter();
-        let mut last_hole = 0;
-        for (occupied, m) in &used {
-            for p in 0..*m {
-                if is_occupied(occupied, p) {
-                    last_hole = holes
-                        .next()
-                        .expect("there is a free slot for each bumped key");
-                }
-                efb.push(last_hole);
-            }
-        }
-        debug_assert!(holes.next().is_none());
-        Ok((n, params0, seeds0, levels, remap(efb)))
+        Ok((
+            n,
+            params0,
+            seeds0,
+            levels,
+            build_remap(holes.iter(), &used, n),
+        ))
     }
 }
 

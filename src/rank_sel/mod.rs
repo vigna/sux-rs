@@ -7,6 +7,60 @@
 
 //! Support for rank and select operations.
 //!
+//! # Choosing a Structure
+//!
+//! Each structure wraps a bit vector, or another rank or selection structure
+//! (see the [design](#design) section below). The extra space is relative to
+//! the size of the bit vector, and it is in addition to the space of the
+//! wrapped structures.
+//!
+//! | Structure | Operation | Extra space | Wraps | Limits | Use it for |
+//! |-----------|-----------|-------------|-------|--------|------------|
+//! | [`SelectAdapt`] | select | 14%–28% | a bit vector or a rank structure | length < 2⁶² (2³¹ on 32-bit platforms) | selection (the default choice) |
+//! | [`SelectZeroAdapt`] | select zero | 14%–28% | a bit vector or a rank structure | as [`SelectAdapt`] | selection on zeros (the default choice) |
+//! | [`SelectAdaptConst`] | select | 28% × density | a bit vector or a rank structure | as [`SelectAdapt`] | selection on bit vectors of known density |
+//! | [`SelectZeroAdaptConst`] | select zero | 28% × density of zeros | a bit vector or a rank structure | as [`SelectAdapt`] | selection on zeros on bit vectors of known density |
+//! | [`Rank9`] | rank | 25% | a bit vector | 64-bit words | the fastest ranking |
+//! | [`RankSmall`] | rank | 1.56%–18.75% (`u64` words), 1.56%–37.5% (`u32` words) | a bit vector | word size fixed by the variant | ranking in little space |
+//! | [`Select9`] | select | 25%–37.5% | a [`Rank9`] | 64-bit words | selection on pathologically irregular bit vectors |
+//! | [`SelectSmall`] | select | 0.1%–6.25% | a [`RankSmall`] | as [`RankSmall`] | slower selection in almost no space |
+//! | [`SelectZeroSmall`] | select zero | 0.1%–6.25% | a [`RankSmall`] | as [`RankSmall`] | slower selection on zeros in almost no space |
+//!
+//! The space of the [`SelectAdapt`] family refers to the default parameters,
+//! which can be tuned. The constant variants are about 5% faster, but their
+//! space is proportional to the density of the bit vector, so they are useful
+//! when the density is known in advance, as it happens for the high bits of an
+//! [`EliasFano`] representation, which uses [`SelectAdaptConst`] and
+//! [`SelectZeroAdaptConst`]. The space of [`RankSmall`] depends on the variant
+//! chosen with the [`rank_small!`] macro, and that of [`SelectSmall`] and
+//! [`SelectZeroSmall`] on the block size of the variant.
+//!
+//! Rank structures provide also [ranking on zeros]. The checked selection
+//! methods [`select`] and [`select_zero`] need the number of ones in the bit
+//! vector, which is provided by the [`NumBits`] trait: rank structures
+//! implement it, and a plain bit vector can be wrapped in an [`AddNumBits`];
+//! otherwise, only the unchecked methods are available.
+//!
+//! A typical stack contains a rank structure, a selection structure, and a
+//! selection structure on zeros, from inner to outer; all operations are
+//! available on the outer structure:
+//!
+//! ```rust
+//! # #[cfg(target_pointer_width = "64")]
+//! # {
+//! use sux::bit_vec;
+//! use sux::rank_sel::{Rank9, SelectAdapt, SelectZeroAdapt};
+//! use sux::traits::{Rank, Select, SelectZero};
+//!
+//! let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0];
+//! let rank_sel = SelectZeroAdapt::new(SelectAdapt::new(Rank9::new(bits)));
+//!
+//! assert_eq!(rank_sel.rank(4), 2);
+//! assert_eq!(rank_sel.select(2), Some(4));
+//! assert_eq!(rank_sel.select_zero(2), Some(5));
+//! # }
+//! ```
+//!
 //! # Design
 //!
 //! Rank and selection structures can be combined arbitrarily with a
@@ -93,10 +147,32 @@
 //! order rank, select, and zero select, from inner to outer, because ranking
 //! structures usually implement [`NumBits`].
 //!
+//! # Benchmarks
+//!
+//! The `rank_sel` benchmark (see `cargo bench --bench rank_sel -- --help`)
+//! uses the following names:
+//!
+//! - `RankSmall64_N` is the [`RankSmall`] built by `rank_small![u64: N; bits]`,
+//!   and `SelectSmall64_N` is a [`SelectSmall`] wrapping it; `RankSmall32_N`
+//!   and `SelectSmall32_N` are the same with `rank_small![u32: N; bits]`;
+//!
+//! - `SelectAdaptN` is a [`SelectAdapt`] with at most 2ᴺ `usize` per
+//!   subinventory and the corresponding [default target inventory span], that
+//!   is, `SelectAdapt::with_span(bits, default_target_inventory_span(N), N)`;
+//!   thus, [`SelectAdapt::new`] corresponds to `SelectAdapt3`;
+//!
+//! - `SelectAdaptConstN` is a [`SelectAdaptConst`] with 2¹² ones per inventory
+//!   and 2ᴺ `usize` per subinventory.
+//!
 //! [`BitVec`]: crate::bits::bit_vec::BitVec
 //! [Broadword Implementation of Rank/Select Queries]: https://link.springer.com/chapter/10.1007/978-3-540-68552-4_12
 //! [`select_unchecked`]: crate::traits::SelectUnchecked::select_unchecked
 //! [`select`]: crate::traits::Select::select
+//! [`select_zero`]: crate::traits::SelectZero::select_zero
+//! [ranking on zeros]: crate::traits::RankZero
+//! [`rank_small!`]: crate::rank_small
+//! [`EliasFano`]: crate::dict::EliasFano
+//! [default target inventory span]: default_target_inventory_span
 //! [`AddNumBits`]: crate::traits::AddNumBits
 //! [`NumBits`]: crate::traits::NumBits
 //! [`Rank`]: crate::traits::Rank
@@ -105,6 +181,7 @@
 //! [`map`]: SelectAdapt::map
 
 pub mod select_adapt;
+#[doc(inline)]
 pub use select_adapt::*;
 
 mod select_zero_adapt;
@@ -117,6 +194,8 @@ mod select_zero_adapt_const;
 pub use select_zero_adapt_const::*;
 
 mod rank_small;
+#[doc(hidden)]
+pub use rank_small::ambassador_impl_SmallCounters;
 pub use rank_small::*;
 
 mod select_small;

@@ -106,8 +106,9 @@ impl PrefixSumIntList {
     /// # Examples
     ///
     /// ```rust
-    /// # use sux::list::prefix_sum_int_list::PrefixSumIntList;
-    /// # use value_traits::slices::SliceByValue;
+    /// use sux::list::prefix_sum_int_list::PrefixSumIntList;
+    /// use value_traits::slices::SliceByValue;
+    ///
     /// let values = vec![3usize, 1, 4, 1, 5];
     /// let list = PrefixSumIntList::new(&values);
     /// assert_eq!(list.len(), 5);
@@ -218,13 +219,7 @@ impl<D: SliceByValue<Value = usize>> PrefixSumIntList<D> {
     pub fn into_inner(self) -> D {
         self.prefix_sums
     }
-}
 
-impl<D: SliceByValue<Value = usize>> PrefixSumIntList<D>
-where
-    for<'a> &'a D: IntoIteratorFrom,
-    for<'a> <&'a D as IntoIteratorFrom>::IntoIterFrom: UncheckedIterator<Item = usize>,
-{
     /// Returns the prefix sum up to (excluded) index `i`.
     ///
     /// `prefix_sum(0)` is 0, and `prefix_sum(n)` is the sum of all values.

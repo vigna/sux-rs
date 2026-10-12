@@ -21,26 +21,9 @@ use ph::{
 #[cfg(target_pointer_width = "64")]
 use sux::bit_field_vec;
 #[cfg(target_pointer_width = "64")]
-use value_traits::slices::*;
-
+use sux::cli::{bench, init_env_logger};
 #[cfg(target_pointer_width = "64")]
-fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
-    let mut timings = Vec::with_capacity(repeats);
-    for _ in 0..repeats {
-        let start = std::time::Instant::now();
-        f();
-        timings.push(start.elapsed().as_nanos() as f64 / n as f64);
-        eprintln!("{} ns/key", timings.last().unwrap());
-    }
-    timings.sort_unstable_by(|a, b| a.total_cmp(b));
-    eprintln!(
-        "Min: {} Median: {} Max: {} Average: {}",
-        timings[0],
-        timings[timings.len() / 2],
-        timings.last().unwrap(),
-        timings.iter().sum::<f64>() / timings.len() as f64
-    );
-}
+use value_traits::slices::*;
 
 #[cfg(target_pointer_width = "64")]
 #[derive(Parser, Debug)]
@@ -59,7 +42,7 @@ struct Args {
 
 #[cfg(target_pointer_width = "64")]
 fn main() -> Result<()> {
-    sux::init_env_logger()?;
+    init_env_logger()?;
 
     let args = Args::parse();
     let keys = (0..args.n as u64).collect::<Vec<_>>();

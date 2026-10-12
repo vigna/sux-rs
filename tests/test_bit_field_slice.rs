@@ -550,3 +550,75 @@ fn test_various_integer_types() {
     BitFieldSliceMut::reset(&mut slice_u128[..]);
     assert_eq!(slice_u128, vec![0, 0, 0]);
 }
+
+#[test]
+fn test_word_containers() {
+    // Arrays
+    let mut a = [1_u16, 2, 3];
+    assert_eq!(BitWidth::bit_width(&a), 16);
+    assert_eq!(BitFieldSlice::as_slice(&a), &[1, 2, 3]);
+    BitFieldSliceMut::as_mut_slice(&mut a)[0] = 4;
+    assert_eq!(a, [4, 2, 3]);
+    BitFieldSliceMut::reset(&mut a);
+    assert_eq!(a, [0; 3]);
+
+    // Vectors
+    let mut v = vec![1_u32, 2, 3];
+    assert_eq!(BitWidth::bit_width(&v), 32);
+    assert_eq!(BitFieldSlice::as_slice(&v), &[1, 2, 3]);
+    BitFieldSliceMut::as_mut_slice(&mut v)[0] = 4;
+    assert_eq!(v, [4, 2, 3]);
+    BitFieldSliceMut::reset(&mut v);
+    assert_eq!(v, [0; 3]);
+
+    // Slices
+    let s: &mut [u8] = &mut [1, 2, 3];
+    assert_eq!(BitWidth::bit_width(s), 8);
+    assert_eq!(BitFieldSlice::as_slice(s), &[1, 2, 3]);
+    BitFieldSliceMut::reset(s);
+    assert_eq!(s, &[0; 3]);
+
+    #[cfg(feature = "rayon")]
+    {
+        let mut a = [1_u64; 5];
+        BitFieldSliceMut::par_reset(&mut a);
+        assert_eq!(a, [0; 5]);
+        let mut v = vec![1_u64; 5];
+        BitFieldSliceMut::par_reset(&mut v);
+        assert_eq!(v, [0; 5]);
+        BitFieldSliceMut::par_reset(&mut v[..]);
+        assert_eq!(v, [0; 5]);
+    }
+}
+
+#[test]
+fn test_atomic_word_containers() {
+    // Arrays
+    let mut a = [AtomicU32::new(1), AtomicU32::new(2)];
+    assert_eq!(AtomicBitFieldSlice::len(&a), 2);
+    assert_eq!(a.atomic_bit_width(), 32);
+    a.set_atomic(1, 5, Ordering::Relaxed);
+    assert_eq!(a.get_atomic(1, Ordering::Relaxed), 5);
+    a.reset_atomic(Ordering::Relaxed);
+    assert_eq!(a.get_atomic(0, Ordering::Relaxed), 0);
+    assert_eq!(a.get_atomic(1, Ordering::Relaxed), 0);
+
+    // Vectors
+    let mut v = vec![AtomicU32::new(1), AtomicU32::new(2), AtomicU32::new(3)];
+    assert_eq!(AtomicBitFieldSlice::len(&v), 3);
+    assert_eq!(v.atomic_bit_width(), 32);
+    v.set_atomic(2, 7, Ordering::Relaxed);
+    assert_eq!(v.get_atomic(2, Ordering::Relaxed), 7);
+    #[cfg(feature = "rayon")]
+    v.par_reset_atomic(Ordering::Relaxed);
+    #[cfg(not(feature = "rayon"))]
+    v.reset_atomic(Ordering::Relaxed);
+    assert_eq!(v.get_atomic(2, Ordering::Relaxed), 0);
+
+    // Slices
+    let s: &[AtomicU32] = &v;
+    assert_eq!(AtomicBitFieldSlice::len(s), 3);
+    assert_eq!(s.atomic_bit_width(), 32);
+    s.set_atomic(0, 9, Ordering::Relaxed);
+    assert_eq!(s.get_atomic(0, Ordering::Relaxed), 9);
+}

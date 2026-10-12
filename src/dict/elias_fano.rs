@@ -66,12 +66,20 @@ use value_traits::slices::{SliceByValue, SliceByValueMut};
 /// The default type for an Elias–Fano structure implementing an [`IndexedSeq`],
 /// but not [`IndexedDict`], [`Succ`], or [`Pred`].
 ///
+/// This is the type returned by [`EliasFanoBuilder::build_with_seq`] and
+/// [`EliasFanoConcurrentBuilder::build_with_seq`]; see the [`EliasFano`]
+/// documentation for the available operations.
+///
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or a different selection structure altogether.
 pub type EfSeq<V = usize> = EliasFano<V, SelectAdaptConst<BitVec<Box<[usize]>>, Box<[usize]>>>;
 
 /// The default type for an Elias–Fano structure implementing
-/// [`IndexedDict`], [`Succ`], and [`Pred`].
+/// [`IndexedDict`], [`Succ`], and [`Pred`], but not [`IndexedSeq`].
+///
+/// This is the type returned by [`EliasFanoBuilder::build_with_dict`] and
+/// [`EliasFanoConcurrentBuilder::build_with_dict`]; see the [`EliasFano`]
+/// documentation for the available operations.
 ///
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or a different selection structure altogether.
@@ -79,6 +87,10 @@ pub type EfDict<V = usize> = EliasFano<V, SelectZeroAdaptConst<BitVec<Box<[usize
 
 /// The default type for an Elias–Fano structure implementing an
 /// [`IndexedSeq`], [`IndexedDict`], [`Succ`], and [`Pred`].
+///
+/// This is the type returned by [`EliasFanoBuilder::build_with_seq_and_dict`]
+/// and [`EliasFanoConcurrentBuilder::build_with_seq_and_dict`]; see the
+/// [`EliasFano`] documentation for the available operations.
 ///
 /// You can start from this type to customize your Elias–Fano structure using
 /// different const parameters or different selection structures altogether.
@@ -96,20 +108,26 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// convenience implementation makes it possible to build an [`EliasFano`]
 /// from a slice.
 ///
-/// In both cases, if you use the [`build`] method you will only be able to
-/// iterate over the sequence. Using the methods [`build_with_seq`],
-/// [`build_with_dict`], or [`build_with_seq_and_dict`] you will have
-/// access to the additional functionalities of an [`IndexedSeq`] or an
-/// [`IndexedDict`] with [`Succ`] and [`Pred`].
+/// The available operations depend on the selection structures on the high
+/// bits, which are added by the builder method you use to build the
+/// structure:
+///
+/// | Selection structures | Type | Builder method | Operations |
+/// |----------------------|------|----------------|------------|
+/// | none | [`EliasFano`] | [`build`] | [`len`], [`iter`], [`iter_back`] |
+/// | ones | [`EfSeq`] | [`build_with_seq`] | those of the first row, plus [`IndexedSeq`] ([`get`], …), [`iter_from`], [`iter_back_from`], [`iter_bidi`], [`iter_bidi_from`], and [`SliceByValue`] |
+/// | zeros | [`EfDict`] | [`build_with_dict`] | those of the first row, plus [`IndexedDict`] ([`index_of`], [`contains`]), [`Succ`] ([`succ`], …), [`Pred`] ([`pred`], [`rank`], …), their unchecked versions [`SuccUnchecked`] and [`PredUnchecked`], and the iterators starting from a successor or predecessor ([`SuccIter`], [`PredIter`], …) |
+/// | ones and zeros | [`EfSeqDict`] | [`build_with_seq_and_dict`] | all of the above |
+///
+/// Note that the checked successor and predecessor queries of [`Succ`] and
+/// [`Pred`] need just a selection structure on zeros (see [below]).
 ///
 /// It is also possible to manually enrich the base structure by calling
-/// [`EliasFano::map_high_bits`]. To use the structure as an [`IndexedSeq`] you
-/// need to add a selection structure for ones, whereas to use it as an
-/// [`IndexedDict`] with [`SuccUnchecked`] and [`PredUnchecked`] you need to add
-/// a selection structure for zeros. [`SelectAdaptConst`] and
-/// [`SelectZeroAdaptConst`] are the structures of choice for this purpose. If
-/// you add both structures, you will have an [`IndexedDict`] with [`Succ`] and
-/// [`Pred`].
+/// [`EliasFano::map_high_bits`]: a selection structure on ones must implement
+/// [`SelectUnchecked`], and a selection structure on zeros must implement
+/// [`SelectZeroUnchecked`]. [`SelectAdaptConst`] and [`SelectZeroAdaptConst`],
+/// which are used by the builder methods, are the structures of choice for
+/// this purpose.
 ///
 /// # Type Parameters
 ///
@@ -131,7 +149,8 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// first and last values stored in the structure to determine whether the
 /// requested successor or predecessor exists. This makes the bounds check
 /// essentially free and does not require [`SelectUnchecked`] on the high
-/// bits.
+/// bits. The same is true of the checked versions of the iterators starting
+/// from a successor or predecessor (e.g., [`SuccIter`] and [`PredIter`]).
 ///
 /// # Iterators
 ///
@@ -144,7 +163,8 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// - Backward iterators, returned by [`iter_back`] and
 ///   [`iter_back_from`], that iterate over the values in decreasing order, are
 ///   slightly slower than forward iterators. The returned iterators implement
-///   also [`UncheckedIterator`].
+///   also [`UncheckedIterator`]. Note that [`iter_back_from(k)`] yields the
+///   elements *before* position *k* (i.e., it excludes position *k*).
 ///
 /// - Bidirectional iterators, returned by [`iter_bidi`]
 ///   and [`iter_bidi_from`], that can iterate in both directions, are the
@@ -153,11 +173,16 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// Besides the convenience inherent methods, we implement [`IntoIterator`],
 /// [`IntoIteratorFrom`], [`IntoBackIterator`], [`IntoBackIteratorFrom`],
 /// [`IntoBidiIterator`], and [`IntoBidiIteratorFrom`] for references to an
-/// [`EliasFano`] structure.
+/// [`EliasFano`] structure. The trait methods are equivalent to the inherent
+/// methods, with one exception: following the convention of
+/// [`IntoBackIteratorFrom`], [`into_iter_back_from(k)`] yields first the
+/// element of index *k* (i.e., it includes position *k*), so it is equivalent
+/// to [`iter_back_from(k + 1)`].
 ///
-/// Iterators can also be obtained from methods in [`SuccUnchecked`],
-/// [`PredUnchecked`], [`Succ`], and [`Pred`] that return an iterator starting
-/// from the successor or predecessor of a given value.
+/// Iterators can also be obtained from the methods of [`SuccIter`],
+/// [`SuccIterBack`], [`SuccBidiIter`], [`PredIter`], [`PredIterBack`], and
+/// [`PredBidiIter`] (and of their unchecked versions) that return an iterator
+/// starting from the successor or predecessor of a given value.
 ///
 /// # Unaligned access
 ///
@@ -165,9 +190,15 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// some architectures this provides a mild performance improvement. To use
 /// unaligned access, call [`try_into_unaligned`]:
 ///
-/// ```ignore
-/// use sux::traits::TryIntoUnaligned;
-/// let ef = ef.try_into_unaligned()?;
+/// ```rust
+/// use sux::dict::EliasFanoBuilder;
+/// use sux::traits::{IndexedSeq, TryIntoUnaligned};
+///
+/// let mut efb = EliasFanoBuilder::new(4, 10u64);
+/// efb.extend([0, 2, 8, 10]);
+/// let ef = efb.build_with_seq().try_into_unaligned()?;
+/// assert_eq!(ef.get(2), 8);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
 /// See the [`BitFieldVecU`] documentation for more details and caveats about
@@ -175,11 +206,16 @@ pub type EfSeqDict<V = usize> = EliasFano<
 ///
 /// # Examples
 ///
+/// Note that the prelude does not glob-import the traits of
+/// [`indexed_dict`], such as [`IndexedSeq`] or [`Succ`]: you can import them
+/// from [`sux::traits`], as we do in these examples, or with `use
+/// sux::prelude::{*, indexed_dict::*}`.
+///
 /// Using convenience builders:
 /// ```rust
-/// # use sux::rank_sel::{SelectAdaptConst, SelectZeroAdaptConst};
-/// # use sux::dict::{EliasFanoBuilder};
-/// # use sux::traits::{Types,IndexedSeq,IndexedDict,SuccUnchecked,Succ};
+/// use sux::dict::EliasFanoBuilder;
+/// use sux::traits::{IndexedSeq, Pred, Succ, SuccUnchecked};
+///
 /// let mut efb = EliasFanoBuilder::new(4, 10u64);
 /// efb.push(0);
 /// efb.push(2);
@@ -199,8 +235,12 @@ pub type EfSeqDict<V = usize> = EliasFano<
 ///
 /// let ef = efb.build_with_dict();
 ///
+/// assert_eq!(ef.succ(6), Some((2, 8)));
+/// assert_eq!(ef.succ(11), None);
+/// assert_eq!(ef.pred(7), Some((1, 2)));
+/// assert_eq!(ef.rank(8), 2);
+/// // If you know that the successor exists, you can skip the bound check
 /// assert_eq!(unsafe { ef.succ_unchecked::<false>(6) }, (2, 8));
-/// // Calling unsafe { ef.succ_unchecked::<false>(11) } would be UB
 ///
 /// let mut efb = EliasFanoBuilder::new(4, 10u64);
 /// efb.push(0);
@@ -217,9 +257,10 @@ pub type EfSeqDict<V = usize> = EliasFano<
 ///
 /// Enriching manually a base structure with [`map_high_bits`]:
 /// ```rust
-/// # use sux::rank_sel::{SelectAdaptConst, SelectZeroAdaptConst};
-/// # use sux::dict::{EliasFanoBuilder};
-/// # use sux::traits::{Types,IndexedSeq,IndexedDict,Succ};
+/// use sux::dict::EliasFanoBuilder;
+/// use sux::rank_sel::{SelectAdaptConst, SelectZeroAdaptConst};
+/// use sux::traits::{IndexedSeq, Succ};
+///
 /// let mut efb = EliasFanoBuilder::new(4, 10u64);
 /// efb.push(0);
 /// efb.push(2);
@@ -242,9 +283,9 @@ pub type EfSeqDict<V = usize> = EliasFano<
 ///
 /// Building a base structure with convenience methods:
 /// ```rust
-/// # use sux::rank_sel::{SelectAdaptConst};
-/// # use sux::dict::{EliasFano, EliasFanoBuilder};
-/// # use sux::traits::{Types,IndexedSeq};
+/// use sux::dict::{EliasFano, EliasFanoBuilder};
+/// use sux::rank_sel::SelectAdaptConst;
+/// use sux::traits::IndexedSeq;
 ///
 /// // Convenience constructor that iterates over a slice
 /// let mut ef: EliasFano = vec![0, 2, 8, 10].into();
@@ -266,6 +307,20 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// ```
 ///
 /// [`build`]: EliasFanoBuilder::build
+/// [below]: #bound-checks-for-successor-and-predecessor-queries
+/// [`len`]: EliasFano::len
+/// [`get`]: IndexedSeq::get
+/// [`index_of`]: IndexedDict::index_of
+/// [`contains`]: IndexedDict::contains
+/// [`succ`]: Succ::succ
+/// [`pred`]: Pred::pred
+/// [`rank`]: Pred::rank
+/// [`SliceByValue`]: value_traits::slices::SliceByValue
+/// [`indexed_dict`]: crate::traits::indexed_dict
+/// [`sux::traits`]: crate::traits
+/// [`iter_back_from(k)`]: EliasFano::iter_back_from
+/// [`iter_back_from(k + 1)`]: EliasFano::iter_back_from
+/// [`into_iter_back_from(k)`]: IntoBackIteratorFrom::into_iter_back_from
 /// [`build_with_seq`]: EliasFanoBuilder::build_with_seq
 /// [`build_with_dict`]: EliasFanoBuilder::build_with_dict
 /// [`build_with_seq_and_dict`]: EliasFanoBuilder::build_with_seq_and_dict
@@ -286,6 +341,8 @@ pub type EfSeqDict<V = usize> = EliasFano<
 #[value_traits_subslices(bound = "V: Word + PrimitiveNumberAs<usize>")]
 #[value_traits_subslices(bound = "H: AsRef<[usize]> + SelectUnchecked")]
 #[value_traits_subslices(bound = "L: SliceByValue<Value = V>")]
+#[doc(alias = "elias fano")]
+#[doc(alias = "monotone")]
 pub struct EliasFano<V = usize, H = BitVec<Box<[usize]>>, L = BitFieldVec<Box<[V]>>> {
     /// The number of values.
     n: usize,
@@ -564,10 +621,39 @@ impl<
 where
     for<'b> &'b L: IntoUncheckedIterator<Item = V> + IntoUncheckedBackIterator<Item = V>,
 {
-    /// Returns a backward iterator that yields elements before position `from`
-    /// in decreasing order.
+    /// Returns a backward iterator that yields in decreasing order the elements
+    /// before position `from`, that is, the elements of index `from` – 1,
+    /// `from` – 2, …, 0.
     ///
     /// This is equivalent to `self.iter_from(from).backward()`.
+    ///
+    /// Note that, following the convention of [`IntoBackIteratorFrom`], the
+    /// iterator returned by [`into_iter_back_from(from)`] yields first the
+    /// element of index `from`; thus, `iter_back_from(from)` is equivalent to
+    /// `into_iter_back_from(from - 1)` when `from` is positive.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `from` is greater than the [length] of the sequence.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sux::dict::EliasFanoBuilder;
+    /// use sux::traits::IntoBackIteratorFrom;
+    ///
+    /// let mut efb = EliasFanoBuilder::new(4, 10u64);
+    /// efb.extend([0, 2, 8, 10]);
+    /// let ef = efb.build_with_seq();
+    ///
+    /// // Position 2 is excluded
+    /// assert_eq!(ef.iter_back_from(2).collect::<Vec<_>>(), [2, 0]);
+    /// // Position 2 is included
+    /// assert_eq!((&ef).into_iter_back_from(2).collect::<Vec<_>>(), [8, 2, 0]);
+    /// ```
+    ///
+    /// [`into_iter_back_from(from)`]: IntoBackIteratorFrom::into_iter_back_from
+    /// [length]: EliasFano::len
     #[inline(always)]
     pub fn iter_back_from(&self, from: usize) -> EliasFanoBackIter<'_, V, H, L> {
         self.iter_from(from).backward()
@@ -680,6 +766,20 @@ where
 {
     type IntoIterBackFrom = EliasFanoBackIter<'a, V, H, L>;
 
+    /// Returns a backward iterator that yields in decreasing order the element
+    /// of index `from` and the elements before it, that is, the elements of
+    /// index `from`, `from` – 1, …, 0.
+    ///
+    /// Note that the inherent method [`EliasFano::iter_back_from`] follows a
+    /// different convention, as it excludes position `from`: this method is
+    /// equivalent to `self.iter_back_from(from + 1)`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `from` is greater than or equal to the [length] of the
+    /// sequence.
+    ///
+    /// [length]: EliasFano::len
     #[inline(always)]
     fn into_iter_back_from(self, from: usize) -> EliasFanoBackIter<'a, V, H, L> {
         self.iter_back_from(

@@ -18,6 +18,28 @@
 //! depending on the technique there are other bounds involved that might limit
 //! the amount of sharding.
 //!
+//! # Choosing a shard/edge logic
+//!
+//! - Use the default, [`FuseLge3Shards`], unless you have specific needs: it
+//!   has a low space overhead at all sizes, and sharding makes construction
+//!   parallel and scalable on large key sets.
+//!
+//! - Use [`Fuse3Shards`] if construction time on small key sets matters more
+//!   than space; it is also the default of [`CompVFunc`], which does not
+//!   support lazy Gaussian elimination.
+//!
+//! - Use [`FuseLge3FullSigs`] if the construction of a function fails with
+//!   [`BuildError::DuplicateLocalSignatures`], which might happen with more
+//!   than a few dozen billion keys.
+//!
+//! - Use [`Fuse3NoShards`] (possibly with `[u64; 1]` signatures) for small or
+//!   medium key sets, as it avoids the small cost of sharding at query time.
+//!
+//! - The MWHC implementations (`mwhc` feature) are mainly useful for
+//!   benchmarking.
+//!
+//! # The main alternatives
+//!
 //! Here we discuss pros and cons of the main alternatives; further options are
 //! available, but they are mostly interesting for benchmarking or for
 //! historical reasons. More details can be found in the documentation of each
@@ -29,7 +51,8 @@
 //!   generates edges from 64-bit local signatures using a fuse 3-hypergraph
 //!   with a 10.5% (ε = 0.001) space overhead for key sets above a few million
 //!   keys. Below 800000 keys, it switches to [lazy Gaussian elimination], which
-//!   increases construction time but still contains space overhead to 12.5%.
+//!   increases construction time but still contains space overhead to 12.5%
+//!   (23% below 5000 keys).
 //!   Sharding makes parallelism possible above a few dozen million keys.
 //!   Depending on the amount of sharding, functions with more than a few dozen
 //!   billion keys might incur in duplicate local signatures, which requires
@@ -69,6 +92,8 @@
 //! [`VFilter`]: crate::dict::VFilter
 //! [`VFunc`]: crate::func::VFunc
 //! [`LcpMmphf`]: crate::func::LcpMmphf
+//! [`CompVFunc`]: crate::func::CompVFunc
+//! [`BuildError::DuplicateLocalSignatures`]: crate::func::BuildError::DuplicateLocalSignatures
 
 use crate::utils::{BinSafe, Sig};
 use mem_dbg::*;
@@ -310,16 +335,18 @@ pub unsafe trait ShardEdge<S, const K: usize>:
     /// This composes [`local_sig`], [`edge_hash`], and the finalization step of
     /// Austin Appleby's [MurmurHash3].
     ///
-    /// The result is the canonical hash used by [`VFilter`] and all signed
-    /// structures to verify membership.
+    /// The result is the canonical hash used to verify membership by
+    /// [`VFilter`] and by the [`SignedFunc`] wrappers of structures based on
+    /// a [`ShardEdge`].
     ///
     /// [`VFilter`]: crate::dict::VFilter
+    /// [`SignedFunc`]: crate::func::SignedFunc
     /// [MurmurHash3]: http://code.google.com/p/smhasher/
     /// [`edge_hash`]: Self::edge_hash
     /// [`local_sig`]: Self::local_sig
     #[inline(always)]
     fn remixed_hash(&self, sig: S) -> u64 {
-        super::mix64(self.edge_hash(self.local_sig(sig)))
+        crate::utils::mix64(self.edge_hash(self.local_sig(sig)))
     }
 }
 
@@ -368,6 +395,54 @@ pub fn sharding_high_bits(n: usize, eps: f64) -> u32 {
     (t.log2() - t.ln().max(1.).log2()).floor() as u32
 }
 
+/// Returns the number of vertices ⌈`c` · `num_edges`⌉ of a graph with
+/// `num_edges` edges and expansion factor `c`.
+///
+/// # Panics
+///
+/// If the number of vertices is larger than `max_vertices` + 1; `name` is
+/// the name of the [`ShardEdge`] used in the panic message.
+fn num_vertices(name: &str, c: f64, num_edges: usize, max_vertices: u128) -> u128 {
+    let num_vertices = (c * num_edges as f64).ceil() as u128;
+    assert!(
+        num_vertices <= max_vertices + 1,
+        "{name} does not support more than {} vertices, but you are requesting {num_vertices}",
+        max_vertices + 1
+    );
+    num_vertices
+}
+
+/// Returns the number 𝓁 of segments in which the first vertex of an edge can
+/// lie in a fuse graph with segments of size 2<sup>`log2_seg_size`</sup> and
+/// at least `num_vertices` vertices (the graph has 𝓁 + 2 segments).
+fn fuse_l(num_vertices: u128, log2_seg_size: u32) -> u128 {
+    num_vertices
+        .div_ceil(1 << log2_seg_size)
+        .saturating_sub(2)
+        .max(1)
+}
+
+/// Checks that the vertices of a shard can be represented by a `u32` and
+/// that the overall number of vertices fits a `usize`.
+///
+/// The global edge index is `shard * num_vertices + local`, so the total
+/// vertex count across all shards must fit `usize`; the check is performed
+/// in `u128` (lossless widening) so that it stays correct on 32-bit
+/// targets, where the product can otherwise wrap.
+///
+/// # Panics
+///
+/// If one of the conditions above is not satisfied; `name` is the name of
+/// the [`ShardEdge`] used in the panic message.
+fn check_total_vertices(name: &str, num_vertices: usize, num_shards: usize) {
+    assert!(num_vertices - 1 <= u32::MAX as usize);
+    let total_vertices = num_vertices as u128 * num_shards as u128;
+    assert!(
+        total_vertices <= usize::MAX as u128,
+        "{name} total vertices ({total_vertices}) overflow usize on this target"
+    );
+}
+
 mod fuse {
     use crate::utils::{BinSafe, SigVal};
 
@@ -412,7 +487,8 @@ mod fuse {
     ///
     /// Below a few million keys, fuse graphs have a much higher space overhead.
     /// This construction in that case switches to sharding and [lazy Gaussian
-    /// elimination] to provide a 12.5% overhead. The construction time per keys
+    /// elimination] to provide a 12.5% overhead (23% below 5000 keys). The
+    /// construction time per keys
     /// increases by an order of magnitude, but since the number of keys is
     /// small, the impact is limited. If you need a fast construction, you can
     /// use [`Fuse3Shards`] instead, trading some space for a faster
@@ -434,7 +510,7 @@ mod fuse {
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct FuseLge3Shards {
         shard_bits_shift: u32,
         log2_seg_size: u32,
@@ -562,30 +638,10 @@ mod fuse {
                 )
             };
 
-            let num_vertices = (c * max_shard as f64).ceil() as u128;
-            assert!(
-                num_vertices <= Self::Vertex::MAX as u128 + 1,
-                "FuseLge3Shards does not support more than {} vertices, but you are requesting {num_vertices}",
-                Self::Vertex::MAX as u128 + 1
-            );
-
-            self.l = (num_vertices as usize)
-                .div_ceil(1 << self.log2_seg_size)
-                .saturating_sub(2)
-                .max(1)
-                .try_into()
-                .unwrap();
-
-            assert!(((self.l as usize + 2) << self.log2_seg_size) - 1 <= u32::MAX as usize);
-            // The global edge index is shard * num_vertices + local, so the
-            // total vertex count across all shards must fit usize. Promote to
-            // u128 (lossless widening) so the check stays correct on 32-bit
-            // targets, where the product can otherwise wrap usize.
-            let total_vertices = self.num_vertices() as u128 * self.num_shards() as u128;
-            assert!(
-                total_vertices <= usize::MAX as u128,
-                "FuseLge3Shards total vertices ({total_vertices}) overflow usize on this target"
-            );
+            let num_vertices =
+                num_vertices("FuseLge3Shards", c, max_shard, Self::Vertex::MAX as u128);
+            self.l = fuse_l(num_vertices, self.log2_seg_size).try_into().unwrap();
+            check_total_vertices("FuseLge3Shards", self.num_vertices(), self.num_shards());
             (c, lge)
         }
 
@@ -659,7 +715,7 @@ mod fuse {
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     #[derive(Default)]
     pub struct Fuse3NoShards {
         log2_seg_size: u32,
@@ -745,19 +801,8 @@ mod fuse {
             // probability of duplicate edges.
             self.log2_seg_size = Self::log2_seg_size(n).min(18);
 
-            let num_vertices = (c * n as f64).ceil() as u128;
-            assert!(
-                num_vertices <= max_vertices + 1,
-                "Fuse3NoShards does not support more than {} vertices, but you are requesting {num_vertices}",
-                max_vertices + 1
-            );
-
-            self.l = num_vertices
-                .div_ceil(1 << self.log2_seg_size)
-                .saturating_sub(2)
-                .max(1)
-                .try_into()
-                .unwrap();
+            let num_vertices = num_vertices("Fuse3NoShards", c, n, max_vertices);
+            self.l = fuse_l(num_vertices, self.log2_seg_size).try_into().unwrap();
 
             (c, false) // false = no Gaussian elimination
         }
@@ -772,19 +817,8 @@ mod fuse {
             let c = Self::c(max_shard_keys);
             self.log2_seg_size = Self::log2_seg_size(max_shard_edges);
 
-            let num_vertices = (c * max_shard_edges as f64).ceil() as u128;
-            assert!(
-                num_vertices <= max_vertices + 1,
-                "Fuse3NoShards does not support more than {} vertices, but you are requesting {num_vertices}",
-                max_vertices + 1
-            );
-
-            self.l = num_vertices
-                .div_ceil(1 << self.log2_seg_size)
-                .saturating_sub(2)
-                .max(1)
-                .try_into()
-                .unwrap();
+            let num_vertices = num_vertices("Fuse3NoShards", c, max_shard_edges, max_vertices);
+            self.l = fuse_l(num_vertices, self.log2_seg_size).try_into().unwrap();
 
             (c, false)
         }
@@ -954,7 +988,7 @@ mod fuse {
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct Fuse3Shards {
         shard_bits_shift: u32,
         log2_seg_size: u32,
@@ -1071,10 +1105,7 @@ mod fuse {
             let m = (n >> log2_num_shards).max(1);
             let c = Fuse3NoShards::c(m);
             let log2_seg_size = Self::log2_seg_size(m);
-            let l = ((c * m as f64).ceil() as u128)
-                .div_ceil(1_u128 << log2_seg_size)
-                .saturating_sub(2)
-                .max(1);
+            let l = fuse_l((c * m as f64).ceil() as u128, log2_seg_size);
             let log2_num_edges = (l as f64).log2() + 3.0 * log2_seg_size as f64;
             let mut pair_prob = (-log2_num_edges).exp2();
             if let Some(t) = local_sig_bits {
@@ -1126,29 +1157,9 @@ mod fuse {
             let c = Fuse3NoShards::c(max_shard);
             self.log2_seg_size = Self::log2_seg_size(max_shard);
 
-            let num_vertices = (c * max_shard as f64).ceil() as u128;
-            assert!(
-                num_vertices <= Self::Vertex::MAX as u128 + 1,
-                "Fuse3Shards does not support more than {} vertices, but you are requesting {num_vertices}",
-                Self::Vertex::MAX as u128 + 1
-            );
-
-            self.l = (num_vertices as usize)
-                .div_ceil(1 << self.log2_seg_size)
-                .saturating_sub(2)
-                .max(1)
-                .try_into()
-                .unwrap();
-
-            assert!(((self.l as usize + 2) << self.log2_seg_size) - 1 <= u32::MAX as usize);
-            // See FuseLge3Shards::set_up_graphs: the global edge index is
-            // shard * num_vertices + local, so the across-shard total must fit
-            // usize. u128 widening keeps the check sound on 32-bit targets.
-            let total_vertices = self.num_vertices() as u128 * self.num_shards() as u128;
-            assert!(
-                total_vertices <= usize::MAX as u128,
-                "Fuse3Shards total vertices ({total_vertices}) overflow usize on this target"
-            );
+            let num_vertices = num_vertices("Fuse3Shards", c, max_shard, Self::Vertex::MAX as u128);
+            self.l = fuse_l(num_vertices, self.log2_seg_size).try_into().unwrap();
+            check_total_vertices("Fuse3Shards", self.num_vertices(), self.num_shards());
             (c, false) // false = no Gaussian elimination
         }
 
@@ -1161,29 +1172,10 @@ mod fuse {
             let c = Fuse3NoShards::c(max_shard_keys);
             self.log2_seg_size = Fuse3Shards::log2_seg_size(max_shard_edges);
 
-            let num_vertices = (c * max_shard_edges as f64).ceil() as u128;
-            assert!(
-                num_vertices <= Self::Vertex::MAX as u128 + 1,
-                "Fuse3Shards does not support more than {} vertices, but you are requesting {num_vertices}",
-                Self::Vertex::MAX as u128 + 1
-            );
-
-            self.l = (num_vertices as usize)
-                .div_ceil(1 << self.log2_seg_size)
-                .saturating_sub(2)
-                .max(1)
-                .try_into()
-                .unwrap();
-
-            assert!(((self.l as usize + 2) << self.log2_seg_size) - 1 <= u32::MAX as usize);
-            // Correlated-graph path: same across-shard total-vertex bound as
-            // set_up_graphs; the global edge index multiplies by num_shards, so
-            // guard the product in u128 for 32-bit soundness.
-            let total_vertices = self.num_vertices() as u128 * self.num_shards() as u128;
-            assert!(
-                total_vertices <= usize::MAX as u128,
-                "Fuse3Shards total vertices ({total_vertices}) overflow usize on this target"
-            );
+            let num_vertices =
+                num_vertices("Fuse3Shards", c, max_shard_edges, Self::Vertex::MAX as u128);
+            self.l = fuse_l(num_vertices, self.log2_seg_size).try_into().unwrap();
+            check_total_vertices("Fuse3Shards", self.num_vertices(), self.num_shards());
             (c, false)
         }
 
@@ -1259,7 +1251,7 @@ mod fuse {
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     #[derive(Default)]
     pub struct FuseLge3FullSigs(FuseLge3Shards);
 
@@ -1475,6 +1467,7 @@ mod mwhc {
     #[derive(Debug, Clone, Copy, MemSize, MemDbg, Default)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct Mwhc3NoShards {
         // One third of the number of vertices in a shard
         seg_size: usize,
@@ -1593,6 +1586,7 @@ mod mwhc {
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct Mwhc3Shards {
         // One third of the number of vertices in a shard
         seg_size: usize,

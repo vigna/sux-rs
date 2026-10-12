@@ -4,29 +4,24 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-#![allow(clippy::collapsible_else_if)]
 use std::ops::{BitXor, BitXorAssign};
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use clap::{ArgGroup, Parser};
-use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
 use mem_dbg::{FlatType, MemSize};
+use num_primitive::PrimitiveNumberAs;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
 use sux::cli::{
-    AnyLineLender, BuilderArgs, Decompression, HashTypes, ShardingArgs, read_concat_lines,
-    str_slice_from_offsets,
+    AnyLineLender, BuilderArgs, Decompression, HashTypes, KeyBuffer, ShardingArgs, check_num_keys,
+    init_env_logger, store,
 };
 use sux::func::signed::SignedFunc;
 use sux::func::{shard_edge::*, *};
-use sux::init_env_logger;
-use sux::prelude::VBuilder;
-use sux::traits::TryIntoUnaligned;
-use sux::utils::{
-    EmptyVal, FromCloneableIntoIterator, FromIntoFallibleLenderFactory, Sig, SigVal, ToSig,
-};
+use sux::traits::{TryIntoUnaligned, Word};
+use sux::utils::{FromCloneableIntoIterator, FromIntoFallibleLenderFactory, Sig, SigVal, ToSig};
 
 #[derive(Parser, Debug)]
 #[command(about = "Creates a (possibly signed) VFunc mapping each input to its rank and serializes it with ε-serde.", long_about = None, next_line_help = true, max_term_width = 100)]
@@ -37,11 +32,12 @@ use sux::utils::{
                 .args(["filename", "n"]),
 ))]
 struct Args {
-    /// The number of keys; if no filename is provided, use the 64-bit keys
-    /// [0 . . n).​
+    /// The number of keys: if a file of keys is specified, its first N keys
+    /// are used, and it is an error if it contains fewer keys; otherwise, the
+    /// 64-bit keys [0 . . N) are used.​
     #[arg(short, long)]
     n: Option<usize>,
-    /// A file containing UTF-8 keys, one per line (at most N keys will be read).​
+    /// A file containing UTF-8 keys, one per line.​
     #[arg(short, long)]
     filename: Option<String>,
     /// Decompress the file of keys using this format (by default, it is read
@@ -51,9 +47,12 @@ struct Args {
     /// Save the structure in unaligned form (faster, if available).​
     #[arg(long, short)]
     unaligned: bool,
-    /// A name for the ε-serde serialized function.​
+    /// A name for the ε-serde serialized function (if not specified, the
+    /// function is built but not saved).​
     func: Option<String>,
-    /// Sign the function using hashes of this type.​
+    /// Sign the function using hashes of this type, obtaining a SignedFunc:
+    /// queries with keys outside the set return None, except for a fraction
+    /// 2^-b of false positives, where b is the number of bits of the type.​
     #[arg(long)]
     hash_type: Option<HashTypes>,
     /// Hashes keys sequentially without loading them in RAM.​
@@ -67,327 +66,156 @@ struct Args {
     log: sux::cli::LogIntervalArg,
 }
 
+/// The functions built by this binary.
+type Func<K, S, E> = VFunc<K, BitFieldVec<Box<[usize]>>, S, E>;
+
+/// The signed functions built by this binary.
+type Signed<K, S, E, W> = SignedFunc<Func<K, S, E>, Box<[W]>>;
+
 fn main() -> Result<()> {
     use sux::cli::ShardEdgeType;
     init_env_logger()?;
 
     let args = Args::parse();
 
+    macro_rules! build_with_types {
+        ($s:ty, $e:ty) => {
+            match args.hash_type {
+                None => build::<$s, $e>(&args),
+                Some(HashTypes::U8) => build_signed::<$s, $e, u8>(&args),
+                Some(HashTypes::U16) => build_signed::<$s, $e, u16>(&args),
+                Some(HashTypes::U32) => build_signed::<$s, $e, u32>(&args),
+                Some(HashTypes::U64) => build_signed::<$s, $e, u64>(&args),
+            }
+        };
+    }
     match args.sharding.shard_edge {
-        ShardEdgeType::Fuse3NoShards64 => main_with_types::<[u64; 1], Fuse3NoShards>(args),
-        ShardEdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
-        ShardEdgeType::Fuse3Shards => main_with_types::<[u64; 2], Fuse3Shards>(args),
-        ShardEdgeType::FuseLge3Shards => main_with_types::<[u64; 2], FuseLge3Shards>(args),
-        ShardEdgeType::FuseLge3FullSigs => main_with_types::<[u64; 2], FuseLge3FullSigs>(args),
+        ShardEdgeType::Fuse3NoShards64 => build_with_types!([u64; 1], Fuse3NoShards),
+        ShardEdgeType::Fuse3NoShards128 => build_with_types!([u64; 2], Fuse3NoShards),
+        ShardEdgeType::Fuse3Shards => build_with_types!([u64; 2], Fuse3Shards),
+        ShardEdgeType::FuseLge3Shards => build_with_types!([u64; 2], FuseLge3Shards),
+        ShardEdgeType::FuseLge3FullSigs => build_with_types!([u64; 2], FuseLge3FullSigs),
         #[cfg(feature = "mwhc")]
-        ShardEdgeType::Mwhc3 => main_with_types::<[u64; 2], Mwhc3Shards>(args),
+        ShardEdgeType::Mwhc3 => build_with_types!([u64; 2], Mwhc3Shards),
         #[cfg(feature = "mwhc")]
-        ShardEdgeType::Mwhc3NoShards => main_with_types::<[u64; 2], Mwhc3NoShards>(args),
+        ShardEdgeType::Mwhc3NoShards => build_with_types!([u64; 2], Mwhc3NoShards),
     }
 }
 
-// ── Sequential (lender-based) build macros ─────────────────────────
+/// Returns a builder configured by the command-line options.
+fn new_builder<S: Sig + Send + Sync, E: ShardEdge<S, 3>>(
+    args: &Args,
+) -> VBuilder<BitFieldVec<Box<[usize]>>, S, E> {
+    let builder = args.builder.configure(VBuilder::default());
+    match args.n {
+        Some(n) => builder.expected_num_keys(n),
+        None => builder,
+    }
+}
 
-macro_rules! filename_save_sign_seq(
-    ($h: ty, $builder:expr, $filename: expr, $decompress: expr, $func: expr, $unaligned: expr, $n: expr, $pl: expr) => {{
-        let func =
-            <SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_new_with_builder(
-                FromIntoFallibleLenderFactory::new(|| {
-                    AnyLineLender::from_path($filename, $decompress).map(|keys| keys.take($n))
-                })?,
-                $builder,
-                &mut $pl,
-            )?;
-        if let Some(filename) = $func {
-            if $unaligned {
-                unsafe { func.try_into_unaligned()?.store(filename) }?;
-            } else {
-                unsafe { func.store(filename) }?;
-            }
-        }
-    }}
-);
-
-macro_rules! n_save_sign_seq(
-    ($h: ty, $builder:expr, $n: expr, $func: expr, $unaligned: expr, $pl: expr) => {{
-        let func =
-            <SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_new_with_builder(
-                FromCloneableIntoIterator::new(0_usize..$n),
-                $builder,
-                &mut $pl,
-            )?;
-        if let Some(filename) = $func {
-            if $unaligned {
-                unsafe { func.try_into_unaligned()?.store(filename) }?;
-            } else {
-                unsafe { func.store(filename) }?;
-            }
-        }
-    }}
-);
-
-macro_rules! n_save_sign_par(
-    ($h: ty, $builder:expr, $keys:expr, $func: expr, $unaligned: expr, $pl: expr) => {{
-        let func =
-            <SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_par_new_with_builder(
-                $keys,
-                $builder,
-                &mut $pl,
-            )?;
-        if let Some(filename) = $func {
-            if $unaligned {
-                unsafe { func.try_into_unaligned()?.store(filename) }?;
-            } else {
-                unsafe { func.store(filename) }?;
-            }
-        }
-    }}
-);
-
-// ── Parallel (slice-based) build macros ────────────────────────────
-
-macro_rules! filename_save_sign_par(
-    ($h: ty, $builder:expr, $keys:expr, $func: expr, $unaligned: expr, $pl: expr) => {{
-        let func =
-            <SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[$h]>>>::try_par_new_with_builder(
-                $keys,
-                $builder,
-                &mut $pl,
-            )?;
-        if let Some(filename) = $func {
-            if $unaligned {
-                unsafe { func.try_into_unaligned()?.store(filename) }?;
-            } else {
-                unsafe { func.store(filename) }?;
-            }
-        }
-    }}
-);
-
-fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3> + MemSize + FlatType>(
-    args: Args,
-) -> Result<()>
+/// Builds a function.
+fn build<S: Sig + Send + Sync, E: ShardEdge<S, 3> + MemSize + FlatType>(args: &Args) -> Result<()>
 where
     str: ToSig<S>,
     usize: ToSig<S>,
     SigVal<S, usize>: RadixKey,
-    SigVal<S, EmptyVal>: RadixKey,
     SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
-    SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
-    VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>:
-        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
-    VFunc<str, BitFieldVec<Box<[usize]>>, S, E>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
-    VFunc<usize, Box<[u8]>, S, E>: Serialize,
-    VFunc<str, Box<[u8]>, S, E>: Serialize,
-    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>:
-        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
-    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u16]>>:
-        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
-    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u32]>>:
-        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
-    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>:
-        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
-    SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u8]>>:
-        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
-    SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u16]>>:
-        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
-    SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u32]>>:
-        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
-    SignedFunc<VFunc<str, BitFieldVec<Box<[usize]>>, S, E>, Box<[u64]>>:
-        Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    Func<str, S, E>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    Func<usize, S, E>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
 {
-    let mut pl = ProgressLogger::default();
-    pl.log_interval(args.log.log_interval);
+    let mut pl = args.log.progress_logger();
+    let builder = new_builder(args);
 
     if let Some(filename) = &args.filename {
-        let n = args.n.unwrap_or(usize::MAX);
-        let mut builder = args
-            .builder
-            .configure(VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default());
-        if let Some(n_hint) = args.n {
-            builder = builder.expected_num_keys(n_hint);
-        }
         if args.sequential {
-            match args.hash_type {
-                None => {
-                    let func = <VFunc<str, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
-                        FromIntoFallibleLenderFactory::new(|| {
-                            AnyLineLender::from_path(filename, args.decompress)
-                                .map(|keys| keys.take(n))
-                        })?,
-                        FromCloneableIntoIterator::from(0_usize..),
-                        builder,
-                        &mut pl,
-                    )?;
-                    if let Some(filename) = args.func {
-                        if args.unaligned {
-                            unsafe { func.try_into_unaligned()?.store(filename) }?;
-                        } else {
-                            unsafe { func.store(filename) }?;
-                        }
-                    }
-                }
-                Some(HashTypes::U8) => {
-                    filename_save_sign_seq!(
-                        u8,
-                        builder,
-                        filename,
-                        args.decompress,
-                        args.func,
-                        args.unaligned,
-                        n,
-                        pl
-                    )
-                }
-                Some(HashTypes::U16) => {
-                    filename_save_sign_seq!(
-                        u16,
-                        builder,
-                        filename,
-                        args.decompress,
-                        args.func,
-                        args.unaligned,
-                        n,
-                        pl
-                    )
-                }
-                Some(HashTypes::U32) => {
-                    filename_save_sign_seq!(
-                        u32,
-                        builder,
-                        filename,
-                        args.decompress,
-                        args.func,
-                        args.unaligned,
-                        n,
-                        pl
-                    )
-                }
-                Some(HashTypes::U64) => {
-                    filename_save_sign_seq!(
-                        u64,
-                        builder,
-                        filename,
-                        args.decompress,
-                        args.func,
-                        args.unaligned,
-                        n,
-                        pl
-                    )
-                }
-            }
+            let n = args.n.unwrap_or(usize::MAX);
+            let func = <Func<str, S, E>>::try_new_with_builder(
+                FromIntoFallibleLenderFactory::new(|| {
+                    AnyLineLender::from_path(filename, args.decompress).map(|keys| keys.take(n))
+                })?,
+                FromCloneableIntoIterator::from(0_usize..),
+                builder,
+                &mut pl,
+            )?;
+            check_num_keys(func.len(), args.n)?;
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
         } else {
-            // Parallel: read all keys into a single concatenated
-            // buffer, then build a Vec<&str> of slices into it for
-            // cache-friendly access during sig hashing.
-            let (buffer, offsets) = read_concat_lines(filename, n, args.decompress)?;
-            let keys = str_slice_from_offsets(&buffer, &offsets);
-            if let Some(n_hint) = args.n {
-                if keys.len() != n_hint {
-                    bail!(
-                        "key count mismatch: read {} keys, expected {n_hint}",
-                        keys.len()
-                    );
-                }
-            }
-            match args.hash_type {
-                None => {
-                    let values: Vec<usize> = (0..keys.len()).collect();
-                    let func =
-                        <VFunc<str, BitFieldVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
-                            &keys, &values, builder, &mut pl,
-                        )?;
-                    if let Some(filename) = args.func {
-                        if args.unaligned {
-                            unsafe { func.try_into_unaligned()?.store(filename) }?;
-                        } else {
-                            unsafe { func.store(filename) }?;
-                        }
-                    }
-                }
-                Some(HashTypes::U8) => {
-                    filename_save_sign_par!(u8, builder, &keys, args.func, args.unaligned, pl)
-                }
-                Some(HashTypes::U16) => {
-                    filename_save_sign_par!(u16, builder, &keys, args.func, args.unaligned, pl)
-                }
-                Some(HashTypes::U32) => {
-                    filename_save_sign_par!(u32, builder, &keys, args.func, args.unaligned, pl)
-                }
-                Some(HashTypes::U64) => {
-                    filename_save_sign_par!(u64, builder, &keys, args.func, args.unaligned, pl)
-                }
-            }
+            // Parallel: read all keys into a single buffer for cache-friendly
+            // access during signature hashing
+            let buffer = KeyBuffer::from_path(filename, args.n, args.decompress)?;
+            let keys = buffer.keys();
+            let values: Vec<usize> = (0..keys.len()).collect();
+            let func =
+                <Func<str, S, E>>::try_par_new_with_builder(&keys, &values, builder, &mut pl)?;
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
         }
     } else {
         let n = args.n.unwrap();
-        let builder = args
-            .builder
-            .configure(VBuilder::<BitFieldVec<Box<[usize]>>, S, E>::default())
-            .expected_num_keys(n);
         if args.sequential {
-            match args.hash_type {
-                None => {
-                    let func =
-                        <VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>::try_new_with_builder(
-                            FromCloneableIntoIterator::from(0_usize..n),
-                            FromCloneableIntoIterator::from(0_usize..),
-                            builder,
-                            &mut pl,
-                        )?;
-                    if let Some(filename) = args.func {
-                        if args.unaligned {
-                            unsafe { func.try_into_unaligned()?.store(filename) }?;
-                        } else {
-                            unsafe { func.store(filename) }?;
-                        }
-                    }
-                }
-                Some(HashTypes::U8) => {
-                    n_save_sign_seq!(u8, builder, n, args.func, args.unaligned, pl)
-                }
-                Some(HashTypes::U16) => {
-                    n_save_sign_seq!(u16, builder, n, args.func, args.unaligned, pl)
-                }
-                Some(HashTypes::U32) => {
-                    n_save_sign_seq!(u32, builder, n, args.func, args.unaligned, pl)
-                }
-                Some(HashTypes::U64) => {
-                    n_save_sign_seq!(u64, builder, n, args.func, args.unaligned, pl)
-                }
-            }
+            let func = <Func<usize, S, E>>::try_new_with_builder(
+                FromCloneableIntoIterator::from(0_usize..n),
+                FromCloneableIntoIterator::from(0_usize..),
+                builder,
+                &mut pl,
+            )?;
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
         } else {
             let keys: Vec<usize> = (0..n).collect();
             let values: Vec<usize> = (0..n).collect();
-            match args.hash_type {
-                None => {
-                    let func =
-                        <VFunc<usize, BitFieldVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
-                            &keys, &values, builder, &mut pl,
-                        )?;
-                    if let Some(filename) = args.func {
-                        if args.unaligned {
-                            unsafe { func.try_into_unaligned()?.store(filename) }?;
-                        } else {
-                            unsafe { func.store(filename) }?;
-                        }
-                    }
-                }
-                Some(HashTypes::U8) => {
-                    n_save_sign_par!(u8, builder, &keys, args.func, args.unaligned, pl)
-                }
-                Some(HashTypes::U16) => {
-                    n_save_sign_par!(u16, builder, &keys, args.func, args.unaligned, pl)
-                }
-                Some(HashTypes::U32) => {
-                    n_save_sign_par!(u32, builder, &keys, args.func, args.unaligned, pl)
-                }
-                Some(HashTypes::U64) => {
-                    n_save_sign_par!(u64, builder, &keys, args.func, args.unaligned, pl)
-                }
-            }
+            let func =
+                <Func<usize, S, E>>::try_par_new_with_builder(&keys, &values, builder, &mut pl)?;
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
         }
     }
+}
 
-    Ok(())
+/// Builds a function signed with hashes of type `W`.
+fn build_signed<S: Sig + Send + Sync, E: ShardEdge<S, 3> + MemSize + FlatType, W: Word>(
+    args: &Args,
+) -> Result<()>
+where
+    u64: PrimitiveNumberAs<W>,
+    str: ToSig<S>,
+    usize: ToSig<S>,
+    SigVal<S, usize>: RadixKey,
+    SigVal<E::LocalSig, usize>: BitXor + BitXorAssign,
+    Signed<str, S, E, W>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    Signed<usize, S, E, W>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+{
+    let mut pl = args.log.progress_logger();
+    let builder = new_builder(args);
+
+    if let Some(filename) = &args.filename {
+        if args.sequential {
+            let n = args.n.unwrap_or(usize::MAX);
+            let func = <Signed<str, S, E, W>>::try_new_with_builder(
+                FromIntoFallibleLenderFactory::new(|| {
+                    AnyLineLender::from_path(filename, args.decompress).map(|keys| keys.take(n))
+                })?,
+                builder,
+                &mut pl,
+            )?;
+            check_num_keys(func.len(), args.n)?;
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
+        } else {
+            let buffer = KeyBuffer::from_path(filename, args.n, args.decompress)?;
+            let func =
+                <Signed<str, S, E, W>>::try_par_new_with_builder(&buffer.keys(), builder, &mut pl)?;
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
+        }
+    } else {
+        let n = args.n.unwrap();
+        if args.sequential {
+            let func = <Signed<usize, S, E, W>>::try_new_with_builder(
+                FromCloneableIntoIterator::new(0_usize..n),
+                builder,
+                &mut pl,
+            )?;
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
+        } else {
+            let keys: Vec<usize> = (0..n).collect();
+            let func = <Signed<usize, S, E, W>>::try_par_new_with_builder(&keys, builder, &mut pl)?;
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
+        }
+    }
 }

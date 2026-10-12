@@ -56,10 +56,64 @@
 //! starting position). Many implementations also offer equivalent
 //! `iter`/`iter_from` convenience methods.
 //!
+//! # Implementations
+//!
+//! The following table shows which structures implement which traits (the
+//! iterator traits follow [`Succ`] and [`Pred`]):
+//!
+//! | Structure                          | [`IndexedSeq`] | [`IndexedDict`] | [`Succ`]/[`Pred`] |
+//! |------------------------------------|:--------------:|:---------------:|:-----------------:|
+//! | [`EliasFano`]                      | ✓ (1)          | ✓ (2)           | ✓ (2)             |
+//! | sorted [`RearCodedList`]           | ✓              | ✓               |                   |
+//! | unsorted [`RearCodedList`]         | ✓              |                 |                   |
+//! | [`MappedRearCodedList`]            | ✓              |                 |                   |
+//! | [`SliceSeq`]                       | ✓              |                 |                   |
+//! | slices, vectors, and arrays (3)    | ✓              |                 |                   |
+//!
+//! 1. If the high bits implement [`SelectUnchecked`], as in [`EfSeq`] and
+//!    [`EfSeqDict`].
+//! 2. If the high bits implement [`SelectZeroUnchecked`], as in [`EfDict`]
+//!    and [`EfSeqDict`].
+//! 3. Of primitive integer types.
+//!
+//! # Examples
+//!
+//! The [prelude] does not glob-import the traits of this module, as, for
+//! example, [`IndexedSeq::get`] would shadow [`slice::get`]: import them
+//! explicitly, or with `use sux::prelude::{*, indexed_dict::*}`.
+//!
+//! ```rust
+//! use sux::prelude::*;
+//! use sux::traits::indexed_dict::*;
+//!
+//! let mut efb = EliasFanoBuilder::new(4, 10);
+//! for v in [0_usize, 2, 8, 10] {
+//!     efb.push(v);
+//! }
+//! // Supports IndexedSeq, IndexedDict, Succ, and Pred
+//! let ef = efb.build_with_seq_and_dict();
+//!
+//! assert_eq!(ef.len(), 4);
+//! assert_eq!(ef.get(2), 8);
+//! assert_eq!(ef.index_of(8), Some(2));
+//! assert!(!ef.contains(5));
+//! assert_eq!(ef.succ(3), Some((2, 8)));
+//! assert_eq!(ef.pred(7), Some((1, 2)));
+//! assert_eq!(ef.succ(11), None);
+//! ```
+//!
 //! [predecessor]: Pred
 //! [successor]: Succ
+//! [prelude]: crate::prelude
 //! [`RearCodedList`]: crate::dict::rear_coded_list::RearCodedList
+//! [`MappedRearCodedList`]: crate::dict::mapped_rear_coded_list::MappedRearCodedList
+//! [`SliceSeq`]: crate::dict::SliceSeq
 //! [`EliasFano`]: crate::dict::elias_fano::EliasFano
+//! [`EfSeq`]: crate::dict::elias_fano::EfSeq
+//! [`EfDict`]: crate::dict::elias_fano::EfDict
+//! [`EfSeqDict`]: crate::dict::elias_fano::EfSeqDict
+//! [`SelectUnchecked`]: crate::traits::SelectUnchecked
+//! [`SelectZeroUnchecked`]: crate::traits::SelectZeroUnchecked
 //! [`IntoIteratorFrom`]: super::iter::IntoIteratorFrom
 
 use ambassador::delegatable_trait;

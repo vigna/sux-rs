@@ -15,7 +15,10 @@
 //! The [`BalParen`] trait abstracts the query interface; currently, the only
 //! implementation is [`JacobsonBalParen`].
 
-pub use crate::traits::bal_paren::{BalParen, ambassador_impl_BalParen};
+pub use crate::traits::bal_paren::BalParen;
+#[doc(hidden)]
+pub use crate::traits::bal_paren::ambassador_impl_BalParen;
 
 pub mod jacobson;
+#[doc(inline)]
 pub use jacobson::*;

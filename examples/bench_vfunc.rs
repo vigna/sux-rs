@@ -10,33 +10,10 @@ use clap::Parser;
 use epserde::prelude::*;
 use sux::{
     bits::{BitFieldVec, BitFieldVecU},
-    cli::{Decompression, pack_strings, reservoir_sample},
+    cli::{Decompression, INCR, bench, init_env_logger, pack_strings, reservoir_sample},
     func::{shard_edge::*, *},
     utils::{Sig, ToSig},
 };
-
-#[cfg(target_pointer_width = "64")]
-const INCR: usize = 0x9e3779b97f4a7c15;
-#[cfg(not(target_pointer_width = "64"))]
-const INCR: usize = 0x9e3779b9;
-
-fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
-    let mut timings = Vec::with_capacity(repeats);
-    for _ in 0..repeats {
-        let start = std::time::Instant::now();
-        f();
-        timings.push(start.elapsed().as_nanos() as f64 / n as f64);
-        eprintln!("{} ns/key", timings.last().unwrap());
-    }
-    timings.sort_unstable_by(|a, b| a.total_cmp(b));
-    eprintln!(
-        "Min: {} Median: {} Max: {} Average: {}",
-        timings[0],
-        timings[timings.len() / 2],
-        timings.last().unwrap(),
-        timings.iter().sum::<f64>() / timings.len() as f64
-    );
-}
 
 #[derive(Parser, Debug)]
 #[command(about = "Benchmarks VFunc with strings or 64-bit integers.", long_about = None, next_line_help = true, max_term_width = 100)]
@@ -45,8 +22,11 @@ struct Args {
     n: usize,
     /// A name for the ε-serde serialized function.​
     func: String,
+    /// A file containing UTF-8 keys, one per line, from which queries are
+    /// sampled. If not specified, queries are multiples of a large odd
+    /// constant, and thus mostly not keys of a structure built with -n (but
+    /// queries take the same time on keys and non-keys).​
     #[arg(short = 'f', long)]
-    /// A file containing UTF-8 keys, one per line. If not specified, the 64-bit keys [0..n) are used.​
     filename: Option<String>,
     /// Decompress the file of keys using this format (by default, it is read
     /// as is).​
@@ -65,7 +45,7 @@ struct Args {
 
 fn main() -> Result<()> {
     use sux::cli::ShardEdgeType;
-    sux::init_env_logger()?;
+    init_env_logger()?;
 
     let args = Args::parse();
 

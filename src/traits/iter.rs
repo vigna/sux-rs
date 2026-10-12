@@ -149,6 +149,11 @@ pub trait IntoUncheckedIterator: Sized {
     }
 
     /// Creates an unchecked iterator starting from the given position.
+    ///
+    /// The first call to [`next_unchecked`] returns the element of position
+    /// `from`.
+    ///
+    /// [`next_unchecked`]: UncheckedIterator::next_unchecked
     fn into_unchecked_iter_from(self, from: usize) -> Self::IntoUncheckedIter;
 }
 
@@ -157,6 +162,13 @@ pub trait IntoUncheckedIterator: Sized {
 ///
 /// Unlike [`IntoIterator`], this trait provides a way
 /// to obtain an iterator starting from a given position.
+///
+/// The position passed to [`into_unchecked_iter_back_from`] is *exclusive*:
+/// the iterator returns the elements of position smaller than `from`, in
+/// decreasing order of position, as [`BidiIterator::prev`] does on the iterator
+/// returned by [`IntoBidiIteratorFrom::into_iter_bidi_from`]. This convention
+/// is different from that of [`IntoBackIteratorFrom::into_iter_back_from`],
+/// which is *inclusive*.
 ///
 /// Note that [`into_unchecked_iter_back`] cannot be implemented in terms of
 /// [`into_unchecked_iter_back_from`] because we cannot know which is the
@@ -169,8 +181,21 @@ pub trait IntoUncheckedBackIterator: Sized {
     type IntoUncheckedIterBack: UncheckedIterator<Item = Self::Item>;
 
     /// Creates a backward unchecked iterator starting from the end.
+    ///
+    /// The first call to [`next_unchecked`] returns the last element.
+    ///
+    /// [`next_unchecked`]: UncheckedIterator::next_unchecked
     fn into_unchecked_iter_back(self) -> Self::IntoUncheckedIterBack;
-    /// Creates a backward unchecked iterator starting from the given position.
+
+    /// Creates a backward unchecked iterator returning the elements of
+    /// position smaller than `from`.
+    ///
+    /// The first call to [`next_unchecked`] returns the element of position
+    /// `from` – 1; if `from` is the length of the sequence, the result is
+    /// thus equivalent to [`into_unchecked_iter_back`].
+    ///
+    /// [`next_unchecked`]: UncheckedIterator::next_unchecked
+    /// [`into_unchecked_iter_back`]: IntoUncheckedBackIterator::into_unchecked_iter_back
     fn into_unchecked_iter_back_from(self, from: usize) -> Self::IntoUncheckedIterBack;
 }
 
@@ -188,16 +213,30 @@ pub trait IntoBackIterator: Sized {
 
 /// Conversion into a backward [`Iterator`] starting from a given position.
 ///
-/// This is the backward counterpart of [`IntoIteratorFrom`]. The iterator
-/// returned by [`into_iter_back_from`] yields element `from` first, then
-/// preceding elements in decreasing order
-/// (as [`IntoUncheckedBackIterator::into_unchecked_iter_back_from`]).
+/// This is the backward counterpart of [`IntoIteratorFrom`]. The position
+/// passed to [`into_iter_back_from`] is *inclusive*: the iterator yields the
+/// element of position `from` first, and then the preceding elements in
+/// decreasing order of position.
+///
+/// Note that this convention is different from that of
+/// [`IntoUncheckedBackIterator::into_unchecked_iter_back_from`] and of
+/// [`BidiIterator::prev`] on the iterator returned by
+/// [`IntoBidiIteratorFrom::into_iter_bidi_from`], whose first element is that
+/// of position `from` – 1. For example, on [`EliasFano`]
+/// `into_iter_back_from(from)` is equivalent to the inherent method
+/// [`iter_back_from(from + 1)`].
 ///
 /// [`into_iter_back_from`]: IntoBackIteratorFrom::into_iter_back_from
+/// [`EliasFano`]: crate::dict::EliasFano
+/// [`iter_back_from(from + 1)`]: crate::dict::EliasFano::iter_back_from
 pub trait IntoBackIteratorFrom: IntoBackIterator {
     type IntoIterBackFrom: Iterator<Item = <Self as IntoBackIterator>::Item>;
 
     /// Creates a backward iterator starting from the given position.
+    ///
+    /// The first element returned is that of position `from`. The behavior
+    /// when `from` is greater than or equal to the number of elements is
+    /// implementation-defined.
     fn into_iter_back_from(self, from: usize) -> Self::IntoIterBackFrom;
 }
 

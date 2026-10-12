@@ -56,9 +56,11 @@ use std::hash::Hash;
 /// A static function whose values are stored in compressed form.
 ///
 /// [`CompVFunc`] maps `n` keys to values of type `D::Word`, representing each
-/// value with a [prefix-free codeword] (by default a length-limited [Huffman
-/// code]) and storing the codewords by peeling a fuse graph, as in the case of
-/// [`VFunc`].
+/// value with a codeword of a length-limited canonical [Huffman code] (rare
+/// values are escaped and stored explicitly) and storing the codewords by
+/// peeling a fuse graph, as in the case of [`VFunc`]. The code is configured
+/// by passing a [`HuffmanConf`] to the `*_with_builder` constructors, together
+/// with a [`VBuilder`] configuring the construction.
 ///
 /// When the value distribution is skewed, this uses much less space than
 /// [`VFunc`], roughly the empirical entropy of the value list plus ≈11%
@@ -68,10 +70,27 @@ use std::hash::Hash;
 ///
 /// Instances of this structure are immutable, except for the [`branchless`]
 /// setting of the internal decoder they are built using [`try_new`] or one of
-/// its variants, and can be serialized using [ε-serde] or [`serde`].
+/// its variants, and can be serialized using [ε-serde] or [`serde`]. Since
+/// signatures are computed from the native representation of keys (see
+/// [`ToSig`]), a serialized function must be queried on a machine with the
+/// same endianness.
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
+///
+/// The `comp_vfunc` binary (`cli` feature) builds and serializes instances of
+/// this structure.
+///
+/// # Alternatives
+///
+/// - A [`VFunc`] has faster queries, and it is smaller when values are not
+///   skewed.
+///
+/// - A [`VFunc2`] is a compromise: it uses less space than a [`VFunc`] on
+///   skewed distributions, with almost the same query speed.
+///
+/// - Contrarily to a [`VFunc`], a [`CompVFunc`] cannot be wrapped in a
+///   [`SignedFunc`].
 ///
 /// # Implementation notes
 ///
@@ -84,7 +103,8 @@ use std::hash::Hash;
 ///
 /// # Generics
 ///
-/// * `K` - the key type.
+/// * `K` - the key type; it must implement [`ToSig`] (see the [`VFunc`]
+///   documentation).
 ///
 /// * `D` - the data backend: the output value type is [`D::Word`]; defaults to
 ///   [`BitVec<Box<[usize]>>`](crate::bits::BitVec). Note that codeword
@@ -126,15 +146,15 @@ use std::hash::Hash;
 /// ```
 ///
 /// [`VFunc`]: crate::func::VFunc
+/// [`VFunc2`]: crate::func::VFunc2
+/// [`SignedFunc`]: crate::func::SignedFunc
 /// [`VBuilder`]: crate::func::VBuilder
-/// [`ShardEdge`]: crate::func::shard_edge::ShardEdge
-/// [`ToSig`]: crate::utils::ToSig
+/// [`HuffmanConf`]: crate::func::codec::HuffmanConf
 /// [`try_new`]: Self::try_new
 /// [ε-serde]: https://docs.rs/epserde/latest/epserde/
 /// [`serde`]: https://crates.io/crates/serde
 /// [`D::Word`]: Backend::Word
 /// [`branchless`]: Self::branchless
-/// [prefix-free codeword]: crate::func::codec::Codec
 /// [Huffman code]: crate::func::codec::HuffmanConf
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
@@ -192,6 +212,9 @@ impl<
 
     /// Returns the value associated with the given signature, or an
     /// arbitrary value if no key has that signature.
+    ///
+    /// The signature must be computed using the [seed](CompVFunc::seed) of
+    /// the function.
     #[inline(always)]
     pub fn get_by_sig(&self, sig: S) -> D::Word {
         // Here we compute manually the edge vertices. We cannot use
@@ -239,6 +262,16 @@ impl<K: ?Sized, D: Backend<Word: Word>, S, E> CompVFunc<K, D, S, E> {
     /// Whether the function has no keys.
     pub const fn is_empty(&self) -> bool {
         self.num_keys == 0
+    }
+
+    /// Returns the seed used to compute the signatures of the keys.
+    ///
+    /// The signatures passed to [`get_by_sig`] must be computed with this
+    /// seed, that is, as `K::to_sig(key, func.seed())`.
+    ///
+    /// [`get_by_sig`]: CompVFunc::get_by_sig
+    pub const fn seed(&self) -> u64 {
+        self.seed
     }
 
     /// Provides access to the underlying [`HuffmanDecoder`].
@@ -399,13 +432,7 @@ where
         builder: VBuilder<BitVec<Box<[W]>>, S, E>,
         pl: &mut (impl ProgressLog + Clone + Send + Sync),
     ) -> Result<Self> {
-        if keys.len() != values.len() {
-            return Err(crate::func::BuildError::MismatchedKeysAndValues {
-                num_keys: keys.len(),
-                num_values: values.len(),
-            }
-            .into());
-        }
+        crate::func::check_num_values(keys.len(), values.len())?;
         if keys.is_empty() {
             return Ok(empty_comp_vfunc::<K, W, S, E>());
         }
@@ -896,7 +923,8 @@ where
         .sum();
     values = values.rewind()?;
 
-    let mut builder = builder.shard_size_hint(total_edges);
+    let mut builder = builder;
+    builder.shard_size_hint = Some(total_edges);
     let mut build_fn = make_build_fn(&coder);
     let ((data, seed_used, shard_size), _keys) =
         builder.try_populate_and_build(keys, values, &mut build_fn, pl, ())?;
@@ -940,7 +968,8 @@ where
     let n = keys.len();
     let coder = build_coder_from_frequencies(huffman, &frequencies_from_slice(values))?;
     let total_edges: usize = values.iter().map(|v| coder.encoded_len(*v) as usize).sum();
-    let mut builder = builder.expected_num_keys(n).shard_size_hint(total_edges);
+    let mut builder = builder.expected_num_keys(n);
+    builder.shard_size_hint = Some(total_edges);
     let mut build_fn = make_build_fn(&coder);
     let (data, seed_used, shard_size) =
         builder.try_par_populate_and_build(keys, &|i: usize| values[i], &mut build_fn, pl, ())?;

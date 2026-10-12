@@ -6,38 +6,23 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-use super::{Inventory, LOG2_U16_PER_USIZE, SpanType, U32_PER_USIZE, assert_inventory_length};
+use super::{
+    Inventory, LOG2_U16_PER_USIZE, U32_PER_USIZE, assert_inventory_length, build_inventory,
+    log2_ones_per_sub32,
+};
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
-use num_primitive::PrimitiveInteger;
-use std::{
-    cmp::{max, min},
-    ops::Deref,
-};
+use std::{cmp::max, ops::Deref};
 
-use crate::{
-    prelude::{BitLength, SelectZeroHinted},
-    traits::{
-        Backend, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
-        SelectUnchecked, SelectZero, SelectZeroUnchecked, Word,
-    },
-};
+use crate::traits::{Backend, BitLength, Word};
 
 use crate::ambassador_impl_Index;
 use crate::traits::BitVecOps;
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::bal_paren::{BalParen, ambassador_impl_BalParen};
 use crate::traits::bit_vec_ops::ambassador_impl_BitLength;
-use crate::traits::rank_sel::ambassador_impl_NumBits;
-use crate::traits::rank_sel::ambassador_impl_Rank;
-use crate::traits::rank_sel::ambassador_impl_RankHinted;
-use crate::traits::rank_sel::ambassador_impl_RankUnchecked;
-use crate::traits::rank_sel::ambassador_impl_RankZero;
-use crate::traits::rank_sel::ambassador_impl_Select;
-use crate::traits::rank_sel::ambassador_impl_SelectHinted;
-use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
-use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
+use crate::traits::rank_sel::*;
 use std::ops::Index;
 
 // NOTE: to make parallel modifications with SelectAdapt as easy as possible,
@@ -49,9 +34,10 @@ use std::ops::Index;
 /// ```rust
 /// # #[cfg(target_pointer_width = "64")]
 /// # {
-/// # use sux::bit_vec;
-/// # use sux::traits::{Rank, SelectZero, SelectZeroUnchecked, AddNumBits};
-/// # use sux::rank_sel::{SelectZeroAdapt, Rank9};
+/// use sux::bit_vec;
+/// use sux::rank_sel::{Rank9, SelectZeroAdapt};
+/// use sux::traits::{AddNumBits, Rank, SelectZero, SelectZeroUnchecked};
+///
 /// // Standalone select
 /// let bits = bit_vec![0, 1, 0, 0, 1, 0, 1, 0];
 /// let select = SelectZeroAdapt::new(bits);
@@ -186,16 +172,6 @@ impl<B, I> SelectZeroAdapt<B, I> {
         self.bits
     }
 
-    // Compute adaptively the number of 32-bit subinventory entries
-    #[inline(always)]
-    const fn log2_ones_per_sub32(span: usize, log2_ones_per_sub16: usize) -> usize {
-        debug_assert!(span > 1 << 16);
-        // Since span > 2^16, (span >> 15).ilog2() >= 0, which implies in any case
-        // at least doubling the frequency of the subinventory with respect to the
-        // 16-bit case, unless log2_ones_per_u16 = 0, that is, we are recording the
-        // position of every one in the subinventory.
-        log2_ones_per_sub16.saturating_sub((span >> 15).ilog2() as usize + 1)
-    }
     /// Replaces the backend with a new one implementing [`SelectZeroHinted`].
     ///
     /// # Safety
@@ -323,10 +299,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
             "max_log2_words_per_subinventory ({max_log2_words_per_subinventory}) exceeds the supported maximum ({})",
             super::select_adapt::MAX_LOG2_WORDS_PER_SUBINVENTORY
         );
-        let num_bits = max(1, bits.len());
-        let ones_per_inventory = 1 << log2_ones_per_inventory;
-        let ones_per_inventory_mask = ones_per_inventory - 1;
-        let inventory_size = num_ones.div_ceil(ones_per_inventory);
+        let ones_per_inventory_mask = (1 << log2_ones_per_inventory) - 1;
 
         // We use a smaller value than max_log2_words_per_subinventory when with a
         // smaller value we can still index, in the 16-bit case, all bits the
@@ -336,274 +309,18 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]> + BitLength>
         let log2_words_per_subinventory =
             max_log2_words_per_subinventory.min(log2_ones_per_inventory.saturating_sub(2));
 
-        let words_per_subinventory = 1 << log2_words_per_subinventory;
-        // A u64 for the inventory, and words_per_inventory for the subinventory
-        let words_per_inventory = words_per_subinventory + 1;
-
         let log2_ones_per_sub16 = log2_ones_per_inventory
             .saturating_sub(log2_words_per_subinventory + LOG2_U16_PER_USIZE);
-        let ones_per_sub16 = 1 << log2_ones_per_sub16;
-        let ones_per_sub16_mask = ones_per_sub16 - 1;
+        let ones_per_sub16_mask = (1 << log2_ones_per_sub16) - 1;
 
-        let inventory_words = inventory_size * words_per_inventory + 1;
-        let mut inventory: Vec<usize> = Vec::with_capacity(inventory_words);
-
-        let bits_per_word = B::Word::BITS as usize;
-        let num_words = bits.len().div_ceil(bits_per_word);
-        let tail_mask = super::tail_mask::<B::Word>(bits.len() % bits_per_word);
-
-        let mut past_ones = 0;
-        let mut next_quantum = 0;
-        let mut spilled = 0;
-
-        // First phase: we build an inventory for each one out of ones_per_inventory.
-        // Take only the logical words and mask the complemented tail so a shrunk
-        // BitVec's stale backing words are not scanned (mirrors SelectAdapt and
-        // SelectZeroAdaptConst).
-        for (i, word) in bits.as_ref().iter().copied().take(num_words).enumerate() {
-            let word = super::mask_tail_word(!word, i + 1 == num_words, tail_mask);
-            // The masking above removes phantom zeros, so no clamp is needed
-            // (this mirrors the ones-based twin).
-            let ones_in_word = word.count_ones() as usize;
-
-            while past_ones + ones_in_word > next_quantum {
-                let in_word_index = word.select_in_word(next_quantum - past_ones);
-                let index = (i * bits_per_word) + in_word_index;
-
-                // write the position of the one in the inventory
-                inventory.push(index);
-                // make space for the subinventory
-                inventory.resize(inventory.len() + words_per_subinventory, 0);
-
-                next_quantum += ones_per_inventory;
-            }
-            past_ones += ones_in_word;
-        }
-
-        assert_eq!(past_ones, num_ones);
-        // in the last inventory write the number of bits
-        inventory.push(num_bits);
-        assert_eq!(inventory.len(), inventory_words);
-
-        // We estimate the subinventory and exact spill size
-        for (i, inv) in inventory[..inventory_size * words_per_inventory]
-            .iter()
-            .copied()
-            .step_by(words_per_inventory)
-            .enumerate()
-        {
-            let start = inv;
-            let span = inventory[i * words_per_inventory + words_per_inventory] - start;
-            past_ones = i * ones_per_inventory;
-            let ones = min(num_ones - past_ones, ones_per_inventory);
-
-            debug_assert!(start + span == num_bits || ones == ones_per_inventory);
-
-            match SpanType::from_span(span) {
-                // We store the entries first in the subinventory and then in
-                // the spill buffer. The first u64 word will be used to store
-                // the position of the entry in the spill buffer. Using the
-                // first word gives a cache advantage to entries that will need
-                // another cache miss to be read from the spill buffer.
-                SpanType::U32 => {
-                    // We store an inventory entry each 1 << log2_ones_per_sub32 ones.
-                    let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span, log2_ones_per_sub16);
-                    let num_u32s = ones.div_ceil(1 << log2_ones_per_sub32);
-                    let num_words = num_u32s.div_ceil(U32_PER_USIZE);
-                    let spilled_u64s = num_words.saturating_sub(words_per_subinventory - 1);
-                    spilled += spilled_u64s;
-                }
-                #[cfg(target_pointer_width = "64")]
-                SpanType::U64 => {
-                    // We store an inventory entry for each one after the first.
-                    spilled += (ones - 1).saturating_sub(words_per_subinventory - 1);
-                }
-                _ => {}
-            }
-        }
-
-        let spill_size = spilled;
-
-        let mut inventory: Box<[usize]> = inventory.into();
-        let mut spill: Box<[usize]> = vec![0; spill_size].into();
-
-        spilled = 0;
-        let locally_stored_u32s = U32_PER_USIZE * (words_per_subinventory - 1);
-
-        // Second phase: we fill the subinventories and the spill.
-        for inventory_idx in 0..inventory_size {
-            // Get the start and end indices of the current inventory
-            let start_inv_idx = inventory_idx * words_per_inventory;
-            let end_inv_idx = start_inv_idx + words_per_inventory;
-            // Read the first-level index to get the start and end bit indices
-            let start_bit_idx = inventory[start_inv_idx];
-            let end_bit_idx = inventory[end_inv_idx];
-            // compute the span of the inventory
-            let span = end_bit_idx - start_bit_idx;
-            let span_type = SpanType::from_span(span);
-
-            // Compute the number of ones before the current inventory
-            let mut past_ones = inventory_idx * ones_per_inventory;
-            let mut next_quantum = past_ones;
-            let log2_quantum;
-
-            match span_type {
-                SpanType::U16 => {
-                    log2_quantum = log2_ones_per_sub16;
-                    inventory[start_inv_idx].set_u16_span();
-                }
-                SpanType::U32 => {
-                    log2_quantum = Self::log2_ones_per_sub32(span, log2_ones_per_sub16);
-                    inventory[start_inv_idx].set_u32_span();
-                    // The first word of the subinventory is used to store the spill index.
-                    inventory[start_inv_idx + 1] = spilled;
-                }
-                #[cfg(target_pointer_width = "64")]
-                SpanType::U64 => {
-                    log2_quantum = 0;
-                    inventory[start_inv_idx].set_u64_span();
-                    // The first word of the subinventory is used to store the spill index.
-                    inventory[start_inv_idx + 1] = spilled;
-                }
-            }
-
-            let quantum = 1 << log2_quantum;
-
-            // If the span is 16-bit or 32-bit the first subinventory element is
-            // always zero, so we don't write it explicitly. Moreover, in the
-            // U64 case we don't write it at all.
-            let mut subinventory_idx = 1;
-            next_quantum += quantum;
-
-            let mut word_idx = start_bit_idx / bits_per_word;
-            let end_word_idx = end_bit_idx.div_ceil(bits_per_word);
-            let bit_idx = start_bit_idx % bits_per_word;
-
-            // Clear the lower bits
-            let mut word = (!bits.as_ref()[word_idx] >> bit_idx) << bit_idx;
-
-            'outer: loop {
-                // Here the complement is not tail-masked, so the clamp is
-                // necessary to exclude phantom zeros beyond the logical end.
-                let ones_in_word = (word.count_ones() as usize).min(num_ones - past_ones);
-
-                // If the quantum is in this word, write it in the subinventory.
-                // Note that this can happen multiple times in the same word if
-                // the quantum is small, hence the following loop.
-                while past_ones + ones_in_word > next_quantum {
-                    debug_assert!(next_quantum <= end_bit_idx);
-                    // find the quantum bit in the word
-                    let in_word_index = word.select_in_word(next_quantum - past_ones);
-                    // compute the global index of the quantum bit in the bitvec
-                    let bit_index = (word_idx * bits_per_word) + in_word_index;
-
-                    // This exit is necessary in case the number of ones per
-                    // inventory is larger than the number of available
-                    // subinventory entries, which can happen if the bit vector
-                    // is very sparse, or if we are in the last inventory entry.
-                    if bit_index >= end_bit_idx {
-                        break 'outer;
-                    }
-
-                    // Compute the offset of the quantum bit from the start of
-                    // the subinventory
-                    let sub_offset = bit_index - start_bit_idx;
-
-                    match span_type {
-                        SpanType::U16 => {
-                            let subinventory: &mut [u16] = unsafe {
-                                inventory[start_inv_idx + 1..end_inv_idx].align_to_mut().1
-                            };
-
-                            subinventory[subinventory_idx] = sub_offset as u16;
-                            subinventory_idx += 1;
-                            // This exit is not necessary for correctness, but
-                            // it avoids the additional loop iterations that
-                            // would be necessary to find the position of the
-                            // next one (i.e., end_bit_idx).
-                            if subinventory_idx << log2_quantum == ones_per_inventory {
-                                break 'outer;
-                            }
-                        }
-                        SpanType::U32 => {
-                            if subinventory_idx < locally_stored_u32s {
-                                let subinventory: &mut [u32] = unsafe {
-                                    inventory[start_inv_idx + 2..end_inv_idx].align_to_mut().1
-                                };
-
-                                debug_assert_eq!(subinventory[subinventory_idx], 0);
-                                subinventory[subinventory_idx] = sub_offset as u32;
-                            } else {
-                                let u32_spill: &mut [u32] =
-                                    unsafe { spill[spilled..].align_to_mut().1 };
-                                debug_assert_eq!(
-                                    u32_spill[subinventory_idx - locally_stored_u32s],
-                                    0
-                                );
-                                u32_spill[subinventory_idx - locally_stored_u32s] =
-                                    sub_offset as u32;
-                            }
-
-                            subinventory_idx += 1;
-                            // This exit is not necessary for correctness, but
-                            // it avoids the additional loop iterations that
-                            // would be necessary to find the position of the
-                            // next one (i.e., end_bit_idx).
-                            if subinventory_idx << log2_quantum == ones_per_inventory {
-                                break 'outer;
-                            }
-                        }
-                        #[cfg(target_pointer_width = "64")]
-                        SpanType::U64 => {
-                            if subinventory_idx < words_per_subinventory {
-                                inventory[start_inv_idx + 1 + subinventory_idx] = bit_index;
-                            } else {
-                                assert!(spilled < spill_size);
-                                spill[spilled] = bit_index;
-                                spilled += 1;
-                            }
-                            // Count every stored zero (local or spilled) so the
-                            // early exit below can fire; the local-vs-spill
-                            // routing above is unchanged.
-                            subinventory_idx += 1;
-                            // This exit is not necessary for correctness, but
-                            // it avoids the additional loop iterations that
-                            // would be necessary to find the position of the
-                            // next one (i.e., end_bit_idx). Note that here
-                            // log2_quantum == 0.
-                            if subinventory_idx == ones_per_inventory {
-                                break 'outer;
-                            }
-                        }
-                    }
-
-                    next_quantum += quantum;
-                }
-
-                // We are done with the word, so update the number of ones
-                past_ones += ones_in_word;
-                // Move to the next word and check whether it is the last one
-                word_idx += 1;
-                if word_idx == end_word_idx {
-                    break;
-                }
-
-                // Read the next word
-                word = !bits.as_ref()[word_idx];
-            }
-
-            // If we are in the U32 case, we need to update the number of used
-            // element in the spill buffer. The update must be done after the
-            // loop, as for the last inventory entry only at this point we know
-            // the actual number of elements in the subinventory.
-            if span_type == SpanType::U32 {
-                spilled += subinventory_idx
-                    .saturating_sub(locally_stored_u32s)
-                    .div_ceil(U32_PER_USIZE);
-            }
-        }
-
-        assert_eq!(spilled, spill_size);
+        let (inventory, spill) = build_inventory::<true, _>(
+            bits.as_ref(),
+            bits.len(),
+            num_ones,
+            log2_ones_per_inventory,
+            log2_words_per_subinventory,
+            log2_ones_per_sub16,
+        );
 
         Self {
             bits,
@@ -682,7 +399,7 @@ impl<
                     .get_unchecked(inventory_start_pos + words_per_subinventory + 1))
                 .get()
                     - inventory_rank;
-                let log2_ones_per_sub32 = Self::log2_ones_per_sub32(span, self.log2_ones_per_sub16);
+                let log2_ones_per_sub32 = log2_ones_per_sub32(span, self.log2_ones_per_sub16);
                 let hint_pos = if subrank >> log2_ones_per_sub32
                     < (words_per_subinventory - 1) * U32_PER_USIZE
                 {

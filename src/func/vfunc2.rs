@@ -39,16 +39,38 @@ use value_traits::slices::SliceByValue;
 ///
 /// Instances of this structure are immutable; they are built using [`try_new`]
 /// or one of its variants, and can be serialized using [ε-serde] or [`serde`].
+/// The construction can be configured by passing a [`VBuilder`] to the
+/// `*_with_builder` constructors. Since signatures are computed from the
+/// native representation of keys (see [`ToSig`]), a serialized function
+/// must be queried on a machine with the same endianness.
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
 ///
+/// The `vfunc2` binary (`cli` feature) builds and serializes instances of
+/// this structure.
+///
+/// # Alternatives
+///
+/// - A [`VFunc`] is preferable when values are not skewed, as it uses a
+///   single function.
+///
+/// - A [`CompVFunc`] stores values in space close to their empirical
+///   entropy, which is usually smaller, but queries are slower.
+///
+/// - [`Lcp2MmphfInt`]/[`Lcp2Mmphf`] use the same two-step technique to map
+///   sorted keys to their rank.
+///
+/// - Contrarily to a [`VFunc`], a [`VFunc2`] cannot be wrapped in a
+///   [`SignedFunc`].
+///
 /// # Generics
 ///
-/// * `K` - the type of the keys.
+/// * `K` - the type of the keys; it must implement [`ToSig`] (see the
+///   [`VFunc`] documentation).
 ///
 /// * `D` - the [`SliceByValue`] storing the function data. The output value type is
-///   [`D::Value`]; the default is [`BitFieldVec<Box<[usize]>>`].
+///   [`D::Value`]; the default is [`BitFieldVec<Box<[usize]>>`](BitFieldVec).
 ///
 /// * `S` - the signature type; the default is `[u64; 2]`.
 ///
@@ -73,6 +95,11 @@ use value_traits::slices::SliceByValue;
 /// [Theory and practice of monotone minimal perfect hashing]: https://doi.org/10.1145/1963190.2025378
 /// [`serde`]: https://crates.io/crates/serde
 /// [`D::Value`]: SliceByValue::Value
+/// [`VBuilder`]: crate::func::VBuilder
+/// [`CompVFunc`]: crate::func::CompVFunc
+/// [`Lcp2MmphfInt`]: crate::func::Lcp2MmphfInt
+/// [`Lcp2Mmphf`]: crate::func::Lcp2Mmphf
+/// [`SignedFunc`]: crate::func::SignedFunc
 #[derive(Clone, MemSize, MemDbg)]
 #[cfg_attr(
     feature = "epserde",
@@ -124,6 +151,16 @@ impl<K: ?Sized, D: SliceByValue, S, E, F> VFunc2<K, D, S, E, F> {
     pub fn is_empty(&self) -> bool {
         self.first.num_keys == 0
     }
+
+    /// Returns the seed used to compute the signatures of the keys.
+    ///
+    /// The signatures passed to [`get_by_sig`] must be computed with this
+    /// seed, that is, as `K::to_sig(key, func.seed())`.
+    ///
+    /// [`get_by_sig`]: VFunc2::get_by_sig
+    pub const fn seed(&self) -> u64 {
+        self.first.seed
+    }
 }
 
 impl<K: ?Sized, D: SliceByValue, S, E, F> std::fmt::Debug for VFunc2<K, D, S, E, F>
@@ -171,8 +208,8 @@ impl<
 {
     /// Retrieves the value for a key given its pre-computed signature.
     ///
-    /// The signature must have been computed with `self.first.seed` (i.e.,
-    /// `K::to_sig(key, self.first.seed)`). Both functions share the same seed.
+    /// The signature must have been computed with the [seed](VFunc2::seed)
+    /// of the function, that is, as `K::to_sig(key, func.seed())`.
     ///
     /// This method is mainly useful in the construction of compound
     /// functions.
@@ -235,13 +272,12 @@ impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>, F: ShardEdge<S, 3>>
 #[cfg(feature = "rayon")]
 mod build {
     use super::*;
-    use crate::{func::VBuilder, traits::BitWidth};
+    use crate::func::{VBuilder, check_num_values};
     use core::error::Error;
     use dsi_progress_logger::ProgressLog;
     use lender::*;
     use rdst::RadixKey;
     use std::ops::{BitXor, BitXorAssign};
-    use sync_cell_slice::SyncSlice;
 
     /// A map from `K` to `V` backed by a flat array for small keys and a
     /// [`HashMap`] for large keys.
@@ -391,6 +427,93 @@ mod build {
         best_r
     }
 
+    /// The frequency-based remapping of the values of a two-step function.
+    ///
+    /// Frequent values are remapped to indices in [0 . . `escape`), and the
+    /// remaining values to `escape`.
+    pub(crate) struct Remap<W> {
+        /// The escape value 2*ʳ* − 1, where *r* is chosen by
+        /// [`find_optimal_r`].
+        pub(crate) escape: W,
+        /// Maps indices in [0 . . `escape`) back to frequent values; entries
+        /// beyond the frequent values are zero padding.
+        pub(crate) remap: Box<[W]>,
+        /// Maps frequent values to their indices, and other values to
+        /// `escape`.
+        pub(crate) inv_map: HybridMap<W, W>,
+        /// The number of keys whose value is not frequent.
+        pub(crate) num_escaped: usize,
+    }
+
+    impl<W: Word + PrimitiveNumberAs<usize> + PrimitiveNumberAs<u128>> Remap<W> {
+        /// Chooses the escape minimizing the estimated total space, given
+        /// the number of occurrences of each value, and builds the
+        /// remapping.
+        pub(crate) fn new(
+            counts: &HybridMap<W, usize>,
+            num_keys: usize,
+            max_value: W,
+            pl: &mut impl ProgressLog,
+        ) -> Self {
+            let sorted_vals: Vec<W> = counts.keys_by_desc_value();
+            let num_distinct = sorted_vals.len();
+
+            let r = find_optimal_r(
+                num_keys,
+                max_value,
+                &sorted_vals,
+                |v| counts.get(v),
+                W::BITS as usize,
+            );
+
+            // Shift in u128 so r >= 32 cannot overflow a 32-bit usize.
+            let escape_usize = usize::try_from(
+                1u128
+                    .checked_shl(r as u32)
+                    .map(|v| v - 1)
+                    .unwrap_or(u128::MAX),
+            )
+            .expect("escape range exceeds usize");
+            let escape = W::try_from(escape_usize).ok().unwrap();
+            let num_frequent = escape_usize.min(num_distinct);
+
+            // We must cover the possible outputs of the first function in
+            // [num_frequent . . escape), including the arbitrary outputs of
+            // absent keys, so the tail of remap stays zeroed as padding.
+            let mut remap: Box<[W]> = vec![W::ZERO; escape_usize].into();
+            remap[..num_frequent].copy_from_slice(&sorted_vals[..num_frequent]);
+            // Build inv_map from the frequent prefix only, so the zero padding
+            // does not pollute it (missing values resolve to the escape sentinel).
+            let mut inv_map: HybridMap<W, W> = HybridMap::new(Some(max_value), escape);
+            for (i, &val) in remap[..num_frequent].iter().enumerate() {
+                inv_map.insert(val, W::try_from(i).ok().unwrap());
+            }
+
+            let num_escaped = num_keys
+                - sorted_vals[..num_frequent]
+                    .iter()
+                    .map(|&v| counts.get(v))
+                    .sum::<usize>();
+
+            pl.info(format_args!(
+                "r: {r}; distinct values: {num_distinct}; frequent values: {num_frequent} ({:.3}%); max value: {max_value} ({} bits)",
+                if num_distinct == 0 {
+                    0.0
+                } else {
+                    100.0 * num_frequent as f64 / num_distinct as f64
+                },
+                max_value.bit_len()
+            ));
+
+            Self {
+                escape,
+                remap,
+                inv_map,
+                num_escaped,
+            }
+        }
+    }
+
     impl<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         W: Word + BinSafe + MemSize + mem_dbg::FlatType,
@@ -518,9 +641,7 @@ mod build {
             builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> anyhow::Result<Self> {
-            let total_start = std::time::Instant::now();
             let mut builder = builder;
-            let num_keys = builder.num_keys;
             builder
                 .try_populate_and_build(
                     keys,
@@ -531,24 +652,14 @@ mod build {
                             builder.shard_edge,
                             &mut *store,
                             &|v| v,
-                            VBuilder::default()
-                                .max_num_threads(builder.max_num_threads)
-                                .eps(builder.eps),
+                            VBuilder::default().set_from(builder),
                             pl,
                         )
                     },
                     pl,
                     (),
                 )
-                .map(|(r, _keys)| {
-                    pl.info(format_args!(
-                        "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                        total_start.elapsed().as_secs_f64(),
-                        num_keys,
-                        total_start.elapsed().as_nanos() as f64 / num_keys as f64
-                    ));
-                    r
-                })
+                .map(|(func, _keys)| func)
         }
 
         /// Builds a [`VFunc2`] from in-memory key and value slices,
@@ -595,17 +706,9 @@ mod build {
         where
             K: Sync,
         {
-            let total_start = std::time::Instant::now();
-            let n = keys.len();
-            if n != values.len() {
-                return Err(crate::func::BuildError::MismatchedKeysAndValues {
-                    num_keys: n,
-                    num_values: values.len(),
-                }
-                .into());
-            }
+            check_num_values(keys.len(), values.len())?;
             builder
-                .expected_num_keys(n)
+                .expected_num_keys(keys.len())
                 .try_par_populate_and_build(
                     keys,
                     &|i| values[i],
@@ -615,29 +718,19 @@ mod build {
                             builder.shard_edge,
                             &mut *store,
                             &|v| v,
-                            VBuilder::default()
-                                .max_num_threads(builder.max_num_threads)
-                                .eps(builder.eps),
+                            VBuilder::default().set_from(builder),
                             pl,
                         )
                     },
                     pl,
                     (),
                 )
-                .inspect(|_| {
-                    pl.info(format_args!(
-                        "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                        total_start.elapsed().as_secs_f64(),
-                        n,
-                        total_start.elapsed().as_nanos() as f64 / n as f64
-                    ));
-                })
         }
 
-        /// Builds a [`VFunc2`] from an existing [`ShardStore`].
+        /// Builds a [`VFunc2`] from a populated [`ShardStore`].
         ///
-        /// This is the low-level constructor used when multiple VFuncs are
-        /// built from the same store (e.g., inside [`Lcp2Mmphf`]). Use
+        /// This is a low-level constructor that reuses the signatures stored
+        /// by a previous construction, without hashing the keys again. Use
         /// [`try_new`] or [`try_new_with_builder`] for the common case of
         /// building from keys and values directly.
         ///
@@ -658,13 +751,12 @@ mod build {
         ///
         /// * `store` - the populated shard store.
         ///
-        /// * `get_val` - extracts the value from the store's packed entry
-        ///   (e.g., `|v| v >> log2_bs` for LCP lengths).
+        /// * `get_val` - extracts the value from the store's packed entry.
         ///
         /// * `builder` - the builder configuration for the internal VFuncs.
+        ///
         /// * `pl` - a progress logger.
         ///
-        /// [`Lcp2Mmphf`]: crate::func::Lcp2Mmphf
         /// [`try_new`]: Self::try_new
         /// [`try_new_with_builder`]: Self::try_new_with_builder
         pub fn try_build_from_store<V: BinSafe + Default + Send + Sync + Copy>(
@@ -672,7 +764,7 @@ mod build {
             shard_edge: E,
             store: &mut (impl ShardStore<S, V> + ?Sized),
             get_val: &(impl Fn(V) -> W + Send + Sync),
-            builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
+            mut builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> anyhow::Result<Self>
         where
@@ -694,161 +786,44 @@ mod build {
                 }
             }
 
-            Self::build_from_hybrid_counts(
-                seed, shard_edge, store, get_val, max_value, counts, builder, pl,
-            )
-        }
-
-        /// Core two-step build logic using [`HybridMap`] for O(1) lookups
-        /// on common value ranges.
-        fn build_from_hybrid_counts<V: BinSafe + Default + Send + Sync + Copy>(
-            seed: u64,
-            shard_edge: E,
-            store: &mut (impl ShardStore<S, V> + ?Sized),
-            get_val: &(impl Fn(V) -> W + Send + Sync),
-            max_value: W,
-            counts: HybridMap<W, usize>,
-            mut builder: VBuilder<BitFieldVec<Box<[W]>>, S, E>,
-            pl: &mut (impl ProgressLog + Clone + Send + Sync),
-        ) -> anyhow::Result<Self>
-        where
-            SigVal<S, V>: RadixKey,
-            SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
-            SigVal<F::LocalSig, V>: BitXor + BitXorAssign,
-        {
-            // -- Sort distinct values by descending frequency --
-
-            let sorted_vals: Vec<W> = counts.keys_by_desc_value();
-
-            let w = max_value.bit_len() as usize;
-            let m = sorted_vals.len();
-
-            // -- Find optimal r --
-
             let num_keys = store.len();
-            let best_r = find_optimal_r(
-                num_keys,
-                max_value,
-                &sorted_vals,
-                |v| counts.get(v),
-                W::BITS as usize,
-            );
+            let remap = Remap::new(&counts, num_keys, max_value, pl);
+            let escaped = |v: V| remap.inv_map.get(get_val(v)) == remap.escape;
 
-            // Shift in u128 so best_r >= 32 cannot overflow a 32-bit usize.
-            let escape_usize = usize::try_from(
-                1u128
-                    .checked_shl(best_r as u32)
-                    .map(|v| v - 1)
-                    .unwrap_or(u128::MAX),
-            )
-            .expect("escape range exceeds usize");
-            let escape = W::try_from(escape_usize).ok().unwrap();
-            let num_frequent = escape_usize.min(m);
-
-            // -- Build remap and inv_map --
-
-            // We must cover possible outputs of the first function in [m..escape_size)
-            let mut remap: Box<[W]> = vec![W::ZERO; escape_usize].into();
-            // Copy the frequent values into the prefix; the tail stays zeroed as
-            // padding so get can index remap with any first-function output in
-            // [0, escape), including the arbitrary outputs of absent keys (which
-            // may land in [num_frequent, escape) when escape > m).
-            remap[..num_frequent].copy_from_slice(&sorted_vals[..num_frequent]);
-            let mut inv_map: HybridMap<W, W> = HybridMap::new(Some(max_value), escape);
-            // Build inv_map from the frequent prefix only, so the zero padding
-            // does not pollute it (missing values resolve to the escape sentinel).
-            for (i, &val) in remap[..num_frequent].iter().enumerate() {
-                inv_map.insert(val, W::try_from(i).ok().unwrap());
-            }
-
-            pl.info(format_args!(
-                "r: {best_r}; distinct values: {m}; frequent values: {num_frequent} ({:.3}%); max_value: {max_value} ({w} bits)",
-                100.0 * num_frequent as f64 / m as f64
-            ));
-
-            // -- Build first VFunc --
+            // -- Build the first function --
             // When r = 0, escape = 0 and the first function maps every key to
             // 0 = escape, so the second function is always queried.
 
-            // Set up per-shard counters for escaped entries at maximum
-            // granularity so they can be re-aggregated to any target.
-            let max_shb = store.max_shard_high_bits();
-            let max_num_shards = 1usize << max_shb;
-            let max_shard_mask = (1u64 << max_shb) - 1;
-            let mut escaped_counts = vec![0usize; max_num_shards];
-            let sync_counts = escaped_counts.as_sync_slice();
-
-            // Save builder settings before the first VFunc consumes it.
-            let saved_max_num_threads = builder.max_num_threads;
-            let saved_eps = builder.eps;
-            let saved_retry_prob = builder.retry_prob;
-
             pl.push_log_target(" ▸ first");
-            let first = builder.try_build_func_with_store_and_inspect::<K, V>(
+            let (first, escaped_counts) = builder.try_build_first_func::<K, V>(
                 seed,
                 shard_edge,
-                escape,
+                remap.escape,
                 store,
-                &|_e, sig_val| inv_map.get(get_val(sig_val.val)),
-                &|sv: &SigVal<S, V>| {
-                    if inv_map.get(get_val(sv.val)) == escape {
-                        let shard_idx = sv.sig.high_bits(max_shb, max_shard_mask) as usize;
-                        // SAFETY: each shard is processed by exactly one
-                        // thread, so no two threads access the same counter.
-                        unsafe {
-                            let c = sync_counts[shard_idx].get();
-                            sync_counts[shard_idx].set(c + 1);
-                        }
-                    }
-                },
+                &|v| remap.inv_map.get(get_val(v)),
+                &escaped,
                 pl,
             )?;
             pl.pop_log_target();
 
-            // escaped_counts now has per-shard escaped entry counts.
-
-            // -- Build second VFunc (escaped keys only) --
-
-            let n_escaped = num_keys
-                - sorted_vals[..num_frequent]
-                    .iter()
-                    .map(|&v| counts.get(v))
-                    .sum::<usize>();
-
             debug_assert_eq!(
                 escaped_counts.iter().sum::<usize>(),
-                n_escaped,
+                remap.num_escaped,
                 "inspect-counted escaped != freq-computed escaped"
             );
 
-            let mut second_shard_edge = F::default();
-            second_shard_edge.set_up_shards(n_escaped, saved_eps, saved_retry_prob);
-            let second_shard_high_bits = second_shard_edge.shard_high_bits();
+            // -- Build the second function (escaped keys only) --
 
-            // Aggregate escaped_counts to the second function's shard granularity.
-            let second_num_shards = 1usize << second_shard_high_bits;
-            let filtered_shard_sizes: Vec<usize> = escaped_counts
-                .chunks(max_num_shards / second_num_shards)
-                .map(|chunk| chunk.iter().sum())
-                .collect();
-
-            let mut filtered_store = FilteredShardStore::new(
-                store,
-                second_shard_high_bits,
-                |sv: &SigVal<S, V>| inv_map.get(get_val(sv.val)) == escape,
-                filtered_shard_sizes,
-            );
             pl.push_log_target(" ▸ second");
-            let second = VBuilder::<BitFieldVec<Box<[W]>>, S, F>::default()
-                .max_num_threads(saved_max_num_threads)
-                .try_build_func_with_store::<K, V>(
-                    seed,
-                    second_shard_edge,
-                    max_value,
-                    &mut filtered_store,
-                    &|_e, sig_val| get_val(sig_val.val),
-                    pl,
-                )?;
+            let second = builder.try_build_escaped_func::<K, V, F>(
+                seed,
+                store,
+                &escaped_counts,
+                &escaped,
+                max_value,
+                get_val,
+                pl,
+            )?;
             pl.pop_log_target();
 
             let bit_width = second.data.bit_width() as f64;
@@ -856,15 +831,15 @@ mod build {
             Ok(Self {
                 first,
                 second,
-                remap,
-                escape,
+                remap: remap.remap,
+                escape: remap.escape,
             })
             .inspect(|vfunc2| {
                 let size = vfunc2.mem_size(SizeFlags::default()) as f64 * 8.0;
                 pl.info(format_args!(
                     "Bits/key: {:.3} ({:+.3}% with respect to bit width)",
                     size / num_keys as f64,
-                    100.0 * (size / (num_keys as f64 * bit_width) as f64 - 1.),
+                    100.0 * (size / (num_keys as f64 * bit_width) - 1.),
                 ));
             })
         }
@@ -872,10 +847,11 @@ mod build {
 }
 
 #[cfg(feature = "rayon")]
-pub(crate) use build::{HybridMap, find_optimal_r};
+pub(crate) use build::{HybridMap, Remap};
 
 #[cfg(all(test, feature = "rayon"))]
 mod tests {
+    use super::build::find_optimal_r;
     use super::*;
     use crate::bits::BitFieldVec;
     use crate::utils::FromCloneableIntoIterator;

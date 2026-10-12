@@ -49,9 +49,90 @@
 //! implementations for the [`IndexedDict`] trait,
 //! independently of whether the underlying [`RearCodedList`] is sorted or not.
 //!
-//! Finally, the `mrcl` command-line tool can be used to create
-//! a serialized mapped rear-coded list starting from a
-//! serialized rear-coded list and a mapping.
+//! Finally, the `mrcl` command-line tool (which requires the `cli` feature)
+//! can be used to create a serialized [`MappedRearCodedListStr`] starting from
+//! a serialized [`RearCodedListStr`] and a file containing a mapping (see
+//! [below](#the-mapping) for its direction).
+//!
+//! # The Mapping
+//!
+//! The mapping goes from positions in the mapped list to positions in the
+//! underlying rear-coded list: the element of index *i* of a mapped rear-coded
+//! list is the element of index `map[i]` of the underlying rear-coded list. In
+//! the typical use case, `map[i]` is thus the rank in sorted order of the
+//! element of index *i* of the original, unsorted list.
+//!
+//! Sorting the indices of the original list by the elements they refer to
+//! yields the inverse permutation: here we use it to push the elements in
+//! sorted order and to fill the mapping.
+//!
+//! ```
+//! use sux::bits::BitFieldVec;
+//! use sux::dict::{MappedRearCodedListStr, RearCodedListBuilder};
+//! use sux::traits::IndexedSeq;
+//! use value_traits::slices::SliceByValueMut;
+//!
+//! let words = ["pear", "apple", "peach", "apricot", "banana"];
+//! // perm[r] is the index in words of the element of rank r
+//! let mut perm: Vec<usize> = (0..words.len()).collect();
+//! perm.sort_unstable_by_key(|&i| words[i]);
+//!
+//! let mut rclb = RearCodedListBuilder::<str, true>::new(4);
+//! let bit_width = words.len().ilog2() as usize + 1;
+//! let mut map = BitFieldVec::<Vec<usize>>::new(bit_width, words.len());
+//! for (rank, &orig) in perm.iter().enumerate() {
+//!     rclb.push(words[orig]);
+//!     map.set_value(orig, rank);
+//! }
+//!
+//! let mrcl = MappedRearCodedListStr::from_parts(rclb.build(), map.into());
+//! for (i, word) in words.iter().enumerate() {
+//!     assert_eq!(mrcl.get(i), *word);
+//! }
+//! ```
+//!
+//! The `mrcl` command-line tool reads the mapping from a file containing one
+//! value per line, in the order above (i.e., `map[0]`, `map[1]`, …). If the file
+//! contains instead the inverse permutation (in the example, `perm[0]`,
+//! `perm[1]`, …, that is, for each element of the rear-coded list, its
+//! position in the mapped list), use the `--invert` option.
+//!
+//! # Serialization and the `SORTED` Parameter
+//!
+//! As in the case of [`RearCodedList`], ε-serde includes the const parameter
+//! `SORTED` in the type hash, so a list must be deserialized with the same
+//! value of `SORTED` it was serialized with. For example, `mrcl --unsorted`
+//! reads a [`RearCodedListStr<false>`] (e.g., built by `rcl --unsorted`) and
+//! writes a [`MappedRearCodedListStr<false>`], which you can load with
+//! `<MappedRearCodedListStr<false>>::load_full` (or map into memory with
+//! `<MappedRearCodedListStr<false>>::mmap`, which requires the `mmap`
+//! feature), but not as a [`MappedRearCodedListStr`]:
+//!
+//! ```
+//! # #[cfg(feature = "epserde")] {
+//! use epserde::{deser::Deserialize, ser::Serialize};
+//! use sux::bits::BitFieldVec;
+//! use sux::dict::{MappedRearCodedListStr, RearCodedListBuilder};
+//! use sux::traits::IndexedSeq;
+//!
+//! let mut rclb = RearCodedListBuilder::<str, false>::new(4);
+//! rclb.push("foo");
+//! rclb.push("bar");
+//! let mut map = BitFieldVec::<Vec<usize>>::new(1, 0);
+//! map.push(1);
+//! map.push(0);
+//! let mrcl = MappedRearCodedListStr::<false>::from_parts(rclb.build(), map.into());
+//!
+//! let dir = tempfile::tempdir()?;
+//! let path = dir.path().join("words.mrcl");
+//! unsafe { mrcl.store(&path)? };
+//! let mrcl = unsafe { <MappedRearCodedListStr<false>>::load_full(&path)? };
+//! assert_eq!(mrcl.get(0), "bar");
+//! // The default alias has SORTED = true, so the type check fails
+//! assert!(unsafe { <MappedRearCodedListStr>::load_full(&path) }.is_err());
+//! # }
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 //!
 //! # Examples
 //!
@@ -59,10 +140,9 @@
 //! [`MappedRearCodedListStr`] together with a permutation:
 //!
 //! ```
-//! # use sux::traits::IndexedSeq;
-//! # use sux::dict::RearCodedListBuilder;
-//! # use sux::dict::MappedRearCodedListStr;
-//! # use sux::bits::BitFieldVec;
+//! use sux::bits::BitFieldVec;
+//! use sux::dict::{MappedRearCodedListStr, RearCodedListBuilder};
+//! use sux::traits::IndexedSeq;
 //!
 //! let mut rclb = RearCodedListBuilder::<str, true>::new(4);
 //!
@@ -86,13 +166,15 @@
 //! ```
 //!
 //! [`IndexedDict`]: crate::traits::IndexedDict
+//! [`RearCodedListStr`]: crate::dict::RearCodedListStr
+//! [`RearCodedListStr<false>`]: crate::dict::RearCodedListStr
 //! [`get_bytes_in_place`]: MappedRearCodedListStr::get_bytes_in_place
 //! [`Iterator`]: MappedRearCodedList::iter
 //! [`Lender`]: MappedRearCodedList::lender
 //! [iterate from a given position]: MappedRearCodedList::lender_from
 //! [wrap the instance together with a mapping]: MappedRearCodedList::from_parts
 use crate::bits::BitFieldVec;
-use crate::dict::rear_coded_list::RearCodedList;
+use crate::dict::rear_coded_list::{RearCodedList, impl_iteration};
 use crate::traits::{IndexedSeq, IntoIteratorFrom, Types};
 use lender::FusedLender;
 use lender::{ExactSizeLender, IntoLender, Lender, Lending, check_covariance};
@@ -101,6 +183,14 @@ use value_traits::slices::SliceByValue;
 
 /// Main structure; please use the type aliases [`MappedRearCodedListStr`] and
 /// [`MappedRearCodedListSliceU8`].
+///
+/// Instances are built by combining a [`RearCodedList`] (see
+/// [`RearCodedListBuilder`]) and a mapping with [`from_parts`]; see the [module
+/// documentation] for the direction of the mapping and for examples.
+///
+/// [`RearCodedListBuilder`]: crate::dict::RearCodedListBuilder
+/// [`from_parts`]: MappedRearCodedList::from_parts
+/// [module documentation]: crate::dict::mapped_rear_coded_list
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(phantom(I, O)))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -116,10 +206,29 @@ pub struct MappedRearCodedList<
     map: Q,
 }
 
-/// A mapped rear-coded list of byte sequences.
+/// A mapped rear-coded list of byte sequences, returning `Vec<u8>` on access,
+/// with the mapping stored in a [`BitFieldVec`].
+///
+/// Instances are built from a [`RearCodedListSliceU8<SORTED>`] and a mapping
+/// using [`from_parts`]. When deserializing with ε-serde, `SORTED` must match
+/// the value used at construction time (see the [module documentation]).
+///
+/// [`RearCodedListSliceU8<SORTED>`]: crate::dict::RearCodedListSliceU8
+/// [`from_parts`]: MappedRearCodedList::from_parts
+/// [module documentation]: crate::dict::mapped_rear_coded_list#serialization-and-the-sorted-parameter
 pub type MappedRearCodedListSliceU8<const SORTED: bool = true> =
     MappedRearCodedList<[u8], Vec<u8>, Box<[u8]>, Box<[usize]>, BitFieldVec<Box<[usize]>>, SORTED>;
-/// A mapped rear-coded list of strings.
+
+/// A mapped rear-coded list of strings, returning [`String`] on access, with
+/// the mapping stored in a [`BitFieldVec`].
+///
+/// Instances are built from a [`RearCodedListStr<SORTED>`] and a mapping using
+/// [`from_parts`]. When deserializing with ε-serde, `SORTED` must match the
+/// value used at construction time (see the [module documentation]).
+///
+/// [`RearCodedListStr<SORTED>`]: crate::dict::RearCodedListStr
+/// [`from_parts`]: MappedRearCodedList::from_parts
+/// [module documentation]: crate::dict::mapped_rear_coded_list#serialization-and-the-sorted-parameter
 pub type MappedRearCodedListStr<const SORTED: bool = true> =
     MappedRearCodedList<str, String, Box<[u8]>, Box<[usize]>, BitFieldVec<Box<[usize]>>, SORTED>;
 
@@ -178,73 +287,6 @@ impl<
     }
 }
 
-impl<
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    Q: SliceByValue<Value = usize>,
-    const SORTED: bool,
-> MappedRearCodedList<I, O, D, P, Q, SORTED>
-where
-    for<'a> Lend<'a, I, O, D, P, Q, SORTED>: Lender,
-{
-    /// Returns a [`Lender`] over the elements of the list.
-    ///
-    /// Note that [`iter`] is more convenient if you need owned elements.
-    ///
-    /// [`iter`]: MappedRearCodedList::iter
-    #[inline(always)]
-    pub fn lender(&self) -> Lend<'_, I, O, D, P, Q, SORTED> {
-        Lend::new(self)
-    }
-
-    /// Returns a [`Lender`] over the elements of the list
-    /// starting from the given index.
-    ///
-    /// Note that [`iter_from`] is more convenient if you need owned
-    /// elements.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `from > self.len()`. Passing `self.len()` returns an empty
-    /// lender.
-    ///
-    /// [`iter_from`]: MappedRearCodedList::iter_from
-    #[inline(always)]
-    pub fn lender_from(&self, from: usize) -> Lend<'_, I, O, D, P, Q, SORTED> {
-        Lend::new_from(self, from)
-    }
-
-    /// Returns an [`Iterator`] over the elements of the list.
-    ///
-    /// Note that [`lender`] is more efficient if you need to iterate
-    /// over many elements.
-    ///
-    /// [`lender`]: MappedRearCodedList::lender
-    #[inline(always)]
-    pub fn iter(&self) -> Iter<'_, I, O, D, P, Q, SORTED> {
-        Iter(self.lender())
-    }
-
-    /// Returns an [`Iterator`] over the elements of the list
-    /// starting from the given index.
-    ///
-    /// Note that [`lender_from`] is more efficient if you need to
-    /// iterate over many elements.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `from > self.len()`. Passing `self.len()` returns an empty
-    /// iterator.
-    ///
-    /// [`lender_from`]: MappedRearCodedList::lender_from
-    #[inline(always)]
-    pub fn iter_from(&self, from: usize) -> Iter<'_, I, O, D, P, Q, SORTED> {
-        Iter(self.lender_from(from))
-    }
-}
-
 // Dictionary traits
 
 impl<
@@ -260,8 +302,16 @@ impl<
     type Input = I;
 }
 
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
-    IndexedSeq for MappedRearCodedList<[u8], Vec<u8>, D, P, Q, SORTED>
+impl<
+    I: PartialEq<O> + PartialEq + ?Sized,
+    O: PartialEq<I> + PartialEq,
+    D: AsRef<[u8]>,
+    P: AsRef<[usize]>,
+    Q: SliceByValue<Value = usize>,
+    const SORTED: bool,
+> IndexedSeq for MappedRearCodedList<I, O, D, P, Q, SORTED>
+where
+    RearCodedList<I, O, D, P, SORTED>: for<'a> IndexedSeq<Output<'a> = O>,
 {
     #[inline(always)]
     unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
@@ -285,21 +335,6 @@ impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SO
         // The checked accessor turns an out-of-range mapped value into a
         // clean bounds panic, as in the str variant.
         self.rcl.get_in_place(index, result);
-    }
-}
-
-impl<D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
-    IndexedSeq for MappedRearCodedList<str, String, D, P, Q, SORTED>
-{
-    #[inline(always)]
-    unsafe fn get_unchecked(&self, index: usize) -> Self::Output<'_> {
-        let index = self.map.index_value(index);
-        unsafe { self.rcl.get_unchecked(index) }
-    }
-
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.rcl.len()
     }
 }
 
@@ -407,239 +442,10 @@ where
     }
 }
 
-impl<
-    'a,
-    'b,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
+impl_iteration!(
+    MappedRearCodedList,
+    prcl,
     D: AsRef<[u8]>,
     P: AsRef<[usize]>,
-    Q: SliceByValue<Value = usize>,
-    const SORTED: bool,
-> Lending<'b> for Lend<'a, I, O, D, P, Q, SORTED>
-{
-    type Lend = &'b I;
-}
-
-impl<
-    O: PartialEq<str> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    Q: SliceByValue<Value = usize>,
-    const SORTED: bool,
-> Lender for Lend<'_, str, O, D, P, Q, SORTED>
-where
-    str: PartialEq<O> + PartialEq,
-{
-    check_covariance!();
-    fn next(&mut self) -> Option<&'_ str> {
-        self.next_impl().map(|s| std::str::from_utf8(s).unwrap())
-    }
-
-    #[inline(always)]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len(), Some(self.len()))
-    }
-}
-
-impl<
-    O: PartialEq<[u8]> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    Q: SliceByValue<Value = usize>,
-    const SORTED: bool,
-> Lender for Lend<'_, [u8], O, D, P, Q, SORTED>
-where
-    [u8]: PartialEq<O> + PartialEq,
-{
-    check_covariance!();
-    fn next(&mut self) -> Option<&[u8]> {
-        self.next_impl()
-    }
-
-    #[inline(always)]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len(), Some(self.len()))
-    }
-}
-
-impl<
-    'a,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    Q: SliceByValue<Value = usize>,
-    const SORTED: bool,
-> ExactSizeLender for Lend<'a, I, O, D, P, Q, SORTED>
-where
-    Lend<'a, I, O, D, P, Q, SORTED>: Lender,
-{
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.prcl.len() - self.index
-    }
-}
-
-impl<
-    'a,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    Q: SliceByValue<Value = usize>,
-    const SORTED: bool,
-> FusedLender for Lend<'a, I, O, D, P, Q, SORTED>
-where
-    Lend<'a, I, O, D, P, Q, SORTED>: Lender,
-{
-}
-
-// Iterators
-
-/// Sequential [`Iterator`] over the contents of the list.
-#[derive(Debug, Clone, MemSize, MemDbg)]
-pub struct Iter<
-    'a,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    Q: SliceByValue<Value = usize>,
-    const SORTED: bool,
->(Lend<'a, I, O, D, P, Q, SORTED>);
-
-impl<
-    'a,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    Q: SliceByValue<Value = usize>,
-    const SORTED: bool,
-> std::iter::ExactSizeIterator for Iter<'a, I, O, D, P, Q, SORTED>
-where
-    Iter<'a, I, O, D, P, Q, SORTED>: std::iter::Iterator,
-    Lend<'a, I, O, D, P, Q, SORTED>: ExactSizeLender,
-{
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
-impl<
-    'a,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    Q: SliceByValue<Value = usize>,
-    const SORTED: bool,
-> std::iter::FusedIterator for Iter<'a, I, O, D, P, Q, SORTED>
-where
-    Iter<'a, I, O, D, P, Q, SORTED>: std::iter::Iterator,
-    Lend<'a, I, O, D, P, Q, SORTED>: FusedLender,
-{
-}
-
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
-    std::iter::Iterator for Iter<'a, str, String, D, P, Q, SORTED>
-where
-    Lend<'a, str, String, D, P, Q, SORTED>: Lender,
-{
-    type Item = String;
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        // SAFETY: We encoded valid UTF-8 strings
-        self.0
-            .next_impl()
-            .map(|v| String::from_utf8(Vec::from(v)).unwrap())
-    }
-
-    #[inline(always)]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len(), Some(self.len()))
-    }
-}
-
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, Q: SliceByValue<Value = usize>, const SORTED: bool>
-    std::iter::Iterator for Iter<'a, [u8], Vec<u8>, D, P, Q, SORTED>
-where
-    Lend<'a, [u8], Vec<u8>, D, P, Q, SORTED>: ExactSizeLender,
-{
-    type Item = Vec<u8>;
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next_impl().map(|v| v.into())
-    }
-
-    #[inline(always)]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len(), Some(self.len()))
-    }
-}
-
-// Into... impls
-
-impl<
-    'a,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    Q: SliceByValue<Value = usize>,
-    const SORTED: bool,
-> IntoLender for &'a MappedRearCodedList<I, O, D, P, Q, SORTED>
-where
-    Lend<'a, I, O, D, P, Q, SORTED>: Lender,
-{
-    type Lender = Lend<'a, I, O, D, P, Q, SORTED>;
-    #[inline(always)]
-    fn into_lender(self) -> Lend<'a, I, O, D, P, Q, SORTED> {
-        Lend::new(self)
-    }
-}
-
-impl<
-    'a,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    Q: SliceByValue<Value = usize>,
-    const SORTED: bool,
-> IntoIterator for &'a MappedRearCodedList<I, O, D, P, Q, SORTED>
-where
-    for<'b> Lend<'b, I, O, D, P, Q, SORTED>: Lender,
-    Iter<'a, I, O, D, P, Q, SORTED>: std::iter::Iterator,
-{
-    type Item = <Iter<'a, I, O, D, P, Q, SORTED> as Iterator>::Item;
-    type IntoIter = Iter<'a, I, O, D, P, Q, SORTED>;
-    #[inline(always)]
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-impl<
-    'a,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    Q: SliceByValue<Value = usize>,
-    const SORTED: bool,
-> IntoIteratorFrom for &'a MappedRearCodedList<I, O, D, P, Q, SORTED>
-where
-    for<'b> Lend<'b, I, O, D, P, Q, SORTED>: Lender,
-    Iter<'a, I, O, D, P, Q, SORTED>: std::iter::Iterator,
-{
-    type IntoIterFrom = Iter<'a, I, O, D, P, Q, SORTED>;
-    #[inline(always)]
-    fn into_iter_from(self, from: usize) -> Self::IntoIter {
-        self.iter_from(from)
-    }
-}
+    Q: SliceByValue<Value = usize>
+);

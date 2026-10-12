@@ -1196,3 +1196,124 @@ fn test_chunks_mut_size_hint() -> Result<()> {
     assert_eq!(chunks.count(), 4);
     Ok(())
 }
+
+#[test]
+fn test_from_atomic_backends() {
+    use std::sync::atomic::AtomicUsize;
+    let b = bit_field_vec![5; 1, 2, 3, 31, 0, 7, 30, 4, 9, 11, 12, 13, 14];
+
+    // Vec to atomic Box, and atomic Box to Vec
+    let a: AtomicBitFieldVec<Box<[AtomicUsize]>> = b.clone().try_into().unwrap();
+    let a: AtomicBitFieldVec<Vec<AtomicUsize>> = a.into();
+    let a: AtomicBitFieldVec<Box<[AtomicUsize]>> = a.into();
+    let c: BitFieldVec<Vec<usize>> = a.try_into().unwrap();
+    assert_eq!(c, b);
+
+    // Box to atomic Vec, and atomic Vec to Box
+    let c: BitFieldVec<Box<[usize]>> = c.into();
+    let a: AtomicBitFieldVec<Vec<AtomicUsize>> = c.try_into().unwrap();
+    for i in 0..b.len() {
+        assert_eq!(a.get_atomic(i, Ordering::Relaxed), b.index_value(i));
+    }
+    let c: BitFieldVec<Box<[usize]>> = a.try_into().unwrap();
+    assert_eq!(c, b);
+}
+
+#[test]
+fn test_macro_word_type() {
+    let b = bit_field_vec![u16: 10];
+    let _: &BitFieldVec<Vec<u16>> = &b;
+    assert_eq!(b.len(), 0);
+    assert_eq!(b.bit_width(), 10);
+
+    let b = bit_field_vec![u8: 3 => 7; 10];
+    let _: &BitFieldVec<Vec<u8>> = &b;
+    assert_eq!(b.len(), 10);
+    assert!(b.iter().all(|x| x == 7));
+
+    let b = bit_field_vec![core::primitive::u32: 10; 4, 500, 2];
+    let _: &BitFieldVec<Vec<u32>> = &b;
+    assert_eq!(b.iter().collect::<Vec<_>>(), [4, 500, 2]);
+
+    let b = bit_field_vec![<BitFieldVec<Vec<u64>> as sux::traits::Backend>::Word: 4; 1, 2];
+    let _: &BitFieldVec<Vec<u64>> = &b;
+    assert_eq!(b.iter().collect::<Vec<_>>(), [1, 2]);
+
+    macro_rules! with_type {
+        ($W:ty) => {
+            bit_field_vec![$W: 6; 1, 63]
+        };
+    }
+    let b = with_type!(u8);
+    let _: &BitFieldVec<Vec<u8>> = &b;
+    assert_eq!(b.iter().collect::<Vec<_>>(), [1, 63]);
+
+    // Variables as bit widths and values
+    let (w, v) = (4, 9);
+    let b = bit_field_vec![w];
+    assert_eq!(b.bit_width(), 4);
+    let b = bit_field_vec![w => v; 3];
+    assert_eq!(b.iter().collect::<Vec<_>>(), [9, 9, 9]);
+    let v16 = 9_u16;
+    let b = bit_field_vec![u16: w; v16, 1];
+    assert_eq!(b.iter().collect::<Vec<_>>(), [9, 1]);
+}
+
+#[test]
+fn test_macro_evaluates_each_item_once() {
+    let mut calls = 0;
+    let b = bit_field_vec![4;
+        {
+            calls += 1;
+            3
+        },
+        {
+            calls += 1;
+            5
+        },
+    ];
+    assert_eq!(calls, 2);
+    assert_eq!(b.iter().collect::<Vec<_>>(), [3, 5]);
+}
+
+#[test]
+fn test_atomic_len_with_traits_in_scope() {
+    // Both SliceByValue and AtomicBitFieldSlice are in scope: the inherent
+    // method avoids the ambiguity
+    use std::sync::atomic::AtomicUsize;
+    let a = AtomicBitFieldVec::<Vec<AtomicUsize>>::new(3, 7);
+    assert_eq!(a.len(), 7);
+    assert_eq!(SliceByValue::len(&a), 7);
+    assert_eq!(AtomicBitFieldSlice::len(&a), 7);
+}
+
+/// Methods that must be available without importing any trait.
+mod no_traits {
+    #[test]
+    fn test_inherent_methods() {
+        let b = sux::bits::BitFieldVec::<Vec<u32>>::new(5, 10);
+        assert_eq!(b.len(), 10);
+        assert_eq!(b.bit_width(), 5);
+        let b: sux::bits::BitFieldVec<Box<[u32]>> = b.into();
+        assert_eq!(b.len(), 10);
+        assert_eq!(b.bit_width(), 5);
+        let b: sux::bits::BitFieldVec<&[u32]> = (&b).into();
+        assert_eq!(b.len(), 10);
+        assert_eq!(b.bit_width(), 5);
+        let a = sux::bits::AtomicBitFieldVec::<Vec<core::sync::atomic::AtomicU32>>::new(3, 7);
+        assert_eq!(a.len(), 7);
+    }
+
+    #[test]
+    fn test_reexported_traits() {
+        use sux::traits::bit_field_slice::*;
+        let mut b = sux::bits::BitFieldVec::<Vec<usize>>::new(5, 10);
+        b.set_value(3, 17);
+        assert_eq!(b.index_value(3), 17);
+        assert_eq!(b.get_value(3), Some(17));
+        assert_eq!(b.get_value(10), None);
+        let s: &[usize] = &[1, 2];
+        assert_eq!(s.bit_width(), usize::BITS as usize);
+        assert_eq!(SliceByValue::index_value(s, 1), 2);
+    }
+}

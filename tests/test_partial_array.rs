@@ -24,6 +24,27 @@ fn test_empty_array() {
 }
 
 #[test]
+fn test_associated_constructors() {
+    use sux::array::{DensePartialArray, PartialArrayBuilder, SparsePartialArray};
+
+    let mut builder = PartialArrayBuilder::dense(10);
+    builder.extend([(1, "foo"), (7, "bar")]);
+    let array: DensePartialArray<&str> = builder.build();
+    assert_eq!(array.len(), 10);
+    assert_eq!(array.get(1), Some(&"foo"));
+    assert_eq!(array.get(2), None);
+    assert_eq!(array.get(7), Some(&"bar"));
+
+    let mut builder = PartialArrayBuilder::sparse(10, 2);
+    builder.extend([(1, "foo"), (7, "bar")]);
+    let array: SparsePartialArray<&str> = builder.build();
+    assert_eq!(array.len(), 10);
+    assert_eq!(array.get(1), Some(&"foo"));
+    assert_eq!(array.get(2), None);
+    assert_eq!(array.get(7), Some(&"bar"));
+}
+
+#[test]
 fn test_basic_operations() {
     let mut builder = partial_array::new_sparse(10, 3);
 
@@ -231,8 +252,6 @@ fn test_strings() {
 fn test_serialize_strings() {
     use epserde::prelude::Aligned64;
     use epserde::utils::AlignedCursor;
-    use sux::bits::BitVec;
-    use sux::rank_sel::Rank9;
 
     // Sparse
     let mut builder = partial_array::new_sparse(10, 3);
@@ -251,10 +270,8 @@ fn test_serialize_strings() {
     cursor.set_position(0);
     let array2 = unsafe {
         use epserde::deser::Deserialize;
-        <partial_array::PartialArray<String, partial_array::SparseIndex<Box<[usize]>>>>::deserialize_full(
-            &mut cursor,
-        )
-        .expect("Could not deserialize")
+        <partial_array::SparsePartialArray<String>>::deserialize_full(&mut cursor)
+            .expect("Could not deserialize")
     };
 
     assert_eq!(array.len(), array2.len());
@@ -280,10 +297,8 @@ fn test_serialize_strings() {
     cursor.set_position(0);
     let array2 = unsafe {
         use epserde::deser::Deserialize;
-        <partial_array::PartialArray<String, Rank9<BitVec<Box<[u64]>>>>>::deserialize_full(
-            &mut cursor,
-        )
-        .expect("Could not deserialize")
+        <partial_array::DensePartialArray<String>>::deserialize_full(&mut cursor)
+            .expect("Could not deserialize")
     };
 
     assert_eq!(array.len(), array2.len());
@@ -317,11 +332,37 @@ fn test_serialize() {
     cursor.set_position(0);
     let array2 = unsafe {
         use epserde::deser::Deserialize;
-        <partial_array::PartialArray<u32, partial_array::SparseIndex<Box<[usize]>>>>::read_mem(
-            &mut cursor,
-            len,
-        )
-        .expect("Could not deserialize")
+        <partial_array::SparsePartialArray<u32>>::read_mem(&mut cursor, len)
+            .expect("Could not deserialize")
+    };
+    let array2 = array2.uncase();
+
+    assert_eq!(array.len(), array2.len());
+    assert_eq!(array.num_values(), array2.num_values());
+    for i in 0..10 {
+        assert_eq!(array.get(i), array2.get(i), "Mismatch at index {i}");
+    }
+
+    let mut builder = partial_array::new_dense(10);
+
+    builder.set(1, 123u32);
+    builder.set(2, 45678);
+    builder.set(7, 90);
+
+    let array = builder.build();
+
+    let mut cursor = <AlignedCursor<Aligned64>>::new();
+    unsafe {
+        use epserde::ser::Serialize;
+        array.serialize(&mut cursor).expect("Could not serialize")
+    };
+
+    let len = cursor.len();
+    cursor.set_position(0);
+    let array2 = unsafe {
+        use epserde::deser::Deserialize;
+        <partial_array::DensePartialArray<u32>>::read_mem(&mut cursor, len)
+            .expect("Could not deserialize")
     };
     let array2 = array2.uncase();
 

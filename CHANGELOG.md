@@ -59,6 +59,33 @@
 - New opt-in `--check` flag for the `vfunc2` and `comp_vfunc` CLI utilities
   that verifies that the number of keys and values match.
 
+- New `DensePartialArray` and `SparsePartialArray` type aliases (e.g., for
+  ε-serde deserialization), and `PartialArrayBuilder::dense`/`sparse`
+  constructors.
+
+- Atomic and non-atomic bit vectors and bit-field vectors convert between
+  any owned backends (`Vec`/`Box`) in both directions, and `AtomicBitVec`
+  and `AtomicBitFieldVec` convert between `Vec` and `Box` backends.
+
+- `bit_field_vec!` accepts an explicit word type (`W:` forms), and
+  `bit_vec![expr; n]` accepts any expression.
+
+- `SliceByValue`/`SliceByValueMut` are re-exported by
+  `sux::traits::bit_field_slice`, and `value_traits` by `sux::traits`;
+  `BitFieldVec::bit_width` and `BitFieldVec::len` are inherent for every
+  backend, and `AtomicBitFieldVec::len` is inherent.
+
+- The prelude includes `BitVecOps`, `BitVecOpsMut`, `AtomicBitVecOps`,
+  `TryIntoUnaligned`, `Unaligned`, `Word`, `Backend`, and the lenders
+  `FromSlice`, `FromCloneableIntoIterator`, and `LineLender`.
+
+- New `seed()` accessors for `VFunc`, `VFunc2`, `VFilter`, `CompVFunc`, and
+  the functions based on longest common prefixes.
+
+- New `cli` helpers shared by the binaries: `store` (which logs the type of
+  the stored structure), `KeyBuffer`, `ValueArgs`, `count_lines`, `bench`,
+  and `gen_sorted_keys`.
+
 ### Fixed
 
 - `FromIntoIterator` and `JacobsonBalParen` no longer fail to compile with
@@ -122,11 +149,50 @@
 - Atomic bit-vector updates (`set_atomic`, `fill`, `flip`) use correct
   read-modify-write orderings.
 
+- `VFunc2` honors all `VBuilder` options (offline mode, `check_dups`,
+  `low_mem`, `retry_prob`) when building its internal functions; previously,
+  only the number of threads and ε were forwarded.
+
+- Structures based on a `ShardEdge` (including `LcpMmphf<str>`) can be
+  deserialized with serde: the edge types did not implement `Deserialize`.
+
+- A shard that cannot be solved after 100 attempts makes construction return
+  `BuildError::UnsolvableShard` instead of panicking, and too large shards
+  return the new `BuildError::MaxShardTooBig`.
+
+- `bit_vec!` no longer fails to compile on lists starting with expressions
+  such as `*x`, `(…)`, or `unsafe {…}`, and `bit_field_vec!` evaluates each
+  element once.
+
+- Dense partial arrays deserialized with ε-serde (ε-copy or memory mapping)
+  provide `len`, `get`, and `SliceByValue`, like sparse ones.
+
+- The adaptive selection structures no longer trigger a debug assertion on
+  bit vectors with dirty padding bits.
+
+- Signing a `VFunc` built offline streams its shards from disk instead of
+  loading all of them in memory.
+
 ### Improved
 
 - Structured logging for structures with substructures.
 
-- Signing is parallel, and possibly from the store, when possible.
+- Signing is parallel, and possibly from the store, when possible; in
+  particular, `SignedFunc` constructors with `BitFieldVec` hashes sign in
+  parallel.
+
+- `PHastR` in-memory construction builds the remapping of the later levels
+  from bitmaps of used slots, as offline construction does, instead of
+  keeping a vector of eight bytes per slot.
+
+- `SelectSmall` and `SelectZeroSmall` constructors infer their const
+  parameters from the wrapped structure, as in
+  `SelectSmall::new(rank_small![bits])`.
+
+- Documentation: guides for choosing a structure in the README and in the
+  `func`, `rank_sel`, `bits`, `list`, and `array` modules, inline item lists
+  in module pages, search aliases (e.g., `mphf`, `bloom`, `elias fano`),
+  and examples showing their imports.
 
 - Fewer allocations and less build-time work: buffer reuse in
   `RearCodedListStr::get_in_place`, capacity reservation in the `Extend`
@@ -145,10 +211,25 @@
 - CLI utilities and examples no longer detect compressed input files
   automatically: files are read as they are, unless a format is specified
   with `--decompress` (`gzip`, `zstd`, or `deko` for detection using the
-  `deko` crate). The new `cli::AnyLineLender` lends the lines of a file
-  decompressed in a format chosen at runtime, and `cli::read_concat_lines`
-  and `cli::reservoir_sample` take the format as an argument. The `cli`
-  feature now enables the `flate2` and `zstd` features.
+  `deko` crate). The new `AnyLineLender` in `utils::lenders` (re-exported by
+  `cli`) lends the lines of a file decompressed in a format chosen at
+  runtime, and `cli::reservoir_sample` takes the format as an argument;
+  `cli::read_concat_lines` and `cli::str_slice_from_offsets` are replaced by
+  `cli::KeyBuffer`. The `cli` feature now enables the `flate2` and `zstd`
+  features.
+
+- CLI utilities follow a single rule for `-n` with `-f`: the first N keys of
+  the file are used, and it is an error if the file has fewer keys (also in
+  sequential mode, and for `lcp_mmphf`). `vfilter -u` with 8, 16, 32, or
+  64-bit hashes warns instead of failing. `HashTypes` no longer implements
+  `Display`, and `bench_phast_r` has no short options.
+
+- `SignedFunc` constructors with `BitFieldVec` hashes require the hash word
+  type to implement `AtomicPrimitive` (so `u128` is no longer accepted).
+
+- `BuildError::ValueTooLarge` has been removed. `SolveError`, the
+  `VBuilder::shard_size_hint` setter, `VBuilder::try_build_func_with_store`,
+  and the fields of `BlockInfo` are no longer public.
 
 - `SignableFunc` provides the verification hash of a signature
   (`remixed_hash`) instead of the shard edge, so that functions without a
@@ -157,9 +238,9 @@
 - Field naming and logging have been reorganized. Serialized structures
   will be incompatible.
 
-- `init_env_logger` is now gated by the `cli` feature, and the
-  `env_logger` and `jiff` dependencies are now optional, enabled by that
-  feature.
+- `init_env_logger` is now in the `cli` module, gated by the `cli` feature
+  (the crate-root path is kept as a hidden re-export), and the `env_logger`
+  and `jiff` dependencies are now optional, enabled by that feature.
 
 - Thanks to the new ε-serde, `VFilter` does not have `F` anymore
   as parameter. Moreover, other structures such as `VFunc2` will

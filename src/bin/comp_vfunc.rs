@@ -4,30 +4,24 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-#![allow(clippy::collapsible_else_if)]
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 use clap::{ArgGroup, Parser};
-use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
 use mem_dbg::{FlatType, MemSize};
-use rand::rngs::SmallRng;
-use rand::{RngExt, SeedableRng};
 use rdst::RadixKey;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::num::NonZeroUsize;
 use sux::bits::BitVec;
 use sux::cli::{
-    AnyLineLender, BuilderArgs, Decompression, read_concat_lines, str_slice_from_offsets,
+    AnyLineLender, BuilderArgs, Decompression, KeyBuffer, ValueArgs, check_num_keys, count_lines,
+    init_env_logger, store,
 };
 use sux::func::codec::HuffmanConf;
 use sux::func::shard_edge::{Fuse3NoShards, Fuse3Shards, ShardEdge};
 use sux::func::{CompVFunc, VBuilder};
-use sux::init_env_logger;
 use sux::traits::TryIntoUnaligned;
-use sux::utils::lenders::FromSlice;
-use sux::utils::{FromCloneableIntoIterator, FromIntoFallibleLenderFactory, Sig, SigVal, ToSig};
+use sux::utils::{
+    FromCloneableIntoIterator, FromIntoFallibleLenderFactory, FromSlice, Sig, SigVal, ToSig,
+};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -42,52 +36,30 @@ use sux::utils::{FromCloneableIntoIterator, FromIntoFallibleLenderFactory, Sig, 
         .multiple(true)
         .args(["filename", "n"]),
 ))]
-#[clap(group(
-    ArgGroup::new("value_source")
-        .required(true)
-        .args(["values", "geometric", "zipf", "uniform"]),
-))]
 struct Args {
-    /// The number of keys; if no filename is provided, use the 64-bit keys
-    /// [0 . . n).​
+    /// The number of keys: if a file of keys is specified, its first N keys
+    /// are used, and it is an error if it contains fewer keys; otherwise, the
+    /// 64-bit keys [0 . . N) are used.​
     #[arg(short, long)]
     n: Option<usize>,
-    /// A file containing UTF-8 keys, one per line (at most N keys will
-    /// be read).​
+    /// A file containing UTF-8 keys, one per line.​
     #[arg(short, long)]
     filename: Option<String>,
     /// Decompress the file of keys using this format (by default, it is read
     /// as is).​
     #[arg(long, value_enum)]
     decompress: Option<Decompression>,
-    /// A file containing the values, one ASCII decimal integer per
-    /// line. The number of values must match the number of keys.​
-    #[arg(short, long)]
-    values: Option<String>,
-    /// Generate values with a geometric distribution (trailing zeros
-    /// of a random u64).​
-    #[arg(long)]
-    geometric: bool,
-    /// Generate values with a Zipf distribution (exponent 1) over
-    /// [0 . . K).​
-    #[arg(long)]
-    zipf: Option<NonZeroUsize>,
-    /// Generate values uniformly distributed in [0 . . K).​
-    #[arg(long)]
-    uniform: Option<NonZeroUsize>,
+    #[clap(flatten)]
+    values: ValueArgs,
     /// Save the structure in unaligned form (faster, if available).​
     #[arg(long, short)]
     unaligned: bool,
-    /// A name for the ε-serde serialized function.​
+    /// A name for the ε-serde serialized function (if not specified, the
+    /// function is built but not saved).​
     func: Option<String>,
     /// Hashes keys sequentially without loading them in RAM.​
     #[arg(short, long)]
     sequential: bool,
-    /// With an explicit --values file, verify that the key count matches the
-    /// value count. This makes an extra pass over the key file, so it is
-    /// off by default.​
-    #[arg(long, requires = "values", conflicts_with_all = ["geometric", "zipf", "uniform"])]
-    check: bool,
     /// Cap on the number of distinct codeword lengths in the Huffman decoding
     /// table, which is the main factor in decoding speed. Rare symbols beyond
     /// the cap are diverted to the escape codeword and stored as literals.​
@@ -101,47 +73,13 @@ struct Args {
     huffman_entropy_threshold: f64,
     #[clap(flatten)]
     builder: BuilderArgs,
-    /// Shard/edge type (CompVFunc does not support LGE variants).​
+    /// Shard/edge type: CompVFunc does not support lazy Gaussian elimination,
+    /// so only fuse3-shards (the default, unlike in the other binaries),
+    /// fuse3-no-shards64, and fuse3-no-shards128 are supported.​
     #[arg(long, short = 'E', value_enum, default_value_t = sux::cli::ShardEdgeType::Fuse3Shards)]
     shard_edge: sux::cli::ShardEdgeType,
     #[clap(flatten)]
     log: sux::cli::LogIntervalArg,
-}
-
-fn read_values(path: &str) -> Result<Vec<usize>> {
-    let file = File::open(path).with_context(|| format!("open values file {path}"))?;
-    let reader = BufReader::new(file);
-    let mut values = Vec::new();
-    for (lineno, line) in reader.lines().enumerate() {
-        let line = line?;
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let v: usize = trimmed.parse().with_context(|| {
-            format!(
-                "values file {path}, line {}: cannot parse `{trimmed}`",
-                lineno + 1
-            )
-        })?;
-        values.push(v);
-    }
-    Ok(values)
-}
-
-/// Optionally convert to unaligned form and store the built function
-/// to `out`, if provided. Extracted so the four branches below each
-/// call it once at their tail.
-macro_rules! maybe_store {
-    ($func:expr, $out:expr, $unaligned:expr) => {
-        if let Some(out) = $out {
-            if $unaligned {
-                unsafe { $func.try_into_unaligned()?.store(&out)? };
-            } else {
-                unsafe { $func.store(&out)? };
-            }
-        }
-    };
 }
 
 /// Validates the Huffman entropy threshold: a finite fraction in `[0.0, 1.0]`.
@@ -179,49 +117,6 @@ fn main() -> Result<()> {
     }
 }
 
-fn zipf_cdf(s: f64, n: usize) -> Vec<f64> {
-    let h: f64 = (1..=n).map(|i| 1.0 / (i as f64).powf(s)).sum();
-    let mut cdf = vec![0.0; n];
-    let mut acc = 0.0;
-    for i in 1..=n {
-        acc += 1.0 / (i as f64).powf(s) / h;
-        cdf[i - 1] = acc;
-    }
-    cdf
-}
-
-fn sample_zipf(cdf: &[f64], rng: &mut SmallRng) -> usize {
-    let u: f64 = (rng.random::<u64>() >> 11) as f64 / ((1u64 << 53) as f64);
-    // The clamp keeps the sample in range when accumulated floating-point
-    // error leaves the last CDF entry slightly below one and u falls above it.
-    cdf.partition_point(|&p| p < u).min(cdf.len() - 1)
-}
-
-fn generate_synthetic_values(args: &Args, n: usize) -> Result<Vec<usize>> {
-    let mut rng = SmallRng::seed_from_u64(0);
-    if args.geometric {
-        Ok((0..n)
-            .map(|_| rng.random::<u64>().trailing_zeros() as usize)
-            .collect())
-    } else if let Some(k) = args.zipf {
-        let cdf = zipf_cdf(1.0, k.get());
-        Ok((0..n).map(|_| sample_zipf(&cdf, &mut rng)).collect())
-    } else if let Some(k) = args.uniform {
-        Ok((0..n).map(|_| rng.random_range(0..k.get())).collect())
-    } else {
-        bail!("one of --values, --geometric, --zipf, or --uniform is required");
-    }
-}
-
-fn count_keys(filename: &str, decompression: Option<Decompression>) -> Result<usize> {
-    let mut lender = AnyLineLender::from_path(filename, decompression)?;
-    let mut count = 0;
-    while lender.next()?.is_some() {
-        count += 1;
-    }
-    Ok(count)
-}
-
 fn main_with_types<S: Sig + Send + Sync, E: ShardEdge<S, 3> + MemSize + FlatType>(
     args: Args,
 ) -> Result<()>
@@ -238,27 +133,17 @@ where
     let huffman =
         HuffmanConf::length_limited(args.huffman_max_table_len, args.huffman_entropy_threshold);
 
-    let mut pl = ProgressLogger::default();
-    pl.log_interval(args.log.log_interval);
+    let mut pl = args.log.progress_logger();
 
     if let Some(filename) = &args.filename {
-        let values: Vec<usize> = if let Some(ref path) = args.values {
-            read_values(path)?
-        } else {
-            let n = match args.n {
-                Some(n) => n,
-                None => count_keys(filename, args.decompress)?,
-            };
-            generate_synthetic_values(&args, n)?
+        let n = match args.n {
+            // Generated values need the number of keys
+            None if args.values.file.is_none() => Some(count_lines(filename, args.decompress)?),
+            n => n,
         };
+        let values = args.values.values(n)?;
         let n = values.len();
-        if args.check {
-            // Opt-in (--check requires --values): the key count must match the
-            // value count exactly, otherwise keys past values.len() would be
-            // silently ignored. This costs an extra pass over the key file.
-            let key_count = count_keys(filename, args.decompress)?;
-            ensure!(key_count == n, "key count {key_count} != value count {n}");
-        }
+        args.values.check_keys(filename, args.decompress, n)?;
         if args.sequential {
             let keys = FromIntoFallibleLenderFactory::new(|| {
                 AnyLineLender::from_path(filename, args.decompress).map(|keys| keys.take(n))
@@ -270,27 +155,22 @@ where
                 vbuilder,
                 &mut pl,
             )?;
-            maybe_store!(func, args.func, args.unaligned);
+            check_num_keys(func.len(), Some(n))?;
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
         } else {
-            let (buffer, offsets) = read_concat_lines(filename, n, args.decompress)?;
-            let keys = str_slice_from_offsets(&buffer, &offsets);
-            if keys.len() != n {
-                bail!("key count mismatch: read {} keys, expected {n}", keys.len());
-            }
+            let buffer = KeyBuffer::from_path(filename, Some(n), args.decompress)?;
             let func = <CompVFunc<str, BitVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
-                &keys, &values, huffman, vbuilder, &mut pl,
+                &buffer.keys(),
+                &values,
+                huffman,
+                vbuilder,
+                &mut pl,
             )?;
-            maybe_store!(func, args.func, args.unaligned);
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
         }
     } else {
         let n = args.n.unwrap();
-        let values: Vec<usize> = if let Some(ref path) = args.values {
-            let v = read_values(path)?;
-            ensure!(v.len() == n, "n={n} but values file has {} values", v.len());
-            v
-        } else {
-            generate_synthetic_values(&args, n)?
-        };
+        let values = args.values.values(Some(n))?;
         if args.sequential {
             let keys = FromCloneableIntoIterator::from(0_usize..n);
             let func = <CompVFunc<usize, BitVec<Box<[usize]>>, S, E>>::try_new_with_builder(
@@ -300,17 +180,15 @@ where
                 vbuilder,
                 &mut pl,
             )?;
-            maybe_store!(func, args.func, args.unaligned);
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
         } else {
             let keys: Vec<usize> = (0..n).collect();
             let func = <CompVFunc<usize, BitVec<Box<[usize]>>, S, E>>::try_par_new_with_builder(
                 &keys, &values, huffman, vbuilder, &mut pl,
             )?;
-            maybe_store!(func, args.func, args.unaligned);
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
         }
     }
-
-    Ok(())
 }
 
 #[cfg(test)]

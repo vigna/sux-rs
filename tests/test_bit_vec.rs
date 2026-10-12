@@ -1344,3 +1344,100 @@ fn test_atomic_flip_release_partial_word() {
         assert!(!bv.get(0, Ordering::Relaxed), "len {len}");
     }
 }
+
+#[test]
+fn test_macro_expressions() {
+    let x = true;
+    let p = &x;
+
+    // A single variable needs a trailing comma, as bit_vec![x] is the
+    // bit_vec![W] form
+    let b = bit_vec![x,];
+    assert_eq!(b.len(), 1);
+    assert!(b[0]);
+
+    // Fill value given by an expression
+    let b = bit_vec![x; 5];
+    assert_eq!(b.len(), 5);
+    assert!(b.iter().all(|y| y));
+    let b = bit_vec![u32: !x; 5];
+    assert_eq!(b.len(), 5);
+    assert!(!b.iter().any(|y| y));
+    let n = 3_u8;
+    let b = bit_vec![n & 1; 7];
+    assert_eq!(b.len(), 7);
+    assert!(b.iter().all(|y| y));
+
+    // Expressions that the type parser cannot handle
+    let b = bit_vec![*p, (3 & 1) == 0, unsafe { std::ptr::read(p) }];
+    assert_eq!(b.iter().collect::<Vec<_>>(), [true, false, true]);
+    let b = bit_vec![(x && !x) == x];
+    assert_eq!(b.iter().collect::<Vec<_>>(), [false]);
+    let b = bit_vec![usize::from(x)];
+    assert_eq!(b.iter().collect::<Vec<_>>(), [true]);
+    let b = bit_vec![u16: *p, !*p];
+    assert_eq!(b.iter().collect::<Vec<_>>(), [true, false]);
+
+    // Single literals
+    let b = bit_vec![true];
+    assert_eq!(b.iter().collect::<Vec<_>>(), [true]);
+    let b = bit_vec![false];
+    assert_eq!(b.iter().collect::<Vec<_>>(), [false]);
+    let b = bit_vec![1];
+    assert_eq!(b.iter().collect::<Vec<_>>(), [true]);
+
+    // Explicit word types
+    let b: BitVec<Vec<u64>> = bit_vec![u64];
+    assert_eq!(b.len(), 0);
+    let b: BitVec<Vec<u16>> = bit_vec![core::primitive::u16: 1, 0];
+    assert_eq!(b.iter().collect::<Vec<_>>(), [true, false]);
+    let b: BitVec<Vec<u32>> = bit_vec![<BitVec<Vec<u32>> as sux::traits::Backend>::Word];
+    assert_eq!(b.len(), 0);
+    let b: BitVec<Vec<u32>> = bit_vec![<BitVec<Vec<u32>> as sux::traits::Backend>::Word: 1, 0, 1];
+    assert_eq!(b.iter().collect::<Vec<_>>(), [true, false, true]);
+    let b: BitVec<Vec<u8>> = bit_vec![<BitVec<Vec<u8>> as sux::traits::Backend>::Word: 1; 9];
+    assert_eq!(b.count_ones(), 9);
+
+    // Metavariables of other macros
+    macro_rules! with_expr {
+        ($e:expr) => {
+            bit_vec![$e]
+        };
+    }
+    let b = with_expr!(x);
+    assert_eq!(b.iter().collect::<Vec<_>>(), [true]);
+    macro_rules! with_type {
+        ($W:ty) => {
+            bit_vec![$W]
+        };
+    }
+    let b: BitVec<Vec<u8>> = with_type!(u8);
+    assert_eq!(b.len(), 0);
+}
+
+#[test]
+fn test_from_atomic_backends() {
+    let mut b = BitVec::<Vec<usize>>::new(100);
+    for i in 0..100 {
+        b.set(i, i % 3 == 0);
+    }
+
+    // Vec to atomic Vec, and atomic Vec to Box
+    let a: AtomicBitVec<Vec<Atomic<usize>>> = b.clone().try_into().unwrap();
+    assert_eq!(a.count_ones(), b.count_ones());
+    let c: BitVec<Box<[usize]>> = a.try_into().unwrap();
+    assert_eq!(c, b);
+
+    // Box to atomic Vec, and atomic Vec to Vec
+    let a: AtomicBitVec<Vec<Atomic<usize>>> = c.try_into().unwrap();
+    let c: BitVec<Vec<usize>> = a.try_into().unwrap();
+    assert_eq!(c, b);
+
+    // Atomic Vec to atomic Box and back
+    let a: AtomicBitVec<Vec<Atomic<usize>>> = c.try_into().unwrap();
+    let a: AtomicBitVec = a.into();
+    let a: AtomicBitVec<Vec<Atomic<usize>>> = a.into();
+    for i in 0..100 {
+        assert_eq!(a.get(i, Ordering::Relaxed), i % 3 == 0);
+    }
+}

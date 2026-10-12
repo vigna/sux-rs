@@ -30,19 +30,44 @@ use std::borrow::Borrow;
 /// Static Functions and Filters to Trillions of Keys]”. Space overhead with
 /// respect to the optimum depends on the [`ShardEdge`] type. The default is
 /// [`FuseLge3Shards`], which provides 10.5% space overhead for large key sets
-/// (above a few million keys), which grow up to 12% going towards smaller key
-/// sets. Details on other possible [`ShardEdge`] implementations can be found
-/// in the [`shard_edge`] module documentation.
+/// (above a few million keys), growing up to 12.5% going towards smaller key
+/// sets (and to 23% below 5000 keys). Details on other possible [`ShardEdge`]
+/// implementations can be found in the [`shard_edge`] module documentation.
 ///
 /// Instances of this structure are immutable; they are built using [`try_new`]
 /// or one of its variants, and can be serialized using [ε-serde] or [`serde`].
+/// The construction can be configured by passing a [`VBuilder`] to the
+/// `*_with_builder` constructors. Since signatures are computed from the
+/// native representation of keys (see [`ToSig`]), a serialized function
+/// must be queried on a machine with the same endianness.
 ///
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it to be
 /// converted into (usually faster) structures using unaligned access.
 ///
+/// The `vfunc` binary (`cli` feature) builds and serializes instances of
+/// this structure.
+///
+/// # Alternatives
+///
+/// - [`VFunc2`] and [`CompVFunc`] use less space when the distribution of
+///   values is skewed.
+///
+/// - [`VFilter`] uses a [`VFunc`] to provide approximate membership.
+///
+/// - [`SignedFunc`] wraps a [`VFunc`] mapping each key to its index in the
+///   input, adding hashes that reject (with high probability) keys outside the
+///   original set; it cannot wrap a [`VFunc2`] or a [`CompVFunc`].
+///
+/// - [`PHastR`] uses much less space than a [`VFunc`] mapping keys to their
+///   index if any bijection between the keys and [0 . . *n*) is sufficient.
+///
+/// - [`LcpMmphfInt`]/[`LcpMmphf`] map sorted keys to their rank.
+///
 /// # Generics
 ///
-/// * `K` - the type of the keys.
+/// * `K` - the type of the keys; it must implement [`ToSig`], which is
+///   implemented for primitive integer types, `str`, `String`, `&str`,
+///   `&String`, and slices of primitive integer types.
 ///
 /// * `D` - the backend storing the function data; the output type is its
 ///   value type `D::Value`, which can be any unsigned type. The backend can
@@ -77,6 +102,15 @@ use std::borrow::Borrow;
 /// [`FuseLge3FullSigs`]: crate::func::shard_edge::FuseLge3FullSigs
 /// [`serde`]: https://crates.io/crates/serde
 /// [`Fuse3NoShards`]: crate::func::shard_edge::Fuse3NoShards
+/// [`VBuilder`]: crate::func::VBuilder
+/// [`VFunc2`]: crate::func::VFunc2
+/// [`CompVFunc`]: crate::func::CompVFunc
+/// [`VFilter`]: crate::dict::VFilter
+/// [`SignedFunc`]: crate::func::SignedFunc
+/// [`PHastR`]: crate::func::PHastR
+/// [`LcpMmphfInt`]: crate::func::LcpMmphfInt
+/// [`LcpMmphf`]: crate::func::LcpMmphf
+#[doc(alias("static", "function", "retrieval"))]
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(phantom(K, S)))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -107,15 +141,23 @@ impl<K: ?Sized, D, S, E> VFunc<K, D, S, E> {
     pub const fn is_empty(&self) -> bool {
         self.num_keys == 0
     }
+
+    /// Returns the seed used to compute the signatures of the keys.
+    ///
+    /// The signatures passed to [`get_by_sig`] must be computed with this
+    /// seed, that is, as `K::to_sig(key, func.seed())`.
+    ///
+    /// [`get_by_sig`]: VFunc::get_by_sig
+    pub const fn seed(&self) -> u64 {
+        self.seed
+    }
 }
 
 impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>> VFunc<K, BitFieldVec<Box<[W]>>, S, E> {
     /// Creates a VFunc with zero keys.
     ///
-    /// The internal data has bit width 0, so `get` always returns zero.
-    /// This is safe because [`BitFieldVec::new(0, 0)`] allocates one
-    /// word and `get_value_unchecked` with bit width 0 always reads
-    /// index 0 and masks with 0.
+    /// The backend has bit width zero, so [`get`](VFunc::get) returns zero
+    /// for every key.
     #[must_use]
     pub fn empty() -> Self {
         Self {
@@ -134,7 +176,9 @@ impl<K: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: Sh
     /// Returns the value associated with the given signature, or a random value
     /// if the signature is not the signature of a key.
     ///
-    /// This method is mainly useful in the construction of compound functions.
+    /// The signature must be computed using the [seed](VFunc::seed) of the
+    /// function. This method is mainly useful in the construction of compound
+    /// functions.
     #[inline]
     pub fn get_by_sig(&self, sig: S) -> D::Value {
         let edge = self.shard_edge.edge(sig);
@@ -198,8 +242,8 @@ impl<K: ?Sized, W: Word, S: Sig, E: ShardEdge<S, 3>>
 #[cfg(feature = "rayon")]
 mod build {
     use super::*;
+    use crate::func::{VBuilder, check_num_values};
     use crate::traits::bit_field_slice::BitFieldSliceMut;
-    use crate::{func::VBuilder, traits::BitFieldSlice};
     use anyhow::Result;
     use core::error::Error;
     use dsi_progress_logger::ProgressLog;
@@ -207,21 +251,6 @@ mod build {
     use rdst::RadixKey;
     use std::ops::{BitXor, BitXorAssign};
     use value_traits::slices::SliceByValueMut;
-
-    fn log_size<K: ?Sized, D: BitFieldSlice, S, E>(
-        result: &VFunc<K, D, S, E>,
-        pl: &mut impl ProgressLog,
-    ) where
-        VFunc<K, D, S, E>: MemSize,
-    {
-        let num_keys = result.len() as f64;
-        let bit_size = result.mem_size(SizeFlags::default()) as f64 * 8.0;
-        pl.info(format_args!(
-            "Bits/key: {:.3} ({:+.3}% with respect to bit width)",
-            bit_size / num_keys,
-            100.0 * (bit_size / (result.data.bit_width() as f64 * num_keys) - 1.),
-        ));
-    }
 
     impl<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
@@ -368,15 +397,9 @@ mod build {
             for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
             for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
         {
-            Ok(builder
-                .try_build_func(
-                    keys,
-                    values,
-                    |_bit_width, len| vec![W::ZERO; len].into(),
-                    pl,
-                )?
-                .0)
-            .inspect(|vfunc| log_size(vfunc, pl))
+            builder
+                .try_build_func(keys, values, |_, len| vec![W::ZERO; len].into(), pl)
+                .map(|(func, _keys)| func)
         }
 
         /// Builds a [`VFunc`] with a `Box<[W]>` backend from in-memory key
@@ -485,37 +508,8 @@ mod build {
             for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
             for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
         {
-            let n = keys.len();
-            if n != values.len() {
-                return Err(crate::func::BuildError::MismatchedKeysAndValues {
-                    num_keys: n,
-                    num_values: values.len(),
-                }
-                .into());
-            }
-            builder.expected_num_keys(n).try_par_populate_and_build(
-                keys,
-                &|i| values[i],
-                &mut |builder, seed, mut store, _max_value, _num_keys, pl, _state: &mut ()| {
-                    let data: Box<[W]> = vec![
-                        W::ZERO;
-                        builder.shard_edge.num_vertices()
-                            * builder.shard_edge.num_shards()
-                    ]
-                    .into();
-                    let func = builder.try_build_from_shard_iter(
-                        seed,
-                        data,
-                        store.drain(),
-                        &|_, sv| sv.val,
-                        &|_| {},
-                        pl,
-                    )?;
-                    Ok(func)
-                },
-                pl,
-                (),
-            )
+            check_num_values(keys.len(), values.len())?;
+            builder.try_par_build_func(keys, &|i| values[i], |_, len| vec![W::ZERO; len].into(), pl)
         }
     }
 
@@ -655,13 +649,8 @@ mod build {
             pl: &mut (impl ProgressLog + Clone + Send + Sync),
         ) -> Result<Self> {
             builder
-                .try_build_func(
-                    keys,
-                    values,
-                    |bit_width, len| BitFieldVec::<Box<[W]>>::new_padded(bit_width, len),
-                    pl,
-                )
-                .map(|res| res.0)
+                .try_build_func(keys, values, BitFieldVec::new_padded, pl)
+                .map(|(func, _keys)| func)
         }
 
         /// Builds a [`VFunc`] with a [`BitFieldVec`] backend from in-memory
@@ -766,36 +755,8 @@ mod build {
         where
             K: Sync,
         {
-            let n = keys.len();
-            if n != values.len() {
-                return Err(crate::func::BuildError::MismatchedKeysAndValues {
-                    num_keys: n,
-                    num_values: values.len(),
-                }
-                .into());
-            }
-            builder.expected_num_keys(n).try_par_populate_and_build(
-                keys,
-                &|i| values[i],
-                &mut |builder, seed, mut store, max_value, _num_keys, pl, _state: &mut ()| {
-                    builder.bit_width = max_value.bit_len() as usize;
-                    let data = BitFieldVec::<Box<[W]>>::new_padded(
-                        builder.bit_width,
-                        builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
-                    );
-                    let func = builder.try_build_from_shard_iter(
-                        seed,
-                        data,
-                        store.drain(),
-                        &|_, sv| sv.val,
-                        &|_| {},
-                        pl,
-                    )?;
-                    Ok(func)
-                },
-                pl,
-                (),
-            )
+            check_num_values(keys.len(), values.len())?;
+            builder.try_par_build_func(keys, &|i| values[i], BitFieldVec::new_padded, pl)
         }
     }
 } // mod build

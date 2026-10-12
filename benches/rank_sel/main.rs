@@ -227,12 +227,13 @@ struct Cli {
     ///
     /// Available structures:
     ///   Rank9, Select9,
-    ///   RankSmall64-0..4 (64-bit, requires 64-bit platform),
-    ///   SelectSmall64-0..4 (64-bit),
-    ///   RankSmall32-0..5 (32-bit),
-    ///   SelectSmall32-0..5 (32-bit),
-    ///   SelectAdapt0..3 (log2 max words per subinventory),
-    ///   SelectAdaptConst0..3,
+    ///   RankSmall64_0..RankSmall64_4 (rank_small![u64: N]; requires a 64-bit platform),
+    ///   SelectSmall64_0..SelectSmall64_4 (over RankSmall64_N; requires a 64-bit platform),
+    ///   RankSmall32_0..RankSmall32_5 (rank_small![u32: N]),
+    ///   SelectSmall32_0..SelectSmall32_5 (over RankSmall32_N),
+    ///   SelectAdapt0..SelectAdapt3 (N: log2 of the maximum number of words per
+    ///   subinventory; SelectAdapt::new uses 3),
+    ///   SelectAdaptConst0..SelectAdaptConst3 (N: log2 of the number of words per subinventory),
     ///   CompareAdaptConst.​
     #[arg(num_args = 1..)]
     rank_sel_struct: Vec<String>,

@@ -130,8 +130,9 @@ impl<V: Word> CompIntList<BitVec<Box<[V]>>> {
     /// # Examples
     ///
     /// ```rust
-    /// # use sux::list::comp_int_list::CompIntList;
-    /// # use value_traits::slices::SliceByValue;
+    /// use sux::list::comp_int_list::CompIntList;
+    /// use value_traits::slices::SliceByValue;
+    ///
     /// let values = vec![1u64, 5, 10];
     /// let list = CompIntList::new(1, &values);
     /// assert_eq!(list.len(), 3);

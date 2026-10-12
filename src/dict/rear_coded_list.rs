@@ -66,11 +66,42 @@
 //! method is about three times slower than using a [`RearCodedListBuilder`],
 //! but it uses very little memory. Since you can memory map an instance of this
 //! class with ε-serde, this makes it possible to create and use lists that
-//! would not fit
-//! into memory.
+//! would not fit into memory.
 //!
-//! Finally, the `rcl` command-line tool can be used to create
-//! a serialized rear-coded list from a file containing strings.
+//! Finally, the `rcl` command-line tool (which requires the `cli` feature) can
+//! be used to create a serialized [`RearCodedListStr`] from a file containing
+//! strings, one per line.
+//!
+//! # Serialization and the `SORTED` Parameter
+//!
+//! ε-serde includes the const parameter `SORTED` in the type hash, so a list
+//! must be deserialized with the same value of `SORTED` it was serialized
+//! with. In particular, `rcl --unsorted` writes a [`RearCodedListStr<false>`],
+//! which you can load with `<RearCodedListStr<false>>::load_full` (or map into
+//! memory with `<RearCodedListStr<false>>::mmap`, which requires the `mmap`
+//! feature); loading it as a [`RearCodedListStr`], whose `SORTED` parameter
+//! defaults to true, fails:
+//!
+//! ```
+//! # #[cfg(feature = "epserde")] {
+//! use epserde::deser::Deserialize;
+//! use sux::dict::{RearCodedListStr, rear_coded_list};
+//! use sux::traits::IndexedSeq;
+//! use sux::utils::FromSlice;
+//!
+//! let dir = tempfile::tempdir()?;
+//! let path = dir.path().join("words.rcl");
+//! let words = ["foo", "bar", "baz"];
+//! // Store an unsorted list, as `rcl --unsorted --low-mem` does
+//! rear_coded_list::store_str::<_, _, false>(8, FromSlice::new(&words), &path)?;
+//!
+//! let rcl = unsafe { <RearCodedListStr<false>>::load_full(&path)? };
+//! assert_eq!(rcl.get(1), "bar");
+//! // The default alias has SORTED = true, so the type check fails
+//! assert!(unsafe { <RearCodedListStr>::load_full(&path) }.is_err());
+//! # }
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 //!
 //! # UTF-8 Encoding and Panics
 //!
@@ -207,15 +238,23 @@ struct Stats {
 /// Main structure; please use the type aliases [`RearCodedListStr`] and
 /// [`RearCodedListSliceU8`].
 ///
+/// Instances are built using a [`RearCodedListBuilder`]; see the [module
+/// documentation] for an overview, examples, and functions serializing a list
+/// directly without building it in memory.
+///
 /// The parameters `I` and `O` are the input and output types, respectively, and
 /// they are used in the [`IndexedSeq`] implementation. The parameters `D` and
 /// `P` are the storage backends for the encoded data and the block pointers,
 /// respectively. The const boolean parameter `SORTED` specifies whether the
 /// elements are sorted in ascending order and enables, if true, the
 /// implementation of [`IndexedDict`].
+///
+/// [module documentation]: crate::dict::rear_coded_list
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[doc(alias = "front coding")]
+#[doc(alias = "prefix omission")]
 pub struct RearCodedList<I: ?Sized, O, D = Box<[u8]>, P = Box<[usize]>, const SORTED: bool = true> {
     /// The number of strings in a block; this value trades off compression for speed.
     ratio: usize,
@@ -229,10 +268,25 @@ pub struct RearCodedList<I: ?Sized, O, D = Box<[u8]>, P = Box<[usize]>, const SO
     _marker_o: PhantomData<O>,
 }
 
-/// A rear-coded list of byte sequences.
+/// A rear-coded list of byte sequences, returning `Vec<u8>` on access.
+///
+/// Instances are built using a [`RearCodedListBuilder<[u8], SORTED>`]. When
+/// deserializing with ε-serde, `SORTED` must match the value used at
+/// construction time (see the [module documentation]).
+///
+/// [`RearCodedListBuilder<[u8], SORTED>`]: RearCodedListBuilder
+/// [module documentation]: crate::dict::rear_coded_list#serialization-and-the-sorted-parameter
 pub type RearCodedListSliceU8<const SORTED: bool = true> =
     RearCodedList<[u8], Vec<u8>, Box<[u8]>, Box<[usize]>, SORTED>;
-/// A rear-coded list of strings.
+
+/// A rear-coded list of strings, returning [`String`] on access.
+///
+/// Instances are built using a [`RearCodedListBuilder<str, SORTED>`]. When
+/// deserializing with ε-serde, `SORTED` must match the value used at
+/// construction time (see the [module documentation]).
+///
+/// [`RearCodedListBuilder<str, SORTED>`]: RearCodedListBuilder
+/// [module documentation]: crate::dict::rear_coded_list#serialization-and-the-sorted-parameter
 pub type RearCodedListStr<const SORTED: bool = true> =
     RearCodedList<str, String, Box<[u8]>, Box<[usize]>, SORTED>;
 
@@ -294,72 +348,6 @@ impl<
     }
 }
 
-impl<
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    const SORTED: bool,
-> RearCodedList<I, O, D, P, SORTED>
-where
-    for<'a> Lend<'a, I, O, D, P, SORTED>: Lender,
-{
-    /// Returns a [`Lender`] over the elements of the list.
-    ///
-    /// Note that [`iter`] is more convenient if you need owned elements.
-    ///
-    /// [`iter`]: RearCodedList::iter
-    #[inline(always)]
-    pub fn lender(&self) -> Lend<'_, I, O, D, P, SORTED> {
-        Lend::new(self)
-    }
-
-    /// Returns a [`Lender`] over the elements of the list
-    /// starting from the given index.
-    ///
-    /// Note that [`iter_from`] is more convenient if you need owned
-    /// elements.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `from > self.len()`. Passing `self.len()` returns an empty
-    /// lender.
-    ///
-    /// [`iter_from`]: RearCodedList::iter_from
-    #[inline(always)]
-    pub fn lender_from(&self, from: usize) -> Lend<'_, I, O, D, P, SORTED> {
-        Lend::new_from(self, from)
-    }
-
-    /// Returns an [`Iterator`] over the elements of the list.
-    ///
-    /// Note that [`lender`] is more efficient if you need to iterate
-    /// over many elements.
-    ///
-    /// [`lender`]: RearCodedList::lender
-    #[inline(always)]
-    pub fn iter(&self) -> Iter<'_, I, O, D, P, SORTED> {
-        Iter(self.lender())
-    }
-
-    /// Returns an [`Iterator`] over the elements of the list
-    /// starting from the given index.
-    ///
-    /// Note that [`lender_from`] is more efficient if you need to
-    /// iterate over many elements.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `from > self.len()`. Passing `self.len()` returns an empty
-    /// iterator.
-    ///
-    /// [`lender_from`]: RearCodedList::lender_from
-    #[inline(always)]
-    pub fn iter_from(&self, from: usize) -> Iter<'_, I, O, D, P, SORTED> {
-        Iter(self.lender_from(from))
-    }
-}
-
 impl<I: ?Sized, O, D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<I, O, D, P, true> {
     /// Internal method that finds the index of a slice of bytes using a binary
     /// search on the blocks followed by a linear search within the block.
@@ -367,15 +355,15 @@ impl<I: ?Sized, O, D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<I, O, D, P, 
     /// Note that we use Rust built-in binary search: thus, in case of multiple
     /// occurrences of the same string, we may return any of them.
     ///
-    /// Use by the implementation of [`IndexedDict::index_of`].
-    fn index_of(&self, value: impl AsRef<[u8]>) -> Option<usize> {
+    /// Used by the implementation of [`IndexedDict::index_of`].
+    fn index_of_bytes(&self, value: impl AsRef<[u8]>) -> Option<usize> {
         let string = value.as_ref();
         // first do a binary search on the blocks to find the block
         let block_idx = self.pointers.as_ref().binary_search_by(|block_ptr| {
             // do a quick in-place decode of the explicit string at the beginning of the block
             let data = &self.data.as_ref()[*block_ptr..];
             let (len, tmp) = decode_int(data);
-            memcmp(string, &tmp[..len]).reverse()
+            string.cmp(&tmp[..len]).reverse()
         });
 
         if let Ok(block_idx) = block_idx {
@@ -411,7 +399,7 @@ impl<I: ?Sized, O, D: AsRef<[u8]>, P: AsRef<[usize]>> RearCodedList<I, O, D, P, 
             result.extend_from_slice(&data[..to_copy]);
             data = &data[to_copy..];
 
-            match memcmp(string, &result) {
+            match string.cmp(result.as_slice()) {
                 core::cmp::Ordering::Greater => {}
                 core::cmp::Ordering::Equal => return Some(block_idx * self.ratio + idx + 1),
                 core::cmp::Ordering::Less => return None,
@@ -535,11 +523,308 @@ impl<
 > IndexedDict for RearCodedList<I, O, D, P, true>
 {
     fn index_of(&self, value: impl Borrow<Self::Input>) -> Option<usize> {
-        self.index_of(value.borrow())
+        self.index_of_bytes(value.borrow())
     }
 }
 
-// Lenders
+// Lenders and iterators
+
+/// Implements the iteration machinery shared by `RearCodedList` and
+/// `MappedRearCodedList`.
+///
+/// The macro generates the inherent methods `lender`, `lender_from`, `iter`,
+/// and `iter_from` of the list type, the `Iter` type, and the implementations
+/// of `Lending`, `Lender`, `ExactSizeLender`, `FusedLender`, `Iterator`,
+/// `ExactSizeIterator`, `FusedIterator`, `IntoLender`, `IntoIterator`, and
+/// `IntoIteratorFrom`.
+///
+/// The first argument is the list type, the second argument is the field of
+/// the `Lend` type referencing the list, and the remaining arguments are the
+/// storage parameters of the list type with their bounds. The invoking module
+/// must define a `Lend` type with the same generic parameters as the list
+/// type, an `index` field, and inherent `new`, `new_from`, and `next_impl`
+/// methods, the latter returning the next element as a slice of bytes; only
+/// these items differ between the two lists. The lender traits, `MemSize`,
+/// and `MemDbg` must be in scope.
+macro_rules! impl_iteration {
+    ($list:ident, $field:ident, $($param:ident: $bound:path),+) => {
+        impl<
+            I: PartialEq<O> + PartialEq + ?Sized,
+            O: PartialEq<I> + PartialEq,
+            $($param: $bound,)*
+            const SORTED: bool,
+        > $list<I, O, $($param,)* SORTED>
+        where
+            for<'a> Lend<'a, I, O, $($param,)* SORTED>: Lender,
+        {
+            /// Returns a [`Lender`] over the elements of the list.
+            ///
+            /// Note that [`iter`] is more convenient if you need owned elements.
+            ///
+            /// [`iter`]: Self::iter
+            #[inline(always)]
+            pub fn lender(&self) -> Lend<'_, I, O, $($param,)* SORTED> {
+                Lend::new(self)
+            }
+
+            /// Returns a [`Lender`] over the elements of the list
+            /// starting from the given index.
+            ///
+            /// Note that [`iter_from`] is more convenient if you need owned
+            /// elements.
+            ///
+            /// # Panics
+            ///
+            /// Panics if `from > self.len()`. Passing `self.len()` returns an empty
+            /// lender.
+            ///
+            /// [`iter_from`]: Self::iter_from
+            #[inline(always)]
+            pub fn lender_from(&self, from: usize) -> Lend<'_, I, O, $($param,)* SORTED> {
+                Lend::new_from(self, from)
+            }
+
+            /// Returns an [`Iterator`] over the elements of the list.
+            ///
+            /// Note that [`lender`] is more efficient if you need to iterate
+            /// over many elements.
+            ///
+            /// [`lender`]: Self::lender
+            #[inline(always)]
+            pub fn iter(&self) -> Iter<'_, I, O, $($param,)* SORTED> {
+                Iter(self.lender())
+            }
+
+            /// Returns an [`Iterator`] over the elements of the list
+            /// starting from the given index.
+            ///
+            /// Note that [`lender_from`] is more efficient if you need to
+            /// iterate over many elements.
+            ///
+            /// # Panics
+            ///
+            /// Panics if `from > self.len()`. Passing `self.len()` returns an empty
+            /// iterator.
+            ///
+            /// [`lender_from`]: Self::lender_from
+            #[inline(always)]
+            pub fn iter_from(&self, from: usize) -> Iter<'_, I, O, $($param,)* SORTED> {
+                Iter(self.lender_from(from))
+            }
+        }
+
+        impl<
+            'a,
+            'b,
+            I: PartialEq<O> + PartialEq + ?Sized,
+            O: PartialEq<I> + PartialEq,
+            $($param: $bound,)*
+            const SORTED: bool,
+        > Lending<'b> for Lend<'a, I, O, $($param,)* SORTED>
+        {
+            type Lend = &'b I;
+        }
+
+        impl<O: PartialEq<str> + PartialEq, $($param: $bound,)* const SORTED: bool> Lender
+            for Lend<'_, str, O, $($param,)* SORTED>
+        where
+            str: PartialEq<O> + PartialEq,
+        {
+            check_covariance!();
+            fn next(&mut self) -> Option<&'_ str> {
+                self.next_impl().map(|s| std::str::from_utf8(s).unwrap())
+            }
+
+            #[inline(always)]
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                (self.len(), Some(self.len()))
+            }
+        }
+
+        impl<O: PartialEq<[u8]> + PartialEq, $($param: $bound,)* const SORTED: bool> Lender
+            for Lend<'_, [u8], O, $($param,)* SORTED>
+        where
+            [u8]: PartialEq<O> + PartialEq,
+        {
+            check_covariance!();
+            fn next(&mut self) -> Option<&[u8]> {
+                self.next_impl()
+            }
+
+            #[inline(always)]
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                (self.len(), Some(self.len()))
+            }
+        }
+
+        impl<
+            'a,
+            I: PartialEq<O> + PartialEq + ?Sized,
+            O: PartialEq<I> + PartialEq,
+            $($param: $bound,)*
+            const SORTED: bool,
+        > ExactSizeLender for Lend<'a, I, O, $($param,)* SORTED>
+        where
+            Lend<'a, I, O, $($param,)* SORTED>: Lender,
+        {
+            #[inline(always)]
+            fn len(&self) -> usize {
+                self.$field.len() - self.index
+            }
+        }
+
+        impl<
+            'a,
+            I: PartialEq<O> + PartialEq + ?Sized,
+            O: PartialEq<I> + PartialEq,
+            $($param: $bound,)*
+            const SORTED: bool,
+        > FusedLender for Lend<'a, I, O, $($param,)* SORTED>
+        where
+            Lend<'a, I, O, $($param,)* SORTED>: Lender,
+        {
+        }
+
+        // Iterators
+
+        /// Sequential [`Iterator`] over the contents of the list.
+        #[derive(Debug, Clone, MemSize, MemDbg)]
+        pub struct Iter<
+            'a,
+            I: PartialEq<O> + PartialEq + ?Sized,
+            O: PartialEq<I> + PartialEq,
+            $($param: $bound,)*
+            const SORTED: bool,
+        >(Lend<'a, I, O, $($param,)* SORTED>);
+
+        impl<
+            'a,
+            I: PartialEq<O> + PartialEq + ?Sized,
+            O: PartialEq<I> + PartialEq,
+            $($param: $bound,)*
+            const SORTED: bool,
+        > std::iter::ExactSizeIterator for Iter<'a, I, O, $($param,)* SORTED>
+        where
+            Iter<'a, I, O, $($param,)* SORTED>: std::iter::Iterator,
+            Lend<'a, I, O, $($param,)* SORTED>: ExactSizeLender,
+        {
+            #[inline(always)]
+            fn len(&self) -> usize {
+                self.0.len()
+            }
+        }
+
+        impl<
+            'a,
+            I: PartialEq<O> + PartialEq + ?Sized,
+            O: PartialEq<I> + PartialEq,
+            $($param: $bound,)*
+            const SORTED: bool,
+        > std::iter::FusedIterator for Iter<'a, I, O, $($param,)* SORTED>
+        where
+            Iter<'a, I, O, $($param,)* SORTED>: std::iter::Iterator,
+            Lend<'a, I, O, $($param,)* SORTED>: FusedLender,
+        {
+        }
+
+        impl<'a, $($param: $bound,)* const SORTED: bool> std::iter::Iterator
+            for Iter<'a, str, String, $($param,)* SORTED>
+        where
+            Lend<'a, str, String, $($param,)* SORTED>: Lender,
+        {
+            type Item = String;
+
+            #[inline(always)]
+            fn next(&mut self) -> Option<Self::Item> {
+                // SAFETY: We encoded valid UTF-8 strings
+                self.0
+                    .next_impl()
+                    .map(|v| String::from_utf8(Vec::from(v)).unwrap())
+            }
+
+            #[inline(always)]
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                (self.len(), Some(self.len()))
+            }
+        }
+
+        impl<'a, $($param: $bound,)* const SORTED: bool> std::iter::Iterator
+            for Iter<'a, [u8], Vec<u8>, $($param,)* SORTED>
+        where
+            Lend<'a, [u8], Vec<u8>, $($param,)* SORTED>: ExactSizeLender,
+        {
+            type Item = Vec<u8>;
+
+            #[inline(always)]
+            fn next(&mut self) -> Option<Self::Item> {
+                self.0.next_impl().map(|v| v.into())
+            }
+
+            #[inline(always)]
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                (self.len(), Some(self.len()))
+            }
+        }
+
+        // Into... impls
+
+        impl<
+            'a,
+            I: PartialEq<O> + PartialEq + ?Sized,
+            O: PartialEq<I> + PartialEq,
+            $($param: $bound,)*
+            const SORTED: bool,
+        > IntoLender for &'a $list<I, O, $($param,)* SORTED>
+        where
+            Lend<'a, I, O, $($param,)* SORTED>: Lender,
+        {
+            type Lender = Lend<'a, I, O, $($param,)* SORTED>;
+            #[inline(always)]
+            fn into_lender(self) -> Lend<'a, I, O, $($param,)* SORTED> {
+                Lend::new(self)
+            }
+        }
+
+        impl<
+            'a,
+            I: PartialEq<O> + PartialEq + ?Sized,
+            O: PartialEq<I> + PartialEq,
+            $($param: $bound,)*
+            const SORTED: bool,
+        > IntoIterator for &'a $list<I, O, $($param,)* SORTED>
+        where
+            for<'b> Lend<'b, I, O, $($param,)* SORTED>: Lender,
+            Iter<'a, I, O, $($param,)* SORTED>: std::iter::Iterator,
+        {
+            type Item = <Iter<'a, I, O, $($param,)* SORTED> as Iterator>::Item;
+            type IntoIter = Iter<'a, I, O, $($param,)* SORTED>;
+            #[inline(always)]
+            fn into_iter(self) -> Self::IntoIter {
+                self.iter()
+            }
+        }
+
+        impl<
+            'a,
+            I: PartialEq<O> + PartialEq + ?Sized,
+            O: PartialEq<I> + PartialEq,
+            $($param: $bound,)*
+            const SORTED: bool,
+        > IntoIteratorFrom for &'a $list<I, O, $($param,)* SORTED>
+        where
+            for<'b> Lend<'b, I, O, $($param,)* SORTED>: Lender,
+            Iter<'a, I, O, $($param,)* SORTED>: std::iter::Iterator,
+        {
+            type IntoIterFrom = Iter<'a, I, O, $($param,)* SORTED>;
+            #[inline(always)]
+            fn into_iter_from(self, from: usize) -> Self::IntoIter {
+                self.iter_from(from)
+            }
+        }
+    };
+}
+
+pub(crate) use impl_iteration;
 
 /// Sequential [`Lender`] over the contents of the list.
 #[derive(Debug, Clone, MemSize, MemDbg)]
@@ -636,223 +921,7 @@ where
     }
 }
 
-impl<
-    'a,
-    'b,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    const SORTED: bool,
-> Lending<'b> for Lend<'a, I, O, D, P, SORTED>
-{
-    type Lend = &'b I;
-}
-
-impl<O: PartialEq<str> + PartialEq, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> Lender
-    for Lend<'_, str, O, D, P, SORTED>
-where
-    str: PartialEq<O> + PartialEq,
-{
-    check_covariance!();
-    fn next(&mut self) -> Option<&'_ str> {
-        self.next_impl().map(|s| std::str::from_utf8(s).unwrap())
-    }
-
-    #[inline(always)]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len(), Some(self.len()))
-    }
-}
-
-impl<O: PartialEq<[u8]> + PartialEq, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> Lender
-    for Lend<'_, [u8], O, D, P, SORTED>
-where
-    [u8]: PartialEq<O> + PartialEq,
-{
-    check_covariance!();
-    fn next(&mut self) -> Option<&[u8]> {
-        self.next_impl()
-    }
-
-    #[inline(always)]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len(), Some(self.len()))
-    }
-}
-
-impl<
-    'a,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    const SORTED: bool,
-> ExactSizeLender for Lend<'a, I, O, D, P, SORTED>
-where
-    Lend<'a, I, O, D, P, SORTED>: Lender,
-{
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.rcl.len() - self.index
-    }
-}
-
-impl<
-    'a,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    const SORTED: bool,
-> FusedLender for Lend<'a, I, O, D, P, SORTED>
-where
-    Lend<'a, I, O, D, P, SORTED>: Lender,
-{
-}
-
-// Iterators
-
-/// Sequential [`Iterator`] over the contents of the list.
-#[derive(Debug, Clone, MemSize, MemDbg)]
-pub struct Iter<
-    'a,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    const SORTED: bool,
->(Lend<'a, I, O, D, P, SORTED>);
-
-impl<
-    'a,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    const SORTED: bool,
-> std::iter::ExactSizeIterator for Iter<'a, I, O, D, P, SORTED>
-where
-    Iter<'a, I, O, D, P, SORTED>: std::iter::Iterator,
-    Lend<'a, I, O, D, P, SORTED>: ExactSizeLender,
-{
-    #[inline(always)]
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
-impl<
-    'a,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    const SORTED: bool,
-> std::iter::FusedIterator for Iter<'a, I, O, D, P, SORTED>
-where
-    Iter<'a, I, O, D, P, SORTED>: std::iter::Iterator,
-    Lend<'a, I, O, D, P, SORTED>: FusedLender,
-{
-}
-
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> std::iter::Iterator
-    for Iter<'a, str, String, D, P, SORTED>
-where
-    Lend<'a, str, String, D, P, SORTED>: Lender,
-{
-    type Item = String;
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        // SAFETY: We encoded valid UTF-8 strings
-        self.0
-            .next_impl()
-            .map(|v| String::from_utf8(Vec::from(v)).unwrap())
-    }
-
-    #[inline(always)]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len(), Some(self.len()))
-    }
-}
-
-impl<'a, D: AsRef<[u8]>, P: AsRef<[usize]>, const SORTED: bool> std::iter::Iterator
-    for Iter<'a, [u8], Vec<u8>, D, P, SORTED>
-where
-    Lend<'a, [u8], Vec<u8>, D, P, SORTED>: ExactSizeLender,
-{
-    type Item = Vec<u8>;
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next_impl().map(|v| v.into())
-    }
-
-    #[inline(always)]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len(), Some(self.len()))
-    }
-}
-
-// Into... impls
-
-impl<
-    'a,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    const SORTED: bool,
-> IntoLender for &'a RearCodedList<I, O, D, P, SORTED>
-where
-    Lend<'a, I, O, D, P, SORTED>: Lender,
-{
-    type Lender = Lend<'a, I, O, D, P, SORTED>;
-    #[inline(always)]
-    fn into_lender(self) -> Lend<'a, I, O, D, P, SORTED> {
-        Lend::new(self)
-    }
-}
-
-impl<
-    'a,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    const SORTED: bool,
-> IntoIterator for &'a RearCodedList<I, O, D, P, SORTED>
-where
-    for<'b> Lend<'b, I, O, D, P, SORTED>: Lender,
-    Iter<'a, I, O, D, P, SORTED>: std::iter::Iterator,
-{
-    type Item = <Iter<'a, I, O, D, P, SORTED> as Iterator>::Item;
-    type IntoIter = Iter<'a, I, O, D, P, SORTED>;
-    #[inline(always)]
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-impl<
-    'a,
-    I: PartialEq<O> + PartialEq + ?Sized,
-    O: PartialEq<I> + PartialEq,
-    D: AsRef<[u8]>,
-    P: AsRef<[usize]>,
-    const SORTED: bool,
-> IntoIteratorFrom for &'a RearCodedList<I, O, D, P, SORTED>
-where
-    for<'b> Lend<'b, I, O, D, P, SORTED>: Lender,
-    Iter<'a, I, O, D, P, SORTED>: std::iter::Iterator,
-{
-    type IntoIterFrom = Iter<'a, I, O, D, P, SORTED>;
-    #[inline(always)]
-    fn into_iter_from(self, from: usize) -> Self::IntoIter {
-        self.iter_from(from)
-    }
-}
+impl_iteration!(RearCodedList, rcl, D: AsRef<[u8]>, P: AsRef<[usize]>);
 
 /// Builder for a rear-coded list.
 ///
@@ -878,18 +947,6 @@ pub struct RearCodedListBuilder<I: ?Sized, const SORTED: bool = true> {
     /// Cache of the last encoded string for incremental encoding.
     last_str: Vec<u8>,
     _marker: PhantomData<I>,
-}
-
-#[inline(always)]
-/// Like memcmp
-fn memcmp(string: &[u8], data: &[u8]) -> core::cmp::Ordering {
-    for (a, b) in string.iter().zip(data.iter()) {
-        let ord = a.cmp(b);
-        if ord != core::cmp::Ordering::Equal {
-            return ord;
-        }
-    }
-    string.len().cmp(&data.len())
 }
 
 impl<I: ?Sized, const SORTED: bool> RearCodedListBuilder<I, SORTED> {
@@ -1217,23 +1274,25 @@ impl<I: ?Sized + AsRef<[u8]>, const SORTED: bool> RearCodedListBuilder<I, SORTED
     /// # Examples
     ///
     /// ```rust
-    /// # use sux::dict::RearCodedListBuilder;
+    /// use lender::IteratorExt;
+    /// use sux::dict::RearCodedListBuilder;
+    /// use sux::traits::IndexedSeq;
+    ///
     /// // For sorted lists
+    /// let words = ["aa", "aab", "abc", "abdd"];
     /// let mut rclb = RearCodedListBuilder::<str, true>::new(4);
-    /// rclb.push("aa");
-    /// rclb.push("aab");
-    /// rclb.push("abc");
-    /// rclb.push("abdd");
+    /// rclb.extend(words.iter().into_lender());
     /// let rcl = rclb.build();
     /// assert_eq!(rcl.len(), 4);
+    /// assert_eq!(rcl.get(2), "abc");
     ///
     /// // For unsorted lists
+    /// let words = vec!["foo".to_string(), "bar".to_string(), "baz".to_string()];
     /// let mut rclb = RearCodedListBuilder::<str, false>::new(4);
-    /// for word in ["foo", "bar", "baz", "qux"] {
-    ///     rclb.push(word);
-    /// }
+    /// rclb.extend(words.iter().into_lender());
     /// let rcl = rclb.build();
-    /// assert_eq!(rcl.len(), 4);
+    /// assert_eq!(rcl.len(), 3);
+    /// assert_eq!(rcl.get(1), "bar");
     /// ```
     ///
     /// [`FallibleRewindableLender`]: crate::utils::FallibleRewindableLender
@@ -1310,7 +1369,6 @@ fn decode_int(mut data: &[u8]) -> (usize, &[u8]) {
 mod epserde_impl {
     use super::{RearCodedList, RearCodedListBuilder};
     use crate::utils::FallibleRewindableLender;
-    #[cfg(feature = "epserde")]
     use epserde::{prelude::SerIter, ser::Serialize};
     use lender::FallibleLending;
     use std::{borrow::Borrow, cell::RefCell, marker::PhantomData};
@@ -1387,13 +1445,27 @@ mod epserde_impl {
         Ok(written)
     }
 
+    /// Creates the given file, serializes into it through a buffered writer
+    /// using `serialize`, and flushes the writer.
+    fn store_impl(
+        filename: impl AsRef<std::path::Path>,
+        serialize: impl FnOnce(&mut std::io::BufWriter<std::fs::File>) -> anyhow::Result<usize>,
+    ) -> anyhow::Result<usize> {
+        let dst_file = std::fs::File::create(filename.as_ref())?;
+        let mut buf_writer = std::io::BufWriter::new(dst_file);
+        // Flush explicitly: errors during the implicit flush on drop would be
+        // silently discarded, reporting success on a truncated file.
+        let written = serialize(&mut buf_writer)?;
+        std::io::Write::flush(&mut buf_writer)?;
+        Ok(written)
+    }
+
     /// Serializes to a stream a rear-coded list of strings directly from a lender of `AsRef<str>`.
     ///
     /// # Panics
     ///
     /// Panics if the lender fails during the second (serialization) pass;
     /// such a mid-serialization failure is not recoverable.
-    #[cfg(feature = "epserde")]
     pub fn serialize_str<
         T: ?Sized + Borrow<str>,
         L: FallibleRewindableLender<
@@ -1415,7 +1487,6 @@ mod epserde_impl {
     ///
     /// Panics if the lender fails during the second (serialization) pass;
     /// such a mid-serialization failure is not recoverable.
-    #[cfg(feature = "epserde")]
     pub fn serialize_slice_u8<
         T: ?Sized + Borrow<[u8]>,
         L: FallibleRewindableLender<
@@ -1438,7 +1509,6 @@ mod epserde_impl {
     ///
     /// Panics if the lender fails during the second (serialization) pass;
     /// such a mid-serialization failure is not recoverable.
-    #[cfg(feature = "epserde")]
     pub fn store_str<
         T: ?Sized + Borrow<str>,
         L: FallibleRewindableLender<
@@ -1451,13 +1521,9 @@ mod epserde_impl {
         lender: L,
         filename: impl AsRef<std::path::Path>,
     ) -> anyhow::Result<usize> {
-        let dst_file = std::fs::File::create(filename.as_ref())?;
-        let mut buf_writer = std::io::BufWriter::new(dst_file);
-        // Flush explicitly: errors during the implicit flush on drop would be
-        // silently discarded, reporting success on a truncated file.
-        let written = serialize_impl::<T, str, String, L, SORTED>(ratio, lender, &mut buf_writer)?;
-        std::io::Write::flush(&mut buf_writer)?;
-        Ok(written)
+        store_impl(filename, |writer| {
+            serialize_impl::<T, str, String, L, SORTED>(ratio, lender, writer)
+        })
     }
 
     /// Stores into a file a rear-coded list of strings built directly from a lender of
@@ -1467,7 +1533,6 @@ mod epserde_impl {
     ///
     /// Panics if the lender fails during the second (serialization) pass;
     /// such a mid-serialization failure is not recoverable.
-    #[cfg(feature = "epserde")]
     pub fn store_slice_u8<
         T: ?Sized + Borrow<[u8]>,
         L: FallibleRewindableLender<
@@ -1480,14 +1545,9 @@ mod epserde_impl {
         lender: L,
         filename: impl AsRef<std::path::Path>,
     ) -> anyhow::Result<usize> {
-        let dst_file = std::fs::File::create(filename.as_ref())?;
-        let mut buf_writer = std::io::BufWriter::new(dst_file);
-        // Flush explicitly: errors during the implicit flush on drop would be
-        // silently discarded, reporting success on a truncated file.
-        let written =
-            serialize_impl::<T, [u8], Vec<u8>, L, SORTED>(ratio, lender, &mut buf_writer)?;
-        std::io::Write::flush(&mut buf_writer)?;
-        Ok(written)
+        store_impl(filename, |writer| {
+            serialize_impl::<T, [u8], Vec<u8>, L, SORTED>(ratio, lender, writer)
+        })
     }
 
     /// An iterator that will be wrapped in a [`SerIter`] to serialize directly the
@@ -1745,16 +1805,25 @@ mod tests {
     }
 
     #[test]
-    fn test_memcmp() {
-        assert_eq!(memcmp(b"abcd", b"abcd"), core::cmp::Ordering::Equal);
-        assert_eq!(memcmp(b"abcd", b"abbd"), core::cmp::Ordering::Greater);
-        assert_eq!(memcmp(b"abcd", b"abdd"), core::cmp::Ordering::Less);
-
-        assert_eq!(memcmp(b"a", b"b\0"), core::cmp::Ordering::Less);
-        assert_eq!(memcmp(b"b", b"a\0"), core::cmp::Ordering::Greater);
-        assert_eq!(memcmp(b"abc", b"abc\0"), core::cmp::Ordering::Less);
-        assert_eq!(memcmp(b"abc", b"ab\0"), core::cmp::Ordering::Greater);
-        assert_eq!(memcmp(b"ab\0", b"abc"), core::cmp::Ordering::Less);
+    fn test_index_of_byte_order() {
+        // Lexicographical byte order, in which a proper prefix precedes its
+        // extensions (also by a \0) and \0 precedes any other byte.
+        let strings = [
+            "a", "a\0", "ab\0", "abbd", "abc", "abc\0", "abcd", "abdd", "b", "b\0",
+        ];
+        for ratio in 1..=4 {
+            let mut builder = RearCodedListBuilder::<[u8], true>::new(ratio);
+            for s in strings {
+                builder.push(s.as_bytes());
+            }
+            let rcl = builder.build();
+            for (i, s) in strings.iter().enumerate() {
+                assert_eq!(rcl.index_of(s.as_bytes()), Some(i));
+            }
+            for s in ["", "\0", "a\0\0", "ab", "abc\0\0", "abd", "b\0\0", "c"] {
+                assert_eq!(rcl.index_of(s.as_bytes()), None);
+            }
+        }
     }
 
     const UPPER_BOUND_1: usize = 128;
@@ -2260,15 +2329,6 @@ mod tests {
             let expected = format!("{}{:03}", prefix, i);
             assert_eq!(rcl.get(i), expected);
         }
-    }
-
-    #[test]
-    fn test_memcmp_rust() {
-        assert_eq!(memcmp(b"abc", b"abc"), core::cmp::Ordering::Equal);
-        assert_eq!(memcmp(b"abc", b"abd"), core::cmp::Ordering::Less);
-        assert_eq!(memcmp(b"abd", b"abc"), core::cmp::Ordering::Greater);
-        assert_eq!(memcmp(b"ab", b"abc"), core::cmp::Ordering::Less);
-        assert_eq!(memcmp(b"abc", b"ab"), core::cmp::Ordering::Greater);
     }
 
     #[test]

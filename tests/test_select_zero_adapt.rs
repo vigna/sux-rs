@@ -10,7 +10,6 @@ use rand::{RngExt, SeedableRng};
 use sux::prelude::*;
 use sux::rank_sel::select_adapt;
 use sux::traits::BitVecOps;
-use sux::traits::bit_vec_ops::*;
 
 #[test]
 fn test() {

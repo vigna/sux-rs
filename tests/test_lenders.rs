@@ -121,6 +121,39 @@ fn test_gzip_line_lender() -> Result<()> {
     Ok(())
 }
 
+#[cfg(all(feature = "deko", feature = "flate2", feature = "zstd"))]
+#[test]
+fn test_any_line_lender() -> Result<()> {
+    let text = b"foo\nbar\nbaz\n";
+    let plain = text.to_vec();
+    let mut encoder = GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(text)?;
+    let gzip = encoder.finish()?;
+    let zstd = zstd::stream::encode_all(Cursor::new(text), 0)?;
+
+    for (data, decompression) in [
+        (&plain, None),
+        (&plain, Some(Decompression::Deko)),
+        (&gzip, Some(Decompression::Gzip)),
+        (&gzip, Some(Decompression::Deko)),
+        (&zstd, Some(Decompression::Zstd)),
+        (&zstd, Some(Decompression::Deko)),
+    ] {
+        test_lender(AnyLineLender::new(Cursor::new(data), decompression)?)?;
+    }
+
+    // Without decompression, compressed data is read as it is
+    ensure!(test_lender(AnyLineLender::new(Cursor::new(&gzip), None)?).is_err());
+
+    let mut file = tempfile::NamedTempFile::new()?;
+    file.write_all(&gzip)?;
+    test_lender(AnyLineLender::from_path(
+        file.path(),
+        Some(Decompression::Gzip),
+    )?)?;
+    Ok(())
+}
+
 #[test]
 fn test_from() -> Result<()> {
     test_lender(FromCloneableIntoIterator::from(["foo", "bar", "baz"]))?;

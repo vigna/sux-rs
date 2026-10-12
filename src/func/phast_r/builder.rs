@@ -41,37 +41,36 @@ pub(super) fn check_progress(
     Ok(())
 }
 
-/// Returns the message of the error returned when the last level, with `k`
-/// keys, cannot be built.
-pub(super) fn last_level_failure(k: usize) -> String {
-    format!(
-        "Could not build the last level ({k} keys) in {LAST_LEVEL_ATTEMPTS} attempts: the slice length or the number of bits of a seed is probably too small"
-    )
+/// Logs the number of keys of the level of index `index` and the number of
+/// keys bumped from it.
+pub(super) fn log_level(index: usize, k: usize, bumped: usize, pl: &mut impl ProgressLog) {
+    pl.info(format_args!(
+        "Level {index}: {k} keys, {bumped} bumped ({:.3}%)",
+        100.0 * bumped as f64 / k as f64
+    ));
 }
 
 /// A builder for [`PHastR`].
 ///
 /// The builder is passed to the constructors [`try_new_with_builder`] and
-/// [`try_par_new_with_builder`], and its fields can be set using the
-/// methods of the same name.
+/// [`try_par_new_with_builder`] of [`PHastR`], and to the constructors with
+/// the same names of a [`SignedFunc`] wrapping a [`PHastR`] (see its
+/// [supported combinations]); its fields can be set using the methods of the
+/// same name.
 ///
 /// The defaults use 8-bit seeds, four layouts, slices of length 1024, and
-/// an expected bucket size of 4.25 keys: a larger size (e.g., 4.5) reduces
-/// space (by about 0.04 bits per key with 4.5), but more keys are bumped
-/// from the first level, and queries for such keys are slower; a smaller
-/// size makes queries slightly faster, but it increases space significantly.
-///
-/// For 10-bit seeds, good parameters are slices of length 2048 and an
-/// expected bucket size of 5.75 keys; seeds must then be stored in a
-/// [`BitFieldVec`], and the function should be converted with
-/// [`TryIntoUnaligned::try_into_unaligned`] to use unaligned reads.
+/// an expected bucket size of 4.25 keys; see the documentation of [`PHastR`]
+/// for [when to change them].
 ///
 /// [`try_new_with_builder`]: PHastR::try_new_with_builder
 /// [`try_par_new_with_builder`]: PHastR::try_par_new_with_builder
+/// [`SignedFunc`]: crate::func::SignedFunc
+/// [supported combinations]: crate::func::SignedFunc#supported-combinations
+/// [when to change them]: PHastR#changing-the-defaults
 #[derive(Setters, Debug, Clone)]
 #[setters(generate = false)]
 pub struct PHastRBuilder {
-    /// The number of bits of a seed.
+    /// The number of bits of a bucket seed.
     ///
     /// The default is 8. Seeds stored in a `Box<[u8]>` can have at most 8
     /// bits, and seeds stored in a [`BitFieldVec`] at most 16 bits (see
@@ -111,7 +110,8 @@ pub struct PHastRBuilder {
     #[setters(generate = true)]
     pub(super) bucket_size: f64,
 
-    /// The seed used to compute the hashes of the keys.
+    /// The hash seed, used to compute the signatures of the keys (see
+    /// [`ToSig`]).
     ///
     /// The default is 0.
     #[setters(generate = true)]
@@ -126,7 +126,7 @@ pub struct PHastRBuilder {
     #[setters(generate = true, strip_option)]
     pub(super) weights: Option<[i64; 7]>,
 
-    /// Keeps the hashes of the keys in temporary files, rather than in
+    /// Keeps the signatures of the keys in temporary files, rather than in
     /// memory.
     ///
     /// The default is false. Only the constructors reading keys from a
@@ -138,14 +138,16 @@ pub struct PHastRBuilder {
     /// on some systems the default temporary directory is in memory (e.g.,
     /// a `tmpfs`).
     ///
-    /// Offline construction uses 256 MiB of buffers whatever the number of
-    /// keys, so it is useful only on large key sets.
+    /// Offline construction uses 256 MiB of buffers up to about 8.6 · 10⁹
+    /// keys, and then about a sixteenth of a byte per key (at most 16 GiB),
+    /// so it is useful only on large key sets (see [`PHastR`] for the memory
+    /// used by the construction).
     #[setters(generate = true)]
     pub(super) offline: bool,
 }
 
 impl PHastRBuilder {
-    /// Builds a function on the keys of a slice, computing their hashes in
+    /// Builds a function on a slice of keys, computing their signatures in
     /// parallel and keeping them in memory (see [`PHastR::try_par_new`]).
     pub(super) fn try_build_from_slice<K: ?Sized + ToSig<[u64; 1]> + Sync, D: SeedStoreBuild>(
         &self,
@@ -169,7 +171,7 @@ impl PHastRBuilder {
         let (params0, seeds0) = levels.next().expect("there is always at least one level");
         let seeds0 = D::from_seeds(&seeds0, self.seed_bits);
         let func = self.assemble(keys.len(), params0, seeds0, levels, remap);
-        log_completion(start, keys.len(), pl);
+        log_completion("Construction", start, keys.len(), pl);
         Ok(func)
     }
 
@@ -252,13 +254,14 @@ impl PHastRBuilder {
             seeds.extend_from_slice(&s);
             params.push(p);
         }
+        let layout_shift = 6 - self.log2_layouts;
+        let default_layouts = layout_shift == DEFAULT_LAYOUT_SHIFT;
         PHastR {
             seed,
             num_keys,
-            layout_shift: 6 - self.log2_layouts,
-            default_shifts: 6 - self.log2_layouts == DEFAULT_LAYOUT_SHIFT
-                && params0.scale == DEFAULT_SCALE as u64,
-            fast_scale: if 6 - self.log2_layouts == DEFAULT_LAYOUT_SHIFT && params0.scale <= 3 {
+            layout_shift,
+            default_shifts: default_layouts && params0.scale == DEFAULT_SCALE as u64,
+            fast_scale: if default_layouts && params0.scale <= 3 {
                 params0.scale as u8 + 1
             } else {
                 0
@@ -283,7 +286,9 @@ impl PHastRBuilder {
         let hash = |idx: usize, seed: u64| K::to_sig(keys[idx].borrow(), seed)[0];
         let n = keys.len();
         let mut levels: Vec<(LevelParams, Vec<u16>)> = vec![];
-        let mut entries: Vec<usize> = vec![];
+        // The sets of used slots and the output ranges of the levels after
+        // the first one
+        let mut used: Vec<(UsedSlots, usize)> = vec![];
         let weights = self.priority_weights();
 
         if n == 0 {
@@ -315,22 +320,15 @@ impl PHastRBuilder {
         let geom = self.geometry(n, n, self.bucket_size);
         let sigs = group(n, |i| hash(i, self.seed), &geom);
         pl.done_with_count(n);
-        log_signatures(start, n, pl);
+        log_completion("Computation of signatures from inputs", start, n, pl);
         let out = sweep_bumping_level(&sigs, &geom, &weights, 0, n, pl);
         // The indices of the keys of the next level
         let mut cur = bumped(&sigs, &out.seeds, &geom);
         drop(sigs);
-        pl.info(format_args!(
-            "Level 0: {} keys, {} bumped ({:.3}%)",
-            n,
-            cur.len(),
-            100.0 * cur.len() as f64 / n as f64
-        ));
+        log_level(0, n, cur.len(), pl);
         let holes = self::holes(&out.occupied, n);
         debug_assert_eq!(holes.len(), cur.len());
         levels.push((geom.level(), out.seeds));
-        let mut hole_idx = 0;
-        let mut last_hole = 0;
 
         // Keys with the same signature are mapped to the same slot by every
         // seed, so they are bumped, and separated by the signatures of the
@@ -371,85 +369,85 @@ impl PHastRBuilder {
 
         // The following levels: signatures are computed from the two
         // hashes of each key and the salt of the level
+        let mut offset = 0;
         while !cur.is_empty() {
             let k = cur.len();
-            let group = |salt: u64, geom: &Geometry| {
-                group(
-                    k,
-                    |i| {
-                        let second = hash(cur[i], self.seed ^ SECOND_HASH);
-                        level_sig(hash(cur[i], self.seed), second, salt)
-                    },
-                    geom,
-                )
+            let index = levels.len();
+            let sig = |i: usize, salt: u64| {
+                let second = hash(cur[i], self.seed ^ SECOND_HASH);
+                level_sig(hash(cur[i], self.seed), second, salt)
             };
-            let (level, seeds, occupied, next, m) = if k > LAST_LEVEL_THRESHOLD {
-                let salt = level_salt(self.seed, levels.len(), 0);
+            let (mut level, seeds, occupied, next, m) = if k > LAST_LEVEL_THRESHOLD {
+                let salt = level_salt(self.seed, index, 0);
                 let geom = self.geometry(k, k, self.bucket_size);
-                let sigs = group(salt, &geom);
-                if levels.len() == 1 && duplicates(&sigs, &cur, &geom) {
+                let sigs = group(k, |i| sig(i, salt), &geom);
+                if index == 1 && duplicates(&sigs, &cur, &geom) {
                     bail!("Duplicate keys");
                 }
-                let out = sweep_bumping_level(&sigs, &geom, &weights, levels.len(), k, pl);
+                let out = sweep_bumping_level(&sigs, &geom, &weights, index, k, pl);
                 let next: Vec<usize> = bumped(&sigs, &out.seeds, &geom)
                     .into_iter()
                     .map(|i| cur[i])
                     .collect();
-                check_progress(levels.len(), k, next.len(), self.bucket_size)?;
+                check_progress(index, k, next.len(), self.bucket_size)?;
                 let mut level = geom.level();
                 level.salt = salt;
                 (level, out.seeds, out.occupied, next, geom.m)
             } else {
-                // The last level does not bump: we change the salt until we
-                // succeed, enlarging the output range every eight attempts
-                let mut attempt = 0u64;
-                loop {
-                    let m = k + k / 4 + 16 + (attempt as usize / 8) * (k / 8 + 8);
-                    let geom = self.geometry(k, m, self.bucket_size.min(3.0));
-                    let salt = level_salt(self.seed, levels.len(), attempt);
-                    let sigs = group(salt, &geom);
-                    if levels.len() == 1 && attempt == 0 && duplicates(&sigs, &cur, &geom) {
-                        bail!("Duplicate keys");
-                    }
-                    if let Some(out) = sweep_level(&sigs, &geom, &weights, false, no_logging![]) {
-                        let mut level = geom.level();
-                        level.salt = salt;
-                        break (level, out.seeds, out.occupied, vec![], geom.m);
-                    }
-                    attempt += 1;
-                    if attempt == LAST_LEVEL_ATTEMPTS {
-                        bail!(last_level_failure(k));
-                    }
-                }
+                let (level, out, m) = self.last_level(index, k, &weights, sig, |sigs, geom| {
+                    duplicates(sigs, &cur, geom)
+                })?;
+                (level, out.seeds, out.occupied, vec![], m)
             };
-
-            pl.info(format_args!(
-                "Level {}: {} keys, {} bumped ({:.3}%)",
-                levels.len(),
-                k,
-                next.len(),
-                100.0 * next.len() as f64 / k as f64
-            ));
-
-            let mut level = level;
-            level.offset = entries.len() as u64;
-            for p in 0..m {
-                if is_occupied(&occupied, p) {
-                    last_hole = holes[hole_idx];
-                    hole_idx += 1;
-                }
-                entries.push(last_hole);
-            }
+            log_level(index, k, next.len(), pl);
+            level.offset = offset as u64;
+            offset += m;
             levels.push((level, seeds));
+            used.push((occupied, m));
             cur = next;
         }
-        debug_assert_eq!(hole_idx, holes.len());
 
-        let mut efb = EliasFanoBuilder::new(entries.len(), n);
-        for &e in &entries {
-            efb.push(e);
+        Ok((levels, build_remap(holes, &used, n)))
+    }
+
+    /// Builds the last level, of index `index` and with `k` keys, which does
+    /// not bump keys: we change the salt until we succeed, enlarging the
+    /// output range every eight attempts. The signature of the key of index
+    /// *i* with a given salt is `sig(i, salt)`.
+    ///
+    /// If the level is the second one, `duplicates` is called at the first
+    /// attempt on the signatures and on the geometry of the level, and an
+    /// error is returned if it returns true (see [`build_levels`]).
+    ///
+    /// Returns the parameters of the level, its seeds and its used slots, and
+    /// its output range.
+    ///
+    /// [`build_levels`]: Self::build_levels
+    pub(super) fn last_level(
+        &self,
+        index: usize,
+        k: usize,
+        weights: &[i64; 7],
+        sig: impl Fn(usize, u64) -> u64 + Sync,
+        duplicates: impl Fn(&Signatures, &Geometry) -> bool,
+    ) -> Result<(LevelParams, Level, usize)> {
+        for attempt in 0..LAST_LEVEL_ATTEMPTS {
+            let m = k + k / 4 + 16 + (attempt as usize / 8) * (k / 8 + 8);
+            let geom = self.geometry(k, m, self.bucket_size.min(3.0));
+            let salt = level_salt(self.seed, index, attempt);
+            let sigs = group(k, |i| sig(i, salt), &geom);
+            if index == 1 && attempt == 0 && duplicates(&sigs, &geom) {
+                bail!("Duplicate keys");
+            }
+            if let Some(out) = sweep_level(&sigs, &geom, weights, false, no_logging![]) {
+                let mut level = geom.level();
+                level.salt = salt;
+                return Ok((level, out, geom.m));
+            }
         }
-        Ok((levels, remap(efb)))
+        bail!(
+            "Could not build the last level ({k} keys) in {LAST_LEVEL_ATTEMPTS} attempts: the slice length or the number of bits of a seed is probably too small"
+        )
     }
 
     /// Returns the weights of the priority of a bucket, which depend on its
@@ -645,22 +643,11 @@ pub(super) const fn level_salt(seed: u64, level: usize, attempt: u64) -> u64 {
     )
 }
 
-/// Logs the completion of the computation of the signatures of `n` keys,
-/// started at `start`.
-pub(super) fn log_signatures(start: Instant, n: usize, pl: &mut impl ProgressLog) {
+/// Logs the completion of a phase (e.g., the computation of the signatures,
+/// or the whole construction) on `n` keys, started at `start`.
+pub(super) fn log_completion(phase: &str, start: Instant, n: usize, pl: &mut impl ProgressLog) {
     pl.info(format_args!(
-        "Computation of signatures from inputs completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-        start.elapsed().as_secs_f64(),
-        n,
-        start.elapsed().as_nanos() as f64 / n.max(1) as f64
-    ));
-}
-
-/// Logs the completion of the construction of a function on `n` keys,
-/// started at `start`.
-pub(super) fn log_completion(start: Instant, n: usize, pl: &mut impl ProgressLog) {
-    pl.info(format_args!(
-        "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+        "{phase} completed in {:.3} seconds ({} keys, {:.3} ns/key)",
         start.elapsed().as_secs_f64(),
         n,
         start.elapsed().as_nanos() as f64 / n.max(1) as f64
@@ -695,6 +682,33 @@ pub(super) fn parallel(len: usize) -> bool {
 /// this size the overhead of parallelism exceeds its benefits.
 #[cfg(feature = "rayon")]
 const PAR_MIN_LEN: usize = 1 << 17;
+
+/// Builds the remapping sequence of a function with `n` keys, given the free
+/// slots of its first level, in increasing order, and the used slots and the
+/// output range of each following level: the used slots of the following
+/// levels are mapped, in order, to the free slots of the first level, and
+/// their free slots to the last free slot assigned.
+pub(super) fn build_remap(
+    holes: impl IntoIterator<Item = usize>,
+    used: &[(UsedSlots, usize)],
+    n: usize,
+) -> Remap {
+    let mut efb = EliasFanoBuilder::new(used.iter().map(|&(_, m)| m).sum(), n);
+    let mut holes = holes.into_iter();
+    let mut last_hole = 0;
+    for (occupied, m) in used {
+        for p in 0..*m {
+            if is_occupied(occupied, p) {
+                last_hole = holes
+                    .next()
+                    .expect("there is a free slot for each bumped key");
+            }
+            efb.push(last_hole);
+        }
+    }
+    debug_assert!(holes.next().is_none());
+    remap(efb)
+}
 
 /// Builds a [`Remap`], whose low bits are padded with a zero word, so that
 /// conversion to [unaligned reads] needs no reallocation (as for the seeds).

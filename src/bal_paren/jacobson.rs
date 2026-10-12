@@ -24,26 +24,12 @@ use std::ops::{Deref, Index};
 use crate::ambassador_impl_Index;
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::bit_vec_ops::ambassador_impl_BitLength;
-use crate::traits::rank_sel::ambassador_impl_NumBits;
-use crate::traits::rank_sel::ambassador_impl_Rank;
-use crate::traits::rank_sel::ambassador_impl_RankHinted;
-use crate::traits::rank_sel::ambassador_impl_RankUnchecked;
-use crate::traits::rank_sel::ambassador_impl_RankZero;
-use crate::traits::rank_sel::ambassador_impl_Select;
-use crate::traits::rank_sel::ambassador_impl_SelectHinted;
-use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
-use crate::traits::rank_sel::ambassador_impl_SelectZero;
-use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
-use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+use crate::traits::rank_sel::*;
 
 use crate::bits::{BitFieldVec, BitVec};
 use crate::dict::{EfDict, EliasFanoBuilder};
 use crate::list::comp_int_list::CompIntList;
 use crate::list::prefix_sum_int_list::PrefixSumIntList;
-use crate::prelude::{
-    NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted, SelectUnchecked,
-    SelectZero, SelectZeroHinted, SelectZeroUnchecked,
-};
 use crate::traits::bal_paren::BalParen;
 use crate::traits::indexed_dict::PredUnchecked;
 use ambassador::Delegate;
@@ -296,9 +282,9 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 /// # Examples
 ///
 /// ```rust
-/// # use sux::bal_paren::JacobsonBalParen;
-/// # use sux::bit_vec;
-/// # use sux::prelude::BalParen;
+/// use sux::bal_paren::{BalParen, JacobsonBalParen};
+/// use sux::bit_vec;
+///
 /// // Sequence "(()())" = bits 1,1,0,1,0,0
 /// let bp = JacobsonBalParen::new(bit_vec![1, 1, 0, 1, 0, 0]);
 /// assert_eq!(bp.find_close(0), Some(5)); // outermost pair
@@ -321,6 +307,8 @@ pub fn find_far_close(word: usize, k: i64) -> usize {
 /// [`new_with_bit_field_vec`]: Self::new_with_bit_field_vec
 /// [`new_with_prefix_sum`]: Self::new_with_prefix_sum
 /// [Space-efficient static trees and graphs]: https://ieeexplore.ieee.org/abstract/document/63533
+#[doc(alias = "balanced")]
+#[doc(alias = "parentheses")]
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

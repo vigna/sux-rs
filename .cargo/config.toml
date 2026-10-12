@@ -5,5 +5,5 @@ rustflags = ["-C", "target-cpu=native"]
 runner = "wasmtime"
 
 [alias]
-cli = "build --features=cli,rayon,deko,epserde --release --bin"
-ex = "build --features=cli,rayon,deko,epserde --release --example"
+cli = "build --features=cli --release --bin"
+ex = "build --features=cli --release --example"

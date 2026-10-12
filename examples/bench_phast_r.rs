@@ -24,17 +24,18 @@ struct Args {
     /// The number of queries.​
     #[arg(short, long, default_value_t = 10_000_000)]
     queries: usize,
-    /// The number of bits per seed (byte seeds are used for 8 bits or less).​
-    #[arg(short, long, default_value_t = 8)]
+    /// The number of bits of a seed; seeds of more than 8 bits are stored in
+    /// a bit-field vector.​
+    #[arg(long, default_value_t = 8)]
     seed_bits: u32,
     /// The base-2 logarithm of the number of layouts.​
-    #[arg(short = 'R', long, default_value_t = 2)]
+    #[arg(long, default_value_t = 2)]
     log2_layouts: u32,
     /// The base-2 logarithm of the slice length.​
-    #[arg(short = 'L', long, default_value_t = 10)]
+    #[arg(long, default_value_t = 10)]
     log2_slice_len: u32,
     /// The expected number of keys per bucket.​
-    #[arg(short = 'l', long, default_value_t = 4.25)]
+    #[arg(long, default_value_t = 4.25)]
     bucket_size: f64,
 }
 

@@ -250,7 +250,9 @@ impl<V: BinSafe + BitXorAssign> BitXorAssign<SigVal<[u64; 2], V>> for SigVal<[u6
 /// `&String`, and slices of primitive types, by turning them into bytes.
 ///
 /// Note that for efficiency reasons the implementations are not
-/// endianness-independent.
+/// endianness-independent: a serialized structure using signatures must be
+/// queried on a machine with the same endianness of the machine that built
+/// it.
 pub trait ToSig<S> {
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> S;
 }
@@ -465,6 +467,72 @@ pub struct SigStoreImpl<S, V, B> {
     _marker: PhantomData<(S, V)>,
 }
 
+impl<S, V, B> SigStoreImpl<S, V, B> {
+    /// Creates an empty store with the given buckets, keeping counts for
+    /// shards defined by at most `max_shard_high_bits` high bits.
+    ///
+    /// The high-bit counts must have been checked by [`check_high_bits`],
+    /// and there must be 2<sup>`buckets_high_bits`</sup> buckets.
+    fn with_buckets(
+        buckets_high_bits: u32,
+        max_shard_high_bits: u32,
+        buckets: VecDeque<B>,
+        temp_dir: Option<tempfile::TempDir>,
+    ) -> Self {
+        debug_assert_eq!(buckets.len(), 1 << buckets_high_bits);
+        Self {
+            len: 0,
+            buckets_high_bits,
+            max_shard_high_bits,
+            buckets_mask: (1u64 << buckets_high_bits) - 1,
+            max_shard_mask: (1u64 << max_shard_high_bits) - 1,
+            buckets,
+            bucket_sizes: vec![0; 1 << buckets_high_bits],
+            shard_sizes: vec![0; 1 << max_shard_high_bits],
+            temp_dir,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Returns a [`ShardStoreImpl`] with the counters and the temporary
+    /// directory of this store, the given buckets (which must contain the
+    /// data of the buckets of this store), and shards defined by
+    /// `shard_high_bits` high bits.
+    ///
+    /// # Panics
+    ///
+    /// If `shard_high_bits` is larger than the maximum number of shard high
+    /// bits of this store.
+    fn into_shard_store_with<B2>(
+        self,
+        shard_high_bits: u32,
+        buckets: Vec<B2>,
+    ) -> ShardStoreImpl<S, V, B2> {
+        assert!(shard_high_bits <= self.max_shard_high_bits);
+        ShardStoreImpl {
+            bucket_high_bits: self.buckets_high_bits,
+            shard_high_bits,
+            max_shard_high_bits: self.max_shard_high_bits,
+            buckets,
+            buf_sizes: self.bucket_sizes,
+            fine_shard_sizes: self.shard_sizes,
+            _temp_dir: self.temp_dir,
+            _marker: PhantomData,
+        }
+    }
+}
+
+/// Checks that the high-bit counts of a new store are smaller than the
+/// number of bits of a `usize`, as they are used as shift amounts.
+fn check_high_bits(buckets_high_bits: u32, max_shard_high_bits: u32) -> Result<()> {
+    anyhow::ensure!(
+        buckets_high_bits < usize::BITS && max_shard_high_bits < usize::BITS,
+        "high bit counts must be less than {} (got buckets {buckets_high_bits}, max shard {max_shard_high_bits})",
+        usize::BITS
+    );
+    Ok(())
+}
+
 /// Creates a new on-disk store with 2<sup>`buckets_high_bits`</sup> buckets,
 /// keeping counts for shards defined by at most `max_shard_high_bits` high
 /// bits.
@@ -484,12 +552,8 @@ pub fn new_offline<S: BinSafe + Sig, V: BinSafe>(
     max_shard_high_bits: u32,
     _expected_num_keys: Option<usize>,
 ) -> Result<SigStoreImpl<S, V, BufWriter<File>>> {
+    check_high_bits(buckets_high_bits, max_shard_high_bits)?;
     let temp_dir = tempfile::TempDir::new()?;
-    anyhow::ensure!(
-        buckets_high_bits < usize::BITS && max_shard_high_bits < usize::BITS,
-        "high bit counts must be less than {} (got buckets {buckets_high_bits}, max shard {max_shard_high_bits})",
-        usize::BITS
-    );
     let mut writers = VecDeque::new();
     for i in 0..1 << buckets_high_bits {
         let file = File::options()
@@ -501,18 +565,12 @@ pub fn new_offline<S: BinSafe + Sig, V: BinSafe>(
         writers.push_back(BufWriter::new(file));
     }
 
-    Ok(SigStoreImpl {
-        len: 0,
+    Ok(SigStoreImpl::with_buckets(
         buckets_high_bits,
         max_shard_high_bits,
-        buckets_mask: (1u64 << buckets_high_bits) - 1,
-        max_shard_mask: (1u64 << max_shard_high_bits) - 1,
-        buckets: writers,
-        bucket_sizes: vec![0; 1 << buckets_high_bits],
-        shard_sizes: vec![0; 1 << max_shard_high_bits],
-        temp_dir: Some(temp_dir),
-        _marker: PhantomData,
-    })
+        writers,
+        Some(temp_dir),
+    ))
 }
 
 /// Creates a new in-memory store with 2<sup>`buckets_high_bits`</sup> buckets,
@@ -529,31 +587,21 @@ pub fn new_online<S: BinSafe + Sig, V: BinSafe>(
     max_shard_high_bits: u32,
     expected_num_keys: Option<usize>,
 ) -> Result<SigStoreImpl<S, V, Vec<SigVal<S, V>>>> {
-    let mut writers = VecDeque::new();
-    anyhow::ensure!(
-        buckets_high_bits < usize::BITS && max_shard_high_bits < usize::BITS,
-        "high bit counts must be less than {} (got buckets {buckets_high_bits}, max shard {max_shard_high_bits})",
-        usize::BITS
-    );
+    check_high_bits(buckets_high_bits, max_shard_high_bits)?;
     let initial_capacity = expected_num_keys
         .map(|n| (n.div_ceil(1 << buckets_high_bits) as f64 * 1.05) as usize)
         .unwrap_or(0);
+    let mut writers = VecDeque::new();
     writers.resize_with(1 << buckets_high_bits, || {
         Vec::with_capacity(initial_capacity)
     });
 
-    Ok(SigStoreImpl {
-        len: 0,
+    Ok(SigStoreImpl::with_buckets(
         buckets_high_bits,
         max_shard_high_bits,
-        buckets_mask: (1u64 << buckets_high_bits) - 1,
-        max_shard_mask: (1u64 << max_shard_high_bits) - 1,
-        buckets: writers,
-        bucket_sizes: vec![0; 1 << buckets_high_bits],
-        shard_sizes: vec![0; 1 << max_shard_high_bits],
-        temp_dir: None,
-        _marker: PhantomData,
-    })
+        writers,
+        None,
+    ))
 }
 
 impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
@@ -585,7 +633,6 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
     type ShardStore = ShardStoreImpl<S, V, BufReader<File>>;
 
     fn into_shard_store(mut self, shard_high_bits: u32) -> Result<Self::ShardStore> {
-        assert!(shard_high_bits <= self.max_shard_high_bits);
         let mut files = Vec::with_capacity(self.buckets.len());
 
         // Flush all writers
@@ -597,16 +644,7 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
             files.push(BufReader::new(file));
         }
 
-        Ok(ShardStoreImpl {
-            bucket_high_bits: self.buckets_high_bits,
-            shard_high_bits,
-            max_shard_high_bits: self.max_shard_high_bits,
-            buckets: files,
-            buf_sizes: self.bucket_sizes,
-            fine_shard_sizes: self.shard_sizes,
-            _temp_dir: self.temp_dir,
-            _marker: PhantomData,
-        })
+        Ok(self.into_shard_store_with(shard_high_bits, files))
     }
 
     fn len(&self) -> usize {
@@ -670,26 +708,15 @@ impl<S: BinSafe + Sig + Send + Sync, V: BinSafe> SigStore<S, V>
 
     type ShardStore = ShardStoreImpl<S, V, Arc<Vec<SigVal<S, V>>>>;
 
-    fn into_shard_store(self, shard_high_bits: u32) -> Result<Self::ShardStore> {
-        assert!(shard_high_bits <= self.max_shard_high_bits);
-        let files = self
-            .buckets
+    fn into_shard_store(mut self, shard_high_bits: u32) -> Result<Self::ShardStore> {
+        let buckets = std::mem::take(&mut self.buckets)
             .into_iter()
             .map(|mut x| {
                 x.shrink_to_fit();
                 Arc::new(x)
             })
             .collect();
-        Ok(ShardStoreImpl {
-            bucket_high_bits: self.buckets_high_bits,
-            shard_high_bits,
-            max_shard_high_bits: self.max_shard_high_bits,
-            buckets: files,
-            buf_sizes: self.bucket_sizes,
-            fine_shard_sizes: self.shard_sizes,
-            _temp_dir: self.temp_dir,
-            _marker: PhantomData,
-        })
+        Ok(self.into_shard_store_with(shard_high_bits, buckets))
     }
 
     fn len(&self) -> usize {

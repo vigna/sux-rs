@@ -8,10 +8,7 @@
 
 use super::Rank9;
 use super::rank9::BlockCounters;
-use crate::traits::{
-    Backend, BitLength, NumBits, Rank, RankHinted, RankUnchecked, RankZero, Select, SelectHinted,
-    SelectUnchecked, SelectZero, SelectZeroHinted, SelectZeroUnchecked, Word,
-};
+use crate::traits::{Backend, BitLength, Word};
 use crate::utils::SelectInWord;
 use ambassador::Delegate;
 use mem_dbg::{MemDbg, MemSize};
@@ -56,15 +53,7 @@ use crate::ambassador_impl_Index;
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::bal_paren::{BalParen, ambassador_impl_BalParen};
 use crate::traits::bit_vec_ops::ambassador_impl_BitLength;
-use crate::traits::rank_sel::ambassador_impl_NumBits;
-use crate::traits::rank_sel::ambassador_impl_Rank;
-use crate::traits::rank_sel::ambassador_impl_RankHinted;
-use crate::traits::rank_sel::ambassador_impl_RankUnchecked;
-use crate::traits::rank_sel::ambassador_impl_RankZero;
-use crate::traits::rank_sel::ambassador_impl_SelectHinted;
-use crate::traits::rank_sel::ambassador_impl_SelectZero;
-use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
-use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+use crate::traits::rank_sel::*;
 use std::ops::{Deref, Index};
 
 /// A selection structure over [`Rank9`] using 25%–37.5% additional space and
@@ -98,8 +87,10 @@ use std::ops::{Deref, Index};
 /// ```rust
 /// # #[cfg(target_pointer_width = "64")]
 /// # {
-/// # use sux::bit_vec;
-/// # use sux::prelude::{Rank, Rank9, Select, Select9};
+/// use sux::bit_vec;
+/// use sux::rank_sel::{Rank9, Select9};
+/// use sux::traits::{Rank, Select};
+///
 /// // A Select9 structure is built on a Rank9 structure
 /// let select9 = Select9::new(Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]));
 ///

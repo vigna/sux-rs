@@ -11,7 +11,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use epserde::{deser::Deserialize, ser::Serialize};
 use sux::traits::{BitVecOps, BitVecOpsMut};
-use sux::{init_env_logger, prelude::*, utils::PrimitiveUnsignedExt};
+use sux::{cli::init_env_logger, prelude::*, utils::PrimitiveUnsignedExt};
 use value_traits::slices::SliceByValueMut;
 
 #[derive(Parser, Debug)]
@@ -19,14 +19,20 @@ use value_traits::slices::SliceByValueMut;
 struct Args {
     /// A file containing an ε-serde serialized rear-coded list.​
     rcl: String,
-    /// An ASCII file containing the mapping, one value per line.​
+    /// An ASCII file containing the mapping, one value per line: line i
+    /// contains the index in the rear-coded list of the i-th string of the
+    /// mapped list.​
     map: String,
     /// A name for the ε-serde serialized mapped rear-coded list.​
     dest: String,
-    /// Assume the rear-coded list is not sorted.​
+    /// Assume the rear-coded list is not sorted (i.e., it was built by rcl
+    /// --unsorted); the output must then be loaded as a
+    /// `MappedRearCodedListStr<false>`.​
     #[arg(short, long)]
     unsorted: bool,
-    /// Require the map to be a permutation and invert it.​
+    /// Invert the mapping, which must be a permutation: line i of the file
+    /// contains the position in the mapped list of the i-th string of the
+    /// rear-coded list.​
     #[arg(short, long)]
     invert: bool,
 }

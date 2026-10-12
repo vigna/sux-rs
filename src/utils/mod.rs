@@ -10,7 +10,9 @@
 //!
 //! This module provides several support facilities:
 //!
-//! - [`lenders`]: lending iterators over lines of (possibly compressed) files.
+//! - [`lenders`]: rewindable lenders, from which sequential constructors read
+//!   their input: adapters for slices and iterators, and lenders of the lines
+//!   of (possibly compressed) files.
 //! - [`sig_store`]: signature storage for static functions and filters.
 //! - [`fair_chunks`]: splitting ranges into balanced chunks.
 //! - [`mod2_sys`]: linear system solving over **F**₂.
@@ -24,21 +26,26 @@
 
 use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic};
 use num_primitive::PrimitiveUnsigned;
+use rand::{Rng, SeedableRng, TryRng};
 
 pub mod lenders;
+#[doc(inline)]
 pub use lenders::*;
 
 pub mod sig_store;
-use rand::{Rng, SeedableRng, TryRng};
+#[doc(inline)]
 pub use sig_store::*;
 
 pub mod fair_chunks;
+#[doc(inline)]
 pub use fair_chunks::FairChunks;
 
 pub mod mod2_sys;
+#[doc(inline)]
 pub use mod2_sys::*;
 
 pub mod select_in_word;
+#[doc(inline)]
 pub use select_in_word::*;
 
 /// The types involved in a failed reinterpretation of a memory buffer, and
@@ -318,6 +325,19 @@ impl SeedableRng for Mwc192 {
             c: 1,
         }
     }
+}
+
+/// Avalanches bits using the finalization step of Austin Appleby's
+/// [MurmurHash3].
+///
+/// [MurmurHash3]: http://code.google.com/p/smhasher/
+pub(crate) const fn mix64(mut k: u64) -> u64 {
+    k ^= k >> 33;
+    k = k.overflowing_mul(0xff51_afd7_ed55_8ccd).0;
+    k ^= k >> 33;
+    k = k.overflowing_mul(0xc4ce_b9fe_1a85_ec53).0;
+    k ^= k >> 33;
+    k
 }
 
 /// Returns the length of the longest common prefix (in bytes) between two

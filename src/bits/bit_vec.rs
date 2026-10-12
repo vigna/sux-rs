@@ -26,6 +26,10 @@
 //! - `AtomicBitVec<AsRef<[Atomic<W>]>>`: a thread-safe, mutable (but
 //!   not resizable) bit vector.
 //!
+//! Moreover, [`BitVecU`] is a wrapper around a `BitVec<Box<[W]>>` with a
+//! padding word, obtained through [`TryIntoUnaligned`], whose
+//! [`BitVecValueOps`] methods use [unaligned reads].
+//!
 //! Note that nothing is assumed about the content of the backend outside the
 //! bits of the bit vector. Query and count methods never depend on it, and
 //! growth operations that write into the last touched word (for example
@@ -51,7 +55,8 @@
 //! in the constructor call, which also applies defaults:
 //!
 //! ```rust
-//! # use sux::prelude::*;
+//! use sux::prelude::*;
+//!
 //! let mut b: BitVec = BitVec::new(10);     // OK: B = Vec<usize>
 //! let mut b = <BitVec>::new(10);           // Identical
 //!
@@ -69,16 +74,39 @@
 //! example, you can convert from a growable bit vector to a fixed-size one by
 //! converting the backend to a boxed slice, and this conversion is infallible.
 //!
-//! Conversions between an atomic backend and a non-atomic one, on the other
-//! hand, reinterpret the same memory buffer, and are thus fallible: they use
-//! [`TryFrom`]/[`TryInto`]. For an *owned* backend the alignment of the atomic
-//! type must be equal to that of the value type, as the buffer must be
-//! deallocated with the alignment it was allocated with; failure returns a
-//! [`DifferentAlignmentError`] containing the original bit vector, so that its
-//! content can be copied instead. For a *mutable reference* there is no
-//! deallocation, so it is sufficient that the target type has an alignment no
-//! stricter than that of the source type; failure returns an
+//! In the following table, `W` is a word type, `A` is the associated atomic
+//! type `W::Atomic`, and `B` is any backend:
+//!
+//! | From                                     | Into                                   | Trait       |
+//! |------------------------------------------|----------------------------------------|-------------|
+//! | `&BitVec<B>`                             | `BitVec<&[W]>`                         | [`From`]    |
+//! | `&mut BitVec<B>`                         | `BitVec<&mut [W]>`                     | [`From`]    |
+//! | `&AtomicBitVec<B>`                       | `AtomicBitVec<&[A]>`                   | [`From`]    |
+//! | `&mut AtomicBitVec<B>`                   | `AtomicBitVec<&mut [A]>`               | [`From`]    |
+//! | `BitVec<Vec<W>>`                         | `BitVec<Box<[W]>>`                     | [`From`]    |
+//! | `BitVec<Box<[W]>>`                       | `BitVec<Vec<W>>`                       | [`From`]    |
+//! | `AtomicBitVec<Vec<A>>`                   | `AtomicBitVec<Box<[A]>>`               | [`From`]    |
+//! | `AtomicBitVec<Box<[A]>>`                 | `AtomicBitVec<Vec<A>>`                 | [`From`]    |
+//! | `BitVec<Vec<W>>`, `BitVec<Box<[W]>>`     | `AtomicBitVec<Vec<A>>`, `AtomicBitVec<Box<[A]>>` | [`TryFrom`] |
+//! | `AtomicBitVec<Vec<A>>`, `AtomicBitVec<Box<[A]>>` | `BitVec<Vec<W>>`, `BitVec<Box<[W]>>` | [`TryFrom`] |
+//! | `BitVec<&mut [W]>`                       | `AtomicBitVec<&mut [A]>`               | [`TryFrom`] |
+//! | `AtomicBitVec<&mut [A]>`                 | `BitVec<&mut [W]>`                     | [`From`]    |
+//! | `BitVec<Box<[W]>>`                       | `BitVecU<Box<[W]>>`                    | [`TryIntoUnaligned`] |
+//! | `BitVecU<Box<[W]>>`                      | `BitVec<Box<[W]>>`                     | [`From`]    |
+//!
+//! Conversions between an atomic backend and a non-atomic one reinterpret the
+//! same memory buffer, and are thus fallible. For an *owned* backend the
+//! alignment of the atomic type must be equal to that of the value type, as the
+//! buffer must be deallocated with the alignment it was allocated with; failure
+//! returns a [`DifferentAlignmentError`] containing the original bit vector, so
+//! that its content can be copied instead. For a *mutable reference* there is
+//! no deallocation, so it is sufficient that the target type has an alignment
+//! no stricter than that of the source type; failure returns an
 //! [`InsufficientAlignmentError`].
+//!
+//! Note that the default backend of [`AtomicBitVec`] is
+//! `Box<[Atomic<usize>]>`, whereas the default backend of
+//! [`AtomicBitFieldVec`] is `Vec<Atomic<usize>>`.
 //!
 //! # Slice-by-value support
 //!
@@ -95,7 +123,6 @@
 //! ```rust
 //! use sux::prelude::*;
 //! use sux::traits::bit_vec_ops::*;
-
 //! use std::sync::atomic::Ordering;
 //!
 //! // Convenience macro
@@ -139,6 +166,11 @@
 //! [mutable chunks]: SliceByValueMut::try_chunks_mut
 //! [`get_value`]: SliceByValue::get_value
 //! [`get_value_unchecked`]: SliceByValue::get_value_unchecked
+//! [`DifferentAlignmentError`]: crate::utils::DifferentAlignmentError
+//! [`InsufficientAlignmentError`]: crate::utils::InsufficientAlignmentError
+//! [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
+//! [unaligned reads]: crate::bits#unaligned-access
+//! [`AtomicBitFieldVec`]: crate::bits::AtomicBitFieldVec
 
 use crate::ambassador_impl_Index;
 use crate::traits::ambassador_impl_Backend;
@@ -151,15 +183,9 @@ use crate::utils::SelectInWord;
 use crate::{
     panic_if_out_of_bounds, panic_if_value,
     traits::{bit_vec_ops::BitLength, rank_sel::*},
-    utils::{
-        DifferentAlignmentError, InsufficientAlignmentError, transmute_boxed_slice_from_atomic,
-        transmute_boxed_slice_into_atomic, transmute_vec_from_atomic, transmute_vec_into_atomic,
-    },
 };
 use ambassador::Delegate;
 use atomic_primitive::{Atomic, AtomicPrimitive, PrimitiveAtomic, PrimitiveAtomicUnsigned};
-#[allow(unused_imports)] // this is in the std prelude but not in no_std!
-use core::borrow::BorrowMut;
 use core::fmt;
 use mem_dbg::*;
 use num_primitive::PrimitiveInteger;
@@ -202,6 +228,8 @@ pub struct BitVec<B = Vec<usize>> {
 /// Converts a supported [`bit_vec!`] item to a bit.
 ///
 /// This trait is public only so exported macro expansions can name it.
+///
+/// [`bit_vec!`]: crate::bit_vec
 #[doc(hidden)]
 pub trait BitVecValue {
     fn into_bit(self) -> bool;
@@ -240,28 +268,33 @@ impl_bit_vec_value!(
 ///
 /// - `bit_vec![]` creates an empty bit vector.
 ///
-/// - `bit_vec![false; n]` or `bit_vec![0; n]` creates a bit vector of length
-///   `n` with all bits set to `false`.
-///
-/// - `bit_vec![true; n]` or `bit_vec![1; n]` creates a bit vector of length `n`
-///   with all bits set to `true`.
+/// - `bit_vec![b; n]` creates a bit vector of length `n` with all bits set to
+///   `b`, where `b` can be any expression that evaluates to a boolean or
+///   integer (0 for `false`, nonzero for `true`), as in `bit_vec![false; n]`,
+///   `bit_vec![0; n]`, `bit_vec![true; n]`, or `bit_vec![1; n]`.
 ///
 /// - `bit_vec![b₀, b₁, b₂, …]` creates a bit vector with the specified bits,
 ///   where each `bᵢ` can be any expression that evaluates to a boolean or
-///   integer (0 for `false`, non-zero for `true`).
+///   integer (0 for `false`, nonzero for `true`).
 ///
-/// - `bit_vec![W]`, `bit_vec![W: false; n]`, `bit_vec![W: 0; n]`,
-///   `bit_vec![W: true; n]`, `bit_vec![W: 1; n]`, and
-///   `bit_vec![W: b₀, b₁, b₂, …]` are the same as the forms above, but
-///   backed by `Vec<W>` instead of `Vec<usize>`.
+/// - `bit_vec![W]`, `bit_vec![W: b; n]`, and `bit_vec![W: b₀, b₁, b₂, …]` are
+///   the same as the forms above, but backed by `Vec<W>` instead of
+///   `Vec<usize>`. The word type `W` must be a path (e.g., `u32` or
+///   `B::Word`) or a qualified path (e.g., `<B as Backend>::Word`).
+///
+/// Note that `bit_vec![x]`, where `x` is an identifier or a path, is the form
+/// `bit_vec![W]`, that is, an empty bit vector with word type `x`. To create a
+/// bit vector containing just the value of a variable `x`, add a trailing
+/// comma, as in `bit_vec![x,]`.
 ///
 /// # Examples
 ///
 /// ```rust
 /// # #[cfg(target_pointer_width = "64")]
 /// # {
-/// # use sux::prelude::*;
-/// # use sux::traits::BitVecOps;
+/// use sux::prelude::*;
+/// use sux::traits::BitVecOps;
+///
 /// // Empty bit vector
 /// let b = bit_vec![];
 /// assert_eq!(b.len(), 0);
@@ -292,7 +325,17 @@ impl_bit_vec_value!(
 /// assert_eq!(b[4], false);
 /// assert_eq!(b[5], false);
 ///
+/// // Bits from variables (note the trailing comma in the second case)
+/// let x = true;
+/// let b = bit_vec![x; 3];
+/// assert_eq!(b.len(), 3);
+/// let b = bit_vec![x,];
+/// assert_eq!(b.len(), 1);
+/// assert_eq!(b[0], true);
+///
 /// // With explicit word type (useful for cross-platform code)
+/// let b = bit_vec![u32];
+/// assert_eq!(b.len(), 0);
 /// let b = bit_vec![u32: 0, 1, 0, 1];
 /// assert_eq!(b.len(), 4);
 /// let b = bit_vec![u32: false; 10];
@@ -300,30 +343,61 @@ impl_bit_vec_value!(
 /// # }
 /// ```
 ///
+/// Without the trailing comma, a single variable is interpreted as a word
+/// type:
+///
+/// ```compile_fail
+/// use sux::prelude::*;
+///
+/// let x = true;
+/// let b = bit_vec![x]; // Error: x is not a type
+/// ```
+///
 /// [`vec!`]: vec!
 #[macro_export]
 macro_rules! bit_vec {
-    // Arms with explicit word type (colon separator)
-    ($W:ty) => {
+    // true and false are identifiers for macro_rules, so we must catch them
+    // before the forms with explicit word type.
+    (true) => {
+        $crate::bit_vec![usize: true]
+    };
+    (false) => {
+        $crate::bit_vec![usize: false]
+    };
+    // Explicit word type given as a path. Matching identifiers, rather than a
+    // type, avoids running the type parser on expressions, which would fail
+    // with a hard error on, e.g., bit_vec![(x & 1) == 0, true].
+    ($($W:ident)::+) => {
+        $crate::bit_vec!(@new [$($W)::+])
+    };
+    ($($W:ident)::+ : $($rest:tt)+) => {
+        $crate::bit_vec!(@new [$($W)::+] $($rest)+)
+    };
+    // Explicit word type given as a qualified path
+    (<$($rest:tt)+) => {
+        $crate::bit_vec!(@qualified <$($rest)+)
+    };
+    // Explicit word type given as a single token tree (e.g., a type
+    // metavariable of another macro)
+    ($W:tt : $($rest:tt)+) => {
+        $crate::bit_vec!(@new [$W] $($rest)+)
+    };
+    (@qualified $W:ty) => {
+        $crate::bit_vec!(@new [$W])
+    };
+    (@qualified $W:ty : $($rest:tt)+) => {
+        $crate::bit_vec!(@new [$W] $($rest)+)
+    };
+    (@new [$W:ty]) => {
         $crate::bits::BitVec::<Vec<$W>>::new(0)
     };
-    ($W:ty: false; $n:expr) => {
-        $crate::bits::BitVec::<Vec<$W>>::new($n)
-    };
-    ($W:ty: 0; $n:expr) => {
-        $crate::bits::BitVec::<Vec<$W>>::new($n)
-    };
-    ($W:ty: true; $n:expr) => {
+    (@new [$W:ty] $x:expr; $n:expr) => {
         {
-            $crate::bits::BitVec::<Vec<$W>>::with_value($n, true)
+            let value = $crate::bits::BitVecValue::into_bit($x);
+            $crate::bits::BitVec::<Vec<$W>>::with_value($n, value)
         }
     };
-    ($W:ty: 1; $n:expr) => {
-        {
-            $crate::bits::BitVec::<Vec<$W>>::with_value($n, true)
-        }
-    };
-    ($W:ty: $($x:expr),+ $(,)?) => {
+    (@new [$W:ty] $($x:expr),+ $(,)?) => {
         {
             let capacity = [$(stringify!($x)),+].len();
             let mut b = $crate::bits::BitVec::<Vec<$W>>::with_capacity(capacity);
@@ -334,36 +408,21 @@ macro_rules! bit_vec {
             b
         }
     };
-    // Default arms (usize backing)
+    // Default word type (usize)
     () => {
-        $crate::bits::BitVec::<Vec<usize>>::new(0)
+        $crate::bit_vec![usize]
     };
-    (false; $n:expr) => {
-        $crate::bits::BitVec::<Vec<usize>>::new($n)
-    };
-    (0; $n:expr) => {
-        $crate::bits::BitVec::<Vec<usize>>::new($n)
-    };
-    (true; $n:expr) => {
-        {
-            $crate::bits::BitVec::<Vec<usize>>::with_value($n, true)
-        }
-    };
-    (1; $n:expr) => {
-        {
-            $crate::bits::BitVec::<Vec<usize>>::with_value($n, true)
-        }
+    ($x:expr; $n:expr) => {
+        $crate::bit_vec![usize: $x; $n]
     };
     ($($x:expr),+ $(,)?) => {
-        {
-            let capacity = [$(stringify!($x)),+].len();
-            let mut b = $crate::bits::BitVec::<Vec<usize>>::with_capacity(capacity);
-            $(
-                let value = $x;
-                b.push($crate::bits::BitVecValue::into_bit(value));
-            )*
-            b
-        }
+        $crate::bit_vec![usize: $($x),+]
+    };
+    // Explicit word type given as a type metavariable of another macro; this
+    // arm must be the last one, so that the type parser runs only on input
+    // that is not a list of expressions.
+    ($W:ty) => {
+        $crate::bit_vec!(@new [$W])
     };
 }
 
@@ -851,7 +910,7 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> fmt::Display for BitVec<B> {
 }
 
 /// An iterator over contiguous mutable chunks of a [`BitVec`], yielding
-/// [`BitVec<&mut [W]>`] views.
+/// [`BitVec<&mut [W]>`](BitVec) views.
 ///
 /// This struct is created by [`BitVec`]'s [`try_chunks_mut`]
 /// implementation. When the vector length is not evenly divided by the
@@ -1165,177 +1224,11 @@ impl<'a, B: Backend<Word: PrimitiveAtomicUnsigned<Value: Word>> + AsRef<[B::Word
 
 // Conversions
 
-impl<'a, B: Backend + AsRef<[B::Word]>> From<&'a BitVec<B>> for BitVec<&'a [B::Word]> {
-    fn from(value: &'a BitVec<B>) -> Self {
-        BitVec {
-            bits: value.bits.as_ref(),
-            len: value.len,
-        }
-    }
-}
-
-impl<'a, B: Backend + AsRef<[B::Word]>> From<&'a AtomicBitVec<B>> for AtomicBitVec<&'a [B::Word]> {
-    fn from(value: &'a AtomicBitVec<B>) -> Self {
-        AtomicBitVec {
-            bits: value.bits.as_ref(),
-            len: value.len,
-        }
-    }
-}
-
-impl<'a, B: Backend + AsMut<[B::Word]>> From<&'a mut BitVec<B>> for BitVec<&'a mut [B::Word]> {
-    fn from(value: &'a mut BitVec<B>) -> Self {
-        BitVec {
-            bits: value.bits.as_mut(),
-            len: value.len,
-        }
-    }
-}
-
-impl<'a, B: Backend + AsMut<[B::Word]>> From<&'a mut AtomicBitVec<B>>
-    for AtomicBitVec<&'a mut [B::Word]>
-{
-    fn from(value: &'a mut AtomicBitVec<B>) -> Self {
-        AtomicBitVec {
-            bits: value.bits.as_mut(),
-            len: value.len,
-        }
-    }
-}
-
-/// This conversion may fail if the alignment of `W::Atomic` is stricter than
-/// that of `W`.
-impl<'a, W: AtomicPrimitive> TryFrom<BitVec<&'a mut [W]>> for AtomicBitVec<&'a mut [W::Atomic]> {
-    type Error = InsufficientAlignmentError;
-    fn try_from(value: BitVec<&'a mut [W]>) -> Result<Self, Self::Error> {
-        if core::mem::align_of::<W::Atomic>() > core::mem::align_of::<W>() {
-            return Err(InsufficientAlignmentError::new::<W, W::Atomic>());
-        }
-        Ok(AtomicBitVec {
-            // SAFETY: an atomic type has the same size and in-memory
-            // representation as its value type, and the alignment of the
-            // target type is not stricter than that of the source type (just
-            // checked), which the buffer is known to satisfy. No deallocation
-            // happens through this reference, so the alignments need not be
-            // equal.
-            bits: unsafe { core::mem::transmute::<&'a mut [W], &'a mut [W::Atomic]>(value.bits) },
-            len: value.len,
-        })
-    }
-}
-
-/// This conversion may fail if the alignment of `W` is not the same as
-/// that of `W::Atomic`; in that case, the error contains the original bit
-/// vector.
-impl<W: AtomicPrimitive> TryFrom<AtomicBitVec<Box<[W::Atomic]>>> for BitVec<Vec<W>> {
-    type Error = DifferentAlignmentError<AtomicBitVec<Box<[W::Atomic]>>>;
-    fn try_from(value: AtomicBitVec<Box<[W::Atomic]>>) -> Result<Self, Self::Error> {
-        let AtomicBitVec { bits, len } = value;
-        match transmute_vec_from_atomic::<W::Atomic>(bits.into_vec()) {
-            Ok(bits) => Ok(BitVec { bits, len }),
-            Err(error) => Err(DifferentAlignmentError(
-                error.0,
-                AtomicBitVec {
-                    // The vector comes from a boxed slice, so its capacity is
-                    // equal to its length and no reallocation happens here.
-                    bits: error.1.into_boxed_slice(),
-                    len,
-                },
-            )),
-        }
-    }
-}
-
-/// This conversion may fail if the alignment of `W` is not the same as
-/// that of `W::Atomic`; in that case, the error contains the original bit
-/// vector.
-impl<W: AtomicPrimitive> TryFrom<BitVec<Vec<W>>> for AtomicBitVec<Box<[W::Atomic]>> {
-    type Error = DifferentAlignmentError<BitVec<Vec<W>>>;
-    fn try_from(value: BitVec<Vec<W>>) -> Result<Self, Self::Error> {
-        let BitVec { bits, len } = value;
-        match transmute_vec_into_atomic(bits) {
-            Ok(bits) => Ok(AtomicBitVec {
-                bits: bits.into_boxed_slice(),
-                len,
-            }),
-            Err(error) => Err(DifferentAlignmentError(
-                error.0,
-                BitVec { bits: error.1, len },
-            )),
-        }
-    }
-}
-
-/// This conversion may fail if the alignment of `W` is not the same as
-/// that of `W::Atomic`; in that case, the error contains the original bit
-/// vector.
-impl<W: AtomicPrimitive> TryFrom<AtomicBitVec<Box<[W::Atomic]>>> for BitVec<Box<[W]>> {
-    type Error = DifferentAlignmentError<AtomicBitVec<Box<[W::Atomic]>>>;
-    fn try_from(value: AtomicBitVec<Box<[W::Atomic]>>) -> Result<Self, Self::Error> {
-        let AtomicBitVec { bits, len } = value;
-        match transmute_boxed_slice_from_atomic::<W::Atomic>(bits) {
-            Ok(bits) => Ok(BitVec { bits, len }),
-            Err(error) => Err(DifferentAlignmentError(
-                error.0,
-                AtomicBitVec { bits: error.1, len },
-            )),
-        }
-    }
-}
-
-/// This conversion may fail if the alignment of `W` is not the same as
-/// that of `W::Atomic`; in that case, the error contains the original bit
-/// vector.
-impl<W: AtomicPrimitive> TryFrom<BitVec<Box<[W]>>> for AtomicBitVec<Box<[W::Atomic]>> {
-    type Error = DifferentAlignmentError<BitVec<Box<[W]>>>;
-    fn try_from(value: BitVec<Box<[W]>>) -> Result<Self, Self::Error> {
-        let BitVec { bits, len } = value;
-        match transmute_boxed_slice_into_atomic::<W>(bits) {
-            Ok(bits) => Ok(AtomicBitVec { bits, len }),
-            Err(error) => Err(DifferentAlignmentError(
-                error.0,
-                BitVec { bits: error.1, len },
-            )),
-        }
-    }
-}
-
-/// This conversion is infallible, contrarily to the [opposite one], because
-/// the alignment of an atomic type is never less strict than the alignment of
-/// its value type.
-///
-/// [opposite one]: #impl-TryFrom%3CBitVec%3C%26mut+%5BW%5D%3E%3E-for-AtomicBitVec%3C%26mut+%5B%3CW+as+AtomicPrimitive%3E::Atomic%5D%3E
-impl<'a, W: AtomicPrimitive> From<AtomicBitVec<&'a mut [W::Atomic]>> for BitVec<&'a mut [W]> {
-    fn from(value: AtomicBitVec<&'a mut [W::Atomic]>) -> Self {
-        BitVec {
-            // SAFETY: an atomic type has the same size and in-memory
-            // representation as its value type. Moreover, all atomic types
-            // have an alignment at least as strict as that of their value
-            // type, so the buffer, which is aligned for W::Atomic, is aligned
-            // for W, too. No deallocation happens through this reference, so
-            // the alignments need not be equal.
-            bits: unsafe { core::mem::transmute::<&'a mut [W::Atomic], &'a mut [W]>(value.bits) },
-            len: value.len,
-        }
-    }
-}
-
-impl<W> From<BitVec<Vec<W>>> for BitVec<Box<[W]>> {
-    fn from(value: BitVec<Vec<W>>) -> Self {
-        BitVec {
-            bits: value.bits.into_boxed_slice(),
-            len: value.len,
-        }
-    }
-}
-
-impl<W> From<BitVec<Box<[W]>>> for BitVec<Vec<W>> {
-    fn from(value: BitVec<Box<[W]>>) -> Self {
-        BitVec {
-            bits: value.bits.into_vec(),
-            len: value.len,
-        }
-    }
+crate::bits::impl_conversions! {
+    BitVec, AtomicBitVec { len },
+    borrow: [B: Backend], [B: Backend],
+    owned: [W], [A],
+    atomic: [W: AtomicPrimitive],
 }
 
 impl<W: Word, B: AsRef<[W]>> AsRef<[W]> for BitVec<B> {

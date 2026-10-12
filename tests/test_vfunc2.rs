@@ -98,3 +98,39 @@ fn test_vfunc2_narrow_value_widths() -> Result<()> {
     }
     Ok(())
 }
+
+/// The second stage honors the options of the builder: with duplicate keys
+/// and duplicate checks enabled, the construction fails with a duplicate-key
+/// error, whereas before the inner builders ignored `check_dups` and every
+/// attempt failed with an unsolvable shard.
+#[test]
+fn test_vfunc2_honors_check_dups() -> Result<()> {
+    use sux::func::{BuildError, VBuilder};
+    use sux::utils::FromSlice;
+
+    let mut keys: Vec<usize> = (0..1000).collect();
+    let mut values: Vec<usize> = (0..1000).map(|i| i % 3).collect();
+    keys.push(500);
+    values.push(1 << 20);
+
+    for result in [
+        <VFunc2<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
+            FromSlice::new(&keys),
+            FromSlice::new(&values),
+            VBuilder::default().check_dups(true),
+            no_logging![],
+        ),
+        <VFunc2<usize, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
+            &keys,
+            &values,
+            VBuilder::default().check_dups(true),
+            no_logging![],
+        ),
+    ] {
+        assert!(matches!(
+            result.unwrap_err().downcast_ref::<BuildError>(),
+            Some(BuildError::DuplicateKey)
+        ));
+    }
+    Ok(())
+}

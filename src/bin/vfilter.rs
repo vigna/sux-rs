@@ -4,25 +4,22 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-#![allow(clippy::collapsible_else_if)]
 use std::ops::{BitXor, BitXorAssign};
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use clap::{ArgGroup, Parser};
-use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
 use mem_dbg::{FlatType, MemSize};
+use num_primitive::PrimitiveNumberAs;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
 use sux::cli::{
-    AnyLineLender, BuilderArgs, Decompression, ShardingArgs, read_concat_lines,
-    str_slice_from_offsets,
+    AnyLineLender, BuilderArgs, Decompression, KeyBuffer, ShardingArgs, check_num_keys,
+    init_env_logger, store, store_as_is,
 };
 use sux::dict::VFilter;
 use sux::func::{shard_edge::*, *};
-use sux::init_env_logger;
-use sux::prelude::VBuilder;
 use sux::traits::{BitFieldSliceMut, TryIntoUnaligned, Word};
 use sux::utils::{
     BinSafe, EmptyVal, FromCloneableIntoIterator, FromIntoFallibleLenderFactory, Sig, SigVal, ToSig,
@@ -38,21 +35,25 @@ use value_traits::slices::SliceByValueMut;
                 .args(["filename", "n"]),
 ))]
 struct Args {
-    /// The number of keys; if no filename is provided, use the 64-bit keys
-    /// [0 . . n).​
+    /// The number of keys: if a file of keys is specified, its first N keys
+    /// are used, and it is an error if it contains fewer keys; otherwise, the
+    /// 64-bit keys [0 . . N) are used.​
     #[arg(short, long)]
     n: Option<usize>,
-    /// A file containing UTF-8 keys, one per line (at most N keys will be read).​
+    /// A file containing UTF-8 keys, one per line.​
     #[arg(short, long)]
     filename: Option<String>,
     /// Decompress the file of keys using this format (by default, it is read
     /// as is).​
     #[arg(long, value_enum)]
     decompress: Option<Decompression>,
-    /// Save the structure in unaligned form (faster, if available).​
+    /// Save the structure in unaligned form (faster); this option has no
+    /// effect if the hashes have 8, 16, 32, or 64 bits, as they are then
+    /// stored in a boxed slice.​
     #[arg(long, short)]
     unaligned: bool,
-    /// A name for the ε-serde serialized filter.​
+    /// A name for the ε-serde serialized filter (if not specified, the filter
+    /// is built but not saved).​
     filter: Option<String>,
     /// The number of bits of the hashes used by the filter.​
     #[arg(short, long, default_value_t = 8)]
@@ -107,40 +108,36 @@ fn main_with_types_boxed_slice<
     args: Args,
 ) -> Result<()>
 where
+    u64: PrimitiveNumberAs<W>,
     str: ToSig<S>,
     usize: ToSig<S>,
-    SigVal<S, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    SigVal<E::LocalSig, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     Box<[W]>: BitFieldSliceMut<Value = W>,
     for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
     for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
         Send + BitFieldSliceMut<Value = W>,
-    VFunc<usize, BitFieldVec, S, E>: Serialize,
-    VFunc<str, BitFieldVec, S, E>: Serialize,
-    VFunc<usize, Box<[W]>, S, E>: Serialize,
-    VFunc<str, Box<[W]>, S, E>: Serialize,
     VFilter<usize, Box<[W]>, S, E>: Serialize,
     VFilter<str, Box<[W]>, S, E>: Serialize,
-    Box<[W]>: MemSize + FlatType,
 {
     if args.unaligned {
-        bail!("--unaligned is not supported for backend Box<[W]>; use a custom bit width");
+        log::warn!(
+            "--unaligned has no effect with {}-bit hashes, which are stored in a boxed slice",
+            args.bits
+        );
     }
 
-    let mut pl = ProgressLogger::default();
-    pl.log_interval(args.log.log_interval);
+    let mut pl = args.log.progress_logger();
+    let mut builder = args
+        .builder
+        .configure(VBuilder::<Box<[W]>, S, E>::default());
+    if let Some(n) = args.n {
+        builder = builder.expected_num_keys(n);
+    }
 
     if let Some(filename) = &args.filename {
-        let n = args.n.unwrap_or(usize::MAX);
-        let mut builder = args
-            .builder
-            .configure(VBuilder::<Box<[W]>, S, E>::default());
-        if let Some(n_hint) = args.n {
-            builder = builder.expected_num_keys(n_hint);
-        }
         if args.sequential {
+            let n = args.n.unwrap_or(usize::MAX);
             let filter = <VFilter<str, Box<[W]>, S, E>>::try_new_with_builder(
                 FromIntoFallibleLenderFactory::new(|| {
                     AnyLineLender::from_path(filename, args.decompress).map(|keys| keys.take(n))
@@ -148,53 +145,34 @@ where
                 builder,
                 &mut pl,
             )?;
-            if let Some(filename) = args.filter {
-                unsafe { filter.store(filename) }?;
-            }
+            check_num_keys(filter.len(), args.n)?;
+            unsafe { store_as_is(&filter, args.filter.as_ref()) }
         } else {
-            let (buffer, offsets) = read_concat_lines(filename, n, args.decompress)?;
-            let keys = str_slice_from_offsets(&buffer, &offsets);
-            if let Some(n_hint) = args.n {
-                if keys.len() != n_hint {
-                    bail!(
-                        "key count mismatch: read {} keys, expected {n_hint}",
-                        keys.len()
-                    );
-                }
-            }
-            let filter =
-                <VFilter<str, Box<[W]>, S, E>>::try_par_new_with_builder(&keys, builder, &mut pl)?;
-            if let Some(filename) = args.filter {
-                unsafe { filter.store(filename) }?;
-            }
+            let buffer = KeyBuffer::from_path(filename, args.n, args.decompress)?;
+            let filter = <VFilter<str, Box<[W]>, S, E>>::try_par_new_with_builder(
+                &buffer.keys(),
+                builder,
+                &mut pl,
+            )?;
+            unsafe { store_as_is(&filter, args.filter.as_ref()) }
         }
     } else {
         let n = args.n.unwrap();
-        let builder = args
-            .builder
-            .configure(VBuilder::<Box<[W]>, S, E>::default())
-            .expected_num_keys(n);
         if args.sequential {
             let filter = <VFilter<usize, Box<[W]>, S, E>>::try_new_with_builder(
                 FromCloneableIntoIterator::from(0_usize..n),
                 builder,
                 &mut pl,
             )?;
-            if let Some(filename) = args.filter {
-                unsafe { filter.store(filename) }?;
-            }
+            unsafe { store_as_is(&filter, args.filter.as_ref()) }
         } else {
             let keys: Vec<usize> = (0..n).collect();
             let filter = <VFilter<usize, Box<[W]>, S, E>>::try_par_new_with_builder(
                 &keys, builder, &mut pl,
             )?;
-            if let Some(filename) = args.filter {
-                unsafe { filter.store(filename) }?;
-            }
+            unsafe { store_as_is(&filter, args.filter.as_ref()) }
         }
     }
-
-    Ok(())
 }
 
 fn main_with_types_bit_field_vec<
@@ -205,28 +183,25 @@ fn main_with_types_bit_field_vec<
     args: Args,
 ) -> Result<()>
 where
+    u64: PrimitiveNumberAs<W>,
     str: ToSig<S>,
     usize: ToSig<S>,
-    SigVal<S, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<S, EmptyVal>: RadixKey + BitXor + BitXorAssign,
-    SigVal<E::LocalSig, usize>: RadixKey + BitXor + BitXorAssign,
     SigVal<E::LocalSig, EmptyVal>: RadixKey + BitXor + BitXorAssign,
     VFilter<usize, BitFieldVec<Box<[W]>>, S, E>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
     VFilter<str, BitFieldVec<Box<[W]>>, S, E>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
-    BitFieldVec<Box<[W]>>: MemSize + FlatType,
 {
-    let mut pl = ProgressLogger::default();
-    pl.log_interval(args.log.log_interval);
+    let mut pl = args.log.progress_logger();
+    let mut builder = args
+        .builder
+        .configure(VBuilder::<BitFieldVec<Box<[W]>>, S, E>::default());
+    if let Some(n) = args.n {
+        builder = builder.expected_num_keys(n);
+    }
 
     if let Some(filename) = &args.filename {
-        let n = args.n.unwrap_or(usize::MAX);
-        let mut builder = args
-            .builder
-            .configure(VBuilder::<BitFieldVec<Box<[W]>>, S, E>::default());
-        if let Some(n_hint) = args.n {
-            builder = builder.expected_num_keys(n_hint);
-        }
         if args.sequential {
+            let n = args.n.unwrap_or(usize::MAX);
             let filter = <VFilter<str, BitFieldVec<Box<[W]>>, S, E>>::try_new_with_builder(
                 FromIntoFallibleLenderFactory::new(|| {
                     AnyLineLender::from_path(filename, args.decompress).map(|keys| keys.take(n))
@@ -235,41 +210,20 @@ where
                 builder,
                 &mut pl,
             )?;
-            if let Some(filename) = args.filter {
-                if args.unaligned {
-                    unsafe { filter.try_into_unaligned()?.store(filename)? };
-                } else {
-                    unsafe { filter.store(filename)? };
-                }
-            }
+            check_num_keys(filter.len(), args.n)?;
+            unsafe { store(filter, args.filter.as_ref(), args.unaligned) }
         } else {
-            let (buffer, offsets) = read_concat_lines(filename, n, args.decompress)?;
-            let keys = str_slice_from_offsets(&buffer, &offsets);
-            if let Some(n_hint) = args.n {
-                if keys.len() != n_hint {
-                    bail!(
-                        "key count mismatch: read {} keys, expected {n_hint}",
-                        keys.len()
-                    );
-                }
-            }
+            let buffer = KeyBuffer::from_path(filename, args.n, args.decompress)?;
             let filter = <VFilter<str, BitFieldVec<Box<[W]>>, S, E>>::try_par_new_with_builder(
-                &keys, args.bits, builder, &mut pl,
+                &buffer.keys(),
+                args.bits,
+                builder,
+                &mut pl,
             )?;
-            if let Some(filename) = args.filter {
-                if args.unaligned {
-                    unsafe { filter.try_into_unaligned()?.store(filename)? };
-                } else {
-                    unsafe { filter.store(filename)? };
-                }
-            }
+            unsafe { store(filter, args.filter.as_ref(), args.unaligned) }
         }
     } else {
         let n = args.n.unwrap();
-        let builder = args
-            .builder
-            .configure(VBuilder::<BitFieldVec<Box<[W]>>, S, E>::default())
-            .expected_num_keys(n);
         if args.sequential {
             let filter = <VFilter<usize, BitFieldVec<Box<[W]>>, S, E>>::try_new_with_builder(
                 FromCloneableIntoIterator::from(0_usize..n),
@@ -277,27 +231,13 @@ where
                 builder,
                 &mut pl,
             )?;
-            if let Some(filename) = args.filter {
-                if args.unaligned {
-                    unsafe { filter.try_into_unaligned()?.store(filename)? };
-                } else {
-                    unsafe { filter.store(filename)? };
-                }
-            }
+            unsafe { store(filter, args.filter.as_ref(), args.unaligned) }
         } else {
             let keys: Vec<usize> = (0..n).collect();
             let filter = <VFilter<usize, BitFieldVec<Box<[W]>>, S, E>>::try_par_new_with_builder(
                 &keys, args.bits, builder, &mut pl,
             )?;
-            if let Some(filename) = args.filter {
-                if args.unaligned {
-                    unsafe { filter.try_into_unaligned()?.store(filename)? };
-                } else {
-                    unsafe { filter.store(filename)? };
-                }
-            }
+            unsafe { store(filter, args.filter.as_ref(), args.unaligned) }
         }
     }
-
-    Ok(())
 }

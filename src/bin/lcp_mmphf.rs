@@ -4,22 +4,21 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
-use rand::rngs::SmallRng;
-use rand::{RngExt, SeedableRng};
+use num_primitive::PrimitiveNumberAs;
 use sux::cli::{
-    AnyLineLender, BuilderArgs, Decompression, HashTypes, read_concat_lines, str_slice_from_offsets,
+    AnyLineLender, BuilderArgs, Decompression, HashTypes, KeyBuffer, count_lines, gen_sorted_keys,
+    init_env_logger, store,
 };
 use sux::func::lcp_mmphf::*;
 use sux::func::lcp2_mmphf::*;
 use sux::func::signed::*;
-use sux::init_env_logger;
-use sux::traits::TryIntoUnaligned;
-use sux::utils::FromSlice;
+use sux::traits::{TryIntoUnaligned, Word};
+use sux::utils::{FromIntoFallibleLenderFactory, FromSlice};
 
 #[derive(Parser, Debug)]
 #[command(about = "Creates a (possibly signed) LCP-based monotone minimal perfect hash function \
@@ -31,8 +30,10 @@ use sux::utils::FromSlice;
                 .args(["filename", "n"]),
 ))]
 struct Args {
-    /// The number of keys; if no filename is provided, use the 64-bit keys
-    /// [0 . . n).​
+    /// The number of keys: if a file of keys is specified, its first N keys
+    /// are used, and it is an error if it contains fewer keys; otherwise, N
+    /// distinct pseudorandom 64-bit keys, always the same for a given N, are
+    /// sorted and used.​
     #[arg(short, long)]
     n: Option<usize>,
     /// A file containing sorted UTF-8 keys, one per line.​
@@ -45,12 +46,15 @@ struct Args {
     /// Save the structure in unaligned form (faster, if available).​
     #[arg(long, short)]
     unaligned: bool,
-    /// A name for the ε-serde serialized function.​
+    /// A name for the ε-serde serialized function (if not specified, the
+    /// function is built but not saved).​
     func: Option<String>,
     /// Use the two-step variant (less space, slightly slower queries).​
     #[arg(long, short = '2')]
     two_step: bool,
-    /// Sign the function using hashes of this type.​
+    /// Sign the function using hashes of this type, obtaining a SignedFunc:
+    /// queries with keys outside the set return None, except for a fraction
+    /// 2^-b of false positives, where b is the number of bits of the type.​
     #[arg(long)]
     hash_type: Option<HashTypes>,
     /// Hashes keys sequentially without loading them in RAM.​
@@ -66,332 +70,148 @@ fn main() -> Result<()> {
     init_env_logger()?;
     let args = Args::parse();
 
-    let mut pl = ProgressLogger::default();
-    pl.log_interval(args.log.log_interval);
+    match args.hash_type {
+        None => build(&args),
+        Some(HashTypes::U8) => build_signed::<u8>(&args),
+        Some(HashTypes::U16) => build_signed::<u16>(&args),
+        Some(HashTypes::U32) => build_signed::<u32>(&args),
+        Some(HashTypes::U64) => build_signed::<u64>(&args),
+    }
+}
 
-    let n = if let Some(ref filename) = args.filename {
-        if let Some(n) = args.n {
-            n
-        } else {
-            pl.info(format_args!("Counting keys..."));
-            let mut lender = AnyLineLender::from_path(filename, args.decompress)?;
-            let mut count = 0usize;
-            while FallibleLender::next(&mut lender)?.is_some() {
-                count += 1;
-            }
-            pl.info(format_args!("Found {count} keys"));
-            count
-        }
-    } else {
-        args.n.unwrap()
-    };
+/// Returns the number of keys to read sequentially from a file: N, if
+/// specified, or the number of lines of the file.
+fn num_keys(args: &Args, filename: &str, pl: &mut impl ProgressLog) -> Result<usize> {
+    if let Some(n) = args.n {
+        return Ok(n);
+    }
+    pl.info(format_args!("Counting keys..."));
+    let count = count_lines(filename, args.decompress)?;
+    pl.info(format_args!("Found {count} keys"));
+    Ok(count)
+}
 
+/// Builds a function.
+fn build(args: &Args) -> Result<()> {
+    let mut pl = args.log.progress_logger();
     let builder = args.builder.to_builder();
 
-    if args.two_step {
-        build_two_step(&args, n, builder, &mut pl)
-    } else {
-        build_single(&args, n, builder, &mut pl)
-    }
-}
-
-/// Generate k sorted distinct random u64 keys.
-///
-/// Draws k + 2*(k²/(2*2^64)) values (the extra accounts for expected
-/// collisions), sorts, deduplicates, and takes k.
-fn gen_sorted_keys(k: usize, seed: u64) -> Vec<u64> {
-    let extra = (((k as u128) * (k as u128)) >> 65) as usize;
-    let draw = k + 2 * extra;
-    let mut rng = SmallRng::seed_from_u64(seed);
-    loop {
-        let mut keys: Vec<u64> = (0..draw).map(|_| rng.random()).collect();
-        keys.sort_unstable();
-        keys.dedup();
-        if keys.len() >= k {
-            keys.truncate(k);
-            return keys;
-        }
-    }
-}
-
-macro_rules! maybe_store {
-    ($func:expr, $out:expr, $unaligned:expr) => {
-        if let Some(ref f) = $out {
-            if $unaligned {
-                unsafe { $func.try_into_unaligned()?.store(f) }?;
+    if let Some(filename) = &args.filename {
+        if args.sequential {
+            let n = num_keys(args, filename, &mut pl)?;
+            let keys = FromIntoFallibleLenderFactory::new(|| {
+                AnyLineLender::from_path(filename, args.decompress).map(|keys| keys.take(n))
+            })?;
+            if args.two_step {
+                let mmphf = <Lcp2MmphfStr>::try_new_with_builder(keys, n, builder, &mut pl)?;
+                unsafe { store(mmphf, args.func.as_ref(), args.unaligned) }
             } else {
-                unsafe { $func.store(f) }?;
+                let mmphf = <LcpMmphfStr>::try_new_with_builder(keys, n, builder, &mut pl)?;
+                unsafe { store(mmphf, args.func.as_ref(), args.unaligned) }
             }
-        }
-    };
-}
-
-fn build_single(
-    args: &Args,
-    n: usize,
-    builder: sux::func::VBuilder<sux::bits::BitFieldVec<Box<[usize]>>>,
-    pl: &mut (impl ProgressLog + Clone + Send + Sync),
-) -> Result<()> {
-    if let Some(ref filename) = args.filename {
-        match args.hash_type {
-            None => {
-                if args.sequential {
-                    let lender = AnyLineLender::from_path(filename, args.decompress)?;
-                    let mmphf: LcpMmphfStr =
-                        LcpMmphfStr::try_new_with_builder(lender, n, builder, pl)?;
-                    maybe_store!(mmphf, args.func, args.unaligned);
-                } else {
-                    let (buffer, offsets) = read_concat_lines(filename, n, args.decompress)?;
-                    let keys = str_slice_from_offsets(&buffer, &offsets);
-                    if let Some(n_hint) = args.n {
-                        if keys.len() != n_hint {
-                            bail!(
-                                "key count mismatch: read {} keys, expected {n_hint}",
-                                keys.len()
-                            );
-                        }
-                    }
-                    let mmphf: LcpMmphfStr =
-                        LcpMmphfStr::try_par_new_with_builder(&keys, builder, pl)?;
-                    maybe_store!(mmphf, args.func, args.unaligned);
-                }
-            }
-            Some(ref ht) => {
-                if args.sequential {
-                    macro_rules! build_seq {
-                        ($h:ty) => {{
-                            let lender = AnyLineLender::from_path(filename, args.decompress)?;
-                            let mmphf: SignedFunc<LcpMmphfStr, Box<[$h]>> =
-                                <SignedFunc<LcpMmphfStr, Box<[$h]>>>::try_new_with_builder(
-                                    lender, n, builder, pl,
-                                )?;
-                            maybe_store!(mmphf, args.func, args.unaligned);
-                        }};
-                    }
-                    match ht {
-                        HashTypes::U8 => build_seq!(u8),
-                        HashTypes::U16 => build_seq!(u16),
-                        HashTypes::U32 => build_seq!(u32),
-                        HashTypes::U64 => build_seq!(u64),
-                    }
-                } else {
-                    let (buffer, offsets) = read_concat_lines(filename, n, args.decompress)?;
-                    let keys = str_slice_from_offsets(&buffer, &offsets);
-                    if let Some(n_hint) = args.n {
-                        if keys.len() != n_hint {
-                            bail!(
-                                "key count mismatch: read {} keys, expected {n_hint}",
-                                keys.len()
-                            );
-                        }
-                    }
-                    macro_rules! build_par {
-                        ($h:ty) => {{
-                            let mmphf: SignedFunc<LcpMmphfStr, Box<[$h]>> =
-                                <SignedFunc<LcpMmphfStr, Box<[$h]>>>::try_par_new_with_builder(
-                                    &keys, builder, pl,
-                                )?;
-                            maybe_store!(mmphf, args.func, args.unaligned);
-                        }};
-                    }
-                    match ht {
-                        HashTypes::U8 => build_par!(u8),
-                        HashTypes::U16 => build_par!(u16),
-                        HashTypes::U32 => build_par!(u32),
-                        HashTypes::U64 => build_par!(u64),
-                    }
-                }
+        } else {
+            let buffer = KeyBuffer::from_path(filename, args.n, args.decompress)?;
+            let keys = buffer.keys();
+            if args.two_step {
+                let mmphf = <Lcp2MmphfStr>::try_par_new_with_builder(&keys, builder, &mut pl)?;
+                unsafe { store(mmphf, args.func.as_ref(), args.unaligned) }
+            } else {
+                let mmphf = <LcpMmphfStr>::try_par_new_with_builder(&keys, builder, &mut pl)?;
+                unsafe { store(mmphf, args.func.as_ref(), args.unaligned) }
             }
         }
     } else {
+        let n = args.n.unwrap();
         let keys = gen_sorted_keys(n, 0);
         if args.sequential {
-            let lender = FromSlice::new(&keys);
-            match args.hash_type {
-                None => {
-                    let mmphf: LcpMmphfInt<u64> =
-                        LcpMmphfInt::try_new_with_builder(lender, n, builder, pl)?;
-                    maybe_store!(mmphf, args.func, args.unaligned);
-                }
-                Some(ref ht) => {
-                    macro_rules! build_seq {
-                        ($h:ty) => {{
-                            let mmphf: SignedFunc<LcpMmphfInt<u64>, Box<[$h]>> =
-                                <SignedFunc<LcpMmphfInt<u64>, Box<[$h]>>>::try_new_with_builder(
-                                    lender, n, builder, pl,
-                                )?;
-                            maybe_store!(mmphf, args.func, args.unaligned);
-                        }};
-                    }
-                    match ht {
-                        HashTypes::U8 => build_seq!(u8),
-                        HashTypes::U16 => build_seq!(u16),
-                        HashTypes::U32 => build_seq!(u32),
-                        HashTypes::U64 => build_seq!(u64),
-                    }
-                }
+            let keys = FromSlice::new(&keys);
+            if args.two_step {
+                let mmphf = <Lcp2MmphfInt<u64>>::try_new_with_builder(keys, n, builder, &mut pl)?;
+                unsafe { store(mmphf, args.func.as_ref(), args.unaligned) }
+            } else {
+                let mmphf = <LcpMmphfInt<u64>>::try_new_with_builder(keys, n, builder, &mut pl)?;
+                unsafe { store(mmphf, args.func.as_ref(), args.unaligned) }
             }
+        } else if args.two_step {
+            let mmphf = <Lcp2MmphfInt<u64>>::try_par_new_with_builder(&keys, builder, &mut pl)?;
+            unsafe { store(mmphf, args.func.as_ref(), args.unaligned) }
         } else {
-            match args.hash_type {
-                None => {
-                    let mmphf: LcpMmphfInt<u64> =
-                        LcpMmphfInt::try_par_new_with_builder(&keys, builder, pl)?;
-                    maybe_store!(mmphf, args.func, args.unaligned);
-                }
-                Some(ref ht) => {
-                    macro_rules! build_par {
-                        ($h:ty) => {{
-                            let mmphf: SignedFunc<LcpMmphfInt<u64>, Box<[$h]>> =
-                                <SignedFunc<LcpMmphfInt<u64>, Box<[$h]>>>::try_par_new_with_builder(
-                                    &keys, builder, pl,
-                                )?;
-                            maybe_store!(mmphf, args.func, args.unaligned);
-                        }};
-                    }
-                    match ht {
-                        HashTypes::U8 => build_par!(u8),
-                        HashTypes::U16 => build_par!(u16),
-                        HashTypes::U32 => build_par!(u32),
-                        HashTypes::U64 => build_par!(u64),
-                    }
-                }
-            }
+            let mmphf = <LcpMmphfInt<u64>>::try_par_new_with_builder(&keys, builder, &mut pl)?;
+            unsafe { store(mmphf, args.func.as_ref(), args.unaligned) }
         }
     }
-    Ok(())
 }
 
-fn build_two_step(
-    args: &Args,
-    n: usize,
-    builder: sux::func::VBuilder<sux::bits::BitFieldVec<Box<[usize]>>>,
-    pl: &mut (impl ProgressLog + Clone + Send + Sync),
-) -> Result<()> {
-    if let Some(ref filename) = args.filename {
-        match args.hash_type {
-            None => {
-                if args.sequential {
-                    let lender = AnyLineLender::from_path(filename, args.decompress)?;
-                    let mmphf: Lcp2MmphfStr =
-                        Lcp2MmphfStr::try_new_with_builder(lender, n, builder, pl)?;
-                    maybe_store!(mmphf, args.func, args.unaligned);
-                } else {
-                    let (buffer, offsets) = read_concat_lines(filename, n, args.decompress)?;
-                    let keys = str_slice_from_offsets(&buffer, &offsets);
-                    if let Some(n_hint) = args.n {
-                        if keys.len() != n_hint {
-                            bail!(
-                                "key count mismatch: read {} keys, expected {n_hint}",
-                                keys.len()
-                            );
-                        }
-                    }
-                    let mmphf: Lcp2MmphfStr =
-                        Lcp2MmphfStr::try_par_new_with_builder(&keys, builder, pl)?;
-                    maybe_store!(mmphf, args.func, args.unaligned);
-                }
+/// Builds a function signed with hashes of type `W`.
+fn build_signed<W: Word>(args: &Args) -> Result<()>
+where
+    u64: PrimitiveNumberAs<W>,
+    SignedFunc<LcpMmphfStr, Box<[W]>>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    SignedFunc<Lcp2MmphfStr, Box<[W]>>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    SignedFunc<LcpMmphfInt<u64>, Box<[W]>>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+    SignedFunc<Lcp2MmphfInt<u64>, Box<[W]>>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
+{
+    let mut pl = args.log.progress_logger();
+    let builder = args.builder.to_builder();
+
+    if let Some(filename) = &args.filename {
+        if args.sequential {
+            let n = num_keys(args, filename, &mut pl)?;
+            let keys = FromIntoFallibleLenderFactory::new(|| {
+                AnyLineLender::from_path(filename, args.decompress).map(|keys| keys.take(n))
+            })?;
+            if args.two_step {
+                let mmphf = <SignedFunc<Lcp2MmphfStr, Box<[W]>>>::try_new_with_builder(
+                    keys, n, builder, &mut pl,
+                )?;
+                unsafe { store(mmphf, args.func.as_ref(), args.unaligned) }
+            } else {
+                let mmphf = <SignedFunc<LcpMmphfStr, Box<[W]>>>::try_new_with_builder(
+                    keys, n, builder, &mut pl,
+                )?;
+                unsafe { store(mmphf, args.func.as_ref(), args.unaligned) }
             }
-            Some(ref ht) => {
-                if args.sequential {
-                    macro_rules! build_seq {
-                        ($h:ty) => {{
-                            let lender = AnyLineLender::from_path(filename, args.decompress)?;
-                            let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =
-                                <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_new_with_builder(
-                                    lender, n, builder, pl,
-                                )?;
-                            maybe_store!(mmphf, args.func, args.unaligned);
-                        }};
-                    }
-                    match ht {
-                        HashTypes::U8 => build_seq!(u8),
-                        HashTypes::U16 => build_seq!(u16),
-                        HashTypes::U32 => build_seq!(u32),
-                        HashTypes::U64 => build_seq!(u64),
-                    }
-                } else {
-                    let (buffer, offsets) = read_concat_lines(filename, n, args.decompress)?;
-                    let keys = str_slice_from_offsets(&buffer, &offsets);
-                    if let Some(n_hint) = args.n {
-                        if keys.len() != n_hint {
-                            bail!(
-                                "key count mismatch: read {} keys, expected {n_hint}",
-                                keys.len()
-                            );
-                        }
-                    }
-                    macro_rules! build_par {
-                        ($h:ty) => {{
-                            let mmphf: SignedFunc<Lcp2MmphfStr, Box<[$h]>> =
-                                <SignedFunc<Lcp2MmphfStr, Box<[$h]>>>::try_par_new_with_builder(
-                                    &keys, builder, pl,
-                                )?;
-                            maybe_store!(mmphf, args.func, args.unaligned);
-                        }};
-                    }
-                    match ht {
-                        HashTypes::U8 => build_par!(u8),
-                        HashTypes::U16 => build_par!(u16),
-                        HashTypes::U32 => build_par!(u32),
-                        HashTypes::U64 => build_par!(u64),
-                    }
-                }
+        } else {
+            let buffer = KeyBuffer::from_path(filename, args.n, args.decompress)?;
+            let keys = buffer.keys();
+            if args.two_step {
+                let mmphf = <SignedFunc<Lcp2MmphfStr, Box<[W]>>>::try_par_new_with_builder(
+                    &keys, builder, &mut pl,
+                )?;
+                unsafe { store(mmphf, args.func.as_ref(), args.unaligned) }
+            } else {
+                let mmphf = <SignedFunc<LcpMmphfStr, Box<[W]>>>::try_par_new_with_builder(
+                    &keys, builder, &mut pl,
+                )?;
+                unsafe { store(mmphf, args.func.as_ref(), args.unaligned) }
             }
         }
     } else {
+        let n = args.n.unwrap();
         let keys = gen_sorted_keys(n, 0);
         if args.sequential {
-            let lender = FromSlice::new(&keys);
-            match args.hash_type {
-                None => {
-                    let mmphf: Lcp2MmphfInt<u64> =
-                        Lcp2MmphfInt::try_new_with_builder(lender, n, builder, pl)?;
-                    maybe_store!(mmphf, args.func, args.unaligned);
-                }
-                Some(ref ht) => {
-                    macro_rules! build_seq {
-                        ($h:ty) => {{
-                            let mmphf: SignedFunc<Lcp2MmphfInt<u64>, Box<[$h]>> =
-                                <SignedFunc<Lcp2MmphfInt<u64>, Box<[$h]>>>::try_new_with_builder(
-                                    lender, n, builder, pl,
-                                )?;
-                            maybe_store!(mmphf, args.func, args.unaligned);
-                        }};
-                    }
-                    match ht {
-                        HashTypes::U8 => build_seq!(u8),
-                        HashTypes::U16 => build_seq!(u16),
-                        HashTypes::U32 => build_seq!(u32),
-                        HashTypes::U64 => build_seq!(u64),
-                    }
-                }
+            let keys = FromSlice::new(&keys);
+            if args.two_step {
+                let mmphf = <SignedFunc<Lcp2MmphfInt<u64>, Box<[W]>>>::try_new_with_builder(
+                    keys, n, builder, &mut pl,
+                )?;
+                unsafe { store(mmphf, args.func.as_ref(), args.unaligned) }
+            } else {
+                let mmphf = <SignedFunc<LcpMmphfInt<u64>, Box<[W]>>>::try_new_with_builder(
+                    keys, n, builder, &mut pl,
+                )?;
+                unsafe { store(mmphf, args.func.as_ref(), args.unaligned) }
             }
+        } else if args.two_step {
+            let mmphf = <SignedFunc<Lcp2MmphfInt<u64>, Box<[W]>>>::try_par_new_with_builder(
+                &keys, builder, &mut pl,
+            )?;
+            unsafe { store(mmphf, args.func.as_ref(), args.unaligned) }
         } else {
-            match args.hash_type {
-                None => {
-                    let mmphf: Lcp2MmphfInt<u64> =
-                        Lcp2MmphfInt::try_par_new_with_builder(&keys, builder, pl)?;
-                    maybe_store!(mmphf, args.func, args.unaligned);
-                }
-                Some(ref ht) => {
-                    macro_rules! build_par {
-                        ($h:ty) => {{
-                            let mmphf: SignedFunc<Lcp2MmphfInt<u64>, Box<[$h]>> =
-                                <SignedFunc<Lcp2MmphfInt<u64>, Box<[$h]>>>::try_par_new_with_builder(
-                                    &keys, builder, pl,
-                                )?;
-                            maybe_store!(mmphf, args.func, args.unaligned);
-                        }};
-                    }
-                    match ht {
-                        HashTypes::U8 => build_par!(u8),
-                        HashTypes::U16 => build_par!(u16),
-                        HashTypes::U32 => build_par!(u32),
-                        HashTypes::U64 => build_par!(u64),
-                    }
-                }
-            }
+            let mmphf = <SignedFunc<LcpMmphfInt<u64>, Box<[W]>>>::try_par_new_with_builder(
+                &keys, builder, &mut pl,
+            )?;
+            unsafe { store(mmphf, args.func.as_ref(), args.unaligned) }
         }
     }
-    Ok(())
 }

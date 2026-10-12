@@ -32,22 +32,53 @@ pub mod utils;
 #[cfg(feature = "cli")]
 pub mod cli;
 
+// Kept for backward compatibility
+#[cfg(feature = "cli")]
+#[doc(hidden)]
+pub use cli::init_env_logger;
+
 #[cfg(feature = "fuzz")]
 pub mod fuzz;
 
 /// Imports the most common items.
 ///
+/// The prelude contains all the structures of the crate, with their
+/// builders and type aliases, the [`bit_vec!`], [`bit_field_vec!`], and
+/// [`rank_small!`] macros, the traits needed to use bit vectors
+/// ([`BitLength`], [`BitVecOps`], [`BitVecOpsMut`], [`AtomicBitVecOps`]), the
+/// rank/select traits, the iteration traits, the [`TryIntoUnaligned`] trait
+/// and the [`Unaligned`] type alias, the [`Word`] and [`Backend`] traits, and
+/// the [lenders] most commonly passed to constructors ([`FromSlice`],
+/// [`FromCloneableIntoIterator`], [`LineLender`]).
+///
 /// The [`bit_field_slice`] and [`indexed_dict`] module names are re-exported so
 /// their items can be reached through the prelude, but their contents are not
-/// glob-imported, as that would cause ambiguities in some contexts.
+/// glob-imported, as that would cause ambiguities in some contexts (e.g.,
+/// [`IndexedSeq::get`] would shadow [`slice::get`]). To use bit-field vectors
+/// and indexed dictionaries, add
+///
+/// ```rust
+/// use sux::prelude::{*, bit_field_slice::*, indexed_dict::*};
+/// ```
 ///
 /// [`bit_field_slice`]: crate::traits::bit_field_slice
 /// [`indexed_dict`]: crate::traits::indexed_dict
+/// [`IndexedSeq::get`]: crate::traits::IndexedSeq::get
+/// [`BitLength`]: crate::traits::BitLength
+/// [`BitVecOps`]: crate::traits::BitVecOps
+/// [`BitVecOpsMut`]: crate::traits::BitVecOpsMut
+/// [`AtomicBitVecOps`]: crate::traits::AtomicBitVecOps
+/// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
+/// [`Unaligned`]: crate::traits::Unaligned
+/// [`Word`]: crate::traits::Word
+/// [`Backend`]: crate::traits::Backend
+/// [lenders]: crate::utils::lenders
+/// [`FromSlice`]: crate::utils::FromSlice
+/// [`FromCloneableIntoIterator`]: crate::utils::FromCloneableIntoIterator
+/// [`LineLender`]: crate::utils::LineLender
 pub mod prelude {
     pub use crate::array::*;
     pub use crate::bal_paren::*;
-    pub use crate::bit_field_vec;
-    pub use crate::bit_vec;
     pub use crate::bits::*;
     pub use crate::dict::*;
     pub use crate::func::*;
@@ -57,7 +88,11 @@ pub mod prelude {
     pub use crate::traits::bit_field_slice;
     pub use crate::traits::bit_vec_ops;
     pub use crate::traits::indexed_dict;
-    pub use crate::traits::{bit_vec_ops::BitLength, iter::*, rank_sel::*};
+    pub use crate::traits::{
+        AtomicBitVecOps, Backend, BitLength, BitVecOps, BitVecOpsMut, TryIntoUnaligned, Unaligned,
+        Word, iter::*, rank_sel::*,
+    };
+    pub use crate::utils::{FromCloneableIntoIterator, FromSlice, LineLender};
 }
 
 #[ambassador::delegatable_trait_remote]
@@ -134,50 +169,3 @@ macro_rules! debug_assert_bounds {
 }
 
 pub(crate) use debug_assert_bounds;
-
-/// Initializes the `env_logger` logger with a custom format including
-/// timestamps with elapsed time since initialization.
-#[cfg(feature = "cli")]
-pub fn init_env_logger() -> anyhow::Result<()> {
-    use jiff::{
-        SpanRound,
-        fmt::friendly::{Designator, Spacing, SpanPrinter},
-    };
-    use std::io::Write;
-
-    let mut builder =
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"));
-
-    let start = std::time::Instant::now();
-    let printer = SpanPrinter::new()
-        .spacing(Spacing::None)
-        .designator(Designator::Compact);
-    let span_round = SpanRound::new()
-        .largest(jiff::Unit::Day)
-        .smallest(jiff::Unit::Millisecond)
-        .days_are_24_hours();
-
-    builder.format(move |buf, record| {
-        let Ok(ts) = jiff::Timestamp::try_from(std::time::SystemTime::now()) else {
-            return Err(std::io::Error::other("Failed to get timestamp"));
-        };
-        let style = buf.default_level_style(record.level());
-        let elapsed = start.elapsed();
-        let span = jiff::Span::new()
-            .seconds(elapsed.as_secs() as i64)
-            .milliseconds(elapsed.subsec_millis() as i64);
-        let span = span.round(span_round).expect("Failed to round span");
-        writeln!(
-            buf,
-            "{} {} {style}{}{style:#} [{:?}] {} - {}",
-            ts.strftime("%F %T%.3f"),
-            printer.span_to_string(&span),
-            record.level(),
-            std::thread::current().id(),
-            record.target(),
-            record.args()
-        )
-    });
-    builder.try_init()?;
-    Ok(())
-}

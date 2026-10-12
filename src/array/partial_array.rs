@@ -6,7 +6,11 @@
 
 //! Immutable [partial array] implementations.
 //!
+//! See the [module documentation] of [`array`] for an overview.
+//!
 //! [partial array]: PartialArray
+//! [module documentation]: crate::array
+//! [`array`]: crate::array
 
 use std::marker::PhantomData;
 
@@ -17,39 +21,149 @@ use crate::bits::{BitFieldVec, BitVec};
 use crate::dict::EliasFanoBuilder;
 use crate::dict::elias_fano::EliasFano;
 use crate::panic_if_out_of_bounds;
-use crate::rank_sel::{Rank9, SelectZeroAdaptConst};
+use crate::rank_sel::{BlockCounters, Rank9, SelectZeroAdaptConst};
 use crate::traits::Backend;
 use crate::traits::TryIntoUnaligned;
 use crate::traits::Unaligned;
-use crate::traits::{BitVecOps, BitVecOpsMut};
+use crate::traits::{BitLength, BitVecOps, BitVecOpsMut};
 use crate::traits::{RankUnchecked, SuccUnchecked};
 
+/// A dense partial array, as built by a [`PartialArrayBuilder`] created by
+/// [`new_dense`] or [`PartialArrayBuilder::dense`].
+///
+/// Use this alias, for example, to deserialize a dense partial array with
+/// ε-serde.
 // Rank9 is inherently u64-based, so the dense index must use u64 backing
 // regardless of usize.
-type DenseIndex = Rank9<BitVec<Box<[u64]>>>;
+pub type DensePartialArray<T> = PartialArray<T, Rank9<BitVec<Box<[u64]>>>>;
+
+/// A sparse partial array, as built by a [`PartialArrayBuilder`] created by
+/// [`new_sparse`] or [`PartialArrayBuilder::sparse`].
+///
+/// Use this alias, for example, to deserialize a sparse partial array with
+/// ε-serde.
+pub type SparsePartialArray<T> = PartialArray<T, SparseIndex<Box<[usize]>>>;
 
 /// An internal index for sparse partial arrays.
 ///
-/// We cannot use directly an [Elias–Fano] structure because we need to
-/// keep track of the first invalid position; and we need to keep track of
-/// the first invalid position because we want to implement just
-/// [`SuccUnchecked`] on the Elias–Fano structure, because it requires just
-/// [`SelectZeroUnchecked`], whereas [`Succ`] would require
-/// [`SelectUnchecked`] as well.
+/// The positions containing a value are stored in an [Elias–Fano] structure
+/// with a selection structure on zeros, which is sufficient for both
+/// [`SuccUnchecked`] and [`Succ`].
+///
+/// The field `first_invalid_pos` (the last position set plus one, or zero if
+/// no position is set) is redundant, as [`Succ`] performs the same bound check
+/// using the last value cached by the Elias–Fano structure, but removing it
+/// would change the serialized layout.
 ///
 /// [Elias–Fano]: crate::dict::EliasFano
 /// [`SuccUnchecked`]: crate::traits::SuccUnchecked
-/// [`SelectZeroUnchecked`]: crate::traits::SelectZeroUnchecked
 /// [`Succ`]: crate::traits::Succ
-/// [`SelectUnchecked`]: crate::traits::SelectUnchecked
 #[doc(hidden)]
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SparseIndex<D, L = BitFieldVec<Box<[u64]>>, I = Box<[usize]>> {
     ef: EliasFano<u64, SelectZeroAdaptConst<BitVec<D>, I>, L>,
-    /// self.ef should not be queried for values >= self.first_invalid_position
+    /// self.ef should not be queried for values >= self.first_invalid_pos
     first_invalid_pos: usize,
+}
+
+mod private {
+    /// The index of a partial array, mapping positions to indices in the
+    /// value array.
+    pub trait PartialArrayIndex {
+        /// Returns the length of the partial array.
+        fn len(&self) -> usize;
+
+        /// Returns the index in the value array of the value at the given
+        /// position, or `None` if no value was stored there.
+        ///
+        /// # Safety
+        ///
+        /// `position` must be smaller than [`len`](PartialArrayIndex::len).
+        unsafe fn lookup(&self, position: usize) -> Option<usize>;
+    }
+
+    /// The builder of the index of a partial array.
+    pub trait PartialArrayIndexBuilder {
+        /// Marks the given position as containing a value.
+        ///
+        /// # Safety
+        ///
+        /// `position` must be smaller than the length of the partial array.
+        unsafe fn add(&mut self, position: usize);
+    }
+}
+
+use private::{PartialArrayIndex, PartialArrayIndexBuilder};
+
+impl<B: Backend<Word = u64> + AsRef<[u64]> + BitLength, C: AsRef<[BlockCounters]>> PartialArrayIndex
+    for Rank9<B, C>
+{
+    #[inline(always)]
+    fn len(&self) -> usize {
+        Rank9::len(self)
+    }
+
+    #[inline(always)]
+    unsafe fn lookup(&self, position: usize) -> Option<usize> {
+        // Check if there's a value at this position
+        // SAFETY: position < len() guaranteed by caller
+        if !unsafe { self.get_unchecked(position) } {
+            return None;
+        }
+
+        // Use ranking to find the index in the values array
+        // SAFETY: position < len() guaranteed by caller
+        Some(unsafe { self.rank_unchecked(position) })
+    }
+}
+
+impl<D: Backend<Word = usize> + AsRef<[usize]>, L: SliceByValue<Value = u64>, I: AsRef<[usize]>>
+    PartialArrayIndex for SparseIndex<D, L, I>
+where
+    for<'b> &'b L: crate::traits::IntoUncheckedIterator<Item = u64>,
+{
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.ef.upper_bound() as usize
+    }
+
+    #[inline(always)]
+    unsafe fn lookup(&self, position: usize) -> Option<usize> {
+        if position >= self.first_invalid_pos {
+            return None;
+        }
+        // Check if there's a value at this position
+        // SAFETY: position <= last set position
+        let (index, pos) = unsafe { self.ef.succ_unchecked::<false>(position as u64) };
+
+        if pos != position as u64 {
+            None
+        } else {
+            Some(index)
+        }
+    }
+}
+
+impl PartialArrayIndexBuilder for BitVec<Box<[u64]>> {
+    #[inline(always)]
+    unsafe fn add(&mut self, position: usize) {
+        // SAFETY: position < len guaranteed by caller
+        unsafe {
+            self.set_unchecked(position, true);
+        }
+    }
+}
+
+impl PartialArrayIndexBuilder for EliasFanoBuilder<u64> {
+    #[inline(always)]
+    unsafe fn add(&mut self, position: usize) {
+        // usize fits u64 on all supported targets, so this cast is lossless. The
+        // checked push panics "Too many values" past the declared capacity,
+        // upholding EliasFano's unchecked "at most n pushes" precondition.
+        self.push(position as u64);
+    }
 }
 
 /// Builder for creating an immutable partial array.
@@ -58,13 +172,55 @@ pub struct SparseIndex<D, L = BitFieldVec<Box<[u64]>>, I = Box<[usize]>> {
 /// (position, value) pairs. Positions must be added in strictly
 /// increasing order.
 ///
-/// To get a builder you can use either [new_dense] or [new_sparse].
+/// To get a builder you can use either [`new_dense`]/[`PartialArrayBuilder::dense`]
+/// or [`new_sparse`]/[`PartialArrayBuilder::sparse`].
 #[derive(Debug, Clone, MemSize, MemDbg)]
 pub struct PartialArrayBuilder<T, B> {
     builder: B,
     values: Vec<T>,
     len: usize,
     min_next_pos: usize,
+}
+
+impl<T, B: PartialArrayIndexBuilder> PartialArrayBuilder<T, B> {
+    /// Sets a value at the given position.
+    ///
+    /// The provided position must be greater than the last position set.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `position` is not strictly greater than the previous position
+    /// set, if `position >= len`, or, for a sparse partial array, if more than
+    /// the declared number of values are set.
+    pub fn set(&mut self, position: usize, value: T) {
+        if position < self.min_next_pos {
+            panic!(
+                "Positions must be set in increasing order: got {} after {}",
+                position,
+                self.min_next_pos - 1
+            );
+        }
+        panic_if_out_of_bounds!(position, self.len);
+
+        // SAFETY: position < len
+        unsafe {
+            self.builder.add(position);
+        }
+        self.values.push(value);
+        self.min_next_pos = position + 1;
+    }
+}
+
+/// Extends the builder with an iterator of (position, value) pairs.
+///
+/// Position must be in strictly increasing order. The first returned
+/// position must be greater than the last position set.
+impl<T, B: PartialArrayIndexBuilder> Extend<(usize, T)> for PartialArrayBuilder<T, B> {
+    fn extend<I: IntoIterator<Item = (usize, T)>>(&mut self, iter: I) {
+        for (pos, val) in iter {
+            self.set(pos, val);
+        }
+    }
 }
 
 /// Creates a new builder for a dense partial array of the given length.
@@ -106,35 +262,28 @@ pub fn new_dense<T>(len: usize) -> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
 }
 
 impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
-    /// Sets a value at the given position.
+    /// Creates a new builder for a dense partial array of the given length.
     ///
-    /// The provided position must be greater than the last position set.
+    /// This method is equivalent to [`new_dense`].
     ///
-    /// # Panics
+    /// # Examples
     ///
-    /// Panics if `position` is not strictly greater than the previous position
-    /// set, or if `position >= len`.
-    pub fn set(&mut self, position: usize, value: T) {
-        if position < self.min_next_pos {
-            panic!(
-                "Positions must be set in increasing order: got {} after {}",
-                position,
-                self.min_next_pos - 1
-            );
-        }
-        panic_if_out_of_bounds!(position, self.len);
-
-        // SAFETY: position < len
-        unsafe {
-            self.builder.set_unchecked(position, true);
-        }
-        self.values.push(value);
-        self.min_next_pos = position + 1;
+    /// ```rust
+    /// # use sux::array::PartialArrayBuilder;
+    /// let mut builder = PartialArrayBuilder::dense(10);
+    /// builder.set(1, "foo");
+    /// let array = builder.build();
+    /// assert_eq!(array.get(1), Some(&"foo"));
+    /// assert_eq!(array.get(2), None);
+    /// ```
+    #[must_use]
+    pub fn dense(len: usize) -> Self {
+        new_dense(len)
     }
 
     /// Builds the immutable dense partial array.
     #[must_use]
-    pub fn build(self) -> PartialArray<T, Rank9<BitVec<Box<[u64]>>>> {
+    pub fn build(self) -> DensePartialArray<T> {
         let (bit_vec, values) = (self.builder, self.values);
         let rank9 = Rank9::new(bit_vec);
         let values = values.into_boxed_slice();
@@ -150,7 +299,7 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
 /// Creates a new builder for a sparse partial array of the given length.
 ///
 /// A sparse partial array stores the non-empty positions of the array in an
-/// [Elias-Fano] structure.
+/// [Elias–Fano] structure.
 ///
 /// If your set of values is really dense, consider using a [dense partial array].
 ///
@@ -175,11 +324,11 @@ impl<T> PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
 /// # Panics
 ///
 /// Panics if `num_values > len`, because strictly increasing in-bounds
-/// positions cannot satisfy that capacity, or if the underlying Elias--Fano
+/// positions cannot satisfy that capacity, or if the underlying Elias–Fano
 /// structures would exceed `usize` in length (for example when `num_values` is
 /// near `usize::MAX`).
 ///
-/// [Elias-Fano]: crate::dict::EliasFano
+/// [Elias–Fano]: crate::dict::EliasFano
 /// [dense partial array]: new_dense
 pub fn new_sparse<T>(
     len: usize,
@@ -198,31 +347,28 @@ pub fn new_sparse<T>(
 }
 
 impl<T> PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
-    /// Sets a value at the given position.
+    /// Creates a new builder for a sparse partial array of the given length
+    /// containing the given number of values.
     ///
-    /// The provided position must be greater than the last position
-    /// set.
+    /// This method is equivalent to [`new_sparse`].
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use sux::array::PartialArrayBuilder;
+    /// let mut builder = PartialArrayBuilder::sparse(10, 1);
+    /// builder.set(1, "foo");
+    /// let array = builder.build();
+    /// assert_eq!(array.get(1), Some(&"foo"));
+    /// assert_eq!(array.get(2), None);
+    /// ```
     ///
     /// # Panics
     ///
-    /// Panics if `position` is not strictly greater than the previous position
-    /// set, if `position >= len`, or if more than the declared number of values
-    /// are set.
-    pub fn set(&mut self, position: usize, value: T) {
-        if position < self.min_next_pos {
-            panic!(
-                "Positions must be set in increasing order: got {} after {}",
-                position,
-                self.min_next_pos - 1
-            );
-        }
-        panic_if_out_of_bounds!(position, self.len);
-        // usize fits u64 on all supported targets, so this cast is lossless. The
-        // checked push panics "Too many values" past the declared capacity,
-        // upholding EliasFano's unchecked "at most n pushes" precondition.
-        self.builder.push(position as u64);
-        self.values.push(value);
-        self.min_next_pos = position + 1;
+    /// See [`new_sparse`].
+    #[must_use]
+    pub fn sparse(len: usize, num_values: usize) -> Self {
+        new_sparse(len, num_values)
     }
 
     /// Builds the immutable sparse partial array.
@@ -231,7 +377,7 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
     ///
     /// Panics if fewer than the declared number of values were set.
     #[must_use]
-    pub fn build(self) -> PartialArray<T, SparseIndex<Box<[usize]>>> {
+    pub fn build(self) -> SparsePartialArray<T> {
         let (builder, values) = (self.builder, self.values);
         let ef_dict = builder.build_with_dict();
         let values = values.into_boxed_slice();
@@ -247,36 +393,14 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
     }
 }
 
-/// Extends the builder with an iterator of (position, value) pairs.
-///
-/// Position must be in strictly increasing order. The first returned
-/// position must be greater than the last position set.
-impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, BitVec<Box<[u64]>>> {
-    fn extend<I: IntoIterator<Item = (usize, T)>>(&mut self, iter: I) {
-        for (pos, val) in iter {
-            self.set(pos, val);
-        }
-    }
-}
-
-/// Extends the builder with an iterator of (position, value) pairs.
-///
-/// Position must be in strictly increasing order. The first returned
-/// position must be greater than the last position set.
-impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
-    fn extend<I: IntoIterator<Item = (usize, T)>>(&mut self, iter: I) {
-        for (pos, val) in iter {
-            self.set(pos, val);
-        }
-    }
-}
-
 /// An immutable partial array that supports efficient queries
 /// in compacted storage.
 ///
 /// This structure stores a *partial array*, an array in which only
 /// some positions contain values. There is a [dense] and a [sparse]
-/// implementation with different space/time trade-offs.
+/// implementation with different space/time trade-offs, whose types are
+/// [`DensePartialArray`] and [`SparsePartialArray`], respectively; the
+/// [module documentation] of [`array`] explains when to use which.
 ///
 /// For convenience, this structure implements [`SliceByValue`].
 ///
@@ -288,6 +412,8 @@ impl<T> Extend<(usize, T)> for PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
 ///
 /// [dense]: new_dense
 /// [sparse]: new_sparse
+/// [module documentation]: crate::array
+/// [`array`]: crate::array
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -305,7 +431,7 @@ impl<T, P, V: AsRef<[T]>> PartialArray<T, P, V> {
     }
 }
 
-impl<T, V: AsRef<[T]>> PartialArray<T, DenseIndex, V> {
+impl<T, P: PartialArrayIndex, V: AsRef<[T]>> PartialArray<T, P, V> {
     /// Returns the total length of the array.
     ///
     /// This is the length that was specified when creating the builder,
@@ -336,67 +462,7 @@ impl<T, V: AsRef<[T]>> PartialArray<T, DenseIndex, V> {
     /// let array = builder.build();
     /// assert_eq!(array.get(5), Some(&42));
     /// assert_eq!(array.get(6), None);
-    /// ```
-    pub fn get(&self, position: usize) -> Option<&T> {
-        panic_if_out_of_bounds!(position, self.len());
-
-        // SAFETY: we just checked
-        unsafe { self.get_unchecked(position) }
-    }
-
-    /// # Safety
     ///
-    /// position < len()
-    pub unsafe fn get_unchecked(&self, position: usize) -> Option<&T> {
-        // Check if there's a value at this position
-        // SAFETY: position < len() guaranteed by caller
-        if !unsafe { self.index.get_unchecked(position) } {
-            return None;
-        }
-
-        // Use ranking to find the index in the values array
-        // SAFETY: position < len() guaranteed by caller
-        let value_index = unsafe { self.index.rank_unchecked(position) };
-
-        // SAFETY: necessarily value_index < num_values().
-        Some(unsafe { self.values.as_ref().get_unchecked(value_index) })
-    }
-}
-
-impl<
-    T,
-    D: Backend<Word = usize> + AsRef<[usize]>,
-    L: SliceByValue<Value = u64>,
-    I: AsRef<[usize]>,
-    V: AsRef<[T]>,
-> PartialArray<T, SparseIndex<D, L, I>, V>
-where
-    for<'b> &'b L: crate::traits::IntoUncheckedIterator<Item = u64>,
-{
-    /// Returns the total length of the array.
-    ///
-    /// This is the length that was specified when creating the builder,
-    /// not the number of values actually stored.
-    #[inline(always)]
-    pub fn len(&self) -> usize {
-        self.index.ef.upper_bound() as usize
-    }
-
-    /// Returns `true` if the array has no elements.
-    #[inline(always)]
-    pub fn is_empty(&self) -> bool {
-        self.index.ef.upper_bound() == 0
-    }
-
-    /// Gets a reference to the value at the given position.
-    ///
-    /// Returns `Some(&value)` if a value is present at the position,
-    /// or `None` if no value was stored there.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// # use sux::array::partial_array;
     /// let mut builder = partial_array::new_sparse(10, 1);
     /// builder.set(5, 42);
     ///
@@ -415,49 +481,17 @@ where
     ///
     /// position < len()
     pub unsafe fn get_unchecked(&self, position: usize) -> Option<&T> {
-        if position >= self.index.first_invalid_pos {
-            return None;
-        }
-        // Check if there's a value at this position
-        // SAFETY: position <= last set position
-        let (index, pos) = unsafe { self.index.ef.succ_unchecked::<false>(position as u64) };
-
-        if pos != position as u64 {
-            None
-        } else {
-            // SAFETY: necessarily value_index < num values.
-            Some(unsafe { self.values.as_ref().get_unchecked(index) })
-        }
-    }
-}
-
-/// Returns an option even when using `get_value_unchecked` because it should be safe to call
-/// whenever `position < len()`.
-impl<T: Clone, V: AsRef<[T]>> SliceByValue for PartialArray<T, DenseIndex, V> {
-    type Value = Option<T>;
-
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    unsafe fn get_value_unchecked(&self, position: usize) -> Self::Value {
         // SAFETY: position < len() guaranteed by caller
-        unsafe { self.get_unchecked(position) }.cloned()
+        let value_index = unsafe { self.index.lookup(position) }?;
+
+        // SAFETY: necessarily value_index < num_values().
+        Some(unsafe { self.values.as_ref().get_unchecked(value_index) })
     }
 }
 
 /// Returns an option even when using `get_value_unchecked` because it should be safe to call
 /// whenever `position < len()`.
-impl<
-    T: Clone,
-    D: Backend<Word = usize> + AsRef<[usize]>,
-    L: SliceByValue<Value = u64>,
-    I: AsRef<[usize]>,
-    V: AsRef<[T]>,
-> SliceByValue for PartialArray<T, SparseIndex<D, L, I>, V>
-where
-    for<'b> &'b L: crate::traits::IntoUncheckedIterator<Item = u64>,
-{
+impl<T: Clone, P: PartialArrayIndex, V: AsRef<[T]>> SliceByValue for PartialArray<T, P, V> {
     type Value = Option<T>;
 
     fn len(&self) -> usize {

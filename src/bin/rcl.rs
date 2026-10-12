@@ -11,33 +11,9 @@ use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
 use sux::{
-    cli::{AnyLineLender, Decompression},
-    init_env_logger,
+    cli::{AnyLineLender, Decompression, init_env_logger},
     prelude::*,
 };
-
-/// Macro to handle the repeated pattern of checking args.unsorted
-/// and calling a function with the appropriate const generic parameter.
-/// When args.unsorted is true, we pass false for SORTED (meaning not sorted).
-/// When args.unsorted is false, we pass true for SORTED.
-macro_rules! call_with_sorted {
-    // For compress function with single type parameter
-    ($unsorted:expr, compress, $($args:expr),*) => {
-        if $unsorted {
-            compress::<_, false>($($args),*)
-        } else {
-            compress::<_, true>($($args),*)
-        }
-    };
-    // For rear_coded_list::store with one type parameter and one const generic
-    ($unsorted:expr, rear_coded_list::store_str, $($args:expr),*) => {
-        if $unsorted {
-            rear_coded_list::store_str::<_,_, false>($($args),*)
-        } else {
-            rear_coded_list::store_str::<_,_,  true>($($args),*)
-        }
-    };
-}
 
 #[derive(Parser, Debug)]
 #[command(about = "Builds a rear-coded list starting from a list of UTF-8 encoded strings.", long_about = None, next_line_help = true, max_term_width = 100)]
@@ -46,7 +22,8 @@ struct Args {
     source: String,
     /// A name for the ε-serde serialized rear-coded list.​
     dest: String,
-    /// Assume the input is not sorted (disables checks and indexing).​
+    /// Assume the input is not sorted (disables checks and indexing); the
+    /// output must then be loaded as a `RearCodedListStr<false>`.​
     #[arg(long)]
     unsorted: bool,
     /// The number of strings in a block: higher values provide more compression
@@ -129,19 +106,25 @@ fn main() -> Result<()> {
             }
         }
         let lender = AnyLineLender::from_path(&args.source, args.decompress)?;
-        call_with_sorted!(
-            args.unsorted,
-            rear_coded_list::store_str,
-            args.ratio.get(),
-            lender,
-            args.dest
-        )?;
+        if args.unsorted {
+            rear_coded_list::store_str::<_, _, false>(args.ratio.get(), lender, args.dest)?;
+        } else {
+            rear_coded_list::store_str::<_, _, true>(args.ratio.get(), lender, args.dest)?;
+        }
     } else if args.source == "-" {
         let stdin = AnyLineLender::new(std::io::stdin().lock(), args.decompress)?;
-        call_with_sorted!(args.unsorted, compress, stdin, args.dest, args.ratio.get())?;
+        if args.unsorted {
+            compress::<_, false>(stdin, args.dest, args.ratio.get())?;
+        } else {
+            compress::<_, true>(stdin, args.dest, args.ratio.get())?;
+        }
     } else {
         let lender = AnyLineLender::from_path(&args.source, args.decompress)?;
-        call_with_sorted!(args.unsorted, compress, lender, args.dest, args.ratio.get())?;
+        if args.unsorted {
+            compress::<_, false>(lender, args.dest, args.ratio.get())?;
+        } else {
+            compress::<_, true>(lender, args.dest, args.ratio.get())?;
+        }
     }
 
     Ok(())

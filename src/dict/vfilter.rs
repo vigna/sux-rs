@@ -44,11 +44,12 @@ use value_traits::slices::SliceByValue;
 /// well, so keys sharing the hash word usually land in different slots, avoiding
 /// that collision (the verification hash itself stays 64-bit either way).
 ///
-/// [`FuseLge3Shards`]: crate::func::shard_edge::FuseLge3Shards
-/// [`FuseLge3FullSigs`]: crate::func::shard_edge::FuseLge3FullSigs
-///
 /// Instances of this structure are immutable; they are built using [`try_new`]
 /// or one of its variants, and can be serialized with [ε-serde] or [`serde`].
+/// The construction can be configured by passing a [`VBuilder`] to the
+/// `*_with_builder` constructors. Since signatures are computed from the
+/// native representation of keys (see [`ToSig`]), a serialized filter must be
+/// queried on a machine with the same endianness.
 ///
 /// This structure implements the [`Index`] trait for convenient
 /// `filter[key]` syntax (returning `&bool`).
@@ -56,9 +57,22 @@ use value_traits::slices::SliceByValue;
 /// This structure implements the [`TryIntoUnaligned`] trait, allowing it
 /// to be converted into (usually faster) structures using unaligned access.
 ///
+/// The `vfilter` binary (`cli` feature) builds and serializes instances of
+/// this structure.
+///
+/// # Alternatives
+///
+/// - A [`VFunc`] stores arbitrary values instead of hashes, but returns
+///   arbitrary values on keys outside the original set.
+///
+/// - A [`SignedFunc`] maps keys to their index (or rank, if it wraps an
+///   [`LcpMmphf`]) and rejects keys outside the original set with a
+///   false-positive rate controlled in the same way.
+///
 /// # Generics
 ///
-/// * `K` - the type of the keys.
+/// * `K` - the type of the keys; it must implement [`ToSig`] (see the
+///   [`VFunc`] documentation).
 /// * `D` - the backend storing the hashes; see the [`VFunc`] documentation
 ///   for the available choices.
 /// * `S` - the signature type; see the [`VFunc`] documentation.
@@ -68,10 +82,16 @@ use value_traits::slices::SliceByValue;
 ///
 /// See [`try_new`].
 ///
+/// [`FuseLge3Shards`]: crate::func::shard_edge::FuseLge3Shards
+/// [`FuseLge3FullSigs`]: crate::func::shard_edge::FuseLge3FullSigs
 /// [`try_new`]: VFilter::try_new
 /// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 /// [ε-serde]: https://crates.io/crates/epserde
 /// [`serde`]: https://crates.io/crates/serde
+/// [`VBuilder`]: crate::func::VBuilder
+/// [`SignedFunc`]: crate::func::SignedFunc
+/// [`LcpMmphf`]: crate::func::LcpMmphf
+#[doc(alias("bloom", "membership", "filter"))]
 #[derive(Clone, MemSize, MemDbg)]
 #[cfg_attr(
     feature = "epserde",
@@ -132,6 +152,16 @@ impl<K: ?Sized, D: SliceByValue, S, E> VFilter<K, D, S, E> {
     pub fn from_parts(func: VFunc<K, D, S, E>, filter_mask: D::Value) -> Self {
         Self { func, filter_mask }
     }
+
+    /// Returns the seed used to compute the signatures of the keys.
+    ///
+    /// The signatures passed to [`contains_by_sig`] must be computed with
+    /// this seed, that is, as `K::to_sig(key, filter.seed())`.
+    ///
+    /// [`contains_by_sig`]: VFilter::contains_by_sig
+    pub const fn seed(&self) -> u64 {
+        self.func.seed
+    }
 }
 
 impl<K: ?Sized + ToSig<S>, D: SliceByValue<Value: Word + BinSafe>, S: Sig, E: ShardEdge<S, 3>>
@@ -147,8 +177,9 @@ where
     /// match (key probably present, with false-positive rate 2⁻*ᵇ*),
     /// `false` on mismatch (key definitely absent).
     ///
-    /// This is the signature-level entry point; most callers should use
-    /// [`contains`] instead.
+    /// This is the signature-level entry point, and the signature must be
+    /// computed using the [seed](VFilter::seed) of the filter; most callers
+    /// should use [`contains`] instead.
     ///
     /// [`contains`]: Self::contains
     #[inline(always)]
@@ -285,6 +316,45 @@ mod build {
     use std::ops::{BitXor, BitXorAssign};
     use value_traits::slices::SliceByValueMut;
 
+    /// Returns the filter mask of a boxed backend, checking that `W` is at
+    /// most 64 bits wide.
+    fn boxed_filter_mask<W: Word>() -> Result<W> {
+        // The verification hash is a 64-bit remixed hash, so a boxed
+        // filter wider than 64 bits would store fictional entropy in its
+        // high bits and advertise an unachievable false-positive rate.
+        anyhow::ensure!(
+            W::BITS <= 64,
+            "boxed VFilter words must be at most 64 bits (got {})",
+            W::BITS
+        );
+        Ok(W::MAX)
+    }
+
+    /// Returns the filter mask for `filter_bits` hash bits, checking that
+    /// `filter_bits` is positive and at most min(64, `W::BITS`).
+    fn filter_mask<W: Word>(filter_bits: usize) -> Result<W> {
+        anyhow::ensure!(filter_bits > 0, "filter_bits must be positive");
+        // Filters store at most 64 hash bits: the remixed hash is 64-bit.
+        anyhow::ensure!(
+            filter_bits <= 64.min(W::BITS as usize),
+            "filter_bits ({filter_bits}) must be at most min(64, W::BITS) = {}",
+            64.min(W::BITS as usize)
+        );
+        // Sound: 0 < filter_bits <= W::BITS, checked above.
+        Ok(W::MAX >> (W::BITS - filter_bits as u32))
+    }
+
+    /// Returns the hash stored for a local signature, masked by
+    /// `filter_mask`.
+    #[inline(always)]
+    fn filter_hash<W: Word, S, E: ShardEdge<S, 3>>(
+        shard_edge: &E,
+        local_sig: E::LocalSig,
+        filter_mask: W,
+    ) -> W {
+        W::as_from(crate::utils::mix64(shard_edge.edge_hash(local_sig))) & filter_mask
+    }
+
     impl<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         W: Word + BinSafe,
@@ -416,22 +486,12 @@ mod build {
             for<'a> <Box<[W]> as SliceByValueMut>::ChunksMut<'a>: Send,
             for<'a> <<Box<[W]> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item: Send,
         {
-            // The verification hash is a 64-bit remixed hash, so a boxed
-            // filter wider than 64 bits would store fictional entropy in its
-            // high bits and advertise an unachievable false-positive rate.
-            anyhow::ensure!(
-                W::BITS <= 64,
-                "boxed VFilter words must be at most 64 bits (got {})",
-                W::BITS
-            );
-            let filter_mask = W::MAX;
+            let filter_mask = boxed_filter_mask::<W>()?;
             let func = builder.try_build_filter(
                 keys,
                 W::BITS as usize,
                 |_, len| vec![W::ZERO; len].into(),
-                &|shard_edge, sig_val| {
-                    W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig)))
-                },
+                &|shard_edge, sig_val| filter_hash(shard_edge, sig_val.sig, filter_mask),
                 pl,
             )?;
 
@@ -534,49 +594,13 @@ mod build {
         where
             K: Sync,
         {
-            let n = keys.len();
-            // The verification hash is a 64-bit remixed hash, so a boxed
-            // filter wider than 64 bits would store fictional entropy in its
-            // high bits and advertise an unachievable false-positive rate.
-            anyhow::ensure!(
-                W::BITS <= 64,
-                "boxed VFilter words must be at most 64 bits (got {})",
-                W::BITS
-            );
-            let filter_mask = W::MAX;
-            let func = builder.expected_num_keys(n).try_par_populate_and_build(
+            let filter_mask = boxed_filter_mask::<W>()?;
+            let func = builder.try_par_build_filter(
                 keys,
-                &|_| EmptyVal::default(),
-                &mut |builder,
-                      seed,
-                      mut store,
-                      _max_value,
-                      _num_keys,
-                      pl: &mut P,
-                      _state: &mut ()| {
-                    builder.bit_width = W::BITS as usize;
-
-                    let data: Box<[W]> = vec![
-                        W::ZERO;
-                        builder.shard_edge.num_vertices()
-                            * builder.shard_edge.num_shards()
-                    ]
-                    .into();
-
-                    let func = builder.try_build_from_shard_iter(
-                        seed,
-                        data,
-                        store.drain(),
-                        &|shard_edge: &E, sig_val| {
-                            W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig)))
-                        },
-                        &|_| {},
-                        pl,
-                    )?;
-                    Ok(func)
-                },
+                W::BITS as usize,
+                |_, len| vec![W::ZERO; len].into(),
+                &|shard_edge, sig_val| filter_hash(shard_edge, sig_val.sig, filter_mask),
                 pl,
-                (),
             )?;
 
             Ok(VFilter { func, filter_mask })
@@ -713,22 +737,12 @@ mod build {
             for<'a> <<BitFieldVec<Box<[W]>> as SliceByValueMut>::ChunksMut<'a> as Iterator>::Item:
                 Send,
         {
-            anyhow::ensure!(filter_bits > 0, "filter_bits must be positive");
-            // Filters store at most 64 hash bits: the remixed hash is 64-bit.
-            anyhow::ensure!(
-                filter_bits <= 64.min(W::BITS as usize),
-                "filter_bits ({filter_bits}) must be at most min(64, W::BITS) = {}",
-                64.min(W::BITS as usize)
-            );
-            // Sound: filter_bits <= 64 <= W::BITS, checked above.
-            let filter_mask = W::MAX >> (W::BITS - filter_bits as u32);
+            let filter_mask = filter_mask::<W>(filter_bits)?;
             let func = builder.try_build_filter(
                 keys,
                 filter_bits,
                 BitFieldVec::new_padded,
-                &|shard_edge, sig_val| {
-                    W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig))) & filter_mask
-                },
+                &|shard_edge, sig_val| filter_hash(shard_edge, sig_val.sig, filter_mask),
                 pl,
             )?;
 
@@ -837,48 +851,13 @@ mod build {
         where
             K: Sync,
         {
-            anyhow::ensure!(filter_bits > 0, "filter_bits must be positive");
-            // Filters store at most 64 hash bits: the remixed hash is 64-bit.
-            anyhow::ensure!(
-                filter_bits <= 64.min(W::BITS as usize),
-                "filter_bits ({filter_bits}) must be at most min(64, W::BITS) = {}",
-                64.min(W::BITS as usize)
-            );
-            let n = keys.len();
-            // Sound: filter_bits <= 64 <= W::BITS, checked above.
-            let filter_mask = W::MAX >> (W::BITS - filter_bits as u32);
-            let func = builder.expected_num_keys(n).try_par_populate_and_build(
+            let filter_mask = filter_mask::<W>(filter_bits)?;
+            let func = builder.try_par_build_filter(
                 keys,
-                &|_| EmptyVal::default(),
-                &mut |builder,
-                      seed,
-                      mut store,
-                      _max_value,
-                      _num_keys,
-                      pl: &mut P,
-                      _state: &mut ()| {
-                    builder.bit_width = filter_bits;
-
-                    let data = BitFieldVec::<Box<[W]>>::new_padded(
-                        builder.bit_width,
-                        builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
-                    );
-
-                    let func = builder.try_build_from_shard_iter(
-                        seed,
-                        data,
-                        store.drain(),
-                        &|shard_edge: &E, sig_val| {
-                            W::as_from(crate::func::mix64(shard_edge.edge_hash(sig_val.sig)))
-                                & filter_mask
-                        },
-                        &|_| {},
-                        pl,
-                    )?;
-                    Ok(func)
-                },
+                filter_bits,
+                BitFieldVec::new_padded,
+                &|shard_edge, sig_val| filter_hash(shard_edge, sig_val.sig, filter_mask),
                 pl,
-                (),
             )?;
 
             Ok(VFilter { func, filter_mask })

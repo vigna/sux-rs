@@ -17,13 +17,7 @@ use crate::ambassador_impl_Index;
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::bal_paren::ambassador_impl_BalParen;
 use crate::traits::bit_vec_ops::ambassador_impl_BitLength;
-use crate::traits::rank_sel::ambassador_impl_RankHinted;
-use crate::traits::rank_sel::ambassador_impl_Select;
-use crate::traits::rank_sel::ambassador_impl_SelectHinted;
-use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
-use crate::traits::rank_sel::ambassador_impl_SelectZero;
-use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
-use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+use crate::traits::rank_sel::*;
 use std::ops::Deref;
 use std::ops::Index;
 
@@ -58,8 +52,10 @@ use std::ops::Index;
 /// ```rust
 /// # #[cfg(target_pointer_width = "64")]
 /// # {
-/// # use sux::bit_vec;
-/// # use sux::prelude::{Rank, Rank9};
+/// use sux::bit_vec;
+/// use sux::rank_sel::Rank9;
+/// use sux::traits::Rank;
+///
 /// let rank9 = Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]);
 /// assert_eq!(rank9.rank(0), 0);
 /// assert_eq!(rank9.rank(1), 1);
@@ -270,7 +266,8 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]> + BitLength, C: AsRef<[BlockCount
     /// ```rust
     /// # #[cfg(target_pointer_width = "64")]
     /// # {
-    /// # use sux::prelude::*;
+    /// use sux::prelude::*;
+    ///
     /// let rank9 = Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]);
     /// // This is safe as there are several unused bits
     /// assert_eq!(unsafe { rank9.rank_unchecked(8) }, rank9.num_ones());

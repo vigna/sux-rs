@@ -477,27 +477,31 @@ pub(super) fn is_occupied(bits: &[u64], p: usize) -> bool {
     bits[p / 64] >> (p % 64) & 1 != 0
 }
 
+/// Calls `f`, in increasing order, on the free slots in [0 . . `m`) of the
+/// words of the bit vector of used slots starting at word `first`, given
+/// those words.
+#[inline]
+pub(super) fn for_each_hole(first: usize, words: &[u64], m: usize, mut f: impl FnMut(usize)) {
+    for (i, &word) in words.iter().enumerate() {
+        let w = first + i;
+        let mut free = !word;
+        let valid = m - w * 64;
+        if valid < 64 {
+            free &= (1u64 << valid) - 1;
+        }
+        while free != 0 {
+            f(w * 64 + free.trailing_zeros() as usize);
+            free &= free - 1;
+        }
+    }
+}
+
 /// Returns the free slots in [0 . . m), given the bit vector of used slots, in
 /// increasing order.
 pub(super) fn holes(bits: &[u64], m: usize) -> Vec<usize> {
     /// Number of words scanned by a parallel task.
     #[cfg(feature = "rayon")]
     const CHUNK: usize = 1 << 12;
-    // Appends to out the free slots of the words starting at word first
-    let scan = |first: usize, words: &[u64], out: &mut Vec<usize>| {
-        for (i, &word) in words.iter().enumerate() {
-            let w = first + i;
-            let mut free = !word;
-            let valid = m - w * 64;
-            if valid < 64 {
-                free &= (1u64 << valid) - 1;
-            }
-            while free != 0 {
-                out.push(w * 64 + free.trailing_zeros() as usize);
-                free &= free - 1;
-            }
-        }
-    };
     #[cfg(feature = "rayon")]
     if parallel(m) {
         use rayon::prelude::*;
@@ -506,14 +510,14 @@ pub(super) fn holes(bits: &[u64], m: usize) -> Vec<usize> {
             .enumerate()
             .map(|(c, words)| {
                 let mut out = vec![];
-                scan(c * CHUNK, words, &mut out);
+                for_each_hole(c * CHUNK, words, m, |p| out.push(p));
                 out
             })
             .collect();
         return parts.concat();
     }
     let mut out = vec![];
-    scan(0, bits, &mut out);
+    for_each_hole(0, bits, m, |p| out.push(p));
     out
 }
 

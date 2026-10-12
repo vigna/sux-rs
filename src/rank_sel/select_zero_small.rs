@@ -19,15 +19,7 @@ use crate::rank_sel::ambassador_impl_SmallCounters;
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::bal_paren::ambassador_impl_BalParen;
 use crate::traits::bit_vec_ops::ambassador_impl_BitLength;
-use crate::traits::rank_sel::ambassador_impl_NumBits;
-use crate::traits::rank_sel::ambassador_impl_Rank;
-use crate::traits::rank_sel::ambassador_impl_RankHinted;
-use crate::traits::rank_sel::ambassador_impl_RankUnchecked;
-use crate::traits::rank_sel::ambassador_impl_RankZero;
-use crate::traits::rank_sel::ambassador_impl_Select;
-use crate::traits::rank_sel::ambassador_impl_SelectHinted;
-use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
-use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
+use crate::traits::rank_sel::*;
 use std::ops::Deref;
 use std::ops::Index;
 
@@ -39,14 +31,13 @@ use std::ops::Index;
 /// # Examples
 ///
 /// ```rust
-/// # #[cfg(target_pointer_width = "64")]
-/// # {
-/// # use sux::{bit_vec, rank_small};
-/// # use sux::rank_sel::{SelectSmall, SelectZeroSmall};
-/// # use sux::traits::{Select, SelectZero};
+/// use sux::rank_sel::{SelectSmall, SelectZeroSmall};
+/// use sux::traits::{Select, SelectZero};
+/// use sux::{bit_vec, rank_small};
+///
 /// let bits = bit_vec![0, 1, 0, 0, 1, 0, 1, 0];
-/// let rank_small = rank_small![u64: 1; bits];
-/// let sel = SelectZeroSmall::<1, 9, _>::new(rank_small);
+/// // The parameters are inferred from the type of the RankSmall structure
+/// let sel = SelectZeroSmall::new(rank_small![bits]);
 ///
 /// assert_eq!(sel.select_zero(0), Some(0));
 /// assert_eq!(sel.select_zero(1), Some(2));
@@ -57,7 +48,7 @@ use std::ops::Index;
 ///
 /// // One can also stack a SelectZeroSmall on top of a SelectSmall:
 /// let rank_small = sel.into_inner();
-/// let sel = SelectZeroSmall::<1, 9, _>::new(SelectSmall::<1, 9, _>::new(rank_small));
+/// let sel = SelectZeroSmall::new(SelectSmall::new(rank_small));
 ///
 /// assert_eq!(sel.select_zero(0), Some(0));
 /// assert_eq!(sel.select_zero(1), Some(2));
@@ -70,7 +61,6 @@ use std::ops::Index;
 /// assert_eq!(sel.select(1), Some(4));
 /// assert_eq!(sel.select(2), Some(6));
 /// assert_eq!(sel.select(3), None);
-/// # }
 /// ```
 ///
 /// [selection on zeros]: crate::traits::SelectZero
@@ -178,130 +168,130 @@ impl<const NUM_U32S: usize, const COUNTER_WIDTH: usize, C: BitLength, I, O>
     }
 }
 
-macro_rules! impl_select_zero_small {
-    ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
-        impl<
-            C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
-                + Backend<Word: Word + SelectInWord>
-                + AsRef<[C::Word]>
-                + BitLength
-                + NumBits
-                + SelectZeroHinted,
-        > SelectZeroSmall<$NUM_U32S, $COUNTER_WIDTH, C>
+impl<
+    const NUM_U32S: usize,
+    const COUNTER_WIDTH: usize,
+    C: SmallCounters<NUM_U32S, COUNTER_WIDTH>
+        + Backend<Word: Word + SelectInWord>
+        + AsRef<[C::Word]>
+        + BitLength
+        + NumBits
+        + SelectZeroHinted,
+> SelectZeroSmall<NUM_U32S, COUNTER_WIDTH, C>
+{
+    /// Creates a new selection structure with four [`RankSmall`]
+    /// blocks per inventory on average.
+    #[must_use]
+    pub fn new(small_counters: C) -> Self {
+        Self::with_inv(small_counters, 4)
+    }
+
+    /// Creates a new selection structure with a given number of
+    /// [`RankSmall`] blocks per inventory on average.
+    #[must_use]
+    pub fn with_inv(small_counters: C, blocks_per_inv: usize) -> Self {
+        assert!(blocks_per_inv > 0, "blocks_per_inv must be positive");
+        let num_bits = small_counters.len();
+        let num_ones = small_counters.len() - small_counters.num_ones();
+
+        // The span is clamped to the vector size, so the u128 product
+        // below cannot be pushed out of range by extreme arguments.
+        let target_inventory_span = blocks_per_inv
+            .saturating_mul(Self::BLOCK_BIT_SIZE)
+            .min(num_bits.max(1));
+        let log2_ones_per_inventory = (num_ones as u128 * target_inventory_span as u128)
+            .div_ceil(num_bits.max(1) as u128)
+            .max(1)
+            .ilog2() as usize;
+
+        Self::_new(small_counters, num_ones, log2_ones_per_inventory)
+    }
+
+    fn _new(small_counters: C, num_ones: usize, log2_ones_per_inventory: usize) -> Self {
+        let ones_per_inventory = 1 << log2_ones_per_inventory;
+        let half_ones = ones_per_inventory >> 1;
+        let step = half_ones.max(1);
+
+        let inventory_size = num_ones.div_ceil(ones_per_inventory);
+        let mut inventory = Vec::<u32>::with_capacity(inventory_size + 1);
+
+        // The inventory_begin vector stores the index of the first element of
+        // each superblock in the inventory.
+        let mut inventory_begin =
+            Vec::<usize>::with_capacity(small_counters.upper_counts().len() + 1);
+
+        let mut past_ones: usize = 0;
+        let mut next_quantum: usize = 0;
+        let mut last_primary_superblock = None;
+
+        let bits_per_word = C::Word::BITS as usize;
+        let words_per_superblock = 1usize << (32 - bits_per_word.ilog2());
+        let num_bits = small_counters.len();
+        let num_words = num_bits.div_ceil(bits_per_word);
+        let tail_mask = super::tail_mask::<C::Word>(num_bits % bits_per_word);
+        for (sb, superblock) in small_counters.as_ref()[..num_words]
+            .chunks(words_per_superblock)
+            .enumerate()
         {
-            /// Creates a new selection structure with four [`RankSmall`]
-            /// blocks per inventory on average.
-            #[must_use]
-            pub fn new(small_counters: C) -> Self {
-                Self::with_inv(small_counters, 4)
-            }
+            inventory_begin.push(inventory.len());
+            for (i, word) in superblock.iter().copied().enumerate() {
+                // Take only logical words and mask the complemented tail so a
+                // shrunk backing's stale words are neither scanned nor recorded
+                // as extra inventory_begin entries (mirrors SelectSmall).
+                let global_word = sb * words_per_superblock + i;
+                let word = super::mask_tail_word(!word, global_word + 1 == num_words, tail_mask);
+                // The masking above removes phantom zeros, so no clamp
+                // is needed (this mirrors the ones-based twin).
+                let ones_in_word = word.count_ones() as usize;
 
-            /// Creates a new selection structure with a given number of
-            /// [`RankSmall`] blocks per inventory on average.
-            #[must_use]
-            pub fn with_inv(small_counters: C, blocks_per_inv: usize) -> Self {
-                assert!(blocks_per_inv > 0, "blocks_per_inv must be positive");
-                let num_bits = small_counters.len();
-                let num_ones = small_counters.len() - small_counters.num_ones();
+                while past_ones + ones_in_word > next_quantum {
+                    let in_word_index = word.select_in_word(next_quantum - past_ones);
+                    let in_superblock_index = i * bits_per_word + in_word_index;
+                    let block_in_superblock = in_superblock_index / Self::BLOCK_BIT_SIZE;
 
-                // The span is clamped to the vector size, so the u128 product
-                // below cannot be pushed out of range by extreme arguments.
-                let target_inventory_span = blocks_per_inv
-                    .saturating_mul(Self::BLOCK_BIT_SIZE)
-                    .min(num_bits.max(1));
-                let log2_ones_per_inventory = (num_ones as u128 * target_inventory_span as u128)
-                    .div_ceil(num_bits.max(1) as u128)
-                    .max(1)
-                    .ilog2() as usize;
-
-                Self::_new(small_counters, num_ones, log2_ones_per_inventory)
-            }
-
-            fn _new(small_counters: C, num_ones: usize, log2_ones_per_inventory: usize) -> Self {
-                let ones_per_inventory = 1 << log2_ones_per_inventory;
-                let half_ones = ones_per_inventory >> 1;
-                let step = half_ones.max(1);
-
-                let inventory_size = num_ones.div_ceil(ones_per_inventory);
-                let mut inventory = Vec::<u32>::with_capacity(inventory_size + 1);
-
-                // The inventory_begin vector stores the index of the first element of
-                // each superblock in the inventory.
-                let mut inventory_begin =
-                    Vec::<usize>::with_capacity(small_counters.upper_counts().len() + 1);
-
-                let mut past_ones: usize = 0;
-                let mut next_quantum: usize = 0;
-                let mut last_primary_superblock = None;
-
-                let bits_per_word = C::Word::BITS as usize;
-                let words_per_superblock = 1usize << (32 - bits_per_word.ilog2());
-                let num_bits = small_counters.len();
-                let num_words = num_bits.div_ceil(bits_per_word);
-                let tail_mask = super::tail_mask::<C::Word>(num_bits % bits_per_word);
-                for (sb, superblock) in small_counters.as_ref()[..num_words]
-                    .chunks(words_per_superblock)
-                    .enumerate()
-                {
-                    inventory_begin.push(inventory.len());
-                    for (i, word) in superblock.iter().copied().enumerate() {
-                        // Take only logical words and mask the complemented tail so a
-                        // shrunk backing's stale words are neither scanned nor recorded
-                        // as extra inventory_begin entries (mirrors SelectSmall).
-                        let global_word = sb * words_per_superblock + i;
-                        let word =
-                            super::mask_tail_word(!word, global_word + 1 == num_words, tail_mask);
-                        // The masking above removes phantom zeros, so no clamp
-                        // is needed (this mirrors the ones-based twin).
-                        let ones_in_word = word.count_ones() as usize;
-
-                        while past_ones + ones_in_word > next_quantum {
-                            let in_word_index = word.select_in_word(next_quantum - past_ones);
-                            let in_superblock_index = i * bits_per_word + in_word_index;
-                            let block_in_superblock = in_superblock_index / Self::BLOCK_BIT_SIZE;
-
-                            if half_ones == 0 || next_quantum & half_ones == 0 {
-                                inventory.push(block_in_superblock as u32);
-                                last_primary_superblock = Some(sb);
-                            } else if last_primary_superblock == Some(sb) {
-                                // Pack the midpoint delta only when the primary lies
-                                // in the same superblock and the delta fits; otherwise
-                                // the hint stays zero, which is correct but entails a
-                                // longer scan.
-                                let last = inventory.last_mut().unwrap();
-                                let delta =
-                                    block_in_superblock - (*last as usize & Self::BLOCK_IDX_MASK);
-                                if delta < Self::BLOCK_BIT_SIZE {
-                                    *last |= (delta as u32) << Self::BLOCK_IDX_BITS;
-                                }
-                            }
-                            next_quantum += step;
+                    if half_ones == 0 || next_quantum & half_ones == 0 {
+                        inventory.push(block_in_superblock as u32);
+                        last_primary_superblock = Some(sb);
+                    } else if last_primary_superblock == Some(sb) {
+                        // Pack the midpoint delta only when the primary lies
+                        // in the same superblock and the delta fits; otherwise
+                        // the hint stays zero, which is correct but entails a
+                        // longer scan.
+                        let last = inventory.last_mut().unwrap();
+                        let delta = block_in_superblock - (*last as usize & Self::BLOCK_IDX_MASK);
+                        if delta < Self::BLOCK_BIT_SIZE {
+                            *last |= (delta as u32) << Self::BLOCK_IDX_BITS;
                         }
-
-                        past_ones += ones_in_word;
                     }
+                    next_quantum += step;
                 }
-                assert_eq!(num_ones, past_ones);
 
-                if inventory.is_empty() {
-                    inventory.push(0);
-                }
-                // Terminal sentinel. Repeated entries before it represent
-                // superblocks with no primary inventory quantum.
-                inventory_begin.push(inventory.len());
-
-                let inventory = inventory.into_boxed_slice();
-                let inventory_begin = inventory_begin.into_boxed_slice();
-
-                Self {
-                    small_counters,
-                    inventory,
-                    inventory_begin,
-                    log2_ones_per_inventory,
-                }
+                past_ones += ones_in_word;
             }
         }
+        assert_eq!(num_ones, past_ones);
 
+        if inventory.is_empty() {
+            inventory.push(0);
+        }
+        // Terminal sentinel. Repeated entries before it represent
+        // superblocks with no primary inventory quantum.
+        inventory_begin.push(inventory.len());
+
+        let inventory = inventory.into_boxed_slice();
+        let inventory_begin = inventory_begin.into_boxed_slice();
+
+        Self {
+            small_counters,
+            inventory,
+            inventory_begin,
+            log2_ones_per_inventory,
+        }
+    }
+}
+
+macro_rules! impl_select_zero_small {
+    ($NUM_U32S: literal; $COUNTER_WIDTH: literal) => {
         impl<
             C: SmallCounters<$NUM_U32S, $COUNTER_WIDTH>
                 + Backend<Word: Word + SelectInWord>

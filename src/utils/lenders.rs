@@ -27,16 +27,89 @@
 //! [`Read`], and [`GzipLineLender`], which lends lines from a
 //! gzip-compressed [`Read`].
 //!
-//! Finally, under the `deko` feature, we provide `DekoLineLender` and
+//! Under the `deko` feature, we provide `DekoLineLender` and
 //! `DekoBufLineLender`, which work like the previous two implementations, but
 //! detect dynamically the compression format using the [`deko`] crate.
 //!
-//! # Methods
+//! Finally, when all three features are enabled, `AnyLineLender` lends the
+//! lines of a [`Read`] decompressed in a format chosen at runtime, specified
+//! by a `Decompression`.
+//!
+//! # Choosing a lender
+//!
+//! Sequential constructors, such as `VFunc::try_new` or [`PHastR::try_new`],
+//! read their input from lenders.
+//!
+//! - If your keys are in a slice, [`FromSlice`] lends them; however, in this
+//!   case you should use the parallel constructors, such as
+//!   `VFunc::try_par_new` or [`PHastR::try_par_new`], which compute the hashes
+//!   of the keys in parallel, and are thus much faster.
+//!
+//! - If you have a cloneable [`IntoIterator`], such as a range,
+//!   [`FromCloneableIntoIterator`] lends its items.
+//!
+//! - If your keys are the lines of a file, use [`LineLender`] for
+//!   uncompressed files, [`GzipLineLender`] for gzip-compressed files,
+//!   `ZstdLineLender` for zstd-compressed files, or `DekoBufLineLender` to
+//!   detect the compression format from the content of the file. If the
+//!   format is known only at runtime (e.g., because it is specified on the
+//!   command line), use `AnyLineLender`.
+//!
+//! `DekoLineLender` and `DekoBufLineLender` differ only in their source:
+//! `DekoBufLineLender` reads from a [`BufRead`], and has convenience
+//! constructors for files, whereas `DekoLineLender` reads from a [`Read`]
+//! that you do not want to wrap into a [`BufReader`].
+//!
+//! For example, this code builds a [`VFunc`] mapping each line of a file to
+//! its position:
+//!
+//! ```no_run
+//! # #[cfg(feature = "rayon")]
+//! # fn main() -> anyhow::Result<()> {
+//! # use dsi_progress_logger::no_logging;
+//! # use sux::bits::BitFieldVec;
+//! # use sux::func::VFunc;
+//! # use sux::utils::{FromCloneableIntoIterator, LineLender};
+//! let func = <VFunc<str, BitFieldVec<Box<[usize]>>>>::try_new(
+//!     LineLender::from_path("keys.txt")?,
+//!     FromCloneableIntoIterator::from(0_usize..),
+//!     no_logging![],
+//! )?;
+//! # Ok(())
+//! # }
+//! # #[cfg(not(feature = "rayon"))]
+//! # fn main() {}
+//! ```
+//!
+//! # Lender adapters
 //!
 //! We implement [`FallibleRewindableLender`] for adapters whose full state can
 //! be reset correctly, such as [`map`]. Stateful limiting adapters such as
 //! [`take`] should instead be recreated with
-//! [`FromIntoFallibleLenderFactory`] on every rewind.
+//! [`FromIntoFallibleLenderFactory`] on every rewind. For example, this code
+//! builds a [`VFunc`] on the first `n` lines of a file:
+//!
+//! ```no_run
+//! # #[cfg(feature = "rayon")]
+//! # fn main() -> anyhow::Result<()> {
+//! # use dsi_progress_logger::no_logging;
+//! # use lender::FallibleLender;
+//! # use sux::bits::BitFieldVec;
+//! # use sux::func::VFunc;
+//! # use sux::utils::{FromCloneableIntoIterator, FromIntoFallibleLenderFactory, LineLender};
+//! # let n = 1000;
+//! let func = <VFunc<str, BitFieldVec<Box<[usize]>>>>::try_new(
+//!     FromIntoFallibleLenderFactory::new(|| {
+//!         LineLender::from_path("keys.txt").map(|lender| lender.take(n))
+//!     })?,
+//!     FromCloneableIntoIterator::from(0_usize..),
+//!     no_logging![],
+//! )?;
+//! # Ok(())
+//! # }
+//! # #[cfg(not(feature = "rayon"))]
+//! # fn main() {}
+//! ```
 //!
 //! # Adapters
 //!
@@ -86,6 +159,9 @@
 //! [`Read`]: std::io::Read
 //! [`map`]: lender::FallibleLender::map
 //! [`take`]: lender::FallibleLender::take
+//! [`VFunc`]: crate::func::VFunc
+//! [`PHastR::try_new`]: crate::func::PHastR::try_new
+//! [`PHastR::try_par_new`]: crate::func::PHastR::try_par_new
 use fallible_iterator::{FallibleIterator, IntoFallibleIterator};
 use io::{BufRead, BufReader};
 use lender::{higher_order::FnMutHKARes, *};
@@ -134,6 +210,24 @@ fn next<'a>(buf: &mut impl BufRead, line: &'a mut String) -> io::Result<Option<&
     }
 }
 
+// Common lending implementations for all line lenders, which have a `buf`
+// field of type `impl BufRead` and a `line` field of type `String`
+macro_rules! impl_line_lender {
+    ($lender:ident, $bound:path) => {
+        impl<'lend, R: $bound> FallibleLending<'lend> for $lender<R> {
+            type Lend = &'lend str;
+        }
+
+        impl<R: $bound> FallibleLender for $lender<R> {
+            check_covariance_fallible!();
+            type Error = io::Error;
+            fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
+                next(&mut self.buf, &mut self.line)
+            }
+        }
+    };
+}
+
 /// A structure lending the lines coming from a [`BufRead`] as `&str`.
 ///
 /// The lines are read into a reusable internal string buffer that grows as
@@ -162,17 +256,7 @@ impl LineLender<BufReader<File>> {
     }
 }
 
-impl<'lend, B: BufRead> FallibleLending<'lend> for LineLender<B> {
-    type Lend = &'lend str;
-}
-
-impl<B: BufRead> FallibleLender for LineLender<B> {
-    check_covariance_fallible!();
-    type Error = io::Error;
-    fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
-        next(&mut self.buf, &mut self.line)
-    }
-}
+impl_line_lender!(LineLender, BufRead);
 
 impl<B: BufRead + Seek> FallibleRewindableLender for LineLender<B> {
     type RewindError = io::Error;
@@ -219,17 +303,7 @@ mod zstd_lender {
         }
     }
 
-    impl<'lend, R: Read> FallibleLending<'lend> for ZstdLineLender<R> {
-        type Lend = &'lend str;
-    }
-
-    impl<R: Read> FallibleLender for ZstdLineLender<R> {
-        check_covariance_fallible!();
-        type Error = io::Error;
-        fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
-            next(&mut self.buf, &mut self.line)
-        }
-    }
+    impl_line_lender!(ZstdLineLender, Read);
 
     impl<R: Read + Seek> FallibleRewindableLender for ZstdLineLender<R> {
         type RewindError = io::Error;
@@ -283,17 +357,7 @@ mod flate2_lender {
         }
     }
 
-    impl<'lend, R: Read> FallibleLending<'lend> for GzipLineLender<R> {
-        type Lend = &'lend str;
-    }
-
-    impl<R: Read> FallibleLender for GzipLineLender<R> {
-        check_covariance_fallible!();
-        type Error = io::Error;
-        fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
-            next(&mut self.buf, &mut self.line)
-        }
-    }
+    impl_line_lender!(GzipLineLender, Read);
 
     impl<R: Read + Seek> FallibleRewindableLender for GzipLineLender<R> {
         type RewindError = io::Error;
@@ -375,29 +439,8 @@ mod deko {
         }
     }
 
-    impl<'lend, R: Read> FallibleLending<'lend> for DekoLineLender<R> {
-        type Lend = &'lend str;
-    }
-
-    impl<'lend, R: BufRead> FallibleLending<'lend> for DekoBufLineLender<R> {
-        type Lend = &'lend str;
-    }
-
-    impl<R: Read> FallibleLender for DekoLineLender<R> {
-        check_covariance_fallible!();
-        type Error = io::Error;
-        fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
-            next(&mut self.buf, &mut self.line)
-        }
-    }
-
-    impl<R: BufRead> FallibleLender for DekoBufLineLender<R> {
-        check_covariance_fallible!();
-        type Error = io::Error;
-        fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
-            next(&mut self.buf, &mut self.line)
-        }
-    }
+    impl_line_lender!(DekoLineLender, Read);
+    impl_line_lender!(DekoBufLineLender, BufRead);
 
     impl<R: Read + Seek> FallibleRewindableLender for DekoLineLender<R> {
         type RewindError = io::Error;
@@ -422,6 +465,106 @@ mod deko {
 
 #[cfg(feature = "deko")]
 pub use deko::*;
+
+#[cfg(all(feature = "deko", feature = "flate2", feature = "zstd"))]
+mod any_line_lender {
+    use super::*;
+    use std::io::Read;
+
+    /// Compression formats of input files, used by [`AnyLineLender`].
+    ///
+    /// With the `clap` feature, this enumeration can be used as the value of
+    /// a command-line option.
+    #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+    #[derive(Clone, Copy, Debug)]
+    pub enum Decompression {
+        /// Detect the format from the first bytes using the deko crate (gzip,
+        /// zlib, bzip2, xz, zstd, or no compression).​
+        Deko,
+        /// gzip (possibly with multiple members).​
+        Gzip,
+        /// Zstandard.​
+        Zstd,
+    }
+
+    /// A lender of the lines of a [`Read`], decompressed in a format chosen
+    /// at runtime.
+    ///
+    /// This lender is useful when the format is known only at runtime: for
+    /// example, the binaries of this crate read their input files with this
+    /// lender, passing the value of their `--decompress` option. Note that
+    /// the input is not decompressed unless a format is specified.
+    pub enum AnyLineLender<R: Read> {
+        /// The lines of an uncompressed input.
+        Plain(LineLender<BufReader<R>>),
+        /// The lines of an input in a format detected by the [`deko`] crate.
+        ///
+        /// [`deko`]: https://crates.io/crates/deko
+        Deko(DekoBufLineLender<BufReader<R>>),
+        /// The lines of a gzip-compressed input.
+        Gzip(GzipLineLender<R>),
+        /// The lines of a zstd-compressed input.
+        Zstd(ZstdLineLender<R>),
+    }
+
+    impl<R: Read> AnyLineLender<R> {
+        /// Creates a lender of the lines of `read`, decompressed in the given
+        /// format, or as they are if `decompression` is [`None`].
+        pub fn new(read: R, decompression: Option<Decompression>) -> io::Result<Self> {
+            Ok(match decompression {
+                None => Self::Plain(LineLender::new(BufReader::new(read))),
+                Some(Decompression::Deko) => {
+                    Self::Deko(DekoBufLineLender::new(BufReader::new(read))?)
+                }
+                Some(Decompression::Gzip) => Self::Gzip(GzipLineLender::new(read)?),
+                Some(Decompression::Zstd) => Self::Zstd(ZstdLineLender::new(read)?),
+            })
+        }
+    }
+
+    impl AnyLineLender<File> {
+        /// Creates a lender of the lines of a file, decompressed in the given
+        /// format, or as they are if `decompression` is [`None`].
+        pub fn from_path(
+            path: impl AsRef<Path>,
+            decompression: Option<Decompression>,
+        ) -> io::Result<Self> {
+            Self::new(File::open(path)?, decompression)
+        }
+    }
+
+    impl<'lend, R: Read> FallibleLending<'lend> for AnyLineLender<R> {
+        type Lend = &'lend str;
+    }
+
+    impl<R: Read> FallibleLender for AnyLineLender<R> {
+        check_covariance_fallible!();
+        type Error = io::Error;
+        fn next(&mut self) -> Result<Option<FallibleLend<'_, Self>>, Self::Error> {
+            match self {
+                Self::Plain(lender) => lender.next(),
+                Self::Deko(lender) => lender.next(),
+                Self::Gzip(lender) => lender.next(),
+                Self::Zstd(lender) => lender.next(),
+            }
+        }
+    }
+
+    impl<R: Read + Seek> FallibleRewindableLender for AnyLineLender<R> {
+        type RewindError = io::Error;
+        fn rewind(self) -> io::Result<Self> {
+            Ok(match self {
+                Self::Plain(lender) => Self::Plain(lender.rewind()?),
+                Self::Deko(lender) => Self::Deko(lender.rewind()?),
+                Self::Gzip(lender) => Self::Gzip(lender.rewind()?),
+                Self::Zstd(lender) => Self::Zstd(lender.rewind()?),
+            })
+        }
+    }
+}
+
+#[cfg(all(feature = "deko", feature = "flate2", feature = "zstd"))]
+pub use any_line_lender::*;
 
 /// An infallible adapter based on an `AsRef<[T]>`.
 ///

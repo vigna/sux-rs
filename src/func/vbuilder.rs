@@ -31,6 +31,7 @@ use std::ops::{BitXor, BitXorAssign};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
+use sync_cell_slice::SyncSlice;
 use thread_priority::ThreadPriority;
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
@@ -43,21 +44,72 @@ fn default_max_num_threads() -> usize {
         .unwrap_or(1)
 }
 
-/// A builder for [`VFunc`] and [`VFilter`].
+/// A builder for static functions, static filters, and the structures based
+/// on them.
 ///
-/// There are two construction modes: in core memory (default) and
-/// [offline]; both use a [`SigStore`]. In the first case, space will be
-/// allocated in core memory for signatures and associated values for all
-/// keys; in the second case, such information will be stored in a number
-/// of on-disk buckets.
+/// A [`VBuilder`] holds the construction parameters of [`VFunc`], [`VFunc2`],
+/// [`CompVFunc`], [`VFilter`], [`LcpMmphfInt`], [`LcpMmphf`],
+/// [`Lcp2MmphfInt`], [`Lcp2Mmphf`], and of the [`SignedFunc`] wrappers around
+/// them. You pass it to the `*_with_builder` constructors of these structures
+/// (e.g., [`VFunc::try_new_with_builder`] or
+/// [`VFunc::try_par_new_with_builder`]); the other constructors use
+/// [`VBuilder::default()`].
 ///
-/// There are several setters: for example, you can [set the maximum number
-/// of threads].
+/// The setters are:
+///
+/// - [`offline`]: stores signatures and values in on-disk buckets instead of
+///   core memory; only sequential constructors support this option;
+/// - [`eps`]: the target relative space loss due to ε-cost sharding;
+/// - [`retry_prob`]: the maximum probability of a retry caused by duplicate
+///   edges;
+/// - [`low_mem`]: forces the low-memory (`true`) or the high-memory (`false`)
+///   peeler; by default, the builder chooses depending on the number of
+///   threads and shards;
+/// - [`check_dups`]: checks explicitly for duplicate keys;
+/// - [`seed`]: the seed of the generator of the hashing seeds;
+/// - [`max_num_threads`]: the maximum number of threads;
+/// - [`expected_num_keys`]: an estimate of the number of keys, which speeds up
+///   the construction;
+/// - [`log2_buckets`]: the base-2 logarithm of the number of buckets of the
+///   [`SigStore`].
+///
+/// # Examples
+///
+/// ```rust
+/// # #[cfg(feature = "rayon")]
+/// # fn main() -> anyhow::Result<()> {
+/// # use sux::func::{VBuilder, VFunc};
+/// # use sux::bits::BitFieldVec;
+/// # use dsi_progress_logger::no_logging;
+/// # use sux::utils::FromCloneableIntoIterator;
+/// let n = 1000;
+/// let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
+///     FromCloneableIntoIterator::new(0..n),
+///     FromCloneableIntoIterator::new(0..n),
+///     VBuilder::default()
+///         .offline(true)
+///         .expected_num_keys(n)
+///         .max_num_threads(4),
+///     no_logging![],
+/// )?;
+///
+/// for i in 0..n {
+///     assert_eq!(func.get(i), i);
+/// }
+/// # Ok(())
+/// # }
+/// # #[cfg(not(feature = "rayon"))]
+/// # fn main() {}
+/// ```
 ///
 /// # Implementation details
 ///
-/// Initially, keys are scanned, turned into signatures, and stored in the
-/// [`SigStore`], possibly together with associated values.
+/// Initially, keys are scanned, turned into signatures, and stored in a
+/// [`SigStore`] (in core memory or, in [offline] mode, in on-disk buckets),
+/// possibly together with associated values. Sequential constructors take
+/// [`FallibleRewindableLender`]s, as the construction might fail and keys
+/// might be scanned again; parallel constructors take slices and compute the
+/// signatures in parallel.
 ///
 /// Once signatures have been computed, each parallel thread will process a
 /// shard of the signature/value pairs. For very large key sets shards will be
@@ -65,16 +117,18 @@ fn default_max_num_threads() -> usize {
 /// particular in offline mode, can be significantly reduced. Note that using
 /// too many threads might actually be harmful due to memory contention.
 ///
-/// The generic parameters are explained in the [`VFunc`] /
-/// [`VFilter`] documentation.
+/// The generic parameters are explained in the [`VFunc`] documentation.
 ///
-/// Most methods require to pass one or two [`FallibleRewindableLender`]s
-/// (keys and possibly values), as the construction might fail and keys might
-/// be scanned again. The structures in the [`lenders`] module provide easy ways
-/// to build such lenders.
-///
+/// [`offline`]: VBuilder::offline
 /// [offline]: VBuilder::offline
-/// [set the maximum number of threads]: VBuilder::max_num_threads
+/// [`eps`]: VBuilder::eps
+/// [`retry_prob`]: VBuilder::retry_prob
+/// [`low_mem`]: VBuilder::low_mem
+/// [`check_dups`]: VBuilder::check_dups
+/// [`seed`]: VBuilder::seed
+/// [`max_num_threads`]: VBuilder::max_num_threads
+/// [`expected_num_keys`]: VBuilder::expected_num_keys
+/// [`log2_buckets`]: VBuilder::log2_buckets
 /// [`VFilter`]: crate::dict::VFilter
 #[derive(Setters, Debug)]
 #[setters(generate = false)]
@@ -87,7 +141,7 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     #[setters(generate = true, strip_option)]
     expected_num_keys: Option<usize>,
 
-    /// Override the value used to size the sharding step.
+    /// Overrides the value used to size the sharding step.
     ///
     /// Normally [`set_up_shards`](ShardEdge::set_up_shards) is called
     /// with the number of keys, which is correct for a construction
@@ -103,7 +157,6 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// [`set_up_shards`](ShardEdge::set_up_shards) instead of the
     /// runtime key count. CompVFunc sets this to the total edge
     /// count after building the Huffman coder.
-    #[setters(generate = true, strip_option)]
     pub(crate) shard_size_hint: Option<usize>,
 
     /// The maximum number of parallel threads to use for both the population
@@ -111,19 +164,21 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     #[setters(generate = true)]
     pub(crate) max_num_threads: usize,
 
-    /// Use disk-based buckets to reduce core memory usage at construction time.
-    /// Only the sequential constructors honor this; the parallel constructors
-    /// return an error if it is set.
+    /// Uses disk-based buckets to reduce core memory usage at construction
+    /// time. Only the sequential constructors honor this; the parallel
+    /// constructors return an error if it is set.
     #[setters(generate = true)]
     offline: bool,
 
-    /// Check for duplicated signatures. This is not necessary in general,
-    /// but if you suspect you might be feeding duplicate keys, you can
-    /// enable this check.
+    /// Checks for duplicate signatures.
+    ///
+    /// This is not necessary in general, but if you suspect you might be
+    /// feeding duplicate keys, you can enable this check: construction will
+    /// then fail with [`BuildError::DuplicateKey`].
     #[setters(generate = true)]
     check_dups: bool,
 
-    /// Use always the low-memory peel-by-signature algorithm (true) or the
+    /// Always uses the low-memory peel-by-signature algorithm (true) or the
     /// high-memory peel-by-index algorithm (false). The former is slightly
     /// slower, but it uses much less memory. Normally [`VBuilder`] uses
     /// high-mem and switches to low-mem if there are more
@@ -159,7 +214,7 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     ///
     /// [`FuseLge3FullSigs`]: crate::func::shard_edge::FuseLge3FullSigs
     ///
-    /// [ε-cost sharding]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
+    /// [ε-cost sharding]: https://arxiv.org/abs/2503.18397
     #[setters(generate = true, strip_option)]
     pub(crate) eps: f64,
 
@@ -179,8 +234,6 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     #[setters(generate = true)]
     pub(crate) retry_prob: f64,
 
-    /// The bit width of the maximum value.
-    pub(crate) bit_width: usize,
     /// The edge generator.
     pub(crate) shard_edge: E,
     /// The number of keys.
@@ -213,7 +266,6 @@ impl<D, S, E: Default> Default for VBuilder<D, S, E> {
             log2_buckets: 8,
             eps: 0.001,
             retry_prob: Fuse3Shards::DUP_EDGE_RETRY_PROB,
-            bit_width: 0,
             shard_edge: E::default(),
             num_keys: 0,
             c: 0.0,
@@ -228,21 +280,6 @@ impl<D, S, E: Default> Default for VBuilder<D, S, E> {
 impl<D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync, S: Sig, E: ShardEdge<S, 3>>
     VBuilder<D, S, E>
 {
-    /// Sets up shards from the expected number of keys and returns the
-    /// seed. This is the same initialization that
-    /// [`try_populate_and_build`] performs at the start; callers that
-    /// drive `try_solve_once` directly must call this first.
-    ///
-    /// [`try_populate_and_build`]: Self::try_populate_and_build
-    pub(crate) fn init_shards_and_seed(&mut self) -> u64 {
-        if let Some(expected_num_keys) = self.expected_num_keys {
-            self.shard_edge
-                .set_up_shards(expected_num_keys, self.eps, self.retry_prob);
-            self.log2_buckets = self.shard_edge.shard_high_bits();
-        }
-        self.seed
-    }
-
     /// Copies behavioral configuration from another builder into `self`,
     /// regardless of the other builder's type parameters.
     ///
@@ -283,10 +320,12 @@ pub enum BuildError {
     /// Multiple construction attempts found duplicate local signatures.
     #[error("Duplicate local signatures: use full signatures")]
     DuplicateLocalSignatures,
-    /// A value is too large for the specified bit size.
-    #[error("Value too large for specified bit size")]
-    ValueTooLarge,
-    /// All shards remained unsolvable after multiple attempts.
+    /// The largest shard was too large with respect to the average shard
+    /// size on 100 construction attempts; a larger [ε](VBuilder::eps) might
+    /// help.
+    #[error("Max shard too big after multiple attempts: try a larger eps")]
+    MaxShardTooBig,
+    /// A shard was unsolvable on 100 construction attempts.
     #[error("Unsolvable shard after multiple attempts")]
     UnsolvableShard,
     /// The number of values is different from the number of keys.
@@ -303,7 +342,7 @@ pub enum BuildError {
 
 /// Transient error during the build, leading to trying with a different seed.
 #[derive(thiserror::Error, Debug)]
-pub enum SolveError {
+pub(crate) enum SolveError {
     /// A duplicate signature was detected.
     #[error("Duplicate signature")]
     DuplicateSignature,
@@ -316,6 +355,19 @@ pub enum SolveError {
     /// A shard cannot be solved.
     #[error("Unsolvable shard")]
     UnsolvableShard,
+}
+
+/// Returns [`BuildError::MismatchedKeysAndValues`] if the number of keys
+/// and the number of values of a slice-based constructor differ.
+pub(crate) fn check_num_values(num_keys: usize, num_values: usize) -> anyhow::Result<()> {
+    if num_keys != num_values {
+        return Err(BuildError::MismatchedKeysAndValues {
+            num_keys,
+            num_values,
+        }
+        .into());
+    }
+    Ok(())
 }
 
 /// Returns `true` when the largest shard deviates pathologically from the
@@ -388,7 +440,10 @@ where
     /// * `get_val` must be deterministic: the store is iterated multiple
     ///   times and different results for the same input would silently
     ///   corrupt the function.
-    pub fn try_build_func_with_store<K: ?Sized + ToSig<S>, V: BinSafe + Default + Send + Sync>(
+    pub(crate) fn try_build_func_with_store<
+        K: ?Sized + ToSig<S>,
+        V: BinSafe + Default + Send + Sync,
+    >(
         &mut self,
         seed: u64,
         shard_edge: E,
@@ -417,13 +472,8 @@ where
     /// Like [`try_build_func_with_store`], but calls `inspect` on each
     /// [`SigVal`] during the peeling phase.
     ///
-    /// This is used by [`VFunc2`] and [`Lcp2MmphfInt`] to count escaped
-    /// keys per shard without a separate pass over the store.
-    ///
     /// [`try_build_func_with_store`]: Self::try_build_func_with_store
-    /// [`VFunc2`]: crate::func::VFunc2
-    /// [`Lcp2MmphfInt`]: crate::func::Lcp2MmphfInt
-    pub fn try_build_func_with_store_and_inspect<
+    fn try_build_func_with_store_and_inspect<
         K: ?Sized + ToSig<S>,
         V: BinSafe + Default + Send + Sync,
     >(
@@ -444,7 +494,6 @@ where
     {
         self.shard_edge = shard_edge;
         self.num_keys = shard_store.len();
-        self.bit_width = max_value.bit_len() as usize;
 
         // The shard structure is fixed by the store (set at into_shard_store
         // time). We only reconfigure graph parameters (c, lge, segment size,
@@ -454,25 +503,147 @@ where
 
         pl.info(format_args!("Max value: {max_value}"));
 
-        let data: BitFieldVec<Box<[W]>> = BitFieldVec::<Box<[W]>>::new_padded(
-            self.bit_width,
-            self.shard_edge.num_vertices() * self.shard_edge.num_shards(),
+        self.try_build_from_shard_iter(
+            seed,
+            max_value.bit_len() as usize,
+            BitFieldVec::new_padded,
+            shard_store.iter(),
+            get_val,
+            inspect,
+            pl,
+        )
+        .map_err(Into::into)
+    }
+
+    /// Builds the first function of a two-step construction (see
+    /// [`VFunc2`]) from a populated [`ShardStore`].
+    ///
+    /// The function maps each key to `get_val` of its value, and is built
+    /// as in [`try_build_func_with_store`], with the same preconditions.
+    /// Besides the function, this method returns, for each shard of the
+    /// store at its [maximum granularity], the number of keys whose value
+    /// satisfies `escaped`; [`try_build_escaped_func`] uses the counts to
+    /// build the second function.
+    ///
+    /// [`try_build_func_with_store`]: Self::try_build_func_with_store
+    /// [`try_build_escaped_func`]: Self::try_build_escaped_func
+    /// [maximum granularity]: ShardStore::max_shard_high_bits
+    pub(crate) fn try_build_first_func<K: ?Sized + ToSig<S>, V: BinSafe + Default + Send + Sync>(
+        &mut self,
+        seed: u64,
+        shard_edge: E,
+        max_value: W,
+        store: &mut (impl ShardStore<S, V> + ?Sized),
+        get_val: &(impl Fn(V) -> W + Send + Sync),
+        escaped: &(impl Fn(V) -> bool + Send + Sync),
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<(VFunc<K, BitFieldVec<Box<[W]>>, S, E>, Vec<usize>)>
+    where
+        SigVal<S, V>: RadixKey,
+        SigVal<E::LocalSig, V>: BitXor + BitXorAssign,
+    {
+        // The counters are kept at maximum granularity, so they can be
+        // re-aggregated to the sharding of the second function.
+        let max_shard_high_bits = store.max_shard_high_bits();
+        let max_shard_mask = (1u64 << max_shard_high_bits) - 1;
+        let mut escaped_counts = vec![0usize; 1 << max_shard_high_bits];
+        let sync_counts = escaped_counts.as_sync_slice();
+
+        let func = self.try_build_func_with_store_and_inspect(
+            seed,
+            shard_edge,
+            max_value,
+            store,
+            &|_, sig_val| get_val(sig_val.val),
+            &|sig_val: &SigVal<S, V>| {
+                if escaped(sig_val.val) {
+                    let shard = sig_val.sig.high_bits(max_shard_high_bits, max_shard_mask) as usize;
+                    // SAFETY: each shard is processed by exactly one
+                    // thread, so no two threads access the same counter.
+                    unsafe {
+                        let count = sync_counts[shard].get();
+                        sync_counts[shard].set(count + 1);
+                    }
+                }
+            },
+            pl,
+        )?;
+
+        Ok((func, escaped_counts))
+    }
+
+    /// Builds the second function of a two-step construction (see
+    /// [`VFunc2`]) on the keys of a populated [`ShardStore`] whose value
+    /// satisfies `escaped`.
+    ///
+    /// The function maps each such key to `get_val` of its value.
+    /// `escaped_counts` must be the counts returned by
+    /// [`try_build_first_func`] for the same store and predicate.
+    ///
+    /// The sharding of the function is set up for the number of escaped keys
+    /// using the [ε] and the [retry probability] of this builder, and the
+    /// function is built by a builder with the [same configuration].
+    ///
+    /// [`try_build_first_func`]: Self::try_build_first_func
+    /// [ε]: Self::eps
+    /// [retry probability]: Self::retry_prob
+    /// [same configuration]: Self::set_from
+    pub(crate) fn try_build_escaped_func<
+        K: ?Sized + ToSig<S>,
+        V: BinSafe + Default + Send + Sync,
+        F: ShardEdge<S, 3> + MemSize + FlatType,
+    >(
+        &self,
+        seed: u64,
+        store: &mut (impl ShardStore<S, V> + ?Sized),
+        escaped_counts: &[usize],
+        escaped: &(impl Fn(V) -> bool + Send + Sync),
+        max_value: W,
+        get_val: &(impl Fn(V) -> W + Send + Sync),
+        pl: &mut (impl ProgressLog + Clone + Send + Sync),
+    ) -> anyhow::Result<VFunc<K, BitFieldVec<Box<[W]>>, S, F>>
+    where
+        SigVal<S, V>: RadixKey,
+        SigVal<F::LocalSig, V>: BitXor + BitXorAssign,
+        SigVal<F::LocalSig, W>: BitXor + BitXorAssign,
+    {
+        let mut shard_edge = F::default();
+        shard_edge.set_up_shards(escaped_counts.iter().sum(), self.eps, self.retry_prob);
+        let shard_high_bits = shard_edge.shard_high_bits();
+
+        // Aggregate the counters to the sharding of the function
+        let filtered_shard_sizes: Vec<usize> = escaped_counts
+            .chunks(escaped_counts.len() >> shard_high_bits)
+            .map(|chunk| chunk.iter().sum())
+            .collect();
+
+        let mut filtered_store = FilteredShardStore::new(
+            store,
+            shard_high_bits,
+            |sig_val: &SigVal<S, V>| escaped(sig_val.val),
+            filtered_shard_sizes,
         );
 
-        self.try_build_from_shard_iter(seed, data, shard_store.iter(), get_val, inspect, pl)
-            .map_err(Into::into)
+        VBuilder::<BitFieldVec<Box<[W]>>, S, F>::default()
+            .set_from(self)
+            .try_build_func_with_store(
+                seed,
+                shard_edge,
+                max_value,
+                &mut filtered_store,
+                &|_, sig_val| get_val(sig_val.val),
+                pl,
+            )
     }
 }
 
-/// State for the retry loop used by
-/// [`VBuilder::try_populate_and_build`] and external callers that drive
-/// [`VBuilder::try_solve_once`] directly.
+/// State for the retry loop of [`VBuilder::try_with_retries`].
 ///
 /// Create with [`VBuilder::retry_state`], then call
 /// [`handle_solve_result`] after each attempt.
 ///
 /// [`handle_solve_result`]: RetryState::handle_solve_result
-pub(crate) struct RetryState {
+struct RetryState {
     prng: SmallRng,
     dup_count: u32,
     local_dup_count: u32,
@@ -481,17 +652,21 @@ pub(crate) struct RetryState {
 }
 
 impl RetryState {
+    /// The number of attempts after which a [`SolveError::MaxShardTooBig`]
+    /// or a [`SolveError::UnsolvableShard`] becomes fatal.
+    const MAX_ATTEMPTS: u32 = 100;
+
     /// Returns the next seed to try.
-    pub(crate) fn next_seed(&mut self) -> u64 {
+    fn next_seed(&mut self) -> u64 {
         self.prng.random()
     }
 
-    /// Handles the result of a [`VBuilder::try_solve_once`] call.
+    /// Handles the result of a construction attempt.
     ///
     /// On success, returns `Ok(Some(r))`. On retryable error, logs a
     /// warning and returns `Ok(None)` (the caller should rewind its
     /// lenders and retry). On fatal error, returns `Err(e)`.
-    pub(crate) fn handle_solve_result<R>(
+    fn handle_solve_result<R>(
         &mut self,
         result: anyhow::Result<R>,
         pl: &mut impl ProgressLog,
@@ -524,13 +699,12 @@ impl RetryState {
                     }
                     SolveError::MaxShardTooBig => {
                         self.max_shard_too_big += 1;
-                        if self.max_shard_too_big >= 100 {
+                        if self.max_shard_too_big >= Self::MAX_ATTEMPTS {
                             pl.error(format_args!(
-                                "The maximum shard was too big on more than 100 attempts"
+                                "The maximum shard was too big on {} attempts",
+                                Self::MAX_ATTEMPTS
                             ));
-                            return Err(anyhow::anyhow!(
-                                "the maximum shard was too big on more than 100 attempts; try a larger eps"
-                            ));
+                            return Err(BuildError::MaxShardTooBig.into());
                         }
                         pl.warn(format_args!(
                             "The maximum shard is too big, trying again with a different seed..."
@@ -539,8 +713,12 @@ impl RetryState {
                     }
                     SolveError::UnsolvableShard => {
                         self.unsolvable_count += 1;
-                        if self.unsolvable_count >= 100 {
-                            panic!("Failed more than 100 attempts (this shouldn't happen)");
+                        if self.unsolvable_count >= Self::MAX_ATTEMPTS {
+                            pl.error(format_args!(
+                                "A shard was unsolvable on {} attempts",
+                                Self::MAX_ATTEMPTS
+                            ));
+                            return Err(BuildError::UnsolvableShard.into());
                         }
                         pl.info(format_args!(
                             "Unsolvable shard, trying again with a different seed..."
@@ -602,30 +780,22 @@ impl<
         for<'a> ShardDataIter<'a, D>: Send,
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
-        let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, D::Value>| sig_val.val;
-
         self.try_populate_and_build(
             keys,
             values,
             &mut |builder, seed, mut store, max_value, _num_keys, pl: &mut P, _state: &mut ()| {
-                builder.bit_width = max_value.bit_len() as usize;
-
-                let data = new_data(
-                    builder.bit_width,
-                    builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
-                );
-
-                pl.info(format_args!("Max value: {max_value}",));
-
-                let func = builder.try_build_from_shard_iter(
-                    seed,
-                    data,
-                    store.drain(),
-                    &get_val,
-                    &|_| {},
-                    pl,
-                )?;
-                Ok(func)
+                pl.info(format_args!("Max value: {max_value}"));
+                builder
+                    .try_build_from_shard_iter(
+                        seed,
+                        max_value.bit_len() as usize,
+                        new_data,
+                        store.drain(),
+                        &|_, sig_val| sig_val.val,
+                        &|_| {},
+                        pl,
+                    )
+                    .map_err(Into::into)
             },
             pl,
             (),
@@ -683,26 +853,17 @@ impl<
         for<'a> ShardDataIter<'a, D>: Send,
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
-        let get_val = |_shard_edge: &E, sig_val: SigVal<E::LocalSig, D::Value>| sig_val.val;
-
         self.try_populate_and_build(
             keys,
             values,
             &mut |builder, seed, mut store, max_value, _num_keys, pl: &mut P, _state: &mut ()| {
-                builder.bit_width = max_value.bit_len() as usize;
-
-                let data = new_data(
-                    builder.bit_width,
-                    builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
-                );
-
                 pl.info(format_args!("Max value: {max_value}"));
-
                 let func = builder.try_build_from_shard_iter(
                     seed,
-                    data,
+                    max_value.bit_len() as usize,
+                    new_data,
                     store.iter(),
-                    &get_val,
+                    &|_, sig_val| sig_val.val,
                     &|_| {},
                     pl,
                 )?;
@@ -714,16 +875,67 @@ impl<
         .map(|((func, store), keys)| (func, store, keys))
     }
 
+    /// Builds a new [`VFunc`] from in-memory keys, computing signatures in
+    /// parallel.
+    ///
+    /// This is the parallel counterpart of [`try_build_func`]: the value
+    /// associated with `keys[i]` is `val_fn(i)`.
+    ///
+    /// [`try_build_func`]: Self::try_build_func
+    pub(crate) fn try_par_build_func<
+        K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
+        B: Borrow<K> + Sync,
+        P: ProgressLog + Clone + Send + Sync,
+    >(
+        mut self,
+        keys: &[B],
+        val_fn: &(impl Fn(usize) -> D::Value + Send + Sync),
+        new_data: fn(usize, usize) -> D,
+        pl: &mut P,
+    ) -> anyhow::Result<VFunc<K, D, S, E>>
+    where
+        SigVal<S, D::Value>: RadixKey,
+        SigVal<E::LocalSig, D::Value>: BitXor + BitXorAssign,
+        D: for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>
+            + MemSize
+            + FlatType,
+        E: MemSize + FlatType,
+        for<'a> ShardDataIter<'a, D>: Send,
+        for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
+    {
+        self.expected_num_keys = Some(keys.len());
+        self.try_par_populate_and_build(
+            keys,
+            val_fn,
+            &mut |builder, seed, mut store, max_value, _num_keys, pl: &mut P, _state: &mut ()| {
+                pl.info(format_args!("Max value: {max_value}"));
+                builder
+                    .try_build_from_shard_iter(
+                        seed,
+                        max_value.bit_len() as usize,
+                        new_data,
+                        store.drain(),
+                        &|_, sig_val| sig_val.val,
+                        &|_| {},
+                        pl,
+                    )
+                    .map_err(Into::into)
+            },
+            pl,
+            (),
+        )
+    }
+
     /// Builds a [`VFunc`] suitable for use as a filter backend.
     ///
-    /// Unlike [`try_build_func_and_store`], this method takes only keys
-    /// (no values), uses a caller-specified `bit_width` instead of
-    /// deriving it from `max_value`, and derives stored values from
-    /// signatures via `get_val`.
+    /// Unlike [`try_build_func`], this method takes only keys (no values),
+    /// uses a caller-specified `bit_width` instead of deriving it from the
+    /// maximum value, and derives stored values from signatures via
+    /// `get_val`.
     ///
     /// `new_data(bit_width, len)` allocates the backend storage.
     ///
-    /// [`try_build_func_and_store`]: Self::try_build_func_and_store
+    /// [`try_build_func`]: Self::try_build_func
     pub(crate) fn try_build_filter<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<K>,
@@ -731,7 +943,7 @@ impl<
         G: Fn(&E, SigVal<E::LocalSig, EmptyVal>) -> D::Value + Send + Sync,
     >(
         mut self,
-        mut keys: impl FallibleRewindableLender<
+        keys: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
@@ -750,83 +962,82 @@ impl<
         for<'a> ShardDataIter<'a, D>: Send,
         for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
     {
-        let mut rs = self.retry_state(pl)?;
-        let total_start = Instant::now();
-
-        loop {
-            let seed = rs.next_seed();
-
-            let result = {
-                let mut populate =
-                    |seed: u64,
-                     push: &mut dyn FnMut(SigVal<S, EmptyVal>) -> anyhow::Result<()>,
-                     pl: &mut P,
-                     _state: &mut ()| {
-                        while let Some(key) = keys.next()? {
-                            pl.light_update();
-                            push(SigVal {
-                                sig: K::to_sig(key.borrow(), seed),
-                                val: EmptyVal::default(),
-                            })?;
-                        }
-                        Ok(EmptyVal::default())
-                    };
-
-                self.try_solve_once(
-                    seed,
-                    &mut populate,
-                    &mut |builder,
-                          seed,
-                          mut store,
-                          _max_value,
-                          _num_keys,
-                          pl: &mut P,
-                          _state: &mut ()| {
-                        builder.bit_width = bit_width;
-
-                        let data = new_data(
-                            builder.bit_width,
-                            builder.shard_edge.num_vertices() * builder.shard_edge.num_shards(),
-                        );
-
-                        let func = builder.try_build_from_shard_iter(
-                            seed,
-                            data,
-                            store.drain(),
-                            get_val,
-                            &|_| {},
-                            pl,
-                        )?;
-                        Ok(func)
-                    },
-                    pl,
-                    &mut (),
-                )
-            };
-
-            if let Some(r) = rs.handle_solve_result(result, pl)? {
-                let num_keys = self.num_keys;
-                pl.info(format_args!(
-                    "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                    total_start.elapsed().as_secs_f64(),
-                    num_keys,
-                    total_start.elapsed().as_nanos() as f64 / num_keys as f64
-                ));
-                return Ok(r);
-            }
-
-            keys = keys.rewind()?;
-        }
+        self.try_populate_and_build(
+            keys,
+            FromCloneableIntoIterator::new(std::iter::repeat(EmptyVal::default())),
+            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
+                builder
+                    .try_build_from_shard_iter(
+                        seed,
+                        bit_width,
+                        new_data,
+                        store.drain(),
+                        get_val,
+                        &|_| {},
+                        pl,
+                    )
+                    .map_err(Into::into)
+            },
+            pl,
+            (),
+        )
+        .map(|(func, _keys)| func)
     }
 
-    /// Initializes shards and returns a [`RetryState`] for driving the
-    /// retry loop.
+    /// Builds a [`VFunc`] suitable for use as a filter backend from
+    /// in-memory keys, computing signatures in parallel.
     ///
-    /// This is the same initialization that
-    /// [`try_populate_and_build`] performs at the start.
+    /// This is the parallel counterpart of [`try_build_filter`].
     ///
-    /// [`try_populate_and_build`]: Self::try_populate_and_build
-    pub(crate) fn retry_state(&mut self, pl: &mut impl ProgressLog) -> anyhow::Result<RetryState> {
+    /// [`try_build_filter`]: Self::try_build_filter
+    pub(crate) fn try_par_build_filter<
+        K: ?Sized + ToSig<S> + std::fmt::Debug + Sync,
+        B: Borrow<K> + Sync,
+        P: ProgressLog + Clone + Send + Sync,
+        G: Fn(&E, SigVal<E::LocalSig, EmptyVal>) -> D::Value + Send + Sync,
+    >(
+        mut self,
+        keys: &[B],
+        bit_width: usize,
+        new_data: fn(usize, usize) -> D,
+        get_val: &G,
+        pl: &mut P,
+    ) -> anyhow::Result<VFunc<K, D, S, E>>
+    where
+        SigVal<S, EmptyVal>: RadixKey,
+        SigVal<E::LocalSig, EmptyVal>: BitXor + BitXorAssign,
+        D: for<'a> BitFieldSliceMut<ChunksMut<'a>: Iterator<Item: BitFieldSliceMut>>
+            + MemSize
+            + FlatType,
+        E: MemSize + FlatType,
+        for<'a> ShardDataIter<'a, D>: Send,
+        for<'a> <ShardDataIter<'a, D> as Iterator>::Item: Send,
+    {
+        self.expected_num_keys = Some(keys.len());
+        self.try_par_populate_and_build(
+            keys,
+            &|_| EmptyVal::default(),
+            &mut |builder, seed, mut store, _max_value, _num_keys, pl: &mut P, _state: &mut ()| {
+                builder
+                    .try_build_from_shard_iter(
+                        seed,
+                        bit_width,
+                        new_data,
+                        store.drain(),
+                        get_val,
+                        &|_| {},
+                        pl,
+                    )
+                    .map_err(Into::into)
+            },
+            pl,
+            (),
+        )
+    }
+
+    /// Validates the configuration, sets up shards from the expected number
+    /// of keys, and returns a [`RetryState`] for driving the retry loop.
+    fn retry_state(&mut self, pl: &mut impl ProgressLog) -> anyhow::Result<RetryState> {
         // The ε-cost formulas divide by ln(1 - eps): eps == 0 divides by
         // zero and eps >= 1 yields NaN, so only the open interval is
         // meaningful. The range check also rejects NaN and ±∞.
@@ -843,7 +1054,11 @@ impl<
             "retry_prob must be in the half-open interval (0..1], got {}",
             self.retry_prob
         );
-        self.init_shards_and_seed();
+        if let Some(expected_num_keys) = self.expected_num_keys {
+            self.shard_edge
+                .set_up_shards(expected_num_keys, self.eps, self.retry_prob);
+            self.log2_buckets = self.shard_edge.shard_high_bits();
+        }
         pl.info(format_args!(
             "Using a store with 2^{} buckets",
             self.log2_buckets
@@ -857,21 +1072,66 @@ impl<
         })
     }
 
-    /// Populates a shard store from keys and values, then calls a build
-    /// closure. If the closure (or the store population) fails with a
-    /// [`SolveError`], the process is retried from scratch with a new
-    /// seed.
+    /// Runs construction attempts with different seeds until one succeeds.
     ///
     /// This is a low-level method that requires a thorough understanding
     /// of the builder's internal state.
     ///
-    /// On each retry the lenders are rewound. Retries continue for
-    /// [`SolveError::UnsolvableShard`] and
-    /// [`SolveError::MaxShardTooBig`]; if the third attempt still finds a
-    /// duplicate signature, [`BuildError::DuplicateKey`] is returned, and
-    /// if it still finds a duplicate local signature,
-    /// [`BuildError::DuplicateLocalSignatures`] is returned. Any other
-    /// error is propagated immediately.
+    /// After validating the configuration and setting up shards from the
+    /// expected number of keys, this method calls `attempt(self, seed,
+    /// &mut state, pl)` with seeds drawn from a generator initialized with
+    /// the [builder seed]. Retries continue for [`SolveError::UnsolvableShard`]
+    /// and [`SolveError::MaxShardTooBig`] (up to 100 attempts, after which
+    /// [`BuildError::UnsolvableShard`] or [`BuildError::MaxShardTooBig`],
+    /// respectively, is returned); if the third attempt still finds a
+    /// duplicate signature, [`BuildError::DuplicateKey`] is returned, and if
+    /// it still finds a duplicate local signature,
+    /// [`BuildError::DuplicateLocalSignatures`] is returned. Any other error
+    /// is propagated immediately.
+    ///
+    /// Before each retry, `state` is replaced with `rewind(state)`;
+    /// usually, `state` contains the lenders to rewind.
+    ///
+    /// Returns the result of the successful attempt and the state.
+    ///
+    /// [builder seed]: Self::seed
+    pub(crate) fn try_with_retries<T, R, P: ProgressLog>(
+        &mut self,
+        mut state: T,
+        mut attempt: impl FnMut(&mut Self, u64, &mut T, &mut P) -> anyhow::Result<R>,
+        mut rewind: impl FnMut(T) -> anyhow::Result<T>,
+        pl: &mut P,
+    ) -> anyhow::Result<(R, T)> {
+        let mut rs = self.retry_state(pl)?;
+        let start = Instant::now();
+
+        loop {
+            let seed = rs.next_seed();
+            let result = attempt(self, seed, &mut state, pl);
+
+            if let Some(r) = rs.handle_solve_result(result, pl)? {
+                pl.info(format_args!(
+                    "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                    start.elapsed().as_secs_f64(),
+                    self.num_keys,
+                    start.elapsed().as_nanos() as f64 / self.num_keys as f64
+                ));
+                return Ok((r, state));
+            }
+
+            state = rewind(state)?;
+        }
+    }
+
+    /// Populates a shard store from keys and values, then calls a build
+    /// closure. If the closure (or the store population) fails with a
+    /// [`SolveError`], the process is retried from scratch with a new
+    /// seed, as described in [`try_with_retries`].
+    ///
+    /// This is a low-level method that requires a thorough understanding
+    /// of the builder's internal state.
+    ///
+    /// On each retry the lenders are rewound.
     ///
     /// `build_fn` is called with `(&mut self, seed, store, max_value, num_keys,
     /// pl)`. The builder's `shard_edge`, `c`, and `lge` fields are already set
@@ -879,6 +1139,8 @@ impl<
     /// `try_build_from_shard_iter` directly.
     ///
     /// Returns whatever `build_fn` returns on success.
+    ///
+    /// [`try_with_retries`]: Self::try_with_retries
     pub(crate) fn try_populate_and_build<
         K: ?Sized + ToSig<S> + std::fmt::Debug,
         B: ?Sized + Borrow<K>,
@@ -892,8 +1154,8 @@ impl<
             > + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
     >(
         &mut self,
-        mut keys: L,
-        mut values: impl FallibleRewindableLender<
+        keys: L,
+        values: impl FallibleRewindableLender<
             RewindError: Error + Send + Sync + 'static,
             Error: Error + Send + Sync + 'static,
         > + for<'lend> FallibleLending<'lend, Lend = &'lend V>,
@@ -912,13 +1174,9 @@ impl<
     where
         SigVal<S, V>: RadixKey,
     {
-        let mut rs = self.retry_state(pl)?;
-        let total_start = Instant::now();
-
-        loop {
-            let seed = rs.next_seed();
-
-            let result = {
+        self.try_with_retries(
+            (keys, values),
+            |builder, seed, (keys, values), pl| {
                 let mut populate = |seed: u64,
                                     push: &mut dyn FnMut(SigVal<S, V>) -> anyhow::Result<()>,
                                     pl: &mut P,
@@ -942,27 +1200,16 @@ impl<
                     Ok(maybe_max_value)
                 };
 
-                self.try_solve_once(seed, &mut populate, build_fn, pl, &mut state)
-            };
-
-            if let Some(r) = rs.handle_solve_result(result, pl)? {
-                let num_keys = self.num_keys;
-                pl.info(format_args!(
-                    "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                    total_start.elapsed().as_secs_f64(),
-                    num_keys,
-                    total_start.elapsed().as_nanos() as f64 / num_keys as f64
-                ));
-                return Ok((r, keys));
-            }
-
-            values = values.rewind()?;
-            keys = keys.rewind()?;
-        }
+                builder.try_solve_once(seed, &mut populate, build_fn, pl, &mut state)
+            },
+            |(keys, values)| Ok((keys.rewind()?, values.rewind()?)),
+            pl,
+        )
+        .map(|(r, (keys, _values))| (r, keys))
     }
 
     /// Like [`try_populate_and_build`], but takes key and value slices and
-    /// parallelizes the hash computation and store population .
+    /// parallelizes the hash computation and store population.
     ///
     /// This method calls [`SigStoreImpl::par_populate`] to compute signatures and
     /// populate the store in parallel on rayon worker threads.
@@ -1001,18 +1248,15 @@ impl<
             !self.offline,
             "offline mode is not supported by the parallel builder; use the sequential constructor (try_new_with_builder)"
         );
-        let mut rs = self.retry_state(pl)?;
         let n = keys.len();
-        let total_start = Instant::now();
 
-        loop {
-            let seed = rs.next_seed();
-
-            let result = {
+        self.try_with_retries(
+            (),
+            |builder, seed, _, pl| {
                 let mut sig_store = sig_store::new_online::<S, V>(
-                    self.log2_buckets,
+                    builder.log2_buckets,
                     LOG2_MAX_SHARDS,
-                    self.expected_num_keys,
+                    builder.expected_num_keys,
                 )?;
 
                 pl.expected_updates(n);
@@ -1020,77 +1264,34 @@ impl<
                 pl.start(format!(
                     "Computing and storing {}-bit signatures in parallel ({} threads) in RAM using seed 0x{seed:016x}...",
                     std::mem::size_of::<S>() * 8,
-                    self.max_num_threads,
+                    builder.max_num_threads,
                 ));
 
                 let start = Instant::now();
 
-                let maybe_max_value =
-                    sig_store.par_populate(n, self.max_num_threads, |i| SigVal {
+                let max_value =
+                    sig_store.par_populate(n, builder.max_num_threads, |i| SigVal {
                         sig: K::to_sig(keys[i].borrow(), seed),
                         val: val_fn(i),
                     })?;
 
                 pl.done();
 
-                let num_keys = sig_store.len();
-
-                pl.info(format_args!(
-                    "Computation of signatures from inputs completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                    start.elapsed().as_secs_f64(),
-                    num_keys,
-                    start.elapsed().as_nanos() as f64 / num_keys as f64
-                ));
-                // When shard_size_hint is set (e.g. by CompVFunc with
-                // total_edges after building the Huffman coder), the
-                // sharding strategy is sized for the hinted workload
-                // rather than the raw key count. See the doc comment on
-                // [VBuilder::shard_size_hint].
-                let shard_n = self.shard_size_hint.unwrap_or(num_keys);
-                let shard_edge = &mut self.shard_edge;
-                shard_edge.set_up_shards(shard_n, self.eps, self.retry_prob);
-
-                let shard_store = sig_store.into_shard_store(shard_edge.shard_high_bits())?;
-                let max_shard = shard_store.shard_sizes().max().unwrap_or(0);
-
-                // Check for pathological (5x) deviation from the target ε-cost.
-                // When shard_size_hint is set the sharding strategy is sized
-                // for the hinted workload, so the per-key average is
-                // meaningless; mirror the sequential path (see
-                // try_populate_and_build) and skip the check.
-                if self.shard_size_hint.is_none()
-                    && max_shard_too_big(max_shard, num_keys, shard_edge.num_shards(), self.eps)
-                {
-                    Err(SolveError::MaxShardTooBig.into())
-                } else {
-                    (self.c, self.lge) = shard_edge.set_up_graphs(num_keys, max_shard);
-                    self.num_keys = num_keys;
-                    let store = Box::new(shard_store) as Box<dyn ShardStore<S, V> + Send + Sync>;
-                    build_fn(self, seed, store, maybe_max_value, num_keys, pl, &mut state)
-                }
-            };
-
-            if let Some(r) = rs.handle_solve_result(result, pl)? {
-                let num_keys = self.num_keys;
-                pl.info(format_args!(
-                    "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                    total_start.elapsed().as_secs_f64(),
-                    num_keys,
-                    total_start.elapsed().as_nanos() as f64 / num_keys as f64
-                ));
-                return Ok(r);
-            }
-            // Keys and values are slices; no rewind needed.
-        }
+                builder.try_build_from_sig_store(
+                    seed, sig_store, max_value, start, build_fn, pl, &mut state,
+                )
+            },
+            |()| Ok(()),
+            pl,
+        )
+        .map(|(r, ())| r)
     }
 
     /// Performs a single population-and-build attempt for the given seed.
     ///
     /// Creates a [`SigStore`] (offline or online depending on
-    /// `self.offline`), populates it via the `populate` closure, converts
-    /// it to a shard store, checks the max-shard invariant, sets up
-    /// `self.shard_edge`/`c`/`lge`, boxes the store into a
-    /// `dyn` [`ShardStore`], and calls `build_fn`.
+    /// `self.offline`), populates it via the `populate` closure, and
+    /// completes the attempt as described in [`try_build_from_sig_store`].
     ///
     /// The `populate` closure receives `(seed, push, &mut pl, &mut state)`
     /// where `push` appends a [`SigVal`] to the store. The closure must
@@ -1104,6 +1305,8 @@ impl<
     ///
     /// Returns the result of `build_fn`, or a [`SolveError`] for the
     /// caller's retry loop to handle.
+    ///
+    /// [`try_build_from_sig_store`]: Self::try_build_from_sig_store
     pub(crate) fn try_solve_once<
         V: BinSafe + Default + Send + Sync + Ord,
         R,
@@ -1214,7 +1417,7 @@ impl<
 
         let start = Instant::now();
 
-        let maybe_max_value = populate(
+        let max_value = populate(
             seed,
             &mut |sig_val| sig_store.try_push(sig_val).map_err(Into::into),
             pl,
@@ -1223,6 +1426,47 @@ impl<
 
         pl.done();
 
+        self.try_build_from_sig_store(seed, sig_store, max_value, start, build_fn, pl, state)
+    }
+
+    /// Completes a construction attempt whose signature/value pairs have
+    /// been stored in `sig_store`, starting at time `start`.
+    ///
+    /// Converts the store into a [`ShardStore`] sharded by `self.shard_edge`
+    /// (sized for [`shard_size_hint`], if set, rather than for the number of
+    /// keys), rejects the attempt with [`SolveError::MaxShardTooBig`] if the
+    /// largest shard deviates pathologically from the average, sets up
+    /// `self.shard_edge`, `self.c`, `self.lge`, and `self.num_keys`, boxes
+    /// the store into a `dyn` [`ShardStore`], and calls `build_fn`.
+    ///
+    /// [`shard_size_hint`]: Self::shard_size_hint
+    fn try_build_from_sig_store<
+        V: BinSafe + Default + Send + Sync + Ord,
+        R,
+        P: ProgressLog + Clone + Send + Sync,
+        SS: SigStore<S, V, ShardStore: 'static>,
+        C,
+    >(
+        &mut self,
+        seed: u64,
+        sig_store: SS,
+        max_value: V,
+        start: Instant,
+        build_fn: &mut impl FnMut(
+            &mut Self,
+            u64,
+            Box<dyn ShardStore<S, V> + Send + Sync>,
+            V,
+            usize,
+            &mut P,
+            &mut C,
+        ) -> anyhow::Result<R>,
+        pl: &mut P,
+        state: &mut C,
+    ) -> anyhow::Result<R>
+    where
+        SigVal<S, V>: RadixKey,
+    {
         let num_keys = sig_store.len();
 
         pl.info(format_args!(
@@ -1232,10 +1476,10 @@ impl<
             start.elapsed().as_nanos() as f64 / num_keys as f64
         ));
 
-        // See the doc comment on [VBuilder::shard_size_hint]:
-        // when set, use it to size the sharding strategy instead of
-        // the runtime key count. Used by CompVFunc to pass the total
-        // edge count (≈ entropy × num_keys).
+        // When shard_size_hint is set (e.g. by CompVFunc with the total
+        // number of edges after building the Huffman coder), the sharding
+        // strategy is sized for the hinted workload rather than the raw key
+        // count.
         let shard_n = self.shard_size_hint.unwrap_or(num_keys);
         let shard_edge = &mut self.shard_edge;
         shard_edge.set_up_shards(shard_n, self.eps, self.retry_prob);
@@ -1250,10 +1494,10 @@ impl<
             ));
         }
 
-        // Reject pathological deviation from the target ε-cost, mirroring the
-        // parallel path (see par_solve). When shard_size_hint is set the
-        // sharding is sized for the hinted workload, so the per-key average is
-        // meaningless and the check is skipped.
+        // Reject pathological deviation from the target ε-cost. When
+        // shard_size_hint is set the sharding is sized for the hinted
+        // workload, so the per-key average is meaningless and the check is
+        // skipped (CompVFunc performs its own check in edge units).
         if self.shard_size_hint.is_none()
             && max_shard_too_big(max_shard, num_keys, shard_edge.num_shards(), self.eps)
         {
@@ -1265,7 +1509,7 @@ impl<
 
         let store = Box::new(shard_store) as Box<dyn ShardStore<S, V> + Send + Sync>;
 
-        build_fn(self, seed, store, maybe_max_value, num_keys, pl, state)
+        build_fn(self, seed, store, max_value, num_keys, pl, state)
     }
 }
 
@@ -1282,20 +1526,20 @@ impl<
 {
     /// Solves the 3-hypergraph system and returns a new [`VFunc`].
     ///
-    /// This is the core solver: it peels the hypergraph defined by the
-    /// shard iterator, writes the solution into `data`, and returns the
-    /// assembled [`VFunc`].
+    /// This is the core solver: it allocates the backend storage with
+    /// `new_data(bit_width, len)`, where `len` is the number of vertices
+    /// over all shards, peels the hypergraph defined by the shard iterator,
+    /// writes the solution into the backend, and returns the assembled
+    /// [`VFunc`].
     ///
     /// # Preconditions
     ///
     /// * `seed` must be the seed used during store population.
     ///
-    /// * `data` must be freshly allocated, zero-initialized storage of
-    ///   size `shard_edge.num_vertices() * shard_edge.num_shards()`.
+    /// * `new_data` must return zero-initialized storage.
     ///
-    /// * `self.shard_edge`, `self.c`, `self.lge`, `self.bit_width`, and
-    ///   `self.num_keys` must be set up by the caller (typically by
-    ///   [`try_solve_once`]).
+    /// * `self.shard_edge`, `self.c`, `self.lge`, and `self.num_keys` must
+    ///   be set up by the caller (typically by [`try_solve_once`]).
     ///
     /// * `get_val` must be deterministic.
     ///
@@ -1321,7 +1565,8 @@ impl<
     >(
         &mut self,
         seed: u64,
-        mut data: D,
+        bit_width: usize,
+        new_data: fn(usize, usize) -> D,
         shard_iter: I,
         get_val: &G,
         inspect: &H,
@@ -1346,9 +1591,15 @@ impl<
         let shard_edge = &self.shard_edge;
         self.num_threads = shard_edge.num_shards().min(self.max_num_threads).max(1);
 
+        let mut data = new_data(
+            bit_width,
+            shard_edge.num_vertices() * shard_edge.num_shards(),
+        );
+
         pl.info(format_args!(
             "Number of keys: {}; bit width: {}",
-            self.num_keys, self.bit_width,
+            self.num_keys,
+            data.bit_width(),
         ));
 
         pl.info(format_args!(
@@ -2372,26 +2623,57 @@ impl<
 mod retry_state_tests {
     use super::*;
 
+    fn retry_state() -> RetryState {
+        RetryState {
+            prng: SmallRng::seed_from_u64(0),
+            dup_count: 0,
+            local_dup_count: 0,
+            max_shard_too_big: 0,
+            unsolvable_count: 0,
+        }
+    }
+
     /// The `MaxShardTooBig` retry counter is capped: the first 99 occurrences
     /// are retried, the 100th is fatal, so a pathological configuration cannot
     /// loop forever.
     #[test]
     fn max_shard_too_big_is_bounded() {
         let mut pl = no_logging![];
-        let mut rs = RetryState {
-            prng: SmallRng::seed_from_u64(0),
-            dup_count: 0,
-            local_dup_count: 0,
-            max_shard_too_big: 0,
-            unsolvable_count: 0,
-        };
+        let mut rs = retry_state();
         for i in 0..99 {
             let r =
                 rs.handle_solve_result(Err::<(), _>(SolveError::MaxShardTooBig.into()), &mut pl);
             assert!(matches!(r, Ok(None)), "attempt {i} should be retried");
         }
         let r = rs.handle_solve_result(Err::<(), _>(SolveError::MaxShardTooBig.into()), &mut pl);
-        assert!(r.is_err(), "the 100th MaxShardTooBig must be fatal");
+        assert!(
+            matches!(
+                r.unwrap_err().downcast_ref::<BuildError>(),
+                Some(BuildError::MaxShardTooBig)
+            ),
+            "the 100th MaxShardTooBig must be fatal"
+        );
+    }
+
+    /// The `UnsolvableShard` retry counter is capped, too, and the 100th
+    /// failure returns a typed error instead of panicking.
+    #[test]
+    fn unsolvable_shard_is_bounded() {
+        let mut pl = no_logging![];
+        let mut rs = retry_state();
+        for i in 0..99 {
+            let r =
+                rs.handle_solve_result(Err::<(), _>(SolveError::UnsolvableShard.into()), &mut pl);
+            assert!(matches!(r, Ok(None)), "attempt {i} should be retried");
+        }
+        let r = rs.handle_solve_result(Err::<(), _>(SolveError::UnsolvableShard.into()), &mut pl);
+        assert!(
+            matches!(
+                r.unwrap_err().downcast_ref::<BuildError>(),
+                Some(BuildError::UnsolvableShard)
+            ),
+            "the 100th UnsolvableShard must be fatal"
+        );
     }
 
     /// The shard-size acceptance threshold is the maximum of the ε-cost

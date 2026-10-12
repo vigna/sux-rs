@@ -12,43 +12,9 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::{
     bits::BitFieldVecU,
-    cli::{Decompression, pack_strings, reservoir_sample},
+    cli::{Decompression, bench, gen_sorted_keys, init_env_logger, pack_strings, reservoir_sample},
     func::{lcp_mmphf::*, lcp2_mmphf::*},
 };
-
-fn bench(n: usize, repeats: usize, mut f: impl FnMut()) {
-    let mut timings = Vec::with_capacity(repeats);
-    for _ in 0..repeats {
-        let start = std::time::Instant::now();
-        f();
-        timings.push(start.elapsed().as_nanos() as f64 / n as f64);
-        eprintln!("{} ns/key", timings.last().unwrap());
-    }
-    timings.sort_unstable_by(|a, b| a.total_cmp(b));
-    eprintln!(
-        "Min: {} Median: {} Max: {} Average: {}",
-        timings[0],
-        timings[timings.len() / 2],
-        timings.last().unwrap(),
-        timings.iter().sum::<f64>() / timings.len() as f64
-    );
-}
-
-/// Generate k sorted distinct random u64 keys.
-fn gen_sorted_keys(k: usize, seed: u64) -> Vec<u64> {
-    let extra = (((k as u128) * (k as u128)) >> 65) as usize;
-    let draw = k + 2 * extra;
-    let mut rng = SmallRng::seed_from_u64(seed);
-    loop {
-        let mut keys: Vec<u64> = (0..draw).map(|_| rng.random()).collect();
-        keys.sort_unstable();
-        keys.dedup();
-        if keys.len() >= k {
-            keys.truncate(k);
-            return keys;
-        }
-    }
-}
 
 /// Sample n random keys from the key set (with replacement).
 fn sample_queries(keys: &[u64], n: usize, seed: u64) -> Vec<u64> {
@@ -89,7 +55,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    sux::init_env_logger()?;
+    init_env_logger()?;
 
     let args = Args::parse();
 

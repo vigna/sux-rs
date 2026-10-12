@@ -35,11 +35,11 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::sync::Mutex;
 use std::time::Instant;
+use sux::cli::init_env_logger;
 use sux::func::shard_edge::{Fuse3NoShards, Fuse3Shards};
 #[cfg(feature = "mwhc")]
 use sux::func::shard_edge::{Mwhc3NoShards, Mwhc3Shards};
 use sux::func::{CompVFunc, VBuilder};
-use sux::init_env_logger;
 
 #[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
 enum ShardEdgeKind {

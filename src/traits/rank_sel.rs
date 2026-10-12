@@ -8,9 +8,41 @@
 //! Basic traits for succinct operations on bit vectors, including [`Rank`] and
 //! [`Select`].
 //!
+//! The traits come in three tiers:
+//!
+//! - *Checked* traits ([`Rank`], [`RankZero`], [`Select`], and [`SelectZero`])
+//!   are the ones you usually call. They extend [`NumBits`], which provides
+//!   the number of ones in constant time, and use it to check their
+//!   arguments: [`rank`] returns the number of ones for positions past the
+//!   end, and [`select`] returns `None` if there is no one of the given rank.
+//!   [`AddNumBits`] provides [`NumBits`] to structures that lack it.
+//! - *Unchecked* traits ([`RankUnchecked`], [`SelectUnchecked`], and
+//!   [`SelectZeroUnchecked`]) provide `unsafe` methods that perform no bound
+//!   checks. They do not need [`NumBits`], and they are the core operations
+//!   implemented by structures.
+//! - *Hinted* traits ([`RankHinted`], [`SelectHinted`], and
+//!   [`SelectZeroHinted`]) are building blocks, not meant for end users: they
+//!   are implemented by [`BitVec`], and rank/select structures such as
+//!   [`RankSmall`] and [`SelectAdapt`] use them to complete a query starting
+//!   from a position and a rank stored in their indices.
+//!
+//! The implementations are in [`crate::rank_sel`] (e.g., [`Rank9`],
+//! [`RankSmall`], [`SelectAdapt`], and [`SelectZeroAdapt`]). The [prelude]
+//! contains all traits in this module and all structures in
+//! [`crate::rank_sel`].
+//!
 //! All traits in this module are automatically implemented for references,
 //! mutable references, and boxes. Moreover, usually they are all forwarded to
 //! underlying implementations.
+//!
+//! [`rank`]: Rank::rank
+//! [`select`]: Select::select
+//! [`BitVec`]: crate::bits::BitVec
+//! [`Rank9`]: crate::rank_sel::Rank9
+//! [`RankSmall`]: crate::rank_sel::RankSmall
+//! [`SelectAdapt`]: crate::rank_sel::SelectAdapt
+//! [`SelectZeroAdapt`]: crate::rank_sel::SelectZeroAdapt
+//! [prelude]: crate::prelude
 
 use crate::ambassador_impl_Index;
 use crate::traits::{Backend, Word};
@@ -59,7 +91,8 @@ pub trait NumBits: BitLength {
 /// ```rust
 /// # #[cfg(target_pointer_width = "64")]
 /// # {
-/// # use sux::prelude::*;
+/// use sux::prelude::*;
+///
 /// let rank9 = Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]);
 /// assert_eq!(rank9.rank(0), 0);
 /// assert_eq!(rank9.rank(4), 3);
@@ -119,7 +152,8 @@ pub trait RankUnchecked {
     ///
     /// For example, take the following for loop:
     /// ```
-    /// # use sux::prelude::RankUnchecked;
+    /// use sux::prelude::RankUnchecked;
+    ///
     /// fn query_all(rank: &impl RankUnchecked, positions: &[usize]) {
     ///    for i in 0..positions.len() {
     ///        let r = unsafe { rank.rank_unchecked(positions[i]) };
@@ -130,7 +164,8 @@ pub trait RankUnchecked {
     /// By prefetching cache lines some iterations ahead, we can make sure that
     /// they are already loaded in memory by the time we get to that loop iteration:
     /// ```
-    /// # use sux::prelude::RankUnchecked;
+    /// use sux::prelude::RankUnchecked;
+    ///
     /// fn query_all(rank: &impl RankUnchecked, positions: &[usize]) {
     ///    for i in 0..positions.len() {
     ///        rank.prefetch(positions[(i + 32).min(positions.len() - 1)]);
@@ -233,42 +268,6 @@ pub trait RankHinted {
     ) -> usize;
 }
 
-impl<T: RankHinted + ?Sized> RankHinted for &T {
-    #[inline(always)]
-    unsafe fn rank_hinted<const WORDS_PER_SUBBLOCK: usize>(
-        &self,
-        pos: usize,
-        hint_pos: usize,
-        hint_rank: usize,
-    ) -> usize {
-        unsafe { (**self).rank_hinted::<WORDS_PER_SUBBLOCK>(pos, hint_pos, hint_rank) }
-    }
-}
-
-impl<T: RankHinted + ?Sized> RankHinted for &mut T {
-    #[inline(always)]
-    unsafe fn rank_hinted<const WORDS_PER_SUBBLOCK: usize>(
-        &self,
-        pos: usize,
-        hint_pos: usize,
-        hint_rank: usize,
-    ) -> usize {
-        unsafe { (**self).rank_hinted::<WORDS_PER_SUBBLOCK>(pos, hint_pos, hint_rank) }
-    }
-}
-
-impl<T: RankHinted + ?Sized> RankHinted for Box<T> {
-    #[inline(always)]
-    unsafe fn rank_hinted<const WORDS_PER_SUBBLOCK: usize>(
-        &self,
-        pos: usize,
-        hint_pos: usize,
-        hint_rank: usize,
-    ) -> usize {
-        unsafe { (**self).rank_hinted::<WORDS_PER_SUBBLOCK>(pos, hint_pos, hint_rank) }
-    }
-}
-
 /// Selection over a bit vector without bound checks.
 ///
 /// This is the unchecked counterpart of [`Select`], providing the core
@@ -292,7 +291,8 @@ pub trait SelectUnchecked {
 /// # Examples
 ///
 /// ```rust
-/// # use sux::prelude::*;
+/// use sux::prelude::*;
+///
 /// // SelectAdapt needs NumBits
 /// let bits: AddNumBits<_> = bit_vec![1, 0, 1, 1, 0, 1, 0, 1].into();
 /// let sel = SelectAdapt::new(bits);
@@ -334,7 +334,8 @@ pub trait SelectZeroUnchecked {
 /// ```rust
 /// # #[cfg(target_pointer_width = "64")]
 /// # {
-/// # use sux::prelude::*;
+/// use sux::prelude::*;
+///
 /// let sel = SelectZeroAdapt::new(Rank9::new(bit_vec![1, 0, 1, 1, 0, 1, 0, 1]));
 /// assert_eq!(sel.select_zero(0), Some(1));
 /// assert_eq!(sel.select_zero(1), Some(4));
@@ -394,42 +395,6 @@ pub trait SelectHinted {
     ) -> usize;
 }
 
-impl<T: SelectHinted + ?Sized> SelectHinted for &T {
-    #[inline(always)]
-    unsafe fn select_hinted<const WORDS_PER_SUBBLOCK: usize>(
-        &self,
-        rank: usize,
-        hint_pos: usize,
-        hint_rank: usize,
-    ) -> usize {
-        unsafe { (**self).select_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank) }
-    }
-}
-
-impl<T: SelectHinted + ?Sized> SelectHinted for &mut T {
-    #[inline(always)]
-    unsafe fn select_hinted<const WORDS_PER_SUBBLOCK: usize>(
-        &self,
-        rank: usize,
-        hint_pos: usize,
-        hint_rank: usize,
-    ) -> usize {
-        unsafe { (**self).select_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank) }
-    }
-}
-
-impl<T: SelectHinted + ?Sized> SelectHinted for Box<T> {
-    #[inline(always)]
-    unsafe fn select_hinted<const WORDS_PER_SUBBLOCK: usize>(
-        &self,
-        rank: usize,
-        hint_pos: usize,
-        hint_rank: usize,
-    ) -> usize {
-        unsafe { (**self).select_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank) }
-    }
-}
-
 /// Selection of zeros over a bit vector, with a hint.
 ///
 /// This trait is used to implement fast selection over zeros by adding to bit
@@ -464,41 +429,28 @@ pub trait SelectZeroHinted {
     ) -> usize;
 }
 
-impl<T: SelectZeroHinted + ?Sized> SelectZeroHinted for &T {
-    #[inline(always)]
-    unsafe fn select_zero_hinted<const WORDS_PER_SUBBLOCK: usize>(
-        &self,
-        rank: usize,
-        hint_pos: usize,
-        hint_rank: usize,
-    ) -> usize {
-        unsafe { (**self).select_zero_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank) }
-    }
+// The hinted traits have methods with const generic parameters, which
+// autoimpl cannot forward, so we forward them to references and boxes
+// explicitly.
+macro_rules! forward_hinted {
+    ($Trait:ident::$method:ident($arg:ident) for $($ptr:ty),+) => {$(
+        impl<T: $Trait + ?Sized> $Trait for $ptr {
+            #[inline(always)]
+            unsafe fn $method<const WORDS_PER_SUBBLOCK: usize>(
+                &self,
+                $arg: usize,
+                hint_pos: usize,
+                hint_rank: usize,
+            ) -> usize {
+                unsafe { (**self).$method::<WORDS_PER_SUBBLOCK>($arg, hint_pos, hint_rank) }
+            }
+        }
+    )+};
 }
 
-impl<T: SelectZeroHinted + ?Sized> SelectZeroHinted for &mut T {
-    #[inline(always)]
-    unsafe fn select_zero_hinted<const WORDS_PER_SUBBLOCK: usize>(
-        &self,
-        rank: usize,
-        hint_pos: usize,
-        hint_rank: usize,
-    ) -> usize {
-        unsafe { (**self).select_zero_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank) }
-    }
-}
-
-impl<T: SelectZeroHinted + ?Sized> SelectZeroHinted for Box<T> {
-    #[inline(always)]
-    unsafe fn select_zero_hinted<const WORDS_PER_SUBBLOCK: usize>(
-        &self,
-        rank: usize,
-        hint_pos: usize,
-        hint_rank: usize,
-    ) -> usize {
-        unsafe { (**self).select_zero_hinted::<WORDS_PER_SUBBLOCK>(rank, hint_pos, hint_rank) }
-    }
-}
+forward_hinted!(RankHinted::rank_hinted(pos) for &T, &mut T, Box<T>);
+forward_hinted!(SelectHinted::select_hinted(rank) for &T, &mut T, Box<T>);
+forward_hinted!(SelectZeroHinted::select_zero_hinted(rank) for &T, &mut T, Box<T>);
 
 /// A thin wrapper implementing [`NumBits`] by caching the result of
 /// [`BitVecOps::count_ones`].
@@ -511,7 +463,8 @@ impl<T: SelectZeroHinted + ?Sized> SelectZeroHinted for Box<T> {
 /// # Examples
 ///
 /// ```rust
-/// # use sux::prelude::*;
+/// use sux::prelude::*;
+///
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 0, 1];
 /// let bits: AddNumBits<_> = bits.into();
 /// assert_eq!(bits.num_ones(), 5);

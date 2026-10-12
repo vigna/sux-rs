@@ -4,19 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use clap::{ArgGroup, Parser};
-use dsi_progress_logger::*;
 use epserde::ser::Serialize;
 use lender::FallibleLender;
 use num_primitive::PrimitiveNumberAs;
 use sux::bits::BitFieldVec;
 use sux::cli::{
-    AnyLineLender, Decompression, HashTypes, read_concat_lines, str_slice_from_offsets,
+    AnyLineLender, Decompression, HashTypes, KeyBuffer, check_num_keys, init_env_logger, store,
 };
 use sux::func::phast_r::SeedStoreBuild;
 use sux::func::{PHastR, PHastRBuilder, SignedFunc};
-use sux::init_env_logger;
 use sux::traits::{TryIntoUnaligned, Word};
 use sux::utils::{FromCloneableIntoIterator, FromIntoFallibleLenderFactory};
 
@@ -29,11 +27,12 @@ use sux::utils::{FromCloneableIntoIterator, FromIntoFallibleLenderFactory};
                 .args(["filename", "n"]),
 ))]
 struct Args {
-    /// The number of keys; if no filename is provided, use the 64-bit keys
-    /// [0 . . n).​
+    /// The number of keys: if a file of keys is specified, its first N keys
+    /// are used, and it is an error if it contains fewer keys; otherwise, the
+    /// 64-bit keys [0 . . N) are used.​
     #[arg(short, long)]
     n: Option<usize>,
-    /// A file containing UTF-8 keys, one per line (at most N keys will be read).​
+    /// A file containing UTF-8 keys, one per line.​
     #[arg(short, long)]
     filename: Option<String>,
     /// Decompress the file of keys using this format (by default, it is read
@@ -43,9 +42,12 @@ struct Args {
     /// Save the structure in unaligned form (faster).​
     #[arg(long, short)]
     unaligned: bool,
-    /// A name for the ε-serde serialized function.​
+    /// A name for the ε-serde serialized function (if not specified, the
+    /// function is built but not saved).​
     func: Option<String>,
-    /// Sign the function using hashes of this type.​
+    /// Sign the function using hashes of this type, obtaining a SignedFunc:
+    /// queries with keys outside the set return None, except for a fraction
+    /// 2^-b of false positives, where b is the number of bits of the type.​
     #[arg(long)]
     hash_type: Option<HashTypes>,
     /// Hashes keys sequentially without loading them in RAM.​
@@ -56,7 +58,7 @@ struct Args {
     /// space per key. Requires --sequential (-s).​
     #[arg(short, long, requires = "sequential")]
     offline: bool,
-    /// Use this number of threads.​
+    /// Use this number of threads [default: all available cores].​
     #[arg(short, long)]
     threads: Option<usize>,
     /// The number of bits of a seed [default: 8]; seeds of more than 8 bits
@@ -130,44 +132,6 @@ fn main() -> Result<()> {
     }
 }
 
-/// Stores a function, if a name was provided, possibly in unaligned form.
-fn store<F: Serialize + TryIntoUnaligned<Unaligned: Serialize>>(
-    func: F,
-    filename: &Option<String>,
-    unaligned: bool,
-) -> Result<()> {
-    if let Some(filename) = filename {
-        if unaligned {
-            unsafe { func.try_into_unaligned()?.store(filename) }?;
-        } else {
-            unsafe { func.store(filename) }?;
-        }
-    }
-    Ok(())
-}
-
-/// Reads all the keys of a file into a single concatenated buffer, returning
-/// the buffer and the offsets of the keys, so that the caller can build a
-/// `Vec<&str>` of slices into it for cache-friendly access during hashing;
-/// at most `n` keys are read, and if `n` is provided exactly `n` keys must
-/// be read.
-fn read_keys(
-    filename: &str,
-    n: Option<usize>,
-    decompression: Option<Decompression>,
-) -> Result<(String, Vec<usize>)> {
-    let (buffer, offsets) = read_concat_lines(filename, n.unwrap_or(usize::MAX), decompression)?;
-    if let Some(n) = n {
-        if offsets.len() - 1 != n {
-            bail!(
-                "key count mismatch: read {} keys, expected {n}",
-                offsets.len() - 1
-            );
-        }
-    }
-    Ok((buffer, offsets))
-}
-
 /// Builds a function with seeds stored in `D`.
 fn build<D: SeedStoreBuild + TryIntoUnaligned + Send + Sync>(
     args: &Args,
@@ -177,8 +141,7 @@ where
     PHastR<str, D>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
     PHastR<usize, D>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
 {
-    let mut pl = ProgressLogger::default();
-    pl.log_interval(args.log.log_interval);
+    let mut pl = args.log.progress_logger();
 
     if let Some(filename) = &args.filename {
         if args.sequential {
@@ -188,12 +151,13 @@ where
                 builder,
                 &mut pl,
             )?;
-            store(func, &args.func, args.unaligned)
+            check_num_keys(func.len(), args.n)?;
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
         } else {
-            let (buffer, offsets) = read_keys(filename, args.n, args.decompress)?;
-            let keys = str_slice_from_offsets(&buffer, &offsets);
+            let buffer = KeyBuffer::from_path(filename, args.n, args.decompress)?;
+            let keys = buffer.keys();
             let func = <PHastR<str, D>>::try_par_new_with_builder(&keys, builder, &mut pl)?;
-            store(func, &args.func, args.unaligned)
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
         }
     } else {
         let n = args.n.unwrap();
@@ -203,11 +167,11 @@ where
                 builder,
                 &mut pl,
             )?;
-            store(func, &args.func, args.unaligned)
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
         } else {
             let keys: Vec<usize> = (0..n).collect();
             let func = <PHastR<usize, D>>::try_par_new_with_builder(&keys, builder, &mut pl)?;
-            store(func, &args.func, args.unaligned)
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
         }
     }
 }
@@ -222,8 +186,7 @@ where
     SignedFunc<PHastR<str, D>, Box<[W]>>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
     SignedFunc<PHastR<usize, D>, Box<[W]>>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
 {
-    let mut pl = ProgressLogger::default();
-    pl.log_interval(args.log.log_interval);
+    let mut pl = args.log.progress_logger();
 
     if let Some(filename) = &args.filename {
         if args.sequential {
@@ -236,14 +199,15 @@ where
                 builder,
                 &mut pl,
             )?;
-            store(func, &args.func, args.unaligned)
+            check_num_keys(func.len(), args.n)?;
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
         } else {
-            let (buffer, offsets) = read_keys(filename, args.n, args.decompress)?;
-            let keys = str_slice_from_offsets(&buffer, &offsets);
+            let buffer = KeyBuffer::from_path(filename, args.n, args.decompress)?;
+            let keys = buffer.keys();
             let func = <SignedFunc<PHastR<str, D>, Box<[W]>>>::try_par_new_with_builder(
                 &keys, builder, &mut pl,
             )?;
-            store(func, &args.func, args.unaligned)
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
         }
     } else {
         let n = args.n.unwrap();
@@ -253,13 +217,13 @@ where
                 builder,
                 &mut pl,
             )?;
-            store(func, &args.func, args.unaligned)
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
         } else {
             let keys: Vec<usize> = (0..n).collect();
             let func = <SignedFunc<PHastR<usize, D>, Box<[W]>>>::try_par_new_with_builder(
                 &keys, builder, &mut pl,
             )?;
-            store(func, &args.func, args.unaligned)
+            unsafe { store(func, args.func.as_ref(), args.unaligned) }
         }
     }
 }

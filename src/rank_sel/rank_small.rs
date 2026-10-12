@@ -15,11 +15,8 @@ use std::{
 };
 
 use crate::{
-    prelude::{BitLength, BitVec, Rank, RankHinted, RankUnchecked, RankZero},
-    traits::{
-        Backend, NumBits, Select, SelectHinted, SelectUnchecked, SelectZero, SelectZeroHinted,
-        SelectZeroUnchecked, Word,
-    },
+    bits::BitVec,
+    traits::{Backend, BitLength, Word},
 };
 
 use super::mask_tail_word;
@@ -27,19 +24,14 @@ use crate::ambassador_impl_Index;
 use crate::traits::ambassador_impl_Backend;
 use crate::traits::bal_paren::{BalParen, ambassador_impl_BalParen};
 use crate::traits::bit_vec_ops::ambassador_impl_BitLength;
-use crate::traits::rank_sel::ambassador_impl_RankHinted;
-use crate::traits::rank_sel::ambassador_impl_Select;
-use crate::traits::rank_sel::ambassador_impl_SelectHinted;
-use crate::traits::rank_sel::ambassador_impl_SelectUnchecked;
-use crate::traits::rank_sel::ambassador_impl_SelectZero;
-use crate::traits::rank_sel::ambassador_impl_SelectZeroHinted;
-use crate::traits::rank_sel::ambassador_impl_SelectZeroUnchecked;
+use crate::traits::rank_sel::*;
 use std::ops::Index;
 
 /// A trait abstracting the access to the internal counters of a [`RankSmall`]
 /// structure.
 ///
-/// This trait is implemented by [`RankSmall`], but it is propagated by
+/// This is an advanced trait: usually, you will not need to use it directly.
+/// It is implemented by [`RankSmall`], but it is propagated by
 /// [`SelectSmall`] and [`SelectZeroSmall`], making it possible to combine
 /// selection structures arbitrarily.
 ///
@@ -146,6 +138,7 @@ pub trait SmallCounters<const NUM_U32S: usize, const COUNTER_WIDTH: usize> {
 /// [improved layout of relative counters by Gog & Petri]: https://doi.org/10.1002/spe.2198
 /// [`poppy`]: https://doi.org/10.1007/978-3-642-38527-8_15
 /// [backend]: Backend
+#[doc(alias = "poppy")]
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -247,7 +240,9 @@ impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, 
 /// The four construction forms:
 ///
 /// ```rust
-/// # use sux::{prelude::Rank,bit_vec,rank_small,prelude::BitVec};
+/// use sux::traits::Rank;
+/// use sux::{bit_vec, rank_small};
+///
 /// // Default: ~3% overhead, usize words (recommended)
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
 /// let rank_small = rank_small![bits];
@@ -274,7 +269,9 @@ impl<const WORD_BITS: usize, const NUM_U32S: usize, const COUNTER_WIDTH: usize, 
 /// underlying bit vector:
 ///
 /// ```rust
-/// # use sux::{prelude::Rank,bit_vec,rank_small};
+/// use sux::traits::Rank;
+/// use sux::{bit_vec, rank_small};
+///
 /// let bits = bit_vec![1, 0, 1, 1, 0, 1, 0, 1];
 /// let rank_small = rank_small![bits];
 ///

@@ -11,13 +11,13 @@ repository = "https://github.com/vigna/sux-rs"
 license = "Apache-2.0 OR MIT"
 readme = "README.md"
 categories = ["compression", "data-structures"]
-keywords = ["succinct", "rank", "select"]
+keywords = ["succinct", "rank", "select", "elias-fano", "perfect-hash"]
 exclude = ["python/"]
 documentation = "https://docs.rs/sux"
 rust-version = "1.85"
 
 [package.metadata.docs.rs]
-all-features = true
+features = ["cli", "epserde", "serde", "mmap", "mwhc"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
@@ -102,35 +102,35 @@ bench = false
 
 [[bin]]
 name = "rcl"
-required-features = ["cli", "epserde", "deko"]
+required-features = ["cli"]
 
 [[bin]]
 name = "mrcl"
-required-features = ["cli", "epserde"]
+required-features = ["cli"]
 
 [[bin]]
 name = "vfunc"
-required-features = ["cli", "epserde", "deko", "rayon"]
+required-features = ["cli"]
 
 [[bin]]
 name = "vfunc2"
-required-features = ["cli", "epserde", "deko", "rayon"]
+required-features = ["cli"]
 
 [[bin]]
 name = "comp_vfunc"
-required-features = ["cli", "epserde", "deko", "rayon"]
+required-features = ["cli"]
 
 [[bin]]
 name = "lcp_mmphf"
-required-features = ["cli", "epserde", "deko", "rayon"]
+required-features = ["cli"]
 
 [[bin]]
 name = "vfilter"
-required-features = ["cli", "epserde", "deko", "rayon"]
+required-features = ["cli"]
 
 [[bin]]
 name = "phastr"
-required-features = ["cli", "epserde", "deko", "rayon"]
+required-features = ["cli"]
 
 [[bin]]
 name = "mem_usage"
@@ -142,19 +142,19 @@ required-features = ["cli"]
 
 [[example]]
 name = "bench_vfunc"
-required-features = ["cli", "epserde", "deko"]
+required-features = ["cli"]
 
 [[example]]
 name = "bench_vfilter"
-required-features = ["cli", "epserde", "deko"]
+required-features = ["cli"]
 
 [[example]]
 name = "bench_comp_vfunc"
-required-features = ["cli", "epserde", "deko", "rayon"]
+required-features = ["cli"]
 
 [[example]]
 name = "bench_lcp_mmphf"
-required-features = ["cli", "epserde", "deko"]
+required-features = ["cli"]
 
 [[example]]
 name = "bench_phast"
@@ -162,11 +162,11 @@ required-features = ["cli"]
 
 [[example]]
 name = "comp_vfunc_stress"
-required-features = ["cli", "rayon"]
+required-features = ["cli"]
 
 [[example]]
 name = "bench_comp_vfunc_data"
-required-features = ["cli", "rayon"]
+required-features = ["cli"]
  
 [[example]]
 name = "example_vfunc"

@@ -33,9 +33,9 @@ use std::hash::Hash;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BlockInfo {
     /// Cumulative number of symbols up to and including this length block.
-    pub how_many_up_to_block: u32,
+    pub(crate) how_many_up_to_block: u32,
     /// Right-shift amount, equal to `max_codeword_len − block_length`.
-    pub shift: u32,
+    pub(crate) shift: u32,
 }
 
 /// A factory for a [`Coder<W>`], given a frequency map.
@@ -177,10 +177,7 @@ pub struct HuffmanConf {
 
 impl Default for HuffmanConf {
     fn default() -> Self {
-        Self {
-            max_decoding_table_len: 20,
-            entropy_threshold: 0.9,
-        }
+        Self::new()
     }
 }
 
@@ -227,6 +224,11 @@ impl HuffmanConf {
     }
 }
 
+/// A canonical Huffman coder.
+///
+/// Instances are built by [`HuffmanConf`] (see [`Codec::build_coder`]) for a
+/// given symbol distribution; the matching decoder is returned by
+/// [`into_decoder`](Coder::into_decoder).
 #[derive(Debug, Clone)]
 pub struct HuffmanCoder<W> {
     /// Codeword for each non-escaped symbol, plus the escape codeword at the
