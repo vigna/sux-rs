@@ -355,8 +355,9 @@ fn test_sparse_large_span_subinventory() {
             bv.set(p, true);
         }
         let bits: AddNumBits<_> = bv.into();
-        // log2_ones_per_inventory = 26 would allow 2^24 words per subinventory
-        let select = SelectAdapt::<_>::with_inv(bits, 26, 24);
+        // log2_ones_per_inventory = 22 would allow 2^20 words per
+        // subinventory (both values are valid also on 32-bit targets)
+        let select = SelectAdapt::<_>::with_inv(bits, 22, 20);
         for (i, &p) in pos.iter().enumerate() {
             assert_eq!(select.select(i), Some(p));
         }
