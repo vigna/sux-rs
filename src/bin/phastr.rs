@@ -13,7 +13,7 @@ use sux::bits::BitFieldVec;
 use sux::cli::{
     AnyLineLender, Decompression, HashTypes, KeyBuffer, check_num_keys, init_env_logger, store,
 };
-use sux::func::phast_r::SeedStoreBuild;
+use sux::func::phastr::SeedStoreBuild;
 use sux::func::{PHastR, PHastRBuilder, SignedFunc};
 use sux::traits::{TryIntoUnaligned, Word};
 use sux::utils::{FromCloneableIntoIterator, FromIntoFallibleLenderFactory};

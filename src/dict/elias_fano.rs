@@ -164,7 +164,8 @@ pub type EfSeqDict<V = usize> = EliasFano<
 ///   [`iter_back_from`], that iterate over the values in decreasing order, are
 ///   slightly slower than forward iterators. The returned iterators implement
 ///   also [`UncheckedIterator`]. Note that [`iter_back_from(k)`] yields the
-///   elements *before* position *k* (i.e., it excludes position *k*).
+///   elements *before* position *k* (i.e., it excludes position *k*), as
+///   `values[..k].iter().rev()` would do on a slice.
 ///
 /// - Bidirectional iterators, returned by [`iter_bidi`]
 ///   and [`iter_bidi_from`], that can iterate in both directions, are the
@@ -174,10 +175,7 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// [`IntoIteratorFrom`], [`IntoBackIterator`], [`IntoBackIteratorFrom`],
 /// [`IntoBidiIterator`], and [`IntoBidiIteratorFrom`] for references to an
 /// [`EliasFano`] structure. The trait methods are equivalent to the inherent
-/// methods, with one exception: following the convention of
-/// [`IntoBackIteratorFrom`], [`into_iter_back_from(k)`] yields first the
-/// element of index *k* (i.e., it includes position *k*), so it is equivalent
-/// to [`iter_back_from(k + 1)`].
+/// methods.
 ///
 /// Iterators can also be obtained from the methods of [`SuccIter`],
 /// [`SuccIterBack`], [`SuccBidiIter`], [`PredIter`], [`PredIterBack`], and
@@ -319,8 +317,6 @@ pub type EfSeqDict<V = usize> = EliasFano<
 /// [`indexed_dict`]: crate::traits::indexed_dict
 /// [`sux::traits`]: crate::traits
 /// [`iter_back_from(k)`]: EliasFano::iter_back_from
-/// [`iter_back_from(k + 1)`]: EliasFano::iter_back_from
-/// [`into_iter_back_from(k)`]: IntoBackIteratorFrom::into_iter_back_from
 /// [`build_with_seq`]: EliasFanoBuilder::build_with_seq
 /// [`build_with_dict`]: EliasFanoBuilder::build_with_dict
 /// [`build_with_seq_and_dict`]: EliasFanoBuilder::build_with_seq_and_dict
@@ -625,12 +621,8 @@ where
     /// before position `from`, that is, the elements of index `from` – 1,
     /// `from` – 2, …, 0.
     ///
-    /// This is equivalent to `self.iter_from(from).backward()`.
-    ///
-    /// Note that, following the convention of [`IntoBackIteratorFrom`], the
-    /// iterator returned by [`into_iter_back_from(from)`] yields first the
-    /// element of index `from`; thus, `iter_back_from(from)` is equivalent to
-    /// `into_iter_back_from(from - 1)` when `from` is positive.
+    /// This is equivalent to `self.iter_from(from).backward()`, and follows
+    /// the convention of [`IntoBackIteratorFrom`].
     ///
     /// # Panics
     ///
@@ -640,7 +632,6 @@ where
     ///
     /// ```rust
     /// use sux::dict::EliasFanoBuilder;
-    /// use sux::traits::IntoBackIteratorFrom;
     ///
     /// let mut efb = EliasFanoBuilder::new(4, 10u64);
     /// efb.extend([0, 2, 8, 10]);
@@ -648,11 +639,12 @@ where
     ///
     /// // Position 2 is excluded
     /// assert_eq!(ef.iter_back_from(2).collect::<Vec<_>>(), [2, 0]);
-    /// // Position 2 is included
-    /// assert_eq!((&ef).into_iter_back_from(2).collect::<Vec<_>>(), [8, 2, 0]);
+    /// // From the length, all elements are returned
+    /// assert_eq!(ef.iter_back_from(4).collect::<Vec<_>>(), [10, 8, 2, 0]);
+    /// // From zero, no element is returned
+    /// assert_eq!(ef.iter_back_from(0).next(), None);
     /// ```
     ///
-    /// [`into_iter_back_from(from)`]: IntoBackIteratorFrom::into_iter_back_from
     /// [length]: EliasFano::len
     #[inline(always)]
     pub fn iter_back_from(&self, from: usize) -> EliasFanoBackIter<'_, V, H, L> {
@@ -766,26 +758,20 @@ where
 {
     type IntoIterBackFrom = EliasFanoBackIter<'a, V, H, L>;
 
-    /// Returns a backward iterator that yields in decreasing order the element
-    /// of index `from` and the elements before it, that is, the elements of
-    /// index `from`, `from` – 1, …, 0.
+    /// Returns a backward iterator that yields in decreasing order the elements
+    /// before position `from`, that is, the elements of index `from` – 1,
+    /// `from` – 2, …, 0.
     ///
-    /// Note that the inherent method [`EliasFano::iter_back_from`] follows a
-    /// different convention, as it excludes position `from`: this method is
-    /// equivalent to `self.iter_back_from(from + 1)`.
+    /// This method is equivalent to [`EliasFano::iter_back_from`].
     ///
     /// # Panics
     ///
-    /// Panics if `from` is greater than or equal to the [length] of the
-    /// sequence.
+    /// Panics if `from` is greater than the [length] of the sequence.
     ///
     /// [length]: EliasFano::len
     #[inline(always)]
     fn into_iter_back_from(self, from: usize) -> EliasFanoBackIter<'a, V, H, L> {
-        self.iter_back_from(
-            from.checked_add(1)
-                .expect("position overflow in into_iter_back_from"),
-        )
+        self.iter_back_from(from)
     }
 }
 

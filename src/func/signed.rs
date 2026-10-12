@@ -41,7 +41,7 @@ use crate::func::PHastR;
 use crate::func::VFunc;
 use crate::func::lcp_mmphf::{BitPrefix, IntBitPrefix, LcpMmphf, LcpMmphfInt};
 use crate::func::lcp2_mmphf::{Lcp2Mmphf, Lcp2MmphfInt};
-use crate::func::phast_r::{LevelParams, SeedStore};
+use crate::func::phastr::{LevelParams, SeedStore};
 use crate::func::shard_edge::ShardEdge;
 use crate::traits::Backend;
 use crate::utils::*;
@@ -594,11 +594,11 @@ mod build {
     use super::*;
     use crate::bits::AtomicBitFieldVec;
     use crate::func::VBuilder;
-    use crate::func::phast_r::{PHastRBuilder, SeedStoreBuild};
+    use crate::func::phastr::{PHastRBuilder, SeedStoreBuild};
     use crate::traits::AtomicBitFieldSlice;
     use crate::utils::FallibleRewindableLender;
     use anyhow::Result;
-    use atomic_primitive::{AtomicPrimitive, PrimitiveAtomicUnsigned};
+    use atomic_primitive::{AtomicPrimitive, PrimitiveAtomic, PrimitiveAtomicUnsigned};
     use core::error::Error;
     use dsi_progress_logger::ProgressLog;
     use lender::*;
@@ -709,6 +709,42 @@ mod build {
             });
         cpl.done();
         pl.pop_log_target();
+    }
+
+    /// Returns a padded bit-field vector of `len` hashes of width
+    /// `hash_width`, filled in parallel by `fill` through an atomic view.
+    ///
+    /// If the alignment of `H::Atomic` is stricter than that of `H` (e.g.,
+    /// `u64` on 32-bit x86), the vector cannot be viewed as atomic, so `fill`
+    /// writes into an atomic copy with the same layout, which is then copied
+    /// back.
+    fn par_fill_hashes<H: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned<Value = H>>>(
+        hash_width: usize,
+        len: usize,
+        fill: impl FnOnce(&AtomicBitFieldVec<&mut [H::Atomic]>),
+    ) -> BitFieldVec<Box<[H]>> {
+        let mut hashes = BitFieldVec::<Box<[H]>>::new_padded(hash_width, len);
+        match AtomicBitFieldVec::<&mut [H::Atomic]>::try_from(BitFieldVec::<&mut [H]>::from(
+            &mut hashes,
+        )) {
+            Ok(atomic_hashes) => fill(&atomic_hashes),
+            Err(_) => fill_through_copy(&mut hashes, fill),
+        }
+        hashes
+    }
+
+    /// Fills `hashes` using `fill` on an atomic copy with the same layout.
+    fn fill_through_copy<H: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned<Value = H>>>(
+        hashes: &mut BitFieldVec<Box<[H]>>,
+        fill: impl FnOnce(&AtomicBitFieldVec<&mut [H::Atomic]>),
+    ) {
+        let (words, hash_width, len) = BitFieldVec::<&mut [H]>::from(hashes).into_raw_parts();
+        let mut atomic_words: Box<[H::Atomic]> = words.iter().map(|&w| H::Atomic::new(w)).collect();
+        // SAFETY: the atomic copy has the same number of words as the original
+        fill(&unsafe { AtomicBitFieldVec::from_raw_parts(&mut atomic_words[..], hash_width, len) });
+        for (word, atomic_word) in words.iter_mut().zip(atomic_words) {
+            *word = atomic_word.into_inner();
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -1122,20 +1158,17 @@ mod build {
                 BitFieldVec::<Box<[usize]>>::new_padded,
                 pl,
             )?;
-            let mut hashes = BitFieldVec::<Box<[H]>>::new_padded(hash_width, func.len());
-            let mask = hashes.mask();
-            let atomic_hashes =
-                AtomicBitFieldVec::<&mut [H::Atomic]>::try_from(BitFieldVec::<&mut [H]>::from(
-                    &mut hashes,
-                ))?;
-            // The indices of the keys are distinct, but the fields of
-            // different indices may share a word: we write atomically
-            par_sign_shards(
-                &func.shard_edge,
-                &mut store,
-                |i, h| atomic_hashes.set_atomic(i, h.as_to::<H>() & mask, Ordering::Relaxed),
-                pl,
-            );
+            let hashes = par_fill_hashes::<H>(hash_width, func.len(), |hashes| {
+                let mask = hashes.mask();
+                // The indices of the keys are distinct, but the fields of
+                // different indices may share a word: we write atomically
+                par_sign_shards(
+                    &func.shard_edge,
+                    &mut store,
+                    |i, h| hashes.set_atomic(i, h.as_to::<H>() & mask, Ordering::Relaxed),
+                    pl,
+                );
+            });
             Ok(SignedFunc { func, hashes })
         }
 
@@ -1245,21 +1278,18 @@ mod build {
                 keys, &values, builder, pl,
             )?;
             let seed = func.seed();
-            let mut hashes = BitFieldVec::<Box<[H]>>::new_padded(hash_width, func.len());
-            let mask = hashes.mask();
-            let atomic_hashes =
-                AtomicBitFieldVec::<&mut [H::Atomic]>::try_from(BitFieldVec::<&mut [H]>::from(
-                    &mut hashes,
-                ))?;
-            // The indices of the keys are distinct, but the fields of
-            // different indices may share a word: we write atomically
-            par_sign(
-                &func,
-                keys,
-                |i, key: &K| (i, K::to_sig(key, seed)),
-                |i, h| atomic_hashes.set_atomic(i, h.as_to::<H>() & mask, Ordering::Relaxed),
-                pl,
-            );
+            let hashes = par_fill_hashes::<H>(hash_width, func.len(), |hashes| {
+                let mask = hashes.mask();
+                // The indices of the keys are distinct, but the fields of
+                // different indices may share a word: we write atomically
+                par_sign(
+                    &func,
+                    keys,
+                    |i, key: &K| (i, K::to_sig(key, seed)),
+                    |i, h| hashes.set_atomic(i, h.as_to::<H>() & mask, Ordering::Relaxed),
+                    pl,
+                );
+            });
             Ok(SignedFunc { func, hashes })
         }
     }
@@ -1855,22 +1885,20 @@ mod build {
                     validate_hash_width::<H>(hash_width)?;
                     let func = $int::try_par_new_with_builder(keys, builder, pl)?;
                     let seed = func.seed();
-                    let mut hashes = BitFieldVec::<Box<[H]>>::new_padded(hash_width, func.len());
-                    let mask = hashes.mask();
-                    let atomic_hashes = AtomicBitFieldVec::<&mut [H::Atomic]>::try_from(
-                        BitFieldVec::<&mut [H]>::from(&mut hashes),
-                    )?;
-                    // The indices of the keys are distinct, but the fields of
-                    // different indices may share a word: we write atomically
-                    par_sign(
-                        &func,
-                        keys,
-                        |i, key: &K| (i, K::to_sig(key, seed)),
-                        |i, h| {
-                            atomic_hashes.set_atomic(i, h.as_to::<H>() & mask, Ordering::Relaxed)
-                        },
-                        pl,
-                    );
+                    let hashes = par_fill_hashes::<H>(hash_width, func.len(), |hashes| {
+                        let mask = hashes.mask();
+                        // The indices of the keys are distinct, but the fields of
+                        // different indices may share a word: we write atomically
+                        par_sign(
+                            &func,
+                            keys,
+                            |i, key: &K| (i, K::to_sig(key, seed)),
+                            |i, h| {
+                                hashes.set_atomic(i, h.as_to::<H>() & mask, Ordering::Relaxed)
+                            },
+                            pl,
+                        );
+                    });
                     Ok(Self { func, hashes })
                 }
             }
@@ -2070,22 +2098,20 @@ mod build {
                     validate_hash_width::<H>(hash_width)?;
                     let func = $bytes::try_par_new_with_builder(keys, builder, pl)?;
                     let seed = func.seed();
-                    let mut hashes = BitFieldVec::<Box<[H]>>::new_padded(hash_width, func.len());
-                    let mask = hashes.mask();
-                    let atomic_hashes = AtomicBitFieldVec::<&mut [H::Atomic]>::try_from(
-                        BitFieldVec::<&mut [H]>::from(&mut hashes),
-                    )?;
-                    // The indices of the keys are distinct, but the fields of
-                    // different indices may share a word: we write atomically
-                    par_sign(
-                        &func,
-                        keys,
-                        |i, key: &K| (i, K::to_sig(key, seed)),
-                        |i, h| {
-                            atomic_hashes.set_atomic(i, h.as_to::<H>() & mask, Ordering::Relaxed)
-                        },
-                        pl,
-                    );
+                    let hashes = par_fill_hashes::<H>(hash_width, func.len(), |hashes| {
+                        let mask = hashes.mask();
+                        // The indices of the keys are distinct, but the fields of
+                        // different indices may share a word: we write atomically
+                        par_sign(
+                            &func,
+                            keys,
+                            |i, key: &K| (i, K::to_sig(key, seed)),
+                            |i, h| {
+                                hashes.set_atomic(i, h.as_to::<H>() & mask, Ordering::Relaxed)
+                            },
+                            pl,
+                        );
+                    });
                     Ok(Self { func, hashes })
                 }
             }
@@ -2477,25 +2503,51 @@ mod build {
             validate_hash_width::<H>(hash_width)?;
             let func = <PHastR<K, D>>::try_par_new_with_builder(keys, builder, pl)?;
             let seed = func.seed;
-            let mut hashes = BitFieldVec::<Box<[H]>>::new_padded(hash_width, func.len());
-            let mask = hashes.mask();
-            let atomic_hashes =
-                AtomicBitFieldVec::<&mut [H::Atomic]>::try_from(BitFieldVec::<&mut [H]>::from(
-                    &mut hashes,
-                ))?;
-            // The outputs of the keys are distinct, but the fields of
-            // different outputs may share a word: we write atomically
-            par_sign(
-                &func,
-                keys,
-                |_, key: &K| {
-                    let sig = K::to_sig(key, seed);
-                    (func.get_by_sig(key, sig), sig)
-                },
-                |i, h| atomic_hashes.set_atomic(i, h.as_to::<H>() & mask, Ordering::Relaxed),
-                pl,
-            );
+            let hashes = par_fill_hashes::<H>(hash_width, func.len(), |hashes| {
+                let mask = hashes.mask();
+                // The outputs of the keys are distinct, but the fields of
+                // different outputs may share a word: we write atomically
+                par_sign(
+                    &func,
+                    keys,
+                    |_, key: &K| {
+                        let sig = K::to_sig(key, seed);
+                        (func.get_by_sig(key, sig), sig)
+                    },
+                    |i, h| hashes.set_atomic(i, h.as_to::<H>() & mask, Ordering::Relaxed),
+                    pl,
+                );
+            });
             Ok(SignedFunc { func, hashes })
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::sync::atomic::AtomicU64;
+
+        fn fill(hashes: &AtomicBitFieldVec<&mut [AtomicU64]>) {
+            let mask = hashes.mask();
+            (0..hashes.len()).into_par_iter().for_each(|i| {
+                let h = (i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+                hashes.set_atomic(i, h & mask, Ordering::Relaxed);
+            });
+        }
+
+        /// The copy used when atomic views are not available must give the
+        /// same result as an atomic view.
+        #[test]
+        fn test_fill_through_copy() {
+            for hash_width in [1, 7, 13, 32, 64] {
+                for len in [0, 1, 100, 10_000] {
+                    let direct = par_fill_hashes::<u64>(hash_width, len, fill);
+                    let mut copied = BitFieldVec::<Box<[u64]>>::new_padded(hash_width, len);
+                    fill_through_copy(&mut copied, fill);
+                    assert_eq!(direct.as_slice(), copied.as_slice());
+                    assert_eq!(direct.len(), copied.len());
+                }
+            }
         }
     }
 } // mod build
@@ -2534,15 +2586,15 @@ where
 
 impl<
     K: ?Sized,
-    D: crate::func::phast_r::SeedStoreBuild + TryIntoUnaligned + From<Unaligned<D>>,
+    D: crate::func::phastr::SeedStoreBuild + TryIntoUnaligned + From<Unaligned<D>>,
     P,
     H: TryIntoUnaligned,
-> From<Unaligned<SignedFunc<PHastR<K, D, P, crate::func::phast_r::Remap>, H>>>
-    for SignedFunc<PHastR<K, D, P, crate::func::phast_r::Remap>, H>
+> From<Unaligned<SignedFunc<PHastR<K, D, P, crate::func::phastr::Remap>, H>>>
+    for SignedFunc<PHastR<K, D, P, crate::func::phastr::Remap>, H>
 where
     H: From<H::Unaligned>,
 {
-    fn from(f: Unaligned<SignedFunc<PHastR<K, D, P, crate::func::phast_r::Remap>, H>>) -> Self {
+    fn from(f: Unaligned<SignedFunc<PHastR<K, D, P, crate::func::phastr::Remap>, H>>) -> Self {
         SignedFunc {
             func: f.func.into(),
             hashes: f.hashes.into(),

@@ -12,7 +12,7 @@ use dsi_progress_logger::no_logging;
 use mem_dbg::{MemSize, SizeFlags};
 use std::time::Instant;
 use sux::bits::BitFieldVec;
-use sux::func::phast_r::SeedStoreBuild;
+use sux::func::phastr::SeedStoreBuild;
 use sux::func::{PHastR, PHastRBuilder};
 use sux::traits::TryIntoUnaligned;
 

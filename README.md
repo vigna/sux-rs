@@ -88,7 +88,8 @@ example, here is a bit vector with ranking and selection:
 ```rust
 use sux::prelude::*;
 
-let bits = bit_vec![0, 1, 0, 1, 1, 0, 1, 0];
+// Rank9 requires 64-bit words, so we choose them explicitly
+let bits = bit_vec![u64: 0, 1, 0, 1, 1, 0, 1, 0];
 let rank_sel = SelectAdapt::new(Rank9::new(bits));
 
 assert_eq!(rank_sel.rank(4), 2); // ones in positions [0 . . 4)
@@ -233,7 +234,7 @@ or map it into memory with `mmap` (requires the `mmap` feature).
 [`VFilter`]: https://docs.rs/sux/latest/sux/dict/vfilter/struct.VFilter.html
 [`LcpMmphf`]: https://docs.rs/sux/latest/sux/func/lcp_mmphf/struct.LcpMmphf.html
 [`Lcp2Mmphf`]: https://docs.rs/sux/latest/sux/func/lcp2_mmphf/struct.Lcp2Mmphf.html
-[`PHastR`]: https://docs.rs/sux/latest/sux/func/phast_r/struct.PHastR.html
+[`PHastR`]: https://docs.rs/sux/latest/sux/func/struct.PHastR.html
 [`SignedFunc`]: https://docs.rs/sux/latest/sux/func/signed/struct.SignedFunc.html
 
 ## Features
@@ -281,8 +282,8 @@ cargo run --release --features cli --example bench_vfunc -- -f keys.txt 10000000
 
 performs ten million queries on a [`VFunc`]. The examples `bench_vfunc`,
 `bench_vfilter`, `bench_comp_vfunc`, and `bench_lcp_mmphf` work in this way;
-`bench_phast_r` instead builds and queries a [`PHastR`] on 64-bit keys by itself
-(e.g., `cargo run --release --example bench_phast_r -- 10000000`).
+`bench_phastr` instead builds and queries a [`PHastR`] on 64-bit keys by itself
+(e.g., `cargo run --release --example bench_phastr -- 10000000`).
 
 A few benchmarks are available in the `benches` directory. The ones starting with
 `bench_` can be just run as usual; for example,

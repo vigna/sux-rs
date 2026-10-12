@@ -26,7 +26,7 @@ use crate::traits::Backend;
 use crate::traits::TryIntoUnaligned;
 use crate::traits::Unaligned;
 use crate::traits::{BitLength, BitVecOps, BitVecOpsMut};
-use crate::traits::{RankUnchecked, SuccUnchecked};
+use crate::traits::{RankUnchecked, Succ};
 
 /// A dense partial array, as built by a [`PartialArrayBuilder`] created by
 /// [`new_dense`] or [`PartialArrayBuilder::dense`].
@@ -47,16 +47,9 @@ pub type SparsePartialArray<T> = PartialArray<T, SparseIndex<Box<[usize]>>>;
 /// An internal index for sparse partial arrays.
 ///
 /// The positions containing a value are stored in an [Elias–Fano] structure
-/// with a selection structure on zeros, which is sufficient for both
-/// [`SuccUnchecked`] and [`Succ`].
-///
-/// The field `first_invalid_pos` (the last position set plus one, or zero if
-/// no position is set) is redundant, as [`Succ`] performs the same bound check
-/// using the last value cached by the Elias–Fano structure, but removing it
-/// would change the serialized layout.
+/// with a selection structure on zeros, which is sufficient for [`Succ`].
 ///
 /// [Elias–Fano]: crate::dict::EliasFano
-/// [`SuccUnchecked`]: crate::traits::SuccUnchecked
 /// [`Succ`]: crate::traits::Succ
 #[doc(hidden)]
 #[derive(Debug, Clone, MemSize, MemDbg)]
@@ -64,8 +57,6 @@ pub type SparsePartialArray<T> = PartialArray<T, SparseIndex<Box<[usize]>>>;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SparseIndex<D, L = BitFieldVec<Box<[u64]>>, I = Box<[usize]>> {
     ef: EliasFano<u64, SelectZeroAdaptConst<BitVec<D>, I>, L>,
-    /// self.ef should not be queried for values >= self.first_invalid_pos
-    first_invalid_pos: usize,
 }
 
 mod private {
@@ -131,18 +122,10 @@ where
 
     #[inline(always)]
     unsafe fn lookup(&self, position: usize) -> Option<usize> {
-        if position >= self.first_invalid_pos {
-            return None;
-        }
-        // Check if there's a value at this position
-        // SAFETY: position <= last set position
-        let (index, pos) = unsafe { self.ef.succ_unchecked::<false>(position as u64) };
-
-        if pos != position as u64 {
-            None
-        } else {
-            Some(index)
-        }
+        // There is a value at this position if and only if the position is
+        // its own successor
+        let (index, pos) = self.ef.succ(position as u64)?;
+        (pos == position as u64).then_some(index)
     }
 }
 
@@ -383,10 +366,7 @@ impl<T> PartialArrayBuilder<T, EliasFanoBuilder<u64>> {
         let values = values.into_boxed_slice();
 
         PartialArray {
-            index: SparseIndex {
-                ef: ef_dict,
-                first_invalid_pos: self.min_next_pos,
-            },
+            index: SparseIndex { ef: ef_dict },
             values,
             _marker: PhantomData,
         }
@@ -513,7 +493,6 @@ impl<D> TryIntoUnaligned for SparseIndex<D> {
     ) -> Result<Self::Unaligned, crate::traits::UnalignedConversionError> {
         Ok(SparseIndex {
             ef: self.ef.try_into_unaligned()?,
-            first_invalid_pos: self.first_invalid_pos,
         })
     }
 }

@@ -33,7 +33,7 @@ fn check(n: usize, get: impl Fn(usize) -> Option<usize>) {
 }
 
 #[test]
-fn test_signed_phast_r() -> Result<()> {
+fn test_signed_phastr() -> Result<()> {
     let n = 100_000;
     let func = MySignedPHastR::try_new(FromCloneableIntoIterator::from(0..n), no_logging![])?;
     check(n, |i| func.get(i));
@@ -43,7 +43,7 @@ fn test_signed_phast_r() -> Result<()> {
 }
 
 #[test]
-fn test_bit_signed_phast_r() -> Result<()> {
+fn test_bit_signed_phastr() -> Result<()> {
     let hash_bits = if cfg!(target_pointer_width = "64") {
         31
     } else {
@@ -64,7 +64,7 @@ fn test_bit_signed_phast_r() -> Result<()> {
 /// The parallel constructors build the same function as the sequential
 /// ones, and sign it in the same way.
 #[test]
-fn test_par_signed_phast_r() -> Result<()> {
+fn test_par_signed_phastr() -> Result<()> {
     let n = 100_000;
     let keys: Vec<usize> = (0..n).collect();
     let seq = MySignedPHastR::try_new(FromCloneableIntoIterator::from(0..n), no_logging![])?;
@@ -83,8 +83,24 @@ fn test_par_signed_phast_r() -> Result<()> {
     Ok(())
 }
 
+/// Parallel signing with 64-bit words, which on 32-bit x86 are less aligned
+/// than their atomic counterpart, and are thus written through a copy.
 #[test]
-fn test_offline_signed_phast_r() -> Result<()> {
+fn test_par_signed_phastr_u64_words() -> Result<()> {
+    type F = SignedFunc<PHastR<usize>, BitFieldVec<Box<[u64]>>>;
+    let n = 100_000;
+    let keys: Vec<usize> = (0..n).collect();
+    let seq = F::try_new(FromCloneableIntoIterator::from(0..n), 40, no_logging![])?;
+    let par = F::try_par_new(&keys, 40, no_logging![])?;
+    check(n, |i| par.get(i));
+    for i in 0..2 * n {
+        assert_eq!(seq.get(i), par.get(i));
+    }
+    Ok(())
+}
+
+#[test]
+fn test_offline_signed_phastr() -> Result<()> {
     let n = 100_000;
     let func = MySignedPHastR::try_new_with_builder(
         FromCloneableIntoIterator::from(0..n),
@@ -98,7 +114,7 @@ fn test_offline_signed_phast_r() -> Result<()> {
 /// Seeds of more than eight bits are stored in a bit-field vector, which can
 /// be read with unaligned reads.
 #[test]
-fn test_wide_seeds_signed_phast_r() -> Result<()> {
+fn test_wide_seeds_signed_phastr() -> Result<()> {
     type F = SignedFunc<PHastR<usize, BitFieldVec<Box<[usize]>>>, Box<[u32]>>;
     let n = 100_000;
     let keys: Vec<usize> = (0..n).collect();
@@ -116,7 +132,7 @@ fn test_wide_seeds_signed_phast_r() -> Result<()> {
 }
 
 #[test]
-fn test_str_signed_phast_r() -> Result<()> {
+fn test_str_signed_phastr() -> Result<()> {
     let n = 10_000;
     let keys: Vec<String> = (0..2 * n).map(|i| format!("key {i}")).collect();
     let func =
@@ -136,7 +152,7 @@ fn test_str_signed_phast_r() -> Result<()> {
 /// With 8-bit hashes, about one key outside the original set out of 256 is
 /// accepted.
 #[test]
-fn test_false_positives_signed_phast_r() -> Result<()> {
+fn test_false_positives_signed_phastr() -> Result<()> {
     let n = 100_000;
     let keys: Vec<usize> = (0..n).collect();
     let func = <SignedFunc<PHastR<usize>, Box<[u8]>>>::try_par_new(&keys, no_logging![])?;
@@ -165,7 +181,7 @@ fn test_invalid_hash_width_is_error() {
 
 #[cfg(feature = "epserde")]
 #[test]
-fn test_signed_phast_r_mapped_query() -> Result<()> {
+fn test_signed_phastr_mapped_query() -> Result<()> {
     use epserde::deser::Deserialize;
     use epserde::prelude::Aligned64;
     use epserde::ser::Serialize;

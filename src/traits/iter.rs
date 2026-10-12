@@ -165,10 +165,10 @@ pub trait IntoUncheckedIterator: Sized {
 ///
 /// The position passed to [`into_unchecked_iter_back_from`] is *exclusive*:
 /// the iterator returns the elements of position smaller than `from`, in
-/// decreasing order of position, as [`BidiIterator::prev`] does on the iterator
-/// returned by [`IntoBidiIteratorFrom::into_iter_bidi_from`]. This convention
-/// is different from that of [`IntoBackIteratorFrom::into_iter_back_from`],
-/// which is *inclusive*.
+/// decreasing order of position, as
+/// [`IntoBackIteratorFrom::into_iter_back_from`] does, and as
+/// [`BidiIterator::prev`] does on the iterator returned by
+/// [`IntoBidiIteratorFrom::into_iter_bidi_from`].
 ///
 /// Note that [`into_unchecked_iter_back`] cannot be implemented in terms of
 /// [`into_unchecked_iter_back_from`] because we cannot know which is the
@@ -214,29 +214,33 @@ pub trait IntoBackIterator: Sized {
 /// Conversion into a backward [`Iterator`] starting from a given position.
 ///
 /// This is the backward counterpart of [`IntoIteratorFrom`]. The position
-/// passed to [`into_iter_back_from`] is *inclusive*: the iterator yields the
-/// element of position `from` first, and then the preceding elements in
-/// decreasing order of position.
+/// passed to [`into_iter_back_from`] is *exclusive*: the iterator yields the
+/// elements of position smaller than `from`, in decreasing order of position,
+/// as `values[..from].iter().rev()` would do on a slice. Thus,
+/// [`into_iter_from(from)`] and `into_iter_back_from(from)` start from the
+/// same cursor position, which lies between the elements of position
+/// `from` – 1 and `from`, and move in opposite directions.
 ///
-/// Note that this convention is different from that of
-/// [`IntoUncheckedBackIterator::into_unchecked_iter_back_from`] and of
+/// This is the convention of
+/// [`IntoUncheckedBackIterator::into_unchecked_iter_back_from`], and of
 /// [`BidiIterator::prev`] on the iterator returned by
-/// [`IntoBidiIteratorFrom::into_iter_bidi_from`], whose first element is that
-/// of position `from` – 1. For example, on [`EliasFano`]
-/// `into_iter_back_from(from)` is equivalent to the inherent method
-/// [`iter_back_from(from + 1)`].
+/// [`IntoBidiIteratorFrom::into_iter_bidi_from`].
 ///
 /// [`into_iter_back_from`]: IntoBackIteratorFrom::into_iter_back_from
-/// [`EliasFano`]: crate::dict::EliasFano
-/// [`iter_back_from(from + 1)`]: crate::dict::EliasFano::iter_back_from
+/// [`into_iter_from(from)`]: IntoIteratorFrom::into_iter_from
 pub trait IntoBackIteratorFrom: IntoBackIterator {
     type IntoIterBackFrom: Iterator<Item = <Self as IntoBackIterator>::Item>;
 
-    /// Creates a backward iterator starting from the given position.
+    /// Creates a backward iterator returning the elements of position
+    /// smaller than `from`.
     ///
-    /// The first element returned is that of position `from`. The behavior
-    /// when `from` is greater than or equal to the number of elements is
+    /// The first element returned is that of position `from` – 1; if `from`
+    /// is the length of the sequence, the result is thus equivalent to
+    /// [`into_iter_back`], and if `from` is zero, the iterator is empty. The
+    /// behavior when `from` is greater than the number of elements is
     /// implementation-defined.
+    ///
+    /// [`into_iter_back`]: IntoBackIterator::into_iter_back
     fn into_iter_back_from(self, from: usize) -> Self::IntoIterBackFrom;
 }
 

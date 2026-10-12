@@ -1272,7 +1272,8 @@ impl<B: Backend<Word: Word> + AsRef<[B::Word]>> RankHinted for BitVec<B> {
         // spans more than one cache line.  When the subblock fits in a single
         // 64-byte cache line (e.g. 8 × u64 words), the first loop iteration
         // already pulls in the target word and the prefetch is pure overhead.
-        if WORDS_PER_SUBBLOCK * std::mem::size_of::<B::Word>() > 64 {
+        // We divide instead of multiplying, as the bound may be usize::MAX.
+        if const { WORDS_PER_SUBBLOCK > 64 / std::mem::size_of::<B::Word>() } {
             crate::utils::prefetch_index(bits, pos / bits_per_word);
         }
 

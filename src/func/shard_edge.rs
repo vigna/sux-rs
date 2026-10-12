@@ -1372,12 +1372,11 @@ mod fuse {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, target_pointer_width = "64"))]
     mod tests {
         use super::super::ShardEdge;
         use super::{Fuse3Shards, FuseLge3FullSigs, FuseLge3Shards};
 
-        #[cfg(target_pointer_width = "64")]
         #[test]
         fn test_dup_edge_retry_prob() {
             // Configurations from the benchmarks of the ε-cost sharding
@@ -1407,7 +1406,6 @@ mod fuse {
             assert!(Fuse3Shards::dup_edge_retry_prob(10_usize.pow(12), 13, None) > 0.5);
         }
 
-        #[cfg(target_pointer_width = "64")]
         #[test]
         fn test_shard_bounds_match_retry_budget() {
             // The chosen sharding always respects the retry budget.
@@ -1423,7 +1421,6 @@ mod fuse {
             }
         }
 
-        #[cfg(target_pointer_width = "64")]
         #[test]
         fn test_shards_match_paper_configs() {
             // The corrected bound reproduces the sharding of the paper's

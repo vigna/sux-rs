@@ -9,7 +9,7 @@ use std::borrow::Borrow;
 use anyhow::Result;
 use dsi_progress_logger::no_logging;
 use sux::bits::BitFieldVec;
-use sux::func::phast_r::SeedStoreBuild;
+use sux::func::phastr::SeedStoreBuild;
 use sux::func::{PHastR, PHastRBuilder};
 use sux::traits::TryIntoUnaligned;
 use sux::utils::{FromSlice, ToSig};

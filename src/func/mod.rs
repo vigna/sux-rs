@@ -158,6 +158,6 @@ pub mod codec;
 mod comp_vfunc;
 pub use comp_vfunc::CompVFunc;
 
-pub mod phast_r;
+pub mod phastr;
 #[doc(inline)]
-pub use phast_r::{PHastR, PHastRBuilder};
+pub use phastr::{PHastR, PHastRBuilder};

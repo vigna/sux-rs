@@ -929,7 +929,7 @@ impl<K: ?Sized, D: SeedStoreBuild + TryIntoUnaligned + From<Unaligned<D>>, P>
 }
 
 // The other tests that use only the public interface are in
-// tests/test_phast_r.rs; this one needs the private fields
+// tests/test_phastr.rs; this one needs the private fields
 #[cfg(all(test, feature = "epserde"))]
 mod tests {
     use super::*;

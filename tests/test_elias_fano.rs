@@ -1416,26 +1416,27 @@ fn test_pred_beyond_last_value() -> Result<()> {
 #[test]
 fn test_into_iter_back_from_boundaries() {
     use sux::traits::iter::IntoBackIteratorFrom;
-    let mut efb = EliasFanoBuilder::new(4, 10);
-    for v in [0usize, 2, 8, 10] {
-        efb.push(v);
-    }
+    let values = [0usize, 2, 8, 10];
+    let mut efb = EliasFanoBuilder::new(values.len(), 10);
+    efb.extend(values);
     let ef = efb.build_with_seq();
-    // Starting from the last position yields all elements in reverse.
-    let back: Vec<_> = (&ef).into_iter_back_from(3).collect();
-    assert_eq!(back, vec![10, 8, 2, 0]);
+    // The position is exclusive, as for the inherent method and for slices
+    for from in 0..=values.len() {
+        let back: Vec<_> = (&ef).into_iter_back_from(from).collect();
+        let expected: Vec<_> = values[..from].iter().copied().rev().collect();
+        assert_eq!(back, expected);
+        assert_eq!(ef.iter_back_from(from).collect::<Vec<_>>(), expected);
+    }
 }
 
 #[test]
-#[should_panic(expected = "position overflow")]
-fn test_into_iter_back_from_overflow() {
+#[should_panic(expected = "Index out of bounds")]
+fn test_into_iter_back_from_out_of_bounds() {
     use sux::traits::iter::IntoBackIteratorFrom;
     let mut efb = EliasFanoBuilder::new(2, 10);
     efb.push(1usize);
     efb.push(10);
     let ef = efb.build_with_seq();
-    // usize::MAX + 1 used to wrap in release, silently yielding an empty
-    // iterator; it must panic deterministically in both profiles.
     let _ = (&ef).into_iter_back_from(usize::MAX);
 }
 

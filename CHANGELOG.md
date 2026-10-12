@@ -88,6 +88,9 @@
 
 ### Fixed
 
+- `BitVec::rank_hinted` no longer overflows in debug mode when the bound on
+  the number of words to scan is `usize::MAX`.
+
 - `FromIntoIterator` and `JacobsonBalParen` no longer fail to compile with
   an overflow evaluating `&_: IntoIterator` when the `objc2` crate is in the
   dependency graph (e.g., through `sysinfo` 0.39 on macOS), as their type
@@ -179,7 +182,9 @@
 
 - Signing is parallel, and possibly from the store, when possible; in
   particular, `SignedFunc` constructors with `BitFieldVec` hashes sign in
-  parallel.
+  parallel (on platforms where the hash word type is less aligned than its
+  atomic counterpart, such as `u64` on 32-bit x86, through a temporary
+  atomic copy).
 
 - `PHastR` in-memory construction builds the remapping of the later levels
   from bitmaps of used slots, as offline construction does, instead of
@@ -208,6 +213,16 @@
 
 ### Changed
 
+- `IntoBackIteratorFrom::into_iter_back_from(from)` now excludes position
+  `from`, yielding first the element of position `from` – 1, like
+  `EliasFano::iter_back_from`, `IntoUncheckedBackIterator`,
+  `BidiIterator::prev`, and `values[..from].iter().rev()` on slices.
+  Previously, it included position `from`; code relying on the old behavior
+  must pass `from + 1`.
+
+- Sparse partial arrays no longer store the redundant end of their index, so
+  their serialized layout has changed.
+
 - CLI utilities and examples no longer detect compressed input files
   automatically: files are read as they are, unless a format is specified
   with `--decompress` (`gzip`, `zstd`, or `deko` for detection using the
@@ -222,7 +237,7 @@
   the file are used, and it is an error if the file has fewer keys (also in
   sequential mode, and for `lcp_mmphf`). `vfilter -u` with 8, 16, 32, or
   64-bit hashes warns instead of failing. `HashTypes` no longer implements
-  `Display`, and `bench_phast_r` has no short options.
+  `Display`, and `bench_phastr` has no short options.
 
 - `SignedFunc` constructors with `BitFieldVec` hashes require the hash word
   type to implement `AtomicPrimitive` (so `u128` is no longer accepted).
