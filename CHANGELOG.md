@@ -1,6 +1,6 @@
 # Change Log
 
-## unreleased
+## [0.15.0] - 2026-10-12
 
 ### New
 
@@ -212,6 +212,11 @@
   subinventories on very sparse vectors with a large inventory span.
 
 - `bit_field_vec!` evaluates its length argument once.
+
+- Structures with substructures (`VFunc2`, `LcpMmphf`, and `Lcp2Mmphf`) no
+  longer leave stale log targets on the progress logger when the
+  construction of a substructure fails: previously, the targets of retried
+  attempts accumulated in log messages.
 
 - The `rcl` CLI utility reports unsorted input as an error instead of
   panicking, and `RearCodedList` serialization functions writing to a file

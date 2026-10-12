@@ -422,9 +422,11 @@ mod build {
                 FromCloneableIntoIterator::new(0..num_buckets),
                 builder.expected_num_keys(num_buckets),
                 pl,
-            )?;
+            );
+        // Pop before propagating errors, or the caller's logger would keep
+        // the target
         pl.pop_log_target();
-        Ok(lcp_to_bucket)
+        lcp_to_bucket
     }
 
     /// Builds the function mapping the LCP of each bucket of byte-sequence
@@ -470,9 +472,11 @@ mod build {
                 FromCloneableIntoIterator::new(0..num_buckets),
                 builder.expected_num_keys(num_buckets),
                 pl,
-            )?;
+            );
+        // Pop before propagating errors, or the caller's logger would keep
+        // the target
         pl.pop_log_target();
-        Ok(lcp_to_bucket)
+        lcp_to_bucket
     }
 
     impl<
@@ -637,21 +641,23 @@ mod build {
 
             // -- Build lcp_len_offset VFunc --
 
+            let keys = keys.rewind()?;
             pl.push_log_target(" ▸ lcp_len_offset");
             pl.info(format_args!("Building key → lcp_len | offset function..."));
-            let keys = keys.rewind()?;
             let lcp_bit_lens = &scan.lcp_bit_lens;
             let bucket_mask = (1 << log2_bs) - 1;
-            let (lcp_len_offset, keys) =
-                builder.expected_num_keys(n).try_build_func::<K, K, _, _>(
-                    keys,
-                    FromCloneableIntoIterator::new(
-                        (0..n).map(|i| pack(lcp_bit_lens[i >> log2_bs], log2_bs, i & bucket_mask)),
-                    ),
-                    BitFieldVec::new_padded,
-                    pl,
-                )?;
+            let result = builder.expected_num_keys(n).try_build_func::<K, K, _, _>(
+                keys,
+                FromCloneableIntoIterator::new(
+                    (0..n).map(|i| pack(lcp_bit_lens[i >> log2_bs], log2_bs, i & bucket_mask)),
+                ),
+                BitFieldVec::new_padded,
+                pl,
+            );
+            // Pop before propagating errors, or the caller's logger would
+            // keep the target
             pl.pop_log_target();
+            let (lcp_len_offset, keys) = result?;
 
             let lcp_to_bucket = build_int_lcp_to_bucket(
                 &scan.bucket_first_keys,
@@ -803,13 +809,16 @@ mod build {
             pl.info(format_args!("Building key → lcp_len | offset function..."));
             let lcp_bit_lens = &scan.lcp_bit_lens;
             let bucket_mask = (1 << log2_bs) - 1;
-            let lcp_len_offset = builder.try_par_build_func(
+            let result = builder.try_par_build_func(
                 keys,
                 &|i| pack(lcp_bit_lens[i >> log2_bs], log2_bs, i & bucket_mask),
                 BitFieldVec::new_padded,
                 pl,
-            )?;
+            );
+            // Pop before propagating errors, or the caller's logger would
+            // keep the target
             pl.pop_log_target();
+            let lcp_len_offset = result?;
 
             let lcp_to_bucket = build_int_lcp_to_bucket(
                 &scan.bucket_first_keys,
@@ -1036,21 +1045,23 @@ mod build {
 
             // -- Build lcp_len_offset VFunc --
 
+            let keys = keys.rewind()?;
             pl.push_log_target(" ▸ lcp_len_offset");
             pl.info(format_args!("Building key → lcp_len | offset function..."));
-            let keys = keys.rewind()?;
             let lcp_bit_lens = &scan.lcp_bit_lens;
             let bucket_mask = (1 << log2_bs) - 1;
-            let (lcp_len_offset, keys) =
-                builder.expected_num_keys(n).try_build_func::<K, B, _, _>(
-                    keys,
-                    FromCloneableIntoIterator::new(
-                        (0..n).map(|i| pack(lcp_bit_lens[i >> log2_bs], log2_bs, i & bucket_mask)),
-                    ),
-                    BitFieldVec::new_padded,
-                    pl,
-                )?;
+            let result = builder.expected_num_keys(n).try_build_func::<K, B, _, _>(
+                keys,
+                FromCloneableIntoIterator::new(
+                    (0..n).map(|i| pack(lcp_bit_lens[i >> log2_bs], log2_bs, i & bucket_mask)),
+                ),
+                BitFieldVec::new_padded,
+                pl,
+            );
+            // Pop before propagating errors, or the caller's logger would
+            // keep the target
             pl.pop_log_target();
+            let (lcp_len_offset, keys) = result?;
 
             let lcp_to_bucket = build_bytes_lcp_to_bucket(
                 &scan.bucket_first_keys,
@@ -1208,13 +1219,16 @@ mod build {
             pl.info(format_args!("Building key → lcp_len | offset function..."));
             let lcp_bit_lens = &scan.lcp_bit_lens;
             let bucket_mask = (1 << log2_bs) - 1;
-            let lcp_len_offset = builder.try_par_build_func(
+            let result = builder.try_par_build_func(
                 keys,
                 &|i| pack(lcp_bit_lens[i >> log2_bs], log2_bs, i & bucket_mask),
                 BitFieldVec::new_padded,
                 pl,
-            )?;
+            );
+            // Pop before propagating errors, or the caller's logger would
+            // keep the target
             pl.pop_log_target();
+            let lcp_len_offset = result?;
 
             let lcp_to_bucket = build_bytes_lcp_to_bucket(
                 &scan.bucket_first_keys,

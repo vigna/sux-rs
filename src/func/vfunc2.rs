@@ -811,7 +811,7 @@ mod build {
             // 0 = escape, so the second function is always queried.
 
             pl.push_log_target(" ▸ first");
-            let (first, escaped_counts) = builder.try_build_first_func::<K, V>(
+            let result = builder.try_build_first_func::<K, V>(
                 seed,
                 shard_edge,
                 remap.escape,
@@ -819,8 +819,10 @@ mod build {
                 &|v| remap.inv_map.get(get_val(v)),
                 &escaped,
                 pl,
-            )?;
+            );
+            // Pop before propagating errors, or retries would nest log targets
             pl.pop_log_target();
+            let (first, escaped_counts) = result?;
 
             debug_assert_eq!(
                 escaped_counts.iter().sum::<usize>(),
@@ -831,7 +833,7 @@ mod build {
             // -- Build the second function (escaped keys only) --
 
             pl.push_log_target(" ▸ second");
-            let second = builder.try_build_escaped_func::<K, V, F>(
+            let result = builder.try_build_escaped_func::<K, V, F>(
                 seed,
                 store,
                 &escaped_counts,
@@ -839,8 +841,9 @@ mod build {
                 max_value,
                 get_val,
                 pl,
-            )?;
+            );
             pl.pop_log_target();
+            let second = result?;
 
             let bit_width = second.data.bit_width() as f64;
 

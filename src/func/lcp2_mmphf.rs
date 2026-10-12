@@ -323,7 +323,7 @@ mod build {
             "Building key → lcp_freq_len | offset function..."
         ));
         let shard_edge = builder.shard_edge;
-        let (lcp_freq_len_offset, escaped_counts) = builder.try_build_first_func::<K, u64>(
+        let result = builder.try_build_first_func::<K, u64>(
             seed,
             shard_edge,
             (remap.escape << log2_bs) | bucket_mask,
@@ -331,8 +331,10 @@ mod build {
             &|v| (remap.inv_map.get(lcp(v)) << log2_bs) | (v as usize & bucket_mask),
             &escaped,
             pl,
-        )?;
+        );
+        // Pop before propagating errors, or retries would nest log targets
         pl.pop_log_target();
+        let (lcp_freq_len_offset, escaped_counts) = result?;
 
         // -- Build lcp_infreq_len (escaped keys only) --
         let lcp_infreq_len = if remap.num_escaped > 0 {
@@ -340,7 +342,7 @@ mod build {
             pl.info(format_args!(
                 "Building escaped key → lcp_infreq_len function..."
             ));
-            let lcp_infreq_len = builder.try_build_escaped_func::<K, u64, F0>(
+            let result = builder.try_build_escaped_func::<K, u64, F0>(
                 seed,
                 store,
                 &escaped_counts,
@@ -348,9 +350,9 @@ mod build {
                 max_lcp,
                 &lcp,
                 pl,
-            )?;
+            );
             pl.pop_log_target();
-            lcp_infreq_len
+            result?
         } else {
             VFunc::empty()
         };
