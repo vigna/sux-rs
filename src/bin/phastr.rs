@@ -58,6 +58,10 @@ struct Args {
     /// space per key. Requires --sequential (-s).​
     #[arg(short, long, requires = "sequential")]
     offline: bool,
+    /// The directory of the temporary files of --offline (-o) [default:
+    /// TMPDIR].​
+    #[arg(long, requires = "offline")]
+    temp_dir: Option<std::path::PathBuf>,
     /// Use this number of threads [default: all available cores].​
     #[arg(short, long)]
     threads: Option<usize>,
@@ -77,6 +81,11 @@ struct Args {
     /// A 64-bit seed for the hash function.​
     #[arg(long)]
     seed: Option<u64>,
+    /// The maximum number of chunks in which a level is swept in parallel
+    /// [default: the number of threads]; setting it makes the function
+    /// independent of the number of threads.​
+    #[arg(long)]
+    sweep_chunks: Option<usize>,
     #[clap(flatten)]
     log: sux::cli::LogIntervalArg,
 }
@@ -101,6 +110,12 @@ fn main() -> Result<()> {
     }
     if let Some(seed) = args.seed {
         builder = builder.seed(seed);
+    }
+    if let Some(temp_dir) = &args.temp_dir {
+        builder = builder.temp_dir(temp_dir);
+    }
+    if let Some(sweep_chunks) = args.sweep_chunks {
+        builder = builder.sweep_chunks(sweep_chunks);
     }
 
     macro_rules! build_with_seeds {

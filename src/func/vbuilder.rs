@@ -27,6 +27,7 @@ use std::any::TypeId;
 use std::borrow::{Borrow, Cow};
 use std::marker::PhantomData;
 use std::ops::{BitXor, BitXorAssign};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
@@ -58,6 +59,7 @@ fn default_max_num_threads() -> usize {
 ///
 /// - [`offline`]: stores signatures and values in on-disk buckets instead of
 ///   core memory; only sequential constructors support this option;
+/// - [`temp_dir`]: the directory of the on-disk buckets of offline mode;
 /// - [`eps`]: the target relative space loss due to ε-cost sharding;
 /// - [`retry_prob`]: the maximum probability of a retry caused by duplicate
 ///   edges;
@@ -120,6 +122,7 @@ fn default_max_num_threads() -> usize {
 ///
 /// [`offline`]: VBuilder::offline
 /// [offline]: VBuilder::offline
+/// [`temp_dir`]: VBuilder::temp_dir
 /// [`eps`]: VBuilder::eps
 /// [`retry_prob`]: VBuilder::retry_prob
 /// [`low_mem`]: VBuilder::low_mem
@@ -168,6 +171,19 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// constructors return an error if it is set.
     #[setters(generate = true)]
     offline: bool,
+
+    /// The directory in which [offline] mode creates the directory of its
+    /// buckets.
+    ///
+    /// By default, the default temporary directory (see
+    /// [`tempfile::env::temp_dir`]; on Unix, the directory specified by the
+    /// environment variable `TMPDIR`, if set). Libraries should use this
+    /// setting to let their users choose where temporary files are written,
+    /// as the default temporary directory can be changed only process-wide.
+    ///
+    /// [offline]: Self::offline
+    #[setters(generate = true, strip_option, into)]
+    temp_dir: Option<PathBuf>,
 
     /// Checks for duplicate signatures.
     ///
@@ -262,6 +278,7 @@ impl<D, S, E: Default> Default for VBuilder<D, S, E> {
             shard_size_hint: None,
             max_num_threads: default_max_num_threads(),
             offline: false,
+            temp_dir: None,
             check_dups: false,
             low_mem: None,
             seed: 0,
@@ -286,13 +303,15 @@ impl<D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync, S: Sig, E: ShardEdge
     /// regardless of the other builder's type parameters.
     ///
     /// The copied fields are: [`max_num_threads`], [`offline`],
-    /// [`check_dups`], [`low_mem`], [`eps`], and [`retry_prob`].
+    /// [`temp_dir`], [`check_dups`], [`low_mem`], [`eps`], and
+    /// [`retry_prob`].
     /// Data-dependent fields
     /// ([`expected_num_keys`], [`seed`], [`log2_buckets`]) and internal
     /// construction state are left at their defaults.
     ///
     /// [`max_num_threads`]: Self::max_num_threads
     /// [`offline`]: Self::offline
+    /// [`temp_dir`]: Self::temp_dir
     /// [`check_dups`]: Self::check_dups
     /// [`low_mem`]: Self::low_mem
     /// [`eps`]: Self::eps
@@ -303,6 +322,7 @@ impl<D: BitFieldSlice<Value: Word + BinSafe> + Send + Sync, S: Sig, E: ShardEdge
     pub fn set_from<D2, S2, E2>(mut self, other: &VBuilder<D2, S2, E2>) -> Self {
         self.max_num_threads = other.max_num_threads;
         self.offline = other.offline;
+        self.temp_dir = other.temp_dir.clone();
         self.check_dups = other.check_dups;
         self.low_mem = other.low_mem;
         self.eps = other.eps;
@@ -1364,11 +1384,19 @@ impl<
         if self.offline {
             self.try_solve_once_inner(
                 seed,
-                sig_store::new_offline::<S, V>(
-                    self.log2_buckets,
-                    LOG2_MAX_SHARDS,
-                    self.expected_num_keys,
-                )?,
+                match &self.temp_dir {
+                    Some(dir) => sig_store::new_offline_in::<S, V>(
+                        dir,
+                        self.log2_buckets,
+                        LOG2_MAX_SHARDS,
+                        self.expected_num_keys,
+                    )?,
+                    None => sig_store::new_offline::<S, V>(
+                        self.log2_buckets,
+                        LOG2_MAX_SHARDS,
+                        self.expected_num_keys,
+                    )?,
+                },
                 populate,
                 build_fn,
                 pl,

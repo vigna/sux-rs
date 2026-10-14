@@ -243,6 +243,38 @@ fn test_mismatched_keys_and_values() -> Result<()> {
     Ok(())
 }
 
+/// Offline construction creates its buckets in the given directory.
+#[test]
+fn test_offline_temp_dir() -> Result<()> {
+    let n = 100_000;
+    let dir = tempfile::tempdir()?;
+    let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
+        FromCloneableIntoIterator::from(0..n),
+        FromCloneableIntoIterator::from(0_usize..),
+        VBuilder::default().offline(true).temp_dir(dir.path()),
+        &mut ProgressLogger::default(),
+    )?;
+    for i in 0..n {
+        assert_eq!(i, func.get(i));
+    }
+    // The buckets are deleted at the end of the construction
+    assert!(std::fs::read_dir(dir.path())?.next().is_none());
+    // A missing directory makes the construction fail, naming it
+    let missing = dir.path().join("missing");
+    let err = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
+        FromCloneableIntoIterator::from(0..n),
+        FromCloneableIntoIterator::from(0_usize..),
+        VBuilder::default().offline(true).temp_dir(&missing),
+        &mut ProgressLogger::default(),
+    )
+    .expect_err("construction in a missing directory must fail");
+    assert!(
+        format!("{err:#}").contains(&missing.display().to_string()),
+        "unexpected error: {err:#}"
+    );
+    Ok(())
+}
+
 /// The parallel builder does not support offline (disk-based) construction and
 /// must reject it rather than silently ignoring the flag.
 #[test]

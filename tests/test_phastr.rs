@@ -275,6 +275,35 @@ fn test_unaligned_round_trip() -> Result<()> {
 }
 
 #[test]
+fn test_temp_dir() -> Result<()> {
+    // Offline construction with temporary files in a given directory
+    let keys: Vec<u64> = (0..100_000).collect();
+    let dir = tempfile::tempdir()?;
+    let phf = <PHastR<u64>>::try_new_with_builder(
+        FromSlice::new(&keys),
+        PHastRBuilder::default().offline(true).temp_dir(dir.path()),
+        no_logging![],
+    )?;
+    let mem = <PHastR<u64>>::try_new(FromSlice::new(&keys), no_logging![])?;
+    for key in &keys {
+        assert_eq!(phf.get(key), mem.get(key));
+    }
+    // A missing directory makes the construction fail, naming it
+    let missing = dir.path().join("missing");
+    let err = <PHastR<u64>>::try_new_with_builder(
+        FromSlice::new(&keys),
+        PHastRBuilder::default().offline(true).temp_dir(&missing),
+        no_logging![],
+    )
+    .expect_err("construction in a missing directory must fail");
+    assert!(
+        format!("{err:#}").contains(&missing.display().to_string()),
+        "unexpected error: {err:#}"
+    );
+    Ok(())
+}
+
+#[test]
 fn test_lender() -> Result<()> {
     // The constructors reading keys from a lender, in memory and offline
     let keys: Vec<u64> = (0..100_000).collect();

@@ -201,8 +201,11 @@ pub struct LevelParams {
 /// them just once. Their variants [`PHastR::try_par_new_with_builder`] and
 /// [`PHastR::try_new_with_builder`] make it possible to configure the
 /// construction using a [`PHastRBuilder`]. Construction uses the threads of
-/// the current [rayon] pool, and the function built does not depend on the
-/// constructor, provided that the pool has the same number of threads.
+/// the current [rayon] pool. The function built does not depend on the
+/// constructor, and it depends on the pool only through the number of chunks
+/// in which levels are swept in parallel, which by default is the number of
+/// threads of the pool: to build the same function with pools of any size,
+/// set the [number of sweep chunks].
 ///
 /// Construction from a slice of keys needs about 10 bytes per key besides
 /// the keys with one thread, and about 12 with eight threads. Construction
@@ -239,7 +242,10 @@ pub struct LevelParams {
 ///   queries on large key sets are about 8% slower); a smaller size makes
 ///   queries slightly faster, but it increases space significantly;
 ///
-/// - the [hash seed], if you need different functions on the same keys.
+/// - the [hash seed], if you need different functions on the same keys;
+///
+/// - the [number of sweep chunks], if you need the same function whatever
+///   the number of threads of the construction.
 ///
 /// # Generics
 ///
@@ -360,6 +366,7 @@ pub struct LevelParams {
 /// [number of bits of a seed]: PHastRBuilder::seed_bits
 /// [expected bucket size]: PHastRBuilder::bucket_size
 /// [hash seed]: PHastRBuilder::seed
+/// [number of sweep chunks]: PHastRBuilder::sweep_chunks
 /// [unaligned reads]: BitFieldVec::get_unaligned
 /// [`try_new`]: PHastR::try_new
 /// [`deserialize_eps`]: https://docs.rs/epserde/latest/epserde/deser/trait.Deserialize.html#tymethod.deserialize_eps
@@ -722,7 +729,8 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     /// memory used). The function is identical to that built by
     /// [`try_par_new_with_builder`] with the same builder (apart from offline
     /// mode, which that constructor does not support), provided that the
-    /// current [rayon] pool has the same number of threads.
+    /// current [rayon] pool has the same number of threads, or that the
+    /// builder sets the [number of sweep chunks].
     ///
     /// * `keys` - a [`FallibleLender`] returning the keys, which is read just
     ///   once. The [`lenders`] module provides easy ways to build such
@@ -771,6 +779,7 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
     /// [offline mode]: PHastRBuilder::offline
     /// [`try_par_new_with_builder`]: Self::try_par_new_with_builder
     /// [rayon]: https://docs.rs/rayon
+    /// [number of sweep chunks]: PHastRBuilder::sweep_chunks
     /// [`lenders`]: crate::utils::lenders
     /// [`LineLender`]: crate::utils::LineLender
     pub fn try_new_with_builder<B: ?Sized + Borrow<K>>(

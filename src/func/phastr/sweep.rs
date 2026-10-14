@@ -343,8 +343,9 @@ pub(super) fn sweep_bumping_level<S: PartSource, T: SweepSeed>(
     cpl.item_name("bucket");
     cpl.expected_updates(g.buckets);
     cpl.start(format!(
-        "Sweeping level {index} ({k} keys, {} buckets)...",
-        g.buckets
+        "Sweeping level {index} ({k} keys, {} buckets, {} chunks)...",
+        g.buckets,
+        g.sweep_chunks()
     ));
     let out = sweep_level(sigs, g, weights, true, &mut cpl).expect("bumping sweeps cannot fail");
     cpl.done();
@@ -354,11 +355,16 @@ pub(super) fn sweep_bumping_level<S: PartSource, T: SweepSeed>(
 /// Assigns seeds to the buckets of a level, possibly in parallel, given the
 /// signatures of its keys (see [`PartSource`]).
 ///
+/// The level is split into [chunks], which are swept possibly in parallel;
+/// then, the gaps left between the chunks are swept, possibly in parallel.
+///
 /// Each sweep updates a clone of `pl` with the number of buckets of each
 /// part it loads.
 ///
 /// Returns `None` if `allow_bump` is false and some bucket could not be
 /// placed.
+///
+/// [chunks]: Geometry::sweep_chunks
 pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog, T: SweepSeed>(
     sigs: &S,
     g: &Geometry,
@@ -367,15 +373,7 @@ pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog, T: SweepSeed>
     pl: &mut P,
 ) -> Option<Level<T>> {
     let nb = g.buckets;
-    let gap = g.chunk_gap();
-    #[cfg(feature = "rayon")]
-    let threads = rayon::current_num_threads();
-    #[cfg(not(feature = "rayon"))]
-    let threads = 1;
-    // In 64 bits, as the gap of small levels can be very large
-    let chunks = threads
-        .min((nb as u64 / (64 * gap).max(4096)) as usize)
-        .max(1);
+    let chunks = g.sweep_chunks();
 
     let mut seeds = vec![T::default(); nb];
     // Each sweep adds to the set the slots it uses (and those marked as
@@ -390,7 +388,7 @@ pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog, T: SweepSeed>
         });
     }
     // With several chunks, the gap is at most the number of buckets
-    let gap = gap as usize;
+    let gap = g.chunk_gap() as usize;
 
     // Chunk boundaries; chunk i processes [bounds[i], bounds[i + 1] - gap),
     // except for the last one, which processes everything.

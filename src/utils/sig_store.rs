@@ -57,7 +57,7 @@
 
 #![allow(clippy::comparison_chain)]
 #![allow(clippy::type_complexity)]
-use anyhow::Result;
+use anyhow::{Context, Result};
 use mem_dbg::{MemDbg, MemSize};
 
 use rdst::RadixKey;
@@ -69,6 +69,7 @@ use std::{
     iter::FusedIterator,
     marker::PhantomData,
     ops::{BitXor, BitXorAssign},
+    path::Path,
     sync::Arc,
 };
 use xxhash_rust::xxh3;
@@ -546,21 +547,49 @@ fn check_high_bits(buckets_high_bits: u32, max_shard_high_bits: u32) -> Result<(
 ///
 /// The type `S` is the type of the signatures (usually `[u64;1]` or `[u64;
 /// 2]`), while `V` is the type of the values. The store will be written to a
-/// [temporary directory], and the files will be deleted when the shard store
-/// returned by [`into_shard_store`] is dropped.
+/// new directory in the default temporary directory (see
+/// [`tempfile::env::temp_dir`]; on Unix, the directory specified by the
+/// environment variable `TMPDIR`, if set), and the files will be deleted
+/// when the shard store returned by [`into_shard_store`] is dropped. To
+/// choose the directory, use [`new_offline_in`].
 ///
 /// Contrarily to [`new_online`], the expected number of keys is ignored: it
 /// is accepted only so the two constructors have the same signature.
 ///
-/// [temporary directory]: https://doc.rust-lang.org/std/env/fn.temp_dir.html
 /// [`into_shard_store`]: SigStore::into_shard_store
 pub fn new_offline<S: BinSafe + Sig, V: BinSafe>(
+    buckets_high_bits: u32,
+    max_shard_high_bits: u32,
+    expected_num_keys: Option<usize>,
+) -> Result<SigStoreImpl<S, V, BufWriter<File>>> {
+    new_offline_in(
+        tempfile::env::temp_dir(),
+        buckets_high_bits,
+        max_shard_high_bits,
+        expected_num_keys,
+    )
+}
+
+/// Creates a new on-disk store as [`new_offline`], but in a new directory in
+/// `dir`.
+///
+/// Libraries should use this function rather than [`new_offline`] to let
+/// their users choose where temporary files are written: the default
+/// temporary directory can be changed only process-wide.
+pub fn new_offline_in<S: BinSafe + Sig, V: BinSafe>(
+    dir: impl AsRef<Path>,
     buckets_high_bits: u32,
     max_shard_high_bits: u32,
     _expected_num_keys: Option<usize>,
 ) -> Result<SigStoreImpl<S, V, BufWriter<File>>> {
     check_high_bits(buckets_high_bits, max_shard_high_bits)?;
-    let temp_dir = tempfile::TempDir::new()?;
+    let dir = dir.as_ref();
+    let temp_dir = tempfile::TempDir::new_in(dir).with_context(|| {
+        format!(
+            "Could not create a temporary directory in {}",
+            dir.display()
+        )
+    })?;
     let mut writers = VecDeque::new();
     for i in 0..1 << buckets_high_bits {
         let file = File::options()

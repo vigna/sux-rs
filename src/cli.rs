@@ -350,6 +350,10 @@ pub struct BuilderArgs {
     /// Requires --sequential (-s).​
     #[arg(short, long, requires = "sequential")]
     pub offline: bool,
+    /// The directory in which --offline (-o) creates the directory of its
+    /// buckets [default: TMPDIR].​
+    #[arg(long, requires = "offline")]
+    pub temp_dir: Option<std::path::PathBuf>,
     /// Sort shards and check for duplicate signatures.​
     #[arg(short, long)]
     pub check_dups: bool,
@@ -384,6 +388,9 @@ impl BuilderArgs {
             .retry_prob(self.retry_prob);
         if let Some(seed) = self.seed {
             builder = builder.seed(seed);
+        }
+        if let Some(temp_dir) = &self.temp_dir {
+            builder = builder.temp_dir(temp_dir);
         }
         if let Some(threads) = self.threads {
             builder = builder.max_num_threads(threads);

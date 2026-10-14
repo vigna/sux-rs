@@ -25,14 +25,16 @@
 //!
 //! The function built is identical to that built by
 //! [`PHastR::try_par_new_with_builder`] with the same builder, provided that
-//! the current [rayon] pool has the same number of threads: the seed chosen
-//! for a bucket depends on the multiset of the signatures of its keys, but
-//! not on their order, and sweeps are split into the same chunks. The only
-//! exception is the detection of duplicate keys, which uses the records (see
+//! the current [rayon] pool has the same number of threads, or that the
+//! builder sets the [number of sweep chunks]: the seed chosen for a bucket
+//! depends on the multiset of the signatures of its keys, but not on their
+//! order, and sweeps are split into the same chunks. The only exception is
+//! the detection of duplicate keys, which uses the records (see
 //! [`has_duplicates`]).
 //!
 //! [offline mode]: PHastRBuilder::offline
 //! [rayon]: https://docs.rs/rayon
+//! [number of sweep chunks]: PHastRBuilder::sweep_chunks
 
 use super::builder::*;
 use super::sigs::*;
@@ -42,6 +44,7 @@ use crate::dict::elias_fano::{EliasFano, EliasFanoBuilder};
 use anyhow::{Context, bail};
 use std::fs::File;
 use std::io::{self, Read, Seek, Write};
+use std::path::Path;
 use std::sync::Mutex;
 use std::time::Instant;
 use zerocopy::IntoBytes;
@@ -239,23 +242,23 @@ struct StoreWriter {
 
 impl StoreWriter {
     /// Creates a writer for a store with the given signature function and
-    /// number of partitions, kept in anonymous temporary files if `offline`
-    /// is true, and in memory otherwise.
-    fn new(sig: SigFn, log2_partitions: u32, offline: bool) -> io::Result<Self> {
+    /// number of partitions, kept in anonymous temporary files in `dir`, if
+    /// it is not `None`, and in memory otherwise.
+    fn new(sig: SigFn, log2_partitions: u32, dir: Option<&Path>) -> io::Result<Self> {
         let partitions = 1 << log2_partitions;
         Ok(Self {
             sig,
             log2_partitions,
-            storage: Mutex::new(if offline {
+            storage: Mutex::new(if let Some(dir) = dir {
                 let log2_files = log2_partitions.min(LOG2_FILES);
                 let files = (0..1 << log2_files)
                     .map(|_| {
-                        tempfile::tempfile().map(Mutex::new).map_err(|e| {
+                        tempfile::tempfile_in(dir).map(Mutex::new).map_err(|e| {
                             io::Error::new(
                                 e.kind(),
                                 format!(
                                     "Could not create a temporary file in {}: {e}",
-                                    tempfile::env::temp_dir().display()
+                                    dir.display()
                                 ),
                             )
                         })
@@ -631,8 +634,9 @@ fn by_thread<T: Send>(
 }
 
 /// Returns the records of the `k` keys of the bumped buckets, given the
-/// salt of the following level: in a new store (kept on disk if `offline`
-/// is true), or in a vector, if the following level is the last one. The
+/// salt of the following level: in a new store (kept on disk in `dir`, if
+/// it is not `None`), or in a vector, if the following level is the last
+/// one. The
 /// progress of the pass, in records read, is logged on a concurrent logger
 /// obtained from `pl`.
 fn collect_bumped<T: SweepSeed>(
@@ -641,7 +645,7 @@ fn collect_bumped<T: SweepSeed>(
     seeds: &[T],
     k: usize,
     salt: u64,
-    offline: bool,
+    dir: Option<&Path>,
     pl: &mut impl ProgressLog,
 ) -> Result<Keys> {
     let sig = store.sig;
@@ -669,7 +673,7 @@ fn collect_bumped<T: SweepSeed>(
         debug_assert_eq!(records.len(), k);
         Keys::Last(records)
     } else {
-        let writer = StoreWriter::new(SigFn(Some(salt)), log2_partitions(k), offline)?;
+        let writer = StoreWriter::new(SigFn(Some(salt)), log2_partitions(k), dir)?;
         let lens = by_thread(store, |range| {
             let (mut buffers, mut records, mut pl) = (writer.buffers(), vec![], cpl.clone());
             for p in range {
@@ -802,7 +806,7 @@ impl PHastRBuilder {
             &seeds,
             num_holes,
             level_salt(self.seed, 1, 0),
-            self.offline,
+            self.offline_dir().as_deref(),
             pl,
         )
         .context("Could not collect the keys bumped from level 0")?;
@@ -832,20 +836,20 @@ impl PHastRBuilder {
         pl: &mut impl ProgressLog,
     ) -> Result<(usize, LevelParams, D, Vec<(LevelParams, Vec<u16>)>, Remap)> {
         let weights = self.priority_weights();
+        let dir = self.offline_dir();
 
         pl.item_name("key");
         pl.expected_updates(None);
         pl.start(format!(
             "Computing and storing 128-bit signatures sequentially {} using seed 0x{:016x}...",
-            if self.offline {
-                format!("on disk ({})", tempfile::env::temp_dir().display())
-            } else {
-                "in RAM".to_owned()
+            match &dir {
+                Some(dir) => format!("on disk ({})", dir.display()),
+                None => "in RAM".to_owned(),
             },
             self.seed
         ));
         let start = Instant::now();
-        let writer = StoreWriter::new(SigFn(None), MAX_LOG2_PARTITIONS, self.offline)?;
+        let writer = StoreWriter::new(SigFn(None), MAX_LOG2_PARTITIONS, dir.as_deref())?;
         let mut buffers = writer.buffers();
         while let Some(key) = keys.next()? {
             let key: &K = key.borrow();
@@ -917,7 +921,7 @@ impl PHastRBuilder {
                         &out.seeds,
                         k - used,
                         level_salt(self.seed, index + 1, 0),
-                        self.offline,
+                        dir.as_deref(),
                         pl,
                     )
                     .with_context(|| {
@@ -1162,6 +1166,45 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "rayon")]
+    #[test]
+    fn test_sweep_chunks() -> Result<()> {
+        // With a fixed number of sweep chunks, the function does not depend
+        // on the size of the pool; by default, the number of chunks is the
+        // number of threads. The key set is large enough for three chunks.
+        let n = 400_000;
+        let fixed = PHastRBuilder::default().sweep_chunks(3);
+        assert_eq!(fixed.geometry(n, n, fixed.bucket_size).sweep_chunks(), 3);
+        let keys: Vec<u64> = (0..n as u64).collect();
+        let refs: Vec<&u64> = keys.iter().collect();
+        let in_pool = |threads: usize, f: &(dyn Fn() -> Result<PHastR<u64>> + Sync)| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()?
+                .install(f)
+        };
+        let reference = in_pool(3, &|| {
+            <PHastR<u64>>::try_par_new_with_builder(&refs, PHastRBuilder::default(), no_logging![])
+        })?;
+        for threads in [1, 2, 3, 4] {
+            let par = in_pool(threads, &|| {
+                <PHastR<u64>>::try_par_new_with_builder(&refs, fixed.clone(), no_logging![])
+            })?;
+            assert_same(&par, &reference);
+            for offline in [false, true] {
+                let phf = in_pool(threads, &|| {
+                    <PHastR<u64>>::try_new_with_builder(
+                        FromSlice::new(&refs),
+                        fixed.clone().offline(offline),
+                        no_logging![],
+                    )
+                })?;
+                assert_same(&phf, &reference);
+            }
+        }
+        Ok(())
+    }
+
     #[test]
     fn test_strings() -> Result<()> {
         let keys: Vec<String> = (0..200_000).map(|i| format!("key{i}")).collect();
@@ -1253,7 +1296,8 @@ mod tests {
         for offline in [false, true] {
             for n in [1, 100, 3000, 100_000, 1_000_000] {
                 let g = PHastRBuilder::default().geometry(n, n, 4.5);
-                let writer = StoreWriter::new(SigFn(None), MAX_LOG2_PARTITIONS, offline)?;
+                let dir = offline.then(tempfile::env::temp_dir);
+                let writer = StoreWriter::new(SigFn(None), MAX_LOG2_PARTITIONS, dir.as_deref())?;
                 let mut buffers = writer.buffers();
                 let sig = |i: usize| folded_multiply(i as u64 + 1, 0x9E37_79B9_7F4A_7C15);
                 for i in 0..n {

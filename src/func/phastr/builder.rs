@@ -13,6 +13,7 @@ use crate::dict::elias_fano::EliasFanoBuilder;
 use anyhow::{bail, ensure};
 use derive_setters::*;
 use dsi_progress_logger::no_logging;
+use std::path::PathBuf;
 use std::time::Instant;
 
 /// The maximum number of keys of the last level, which is built without
@@ -131,19 +132,56 @@ pub struct PHastRBuilder {
     ///
     /// The default is false. Only the constructors reading keys from a
     /// lender honor this setting, and the constructors reading keys from a
-    /// slice return an error if it is set. Files are created in the default
-    /// temporary directory (see [`tempfile::env::temp_dir`]; on Unix, the
-    /// directory specified by the environment variable `TMPDIR`, if set),
-    /// which must have about sixteen bytes of free space per key; note that
-    /// on some systems the default temporary directory is in memory (e.g.,
-    /// a `tmpfs`).
+    /// slice return an error if it is set. Files are created in the
+    /// [temporary directory], which must have about sixteen bytes of free
+    /// space per key.
     ///
     /// Offline construction uses 256 MiB of buffers up to about 8.6 · 10⁹
     /// keys, and then about a sixteenth of a byte per key (at most 16 GiB),
     /// so it is useful only on large key sets (see [`PHastR`] for the memory
     /// used by the construction).
+    ///
+    /// [temporary directory]: Self::temp_dir
     #[setters(generate = true)]
     pub(super) offline: bool,
+
+    /// The directory of the temporary files of [offline mode].
+    ///
+    /// By default, the default temporary directory (see
+    /// [`tempfile::env::temp_dir`]; on Unix, the directory specified by the
+    /// environment variable `TMPDIR`, if set); note that on some systems the
+    /// default temporary directory is in memory (e.g., a `tmpfs`). Libraries
+    /// should use this setting to let their users choose where temporary
+    /// files are written, as the default temporary directory can be changed
+    /// only process-wide.
+    ///
+    /// [offline mode]: Self::offline
+    #[setters(generate = true, strip_option, into)]
+    pub(super) temp_dir: Option<PathBuf>,
+
+    /// The maximum number of chunks in which a level is swept in parallel.
+    ///
+    /// By default, the number of threads of the current [rayon] pool (one
+    /// without the `rayon` feature). Since the function built depends on
+    /// the number of chunks, by default it depends on the size of the pool:
+    /// setting this value makes it independent of the pool (the chunks are
+    /// still processed by its threads). Levels too small to be split into
+    /// this number of chunks are swept in fewer chunks, depending only on
+    /// their size.
+    ///
+    /// With fewer chunks than threads, sweeps use fewer threads, and if the
+    /// number of chunks is not a multiple of the number of threads, some
+    /// threads are idle at the end of a sweep. Each additional chunk
+    /// requires the sweep of a short gap, which makes construction slower
+    /// and the function slightly larger: for example, on 10⁸ keys with one
+    /// thread, construction in 16 chunks is about 3% slower than in one
+    /// chunk, and in 64 chunks about 10% slower, using 0.003 more bits per
+    /// key. To build the same function with any number of threads, a good
+    /// choice is thus the largest number of threads that will be used.
+    ///
+    /// [rayon]: https://docs.rs/rayon
+    #[setters(generate = true, strip_option)]
+    pub(super) sweep_chunks: Option<usize>,
 }
 
 impl PHastRBuilder {
@@ -221,17 +259,37 @@ impl PHastRBuilder {
                 bail!("The weights must be in [-2^32..2^32] (got {weights:?})");
             }
         }
+        if self.sweep_chunks == Some(0) {
+            bail!("The number of sweep chunks must be positive");
+        }
         Ok(())
+    }
+
+    /// Returns the directory of the temporary files, if in offline mode, or
+    /// `None`.
+    pub(super) fn offline_dir(&self) -> Option<PathBuf> {
+        self.offline.then(|| {
+            self.temp_dir
+                .clone()
+                .unwrap_or_else(tempfile::env::temp_dir)
+        })
+    }
+
+    /// Returns the maximum number of chunks of a parallel sweep (see
+    /// [`sweep_chunks`](Self::sweep_chunks)).
+    fn max_sweep_chunks(&self) -> usize {
+        self.sweep_chunks.unwrap_or_else(num_threads)
     }
 
     /// Logs the parameters of the construction.
     pub(super) fn log_params(&self, pl: &mut impl ProgressLog) {
         pl.info(format_args!(
-            "Seed bits: {}; layouts: {}; maximum slice length: {}; expected bucket size: {}",
+            "Seed bits: {}; layouts: {}; maximum slice length: {}; expected bucket size: {}; maximum sweep chunks: {}",
             self.seed_bits,
             1 << self.log2_layouts,
             1 << self.log2_slice_len,
-            self.bucket_size
+            self.bucket_size,
+            self.max_sweep_chunks()
         ));
     }
 
@@ -480,6 +538,7 @@ impl PHastRBuilder {
             log2_layouts: self.log2_layouts,
             seed_bits: self.seed_bits,
             m,
+            max_chunks: self.max_sweep_chunks(),
         }
     }
 }
@@ -494,6 +553,8 @@ impl Default for PHastRBuilder {
             seed: 0,
             weights: None,
             offline: false,
+            temp_dir: None,
+            sweep_chunks: None,
         }
     }
 }
@@ -520,6 +581,11 @@ pub(super) struct Geometry {
     pub(super) seed_bits: u32,
     /// The output range.
     pub(super) m: usize,
+    /// The maximum number of chunks of a parallel sweep (see
+    /// [`sweep_chunks`]).
+    ///
+    /// [`sweep_chunks`]: Self::sweep_chunks
+    pub(super) max_chunks: usize,
 }
 
 impl Geometry {
@@ -579,6 +645,19 @@ impl Geometry {
         // In 128 bits, as the product might overflow (in particular, on
         // 32-bit platforms, it does in 32 bits)
         ((self.l_mask as u128 + 1) * self.buckets as u128 / self.num_slices as u128) as u64 + 1
+    }
+
+    /// Returns the number of chunks of a parallel sweep: at most
+    /// [`max_chunks`], and such that each chunk has at least 4096 buckets
+    /// and 64 times the [gap between chunks]; it thus depends only on the
+    /// geometry.
+    ///
+    /// [`max_chunks`]: Self::max_chunks
+    /// [gap between chunks]: Self::chunk_gap
+    pub(super) fn sweep_chunks(&self) -> usize {
+        // In 64 bits, as the gap of small levels can be very large
+        let max_by_size = self.buckets as u64 / (64 * self.chunk_gap()).max(4096);
+        (self.max_chunks as u64).min(max_by_size).max(1) as usize
     }
 
     /// Returns the value providing the in-slice offsets of the layouts:

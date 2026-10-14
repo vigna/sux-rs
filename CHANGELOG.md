@@ -1,5 +1,22 @@
 # Change Log
 
+## [0.15.2] - unreleased
+
+### New
+
+- `PHastRBuilder::sweep_chunks` sets the maximum number of chunks in which
+  a level of a `PHastR` is swept in parallel, which by default is the number
+  of threads of the current rayon pool: setting it makes the function built
+  independent of the size of the pool. The `phastr` CLI utility has a
+  corresponding `--sweep-chunks` option.
+
+- `PHastRBuilder::temp_dir` and `VBuilder::temp_dir` set the directory of
+  the temporary files of offline construction, which by default is the
+  default temporary directory; the new function `sig_store::new_offline_in`
+  creates an offline signature store in a given directory. The CLI
+  utilities building structures offline have a corresponding `--temp-dir`
+  option.
+
 ## [0.15.1] - 2026-10-14
 
 ### Improved
