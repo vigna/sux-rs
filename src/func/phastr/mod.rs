@@ -44,6 +44,38 @@ const fn mul_hi(a: u64, b: u64) -> u64 {
     ((a as u128 * b as u128) >> 64) as u64
 }
 
+/// Returns, in its lowest *f* bits, the field of `lo` of width *f* =
+/// 2^`layout_shift` bits selected by the lowest bits of the seed *s* (i.e.,
+/// field *r* = *s* mod (64 / *f*), which starts at bit *rf*); the higher bits
+/// of the result are arbitrary.
+///
+/// Since *sf* mod 64 = *rf* and shifts are taken modulo 64, shifting `lo`
+/// right by *sf* yields the field without extracting *r*. However, when
+/// fields are byte-aligned we read the field from memory: on AMD Zen 5 a
+/// variable shift whose count depends on the seed, and thus on a cache miss,
+/// reduces the number of queries in flight, making queries on large key sets
+/// almost 20% slower. The load is satisfied by store-to-load forwarding.
+#[inline(always)]
+fn layout_field(lo: u64, s: u64, layout_shift: u32) -> u64 {
+    #[cfg(target_endian = "little")]
+    {
+        let buf = [lo];
+        let p = buf.as_ptr();
+        // SAFETY: the index is smaller than the number of fields of the
+        // given width in a u64, and buf is aligned for all of them
+        unsafe {
+            match layout_shift {
+                3 => return p.cast::<u8>().add((s & 7) as usize).read() as u64,
+                4 => return p.cast::<u16>().add((s & 3) as usize).read() as u64,
+                5 => return p.cast::<u32>().add((s & 1) as usize).read() as u64,
+                6 => return lo,
+                _ => {}
+            }
+        }
+    }
+    lo.wrapping_shr((s << layout_shift) as u32)
+}
+
 /// The base-2 logarithm of the distance in bits between the offsets of two
 /// consecutive layouts with the default number of layouts (four).
 const DEFAULT_LAYOUT_SHIFT: u32 = 4;
@@ -465,15 +497,13 @@ impl<
     /// level).
     ///
     /// The layout *r* is given by the lowest bits of the seed *s*, and its
-    /// in-slice offset is in field *r* of `lo`, which starts at bit *rf*:
-    /// since *sf* mod 64 = *rf* and shifts are taken modulo 64, shifting `lo`
-    /// right by *sf* yields the offset without extracting the layout.
+    /// in-slice offset is in field *r* of `lo`, which starts at bit *rf* (see
+    /// [`layout_field`]); since the slice length is at most 2^*f*, the bits
+    /// of `lo` beyond the field are irrelevant.
     #[inline(always)]
     fn pos(lv: &LevelParams, h: u64, lo: u64, seed: usize, layout_shift: u32, scale: u32) -> usize {
         let s = seed as u64;
-        let offset = lo
-            .wrapping_shr((s << layout_shift) as u32)
-            .wrapping_add(s << scale);
+        let offset = layout_field(lo, s, layout_shift).wrapping_add(s << scale);
         mul_hi(h, lv.num_slices) as usize + (offset & lv.l_mask) as usize
     }
 
