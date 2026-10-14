@@ -44,36 +44,27 @@ const fn mul_hi(a: u64, b: u64) -> u64 {
     ((a as u128 * b as u128) >> 64) as u64
 }
 
-/// Returns, in its lowest *f* bits, the field of `lo` of width *f* =
-/// 2^`layout_shift` bits selected by the lowest bits of the seed *s* (i.e.,
-/// field *r* = *s* mod (64 / *f*), which starts at bit *rf*); the higher bits
-/// of the result are arbitrary.
+/// Returns, in its lowest 16 bits, the field of `lo` of layout *r* = *s* mod
+/// 4 with four layouts (the default), that is, bits [16*r* . . 16*r* + 16)
+/// of `lo`; the higher bits of the result are arbitrary.
 ///
-/// Since *sf* mod 64 = *rf* and shifts are taken modulo 64, shifting `lo`
-/// right by *sf* yields the field without extracting *r*. However, when
-/// fields are byte-aligned we read the field from memory: on AMD Zen 5 a
+/// The result agrees in its lowest 16 bits with that of shifting `lo` right
+/// by 16*s* (as shifts are taken modulo 64, see [`PHastR::pos`]), but a
 /// variable shift whose count depends on the seed, and thus on a cache miss,
-/// reduces the number of queries in flight, making queries on large key sets
-/// almost 20% slower. The load is satisfied by store-to-load forwarding.
+/// reduces memory-level parallelism: we read instead the field from memory
+/// (the load is satisfied by store-to-load forwarding). On 10⁹ keys,
+/// this makes queries about 15% faster on AMD Zen 5, and 10% faster on
+/// Intel Rocket Lake.
 #[inline(always)]
-fn layout_field(lo: u64, s: u64, layout_shift: u32) -> u64 {
+fn default_layout_field(lo: u64, s: u64) -> u64 {
     #[cfg(target_endian = "little")]
     {
         let buf = [lo];
-        let p = buf.as_ptr();
-        // SAFETY: the index is smaller than the number of fields of the
-        // given width in a u64, and buf is aligned for all of them
-        unsafe {
-            match layout_shift {
-                3 => return p.cast::<u8>().add((s & 7) as usize).read() as u64,
-                4 => return p.cast::<u16>().add((s & 3) as usize).read() as u64,
-                5 => return p.cast::<u32>().add((s & 1) as usize).read() as u64,
-                6 => return lo,
-                _ => {}
-            }
-        }
+        // SAFETY: s & 3 < 4, and buf is aligned for u16
+        unsafe { buf.as_ptr().cast::<u16>().add((s & 3) as usize).read() as u64 }
     }
-    lo.wrapping_shr((s << layout_shift) as u32)
+    #[cfg(not(target_endian = "little"))]
+    lo.wrapping_shr((s << DEFAULT_LAYOUT_SHIFT) as u32)
 }
 
 /// The base-2 logarithm of the distance in bits between the offsets of two
@@ -497,13 +488,29 @@ impl<
     /// level).
     ///
     /// The layout *r* is given by the lowest bits of the seed *s*, and its
-    /// in-slice offset is in field *r* of `lo`, which starts at bit *rf* (see
-    /// [`layout_field`]); since the slice length is at most 2^*f*, the bits
-    /// of `lo` beyond the field are irrelevant.
+    /// in-slice offset is in field *r* of `lo`, which starts at bit *rf*:
+    /// since *sf* mod 64 = *rf* and shifts are taken modulo 64, shifting `lo`
+    /// right by *sf* yields the offset without extracting the layout.
     #[inline(always)]
     fn pos(lv: &LevelParams, h: u64, lo: u64, seed: usize, layout_shift: u32, scale: u32) -> usize {
         let s = seed as u64;
-        let offset = layout_field(lo, s, layout_shift).wrapping_add(s << scale);
+        let offset = lo
+            .wrapping_shr((s << layout_shift) as u32)
+            .wrapping_add(s << scale);
+        mul_hi(h, lv.num_slices) as usize + (offset & lv.l_mask) as usize
+    }
+
+    /// Returns the output of a key in a level with the default shifts, as
+    /// [`pos`] does with layout shift [`DEFAULT_LAYOUT_SHIFT`] and scale
+    /// [`DEFAULT_SCALE`], but extracting the field of the layout with
+    /// [`default_layout_field`] (since the slice length is at most 2^16, the
+    /// bits of `lo` beyond the field are irrelevant).
+    ///
+    /// [`pos`]: Self::pos
+    #[inline(always)]
+    fn pos_default(lv: &LevelParams, h: u64, lo: u64, seed: usize) -> usize {
+        let s = seed as u64;
+        let offset = default_layout_field(lo, s).wrapping_add(s << DEFAULT_SCALE);
         mul_hi(h, lv.num_slices) as usize + (offset & lv.l_mask) as usize
     }
 
@@ -512,17 +519,24 @@ impl<
     /// With the default shifts we use constants, so that the compiler can
     /// fuse the scaling of the seed with the addition (the test is on a
     /// dedicated field because a test on the shifts themselves would be
-    /// optimized away; queries in a loop perform it just once). We use
-    /// constants also for the other scales that can be fused when there
-    /// are four layouts (e.g., with 10-bit seeds and slices of length
-    /// 2048), albeit in this case the test is not moved out of loops.
+    /// optimized away; queries in a loop perform it just once), and we
+    /// extract the field of the layout with a load (see
+    /// [`default_layout_field`]). We use constants also for the other scales
+    /// that can be fused when there are four layouts (e.g., with 10-bit
+    /// seeds and slices of length 2048), albeit in this case the test is not
+    /// moved out of loops; for these scales, extracting the field with a
+    /// load makes queries slower.
+    ///
+    /// The code of this method must stay small, or [`get`] might not be
+    /// inlined in loops.
     ///
     /// [`pos`]: Self::pos
+    /// [`get`]: Self::get
     #[inline(always)]
     fn pos0(&self, h: u64, lo: u64, seed: usize) -> usize {
         let lv = &self.params0;
         if self.default_shifts {
-            return Self::pos(lv, h, lo, seed, DEFAULT_LAYOUT_SHIFT, DEFAULT_SCALE);
+            return Self::pos_default(lv, h, lo, seed);
         }
         match self.fast_scale {
             1 => Self::pos(lv, h, lo, seed, DEFAULT_LAYOUT_SHIFT, 0),
