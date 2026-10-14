@@ -1,6 +1,6 @@
 # Change Log
 
-## [0.15.2] - unreleased
+## [0.15.2] - 2026-10-14
 
 ### New
 

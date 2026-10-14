@@ -14,13 +14,13 @@ use super::*;
 /// The signatures of the keys of a level, distributed into parts (see
 /// [`group`]).
 ///
-/// Parts are made of a power of two of consecutive buckets. For each part
-/// and for each *batch* of consecutive keys (one per thread), a *region*
-/// contains the signatures of the keys of the batch whose bucket is in the
-/// part, in the order of the keys. Regions are sized before computing the
-/// signatures, assuming that they are uniform, and they have some slack:
-/// the few signatures that do not fit their region, if any, are kept
-/// separately.
+/// Parts are made of a power of two of consecutive buckets. The sequence of
+/// keys is split into *batches*, one for each thread, and for each part and
+/// each batch a *region* contains the signatures of the keys of the batch
+/// whose bucket is in the part, in the order of the keys. Regions are sized
+/// before computing the signatures, assuming that they are uniform, and they
+/// have some slack: the few signatures that do not fit their region, if any,
+/// are kept separately.
 ///
 /// The signatures of a part are distributed into buckets only when a sweep
 /// needs the part (see [`load`]): thus, besides the signatures, which take
