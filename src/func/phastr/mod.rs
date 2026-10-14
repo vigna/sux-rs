@@ -131,12 +131,15 @@ pub struct LevelParams {
 /// [`PHastR`] is a *minimal perfect hash function*, which maps bijectively a
 /// set of *n* keys to the integers in [0 . . *n*): querying a key outside of
 /// the original set will lead to an arbitrary result (wrap the function in
-/// a [`SignedFunc`] to detect such keys with high probability). Like
-/// [PHast], it is based on *bucket placement*: keys are hashed to buckets,
-/// and each bucket stores a fixed-width *seed* that maps each key of the
-/// bucket to a slot of the output range so that no two keys collide. For
-/// almost all keys, a query needs just the computation of a signature and
-/// the access to a seed.
+/// a [`SignedFunc`] to detect such keys with high probability). It was
+/// introduced by Sebastiano Vigna in “[PHastR: Minimal Perfect Hashing with
+/// Rotated Layouts]”, 2026.
+///
+/// Like [PHast], it is based on *bucket placement*: keys are hashed to buckets,
+/// and each bucket stores a fixed-width *seed* that maps each key of the bucket
+/// to a slot of the output range so that no two keys collide. For almost all
+/// keys, a query needs just the computation of a signature and the access to a
+/// seed. Details can be found in the [PHastR paper].
 ///
 /// With the default parameters (8-bit seeds, four layouts, slices of length
 /// 1024, and an expected bucket size of 4.25 keys) space is about 1.94 bits per
@@ -323,6 +326,7 @@ pub struct LevelParams {
 /// ```
 ///
 /// [PHast]: https://doi.org/10.1137/1.9781611978957.1
+/// [PHastR: Minimal Perfect Hashing with Rotated Layouts]: https://arxiv.org/abs/2610.17833
 /// [`SignedFunc`]: crate::func::SignedFunc
 /// [constructors for `PHastR`]: crate::func::SignedFunc#supported-combinations
 /// [lender]: crate::utils::lenders
