@@ -2,10 +2,19 @@
 
 ## [0.15.3] - unreleased
 
+### New
+
+- `PHastRBuilder::expected_num_keys` sets the expected number of keys, which
+  is used to log the progress of the constructors reading keys from a lender;
+  the `phastr` CLI utility sets it when the number of keys is specified.
+
 ### Improved
 
 - `PHastR` construction is slightly faster: the scan finding the keys of the
   buckets without a seed prefetches the words of the bit vector of the buckets.
+
+- The CLI utilities log memory usage from the start of construction: in
+  particular, `phastr` did not log it at all.
 
 ## [0.15.2] - 2026-10-14
 

@@ -182,6 +182,14 @@ pub struct PHastRBuilder {
     /// [rayon]: https://docs.rs/rayon
     #[setters(generate = true, strip_option)]
     pub(super) sweep_chunks: Option<usize>,
+
+    /// The expected number of keys, used only to log the progress of the
+    /// constructors reading keys from a lender.
+    ///
+    /// The constructors reading keys from a slice know the number of keys,
+    /// and ignore this setting. The function built does not depend on it.
+    #[setters(generate = true, strip_option)]
+    pub(super) expected_num_keys: Option<usize>,
 }
 
 impl PHastRBuilder {
@@ -555,6 +563,7 @@ impl Default for PHastRBuilder {
             offline: false,
             temp_dir: None,
             sweep_chunks: None,
+            expected_num_keys: None,
         }
     }
 }

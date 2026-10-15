@@ -629,10 +629,13 @@ pub struct LogIntervalArg {
 }
 
 impl LogIntervalArg {
-    /// Returns a [`ProgressLogger`] logging at this interval.
+    /// Returns a [`ProgressLogger`] logging at this interval, displaying
+    /// memory usage.
     pub fn progress_logger(&self) -> ProgressLogger {
         let mut pl = ProgressLogger::default();
-        pl.log_interval(self.log_interval);
+        // Displaying memory is safe in rayon tasks as no crate of the CLI
+        // utilities enables the multithread feature of sysinfo
+        pl.log_interval(self.log_interval).display_memory(true);
         pl
     }
 }

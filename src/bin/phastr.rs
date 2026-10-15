@@ -117,6 +117,9 @@ fn main() -> Result<()> {
     if let Some(sweep_chunks) = args.sweep_chunks {
         builder = builder.sweep_chunks(sweep_chunks);
     }
+    if let Some(n) = args.n {
+        builder = builder.expected_num_keys(n);
+    }
 
     macro_rules! build_with_seeds {
         ($d:ty) => {

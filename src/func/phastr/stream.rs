@@ -839,7 +839,7 @@ impl PHastRBuilder {
         let dir = self.offline_dir();
 
         pl.item_name("key");
-        pl.expected_updates(None);
+        pl.expected_updates(self.expected_num_keys);
         pl.start(format!(
             "Computing and storing 128-bit signatures sequentially {} using seed 0x{:016x}...",
             match &dir {
