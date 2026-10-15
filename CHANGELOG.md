@@ -1,5 +1,12 @@
 # Change Log
 
+## [0.15.3] - unreleased
+
+### Improved
+
+- `PHastR` construction is slightly faster: the scan finding the keys of the
+  buckets without a seed prefetches the words of the bit vector of the buckets.
+
 ## [0.15.2] - 2026-10-14
 
 ### New
@@ -433,7 +440,7 @@
 - The `cli` feature now implies `rayon`.
 
 - The license is now `Apache-2.0 OR MIT` (it was `Apache-2.0 OR
-  LGPL-2.1-or-later`).
+LGPL-2.1-or-later`).
 
 - `ShardEdge::set_up_shards` takes an additional `retry_prob` parameter, and
   implementations must not select more than `LOG2_MAX_SHARDS` shard high

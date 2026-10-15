@@ -884,6 +884,12 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
         } = self;
         free.clear();
         free.resize(layouts * words, 0);
+        // Rotation 0 of layout 0 is seed zero, which marks bumped buckets,
+        // unless rotations are redundant (see Rings::seed). We mark it here,
+        // with a whole-word store: setting the bit later, the compiler would
+        // store a byte, which the following load of the whole word could not
+        // forward from the store buffer, stalling the search.
+        free[0] = (n == rings.rotations) as u64;
         ring_keys.clear();
         ring_keys.resize(keys.len() * layouts, 0);
         // Slices, so that pointers and lengths are loop invariants
@@ -930,11 +936,6 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
                     }
                 }
             }
-        }
-        // Rotation 0 of layout 0 is seed zero, which marks bumped buckets,
-        // unless rotations are redundant (see Rings::seed)
-        if n == rings.rotations {
-            free[0] |= 1;
         }
 
         // We complement the result, and gather the nonzero words

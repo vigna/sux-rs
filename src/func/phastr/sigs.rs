@@ -534,13 +534,35 @@ fn into_buckets(
     }
 }
 
+/// The minimum number of words of the bit vector of the bumped buckets for
+/// which [`bumped`] prefetches its words (4 MiB): smaller bit vectors fit
+/// in the cache, and prefetching would only add instructions.
+const PREFETCH_MIN_WORDS: usize = 1 << 19;
+
+/// The number of keys ahead of which [`bumped`] prefetches the words of the
+/// bit vector of the bumped buckets (a power of two).
+const PREFETCH_DIST: usize = 32;
+
 /// Returns the indices of the keys of the bumped buckets, in increasing
 /// order.
 ///
 /// We scan the signatures in the order of the keys (see
 /// [`Signatures::walk`]), and we check the bucket of each signature in a
-/// bit vector.
+/// bit vector. On large levels the bit vector does not fit in the cache, and
+/// its words are read at random, so we prefetch them [`PREFETCH_DIST`] keys
+/// ahead.
 pub(super) fn bumped(sigs: &Signatures, seeds: &[u16], g: &Geometry) -> Vec<usize> {
+    bumped_with(sigs, seeds, g, PREFETCH_MIN_WORDS)
+}
+
+/// Implements [`bumped`], prefetching the words of the bit vector if it has
+/// at least `prefetch_min_words` words.
+fn bumped_with(
+    sigs: &Signatures,
+    seeds: &[u16],
+    g: &Geometry,
+    prefetch_min_words: usize,
+) -> Vec<usize> {
     let word = |seeds: &[u16]| {
         seeds
             .iter()
@@ -549,12 +571,38 @@ pub(super) fn bumped(sigs: &Signatures, seeds: &[u16], g: &Geometry) -> Vec<usiz
     };
     let scan = |bits: &[u64], batch: usize| {
         let mut out = vec![];
+        if bits.len() < prefetch_min_words {
+            sigs.walk(batch, |i, h| {
+                let b = g.bucket(h);
+                if bits[b / 64] >> (b % 64) & 1 != 0 {
+                    out.push(i);
+                }
+            });
+            return out;
+        }
+        // The indices and buckets of the last keys, whose words have been
+        // prefetched, in a ring
+        let mut ring = [(0usize, 0usize); PREFETCH_DIST];
+        let mut k = 0;
         sigs.walk(batch, |i, h| {
             let b = g.bucket(h);
-            if bits[b / 64] >> (b % 64) & 1 != 0 {
-                out.push(i);
+            crate::utils::prefetch_index(bits, b / 64);
+            let slot = &mut ring[k % PREFETCH_DIST];
+            if k >= PREFETCH_DIST {
+                let (j, c) = *slot;
+                if bits[c / 64] >> (c % 64) & 1 != 0 {
+                    out.push(j);
+                }
             }
+            *slot = (i, b);
+            k += 1;
         });
+        for t in k.saturating_sub(PREFETCH_DIST)..k {
+            let (j, c) = ring[t % PREFETCH_DIST];
+            if bits[c / 64] >> (c % 64) & 1 != 0 {
+                out.push(j);
+            }
+        }
         out
     };
     #[cfg(feature = "rayon")]
@@ -631,6 +679,8 @@ mod tests {
                 let seeds: Vec<u16> = (0..g.buckets).map(|b| (b % 3) as u16).collect();
                 let expected: Vec<usize> = (0..n).filter(|&i| g.bucket(sig(i)) % 3 == 0).collect();
                 assert_eq!(bumped(&sigs, &seeds, &g), expected);
+                // Always prefetching (in the tests, the bit vector is small)
+                assert_eq!(bumped_with(&sigs, &seeds, &g, 0), expected);
             }
         }
     }
