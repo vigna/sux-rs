@@ -8,6 +8,7 @@ use anyhow::Result;
 use clap::{ArgGroup, Parser};
 use epserde::ser::Serialize;
 use lender::FallibleLender;
+use mem_dbg::{FlatType, MemSize};
 use num_primitive::PrimitiveNumberAs;
 use sux::bits::BitFieldVec;
 use sux::cli::{
@@ -151,7 +152,7 @@ fn main() -> Result<()> {
 }
 
 /// Builds a function with seeds stored in `D`.
-fn build<D: SeedStoreBuild + TryIntoUnaligned + Send + Sync>(
+fn build<D: SeedStoreBuild + MemSize + FlatType + TryIntoUnaligned + Send + Sync>(
     args: &Args,
     builder: PHastRBuilder,
 ) -> Result<()>
@@ -195,7 +196,10 @@ where
 }
 
 /// Builds a function with seeds stored in `D`, signed with hashes of type `W`.
-fn build_signed<D: SeedStoreBuild + TryIntoUnaligned + Send + Sync, W: Word + Send + Sync>(
+fn build_signed<
+    D: SeedStoreBuild + MemSize + FlatType + TryIntoUnaligned + Send + Sync,
+    W: Word + Send + Sync,
+>(
     args: &Args,
     builder: PHastRBuilder,
 ) -> Result<()>

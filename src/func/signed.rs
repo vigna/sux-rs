@@ -2165,7 +2165,8 @@ mod build {
     // Constructors: SignedFunc<PHastR<...>>
     // ═══════════════════════════════════════════════════════════════════
 
-    impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild, W: Word> SignedFunc<PHastR<K, D>, Box<[W]>>
+    impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild + MemSize + FlatType, W: Word>
+        SignedFunc<PHastR<K, D>, Box<[W]>>
     where
         u64: PrimitiveNumberAs<W>,
     {
@@ -2349,7 +2350,7 @@ mod build {
 
     impl<
         K: ?Sized + ToSig<[u64; 1]>,
-        D: SeedStoreBuild,
+        D: SeedStoreBuild + MemSize + FlatType,
         H: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned<Value = H>>,
     > SignedFunc<PHastR<K, D>, BitFieldVec<Box<[H]>>>
     where

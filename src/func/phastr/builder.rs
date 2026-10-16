@@ -195,7 +195,10 @@ pub struct PHastRBuilder {
 impl PHastRBuilder {
     /// Builds a function on a slice of keys, computing their signatures in
     /// parallel and keeping them in memory (see [`PHastR::try_par_new`]).
-    pub(super) fn try_build_from_slice<K: ?Sized + ToSig<[u64; 1]> + Sync, D: SeedStoreBuild>(
+    pub(super) fn try_build_from_slice<
+        K: ?Sized + ToSig<[u64; 1]> + Sync,
+        D: SeedStoreBuild + MemSize + FlatType,
+    >(
         &self,
         keys: &[impl Borrow<K> + Sync],
         pl: &mut impl ProgressLog,
@@ -218,6 +221,7 @@ impl PHastRBuilder {
         let seeds0 = D::from_seeds(&seeds0, self.seed_bits);
         let func = self.assemble(keys.len(), params0, seeds0, levels, remap);
         log_completion("Construction", start, keys.len(), pl);
+        log_bits_per_key(&func, pl);
         Ok(func)
     }
 
@@ -739,6 +743,17 @@ pub(super) fn log_completion(phase: &str, start: Instant, n: usize, pl: &mut imp
         start.elapsed().as_secs_f64(),
         n,
         start.elapsed().as_nanos() as f64 / n.max(1) as f64
+    ));
+}
+
+/// Logs the space used by a function, in bits per key.
+pub(super) fn log_bits_per_key<K: ?Sized, D: MemSize + FlatType>(
+    func: &PHastR<K, D>,
+    pl: &mut impl ProgressLog,
+) {
+    pl.info(format_args!(
+        "Bits/key: {:.3}",
+        func.mem_size(SizeFlags::default()) as f64 * 8.0 / func.len().max(1) as f64
     ));
 }
 

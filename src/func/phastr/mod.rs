@@ -662,7 +662,7 @@ impl<
 
 // ── Constructors ────────────────────────────────────────────────────
 
-impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild> PHastR<K, D> {
+impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild + MemSize + FlatType> PHastR<K, D> {
     /// Builds a [`PHastR`] from keys using default [`PHastRBuilder`]
     /// settings.
     ///

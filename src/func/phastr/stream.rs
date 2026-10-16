@@ -759,7 +759,7 @@ impl PHastRBuilder {
     /// itself.
     pub(super) fn try_build_from_lender<
         K: ?Sized + ToSig<[u64; 1]>,
-        D: SeedStoreBuild,
+        D: SeedStoreBuild + MemSize + FlatType,
         B: ?Sized + Borrow<K>,
     >(
         &self,
@@ -774,6 +774,7 @@ impl PHastRBuilder {
             self.build_levels_from_lender::<K, D, B>(keys, pl)?;
         let func = self.assemble(num_keys, params0, seeds0, levels, remap);
         log_completion("Construction", start, num_keys, pl);
+        log_bits_per_key(&func, pl);
         Ok(func)
     }
 
@@ -1032,7 +1033,7 @@ mod tests {
 
     /// Builds a function from a slice and from a lender, in memory and
     /// offline, checking that the functions are identical and correct.
-    fn check<K: ?Sized + ToSig<[u64; 1]> + Sync, D: SeedStoreBuild>(
+    fn check<K: ?Sized + ToSig<[u64; 1]> + Sync, D: SeedStoreBuild + MemSize + FlatType>(
         keys: &[&K],
         builder: PHastRBuilder,
     ) -> Result<()> {
@@ -1054,7 +1055,10 @@ mod tests {
         Ok(())
     }
 
-    fn check_u64<D: SeedStoreBuild>(n: usize, builder: PHastRBuilder) -> Result<()> {
+    fn check_u64<D: SeedStoreBuild + MemSize + FlatType>(
+        n: usize,
+        builder: PHastRBuilder,
+    ) -> Result<()> {
         let keys: Vec<u64> = (0..n as u64).collect();
         let refs: Vec<&u64> = keys.iter().collect();
         check::<u64, D>(&refs, builder)

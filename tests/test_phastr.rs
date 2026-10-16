@@ -8,6 +8,7 @@ use std::borrow::Borrow;
 
 use anyhow::Result;
 use dsi_progress_logger::no_logging;
+use mem_dbg::{FlatType, MemSize};
 use sux::bits::BitFieldVec;
 use sux::func::phastr::SeedStoreBuild;
 use sux::func::{PHastR, PHastRBuilder};
@@ -16,7 +17,7 @@ use sux::utils::{FromSlice, ToSig};
 
 /// Builds a function on the first `n` integers from a slice, and checks that
 /// it is a minimal perfect hash function.
-fn check<D: SeedStoreBuild>(n: usize, builder: PHastRBuilder) -> Result<()> {
+fn check<D: SeedStoreBuild + MemSize + FlatType>(n: usize, builder: PHastRBuilder) -> Result<()> {
     let keys: Vec<u64> = (0..n as u64).collect();
     let phf = <PHastR<u64, D>>::try_par_new_with_builder(&keys, builder, no_logging![])?;
     assert_eq!(phf.len(), n);

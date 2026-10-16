@@ -16,6 +16,9 @@
 - The CLI utilities log memory usage from the start of construction: in
   particular, `phastr` did not log it at all.
 
+- `PHastR` construction logs the number of bits per key, as `VFunc`
+  construction does.
+
 ## [0.15.2] - 2026-10-14
 
 ### New
