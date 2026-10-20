@@ -45,8 +45,8 @@
 //! Here we discuss pros and cons of the main alternatives; further options are
 //! available, but they are mostly interesting for benchmarking or for
 //! historical reasons. More details can be found in the documentation of each
-//! implementation, and in “[ε-Cost Sharding: Scaling Hypergraph-Based Static
-//! Functions and Filters to Trillions of Keys]”.
+//! implementation, and in “[ε–Cost Sharding: Scaling Hypergraph–Based Data
+//! Structures to Trillions of Keys]”.
 //!
 //! - [`FuseLge3Shards`] with 128-bit signatures and 64-bit local signatures:
 //!   this is the default choice. It shards keys using ε-cost sharding and
@@ -91,7 +91,7 @@
 //!
 //! [“Binary Fuse Filters: Fast and Smaller Than Xor Filters”]: https://doi.org/10.1145/3510449
 //! [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
-//! [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
+//! [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
 //! [`VBuilder`]: crate::func::VBuilder
 //! [`VFilter`]: crate::dict::VFilter
 //! [`VFunc`]: crate::func::VFunc
@@ -191,9 +191,9 @@ pub unsafe trait ShardEdge<S, const K: usize>:
 
     /// Sets up the sharding logic for the given number of keys.
     ///
-    /// `eps` is the target relative space overhead. See “[ε-Cost Sharding:
-    /// Scaling Hypergraph-Based Static Functions and Filters to Trillions of
-    /// Keys]” for more information.
+    /// `eps` is the target relative space overhead. See “[ε–Cost Sharding:
+    /// Scaling Hypergraph–Based Data Structures to Trillions of Keys]” for more
+    /// information.
     ///
     /// `retry_prob` is the maximum acceptable probability that a construction
     /// attempt has to be retried because a shard contains duplicate edges
@@ -214,7 +214,7 @@ pub unsafe trait ShardEdge<S, const K: usize>:
     /// [`num_shards`]: ShardEdge::num_shards
     /// [`shard_high_bits`]: ShardEdge::shard_high_bits
     /// [`SigStore`]: crate::utils::SigStore
-    /// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
+    /// [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
     fn set_up_shards(&mut self, n: usize, eps: f64, retry_prob: f64);
 
     /// Sets up the edge logic for the given number of keys and maximum shard
@@ -404,10 +404,10 @@ pub const LOG2_MAX_SHARDS: u32 = 16;
 /// keys so that the overhead of the maximum shard size with respect to the
 /// average shard size is with high probability `eps`.
 ///
-/// From “[ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and
-/// Filters to Trillions of Keys]”.
+/// From “[ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to
+/// Trillions of Keys]”.
 ///
-/// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
+/// [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
 pub fn sharding_high_bits(n: usize, eps: f64) -> u32 {
     // Bound from balls and bins problem
     let t = (n as f64 * eps * eps / 2.0).max(1.);
@@ -574,14 +574,13 @@ mod fuse {
     /// [ε-cost sharded] [fuse 3-hypergraphs] with [lazy Gaussian elimination]
     /// using 64-bit local signatures.
     ///
-    /// This construction uses ε-cost sharding (“[ε-Cost Sharding: Scaling
-    /// Hypergraph-Based Static Functions and Filters to Trillions of Keys]”) to
-    /// shard keys and then fuse 3-hypergraphs (see “[Dense Peelable Random
-    /// Uniform Hypergraphs]”) on sharded keys, giving a space overhead of
-    /// about 11% for large key sets (above a hundred million keys); smaller
-    /// key sets have a slightly larger overhead (11–13%).
-    /// Duplicate edges are possible, which limits the amount of possible
-    /// sharding.
+    /// This construction uses ε-cost sharding (“[ε–Cost Sharding: Scaling
+    /// Hypergraph–Based Data Structures to Trillions of Keys]”) to shard keys
+    /// and then fuse 3-hypergraphs (see “[Dense Peelable Random Uniform
+    /// Hypergraphs]”) on sharded keys, giving a space overhead of about 11% for
+    /// large key sets (above a hundred million keys); smaller key sets have a
+    /// slightly larger overhead (11–13%). Duplicate edges are possible, which
+    /// limits the amount of possible sharding.
     ///
     /// To keep the expansion factor close to the minimums (1.105), in the
     /// fuse regime shards are never smaller than 10⁷ keys. In the linear
@@ -634,7 +633,7 @@ mod fuse {
     ///
     /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     /// [Dense Peelable Random Uniform Hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
-    /// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
+    /// [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
     /// [fuse 3-hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
     /// [ε-cost sharded]: https://arxiv.org/abs/2503.18397
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
@@ -1228,10 +1227,10 @@ mod fuse {
         /// [`Fuse3NoShards::log2_seg_size`], reducing the possibility of
         /// duplicate edges for large key sets.
         ///
-        /// From "[ε-Cost Sharding: Scaling Hypergraph-Based Static Functions
-        /// and Filters to Trillions of Keys]".
+        /// From “[ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to
+        /// Trillions of Keys]”.
         ///
-        /// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
+        /// [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
         pub fn log2_large_seg_size(n: usize) -> u32 {
             let n = n.max(1) as f64;
             (Self::A * n.ln() * n.ln().max(1.).ln() + Self::B).floor() as u32
@@ -1277,10 +1276,10 @@ mod fuse {
         /// impossible. If `local_sig_bits` is `None` (full signatures),
         /// the uniform estimate 1/𝓁s³ is used.
         ///
-        /// From "[ε-Cost Sharding: Scaling Hypergraph-Based Static Functions
-        /// and Filters to Trillions of Keys]".
+        /// From “[ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to
+        /// Trillions of Keys]”.
         ///
-        /// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
+        /// [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
         pub fn dup_edge_retry_prob(
             n: usize,
             log2_num_shards: u32,
@@ -1812,12 +1811,11 @@ mod mwhc {
 
     /// [ε-cost sharded] 3-hypergraph [MWHC construction].
     ///
-    /// This construction uses ε-cost sharding (“[ε-Cost Sharding: Scaling
-    /// Hypergraph-Based Static Functions and Filters to Trillions of Keys]”) to
-    /// shard keys and then random peelable 3-hypergraphs on sharded keys,
-    /// giving a 23% space overhead. Duplicate edges are much less likely than
-    /// with [fuse graphs], which makes it possible to shard keys with a finer
-    /// grain.
+    /// This construction uses ε-cost sharding (“[ε–Cost Sharding: Scaling
+    /// Hypergraph–Based Data Structures to Trillions of Keys]”) to shard keys
+    /// and then random peelable 3-hypergraphs on sharded keys, giving a 23%
+    /// space overhead. Duplicate edges are much less likely than with [fuse
+    /// graphs], which makes it possible to shard keys with a finer grain.
     ///
     /// The MWHC construction has mostly been obsoleted by [fuse graphs], but it
     /// is still useful for benchmarking and comparison. It also provides
@@ -1825,7 +1823,7 @@ mod mwhc {
     /// construction is slower due to cache-unfriendly accesses.
     ///
     /// [fuse graphs]: crate::func::shard_edge::FuseLge3Shards
-    /// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
+    /// [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
     /// [MWHC construction]: https://doi.org/10.1093/comjnl/39.6.547
     /// [ε-cost sharded]: https://arxiv.org/abs/2503.18397
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
@@ -1874,10 +1872,10 @@ mod mwhc {
     /// keys so that the probability of a duplicate edge in a hypergraph is at
     /// most `eta`.
     ///
-    /// From “[ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and
-    /// Filters to Trillions of Keys]”.
+    /// From “[ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to
+    /// Trillions of Keys]”.
     ///
-    /// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
+    /// [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
     fn dup_edge_high_bits(arity: usize, n: usize, c: f64, eta: f64) -> u32 {
         let n = n as f64;
         match arity {

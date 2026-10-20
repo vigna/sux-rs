@@ -26,14 +26,14 @@ use std::borrow::Borrow;
 /// possible to store the association between keys and values just in the space
 /// required by the values (with a small overhead).
 ///
-/// This structure is based on “[ε-Cost Sharding: Scaling Hypergraph-Based
-/// Static Functions and Filters to Trillions of Keys]”. Space overhead with
-/// respect to the optimum depends on the [`ShardEdge`] type. The default is
-/// [`FuseLge3Shards`], which provides a space overhead of about 11% for large
-/// key sets (above a hundred million keys), growing up to about 13% going
-/// towards smaller key sets (and to about 25% below 5000 keys). Details on
-/// other possible [`ShardEdge`]
-/// implementations can be found in the [`shard_edge`] module documentation.
+/// This structure has been described by Sebastiano Vigna in “[ε–Cost Sharding:
+/// Scaling Hypergraph–Based Data Structures to Trillions of Keys]”, 2026. Space
+/// overhead with respect to the optimum depends on the [`ShardEdge`] type. The
+/// default is [`FuseLge3Shards`], which provides a space overhead of about 11%
+/// for large key sets (above a hundred million keys), growing up to about 13%
+/// going towards smaller key sets (and to about 25% below 5000 keys). Details
+/// on other possible [`ShardEdge`] implementations can be found in the
+/// [`shard_edge`] module documentation.
 ///
 /// Instances of this structure are immutable; they are built using [`try_new`]
 /// or one of its variants, and can be serialized using [ε-serde] or [`serde`].
@@ -95,7 +95,7 @@ use std::borrow::Borrow;
 /// See [`try_new`].
 ///
 /// [`get`]: VFunc::get
-/// [ε-Cost Sharding: Scaling Hypergraph-Based Static Functions and Filters to Trillions of Keys]: https://arxiv.org/abs/2503.18397
+/// [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
 /// [`shard_edge`]: crate::func::shard_edge
 /// [`try_new`]: VFunc::try_new
 /// [ε-serde]: https://crates.io/crates/epserde

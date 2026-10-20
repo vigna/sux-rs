@@ -24,6 +24,10 @@
 //! These structures implement the [`TryIntoUnaligned`] trait, allowing them to
 //! be converted into (usually faster) structures using unaligned access.
 //!
+//! Like those in [`lcp_mmphf`], these structures use ε-cost sharding, as
+//! described by Sebastiano Vigna in “[ε–Cost Sharding: Scaling Hypergraph–Based
+//! Data Structures to Trillions of Keys]”, 2026.
+//!
 //! # References
 //!
 //! Djamal Belazzougui, Paolo Boldi, Rasmus Pagh, and Sebastiano Vigna.
@@ -33,6 +37,7 @@
 //! [`lcp_mmphf`]: super::lcp_mmphf
 //! [`VFunc2`]: crate::func::VFunc2
 //! [Theory and practice of monotone minimal perfect hashing]: https://doi.org/10.1145/1963190.2025378
+//! [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
 
 use crate::bits::BitFieldVec;
 use crate::func::VFunc;

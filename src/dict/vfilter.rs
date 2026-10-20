@@ -31,6 +31,9 @@ use value_traits::slices::SliceByValue;
 /// For values of *b* that correspond to the size of an unsigned type, you can
 /// use a boxed slice as a backend.
 ///
+/// This structure has been described by Sebastiano Vigna in “[ε–Cost Sharding:
+/// Scaling Hypergraph–Based Data Structures to Trillions of Keys]”, 2026.
+///
 /// The stored and expected hashes are `mix64` of a single 64-bit signature
 /// word, so at most 64 bits are usable: `b` is capped at 64 (a boxed backend
 /// must be at most 64 bits wide). This holds for every edge variant: the
@@ -91,6 +94,7 @@ use value_traits::slices::SliceByValue;
 /// [`VBuilder`]: crate::func::VBuilder
 /// [`SignedFunc`]: crate::func::SignedFunc
 /// [`LcpMmphf`]: crate::func::LcpMmphf
+/// [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
 #[doc(alias("bloom", "membership", "filter"))]
 #[derive(MemSize, MemDbg)]
 #[cfg_attr(

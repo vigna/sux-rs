@@ -32,7 +32,9 @@
 //! length) and the offset is stored directly. The mapping from a key to the
 //! length of the prefix of its bucket and its offset within the bucket is
 //! stored in a [`VFunc`]. Another [`VFunc`] maps each LCP bit-prefix to its
-//! bucket index.
+//! bucket index. The use of ε-cost sharding in this context has been described
+//! by Sebastiano Vigna in “[ε–Cost Sharding: Scaling Hypergraph–Based Data
+//! Structures to Trillions of Keys]”, 2026.
 //!
 //! # References
 //!
@@ -42,6 +44,7 @@
 //! Discrete Mathematics (SODA)*, pages 785−794, New York, 2009. ACM Press.
 //!
 //! [Monotone minimal perfect hashing: Searching a sorted table with O(1) accesses]: https://dl.acm.org/doi/10.5555/1496770.1496856
+//! [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
 
 use crate::bits::BitFieldVec;
 use crate::func::VFunc;
