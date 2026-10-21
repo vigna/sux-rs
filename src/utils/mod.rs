@@ -262,6 +262,8 @@ pub fn transmute_boxed_slice_from_atomic<A: PrimitiveAtomic>(
 
 /// A multiply-with-carry pseudo-random number generator with 192 bits of
 /// state.
+///
+/// A better generator, MWC192X, can be found at <https://prng.di.unimi.it/>.
 pub struct Mwc192 {
     x: u64,
     y: u64,
