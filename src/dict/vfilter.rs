@@ -10,7 +10,7 @@
 use crate::bits::BitFieldVec;
 use crate::func::{
     VFunc,
-    shard_edge::{FuseLge3Shards, ShardEdge},
+    shard_edge::{FuseAug3Shards, ShardEdge},
 };
 use crate::traits::Unaligned;
 use crate::traits::Word;
@@ -39,11 +39,11 @@ use value_traits::slices::SliceByValue;
 /// must be at most 64 bits wide). This holds for every edge variant: the
 /// verification hash is always 64-bit.
 ///
-/// With the default sharded fuse edges ([`FuseLge3Shards`]) that same 64-bit
+/// With the default sharded fuse edges ([`FuseAug3Shards`]) that same 64-bit
 /// word also determines the local edge, so two distinct keys that share it land
 /// in the same slots with the same expected hash and are indistinguishable, an
 /// irreducible false positive that no larger `b` can remove.
-/// [`FuseLge3FullSigs`] computes the edge from the *other* signature word as
+/// [`FuseAug3FullSigs`] computes the edge from the *other* signature word as
 /// well, so keys sharing the hash word usually land in different slots, avoiding
 /// that collision (the verification hash itself stays 64-bit either way).
 ///
@@ -85,8 +85,8 @@ use value_traits::slices::SliceByValue;
 ///
 /// See [`try_new`].
 ///
-/// [`FuseLge3Shards`]: crate::func::shard_edge::FuseLge3Shards
-/// [`FuseLge3FullSigs`]: crate::func::shard_edge::FuseLge3FullSigs
+/// [`FuseAug3Shards`]: crate::func::shard_edge::FuseAug3Shards
+/// [`FuseAug3FullSigs`]: crate::func::shard_edge::FuseAug3FullSigs
 /// [`try_new`]: VFilter::try_new
 /// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 /// [ε-serde]: https://crates.io/crates/epserde
@@ -113,7 +113,7 @@ use value_traits::slices::SliceByValue;
         deserialize = "D: serde::Deserialize<'de>, D::Value: serde::Deserialize<'de>, E: serde::Deserialize<'de>"
     ))
 )]
-pub struct VFilter<K: ?Sized, D: SliceByValue, S = [u64; 2], E = FuseLge3Shards> {
+pub struct VFilter<K: ?Sized, D: SliceByValue, S = [u64; 2], E = FuseAug3Shards> {
     /// The underlying static function mapping keys to hashes.
     pub(crate) func: VFunc<K, D, S, E>,
     /// Bit mask applied to the derived hash before comparison.
@@ -897,7 +897,7 @@ mod tests {
     use crate::{
         func::{
             VBuilder,
-            shard_edge::{Fuse3NoShards, FuseLge3Shards},
+            shard_edge::{Fuse3NoShards, FuseAug3Shards},
         },
         utils::{EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig},
     };
@@ -907,7 +907,7 @@ mod tests {
     #[test]
     fn test_filter_func() -> anyhow::Result<()> {
         _test_filter_func::<[u64; 1], Fuse3NoShards>()?;
-        _test_filter_func::<[u64; 2], FuseLge3Shards>()?;
+        _test_filter_func::<[u64; 2], FuseAug3Shards>()?;
         Ok(())
     }
 

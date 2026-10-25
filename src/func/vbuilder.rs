@@ -35,7 +35,7 @@ use sync_cell_slice::SyncSlice;
 use thread_priority::ThreadPriority;
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
-use super::shard_edge::{Fuse3Shards, FuseLge3Shards, LOG2_MAX_SHARDS};
+use super::shard_edge::{Fuse3Shards, FuseAug3Shards, LOG2_MAX_SHARDS};
 
 /// Returns the default maximum number of threads: `min(16, available_parallelism)`.
 fn default_max_num_threads() -> usize {
@@ -134,7 +134,7 @@ fn default_max_num_threads() -> usize {
 /// [`VFilter`]: crate::dict::VFilter
 #[derive(Setters, Debug)]
 #[setters(generate = false)]
-pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
+pub struct VBuilder<D, S = [u64; 2], E = FuseAug3Shards> {
     /// The expected number of keys.
     ///
     /// While this setter is optional, setting this value to a reasonable bound
@@ -225,9 +225,9 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// sharding for a specific [`ShardEdge`]. For example, increasing the
     /// target to 0.01 will provide very fine sharding using `Mwhc3Shards`
     /// shard/edge logic, activated by the `mwhc` feature, but will affect only
-    /// slightly [`FuseLge3Shards`] or [`FuseLge3FullSigs`].
+    /// slightly [`FuseAug3Shards`] or [`FuseAug3FullSigs`].
     ///
-    /// [`FuseLge3FullSigs`]: crate::func::shard_edge::FuseLge3FullSigs
+    /// [`FuseAug3FullSigs`]: crate::func::shard_edge::FuseAug3FullSigs
     ///
     /// [ε-cost sharding]: https://arxiv.org/abs/2503.18397
     #[setters(generate = true, strip_option)]
@@ -241,7 +241,7 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// different seed, is at most this value. The bound does not cover
     /// duplicate local signatures, which can occur only with huge key sets
     /// and lead to [`BuildError::DuplicateLocalSignatures`] (see
-    /// [`FuseLge3FullSigs`](crate::func::shard_edge::FuseLge3FullSigs)). The
+    /// [`FuseAug3FullSigs`](crate::func::shard_edge::FuseAug3FullSigs)). The
     /// value must lie in the half-open interval (0 . . 1];
     /// constructors return an error otherwise.
     ///
@@ -259,10 +259,9 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseLge3Shards> {
     /// The ratio between the number of vertices and the number of edges
     /// (i.e., between the number of variables and the number of equations).
     pub(crate) c: f64,
-    /// Whether we should use [lazy Gaussian elimination].
-    ///
-    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
-    pub(crate) lge: bool,
+    /// Whether we should solve shards by augmented peeling (see
+    /// [`ShardEdge::set_up_graphs`]).
+    pub(crate) aug: bool,
     /// The number of threads to use.
     pub(crate) num_threads: usize,
     /// Fast-stop for failed attempts.
@@ -288,7 +287,7 @@ impl<D, S, E: Default> Default for VBuilder<D, S, E> {
             shard_edge: E::default(),
             num_keys: 0,
             c: 0.0,
-            lge: false,
+            aug: false,
             num_threads: 0,
             failed: AtomicBool::new(false),
             _marker: PhantomData,
@@ -348,7 +347,7 @@ pub enum BuildError {
     #[error("Max shard too big after multiple attempts: try a larger eps")]
     MaxShardTooBig,
     /// A shard was unsolvable on 100 construction attempts (1000 when using
-    /// [lazy Gaussian elimination](https://doi.org/10.1016/j.ic.2020.104517)).
+    /// augmented peeling).
     #[error("Unsolvable shard after multiple attempts")]
     UnsolvableShard,
     /// The number of values is different from the number of keys.
@@ -412,31 +411,6 @@ fn max_shard_too_big(max_shard: usize, num_keys: usize, num_shards: usize, eps: 
     let avg = num_keys as f64 / num_shards as f64;
     let tolerance = (5.0 * eps * avg).max(2.5 * (avg * (num_shards as f64).ln().max(1.0)).sqrt());
     max_shard as f64 > avg + tolerance
-}
-
-/// The result of a peeling procedure.
-enum PeelResult<
-    'a,
-    D: BitFieldSlice<Value: Word + BinSafe + Send + Sync> + BitFieldSliceMut + Send + Sync + 'a,
-    S: Sig + BinSafe,
-    E: ShardEdge<S, 3>,
-    V: BinSafe,
-> {
-    Complete(),
-    Partial {
-        /// The shard index.
-        shard_index: usize,
-        /// The shard.
-        shard: Arc<Vec<SigVal<S, V>>>,
-        /// The data.
-        data: ShardData<'a, D>,
-        /// The double stack whose upper stack contains the peeled edges
-        /// (possibly represented by the vertex from which they have been
-        /// peeled).
-        double_stack: DoubleStack<E::Vertex>,
-        /// The sides stack.
-        sides_stack: Vec<u8>,
-    },
 }
 
 /// An iterator over segments of data associated with each shard.
@@ -524,10 +498,10 @@ where
         self.num_keys = shard_store.len();
 
         // The shard structure is fixed by the store (set at into_shard_store
-        // time). We only reconfigure graph parameters (c, lge, segment size,
+        // time). We only reconfigure graph parameters (c, aug, segment size,
         // vertex count) for the actual key count and shard sizes.
         let max_shard = shard_store.shard_sizes().max().unwrap_or(0);
-        (self.c, self.lge) = self.shard_edge.set_up_graphs(self.num_keys, max_shard);
+        (self.c, self.aug) = self.shard_edge.set_up_graphs(self.num_keys, max_shard);
 
         pl.info(format_args!("Max value: {max_value}"));
 
@@ -685,20 +659,21 @@ impl RetryState {
     const MAX_ATTEMPTS: u32 = 100;
 
     /// The number of attempts after which a [`SolveError::UnsolvableShard`]
-    /// becomes fatal when using lazy Gaussian elimination.
+    /// becomes fatal when using augmented peeling.
     ///
-    /// Lazy Gaussian elimination is used on small shards with small segments,
-    /// where duplicate edges are frequent: on some key sets of a few dozen
-    /// keys more than 95% of the attempts fail.
-    const MAX_LGE_ATTEMPTS: u32 = 1000;
+    /// Augmented peeling is used on small shards, whose graphs are sized so
+    /// that a construction attempt succeeds with probability about 70%; the
+    /// larger bound is a safety margin for tiny key sets, on which the
+    /// estimate of the success probability is less accurate.
+    const MAX_AUG_ATTEMPTS: u32 = 1000;
 
     /// Returns the next seed to try.
     fn next_seed(&mut self) -> u64 {
         self.prng.random()
     }
 
-    /// Handles the result of a construction attempt; `lge` tells whether the
-    /// attempt used lazy Gaussian elimination.
+    /// Handles the result of a construction attempt; `aug` tells whether the
+    /// attempt used augmented peeling.
     ///
     /// On success, returns `Ok(Some(r))`. On retryable error, logs a
     /// warning and returns `Ok(None)` (the caller should rewind its
@@ -706,7 +681,7 @@ impl RetryState {
     fn handle_solve_result<R>(
         &mut self,
         result: anyhow::Result<R>,
-        lge: bool,
+        aug: bool,
         pl: &mut impl ProgressLog,
     ) -> anyhow::Result<Option<R>> {
         match result {
@@ -751,8 +726,8 @@ impl RetryState {
                     }
                     SolveError::UnsolvableShard => {
                         self.unsolvable_count += 1;
-                        let max_attempts = if lge {
-                            Self::MAX_LGE_ATTEMPTS
+                        let max_attempts = if aug {
+                            Self::MAX_AUG_ATTEMPTS
                         } else {
                             Self::MAX_ATTEMPTS
                         };
@@ -1124,8 +1099,8 @@ impl<
     /// &mut state, pl)` with seeds drawn from a generator initialized with
     /// the [builder seed]. Retries continue for [`SolveError::UnsolvableShard`]
     /// and [`SolveError::MaxShardTooBig`] (up to 100 attempts, or 1000
-    /// attempts for [`SolveError::UnsolvableShard`] when using lazy Gaussian
-    /// elimination, after which [`BuildError::UnsolvableShard`] or
+    /// attempts for [`SolveError::UnsolvableShard`] when using augmented
+    /// peeling, after which [`BuildError::UnsolvableShard`] or
     /// [`BuildError::MaxShardTooBig`], respectively, is returned); if the
     /// third attempt still finds a
     /// duplicate signature, [`BuildError::DuplicateKey`] is returned, and if
@@ -1153,8 +1128,8 @@ impl<
             let seed = rs.next_seed();
             let result = attempt(self, seed, &mut state, pl);
 
-            // self.lge has been set by the attempt
-            if let Some(r) = rs.handle_solve_result(result, self.lge, pl)? {
+            // self.aug has been set by the attempt
+            if let Some(r) = rs.handle_solve_result(result, self.aug, pl)? {
                 pl.info(format_args!(
                     "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
                     start.elapsed().as_secs_f64(),
@@ -1179,7 +1154,7 @@ impl<
     /// On each retry the lenders are rewound.
     ///
     /// `build_fn` is called with `(&mut self, seed, store, max_value, num_keys,
-    /// pl)`. The builder's `shard_edge`, `c`, and `lge` fields are already set
+    /// pl)`. The builder's `shard_edge`, `c`, and `aug` fields are already set
     /// up when `build_fn` is invoked, so it can call
     /// `try_build_from_shard_iter` directly.
     ///
@@ -1489,7 +1464,7 @@ impl<
     /// (sized for [`shard_size_hint`], if set, rather than for the number of
     /// keys), rejects the attempt with [`SolveError::MaxShardTooBig`] if the
     /// largest shard deviates pathologically from the average, sets up
-    /// `self.shard_edge`, `self.c`, `self.lge`, and `self.num_keys`, boxes
+    /// `self.shard_edge`, `self.c`, `self.aug`, and `self.num_keys`, boxes
     /// the store into a `dyn` [`ShardStore`], and calls `build_fn`.
     ///
     /// [`shard_size_hint`]: Self::shard_size_hint
@@ -1557,7 +1532,7 @@ impl<
             return Err(SolveError::MaxShardTooBig.into());
         }
 
-        (self.c, self.lge) = shard_edge.set_up_graphs(num_keys, max_shard);
+        (self.c, self.aug) = shard_edge.set_up_graphs(num_keys, max_shard);
         self.num_keys = num_keys;
 
         let store = Box::new(shard_store) as Box<dyn ShardStore<S, V> + Send + Sync>;
@@ -1591,7 +1566,7 @@ impl<
     ///
     /// * `new_data` must return zero-initialized storage.
     ///
-    /// * `self.shard_edge`, `self.c`, `self.lge`, and `self.num_keys` must
+    /// * `self.shard_edge`, `self.c`, `self.aug`, and `self.num_keys` must
     ///   be set up by the caller (typically by [`try_solve_once`]).
     ///
     /// * `get_val` must be deterministic.
@@ -1602,7 +1577,7 @@ impl<
     /// [`SolveError::DuplicateLocalSignature`] if the system cannot be
     /// solved with the current seed.
     ///
-    /// The peeling algorithm is selected based on `self.lge` and
+    /// The solving algorithm is selected based on `self.aug` and
     /// `self.low_mem`; see the [`low_mem`] field documentation for the
     /// automatic selection heuristic.
     ///
@@ -1676,14 +1651,14 @@ impl<
         let mut main_pl = pl.concurrent();
         pl.log_level(log::Level::Trace);
 
-        let solve_result = if self.lge {
+        let solve_result = if self.aug {
             self.par_solve(
                 seed,
                 shard_iter,
                 &mut data,
                 0,
                 |this, shard_index, shard, data, pl| {
-                    this.lge_shard(shard_index, shard, data, get_val, inspect, pl)
+                    this.aug_shard(shard_index, shard, data, get_val, inspect, pl)
                 },
                 &mut main_pl,
                 pl,
@@ -2061,171 +2036,6 @@ impl<
         result
     }
 
-    /// Peels a shard via edge indices.
-    ///
-    /// This peeler uses a [`SigVal`] per key (the shard), a
-    /// [`ShardEdge::Vertex`] and a byte per vertex (for the [`XorGraph`]), a
-    /// [`ShardEdge::Vertex`] per vertex (for the [`DoubleStack`]), and a final
-    /// byte per vertex (for the stack of sides).
-    ///
-    /// This peeler uses more memory than [`peel_by_sig_vals_low_mem`] but
-    /// less memory than [`peel_by_sig_vals_high_mem`]. It is fairly slow as
-    /// it has to go through a cache-unfriendly memory indirection every time
-    /// it has to retrieve a [`SigVal`] from the shard, but it is the peeler
-    /// of choice when [lazy Gaussian elimination] is required, as after a
-    /// failed peel-by-sig-vals it is not possible to retrieve information
-    /// about the signature/value pairs in the shard.
-    ///
-    /// In theory one could avoid the stack of sides by putting vertices,
-    /// instead of edge indices, on the upper stack, and retrieving edge
-    /// indices and sides from the [`XorGraph`], as
-    /// [`peel_by_sig_vals_low_mem`] does, but this would be less cache
-    /// friendly. This peeler is only used for very small instances, and
-    /// since we are going to pass through lazy Gaussian elimination some
-    /// additional speed is a good idea.
-    ///
-    /// [`peel_by_sig_vals_low_mem`]: VBuilder::peel_by_sig_vals_low_mem
-    /// [`peel_by_sig_vals_high_mem`]: VBuilder::peel_by_sig_vals_high_mem
-    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
-    fn peel_by_index<
-        'a,
-        V: BinSafe,
-        G: Fn(&E, SigVal<E::LocalSig, V>) -> D::Value + Send + Sync,
-        H: Fn(&SigVal<S, V>) + Send + Sync,
-    >(
-        &self,
-        shard_index: usize,
-        shard: Arc<Vec<SigVal<S, V>>>,
-        data: ShardData<'a, D>,
-        get_val: &G,
-        inspect: &H,
-        pl: &mut impl ProgressLog,
-    ) -> Result<PeelResult<'a, D, S, E, V>, ()> {
-        let shard_edge = &self.shard_edge;
-        let num_vertices = shard_edge.num_vertices();
-        let num_shards = shard_edge.num_shards();
-
-        pl.start(format!(
-            "Generating graph for shard {}/{}...",
-            shard_index + 1,
-            num_shards
-        ));
-
-        let mut xor_graph = XorGraph::<E::Vertex>::new(num_vertices);
-        for (edge_index, sig_val) in shard.iter().enumerate() {
-            inspect(sig_val);
-            for (side, &v) in shard_edge
-                .local_edge(shard_edge.local_sig(sig_val.sig))
-                .iter()
-                .enumerate()
-            {
-                xor_graph.add(v, E::Vertex::as_from(edge_index), side);
-            }
-        }
-        pl.done_with_count(shard.len());
-
-        assert!(
-            !xor_graph.overflow,
-            "Degree overflow for shard {}/{}",
-            shard_index + 1,
-            num_shards
-        );
-
-        if self.failed.load(Ordering::Relaxed) {
-            return Err(());
-        }
-
-        // The lower stack contains vertices to be visited. The upper stack
-        // contains peeled edges.
-        let mut double_stack = DoubleStack::<E::Vertex>::new(num_vertices);
-        let mut sides_stack = Vec::<u8>::new();
-
-        pl.start(format!(
-            "Peeling graph for shard {}/{} by edge indices...",
-            shard_index + 1,
-            num_shards
-        ));
-
-        // Preload all vertices of degree one in the visit stack
-        for (v, degree) in xor_graph.degrees().enumerate() {
-            if degree == 1 {
-                double_stack.push_lower(E::Vertex::as_from(v));
-            }
-        }
-
-        while let Some(v) = double_stack.pop_lower() {
-            let v: usize = v.as_to();
-            if xor_graph.degree(v) == 0 {
-                continue;
-            }
-            debug_assert!(xor_graph.degree(v) == 1);
-            let (edge_index, side) = xor_graph.edge_and_side(v);
-            xor_graph.zero(v);
-            double_stack.push_upper(edge_index);
-            sides_stack.push(side as u8);
-            let edge: usize = edge_index.as_to();
-
-            let e = shard_edge.local_edge(shard_edge.local_sig(shard[edge].sig));
-            remove_edge!(
-                xor_graph,
-                e,
-                side,
-                edge_index,
-                double_stack,
-                push_lower,
-                E::Vertex::as_from
-            );
-        }
-
-        pl.done();
-
-        if shard.len() != double_stack.upper_len() {
-            pl.debug(format_args!(
-                "Peeling failed for shard {}/{} (peeled {} out of {} edges, {:.2}% unpeeled)",
-                shard_index + 1,
-                num_shards,
-                double_stack.upper_len(),
-                shard.len(),
-                100.0 * (shard.len() - double_stack.upper_len()) as f64 / shard.len() as f64,
-            ));
-            return Ok(PeelResult::Partial {
-                shard_index,
-                shard,
-                data,
-                double_stack,
-                sides_stack,
-            });
-        }
-
-        self.assign(
-            shard_index,
-            data,
-            double_stack
-                .iter_upper()
-                .map(|&edge_index| {
-                    // Turn edge indices into local edge signatures
-                    // and associated values
-                    let edge: usize = edge_index.as_to();
-                    let sig_val = &shard[edge];
-                    let local_sig = shard_edge.local_sig(sig_val.sig);
-                    (
-                        local_sig,
-                        get_val(
-                            shard_edge,
-                            SigVal {
-                                sig: local_sig,
-                                val: sig_val.val,
-                            },
-                        ),
-                    )
-                })
-                .zip(sides_stack.into_iter().rev()),
-            pl,
-        );
-
-        Ok(PeelResult::Complete())
-    }
-
     /// Peels a shard via signature/value pairs using a stack of peeled
     /// signatures/value pairs.
     ///
@@ -2242,12 +2052,12 @@ impl<
     /// [`peel_by_sig_vals_low_mem`], which uses almost half the memory. It
     /// is the peeler of choice for low levels of parallelism.
     ///
-    /// This peeler cannot be used in conjunction with [lazy Gaussian
-    /// elimination] as after a failed peeling it is not possible to retrieve
-    /// information about the signature/value pairs in the shard.
+    /// This peeler cannot be used in conjunction with [augmented peeling], as
+    /// after a failed peeling it is not possible to retrieve information about
+    /// the signature/value pairs in the shard.
     ///
     /// [`peel_by_sig_vals_low_mem`]: VBuilder::peel_by_sig_vals_low_mem
-    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
+    /// [augmented peeling]: VBuilder::aug_shard
     fn peel_by_sig_vals_high_mem<
         V: BinSafe,
         G: Fn(&E, SigVal<E::LocalSig, V>) -> D::Value + Send + Sync,
@@ -2385,12 +2195,12 @@ impl<
     /// the memory. It is the peeler of choice for significant levels of
     /// parallelism.
     ///
-    /// This peeler cannot be used in conjunction with [lazy Gaussian
-    /// elimination] as after a failed peeling it is not possible to retrieve
-    /// information about the signature/value pairs in the shard.
+    /// This peeler cannot be used in conjunction with [augmented peeling], as
+    /// after a failed peeling it is not possible to retrieve information about
+    /// the signature/value pairs in the shard.
     ///
     /// [`peel_by_sig_vals_high_mem`]: VBuilder::peel_by_sig_vals_high_mem
-    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
+    /// [augmented peeling]: VBuilder::aug_shard
     fn peel_by_sig_vals_low_mem<
         V: BinSafe,
         G: Fn(&E, SigVal<E::LocalSig, V>) -> D::Value + Send + Sync,
@@ -2507,21 +2317,33 @@ impl<
         Ok(())
     }
 
-    /// Solves a shard of given index possibly using [lazy Gaussian
-    /// elimination], and stores the solution in the given data.
+    /// Solves a shard of given index using augmented peeling, and stores the
+    /// solution in the given data.
     ///
-    /// As a first try, the shard is [peeled by index]. If the peeling is
-    /// [partial], lazy Gaussian elimination is used to solve the remaining
-    /// edges.
+    /// The graph is peeled by edge indices; whenever peeling gets stuck, we
+    /// remove the first live edge in shard order and continue peeling. Since
+    /// shards are sorted by the segment of the first vertex of their edges,
+    /// the removed edge lies in the leftmost segment containing live edges,
+    /// and peeling resumes from the hole left by the removal, as at the
+    /// lightly loaded left end of a fuse graph.
     ///
-    /// This method will scan the double stack, without emptying it, to check
-    /// which edges have been peeled. The information will be then passed to
-    /// [`VBuilder::assign`] to complete the assignment of values.
+    /// At the end, every vertex that is incident to some edge but is not the
+    /// pivot of a peeled edge is *lost*: its value can be chosen freely, and
+    /// the values of the lost vertices determine, by back-substitution, the
+    /// values of all pivots. Each removed edge is thus a linear equation in
+    /// the lost vertices; moreover, only vertices lost after the first
+    /// removal can appear in such equations, as removed edges depend only on
+    /// the pivots of edges peeled after the first removal. We compute the
+    /// coefficients of the equations for the most recently lost vertices, in
+    /// blocks of 256 vertices, and solve the resulting small dense system,
+    /// adding blocks until the system is solvable or the lost vertices are
+    /// exhausted.
     ///
-    /// [peeled by index]: VBuilder::peel_by_index
-    /// [partial]: PeelResult::Partial
-    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
-    fn lge_shard<
+    /// Without the cap on the number of unknowns (four times the number of
+    /// removed edges, plus 2048) the solver would be exact, that is, it would
+    /// fail only on unsolvable systems; the cap makes attempts on unsolvable
+    /// systems fail fast.
+    fn aug_shard<
         V: BinSafe,
         G: Fn(&E, SigVal<E::LocalSig, V>) -> D::Value + Send + Sync,
         H: Fn(&SigVal<S, V>) + Send + Sync,
@@ -2529,115 +2351,325 @@ impl<
         &self,
         shard_index: usize,
         shard: Arc<Vec<SigVal<S, V>>>,
-        data: ShardData<'_, D>,
+        mut data: ShardData<'_, D>,
         get_val: &G,
         inspect: &H,
         pl: &mut impl ProgressLog,
     ) -> Result<(), ()> {
+        const BLOCK_WORDS: usize = 4;
         let shard_edge = &self.shard_edge;
-        // Let's try to peel first
-        match self.peel_by_index(shard_index, shard, data, get_val, inspect, pl) {
-            Err(()) => Err(()),
-            Ok(PeelResult::Complete()) => Ok(()),
-            Ok(PeelResult::Partial {
-                shard_index,
-                shard,
-                mut data,
-                double_stack,
-                sides_stack,
-            }) => {
-                pl.debug(format_args!("Switching to lazy Gaussian elimination..."));
-                // We now solve the remaining edges with Gaussian elimination.
-                pl.start(format!(
-                    "Generating system for shard {}/{}...",
-                    shard_index + 1,
-                    shard_edge.num_shards()
-                ));
+        let num_vertices = shard_edge.num_vertices();
+        let num_shards = shard_edge.num_shards();
+        let num_edges = shard.len();
 
-                let num_vertices = shard_edge.num_vertices();
-                let mut peeled_edges: BitVec = BitVec::new(shard.len());
-                let mut used_vars: BitVec = BitVec::new(num_vertices);
-                for &edge in double_stack.iter_upper() {
-                    peeled_edges.set(edge.as_to(), true);
-                }
+        pl.start(format!(
+            "Generating graph for shard {}/{}...",
+            shard_index + 1,
+            num_shards
+        ));
 
-                // Create data for a system using non-peeled edges
-                //
-                // SAFETY: there is no undefined behavior here, but the
-                // raw construction methods we use assume that the
-                // equations are sorted, that the variables are not repeated,
-                // and the variables are in the range [0..num_vertices)
-                let mut system = unsafe {
-                    crate::utils::mod2_sys::Modulo2System::from_parts(
-                        num_vertices,
-                        shard
-                            .iter()
-                            .enumerate()
-                            .filter(|(edge_index, _)| !peeled_edges[*edge_index])
-                            .map(|(_edge_index, sig_val)| {
-                                let local_sig = shard_edge.local_sig(sig_val.sig);
-                                let mut eq: Vec<_> = shard_edge
-                                    .local_edge(local_sig)
-                                    .iter()
-                                    .map(|&x| {
-                                        used_vars.set(x, true);
-                                        x as u32
-                                    })
-                                    .collect();
-                                eq.sort_unstable();
-                                crate::utils::mod2_sys::Modulo2Equation::from_parts(
-                                    eq,
-                                    get_val(
-                                        shard_edge,
-                                        SigVal {
-                                            sig: local_sig,
-                                            val: sig_val.val,
-                                        },
-                                    ),
-                                )
-                            })
-                            .collect(),
-                    )
-                };
-
-                if self.failed.load(Ordering::Relaxed) {
-                    return Err(());
-                }
-
-                pl.start("Solving system...");
-                let result = system.lazy_gaussian_elimination().map_err(|_| ())?;
-                pl.done_with_count(system.num_equations());
-
-                for (v, &value) in result.iter().enumerate().filter(|(v, _)| used_vars[*v]) {
-                    data.set_value(v, value);
-                }
-
-                self.assign(
-                    shard_index,
-                    data,
-                    double_stack
-                        .iter_upper()
-                        .map(|&edge_index| {
-                            let edge: usize = edge_index.as_to();
-                            let sig_val = &shard[edge];
-                            let local_sig = shard_edge.local_sig(sig_val.sig);
-                            (
-                                local_sig,
-                                get_val(
-                                    shard_edge,
-                                    SigVal {
-                                        sig: local_sig,
-                                        val: sig_val.val,
-                                    },
-                                ),
-                            )
-                        })
-                        .zip(sides_stack.into_iter().rev()),
-                    pl,
-                );
-                Ok(())
+        let mut xor_graph = XorGraph::<E::Vertex>::new(num_vertices);
+        for (edge_index, sig_val) in shard.iter().enumerate() {
+            inspect(sig_val);
+            for (side, &v) in shard_edge
+                .local_edge(shard_edge.local_sig(sig_val.sig))
+                .iter()
+                .enumerate()
+            {
+                xor_graph.add(v, E::Vertex::as_from(edge_index), side);
             }
         }
+        pl.done_with_count(num_edges);
+
+        assert!(
+            !xor_graph.overflow,
+            "Degree overflow for shard {}/{}",
+            shard_index + 1,
+            num_shards
+        );
+
+        if self.failed.load(Ordering::Relaxed) {
+            return Err(());
+        }
+
+        pl.start(format!(
+            "Peeling graph for shard {}/{} by edge indices (augmented)...",
+            shard_index + 1,
+            num_shards
+        ));
+
+        let edge =
+            |edge_index: usize| shard_edge.local_edge(shard_edge.local_sig(shard[edge_index].sig));
+        let value = |edge_index: usize| {
+            let sig_val = &shard[edge_index];
+            get_val(
+                shard_edge,
+                SigVal {
+                    sig: shard_edge.local_sig(sig_val.sig),
+                    val: sig_val.val,
+                },
+            )
+        };
+
+        // The lower stack contains vertices to be visited. The upper stack
+        // contains peeled edges.
+        let mut double_stack = DoubleStack::<E::Vertex>::new(num_vertices);
+        let mut sides_stack = Vec::<u8>::with_capacity(num_edges);
+        let mut dead: BitVec = BitVec::new(num_edges);
+        let mut removed = Vec::<E::Vertex>::new();
+        let mut lost = Vec::<E::Vertex>::new();
+        // Number of edges peeled before the first removal
+        let mut num_peeled_before = 0;
+        let mut next_removal = 0;
+
+        for (v, degree) in xor_graph.degrees().enumerate() {
+            if degree == 1 {
+                double_stack.push_lower(E::Vertex::as_from(v));
+            }
+        }
+
+        loop {
+            while let Some(v) = double_stack.pop_lower() {
+                let v: usize = v.as_to();
+                if xor_graph.degree(v) == 0 {
+                    continue;
+                }
+                let (edge_index, side) = xor_graph.edge_and_side(v);
+                xor_graph.zero(v);
+                double_stack.push_upper(edge_index);
+                sides_stack.push(side as u8);
+                let e_index: usize = edge_index.as_to();
+                dead.set(e_index, true);
+                let e = edge(e_index);
+                for (s, &u) in e.iter().enumerate() {
+                    if s == side {
+                        continue;
+                    }
+                    match xor_graph.degree(u) {
+                        2 => double_stack.push_lower(E::Vertex::as_from(u)),
+                        1 if !removed.is_empty() => lost.push(E::Vertex::as_from(u)),
+                        _ => {}
+                    }
+                    xor_graph.remove(u, edge_index, s);
+                }
+            }
+
+            if double_stack.upper_len() + removed.len() == num_edges {
+                break;
+            }
+
+            // Stuck: we remove the first live edge in shard order
+            while dead[next_removal] {
+                next_removal += 1;
+            }
+            if removed.is_empty() {
+                num_peeled_before = double_stack.upper_len();
+            }
+            let edge_index = E::Vertex::as_from(next_removal);
+            dead.set(next_removal, true);
+            removed.push(edge_index);
+            for (s, &u) in edge(next_removal).iter().enumerate() {
+                match xor_graph.degree(u) {
+                    2 => double_stack.push_lower(E::Vertex::as_from(u)),
+                    1 => lost.push(E::Vertex::as_from(u)),
+                    _ => {}
+                }
+                xor_graph.remove(u, edge_index, s);
+            }
+        }
+
+        pl.done();
+        drop(xor_graph);
+        drop(dead);
+
+        let num_removed = removed.len();
+
+        // Assigns values to the pivots of the given peeled edges, which
+        // must be in reverse peeling order
+        let assign = |data: &mut ShardData<'_, D>, edges: &mut dyn Iterator<Item = (usize, u8)>| {
+            for (edge_index, side) in edges {
+                let e = edge(edge_index);
+                let side = side as usize;
+                // SAFETY: vertex indices from local_edge are guaranteed
+                // within bounds of data by the ShardEdge contract; side is
+                // always 0, 1, or 2.
+                unsafe {
+                    let xor = match side {
+                        0 => data.get_value_unchecked(e[1]) ^ data.get_value_unchecked(e[2]),
+                        1 => data.get_value_unchecked(e[0]) ^ data.get_value_unchecked(e[2]),
+                        2 => data.get_value_unchecked(e[0]) ^ data.get_value_unchecked(e[1]),
+                        _ => core::hint::unreachable_unchecked(),
+                    };
+                    data.set_value_unchecked(e[side], value(edge_index) ^ xor);
+                }
+            }
+        };
+
+        let num_peeled = double_stack.upper_len();
+        let peeled = || {
+            double_stack
+                .iter_upper()
+                .map(|&e| e.as_to())
+                .zip(sides_stack.iter().rev().copied())
+        };
+
+        if num_removed != 0 {
+            if self.failed.load(Ordering::Relaxed) {
+                return Err(());
+            }
+            if lost.len() < num_removed {
+                pl.debug(format_args!(
+                    "Augmented peeling failed for shard {}/{}: {} removed edges but only {} lost vertices",
+                    shard_index + 1,
+                    num_shards,
+                    num_removed,
+                    lost.len()
+                ));
+                return Err(());
+            }
+
+            pl.start(format!(
+                "Eliminating peeled variables for shard {}/{} ({} removed edges, {} lost vertices)...",
+                shard_index + 1,
+                num_shards,
+                num_removed,
+                lost.len()
+            ));
+
+            // Removed equations depend only on edges peeled after the first
+            // removal (the first num_peeled - num_peeled_before in reverse
+            // peeling order). We assign their pivots using the current
+            // values of the lost vertices (zero), and evaluate the removed
+            // equations to get the constant terms.
+            let num_tail = num_peeled - num_peeled_before;
+            assign(&mut data, &mut peeled().take(num_tail));
+            let rhs: Vec<D::Value> = removed
+                .iter()
+                .map(|&r| {
+                    let r: usize = r.as_to();
+                    let e = edge(r);
+                    // SAFETY: see above
+                    unsafe {
+                        value(r)
+                            ^ data.get_value_unchecked(e[0])
+                            ^ data.get_value_unchecked(e[1])
+                            ^ data.get_value_unchecked(e[2])
+                    }
+                })
+                .collect();
+            // Pivot first, then the two other vertices
+            let tail: Vec<[E::Vertex; 3]> = peeled()
+                .take(num_tail)
+                .map(|(edge_index, side)| {
+                    let e = edge(edge_index);
+                    let (a, b) = match side {
+                        0 => (e[1], e[2]),
+                        1 => (e[0], e[2]),
+                        _ => (e[0], e[1]),
+                    };
+                    [
+                        E::Vertex::as_from(e[side as usize]),
+                        E::Vertex::as_from(a),
+                        E::Vertex::as_from(b),
+                    ]
+                })
+                .collect();
+            let removed_edges: Vec<[usize; 3]> = removed.iter().map(|&r| edge(r.as_to())).collect();
+            drop(removed);
+
+            // Unknown j is the j-th most recently lost vertex. We cap the
+            // number of unknowns so that an unsolvable system fails fast;
+            // solvable systems need on average between one and one and a
+            // half unknowns per removed edge, and occasionally a few more
+            // when few edges have been removed.
+            let num_lost = lost.len().min(4 * num_removed + 2048);
+            let lost = &lost[lost.len() - num_lost..];
+            let unknown = |j: usize| -> usize { lost[num_lost - 1 - j].as_to() };
+            let block_size = BLOCK_WORDS * 64;
+            let max_blocks = num_lost.div_ceil(block_size);
+            let mut coeffs = vec![[0_u64; BLOCK_WORDS]; num_vertices];
+            // Coefficients of the removed equations, block by block
+            let mut blocks: Vec<Vec<[u64; BLOCK_WORDS]>> = vec![];
+            let mut num_blocks = (2 * num_removed).div_ceil(block_size).min(max_blocks);
+            let solution = loop {
+                while blocks.len() < num_blocks {
+                    let base = blocks.len() * block_size;
+                    let top = (base + block_size).min(num_lost);
+                    coeffs.iter_mut().for_each(|c| *c = [0; BLOCK_WORDS]);
+                    for j in base..top {
+                        let o = j - base;
+                        coeffs[unknown(j)][o / 64] |= 1 << (o % 64);
+                    }
+                    for &[p, a, b] in &tail {
+                        let (p, a, b): (usize, usize, usize) = (p.as_to(), a.as_to(), b.as_to());
+                        let (ca, cb) = (coeffs[a], coeffs[b]);
+                        coeffs[p] = std::array::from_fn(|i| ca[i] ^ cb[i]);
+                    }
+                    blocks.push(
+                        removed_edges
+                            .iter()
+                            .map(|e| {
+                                let (c0, c1, c2) = (coeffs[e[0]], coeffs[e[1]], coeffs[e[2]]);
+                                std::array::from_fn(|i| c0[i] ^ c1[i] ^ c2[i])
+                            })
+                            .collect(),
+                    );
+                }
+
+                let row_words = blocks.len() * BLOCK_WORDS;
+                let mut rows = vec![0_u64; num_removed * row_words];
+                for (b, block) in blocks.iter().enumerate() {
+                    for (i, c) in block.iter().enumerate() {
+                        let start = i * row_words + b * BLOCK_WORDS;
+                        rows[start..start + BLOCK_WORDS].copy_from_slice(c);
+                    }
+                }
+                let mut block_rhs = rhs.clone();
+                let num_vars = (blocks.len() * block_size).min(num_lost);
+                match crate::utils::mod2_sys::dense_gaussian_elimination(
+                    &mut rows,
+                    &mut block_rhs,
+                    num_removed,
+                    row_words,
+                    num_vars,
+                ) {
+                    Some(solution) => break solution,
+                    None if blocks.len() == max_blocks => {
+                        pl.debug(format_args!(
+                            "Augmented peeling failed for shard {}/{}: unsolvable system",
+                            shard_index + 1,
+                            num_shards,
+                        ));
+                        return Err(());
+                    }
+                    None => num_blocks = (2 * blocks.len()).min(max_blocks),
+                }
+            };
+            pl.done_with_count(num_removed);
+
+            // The solution is the delta to apply to the lost vertices
+            for (j, &x) in solution.iter().enumerate() {
+                let v = unknown(j);
+                // SAFETY: lost vertices are within bounds of data
+                unsafe {
+                    data.set_value_unchecked(v, data.get_value_unchecked(v) ^ x);
+                }
+            }
+        }
+
+        if self.failed.load(Ordering::Relaxed) {
+            return Err(());
+        }
+
+        pl.start(format!(
+            "Assigning values for shard {}/{}...",
+            shard_index + 1,
+            num_shards
+        ));
+        assign(&mut data, &mut peeled());
+        pl.done();
+
+        Ok(())
     }
 
     /// Perform assignment of values based on peeling data.
@@ -2703,23 +2735,23 @@ mod retry_state_tests {
 
     /// The `MaxShardTooBig` retry counter is capped: the first 99 occurrences
     /// are retried, the 100th is fatal, so a pathological configuration cannot
-    /// loop forever. The cap does not depend on lazy Gaussian elimination.
+    /// loop forever. The cap does not depend on augmented peeling.
     #[test]
     fn max_shard_too_big_is_bounded() {
-        for lge in [false, true] {
+        for aug in [false, true] {
             let mut pl = no_logging![];
             let mut rs = retry_state();
             for i in 0..99 {
                 let r = rs.handle_solve_result(
                     Err::<(), _>(SolveError::MaxShardTooBig.into()),
-                    lge,
+                    aug,
                     &mut pl,
                 );
                 assert!(matches!(r, Ok(None)), "attempt {i} should be retried");
             }
             let r = rs.handle_solve_result(
                 Err::<(), _>(SolveError::MaxShardTooBig.into()),
-                lge,
+                aug,
                 &mut pl,
             );
             assert!(
@@ -2733,27 +2765,27 @@ mod retry_state_tests {
     }
 
     /// The `UnsolvableShard` retry counter is capped, too, and the 100th
-    /// failure (the 1000th with lazy Gaussian elimination) returns a typed
+    /// failure (the 1000th with augmented peeling) returns a typed
     /// error instead of panicking.
     #[test]
     fn unsolvable_shard_is_bounded() {
-        for (lge, max_attempts) in [
+        for (aug, max_attempts) in [
             (false, RetryState::MAX_ATTEMPTS),
-            (true, RetryState::MAX_LGE_ATTEMPTS),
+            (true, RetryState::MAX_AUG_ATTEMPTS),
         ] {
             let mut pl = no_logging![];
             let mut rs = retry_state();
             for i in 0..max_attempts - 1 {
                 let r = rs.handle_solve_result(
                     Err::<(), _>(SolveError::UnsolvableShard.into()),
-                    lge,
+                    aug,
                     &mut pl,
                 );
                 assert!(matches!(r, Ok(None)), "attempt {i} should be retried");
             }
             let r = rs.handle_solve_result(
                 Err::<(), _>(SolveError::UnsolvableShard.into()),
-                lge,
+                aug,
                 &mut pl,
             );
             assert!(
@@ -2775,7 +2807,7 @@ mod retry_state_tests {
         // ε-cost term dominates: tolerance = 5·0.001·10⁷ = 50000.
         assert!(!max_shard_too_big(10_050_000, 1_000_000_000, 100, 0.001));
         assert!(max_shard_too_big(10_060_000, 1_000_000_000, 100, 0.001));
-        // Linear regime: 800000 keys in 16 shards, average 50000. The
+        // Small shards: 800000 keys in 16 shards, average 50000. The
         // statistical term dominates: tolerance = 2.5·√(50000·ln 16) ≈
         // 930, so a typical maximum (≈ average + 400) is accepted—the
         // old 0.5% rule rejected it about 60 times per build—while a

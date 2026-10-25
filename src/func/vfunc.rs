@@ -6,7 +6,7 @@
 
 use value_traits::slices::SliceByValue;
 
-use super::shard_edge::FuseLge3Shards;
+use super::shard_edge::FuseAug3Shards;
 use crate::bits::BitFieldVec;
 use crate::func::shard_edge::ShardEdge;
 use crate::traits::Word;
@@ -29,9 +29,10 @@ use std::borrow::Borrow;
 /// This structure has been described by Sebastiano Vigna in “[ε–Cost Sharding:
 /// Scaling Hypergraph–Based Data Structures to Trillions of Keys]”, 2026. Space
 /// overhead with respect to the optimum depends on the [`ShardEdge`] type. The
-/// default is [`FuseLge3Shards`], which provides a space overhead of about 11%
-/// for large key sets (above a hundred million keys), growing up to about 13%
-/// going towards smaller key sets (and to about 25% below 5000 keys). Details
+/// default is [`FuseAug3Shards`], which provides a space overhead of about 11%
+/// for large key sets (above a hundred million keys), and of 10–12% for key
+/// sets above 30000 keys, growing to about 14% at 10⁴ keys and 22% at 1000
+/// keys. Details
 /// on other possible [`ShardEdge`] implementations can be found in the
 /// [`shard_edge`] module documentation.
 ///
@@ -85,10 +86,10 @@ use std::borrow::Borrow;
 ///   `[u64; 1]` for slightly faster construction and queries, but the
 ///   construction will not scale beyond 3.8 billion keys.
 ///
-/// * `E` - the sharding and edge logic type. The default is [`FuseLge3Shards`].
+/// * `E` - the sharding and edge logic type. The default is [`FuseAug3Shards`].
 ///   For small sets of keys you might try [`Fuse3NoShards`], possibly
 ///   coupled with `[u64; 1]` signatures. For functions with more than a few
-///   dozen billion keys, you might try [`FuseLge3FullSigs`].
+///   dozen billion keys, you might try [`FuseAug3FullSigs`].
 ///
 /// # Examples
 ///
@@ -100,7 +101,7 @@ use std::borrow::Borrow;
 /// [`try_new`]: VFunc::try_new
 /// [ε-serde]: https://crates.io/crates/epserde
 /// [unaligned reads]: BitFieldVec::get_unaligned
-/// [`FuseLge3FullSigs`]: crate::func::shard_edge::FuseLge3FullSigs
+/// [`FuseAug3FullSigs`]: crate::func::shard_edge::FuseAug3FullSigs
 /// [`serde`]: https://crates.io/crates/serde
 /// [`Fuse3NoShards`]: crate::func::shard_edge::Fuse3NoShards
 /// [`VBuilder`]: crate::func::VBuilder
@@ -115,7 +116,7 @@ use std::borrow::Borrow;
 #[derive(Debug, MemSize, MemDbg)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(phantom(K, S)))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct VFunc<K: ?Sized, D, S = [u64; 2], E = FuseLge3Shards> {
+pub struct VFunc<K: ?Sized, D, S = [u64; 2], E = FuseAug3Shards> {
     pub(crate) shard_edge: E,
     pub(crate) seed: u64,
     pub(crate) num_keys: usize,

@@ -8,7 +8,7 @@
 
 use std::borrow::Borrow;
 
-use super::shard_edge::FuseLge3Shards;
+use super::shard_edge::FuseAug3Shards;
 use crate::bits::BitFieldVec;
 use crate::func::VFunc;
 use crate::func::shard_edge::ShardEdge;
@@ -75,7 +75,7 @@ use value_traits::slices::SliceByValue;
 /// * `S` - the signature type; the default is `[u64; 2]`.
 ///
 /// * `E` - the sharding and edge logic type for the first (frequent-value)
-///   function; the default is [`FuseLge3Shards`].
+///   function; the default is [`FuseAug3Shards`].
 ///
 /// * `F` - the sharding and edge logic type for the second (escaped-value)
 ///   function; the default is `E`.
@@ -121,7 +121,7 @@ pub struct VFunc2<
     K: ?Sized,
     D: SliceByValue = BitFieldVec<Box<[usize]>>,
     S = [u64; 2],
-    E = FuseLge3Shards,
+    E = FuseAug3Shards,
     F = E,
 > {
     /// First function: maps each key to an index (*r* bits), or [`escape`] for

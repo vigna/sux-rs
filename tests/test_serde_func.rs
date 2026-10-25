@@ -12,7 +12,7 @@ use anyhow::Result;
 use dsi_progress_logger::no_logging;
 use sux::bits::BitFieldVec;
 use sux::dict::VFilter;
-use sux::func::shard_edge::{Fuse3NoShards, Fuse3Shards, FuseLge3FullSigs};
+use sux::func::shard_edge::{Fuse3NoShards, Fuse3Shards, FuseAug3FullSigs};
 use sux::func::{CompVFunc, Lcp2MmphfInt, LcpMmphfStr, VFunc, VFunc2};
 
 /// Serializes and deserializes `t` with serde, checking that the result
@@ -56,7 +56,7 @@ fn test_serde_vfunc() -> Result<()> {
     )?;
     round_trip(&func)?;
 
-    let func = <VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3FullSigs>>::try_par_new(
+    let func = <VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseAug3FullSigs>>::try_par_new(
         &keys,
         &values,
         no_logging![],

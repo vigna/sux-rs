@@ -73,7 +73,7 @@ struct Args {
     huffman_entropy_threshold: f64,
     #[clap(flatten)]
     builder: BuilderArgs,
-    /// Shard/edge type: CompVFunc does not support lazy Gaussian elimination,
+    /// Shard/edge type: CompVFunc does not support augmented peeling,
     /// so only fuse3-shards (the default, unlike in the other binaries),
     /// fuse3-no-shards64, and fuse3-no-shards128 are supported.​
     #[arg(long, short = 'E', value_enum, default_value_t = sux::cli::ShardEdgeType::Fuse3Shards)]

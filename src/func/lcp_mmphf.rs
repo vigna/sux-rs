@@ -48,7 +48,7 @@
 
 use crate::bits::BitFieldVec;
 use crate::func::VFunc;
-use crate::func::shard_edge::{Fuse3NoShards, FuseLge3Shards, ShardEdge};
+use crate::func::shard_edge::{Fuse3NoShards, FuseAug3Shards, ShardEdge};
 use crate::traits::TryIntoUnaligned;
 use crate::traits::Unaligned;
 use crate::utils::*;
@@ -1326,7 +1326,7 @@ pub struct LcpMmphfInt<
     K,
     D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
-    E0 = FuseLge3Shards,
+    E0 = FuseAug3Shards,
     S1 = [u64; 1],
     E1 = Fuse3NoShards,
 > {
@@ -1546,7 +1546,7 @@ pub struct LcpMmphf<
     K: ?Sized,
     D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
-    E0 = FuseLge3Shards,
+    E0 = FuseAug3Shards,
     S1 = [u64; 1],
     E1 = Fuse3NoShards,
 > {
@@ -1608,7 +1608,7 @@ impl<K: ?Sized, D: Clone, S0, E0: Clone, S1, E1: Clone> Clone for LcpMmphf<K, D,
 pub type LcpMmphfStr<
     D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
-    E0 = FuseLge3Shards,
+    E0 = FuseAug3Shards,
     S1 = [u64; 1],
     E1 = Fuse3NoShards,
 > = LcpMmphf<str, D, S0, E0, S1, E1>;
@@ -1651,7 +1651,7 @@ pub type LcpMmphfStr<
 pub type LcpMmphfSliceU8<
     D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
-    E0 = FuseLge3Shards,
+    E0 = FuseAug3Shards,
     S1 = [u64; 1],
     E1 = Fuse3NoShards,
 > = LcpMmphf<[u8], D, S0, E0, S1, E1>;

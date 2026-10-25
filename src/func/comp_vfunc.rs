@@ -124,7 +124,7 @@ use std::hash::Hash;
 ///
 /// * `E` - the [`ShardEdge`] used for sharding and local hashing;
 ///   defaults to [`Fuse3Shards`] (see [`VFunc`] for details; note that
-///   variants using Lazy Gaussian Elimination (LGE) are not supported).
+///   variants using augmented peeling are not supported).
 ///
 /// # Examples
 ///
@@ -604,7 +604,7 @@ where
         // Correlated-graph setup: the first argument is the total key count
         // (the regime selector, analogous to n in set_up_graphs), followed
         // by the largest per-shard key count and per-shard edge count.
-        let (c, lge) = vb.shard_edge.set_up_corr_graphs(
+        let (c, aug) = vb.shard_edge.set_up_corr_graphs(
             num_keys,
             max_shard_keys,
             max_shard_edges,
@@ -612,9 +612,9 @@ where
             num_failures,
         );
         // This should never really happen--we have static checks
-        assert!(!lge, "CompVFunc does not support LGE");
+        assert!(!aug, "CompVFunc does not support augmented peeling");
         vb.c = c;
-        vb.lge = false;
+        vb.aug = false;
 
         // Compute the per-shard stride and allocate
         let num_vertices_per_shard = vb.shard_edge.num_vertices();
@@ -1019,8 +1019,7 @@ where
 
 // ── Index-based peeler + solver ────────────────────────────────────
 
-/// Peels a 3-uniform hypergraph by edge index and assign values, mirroring
-/// [`VBuilder::peel_by_index`](crate::func::vbuilder).
+/// Peels a 3-uniform hypergraph by edge index and assign values.
 ///
 /// This builder is used when the per-shard vertex count exceeds
 /// `PackedEdge::MAX_VERTEX` and we cannot use the other two peelers. It
@@ -1114,9 +1113,7 @@ fn peel_by_index<W: Word>(
     Ok(())
 }
 
-/// Peels a 3-uniform hypergraph by edge index, mirroring
-/// [`VBuilder::peel_by_index`](crate::func::vbuilder), but does not assign
-/// values.
+/// Peels a 3-uniform hypergraph by edge index, but does not assign values.
 ///
 /// The caller checks `double_stack.upper_len()` against `edges.len()` to decide
 /// whether peeling succeeded.

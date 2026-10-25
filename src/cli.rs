@@ -414,14 +414,14 @@ impl BuilderArgs {
 /// Shard/edge type used during construction.
 #[derive(clap::ValueEnum, Copy, Clone, Debug, Default)]
 pub enum ShardEdgeType {
-    /// Fuse 3-hypergraphs with lazy Gaussian elimination and ε-cost sharding.​
+    /// Fuse 3-hypergraphs with augmented peeling and ε-cost sharding.​
     #[default]
-    FuseLge3Shards,
-    /// Fuse 3-hypergraphs with ε-cost sharding, no lazy Gaussian elimination.​
+    FuseAug3Shards,
+    /// Fuse 3-hypergraphs with ε-cost sharding, no augmented peeling.​
     Fuse3Shards,
-    /// Fuse 3-hypergraphs without sharding or lazy Gaussian elimination and 64-bit signatures.​
+    /// Fuse 3-hypergraphs without sharding or augmented peeling and 64-bit signatures.​
     Fuse3NoShards64,
-    /// Fuse 3-hypergraphs without sharding or lazy Gaussian elimination and 128-bit signatures.​
+    /// Fuse 3-hypergraphs without sharding or augmented peeling and 128-bit signatures.​
     Fuse3NoShards128,
     /// MWHC 3-hypergraphs with ε-cost sharding.​
     #[cfg(feature = "mwhc")]
@@ -429,8 +429,14 @@ pub enum ShardEdgeType {
     /// MWHC 3-hypergraphs without ε-cost sharding.​
     #[cfg(feature = "mwhc")]
     Mwhc3NoShards,
-    /// Fuse 3-hypergraphs with lazy Gaussian elimination, ε-cost sharding, and full
+    /// Fuse 3-hypergraphs with augmented peeling, ε-cost sharding, and full
     /// signatures.​
+    FuseAug3FullSigs,
+    /// Deprecated: same as fuse-aug3-shards, but builds the type of previous
+    /// versions.​
+    FuseLge3Shards,
+    /// Deprecated: same as fuse-aug3-full-sigs, but builds the type of
+    /// previous versions.​
     FuseLge3FullSigs,
 }
 

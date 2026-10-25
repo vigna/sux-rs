@@ -17,7 +17,7 @@ use sux::{
     dict::VFilter,
     func::{
         VBuilder, VFunc,
-        shard_edge::{Fuse3NoShards, Fuse3Shards, FuseLge3FullSigs, FuseLge3Shards, ShardEdge},
+        shard_edge::{Fuse3NoShards, Fuse3Shards, FuseAug3FullSigs, FuseAug3Shards, ShardEdge},
     },
     utils::{EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig},
 };
@@ -60,8 +60,8 @@ where
 
 #[test]
 fn test_vfunc_lge() -> Result<()> {
-    _test_vfunc::<[u64; 2], FuseLge3Shards>(&[0, 10, 1000, 100_000], false, false)?;
-    _test_vfunc::<[u64; 2], FuseLge3Shards>(&[0, 10, 1000, 100_000], true, false)?;
+    _test_vfunc::<[u64; 2], FuseAug3Shards>(&[0, 10, 1000, 100_000], false, false)?;
+    _test_vfunc::<[u64; 2], FuseAug3Shards>(&[0, 10, 1000, 100_000], true, false)?;
     _test_vfunc::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], false, false)?;
     _test_vfunc::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], true, false)?;
     _test_vfunc::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], false, false)?;
@@ -84,16 +84,16 @@ fn test_vfunc_mwhc() -> Result<()> {
 
 #[test]
 fn test_vfunc_peeling_by_sig_vals() -> Result<()> {
-    _test_vfunc::<[u64; 2], FuseLge3Shards>(&[1_000_000], false, false)?;
-    _test_vfunc::<[u64; 2], FuseLge3Shards>(&[1_000_000], false, true)?;
-    _test_vfunc::<[u64; 2], FuseLge3Shards>(&[1_000_000], true, false)?;
-    _test_vfunc::<[u64; 2], FuseLge3Shards>(&[1_000_000], true, true)?;
+    _test_vfunc::<[u64; 2], FuseAug3Shards>(&[1_000_000], false, false)?;
+    _test_vfunc::<[u64; 2], FuseAug3Shards>(&[1_000_000], false, true)?;
+    _test_vfunc::<[u64; 2], FuseAug3Shards>(&[1_000_000], true, false)?;
+    _test_vfunc::<[u64; 2], FuseAug3Shards>(&[1_000_000], true, true)?;
     _test_vfunc::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, false)?;
     _test_vfunc::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, true)?;
     _test_vfunc::<[u64; 2], Fuse3NoShards>(&[1_000_000], false, false)?;
     _test_vfunc::<[u64; 2], Fuse3NoShards>(&[1_000_000], false, true)?;
-    _test_vfunc::<[u64; 2], FuseLge3FullSigs>(&[1_000_000], false, false)?;
-    _test_vfunc::<[u64; 2], FuseLge3FullSigs>(&[1_000_000], false, true)?;
+    _test_vfunc::<[u64; 2], FuseAug3FullSigs>(&[1_000_000], false, false)?;
+    _test_vfunc::<[u64; 2], FuseAug3FullSigs>(&[1_000_000], false, true)?;
     _test_vfunc::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, false)?;
     _test_vfunc::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, true)?;
     _test_vfunc::<[u64; 2], Fuse3Shards>(&[1_000_000], false, false)?;
@@ -153,8 +153,8 @@ where
 
 #[test]
 fn test_vfilter_lge() -> Result<()> {
-    _test_vfilter::<[u64; 2], FuseLge3Shards>(&[0, 10, 1000, 100_000], false, false)?;
-    _test_vfilter::<[u64; 2], FuseLge3Shards>(&[0, 10, 1000, 100_000], true, false)?;
+    _test_vfilter::<[u64; 2], FuseAug3Shards>(&[0, 10, 1000, 100_000], false, false)?;
+    _test_vfilter::<[u64; 2], FuseAug3Shards>(&[0, 10, 1000, 100_000], true, false)?;
     _test_vfilter::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], false, false)?;
     _test_vfilter::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], true, false)?;
     _test_vfilter::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], false, false)?;
@@ -166,16 +166,16 @@ fn test_vfilter_lge() -> Result<()> {
 
 #[test]
 fn test_vfilter_peeling_by_sig_vals() -> Result<()> {
-    _test_vfilter::<[u64; 2], FuseLge3Shards>(&[1_000_000], false, false)?;
-    _test_vfilter::<[u64; 2], FuseLge3Shards>(&[1_000_000], false, true)?;
-    _test_vfilter::<[u64; 2], FuseLge3Shards>(&[1_000_000], true, false)?;
-    _test_vfilter::<[u64; 2], FuseLge3Shards>(&[1_000_000], true, true)?;
+    _test_vfilter::<[u64; 2], FuseAug3Shards>(&[1_000_000], false, false)?;
+    _test_vfilter::<[u64; 2], FuseAug3Shards>(&[1_000_000], false, true)?;
+    _test_vfilter::<[u64; 2], FuseAug3Shards>(&[1_000_000], true, false)?;
+    _test_vfilter::<[u64; 2], FuseAug3Shards>(&[1_000_000], true, true)?;
     _test_vfilter::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, false)?;
     _test_vfilter::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, true)?;
     _test_vfilter::<[u64; 2], Fuse3NoShards>(&[1_000_000], false, false)?;
     _test_vfilter::<[u64; 2], Fuse3NoShards>(&[1_000_000], false, true)?;
-    _test_vfilter::<[u64; 2], FuseLge3FullSigs>(&[1_000_000], false, false)?;
-    _test_vfilter::<[u64; 2], FuseLge3FullSigs>(&[1_000_000], false, true)?;
+    _test_vfilter::<[u64; 2], FuseAug3FullSigs>(&[1_000_000], false, false)?;
+    _test_vfilter::<[u64; 2], FuseAug3FullSigs>(&[1_000_000], false, true)?;
     _test_vfilter::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, false)?;
     _test_vfilter::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, true)?;
     _test_vfilter::<[u64; 2], Fuse3Shards>(&[1_000_000], false, false)?;

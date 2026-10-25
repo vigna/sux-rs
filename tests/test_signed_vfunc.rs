@@ -11,13 +11,13 @@ use anyhow::Result;
 use dsi_progress_logger::*;
 use sux::{
     bits::BitFieldVec,
-    func::{SignedFunc, VFunc, shard_edge::FuseLge3Shards},
+    func::{SignedFunc, VFunc, shard_edge::FuseAug3Shards},
     traits::TryIntoUnaligned,
     utils::FromCloneableIntoIterator,
 };
 
 type MySignedVFunc =
-    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseLge3Shards>, Box<[usize]>>;
+    SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseAug3Shards>, Box<[usize]>>;
 
 type MyBitSignedVFunc =
     SignedFunc<VFunc<usize, BitFieldVec<Box<[usize]>>>, BitFieldVec<Box<[usize]>>>;

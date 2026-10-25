@@ -8,6 +8,28 @@
   is used to log the progress of the constructors reading keys from a lender;
   the `phastr` CLI utility sets it when the number of keys is specified.
 
+- Following a suggestion by Stefan Walzer, `FuseAug3Shards` and
+  `FuseAug3FullSigs` solve key sets of up to 20,000,000 keys by augmented
+  peeling, rather than by lazy Gaussian elimination as `FuseLge3Shards` and
+  `FuseLge3FullSigs` did: whenever peeling gets stuck an edge is removed, and
+  the removed edges are satisfied at the end by solving a small dense linear
+  system. Construction is up to 45 times faster, needs on average at most 1.35
+  attempts, and the resulting structures are 0.2–5% smaller between 1,000 and
+  20,000,000 keys (but up to 7% larger below 100 keys). Above 20,000,000 keys
+  the new types behave as the old ones. The CLI utilities accept the new types
+  (`fuse-aug3-shards`, now the default, and `fuse-aug3-full-sigs`).
+
+### Changed
+
+- `FuseAug3Shards` is the new default `ShardEdge` of `VBuilder`, `VFunc`,
+  `VFunc2`, `VFilter`, `LcpMmphf`, and `Lcp2Mmphf`. `FuseLge3Shards` and
+  `FuseLge3FullSigs` are deprecated: they now build exactly the same
+  structures as the new types (the format is unchanged), and they are kept
+  only because ε-serde type hashes include type names. Structures
+  serialized by previous versions with the default shard/edge logic must be
+  deserialized by specifying `FuseLge3Shards` explicitly (e.g.,
+  `VFunc<K, D, [u64; 2], FuseLge3Shards>`).
+
 ### Improved
 
 - `PHastR` construction is slightly faster: the scan finding the keys of the

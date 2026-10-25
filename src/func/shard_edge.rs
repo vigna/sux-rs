@@ -20,17 +20,16 @@
 //!
 //! # Choosing a shard/edge logic
 //!
-//! - Use the default, [`FuseLge3Shards`], unless you have specific needs: it
+//! - Use the default, [`FuseAug3Shards`], unless you have specific needs: it
 //!   has a low space overhead at all sizes, and sharding makes construction
 //!   parallel and scalable on large key sets.
 //!
 //! - Use [`Fuse3Shards`] if construction time on small key sets matters more
-//!   than space: below 800000 keys [`FuseLge3Shards`] uses lazy Gaussian
-//!   elimination, which is slower and often needs more than one construction
-//!   attempt. [`Fuse3Shards`] is also the default of [`CompVFunc`], which does
-//!   not support lazy Gaussian elimination.
+//!   than space: up to 2 · 10⁷ keys [`FuseAug3Shards`] is slower and sometimes
+//!   needs more than one construction attempt. [`Fuse3Shards`] is also the
+//!   default of [`CompVFunc`], which does not support augmented peeling.
 //!
-//! - Use [`FuseLge3FullSigs`] if the construction of a function fails with
+//! - Use [`FuseAug3FullSigs`] if the construction of a function fails with
 //!   [`BuildError::DuplicateLocalSignatures`], which might happen with more
 //!   than a few dozen billion keys.
 //!
@@ -40,6 +39,10 @@
 //! - The MWHC implementations (`mwhc` feature) are mainly useful for
 //!   benchmarking.
 //!
+//! - [`FuseLge3Shards`] and [`FuseLge3FullSigs`] are deprecated equivalents of
+//!   [`FuseAug3Shards`] and [`FuseAug3FullSigs`], which are needed only to
+//!   deserialize structures serialized by previous versions.
+//!
 //! # The main alternatives
 //!
 //! Here we discuss pros and cons of the main alternatives; further options are
@@ -48,31 +51,31 @@
 //! implementation, and in “[ε–Cost Sharding: Scaling Hypergraph–Based Data
 //! Structures to Trillions of Keys]”.
 //!
-//! - [`FuseLge3Shards`] with 128-bit signatures and 64-bit local signatures:
+//! - [`FuseAug3Shards`] with 128-bit signatures and 64-bit local signatures:
 //!   this is the default choice. It shards keys using ε-cost sharding and
 //!   generates edges from 64-bit local signatures using a fuse 3-hypergraph
 //!   with a space overhead of about 11% (ε = 0.001) for key sets above a
-//!   hundred million keys, and of 11–13% for key sets above a million keys.
-//!   Below 800000 keys, it switches to [lazy Gaussian elimination], which
-//!   increases construction time (also because construction attempts fail
-//!   more often) but still contains space overhead to about 13% (25% below
-//!   5000 keys).
-//!   Sharding makes parallelism possible above a few dozen million keys.
+//!   hundred million keys, and of 11–12% for key sets above 2 · 10⁷ keys.
+//!   Up to 2 · 10⁷ keys, it uses up to sixteen smaller shards solved by
+//!   augmented peeling, which keeps the space overhead at 10–12% above 30000
+//!   keys (14% at 10⁴ keys, 22% at 1000 keys), and makes construction
+//!   parallel above 400000 keys.
 //!   Depending on the amount of sharding, functions with more than a few dozen
 //!   billion keys might incur in duplicate local signatures, which requires
-//!   switching to [`FuseLge3FullSigs`].
+//!   switching to [`FuseAug3FullSigs`].
 //!
-//! - [`Fuse3Shards`] is like [`FuseLge3Shards`] but does not use [lazy Gaussian
-//!   elimination], so on small key sets the construction will be significantly
-//!   faster but the resulting structure will be bigger (≈+10%).
+//! - [`Fuse3Shards`] is like [`FuseAug3Shards`] but does not use augmented
+//!   peeling, so on small key sets the construction will be faster but the
+//!   resulting structure will be bigger (≈+10% on small key sets, ≈+2% on a
+//!   few million keys).
 //!
 //! - [`Fuse3NoShards`] is like [`Fuse3Shards`] but does not use sharding. It is
 //!   thus is mostly equivalent to [“Binary Fuse Filters: Fast and Smaller Than
 //!   Xor Filters”], albeit for large key sets the space overhead will be lower,
 //!   as we use a better expansion factor.
 //!
-//! - [`FuseLge3FullSigs`]: When building functions with more than a few dozen
-//!   billion keys, depending on the amount of sharding [`FuseLge3Shards`] might
+//! - [`FuseAug3FullSigs`]: When building functions with more than a few dozen
+//!   billion keys, depending on the amount of sharding [`FuseAug3Shards`] might
 //!   incur in duplicate local signatures. This logic is slightly slower and
 //!   uses almost double memory during construction, but uses full local
 //!   signatures, which cannot lead to duplicates with overwhelming probability.
@@ -85,12 +88,11 @@
 //!   very small sizes, providing the fastest parallel construction. Query speed
 //!   is similar to [`Fuse3Shards`].
 //!
-//! Note that the solving strategy (e.g., using nor not lazy Gaussian
-//! elimination) has no effect on query time. Sharding adds a few nanoseconds to
+//! Note that the solving strategy (e.g., using or not augmented peeling) has
+//! no effect on query time. Sharding adds a few nanoseconds to
 //! query time, but without sharding one cannot go beyond a few billion keys.
 //!
 //! [“Binary Fuse Filters: Fast and Smaller Than Xor Filters”]: https://doi.org/10.1145/3510449
-//! [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
 //! [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
 //! [`VBuilder`]: crate::func::VBuilder
 //! [`VFilter`]: crate::dict::VFilter
@@ -121,7 +123,7 @@ use std::fmt::Display;
 ///
 /// There are a few different implementations depending on the type of graphs,
 /// on the size of signatures, and on whether sharding is used. See, for
-/// example, [`FuseLge3Shards`]. The [module documentation] contains some
+/// example, [`FuseAug3Shards`]. The [module documentation] contains some
 /// discussion.
 ///
 /// The implementation of the [`Display`] trait should return the relevant
@@ -222,13 +224,15 @@ pub unsafe trait ShardEdge<S, const K: usize>:
     ///
     /// This method must be called after [`set_up_shards`], albeit some
     /// no-sharding implementation might not require it. It returns the
-    /// expansion factor and whether the graph will need [lazy Gaussian
-    /// elimination].
+    /// expansion factor and whether the graph must be solved by augmented
+    /// peeling, that is, peeling that removes an edge whenever it gets stuck,
+    /// followed by the solution of a small dense linear system that
+    /// satisfies the removed edges. Graphs solved by augmented peeling can be
+    /// much denser than peelable graphs.
     ///
     /// This method can be called multiple times. For example, it can be used to
     /// precompute data and then refine it.
     ///
-    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     /// [`set_up_shards`]: ShardEdge::set_up_shards
     fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool);
 
@@ -258,7 +262,7 @@ pub unsafe trait ShardEdge<S, const K: usize>:
     ///   eventually succeeds even on distributions of edges that make the
     ///   graph harder to peel than expected.
     ///
-    /// Returns `(c, lge)` analogously to [`set_up_graphs`] and stores per-shard
+    /// Returns `(c, aug)` analogously to [`set_up_graphs`] and stores per-shard
     /// layout in `self`.
     ///
     /// The default implementation fails at compile time: every [`ShardEdge`]
@@ -544,6 +548,166 @@ fn fuse_l_corr(
     l.max((threshold * e / s).ceil() as u128) + num_failures as u128 * (0.01 * e / s).ceil() as u128
 }
 
+/// The complementary error function, with fractional error less than
+/// 1.2 · 10⁻⁷ (from “Numerical Recipes”).
+fn erfc(x: f64) -> f64 {
+    let z = x.abs();
+    let t = 1.0 / (1.0 + 0.5 * z);
+    let r = t
+        * (-z * z - 1.26551223
+            + t * (1.00002368
+                + t * (0.37409196
+                    + t * (0.09678418
+                        + t * (-0.18628806
+                            + t * (0.27886807
+                                + t * (-1.13520398
+                                    + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))))
+            .exp();
+    if x >= 0.0 { r } else { 2.0 - r }
+}
+
+/// The boundary term δ(𝓁) of the rank threshold of fuse 3-hypergraphs, for
+/// 𝓁 = 1, 2, …, 23 (see [`aug_rank_threshold`]).
+const AUG_DELTA: [f64; 23] = [
+    2.0, 1.844074, 1.678319, 1.552089, 1.454049, 1.3769, 1.315092, 1.264774, 1.223203, 1.188394,
+    1.158889, 1.133599, 1.111705, 1.092578, 1.075731, 1.060784, 1.047433, 1.035436, 1.024598,
+    1.014758, 1.005784, 0.997566, 0.990013,
+];
+
+/// Returns the rank threshold, as the density 𝓁*s* / *m*, of a fuse
+/// 3-hypergraph with *m* edges and 𝓁 segments in which the first vertex of
+/// an edge can lie, in the limit *s* → ∞.
+///
+/// The threshold is computed by density evolution of the 2-core: the
+/// incidence matrix has full rank as long as the core has more vertices than
+/// edges. It has the form *c*<sub>3</sub>𝓁 / (𝓁 + δ(𝓁)), where *c*<sub>3</sub>
+/// ≈ 1.0894 is the inverse of the threshold of random 3-XORSAT: the end
+/// segments, which are lightly loaded, are worth δ(𝓁) segments. We have δ(1)
+/// = 2, as all segments are equally loaded, and δ(𝓁) → 0.805 as 𝓁 → ∞; we use
+/// exact values up to 𝓁 = 23 and an asymptotic expansion afterwards (the
+/// relative error on the threshold is less than 4 · 10⁻⁵).
+fn aug_rank_threshold(l: f64) -> f64 {
+    const C3: f64 = 1.0 / 0.9179352766580832;
+    let delta = if l <= 23.0 {
+        AUG_DELTA[l as usize - 1]
+    } else {
+        0.8048619809906162 + 4.841716620896959 / l - 14.04584820008975 / (l * l)
+    };
+    C3 * l / (l + delta)
+}
+
+/// Returns an estimate of the probability that a construction attempt by
+/// augmented peeling succeeds for a fuse graph with `num_edges` edges, 𝓁
+/// = `l` segments in which the first vertex of an edge can lie, and
+/// segments of size *s* = 2<sup>`log2_seg_size`</sup>.
+///
+/// The attempt fails if there are duplicate edges (the graph has 𝓁*s*³
+/// possible edges) or if the linear system is unsolvable. We model the
+/// probability that the system is solvable as Φ((𝓁*s* / `num_edges` − μ) /
+/// σ), where:
+///
+/// - μ is the [rank threshold] for *s* → ∞ plus a correction proportional to
+///   1 / *s*, which grows slowly with 𝓁 as the load of some segments is
+///   larger than average;
+///
+/// - σ combines the finite-size window of a system with about 𝓁*s*
+///   variables, which grows with 𝓁 as the end segments make the threshold
+///   fluctuate, and a fluctuation term that decreases quickly with *s*.
+///
+/// The parameters of the corrections have been fitted on about 1.6 million
+/// simulated systems with 2³ ≤ *s* ≤ 2¹⁴ and 1 ≤ 𝓁 ≤ 1536.
+///
+/// [rank threshold]: aug_rank_threshold
+fn aug_success_prob(num_edges: usize, l: u128, log2_seg_size: u32) -> f64 {
+    const A0: f64 = 0.7549025339737417;
+    const A1: f64 = 0.08505870512858636;
+    const A2: f64 = 1.5574013144125352;
+    const A3: f64 = 3.2518393977370414;
+    const G: f64 = 0.5258773539624467;
+    const LAMBDA: f64 = 4.186702858369681;
+    const G_SHIFT: f64 = -0.48274975870686254;
+    const H: f64 = 0.6795275068300325;
+    const H_S_EXP: f64 = 1.8526507762564222;
+    let s = (1_u64 << log2_seg_size) as f64;
+    let l = l as f64;
+    let m = num_edges.max(1) as f64;
+    let no_dup = (-m * (m - 1.0) / (2.0 * l * s * s * s)).exp();
+    let mu = aug_rank_threshold(l) + (A0 + A1 * l.ln().powf(A2)) * (1.0 + A3 / s) / s;
+    let g = G * (1.0 - (-(l + G_SHIFT) / LAMBDA).exp());
+    let sigma = (g * g / (l * s) + H * H / s.powf(H_S_EXP)).sqrt();
+    let solvable = 0.5 * erfc(-(l * s / m - mu) / (sigma * std::f64::consts::SQRT_2));
+    no_dup * solvable
+}
+
+/// Returns an estimate of the fraction of edges removed by augmented peeling
+/// near the threshold for a fuse graph with 𝓁 = `l` segments in which the
+/// first vertex of an edge can lie and segments of size *s* =
+/// 2<sup>`log2_seg_size`</sup>.
+///
+/// The first term accounts for the load of the end segments, the second one
+/// for the fluctuations of the load of the segments; the estimate is within
+/// 13% for 90% of the simulated configurations.
+fn aug_removed_frac(l: u128, log2_seg_size: u32) -> f64 {
+    let s = (1_u64 << log2_seg_size) as f64;
+    let l = l as f64;
+    0.05879304076717531 * (1.0 + l / 11.007559385010206).powf(-1.1533203174756244)
+        + 0.09756436184694474
+            * s.powf(-0.43041243276810787)
+            * (1.0 - (-l / 113.29602572810826).exp())
+}
+
+/// The maximum estimated number of edges removed by augmented peeling for
+/// the graphs sized by [`aug_fuse_params`] (see [`aug_removed_frac`]).
+///
+/// The cost of the final dense system grows with the cube of the number of
+/// removed edges. The bound has no effect on the shards of
+/// [`FuseAug3Shards`], which contain fewer than 1.3 million keys, but it
+/// avoids pathologically slow constructions if the sizing is used for larger
+/// graphs.
+const AUG_MAX_REMOVED: f64 = 8192.0;
+
+/// The probability that a construction attempt succeeds (that is, that all
+/// shards are solvable) targeted by [`FuseAug3Shards`] and
+/// [`FuseAug3FullSigs`] when using augmented peeling.
+const AUG_SUCCESS_PROB: f64 = 0.7;
+
+/// Returns the log₂ of the segment size and the number 𝓁 of segments in
+/// which the first vertex of an edge can lie that minimize the number of
+/// vertices (𝓁 + 2)*s* of a fuse graph with `num_edges` edges, subject to
+/// the condition that a construction attempt by augmented peeling succeeds
+/// with probability at least `success_prob` (see [`aug_success_prob`]).
+///
+/// Graphs whose estimated number of removed edges is larger than
+/// [`AUG_MAX_REMOVED`] are discarded, unless no graph satisfies the bound.
+fn aug_fuse_params(num_edges: usize, success_prob: f64) -> (u32, u128) {
+    let m = num_edges.max(1);
+    // Smaller segments have too many duplicate edges
+    let min_log2_seg_size = ((m as f64).sqrt().log2() as u32).saturating_sub(1).max(1);
+    let max_log2_seg_size = m.ilog2().max(min_log2_seg_size) + 1;
+    // The best graph overall, and the best one whose estimated number of
+    // removed edges is within AUG_MAX_REMOVED
+    let mut best_any: Option<(u128, u32, u128)> = None;
+    let mut best: Option<(u128, u32, u128)> = None;
+    for log2_seg_size in min_log2_seg_size..=max_log2_seg_size {
+        let max_l = 4 * (m as u128 >> log2_seg_size) + 16;
+        let Some(l) = (1..=max_l).find(|&l| aug_success_prob(m, l, log2_seg_size) >= success_prob)
+        else {
+            continue;
+        };
+        let num_vertices = (l + 2) << log2_seg_size;
+        if best_any.is_none_or(|(v, _, _)| num_vertices < v) {
+            best_any = Some((num_vertices, log2_seg_size, l));
+        }
+        if m as f64 * aug_removed_frac(l, log2_seg_size) <= AUG_MAX_REMOVED
+            && best.is_none_or(|(v, _, _)| num_vertices < v)
+        {
+            best = Some((num_vertices, log2_seg_size, l));
+        }
+    }
+    let (_, log2_seg_size, l) = best.or(best_any).expect("no feasible fuse graph");
+    (log2_seg_size, l)
+}
+
 /// Checks that the vertices of a shard can be represented by a `u32` and
 /// that the overall number of vertices fits a `usize`.
 ///
@@ -565,29 +729,33 @@ fn check_total_vertices(name: &str, num_vertices: usize, num_shards: usize) {
     );
 }
 
+// The deprecated FuseLge3Shards and FuseLge3FullSigs are defined (and used by
+// derived implementations) in this module.
+#[allow(deprecated)]
 mod fuse {
     use crate::utils::{BinSafe, SigVal};
 
     use super::*;
     use rdst::RadixKey;
 
-    /// [ε-cost sharded] [fuse 3-hypergraphs] with [lazy Gaussian elimination]
-    /// using 64-bit local signatures.
+    /// [ε-cost sharded] [fuse 3-hypergraphs] with augmented peeling using
+    /// 64-bit local signatures.
     ///
     /// This construction uses ε-cost sharding (“[ε–Cost Sharding: Scaling
     /// Hypergraph–Based Data Structures to Trillions of Keys]”) to shard keys
     /// and then fuse 3-hypergraphs (see “[Dense Peelable Random Uniform
     /// Hypergraphs]”) on sharded keys, giving a space overhead of about 11% for
     /// large key sets (above a hundred million keys); smaller key sets have a
-    /// slightly larger overhead (11–13%). Duplicate edges are possible, which
+    /// slightly larger overhead (11–12%). Duplicate edges are possible, which
     /// limits the amount of possible sharding.
     ///
     /// To keep the expansion factor close to the minimums (1.105), in the
-    /// fuse regime shards are never smaller than 10⁷ keys. In the linear
-    /// regime (below 800000 keys) shards are much smaller, and the
-    /// probability of a construction retry caused by a duplicate edge can be
-    /// significantly larger than the configured bound; retries at such sizes
-    /// are however very cheap.
+    /// peeling regime shards are never smaller than 10⁷ keys. In the
+    /// augmented-peeling regime (up to 2 · 10⁷ keys, see below) shards are
+    /// much smaller, and the probability of a construction retry caused by a
+    /// duplicate edge is not limited by the configured bound: it is instead
+    /// accounted for, together with the probability of an unsolvable system,
+    /// when sizing the graphs.
     ///
     /// In a fuse graph there are 𝓁 + 2 *segments* of size *s*. A random edge is
     /// chosen by selecting a first segment *f* uniformly at random among the
@@ -607,31 +775,39 @@ mod fuse {
     /// is at most [`Fuse3Shards::DUP_EDGE_RETRY_PROB`] (or the bound set with
     /// [`VBuilder::retry_prob`](crate::func::VBuilder::retry_prob)).
     ///
-    /// Below a few million keys, fuse graphs have a much higher space overhead.
-    /// This construction in that case switches to sharding and [lazy Gaussian
-    /// elimination] to provide a ≈13% overhead (≈25% below 5000 keys). The
-    /// construction time per key increases by an order of magnitude, but since
-    /// the number of keys is small, the impact is limited.
+    /// Below a few dozen million keys, peelable fuse graphs have a higher space
+    /// overhead, and since shards cannot be smaller than 10⁷ keys, construction
+    /// is sequential. Up to 2 · 10⁷ keys this construction thus uses up to
+    /// sixteen shards of at least 200000 keys, and, following a suggestion by
+    /// Stefan Walzer, solves them by *augmented peeling*: whenever peeling gets
+    /// stuck, it removes the first remaining edge in the leftmost segment
+    /// containing edges and continues; at the end, the removed edges are
+    /// satisfied by solving a small dense linear system whose unknowns are the
+    /// vertices left without edges after the first removal. Augmented peeling
+    /// fails only if the system is unsolvable, so graphs can be much denser
+    /// than peelable graphs. The segment size and the number of segments are
+    /// chosen to minimize the number of vertices using a law for the threshold
+    /// of solvability, derived by density evolution and corrected for finite
+    /// segments, so that a construction attempt succeeds with probability ≈70%,
+    /// duplicate edges included. The resulting space overhead is 10–12% above
+    /// 30000 keys (≈14% at 10⁴ keys, ≈22% at 1000 keys), and construction is
+    /// parallel above 400000 keys.
     ///
-    /// In this regime segments are small, and a construction attempt often
-    /// fails because of a duplicate edge or of an unsolvable system, in which
-    /// case the construction is retried with a new seed: on average, 1.2
-    /// attempts are necessary between 1000 and 100000 keys, 2.4 between 100000
-    /// and 800000 keys, and up to 25 for some key sets of a few dozen keys. For
-    /// this reason, [`VBuilder`](crate::func::VBuilder) allows up to 1000
-    /// attempts in this regime (instead of 100). If you need a fast
-    /// construction with few retries, you can use [`Fuse3Shards`] instead,
+    /// When a construction attempt fails the construction is retried with a
+    /// new seed: on average, between 1.1 and 1.35 attempts are necessary,
+    /// depending on the number of keys. [`VBuilder`](crate::func::VBuilder)
+    /// allows up to 1000 attempts in this regime (instead of 100). If you
+    /// need the fastest construction, you can use [`Fuse3Shards`] instead,
     /// trading some space for a faster construction.
     ///
     /// When building functions over key sets above a few dozen billion keys
     /// (but this depends on the sharding parameter ε) we suggest to use
-    /// [`FuseLge3FullSigs`]. It uses full signatures as local signatures,
+    /// [`FuseAug3FullSigs`]. It uses full signatures as local signatures,
     /// making the probability of a duplicate local signature negligible. As a
     /// result, it is slightly slower and uses more space at construction time.
     /// Filters do not have this problem, as local signatures can be
     /// deduplicated without affecting the semantics of the filter.
     ///
-    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     /// [Dense Peelable Random Uniform Hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
     /// [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
     /// [fuse 3-hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
@@ -640,13 +816,13 @@ mod fuse {
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-    pub struct FuseLge3Shards {
+    pub struct FuseAug3Shards {
         shard_bits_shift: u32,
         log2_seg_size: u32,
         l: u32,
     }
 
-    impl Default for FuseLge3Shards {
+    impl Default for FuseAug3Shards {
         fn default() -> Self {
             Self {
                 shard_bits_shift: 63,
@@ -656,11 +832,11 @@ mod fuse {
         }
     }
 
-    impl Display for FuseLge3Shards {
+    impl Display for FuseAug3Shards {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
-                "Fuse3 (LGE, shards); shards: 2^{}; vertices per shard: {}; segment size: 2^{}; segments: {}",
+                "Fuse3 (augmented peeling, shards); shards: 2^{}; vertices per shard: {}; segment size: 2^{}; segments: {}",
                 self.shard_high_bits(),
                 (self.l as usize + 2) << self.log2_seg_size,
                 self.log2_seg_size,
@@ -682,50 +858,58 @@ mod fuse {
         [v0, v1, v2]
     }
 
-    impl FuseLge3Shards {
-        /// The maximum size intended for linear solving. Under this size we change
-        /// our sharding strategy and we try to make shards as big as possible,
-        /// within a maximum size of 2 * [`Self::HALF_MAX_LIN_SHARD_SIZE`]. Above
-        /// this threshold we do not shard unless we can create shards of at least
-        /// [`Self::MIN_FUSE_SHARD`].
-        const MAX_LIN_SIZE: usize = 800_000;
-        /// We try to keep shards large enough so that they are solvable and that
-        /// the size of the largest shard is close to the target average size, but
-        /// also small enough so that we can exploit parallelism. See
-        /// [`Self::MAX_LIN_SIZE`].
-        const HALF_MAX_LIN_SHARD_SIZE: usize = 50_000;
-        /// When we shard, we never create a shard smaller then this.
+    impl FuseAug3Shards {
+        /// The maximum number of keys for which we use augmented peeling.
+        ///
+        /// Up to this size we use at most 2<sup>[`Self::LOG2_AUG_SHARDS`]</sup>
+        /// shards of at least [`Self::MIN_AUG_SHARD_SIZE`] keys, and solve
+        /// them by augmented peeling. Above this size we use peeling, and we
+        /// do not shard unless we can create shards of at least
+        /// [`Self::MIN_FUSE_SHARD`] keys.
+        const MAX_AUG_SIZE: usize = 20_000_000;
+        /// The minimum number of keys of a shard solved by augmented peeling.
+        ///
+        /// Smaller shards are solved faster, but since segments must be large
+        /// enough to make duplicate edges rare, they would contain too few
+        /// segments, and the lightly loaded end segments would increase the
+        /// space overhead.
+        const MIN_AUG_SHARD_SIZE: usize = 200_000;
+        /// The log₂ of the maximum number of shards solved by augmented
+        /// peeling.
+        ///
+        /// More shards would increase parallelism, but they would have too
+        /// few segments (see [`Self::MIN_AUG_SHARD_SIZE`]).
+        const LOG2_AUG_SHARDS: u32 = 4;
+        /// When we shard and use peeling, we never create a shard smaller than
+        /// this.
         const MIN_FUSE_SHARD: usize = 10_000_000;
 
-        /// Returns the log₂ of segment size that makes graphs solvable with
-        /// high probability using peeling followed by lazy Gaussian
-        /// elimination on no more than (approximately) half the edges.
-        ///
-        /// This function should be called only for graphs of about 2 *
-        /// [`Self::HALF_MAX_LIN_SHARD_SIZE`] keys or fewer. Note that the
-        /// max-shard check of the builder tolerates shards up to 1 + 5ε
-        /// times the average, so the argument can slightly exceed that
-        /// value; the formula is smooth, so the result is still valid.
-        fn lin_log2_seg_size(n: usize) -> u32 {
-            (0.85 * (n.max(1) as f64).ln()).floor().max(1.) as u32
+        /// Returns the number of shard high bits for `n` keys when using
+        /// augmented peeling.
+        fn aug_high_bits(n: usize) -> u32 {
+            (n / Self::MIN_AUG_SHARD_SIZE)
+                .max(1)
+                .ilog2()
+                .min(Self::LOG2_AUG_SHARDS)
         }
 
         /// Implements [`ShardEdge::set_up_graphs`] for this structure and for
-        /// [`FuseLge3FullSigs`]; `name` is used in panic messages.
+        /// [`FuseAug3FullSigs`]; `name` is used in panic messages.
         fn set_up_graphs_named(&mut self, name: &str, n: usize, max_shard: usize) -> (f64, bool) {
-            let (c, lge);
-            (c, self.log2_seg_size, lge) = if n <= 5000 {
-                (1.23, Self::lin_log2_seg_size(max_shard), true)
-            } else if n <= Self::MAX_LIN_SIZE {
-                (1.125, Self::lin_log2_seg_size(max_shard), true)
-            } else {
-                (
-                    Fuse3NoShards::c(max_shard),
-                    Fuse3Shards::log2_seg_size(max_shard),
-                    false,
-                )
-            };
+            let num_shards = <Self as ShardEdge<[u64; 2], 3>>::num_shards(self);
+            if n <= Self::MAX_AUG_SIZE {
+                // An attempt succeeds only if all shards are solvable
+                let l;
+                (self.log2_seg_size, l) =
+                    aug_fuse_params(max_shard, AUG_SUCCESS_PROB.powf(1.0 / num_shards as f64));
+                self.l = l.try_into().unwrap();
+                let num_vertices = <Self as ShardEdge<[u64; 2], 3>>::num_vertices(self);
+                check_total_vertices(name, num_vertices, num_shards);
+                return (num_vertices as f64 / max_shard.max(1) as f64, true);
+            }
 
+            let c = Fuse3NoShards::c(max_shard);
+            self.log2_seg_size = Fuse3Shards::log2_seg_size(max_shard);
             let num_vertices = num_vertices(
                 name,
                 c,
@@ -736,9 +920,9 @@ mod fuse {
             check_total_vertices(
                 name,
                 <Self as ShardEdge<[u64; 2], 3>>::num_vertices(self),
-                <Self as ShardEdge<[u64; 2], 3>>::num_shards(self),
+                num_shards,
             );
-            (c, lge)
+            (c, false)
         }
     }
 
@@ -763,17 +947,15 @@ mod fuse {
 
     // SAFETY: setup bounds all generated shard/global/local indices, and
     // LowSortSigVal is a transparent SigVal<[u64; 2], V> wrapper.
-    unsafe impl ShardEdge<[u64; 2], 3> for FuseLge3Shards {
+    unsafe impl ShardEdge<[u64; 2], 3> for FuseAug3Shards {
         type SortSigVal<V: BinSafe> = LowSortSigVal<V>;
         type LocalSig = [u64; 1];
         type Vertex = u32;
 
         fn set_up_shards(&mut self, n: usize, eps: f64, retry_prob: f64) {
             self.shard_bits_shift = 63
-                - if n <= Self::MAX_LIN_SIZE {
-                    // We just try to make shards as big as possible,
-                    // within a maximum size of 2 * MAX_LIN_SHARD_SIZE
-                    (n / Self::HALF_MAX_LIN_SHARD_SIZE).max(1).ilog2()
+                - if n <= Self::MAX_AUG_SIZE {
+                    Self::aug_high_bits(n)
                 } else {
                     // Shards can't be smaller than MIN_FUSE_SHARD, and we
                     // cannot use more than LOG2_MAX_SHARDS shard bits
@@ -781,12 +963,12 @@ mod fuse {
                         .min((n / Self::MIN_FUSE_SHARD).max(1).ilog2())
                         .min(LOG2_MAX_SHARDS);
                     Fuse3Shards::dup_edge_high_bits(n, retry_prob, Some(64), max_high_bits)
-                        .max(min_fuse_high_bits("FuseLge3Shards", n))
+                        .max(min_fuse_high_bits("FuseAug3Shards", n))
                 };
         }
 
         fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
-            self.set_up_graphs_named("FuseLge3Shards", n, max_shard)
+            self.set_up_graphs_named("FuseAug3Shards", n, max_shard)
         }
 
         #[inline(always)]
@@ -834,7 +1016,7 @@ mod fuse {
         }
     }
 
-    /// Unsharded [fuse 3-hypergraphs] without [lazy Gaussian elimination].
+    /// Unsharded [fuse 3-hypergraphs] without augmented peeling.
     ///
     /// In the case of 64-bit signatures this implementation is equivalent to
     /// that described in "[Binary Fuse Filters: Fast and Smaller Than Xor
@@ -858,7 +1040,6 @@ mod fuse {
     /// parallel processing.
     ///
     /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
-    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     /// [fuse 3-hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
     /// [experimentally derived smaller factor]: Self::c
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
@@ -875,7 +1056,7 @@ mod fuse {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
-                "Fuse3 (no LGE, no shards); vertices: {}; segment size: 2^{}; segments: {}",
+                "Fuse3 (no augmented peeling, no shards); vertices: {}; segment size: 2^{}; segments: {}",
                 (self.l as usize + 2) << self.log2_seg_size,
                 self.log2_seg_size,
                 self.l + 2
@@ -1148,21 +1329,20 @@ mod fuse {
         }
     }
 
-    /// [ε-cost sharded] [fuse 3-hypergraphs] without [lazy Gaussian
-    /// elimination].
+    /// [ε-cost sharded] [fuse 3-hypergraphs] without augmented peeling.
     ///
     /// This is a sharded variant of [`Fuse3NoShards`]. See the comments
     /// on sharding and on the injective regime in the documentation of
-    /// [`FuseLge3Shards`], which apply to this variant as well.
+    /// [`FuseAug3Shards`], which apply to this variant as well.
     ///
-    /// Compared to [`FuseLge3Shards`], this variant avoids the Gaussian
-    /// elimination fallback (which slows down construction) at the cost of
-    /// higher space overhead for small shard sizes (e.g., ≈28% instead of
-    /// ≈13% at ten thousand keys, and ≈19% instead of ≈13% at a hundred
-    /// thousand keys; the two variants coincide above 800000 keys).
+    /// Compared to [`FuseAug3Shards`], this variant avoids augmented peeling
+    /// (which slows down construction) at the cost of higher space overhead
+    /// for small shard sizes (e.g., ≈28% instead of ≈14% at ten thousand
+    /// keys, ≈19% instead of ≈11% at a hundred thousand keys, and ≈13%
+    /// instead of ≈11.5% at a few million keys; the two variants coincide
+    /// above 2 · 10⁷ keys).
     ///
     /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
-    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     /// [fuse 3-hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
     /// [ε-cost sharded]: https://arxiv.org/abs/2503.18397
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
@@ -1189,7 +1369,7 @@ mod fuse {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
-                "Fuse3 (no LGE, shards); shards: 2^{}; vertices per shard: {}; segment size: 2^{}; segments: {}",
+                "Fuse3 (no augmented peeling, shards); shards: 2^{}; vertices per shard: {}; segment size: 2^{}; segments: {}",
                 self.shard_high_bits(),
                 (self.l as usize + 2) << self.log2_seg_size,
                 self.log2_seg_size,
@@ -1429,10 +1609,10 @@ mod fuse {
         }
     }
 
-    /// [ε-cost sharded] fuse 3-hypergraphs with [lazy Gaussian elimination]
-    /// using full local signatures.
+    /// [ε-cost sharded] fuse 3-hypergraphs with augmented peeling using full
+    /// local signatures.
     ///
-    /// This construction should be preferred to [`FuseLge3Shards`] when
+    /// This construction should be preferred to [`FuseAug3Shards`] when
     /// building functions over key sets above a few dozen billion keys (but
     /// this depends on the sharding parameter ε). It uses full signatures as
     /// local signatures, making the probability of a duplicate local signature
@@ -1443,24 +1623,23 @@ mod fuse {
     /// construction time. The rest of the logic is identical, with one
     /// exception: since local signatures have 128 bits, the map from local
     /// signatures to edges never becomes injective, so, contrarily to
-    /// [`FuseLge3Shards`], duplicate edges are possible at every scale.
+    /// [`FuseAug3Shards`], duplicate edges are possible at every scale.
     /// Sharding is limited so that the probability of a construction retry
     /// caused by a duplicate edge is at most
     /// [`Fuse3Shards::DUP_EDGE_RETRY_PROB`] (or the bound set with
     /// [`VBuilder::retry_prob`](crate::func::VBuilder::retry_prob)). As a
     /// consequence, this structure sometimes shards less than
-    /// [`FuseLge3Shards`].
+    /// [`FuseAug3Shards`].
     ///
-    /// [lazy Gaussian elimination]: https://doi.org/10.1016/j.ic.2020.104517
     /// [ε-cost sharded]: https://arxiv.org/abs/2503.18397
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     #[derive(Default)]
-    pub struct FuseLge3FullSigs(FuseLge3Shards);
+    pub struct FuseAug3FullSigs(FuseAug3Shards);
 
-    impl Display for FuseLge3FullSigs {
+    impl Display for FuseAug3FullSigs {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             self.0.fmt(f)
         }
@@ -1493,32 +1672,32 @@ mod fuse {
 
     // SAFETY: the delegated setup bounds all generated indices, and
     // SortSigVal is exactly SigVal<[u64; 2], V>.
-    unsafe impl ShardEdge<[u64; 2], 3> for FuseLge3FullSigs {
+    unsafe impl ShardEdge<[u64; 2], 3> for FuseAug3FullSigs {
         type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
         type LocalSig = [u64; 2];
         type Vertex = u32;
 
         fn set_up_shards(&mut self, n: usize, eps: f64, retry_prob: f64) {
-            // Same logic as FuseLge3Shards, except that full local
+            // Same logic as FuseAug3Shards, except that full local
             // signatures never enter the injective regime, so the uniform
             // duplicate-edge estimate applies at every scale.
             self.0.shard_bits_shift = 63
-                - if n <= FuseLge3Shards::MAX_LIN_SIZE {
-                    (n / FuseLge3Shards::HALF_MAX_LIN_SHARD_SIZE).max(1).ilog2()
+                - if n <= FuseAug3Shards::MAX_AUG_SIZE {
+                    FuseAug3Shards::aug_high_bits(n)
                 } else {
                     let max_high_bits = sharding_high_bits(n, eps)
-                        .min((n / FuseLge3Shards::MIN_FUSE_SHARD).max(1).ilog2())
+                        .min((n / FuseAug3Shards::MIN_FUSE_SHARD).max(1).ilog2())
                         .min(LOG2_MAX_SHARDS);
                     // With full signatures the duplicate-edge bound limits
                     // sharding at every scale, so on huge key sets it is the
                     // vertex bound that determines the number of shards
                     Fuse3Shards::dup_edge_high_bits(n, retry_prob, None, max_high_bits)
-                        .max(min_fuse_high_bits("FuseLge3FullSigs", n))
+                        .max(min_fuse_high_bits("FuseAug3FullSigs", n))
                 };
         }
 
         fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
-            self.0.set_up_graphs_named("FuseLge3FullSigs", n, max_shard)
+            self.0.set_up_graphs_named("FuseAug3FullSigs", n, max_shard)
         }
 
         #[inline(always)]
@@ -1581,10 +1760,348 @@ mod fuse {
         }
     }
 
+    /// A deprecated equivalent of [`FuseAug3Shards`].
+    ///
+    /// This type was the default shard/edge logic before augmented peeling
+    /// replaced lazy Gaussian elimination. It builds exactly the same
+    /// structures as [`FuseAug3Shards`], but it is a different type, and it is
+    /// kept only because [ε-serde] type hashes include type names: structures
+    /// serialized by previous versions with the default shard/edge logic can
+    /// be deserialized by specifying this type explicitly (e.g.,
+    /// `VFunc<K, D, [u64; 2], FuseLge3Shards>`).
+    ///
+    /// [ε-serde]: https://crates.io/crates/epserde
+    #[deprecated(
+        since = "0.15.3",
+        note = "use FuseAug3Shards; this type is needed only to deserialize structures serialized by previous versions"
+    )]
+    #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
+    #[mem_size(flat)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    pub struct FuseLge3Shards {
+        shard_bits_shift: u32,
+        log2_seg_size: u32,
+        l: u32,
+    }
+
+    impl FuseLge3Shards {
+        /// Returns the equivalent [`FuseAug3Shards`].
+        #[inline(always)]
+        fn aug(&self) -> FuseAug3Shards {
+            FuseAug3Shards {
+                shard_bits_shift: self.shard_bits_shift,
+                log2_seg_size: self.log2_seg_size,
+                l: self.l,
+            }
+        }
+
+        /// Returns the equivalent of the given [`FuseAug3Shards`].
+        fn from_aug(aug: FuseAug3Shards) -> Self {
+            Self {
+                shard_bits_shift: aug.shard_bits_shift,
+                log2_seg_size: aug.log2_seg_size,
+                l: aug.l,
+            }
+        }
+    }
+
+    impl Default for FuseLge3Shards {
+        fn default() -> Self {
+            Self::from_aug(FuseAug3Shards::default())
+        }
+    }
+
+    impl Display for FuseLge3Shards {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.aug().fmt(f)
+        }
+    }
+
+    // SAFETY: every method delegates to FuseAug3Shards, which has the same
+    // fields.
+    unsafe impl ShardEdge<[u64; 2], 3> for FuseLge3Shards {
+        type SortSigVal<V: BinSafe> = LowSortSigVal<V>;
+        type LocalSig = [u64; 1];
+        type Vertex = u32;
+
+        fn set_up_shards(&mut self, n: usize, eps: f64, retry_prob: f64) {
+            let mut aug = self.aug();
+            aug.set_up_shards(n, eps, retry_prob);
+            *self = Self::from_aug(aug);
+        }
+
+        fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
+            let mut aug = self.aug();
+            let result = aug.set_up_graphs(n, max_shard);
+            *self = Self::from_aug(aug);
+            result
+        }
+
+        #[inline(always)]
+        fn shard_high_bits(&self) -> u32 {
+            self.aug().shard_high_bits()
+        }
+
+        fn num_sort_keys(&self) -> usize {
+            self.aug().num_sort_keys()
+        }
+
+        #[inline(always)]
+        fn sort_key(&self, sig: [u64; 2]) -> usize {
+            self.aug().sort_key(sig)
+        }
+
+        #[inline(always)]
+        fn edge_hash(&self, sig: Self::LocalSig) -> u64 {
+            self.aug().edge_hash(sig)
+        }
+
+        #[inline(always)]
+        fn shard(&self, sig: [u64; 2]) -> usize {
+            self.aug().shard(sig)
+        }
+
+        #[inline(always)]
+        fn num_vertices(&self) -> usize {
+            self.aug().num_vertices()
+        }
+
+        #[inline(always)]
+        fn local_sig(&self, sig: [u64; 2]) -> Self::LocalSig {
+            self.aug().local_sig(sig)
+        }
+
+        #[inline(always)]
+        fn local_edge(&self, local_sig: Self::LocalSig) -> [usize; 3] {
+            self.aug().local_edge(local_sig)
+        }
+
+        #[inline(always)]
+        fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
+            self.aug().edge(sig)
+        }
+    }
+
+    /// A deprecated equivalent of [`FuseAug3FullSigs`].
+    ///
+    /// This type is kept only to deserialize structures serialized by
+    /// previous versions (see [`FuseLge3Shards`]).
+    #[deprecated(
+        since = "0.15.3",
+        note = "use FuseAug3FullSigs; this type is needed only to deserialize structures serialized by previous versions"
+    )]
+    #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
+    #[mem_size(flat)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[derive(Default)]
+    pub struct FuseLge3FullSigs(FuseLge3Shards);
+
+    impl FuseLge3FullSigs {
+        /// Returns the equivalent [`FuseAug3FullSigs`].
+        #[inline(always)]
+        fn aug(&self) -> FuseAug3FullSigs {
+            FuseAug3FullSigs(self.0.aug())
+        }
+
+        /// Returns the equivalent of the given [`FuseAug3FullSigs`].
+        fn from_aug(aug: FuseAug3FullSigs) -> Self {
+            Self(FuseLge3Shards::from_aug(aug.0))
+        }
+    }
+
+    impl Display for FuseLge3FullSigs {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.aug().fmt(f)
+        }
+    }
+
+    // SAFETY: every method delegates to FuseAug3FullSigs, which has the same
+    // fields.
+    unsafe impl ShardEdge<[u64; 2], 3> for FuseLge3FullSigs {
+        type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
+        type LocalSig = [u64; 2];
+        type Vertex = u32;
+
+        fn set_up_shards(&mut self, n: usize, eps: f64, retry_prob: f64) {
+            let mut aug = self.aug();
+            aug.set_up_shards(n, eps, retry_prob);
+            *self = Self::from_aug(aug);
+        }
+
+        fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
+            let mut aug = self.aug();
+            let result = aug.set_up_graphs(n, max_shard);
+            *self = Self::from_aug(aug);
+            result
+        }
+
+        #[inline(always)]
+        fn shard_high_bits(&self) -> u32 {
+            self.aug().shard_high_bits()
+        }
+
+        fn num_sort_keys(&self) -> usize {
+            self.aug().num_sort_keys()
+        }
+
+        #[inline(always)]
+        fn sort_key(&self, sig: [u64; 2]) -> usize {
+            self.aug().sort_key(sig)
+        }
+
+        #[inline(always)]
+        fn edge_hash(&self, sig: Self::LocalSig) -> u64 {
+            self.aug().edge_hash(sig)
+        }
+
+        #[inline(always)]
+        fn shard(&self, sig: [u64; 2]) -> usize {
+            self.aug().shard(sig)
+        }
+
+        #[inline(always)]
+        fn num_vertices(&self) -> usize {
+            self.aug().num_vertices()
+        }
+
+        #[inline(always)]
+        fn local_sig(&self, sig: [u64; 2]) -> Self::LocalSig {
+            self.aug().local_sig(sig)
+        }
+
+        #[inline(always)]
+        fn local_edge(&self, local_sig: Self::LocalSig) -> [usize; 3] {
+            self.aug().local_edge(local_sig)
+        }
+
+        #[inline(always)]
+        fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
+            self.aug().edge(sig)
+        }
+    }
+
     #[cfg(all(test, target_pointer_width = "64"))]
     mod tests {
-        use super::super::ShardEdge;
-        use super::{Fuse3Shards, FuseLge3FullSigs, FuseLge3Shards};
+        use super::super::{AUG_SUCCESS_PROB, ShardEdge, aug_rank_threshold, aug_success_prob};
+        use super::{Fuse3Shards, FuseAug3FullSigs, FuseAug3Shards};
+
+        #[test]
+        fn test_deprecated_types_are_equivalent() {
+            use super::{FuseLge3FullSigs, FuseLge3Shards};
+            for n in [10, 1000, 300_000, 3_000_000, 30_000_000, 3_000_000_000] {
+                let mut a = FuseAug3Shards::default();
+                let mut b = FuseLge3Shards::default();
+                a.set_up_shards(n, 0.001, Fuse3Shards::DUP_EDGE_RETRY_PROB);
+                b.set_up_shards(n, 0.001, Fuse3Shards::DUP_EDGE_RETRY_PROB);
+                let max_shard = n.div_ceil(a.num_shards());
+                assert_eq!(a.set_up_graphs(n, max_shard), b.set_up_graphs(n, max_shard));
+                assert_eq!(a.num_vertices(), b.num_vertices());
+                assert_eq!(a.num_sort_keys(), b.num_sort_keys());
+                assert_eq!(a.to_string(), b.to_string());
+                let mut c = FuseAug3FullSigs::default();
+                let mut d = FuseLge3FullSigs::default();
+                c.set_up_shards(n, 0.001, Fuse3Shards::DUP_EDGE_RETRY_PROB);
+                d.set_up_shards(n, 0.001, Fuse3Shards::DUP_EDGE_RETRY_PROB);
+                let max_shard = n.div_ceil(c.num_shards());
+                assert_eq!(c.set_up_graphs(n, max_shard), d.set_up_graphs(n, max_shard));
+                let mut x = n as u64;
+                for _ in 0..1000 {
+                    x = x.wrapping_mul(0x9E3779B97F4A7C15).wrapping_add(1);
+                    let sig = [x, x.rotate_left(29) ^ 0xA5A5_A5A5_A5A5_A5A5];
+                    assert_eq!(a.shard(sig), b.shard(sig));
+                    assert_eq!(a.edge(sig), b.edge(sig));
+                    assert_eq!(a.sort_key(sig), b.sort_key(sig));
+                    assert_eq!(c.shard(sig), d.shard(sig));
+                    assert_eq!(c.edge(sig), d.edge(sig));
+                    assert_eq!(c.sort_key(sig), d.sort_key(sig));
+                }
+            }
+        }
+
+        #[cfg(feature = "epserde")]
+        #[test]
+        fn test_deprecated_types_type_hash() {
+            // The ε-serde type hashes of the deprecated types must not
+            // change, or structures serialized by previous versions could
+            // not be deserialized
+            use super::{FuseLge3FullSigs, FuseLge3Shards};
+            use epserde::traits::{CryptoHasher, TypeHash};
+            fn digest<T: TypeHash>() -> String {
+                let mut hasher = CryptoHasher::new();
+                T::type_hash(&mut hasher);
+                hasher
+                    .finalize()
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect()
+            }
+            assert_eq!(
+                digest::<FuseLge3Shards>(),
+                "42c4a5cf189c060654db23bce75aa6efedc815ecc7973b90be45ab1c9a4cfbbc"
+            );
+            assert_eq!(
+                digest::<FuseLge3FullSigs>(),
+                "fe7984f5193abc8bea72daefd9c7f786c25a57f98125db807de4062863c2b77e"
+            );
+        }
+
+        #[test]
+        fn test_aug_rank_threshold() {
+            // With one segment the graph is a random 3-partite hypergraph,
+            // whose rank threshold is that of random 3-XORSAT
+            let c3 = 1.0 / 0.9179352766580832;
+            assert!((3.0 * aug_rank_threshold(1.0) - c3).abs() < 1e-9);
+            // The threshold increases to c3 with the number of segments,
+            // and the asymptotic expansion joins the table smoothly
+            let mut prev = 0.0;
+            for l in 1..10_000 {
+                let x = aug_rank_threshold(l as f64);
+                assert!(x > prev && x < c3, "l = {l}");
+                prev = x;
+            }
+            assert!(c3 - aug_rank_threshold(4096.0) < 6e-4);
+        }
+
+        #[test]
+        fn test_aug_sizing() {
+            // The augmented-peeling regime uses up to 16 shards of at least
+            // 200000 keys, sized so that an attempt succeeds with probability
+            // at least AUG_SUCCESS_PROB, with a reasonable expansion factor
+            let mut n = 1_usize;
+            while n <= FuseAug3Shards::MAX_AUG_SIZE {
+                let mut se = FuseAug3Shards::default();
+                se.set_up_shards(n, 0.001, Fuse3Shards::DUP_EDGE_RETRY_PROB);
+                let num_shards = se.num_shards();
+                assert!(num_shards <= 16, "n = {n}");
+                assert!(num_shards == 1 || n / num_shards >= 200_000, "n = {n}");
+                let max_shard = n.div_ceil(num_shards);
+                let (c, aug) = se.set_up_graphs(n, max_shard);
+                assert!(aug, "n = {n}");
+                let p = aug_success_prob(max_shard, se.l as u128, se.log2_seg_size);
+                assert!(
+                    p.powi(num_shards as i32) >= AUG_SUCCESS_PROB - 1e-9,
+                    "n = {n}"
+                );
+                if n >= 30_000 {
+                    assert!(c < 1.13, "n = {n}, c = {c}");
+                } else if n >= 1000 {
+                    assert!(c < 1.25, "n = {n}, c = {c}");
+                }
+                // The 128-bit variant shards in the same way
+                let mut se = FuseAug3FullSigs::default();
+                se.set_up_shards(n, 0.001, Fuse3Shards::DUP_EDGE_RETRY_PROB);
+                assert_eq!(se.num_shards(), num_shards, "n = {n}");
+                n = n * 3 / 2 + 1;
+            }
+            // Above the regime we switch to peeling
+            let mut se = FuseAug3Shards::default();
+            let n = FuseAug3Shards::MAX_AUG_SIZE + 1;
+            se.set_up_shards(n, 0.001, Fuse3Shards::DUP_EDGE_RETRY_PROB);
+            let (_, aug) = se.set_up_graphs(n, n.div_ceil(se.num_shards()));
+            assert!(!aug);
+        }
 
         #[test]
         fn test_dup_edge_retry_prob() {
@@ -1604,10 +2121,11 @@ mod fuse {
             let p = Fuse3Shards::dup_edge_retry_prob(10_usize.pow(10), 7, Some(64));
             assert!(p > 0.03 && p < 0.05, "{p}");
             // For reference, the model matches measurements: 800000 keys
-            // in 16 shards with segments of size 2⁹ fail with probability
-            // ≈74% (73% measured over 37 attempts), although in the linear
-            // regime the segment-size estimate differs, so the model is
-            // only accurate in order of magnitude there.
+            // in 16 shards with segments of size 2⁹ (the configuration used
+            // before augmented peeling) fail with probability
+            // ≈74% (73% measured over 37 attempts), although with such small
+            // shards the segment-size estimate of the model differs, so the
+            // model is only accurate in order of magnitude there.
             //
             // Full signatures (None) never enter the injective regime, so
             // even at 10¹² keys heavy sharding keeps a high retry
@@ -1617,9 +2135,11 @@ mod fuse {
 
         #[test]
         fn test_shard_bounds_match_retry_budget() {
-            // The chosen sharding always respects the retry budget.
-            let mut se = FuseLge3Shards::default();
-            for lg_n in [24, 27, 30, 33, 36, 40] {
+            // The chosen sharding always respects the retry budget (in the
+            // augmented-peeling regime, up to 2 · 10⁷ keys, duplicate edges
+            // are instead accounted for by the sizing of the graphs).
+            let mut se = FuseAug3Shards::default();
+            for lg_n in [25, 27, 30, 33, 36, 40] {
                 se.set_up_shards(1 << lg_n, 0.001, Fuse3Shards::DUP_EDGE_RETRY_PROB);
                 let h = se.shard_high_bits();
                 assert!(
@@ -1635,7 +2155,7 @@ mod fuse {
             // The corrected bound reproduces the sharding of the paper's
             // benchmarks at 10¹⁰ and 10¹¹ keys, and improves it at 10¹²
             // (8192 shards, all in the injective regime).
-            let mut se = FuseLge3Shards::default();
+            let mut se = FuseAug3Shards::default();
             for (n, expected_h) in [
                 (10_usize.pow(10), 7),
                 (10_usize.pow(11), 9),
@@ -1645,7 +2165,7 @@ mod fuse {
                 assert_eq!(se.shard_high_bits(), expected_h, "n = {n}");
             }
             // Full signatures shard less: no injective regime.
-            let mut se = FuseLge3FullSigs::default();
+            let mut se = FuseAug3FullSigs::default();
             se.set_up_shards(10_usize.pow(12), 0.001, Fuse3Shards::DUP_EDGE_RETRY_PROB);
             assert!(se.shard_high_bits() < 13);
             assert!(
@@ -1659,7 +2179,7 @@ mod fuse {
             // With full signatures the duplicate-edge bound alone would
             // allow shards needing more than 2³² vertices.
             let n = 1_usize << 45;
-            let mut se = FuseLge3FullSigs::default();
+            let mut se = FuseAug3FullSigs::default();
             se.set_up_shards(n, 0.001, Fuse3Shards::DUP_EDGE_RETRY_PROB);
             let avg_shard = (n >> se.shard_high_bits()) as f64;
             assert!(avg_shard * 1.1 * 1.18 <= (1_u64 << 32) as f64);
@@ -1668,7 +2188,7 @@ mod fuse {
         #[test]
         #[should_panic(expected = "does not support")]
         fn test_too_many_keys_fail_early() {
-            let mut se = FuseLge3FullSigs::default();
+            let mut se = FuseAug3FullSigs::default();
             se.set_up_shards(1_usize << 50, 0.001, Fuse3Shards::DUP_EDGE_RETRY_PROB);
         }
     }
@@ -1822,7 +2342,7 @@ mod mwhc {
     /// slightly faster queries due to the simpler edge-generation logic, albeit
     /// construction is slower due to cache-unfriendly accesses.
     ///
-    /// [fuse graphs]: crate::func::shard_edge::FuseLge3Shards
+    /// [fuse graphs]: crate::func::shard_edge::FuseAug3Shards
     /// [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
     /// [MWHC construction]: https://doi.org/10.1093/comjnl/39.6.547
     /// [ε-cost sharded]: https://arxiv.org/abs/2503.18397

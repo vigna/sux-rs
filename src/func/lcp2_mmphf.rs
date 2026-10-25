@@ -42,7 +42,7 @@
 use crate::bits::BitFieldVec;
 use crate::func::VFunc;
 use crate::func::lcp_mmphf::{BitPrefix, IntBitPrefix, bit_prefix_sig};
-use crate::func::shard_edge::{Fuse3NoShards, Fuse3Shards, FuseLge3Shards, ShardEdge};
+use crate::func::shard_edge::{Fuse3NoShards, Fuse3Shards, FuseAug3Shards, ShardEdge};
 use crate::utils::*;
 use mem_dbg::*;
 use num_primitive::PrimitiveInteger;
@@ -124,7 +124,7 @@ pub struct Lcp2MmphfInt<
     K,
     D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
-    E0 = FuseLge3Shards,
+    E0 = FuseAug3Shards,
     F0 = Fuse3Shards,
     S1 = [u64; 1],
     E1 = Fuse3NoShards,
@@ -1235,7 +1235,7 @@ pub struct Lcp2Mmphf<
     K: ?Sized,
     D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
-    E0 = FuseLge3Shards,
+    E0 = FuseAug3Shards,
     F0 = Fuse3Shards,
     S1 = [u64; 1],
     E1 = Fuse3NoShards,
@@ -1329,7 +1329,7 @@ where
 pub type Lcp2MmphfStr<
     D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
-    E0 = FuseLge3Shards,
+    E0 = FuseAug3Shards,
     F0 = Fuse3Shards,
     S1 = [u64; 1],
     E1 = Fuse3NoShards,
@@ -1372,7 +1372,7 @@ pub type Lcp2MmphfStr<
 pub type Lcp2MmphfSliceU8<
     D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
-    E0 = FuseLge3Shards,
+    E0 = FuseAug3Shards,
     F0 = Fuse3Shards,
     S1 = [u64; 1],
     E1 = Fuse3NoShards,

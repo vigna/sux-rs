@@ -298,10 +298,10 @@ impl<K: ?Sized, D, P, R> SignableFunc for PHastR<K, D, P, R> {
 ///
 /// The verification hashes are `mix64` of a single 64-bit signature word (the
 /// verification hash is 64-bit in every edge variant). With the default sharded
-/// fuse edges (`FuseLge3Shards`) that same word also determines the local edge,
+/// fuse edges (`FuseAug3Shards`) that same word also determines the local edge,
 /// so two distinct keys that share it land in the same slots with the same
 /// expected hash and are indistinguishable, an irreducible false positive that
-/// no larger hash width can remove. `FuseLge3FullSigs` computes the edge from
+/// no larger hash width can remove. `FuseAug3FullSigs` computes the edge from
 /// the other signature word as well, so keys sharing the hash word usually land
 /// in different slots, avoiding that collision (the verification hash itself
 /// stays 64-bit either way). For a [`PHastR`], the verification hash is a

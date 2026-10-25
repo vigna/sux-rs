@@ -454,9 +454,120 @@ impl<W: Word> Modulo2System<W> {
     }
 }
 
+/// Solves a dense system of `num_rows` equations in `num_vars` variables
+/// with coefficients in **F**₂ by Gaussian elimination.
+///
+/// Row *i* of the system is stored in the words of `rows` with index in
+/// [*i* · `row_words` . . (*i* + 1) · `row_words`), where bit *j* (in
+/// little-endian order) is the coefficient of variable *j*, and has constant
+/// term `rhs[i]`. Both `rows` and `rhs` are used as working space.
+///
+/// Columns are scanned in increasing order, so if the system is solvable the
+/// solution uses only the variables up to the last pivot, and the remaining
+/// variables are set to zero.
+///
+/// Returns `None` if the system is unsolvable.
+///
+/// # Panics
+///
+/// If `rows` is shorter than `num_rows * row_words`, or if `num_vars` is
+/// larger than `row_words` × 64.
+#[cfg(feature = "rayon")]
+pub(crate) fn dense_gaussian_elimination<W: Word>(
+    rows: &mut [u64],
+    rhs: &mut [W],
+    num_rows: usize,
+    row_words: usize,
+    num_vars: usize,
+) -> Option<Vec<W>> {
+    assert!(rows.len() >= num_rows * row_words);
+    assert!(num_vars <= row_words * 64);
+    let mut pivots = Vec::with_capacity(num_rows);
+    let mut rank = 0;
+    for col in 0..num_vars {
+        if rank == num_rows {
+            break;
+        }
+        let word = col / 64;
+        let bit = 1_u64 << (col % 64);
+        let Some(r) = (rank..num_rows).find(|&r| rows[r * row_words + word] & bit != 0) else {
+            continue;
+        };
+        if r != rank {
+            for j in word..row_words {
+                rows.swap(r * row_words + j, rank * row_words + j);
+            }
+            rhs.swap(r, rank);
+        }
+        let (top, bottom) = rows.split_at_mut((rank + 1) * row_words);
+        let pivot_row = &top[rank * row_words + word..];
+        let pivot_rhs = rhs[rank];
+        for (row, c) in bottom
+            .chunks_exact_mut(row_words)
+            .zip(&mut rhs[rank + 1..num_rows])
+        {
+            if row[word] & bit != 0 {
+                for (x, &y) in row[word..].iter_mut().zip(pivot_row) {
+                    *x ^= y;
+                }
+                *c ^= pivot_rhs;
+            }
+        }
+        pivots.push(col);
+        rank += 1;
+    }
+
+    // The remaining rows are zero, so they must have a zero constant term
+    if rhs[rank..num_rows].iter().any(|&c| c != W::ZERO) {
+        return None;
+    }
+
+    let mut solution = vec![W::ZERO; num_vars];
+    for (i, &pivot) in pivots.iter().enumerate().rev() {
+        let row = &rows[i * row_words..(i + 1) * row_words];
+        let mut value = rhs[i];
+        // Variables before the pivot have zero coefficient
+        for (w, &word) in row.iter().enumerate().skip(pivot / 64) {
+            let mut word = if w == pivot / 64 {
+                word & !(1_u64 << (pivot % 64))
+            } else {
+                word
+            };
+            while word != 0 {
+                value ^= solution[w * 64 + word.trailing_zeros() as usize];
+                word &= word - 1;
+            }
+        }
+        solution[pivot] = value;
+    }
+    Some(solution)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "rayon")]
+    #[test]
+    fn test_dense_gaussian_elimination() {
+        // x0 + x1 = 1, x1 + x2 = 2, x0 + x2 = 3, x3 = 4
+        let mut rows = vec![0b0011, 0b0110, 0b0101, 0b1000];
+        let mut rhs = vec![1_u64, 2, 3, 4];
+        let x = dense_gaussian_elimination(&mut rows.clone(), &mut rhs.clone(), 4, 1, 4).unwrap();
+        assert_eq!(x[0] ^ x[1], 1);
+        assert_eq!(x[1] ^ x[2], 2);
+        assert_eq!(x[0] ^ x[2], 3);
+        assert_eq!(x[3], 4);
+        // Inconsistent: x0 + x1 = 1, x1 + x2 = 2, x0 + x2 = 0
+        rhs[2] = 0;
+        assert!(dense_gaussian_elimination(&mut rows, &mut rhs, 3, 1, 4).is_none());
+        // Multiword rows
+        let mut rows = vec![1, 1 << 3, 0, 1 << 3];
+        let mut rhs = vec![5_u64, 6];
+        let x = dense_gaussian_elimination(&mut rows, &mut rhs, 2, 2, 128).unwrap();
+        assert_eq!(x[0] ^ x[67], 5);
+        assert_eq!(x[67], 6);
+    }
 
     #[test]
     fn test_add_ptr() {

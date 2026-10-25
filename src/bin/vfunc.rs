@@ -93,7 +93,11 @@ fn main() -> Result<()> {
         ShardEdgeType::Fuse3NoShards64 => build_with_types!([u64; 1], Fuse3NoShards),
         ShardEdgeType::Fuse3NoShards128 => build_with_types!([u64; 2], Fuse3NoShards),
         ShardEdgeType::Fuse3Shards => build_with_types!([u64; 2], Fuse3Shards),
+        ShardEdgeType::FuseAug3Shards => build_with_types!([u64; 2], FuseAug3Shards),
+        ShardEdgeType::FuseAug3FullSigs => build_with_types!([u64; 2], FuseAug3FullSigs),
+        #[allow(deprecated)]
         ShardEdgeType::FuseLge3Shards => build_with_types!([u64; 2], FuseLge3Shards),
+        #[allow(deprecated)]
         ShardEdgeType::FuseLge3FullSigs => build_with_types!([u64; 2], FuseLge3FullSigs),
         #[cfg(feature = "mwhc")]
         ShardEdgeType::Mwhc3 => build_with_types!([u64; 2], Mwhc3Shards),
