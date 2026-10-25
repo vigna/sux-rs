@@ -793,6 +793,14 @@ mod fuse {
     /// 30000 keys (≈14% at 10⁴ keys, ≈22% at 1000 keys), and construction is
     /// parallel above 400000 keys.
     ///
+    /// Augmented peeling is a transposed form of the *inactivation decoding*
+    /// of Raptor codes, described by Amin Shokrollahi and Michael Luby in
+    /// “[Raptor Codes]”, 2011: if we transpose the linear system, so that
+    /// vertices become equations and edges become unknowns, peeling a vertex
+    /// of degree one becomes solving an equation with a single unknown, and
+    /// removing an edge becomes inactivating an unknown, that is, setting it
+    /// aside as a symbolic value to be computed at the end.
+    ///
     /// When a construction attempt fails the construction is retried with a
     /// new seed: on average, between 1.1 and 1.35 attempts are necessary,
     /// depending on the number of keys. [`VBuilder`](crate::func::VBuilder)
@@ -812,6 +820,7 @@ mod fuse {
     /// [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
     /// [fuse 3-hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
     /// [ε-cost sharded]: https://arxiv.org/abs/2503.18397
+    /// [Raptor Codes]: https://doi.org/10.1561/0100000060
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
     #[mem_size(flat)]
     #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]

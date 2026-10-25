@@ -13,11 +13,14 @@
   peeling, rather than by lazy Gaussian elimination as `FuseLge3Shards` and
   `FuseLge3FullSigs` did: whenever peeling gets stuck an edge is removed, and
   the removed edges are satisfied at the end by solving a small dense linear
-  system. Construction is up to 45 times faster, needs on average at most 1.35
-  attempts, and the resulting structures are 0.2–5% smaller between 1,000 and
-  20,000,000 keys (but up to 7% larger below 100 keys). Above 20,000,000 keys
-  the new types behave as the old ones. The CLI utilities accept the new types
-  (`fuse-aug3-shards`, now the default, and `fuse-aug3-full-sigs`).
+  system. Augmented peeling is a transposed form of the inactivation decoding of
+  Raptor codes: in the transposed system, removing an edge corresponds to
+  inactivating an unknown. Construction is up to 45 times faster, needs on
+  average at most 1.35 attempts, and the resulting structures are 0.2–5% smaller
+  between 1,000 and 20,000,000 keys (but up to 7% larger below 100 keys). Above
+  20,000,000 keys the new types behave as the old ones. The CLI utilities accept
+  the new types (`fuse-aug3-shards`, now the default, and
+  `fuse-aug3-full-sigs`).
 
 ### Changed
 

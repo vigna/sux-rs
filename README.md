@@ -22,7 +22,9 @@ from [the DSI Utilities] and new structures.
   representation of monotone sequences], and [lists of strings compressed by
   prefix omission].
 - new state-of-the-art structures for [static functions] and [static filters],
-  scaling to trillions of keys, and providing very fast queries;
+  scaling to trillions of keys, and providing very fast queries; small key
+  sets are solved by augmented peeling, a transposed form of the inactivation
+  decoding of [Raptor codes];
 - [compressed static functions], which store values using a prefix-free code,
   and [two-step static functions], which handle frequent values separately:
   both use less space when the distribution of values is skewed;
@@ -368,6 +370,7 @@ Union nor the Italian MUR can be held responsible for them.
 [`SelectSmall`]: https://docs.rs/sux/latest/sux/rank_sel/struct.SelectSmall.html
 [`SelectAdapt`]: https://docs.rs/sux/latest/sux/rank_sel/struct.SelectAdapt.html
 [static functions]: https://docs.rs/sux/latest/sux/func/struct.VFunc.html
+[Raptor codes]: https://doi.org/10.1561/0100000060
 [compressed static functions]: https://docs.rs/sux/latest/sux/func/struct.CompVFunc.html
 [two-step static functions]: https://docs.rs/sux/latest/sux/func/struct.VFunc2.html
 [minimal perfect hash function]: https://docs.rs/sux/latest/sux/func/struct.PHastR.html

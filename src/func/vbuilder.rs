@@ -2325,7 +2325,9 @@ impl<
     /// shards are sorted by the segment of the first vertex of their edges,
     /// the removed edge lies in the leftmost segment containing live edges,
     /// and peeling resumes from the hole left by the removal, as at the
-    /// lightly loaded left end of a fuse graph.
+    /// lightly loaded left end of a fuse graph. The procedure is a transposed
+    /// form of the inactivation decoding of Raptor codes (see
+    /// [`FuseAug3Shards`](crate::func::shard_edge::FuseAug3Shards)).
     ///
     /// At the end, every vertex that is incident to some edge but is not the
     /// pivot of a peeled edge is *lost*: its value can be chosen freely, and
@@ -2336,7 +2338,8 @@ impl<
     /// the pivots of edges peeled after the first removal. We compute the
     /// coefficients of the equations for the most recently lost vertices, in
     /// blocks of 256 vertices, and solve the resulting small dense system,
-    /// adding blocks until the system is solvable or the lost vertices are
+    /// starting with twice as many unknowns as removed edges and doubling the
+    /// number of blocks until the system is solvable or the lost vertices are
     /// exhausted.
     ///
     /// Without the cap on the number of unknowns (four times the number of
