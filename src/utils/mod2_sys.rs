@@ -7,7 +7,7 @@
  */
 
 //! Fast solution of random systems of linear equations with coefficients in
-//! **F**₂.
+//! 𝐅₂.
 
 #![allow(unexpected_cfgs)]
 #![allow(clippy::comparison_chain)]
@@ -21,7 +21,7 @@ use crate::{
 use anyhow::{Result, bail, ensure};
 use arbitrary_chunks::ArbitraryChunks;
 
-/// An equation on `W::BITS`-dimensional vectors with coefficients in **F**₂.
+/// An equation on `W::BITS`-dimensional vectors with coefficients in 𝐅₂.
 #[derive(Clone, Debug)]
 pub struct Modulo2Equation<W: Word = usize> {
     /// The variables in increasing order.
@@ -47,7 +47,7 @@ impl<W: Word> Modulo2Equation<W> {
     /// # Safety
     ///
     /// `vars` must be strictly increasing. In particular, duplicate variables
-    /// are invalid: repeated coefficients cancel in F2 and must be removed by
+    /// are invalid: repeated coefficients cancel in 𝐅₂ and must be removed by
     /// the caller before construction.
     pub unsafe fn from_parts(vars: Vec<u32>, c: W) -> Self {
         debug_assert!(vars.windows(2).all(|pair| pair[0] < pair[1]));
@@ -455,7 +455,7 @@ impl<W: Word> Modulo2System<W> {
 }
 
 /// Solves a dense system of `num_rows` equations in `num_vars` variables
-/// with coefficients in **F**₂ by Gaussian elimination.
+/// with coefficients in 𝐅₂ by Gaussian elimination.
 ///
 /// Row *i* of the system is stored in the words of `rows` with index in
 /// [*i* · `row_words` . . (*i* + 1) · `row_words`), where bit *j* (in

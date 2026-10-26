@@ -15,7 +15,7 @@
 //!   of (possibly compressed) files.
 //! - [`sig_store`]: signature storage for static functions and filters.
 //! - [`fair_chunks`]: splitting ranges into balanced chunks.
-//! - [`mod2_sys`]: linear system solving over **F**₂.
+//! - [`mod2_sys`]: linear system solving over 𝐅₂.
 //! - [`select_in_word`]: select-in-word primitives.
 //! - [`Mwc192`]: a ridiculously fast multiply-with-carry pseudo-random number generator.
 //! - [`transmute_vec_into_atomic`] / [`transmute_vec_from_atomic`]: safe
