@@ -25,7 +25,7 @@ anyhow = "1.0.103"
 atomic-primitive = "0.1.1"
 num-primitive = "0.2.1"
 log = "0.4.20"
-dsi-progress-logger = "0.8.7"
+dsi-progress-logger = "0.8.10"
 tempfile = "3.11.0"
 lender = "0.8.0"
 epserde = { version = "0.13.2", optional = true, default-features = false, features = ["std", "derive"] }

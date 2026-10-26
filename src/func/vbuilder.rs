@@ -1717,7 +1717,7 @@ impl<
 // macro live in [crate::func::peeling] so they can be shared with
 // [crate::func::CompVFunc]. VBuilder's peeler bodies are otherwise
 // unchanged.
-use crate::func::peeling::{DoubleStack, FastStack, XorGraph, remove_edge};
+use crate::func::peeling::{DoubleStack, FastStack, IndexedSigVal, XorGraph, remove_edge};
 
 impl<
     D: BitFieldSlice<Value: Word + BinSafe + Send + Sync>
@@ -2338,9 +2338,9 @@ impl<
     /// the pivots of edges peeled after the first removal. We compute the
     /// coefficients of the equations for the most recently lost vertices, in
     /// blocks of 256 vertices, and solve the resulting small dense system,
-    /// starting with twice as many unknowns as removed edges and doubling the
-    /// number of blocks until the system is solvable or the lost vertices are
-    /// exhausted.
+    /// starting with 32 more unknowns than removed edges, rounded up to a
+    /// block (almost always enough), and doubling the number of blocks until
+    /// the system is solvable or the lost vertices are exhausted.
     ///
     /// Without the cap on the number of unknowns (four times the number of
     /// removed edges, plus 2048) the solver would be exact, that is, it would
@@ -2358,7 +2358,10 @@ impl<
         get_val: &G,
         inspect: &H,
         pl: &mut impl ProgressLog,
-    ) -> Result<(), ()> {
+    ) -> Result<(), ()>
+    where
+        SigVal<E::LocalSig, V>: BitXor + BitXorAssign + Default,
+    {
         const BLOCK_WORDS: usize = 4;
         let shard_edge = &self.shard_edge;
         let num_vertices = shard_edge.num_vertices();
@@ -2371,15 +2374,23 @@ impl<
             num_shards
         ));
 
-        let mut xor_graph = XorGraph::<E::Vertex>::new(num_vertices);
+        // Augmented peeling needs both the signature/value pair of an edge,
+        // to peel it, and its index, to find the first live edge when it gets
+        // stuck, so we XOR both in the graph
+        let mut xor_graph =
+            XorGraph::<IndexedSigVal<SigVal<E::LocalSig, V>, E::Vertex>>::new(num_vertices);
         for (edge_index, sig_val) in shard.iter().enumerate() {
             inspect(sig_val);
-            for (side, &v) in shard_edge
-                .local_edge(shard_edge.local_sig(sig_val.sig))
-                .iter()
-                .enumerate()
-            {
-                xor_graph.add(v, E::Vertex::as_from(edge_index), side);
+            let local_sig = shard_edge.local_sig(sig_val.sig);
+            let x = IndexedSigVal {
+                sig_val: SigVal {
+                    sig: local_sig,
+                    val: sig_val.val,
+                },
+                index: E::Vertex::as_from(edge_index),
+            };
+            for (side, &v) in shard_edge.local_edge(local_sig).iter().enumerate() {
+                xor_graph.add(v, x, side);
             }
         }
         pl.done_with_count(num_edges);
@@ -2396,30 +2407,18 @@ impl<
         }
 
         pl.start(format!(
-            "Peeling graph for shard {}/{} by edge indices (augmented)...",
+            "Peeling graph for shard {}/{} by signatures (augmented)...",
             shard_index + 1,
             num_shards
         ));
 
-        let edge =
-            |edge_index: usize| shard_edge.local_edge(shard_edge.local_sig(shard[edge_index].sig));
-        let value = |edge_index: usize| {
-            let sig_val = &shard[edge_index];
-            get_val(
-                shard_edge,
-                SigVal {
-                    sig: shard_edge.local_sig(sig_val.sig),
-                    val: sig_val.val,
-                },
-            )
-        };
+        let value = |sig_val: SigVal<E::LocalSig, V>| get_val(shard_edge, sig_val);
 
-        // The lower stack contains vertices to be visited. The upper stack
-        // contains peeled edges.
-        let mut double_stack = DoubleStack::<E::Vertex>::new(num_vertices);
-        let mut sides_stack = Vec::<u8>::with_capacity(num_edges);
+        let mut visit_stack = Vec::<E::Vertex>::with_capacity(num_vertices / 3);
+        let mut sig_vals_stack = FastStack::<SigVal<E::LocalSig, V>>::new(num_edges);
+        let mut sides_stack = FastStack::<u8>::new(num_edges);
         let mut dead: BitVec = BitVec::new(num_edges);
-        let mut removed = Vec::<E::Vertex>::new();
+        let mut removed = Vec::<SigVal<E::LocalSig, V>>::new();
         let mut lost = Vec::<E::Vertex>::new();
         // Number of edges peeled before the first removal
         let mut num_peeled_before = 0;
@@ -2427,37 +2426,35 @@ impl<
 
         for (v, degree) in xor_graph.degrees().enumerate() {
             if degree == 1 {
-                double_stack.push_lower(E::Vertex::as_from(v));
+                visit_stack.push(E::Vertex::as_from(v));
             }
         }
 
         loop {
-            while let Some(v) = double_stack.pop_lower() {
+            while let Some(v) = visit_stack.pop() {
                 let v: usize = v.as_to();
                 if xor_graph.degree(v) == 0 {
                     continue;
                 }
-                let (edge_index, side) = xor_graph.edge_and_side(v);
+                let (x, side) = xor_graph.edge_and_side(v);
                 xor_graph.zero(v);
-                double_stack.push_upper(edge_index);
+                sig_vals_stack.push(x.sig_val);
                 sides_stack.push(side as u8);
-                let e_index: usize = edge_index.as_to();
-                dead.set(e_index, true);
-                let e = edge(e_index);
-                for (s, &u) in e.iter().enumerate() {
+                dead.set(x.index.as_to(), true);
+                for (s, &u) in shard_edge.local_edge(x.sig_val.sig).iter().enumerate() {
                     if s == side {
                         continue;
                     }
                     match xor_graph.degree(u) {
-                        2 => double_stack.push_lower(E::Vertex::as_from(u)),
+                        2 => visit_stack.push(E::Vertex::as_from(u)),
                         1 if !removed.is_empty() => lost.push(E::Vertex::as_from(u)),
                         _ => {}
                     }
-                    xor_graph.remove(u, edge_index, s);
+                    xor_graph.remove(u, x, s);
                 }
             }
 
-            if double_stack.upper_len() + removed.len() == num_edges {
+            if sig_vals_stack.len() + removed.len() == num_edges {
                 break;
             }
 
@@ -2466,53 +2463,44 @@ impl<
                 next_removal += 1;
             }
             if removed.is_empty() {
-                num_peeled_before = double_stack.upper_len();
+                num_peeled_before = sig_vals_stack.len();
             }
-            let edge_index = E::Vertex::as_from(next_removal);
             dead.set(next_removal, true);
-            removed.push(edge_index);
-            for (s, &u) in edge(next_removal).iter().enumerate() {
+            let sig_val = &shard[next_removal];
+            let x = IndexedSigVal {
+                sig_val: SigVal {
+                    sig: shard_edge.local_sig(sig_val.sig),
+                    val: sig_val.val,
+                },
+                index: E::Vertex::as_from(next_removal),
+            };
+            removed.push(x.sig_val);
+            for (s, &u) in shard_edge.local_edge(x.sig_val.sig).iter().enumerate() {
                 match xor_graph.degree(u) {
-                    2 => double_stack.push_lower(E::Vertex::as_from(u)),
+                    2 => visit_stack.push(E::Vertex::as_from(u)),
                     1 => lost.push(E::Vertex::as_from(u)),
                     _ => {}
                 }
-                xor_graph.remove(u, edge_index, s);
+                xor_graph.remove(u, x, s);
             }
         }
 
         pl.done();
         drop(xor_graph);
+        drop(visit_stack);
         drop(dead);
+        // We are using a consuming iterator over the shard store, so this
+        // drop will free the memory used by the signatures
+        drop(shard);
 
         let num_removed = removed.len();
-
-        // Assigns values to the pivots of the given peeled edges, which
-        // must be in reverse peeling order
-        let assign = |data: &mut ShardData<'_, D>, edges: &mut dyn Iterator<Item = (usize, u8)>| {
-            for (edge_index, side) in edges {
-                let e = edge(edge_index);
-                let side = side as usize;
-                // SAFETY: vertex indices from local_edge are guaranteed
-                // within bounds of data by the ShardEdge contract; side is
-                // always 0, 1, or 2.
-                unsafe {
-                    let xor = match side {
-                        0 => data.get_value_unchecked(e[1]) ^ data.get_value_unchecked(e[2]),
-                        1 => data.get_value_unchecked(e[0]) ^ data.get_value_unchecked(e[2]),
-                        2 => data.get_value_unchecked(e[0]) ^ data.get_value_unchecked(e[1]),
-                        _ => core::hint::unreachable_unchecked(),
-                    };
-                    data.set_value_unchecked(e[side], value(edge_index) ^ xor);
-                }
-            }
-        };
-
-        let num_peeled = double_stack.upper_len();
+        let num_peeled = sig_vals_stack.len();
+        // The peeled edges in reverse peeling order
         let peeled = || {
-            double_stack
-                .iter_upper()
-                .map(|&e| e.as_to())
+            sig_vals_stack
+                .iter()
+                .rev()
+                .copied()
                 .zip(sides_stack.iter().rev().copied())
         };
 
@@ -2539,81 +2527,114 @@ impl<
                 lost.len()
             ));
 
-            // Removed equations depend only on edges peeled after the first
-            // removal (the first num_peeled - num_peeled_before in reverse
-            // peeling order). We assign their pivots using the current
-            // values of the lost vertices (zero), and evaluate the removed
-            // equations to get the constant terms.
+            // Removed equations depend only on the edges peeled after the
+            // first removal (the first num_peeled - num_peeled_before in
+            // reverse peeling order), and the vertices of these edges are
+            // either their pivots or vertices lost after the first removal.
+            //
+            // We thus work in a compact array of slots: slot 0 is always zero,
+            // slots 1..num_lost + 1 are the lost vertices, and the following
+            // slots are the pivots of the tail in reverse peeling order. The
+            // operands of a pivot are pivots of edges peeled later, and since
+            // peeling proceeds as a wave through the segments, they are
+            // usually close to it in the array.
             let num_tail = num_peeled - num_peeled_before;
-            assign(&mut data, &mut peeled().take(num_tail));
-            let rhs: Vec<D::Value> = removed
-                .iter()
-                .map(|&r| {
-                    let r: usize = r.as_to();
-                    let e = edge(r);
-                    // SAFETY: see above
-                    unsafe {
-                        value(r)
-                            ^ data.get_value_unchecked(e[0])
-                            ^ data.get_value_unchecked(e[1])
-                            ^ data.get_value_unchecked(e[2])
-                    }
-                })
-                .collect();
-            // Pivot first, then the two other vertices
-            let tail: Vec<[E::Vertex; 3]> = peeled()
+            let num_lost = lost.len();
+            let first_pivot = 1 + num_lost;
+            let mut slot = vec![0_u32; num_vertices];
+            for (i, &v) in lost.iter().enumerate() {
+                let v: usize = v.as_to();
+                slot[v] = (1 + i) as u32;
+            }
+            let tail: Vec<([usize; 3], usize)> = peeled()
                 .take(num_tail)
-                .map(|(edge_index, side)| {
-                    let e = edge(edge_index);
+                .map(|(sig_val, side)| (shard_edge.local_edge(sig_val.sig), side as usize))
+                .collect();
+            for (i, &(e, side)) in tail.iter().enumerate() {
+                slot[e[side]] = (first_pivot + i) as u32;
+            }
+            let operands: Vec<[u32; 2]> = tail
+                .iter()
+                .map(|&(e, side)| {
                     let (a, b) = match side {
                         0 => (e[1], e[2]),
                         1 => (e[0], e[2]),
                         _ => (e[0], e[1]),
                     };
-                    [
-                        E::Vertex::as_from(e[side as usize]),
-                        E::Vertex::as_from(a),
-                        E::Vertex::as_from(b),
-                    ]
+                    [slot[a], slot[b]]
                 })
                 .collect();
-            let removed_edges: Vec<[usize; 3]> = removed.iter().map(|&r| edge(r.as_to())).collect();
+            drop(tail);
+            let removed_slots: Vec<[u32; 3]> = removed
+                .iter()
+                .map(|sig_val| shard_edge.local_edge(sig_val.sig).map(|v| slot[v]))
+                .collect();
+            drop(slot);
+
+            // We propagate the current values of the lost vertices (zero, or
+            // random for filters) to get the constant terms of the removed
+            // equations
+            let mut vals = vec![D::Value::ZERO; first_pivot + num_tail];
+            for (i, &v) in lost.iter().enumerate() {
+                // SAFETY: lost vertices are within bounds of data
+                vals[1 + i] = unsafe { data.get_value_unchecked(v.as_to()) };
+            }
+            for (i, ((sig_val, _), &[a, b])) in peeled().zip(&operands).enumerate() {
+                vals[first_pivot + i] = value(sig_val) ^ vals[a as usize] ^ vals[b as usize];
+            }
+            let rhs: Vec<D::Value> = removed
+                .iter()
+                .zip(&removed_slots)
+                .map(|(&sig_val, s)| {
+                    value(sig_val) ^ vals[s[0] as usize] ^ vals[s[1] as usize] ^ vals[s[2] as usize]
+                })
+                .collect();
+            drop(vals);
             drop(removed);
 
-            // Unknown j is the j-th most recently lost vertex. We cap the
-            // number of unknowns so that an unsolvable system fails fast;
-            // solvable systems need on average between one and one and a
-            // half unknowns per removed edge, and occasionally a few more
-            // when few edges have been removed.
-            let num_lost = lost.len().min(4 * num_removed + 2048);
-            let lost = &lost[lost.len() - num_lost..];
-            let unknown = |j: usize| -> usize { lost[num_lost - 1 - j].as_to() };
+            // Unknown j is the j-th most recently lost vertex, in slot
+            // num_lost - j. We cap the number of unknowns so that an
+            // unsolvable system fails fast; solvable systems need almost
+            // always just a few more unknowns than removed edges, so we start
+            // with 32 more, rounded up to a block.
+            let num_unknowns = num_lost.min(4 * num_removed + 2048);
+            let unknown_slot = |j: usize| num_lost - j;
             let block_size = BLOCK_WORDS * 64;
-            let max_blocks = num_lost.div_ceil(block_size);
-            let mut coeffs = vec![[0_u64; BLOCK_WORDS]; num_vertices];
+            let max_blocks = num_unknowns.div_ceil(block_size);
+            let mut coeffs = vec![[0_u64; BLOCK_WORDS]; first_pivot + num_tail];
             // Coefficients of the removed equations, block by block
             let mut blocks: Vec<Vec<[u64; BLOCK_WORDS]>> = vec![];
-            let mut num_blocks = (2 * num_removed).div_ceil(block_size).min(max_blocks);
+            let mut num_blocks = (num_removed + 32).div_ceil(block_size).min(max_blocks);
             let solution = loop {
                 while blocks.len() < num_blocks {
                     let base = blocks.len() * block_size;
-                    let top = (base + block_size).min(num_lost);
-                    coeffs.iter_mut().for_each(|c| *c = [0; BLOCK_WORDS]);
+                    let top = (base + block_size).min(num_unknowns);
+                    coeffs[1..first_pivot].fill([0; BLOCK_WORDS]);
                     for j in base..top {
                         let o = j - base;
-                        coeffs[unknown(j)][o / 64] |= 1 << (o % 64);
+                        coeffs[unknown_slot(j)][o / 64] |= 1 << (o % 64);
                     }
-                    for &[p, a, b] in &tail {
-                        let (p, a, b): (usize, usize, usize) = (p.as_to(), a.as_to(), b.as_to());
-                        let (ca, cb) = (coeffs[a], coeffs[b]);
-                        coeffs[p] = std::array::from_fn(|i| ca[i] ^ cb[i]);
+                    let (head, pivots) = coeffs.split_at_mut(first_pivot);
+                    for (i, &[a, b]) in operands.iter().enumerate() {
+                        let (a, b) = (a as usize, b as usize);
+                        let ca = if a < first_pivot {
+                            head[a]
+                        } else {
+                            pivots[a - first_pivot]
+                        };
+                        let cb = if b < first_pivot {
+                            head[b]
+                        } else {
+                            pivots[b - first_pivot]
+                        };
+                        pivots[i] = std::array::from_fn(|w| ca[w] ^ cb[w]);
                     }
                     blocks.push(
-                        removed_edges
+                        removed_slots
                             .iter()
-                            .map(|e| {
-                                let (c0, c1, c2) = (coeffs[e[0]], coeffs[e[1]], coeffs[e[2]]);
-                                std::array::from_fn(|i| c0[i] ^ c1[i] ^ c2[i])
+                            .map(|s| {
+                                let [c0, c1, c2] = s.map(|x| coeffs[x as usize]);
+                                std::array::from_fn(|w| c0[w] ^ c1[w] ^ c2[w])
                             })
                             .collect(),
                     );
@@ -2628,7 +2649,7 @@ impl<
                     }
                 }
                 let mut block_rhs = rhs.clone();
-                let num_vars = (blocks.len() * block_size).min(num_lost);
+                let num_vars = (blocks.len() * block_size).min(num_unknowns);
                 match crate::utils::mod2_sys::dense_gaussian_elimination(
                     &mut rows,
                     &mut block_rhs,
@@ -2650,9 +2671,9 @@ impl<
             };
             pl.done_with_count(num_removed);
 
-            // The solution is the delta to apply to the lost vertices
+            // The solution is the delta to apply to the unknowns
             for (j, &x) in solution.iter().enumerate() {
-                let v = unknown(j);
+                let v: usize = lost[num_lost - 1 - j].as_to();
                 // SAFETY: lost vertices are within bounds of data
                 unsafe {
                     data.set_value_unchecked(v, data.get_value_unchecked(v) ^ x);
@@ -2669,7 +2690,22 @@ impl<
             shard_index + 1,
             num_shards
         ));
-        assign(&mut data, &mut peeled());
+        for (sig_val, side) in peeled() {
+            let e = shard_edge.local_edge(sig_val.sig);
+            let side = side as usize;
+            // SAFETY: vertex indices from local_edge are guaranteed within
+            // bounds of data by the ShardEdge contract; side is always 0, 1,
+            // or 2.
+            unsafe {
+                let xor = match side {
+                    0 => data.get_value_unchecked(e[1]) ^ data.get_value_unchecked(e[2]),
+                    1 => data.get_value_unchecked(e[0]) ^ data.get_value_unchecked(e[2]),
+                    2 => data.get_value_unchecked(e[0]) ^ data.get_value_unchecked(e[1]),
+                    _ => core::hint::unreachable_unchecked(),
+                };
+                data.set_value_unchecked(e[side], value(sig_val) ^ xor);
+            }
+        }
         pl.done();
 
         Ok(())

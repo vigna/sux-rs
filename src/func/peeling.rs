@@ -106,6 +106,27 @@ impl<X: BitXorAssign + Default + Copy> XorGraph<X> {
     }
 }
 
+// ── IndexedSigVal ───────────────────────────────────────────────────
+
+/// A signature/value pair together with the index of its edge.
+///
+/// Augmented peeling stores these pairs in a [`XorGraph`], as it needs both
+/// the signature/value pair, to peel an edge, and the index, to find the
+/// first live edge in shard order when peeling gets stuck.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct IndexedSigVal<X, I> {
+    pub(crate) sig_val: X,
+    pub(crate) index: I,
+}
+
+impl<X: BitXorAssign, I: BitXorAssign> BitXorAssign for IndexedSigVal<X, I> {
+    #[inline(always)]
+    fn bitxor_assign(&mut self, rhs: Self) {
+        self.sig_val ^= rhs.sig_val;
+        self.index ^= rhs.index;
+    }
+}
+
 // ── FastStack ───────────────────────────────────────────────────────
 
 /// A preallocated stack implementation that avoids the expensive (even if
