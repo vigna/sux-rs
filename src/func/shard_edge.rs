@@ -57,9 +57,9 @@
 //!   with a space overhead of about 11% (ε = 0.001) for key sets above a
 //!   hundred million keys, and of 11–12% for key sets above 2 · 10⁷ keys. Up to
 //!   2 · 10⁷ keys, it uses up to sixteen smaller shards solved by augmented
-//!   peeling, which keeps the space overhead at 9–12%, and makes construction 
-//!   parallel above 400000 keys. Depending on the amount of sharding, functions 
-//!   with more than a few dozen billion keys might incur in duplicate local 
+//!   peeling, which keeps the space overhead at 9–12%, and makes construction
+//!   parallel above 400000 keys. Depending on the amount of sharding, functions
+//!   with more than a few dozen billion keys might incur in duplicate local
 //!   signatures, which requires switching to [`FuseAug3FullSigs`].
 //!
 //! - [`Fuse3Shards`] is like [`FuseAug3Shards`] but does not use augmented
