@@ -48,7 +48,7 @@
 
 use crate::bits::BitFieldVec;
 use crate::func::VFunc;
-use crate::func::shard_edge::{Fuse3NoShards, FuseAug3Shards, ShardEdge};
+use crate::func::shard_edge::{FuseAug3Shards, ShardEdge};
 use crate::traits::TryIntoUnaligned;
 use crate::traits::Unaligned;
 use crate::utils::*;
@@ -141,14 +141,14 @@ pub(crate) fn pack_int_bit_prefix<K: PrimitiveInteger>(
     n
 }
 
-impl<K: PrimitiveInteger> ToSig<[u64; 1]> for IntBitPrefix<K> {
+impl<K: PrimitiveInteger, S: Sig> ToSig<S> for IntBitPrefix<K> {
     #[inline]
-    fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
+    fn to_sig(key: impl Borrow<Self>, seed: u64) -> S {
         let mut buf = [0u8; 24];
         let n = pack_int_bit_prefix(key.borrow(), &mut buf);
         let mut hasher = xxh3::Xxh3::with_seed(seed);
         hasher.update(&buf[..n]);
-        <[u64; 1]>::from_hasher(&hasher)
+        S::from_hasher(&hasher)
     }
 }
 
@@ -1327,8 +1327,8 @@ pub struct LcpMmphfInt<
     D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
     E0 = FuseAug3Shards,
-    S1 = [u64; 1],
-    E1 = Fuse3NoShards,
+    S1 = [u64; 2],
+    E1 = FuseAug3Shards,
 > {
     /// Number of keys.
     pub(crate) n: usize,
@@ -1460,9 +1460,9 @@ pub(crate) fn bit_prefix_sig<S: Sig>(bytes: &[u8], bit_len: usize, seed: u64) ->
     S::from_hasher(&hasher)
 }
 
-impl ToSig<[u64; 1]> for BitPrefix {
+impl<S: Sig> ToSig<S> for BitPrefix {
     #[inline]
-    fn to_sig(key: impl Borrow<Self>, seed: u64) -> [u64; 1] {
+    fn to_sig(key: impl Borrow<Self>, seed: u64) -> S {
         let bp = key.borrow();
         bit_prefix_sig(&bp.bytes, bp.bit_len, seed)
     }
@@ -1547,8 +1547,8 @@ pub struct LcpMmphf<
     D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
     E0 = FuseAug3Shards,
-    S1 = [u64; 1],
-    E1 = Fuse3NoShards,
+    S1 = [u64; 2],
+    E1 = FuseAug3Shards,
 > {
     /// Number of keys.
     pub(crate) n: usize,
@@ -1609,8 +1609,8 @@ pub type LcpMmphfStr<
     D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
     E0 = FuseAug3Shards,
-    S1 = [u64; 1],
-    E1 = Fuse3NoShards,
+    S1 = [u64; 2],
+    E1 = FuseAug3Shards,
 > = LcpMmphf<str, D, S0, E0, S1, E1>;
 
 /// A [`LcpMmphf`] for `[u8]` keys.
@@ -1652,8 +1652,8 @@ pub type LcpMmphfSliceU8<
     D = BitFieldVec<Box<[usize]>>,
     S0 = [u64; 2],
     E0 = FuseAug3Shards,
-    S1 = [u64; 1],
-    E1 = Fuse3NoShards,
+    S1 = [u64; 2],
+    E1 = FuseAug3Shards,
 > = LcpMmphf<[u8], D, S0, E0, S1, E1>;
 
 impl<K: ?Sized, D, S0, E0, S1, E1> LcpMmphf<K, D, S0, E0, S1, E1> {

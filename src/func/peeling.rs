@@ -30,8 +30,8 @@ use std::slice::Iter;
 /// once the edge is peeled (see the `peel_by_*` methods). For the same reason
 /// it also speeds up assignment.
 ///
-/// Depending on the peeling method (by signature or by index), the graph will
-/// store edge indices or signature/value pairs (the generic parameter `X`).
+/// The graph stores signature/value pairs, together with the index of their
+/// edge in the case of augmented peeling (the generic parameter `X`).
 ///
 /// Edge information is packed together using Djamal's XOR trick (see
 /// [“Cache-Oblivious Peeling of Random Hypergraphs”]): since during the

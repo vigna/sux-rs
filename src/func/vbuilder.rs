@@ -193,11 +193,10 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseAug3Shards> {
     #[setters(generate = true)]
     check_dups: bool,
 
-    /// Always uses the low-memory peel-by-signature algorithm (true) or the
-    /// high-memory peel-by-index algorithm (false). The former is slightly
-    /// slower, but it uses much less memory. Normally [`VBuilder`] uses
-    /// high-mem and switches to low-mem if there are more
-    /// than three threads and more than two shards.
+    /// Always uses the low-memory peeling visit (true) or the high-memory
+    /// peeling visit (false). The former is slightly slower, but it uses much
+    /// less memory. Normally [`VBuilder`] uses high-mem and switches to low-mem
+    /// if there are more than three threads and more than two shards.
     #[setters(generate = true, strip_option)]
     pub(crate) low_mem: Option<bool>,
 
@@ -2320,8 +2319,9 @@ impl<
     /// Solves a shard of given index using augmented peeling, and stores the
     /// solution in the given data.
     ///
-    /// The graph is peeled by edge indices; whenever peeling gets stuck, we
-    /// remove the first live edge in shard order and continue peeling. Since
+    /// The graph stores signature/value pairs together with the index of their
+    /// edge, which is needed to perform removals; whenever peeling gets stuck,
+    /// we remove the first live edge in shard order and continue peeling. Since
     /// shards are sorted by the segment of the first vertex of their edges,
     /// the removed edge lies in the leftmost segment containing live edges,
     /// and peeling resumes from the hole left by the removal, as at the

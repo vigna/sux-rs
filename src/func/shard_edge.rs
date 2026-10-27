@@ -55,14 +55,13 @@
 //!   this is the default choice. It shards keys using ε-cost sharding and
 //!   generates edges from 64-bit local signatures using a fuse 3-hypergraph
 //!   with a space overhead of about 11% (ε = 0.001) for key sets above a
-//!   hundred million keys, and of 11–12% for key sets above 2 · 10⁷ keys.
-//!   Up to 2 · 10⁷ keys, it uses up to sixteen smaller shards solved by
-//!   augmented peeling, which keeps the space overhead at 10–12% above 30000
-//!   keys (14% at 10⁴ keys, 22% at 1000 keys), and makes construction
-//!   parallel above 400000 keys.
-//!   Depending on the amount of sharding, functions with more than a few dozen
-//!   billion keys might incur in duplicate local signatures, which requires
-//!   switching to [`FuseAug3FullSigs`].
+//!   hundred million keys, and of 11–12% for key sets above 2 · 10⁷ keys. Up to
+//!   2 · 10⁷ keys, it uses up to sixteen smaller shards solved by augmented
+//!   peeling, which keeps the space overhead at 9–12% above 30000 keys (14% at
+//!   10⁴ keys, 22% at 1000 keys), and makes construction parallel above 400000
+//!   keys. Depending on the amount of sharding, functions with more than a few
+//!   dozen billion keys might incur in duplicate local signatures, which
+//!   requires switching to [`FuseAug3FullSigs`].
 //!
 //! - [`Fuse3Shards`] is like [`FuseAug3Shards`] but does not use augmented
 //!   peeling, so on small key sets the construction will be faster but the
@@ -778,20 +777,21 @@ mod fuse {
     /// Below a few dozen million keys, peelable fuse graphs have a higher space
     /// overhead, and since shards cannot be smaller than 10⁷ keys, construction
     /// is sequential. Up to 2 · 10⁷ keys this construction thus uses up to
-    /// sixteen shards of at least 200000 keys, and, following a suggestion by
-    /// Stefan Walzer, solves them by *augmented peeling*: whenever peeling gets
-    /// stuck, it removes the first remaining edge in the leftmost segment
-    /// containing edges and continues; at the end, the removed edges are
-    /// satisfied by solving a small dense linear system whose unknowns are the
-    /// vertices left without edges after the first removal. Augmented peeling
-    /// fails only if the system is unsolvable, so graphs can be much denser
-    /// than peelable graphs. The segment size and the number of segments are
-    /// chosen to minimize the number of vertices using a law for the threshold
-    /// of solvability, derived by density evolution and corrected for finite
-    /// segments, so that a construction attempt succeeds with probability ≈70%,
-    /// duplicate edges included. The resulting space overhead is 10–12% above
-    /// 30000 keys (≈14% at 10⁴ keys, ≈22% at 1000 keys), and construction is
-    /// parallel above 400000 keys.
+    /// eight shards of at least 200000 keys, or sixteen shards of at least
+    /// 400000 keys, and, following a suggestion by Stefan Walzer, Stefan
+    /// Hermann, and Markus Wünstel, solves them by *augmented peeling*:
+    /// whenever peeling gets stuck, it removes the first remaining edge in the
+    /// leftmost segment containing edges and continues; at the end, the removed
+    /// edges are satisfied by solving a small dense linear system whose
+    /// unknowns are the vertices left without edges after the first removal.
+    /// Augmented peeling fails only if the system is unsolvable, so graphs can
+    /// be much denser than peelable graphs. The segment size and the number of
+    /// segments are chosen to minimize the number of vertices using a law for
+    /// the threshold of solvability, derived by density evolution and corrected
+    /// for finite segments, so that a construction attempt succeeds with
+    /// probability ≈70%, duplicate edges included. The resulting space overhead
+    /// is 9–12% above 30000 keys (≈14% at 10⁴ keys, ≈22% at 1000 keys), and
+    /// construction is parallel above 400000 keys.
     ///
     /// Augmented peeling is a transposed form of the *inactivation decoding*
     /// of Raptor codes, described by Amin Shokrollahi and Michael Luby in
@@ -870,11 +870,13 @@ mod fuse {
     impl FuseAug3Shards {
         /// The maximum number of keys for which we use augmented peeling.
         ///
-        /// Up to this size we use at most 2<sup>[`Self::LOG2_AUG_SHARDS`]</sup>
-        /// shards of at least [`Self::MIN_AUG_SHARD_SIZE`] keys, and solve
-        /// them by augmented peeling. Above this size we use peeling, and we
-        /// do not shard unless we can create shards of at least
-        /// [`Self::MIN_FUSE_SHARD`] keys.
+        /// Up to this size we solve shards by augmented peeling, using either
+        /// at most 2<sup>[`Self::LOG2_AUG_SHARDS`] − 1</sup> shards of at least
+        /// [`Self::MIN_AUG_SHARD_SIZE`] keys, or
+        /// 2<sup>[`Self::LOG2_AUG_SHARDS`]</sup> shards of at least
+        /// [`Self::MIN_MAX_AUG_SHARD_SIZE`] keys. Above this size we use
+        /// peeling, and we do not shard unless we can create shards of at
+        /// least [`Self::MIN_FUSE_SHARD`] keys.
         const MAX_AUG_SIZE: usize = 20_000_000;
         /// The minimum number of keys of a shard solved by augmented peeling.
         ///
@@ -883,6 +885,15 @@ mod fuse {
         /// segments, and the lightly loaded end segments would increase the
         /// space overhead.
         const MIN_AUG_SHARD_SIZE: usize = 200_000;
+        /// The minimum number of keys of a shard solved by augmented peeling
+        /// when using 2<sup>[`Self::LOG2_AUG_SHARDS`]</sup> shards.
+        ///
+        /// To make duplicate edges rare, the size of segments must grow with
+        /// the number of keys, whatever the number of shards: above about 3.3
+        /// · 10⁶ keys segments of size 2¹² are necessary, and with the maximum
+        /// number of shards and fewer keys per shard shards would contain
+        /// fewer than eighty segments, increasing the space overhead to 13%.
+        const MIN_MAX_AUG_SHARD_SIZE: usize = 400_000;
         /// The log₂ of the maximum number of shards solved by augmented
         /// peeling.
         ///
@@ -896,10 +907,14 @@ mod fuse {
         /// Returns the number of shard high bits for `n` keys when using
         /// augmented peeling.
         fn aug_high_bits(n: usize) -> u32 {
-            (n / Self::MIN_AUG_SHARD_SIZE)
-                .max(1)
-                .ilog2()
-                .min(Self::LOG2_AUG_SHARDS)
+            if n >= Self::MIN_MAX_AUG_SHARD_SIZE << Self::LOG2_AUG_SHARDS {
+                Self::LOG2_AUG_SHARDS
+            } else {
+                (n / Self::MIN_AUG_SHARD_SIZE)
+                    .max(1)
+                    .ilog2()
+                    .min(Self::LOG2_AUG_SHARDS - 1)
+            }
         }
 
         /// Implements [`ShardEdge::set_up_graphs`] for this structure and for
@@ -1154,13 +1169,15 @@ mod fuse {
         fn set_up_corr_graphs(
             &mut self,
             _num_keys: usize,
-            max_shard_keys: usize,
+            _max_shard_keys: usize,
             max_shard_edges: usize,
             clump: f64,
             num_failures: usize,
             max_vertices: u128,
         ) -> (f64, bool) {
-            let c = Self::c(max_shard_keys);
+            // The expansion factor of independent edges is a floor; the effect
+            // of correlation is accounted for by fuse_l_corr
+            let c = Self::c(max_shard_edges);
             self.log2_seg_size = Self::log2_seg_size(max_shard_edges);
 
             let num_vertices = num_vertices("Fuse3NoShards", c, max_shard_edges, max_vertices);
@@ -1549,12 +1566,14 @@ mod fuse {
         fn set_up_corr_graphs(
             &mut self,
             _num_keys: usize,
-            max_shard_keys: usize,
+            _max_shard_keys: usize,
             max_shard_edges: usize,
             clump: f64,
             num_failures: usize,
         ) -> (f64, bool) {
-            let c = Fuse3NoShards::c(max_shard_keys);
+            // The expansion factor of independent edges is a floor; the effect
+            // of correlation is accounted for by fuse_l_corr
+            let c = Fuse3NoShards::c(max_shard_edges);
             self.log2_seg_size = Fuse3Shards::log2_seg_size(max_shard_edges);
 
             let num_vertices =
@@ -2075,9 +2094,10 @@ mod fuse {
 
         #[test]
         fn test_aug_sizing() {
-            // The augmented-peeling regime uses up to 16 shards of at least
-            // 200000 keys, sized so that an attempt succeeds with probability
-            // at least AUG_SUCCESS_PROB, with a reasonable expansion factor
+            // The augmented-peeling regime uses up to 8 shards of at least
+            // 200000 keys, or 16 shards of at least 400000 keys, sized so
+            // that an attempt succeeds with probability at least
+            // AUG_SUCCESS_PROB, with a reasonable expansion factor
             let mut n = 1_usize;
             while n <= FuseAug3Shards::MAX_AUG_SIZE {
                 let mut se = FuseAug3Shards::default();
@@ -2085,6 +2105,7 @@ mod fuse {
                 let num_shards = se.num_shards();
                 assert!(num_shards <= 16, "n = {n}");
                 assert!(num_shards == 1 || n / num_shards >= 200_000, "n = {n}");
+                assert!(num_shards < 16 || n / num_shards >= 400_000, "n = {n}");
                 let max_shard = n.div_ceil(num_shards);
                 let (c, aug) = se.set_up_graphs(n, max_shard);
                 assert!(aug, "n = {n}");
@@ -2094,7 +2115,7 @@ mod fuse {
                     "n = {n}"
                 );
                 if n >= 30_000 {
-                    assert!(c < 1.13, "n = {n}, c = {c}");
+                    assert!(c < 1.12, "n = {n}, c = {c}");
                 } else if n >= 1000 {
                     assert!(c < 1.25, "n = {n}, c = {c}");
                 }

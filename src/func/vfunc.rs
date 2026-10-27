@@ -30,10 +30,9 @@ use std::borrow::Borrow;
 /// Scaling Hypergraph–Based Data Structures to Trillions of Keys]”, 2026. Space
 /// overhead with respect to the optimum depends on the [`ShardEdge`] type. The
 /// default is [`FuseAug3Shards`], which provides a space overhead of about 11%
-/// for large key sets (above a hundred million keys), and of 10–12% for key
-/// sets above 30000 keys, growing to about 14% at 10⁴ keys and 22% at 1000
-/// keys. Details
-/// on other possible [`ShardEdge`] implementations can be found in the
+/// for large key sets (above a hundred million keys), and of 9–12% for key sets
+/// above 30000 keys, growing to about 14% at 10⁴ keys and 22% at 1000 keys.
+/// Details on other possible [`ShardEdge`] implementations can be found in the
 /// [`shard_edge`] module documentation.
 ///
 /// Instances of this structure are immutable; they are built using [`try_new`]

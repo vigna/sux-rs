@@ -8,19 +8,14 @@
   is used to log the progress of the constructors reading keys from a lender;
   the `phastr` CLI utility sets it when the number of keys is specified.
 
-- Following a suggestion by Stefan Walzer, `FuseAug3Shards` and
-  `FuseAug3FullSigs` solve key sets of up to 20,000,000 keys by augmented
-  peeling, rather than by lazy Gaussian elimination as `FuseLge3Shards` and
-  `FuseLge3FullSigs` did: whenever peeling gets stuck an edge is removed, and
-  the removed edges are satisfied at the end by solving a small dense linear
-  system. Augmented peeling is a transposed form of the inactivation decoding of
-  Raptor codes: in the transposed system, removing an edge corresponds to
-  inactivating an unknown. Construction is up to 45 times faster, needs on
-  average at most 1.35 attempts, and the resulting structures are 0.2–5% smaller
-  between 1,000 and 20,000,000 keys (but up to 7% larger below 100 keys). Above
-  20,000,000 keys the new types behave as the old ones. The CLI utilities accept
-  the new types (`fuse-aug3-shards`, now the default, and
-  `fuse-aug3-full-sigs`).
+- Following a suggestion by Stefan Walzer, Stefan Hermann, and Markus Wünstel,
+  `FuseAug3Shards` and `FuseAug3FullSigs` solve key sets of up to 20,000,000
+  keys by augmented peeling, rather than by lazy Gaussian elimination as
+  `FuseLge3Shards` and `FuseLge3FullSigs` did: whenever peeling gets stuck an
+  edge is removed, and the removed edges are satisfied at the end by solving a
+  small dense linear system. Above 20,000,000 keys the new types behave as the
+  old ones. The CLI utilities accept the new types (`fuse-aug3-shards`, now the
+  default, and `fuse-aug3-full-sigs`).
 
 ### Changed
 
@@ -33,10 +28,23 @@
   deserialized by specifying `FuseLge3Shards` explicitly (e.g.,
   `VFunc<K, D, [u64; 2], FuseLge3Shards>`).
 
+- The function mapping LCPs to buckets of `LcpMmphf` and `Lcp2Mmphf` now uses
+  by default 128-bit signatures and `FuseAug3Shards`, rather than 64-bit
+  signatures and `Fuse3NoShards`, so it is sharded, and it no longer limits the
+  number of keys to about 10¹¹ (because of the number of vertices and of
+  duplicate signatures). Structures serialized by previous versions with the
+  default types must be deserialized by specifying also `[u64; 1]` and
+  `Fuse3NoShards` as the last two type parameters.
+
 ### Improved
 
 - `PHastR` construction is slightly faster: the scan finding the keys of the
   buckets without a seed prefetches the words of the bit vector of the buckets.
+
+- The expansion factor of the fuse graphs of `CompVFunc` is now chosen using
+  the number of edges of the largest shard, rather than its number of keys, as
+  the effect of correlated edges is already accounted for by a specific law:
+  below a million keys structures are 1–3% smaller.
 
 - The CLI utilities log memory usage from the start of construction: in
   particular, `phastr` did not log it at all.
