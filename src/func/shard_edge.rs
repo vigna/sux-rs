@@ -890,7 +890,7 @@ mod fuse {
         /// the number of keys, whatever the number of shards: above about 3.3
         /// · 10⁶ keys segments of size 2¹² are necessary, and with the maximum
         /// number of shards and fewer keys per shard shards would contain
-        /// fewer than eighty segments, increasing the space overhead to 13%.
+        /// fewer than eighty segments, increasing the space overhead.
         const MIN_MAX_AUG_SHARD_SIZE: usize = 400_000;
         /// The log₂ of the maximum number of shards solved by augmented
         /// peeling.
@@ -1361,8 +1361,7 @@ mod fuse {
     ///
     /// Compared to [`FuseAug3Shards`], this variant avoids augmented peeling
     /// (which slows down construction) at the cost of higher space overhead
-    /// for small shard sizes; the two variants coincide
-    /// above 2 · 10⁷ keys.
+    /// for small shard sizes; the two variants coincide above 2 · 10⁷ keys.
     ///
     /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
     /// [fuse 3-hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38

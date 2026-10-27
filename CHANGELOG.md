@@ -44,7 +44,7 @@
 - The expansion factor of the fuse graphs of `CompVFunc` is now chosen using
   the number of edges of the largest shard, rather than its number of keys, as
   the effect of correlated edges is already accounted for by a specific law:
-  below a million keys structures are 1–3% smaller.
+  structures are slightly smaller on small key sets.
 
 - The CLI utilities log memory usage from the start of construction: in
   particular, `phastr` did not log it at all.
