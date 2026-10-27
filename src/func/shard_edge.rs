@@ -57,11 +57,10 @@
 //!   with a space overhead of about 11% (ε = 0.001) for key sets above a
 //!   hundred million keys, and of 11–12% for key sets above 2 · 10⁷ keys. Up to
 //!   2 · 10⁷ keys, it uses up to sixteen smaller shards solved by augmented
-//!   peeling, which keeps the space overhead at 9–12% above 30000 keys (14% at
-//!   10⁴ keys, 22% at 1000 keys), and makes construction parallel above 400000
-//!   keys. Depending on the amount of sharding, functions with more than a few
-//!   dozen billion keys might incur in duplicate local signatures, which
-//!   requires switching to [`FuseAug3FullSigs`].
+//!   peeling, which keeps the space overhead at 9–12%, and makes construction 
+//!   parallel above 400000 keys. Depending on the amount of sharding, functions 
+//!   with more than a few dozen billion keys might incur in duplicate local 
+//!   signatures, which requires switching to [`FuseAug3FullSigs`].
 //!
 //! - [`Fuse3Shards`] is like [`FuseAug3Shards`] but does not use augmented
 //!   peeling, so on small key sets the construction will be faster but the
@@ -790,8 +789,7 @@ mod fuse {
     /// the threshold of solvability, derived by density evolution and corrected
     /// for finite segments, so that a construction attempt succeeds with
     /// probability ≈70%, duplicate edges included. The resulting space overhead
-    /// is 9–12% above 30000 keys (≈14% at 10⁴ keys, ≈22% at 1000 keys), and
-    /// construction is parallel above 400000 keys.
+    /// is 9–12%, and construction is parallel above 400000 keys.
     ///
     /// Augmented peeling is a transposed form of the *inactivation decoding*
     /// of Raptor codes, described by Amin Shokrollahi and Michael Luby in
@@ -1363,10 +1361,8 @@ mod fuse {
     ///
     /// Compared to [`FuseAug3Shards`], this variant avoids augmented peeling
     /// (which slows down construction) at the cost of higher space overhead
-    /// for small shard sizes (e.g., ≈28% instead of ≈14% at ten thousand
-    /// keys, ≈19% instead of ≈11% at a hundred thousand keys, and ≈13%
-    /// instead of ≈11.5% at a few million keys; the two variants coincide
-    /// above 2 · 10⁷ keys).
+    /// for small shard sizes; the two variants coincide
+    /// above 2 · 10⁷ keys.
     ///
     /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
     /// [fuse 3-hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
