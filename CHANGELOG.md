@@ -46,6 +46,11 @@
   the effect of correlated edges is already accounted for by a specific law:
   structures are slightly smaller on small key sets.
 
+- Queries of `LcpMmphfInt` and `Lcp2MmphfInt` are faster, as the prefix of the
+  key mapped to its bucket is hashed by a one-shot hash function, rather than
+  by a streaming hasher, using the new method `Sig::from_bytes`; signatures
+  are unchanged, so the format is the same.
+
 - The CLI utilities log memory usage from the start of construction: in
   particular, `phastr` did not log it at all.
 

@@ -146,9 +146,7 @@ impl<K: PrimitiveInteger, S: Sig> ToSig<S> for IntBitPrefix<K> {
     fn to_sig(key: impl Borrow<Self>, seed: u64) -> S {
         let mut buf = [0u8; 24];
         let n = pack_int_bit_prefix(key.borrow(), &mut buf);
-        let mut hasher = xxh3::Xxh3::with_seed(seed);
-        hasher.update(&buf[..n]);
-        S::from_hasher(&hasher)
+        S::from_bytes(&buf[..n], seed)
     }
 }
 

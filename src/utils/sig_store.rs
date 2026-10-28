@@ -97,6 +97,24 @@ pub trait Sig: BinSafe + Default + PartialEq + Eq + std::fmt::Debug {
     ///
     /// [`Xxh3`]: xxh3::Xxh3
     fn from_hasher(hasher: &xxh3::Xxh3) -> Self;
+
+    /// Constructs a signature by hashing a byte slice with a given seed.
+    ///
+    /// The result must be the same as that of [`from_hasher`] applied to an
+    /// [`Xxh3`] streaming hasher with the same seed that has been fed `bytes`.
+    /// The default implementation does exactly that, but implementations
+    /// should use the corresponding one-shot hash function, which is much
+    /// faster on short inputs, as the streaming hasher derives a new secret
+    /// from the seed at each construction.
+    ///
+    /// [`from_hasher`]: Self::from_hasher
+    /// [`Xxh3`]: xxh3::Xxh3
+    #[inline(always)]
+    fn from_bytes(bytes: &[u8], seed: u64) -> Self {
+        let mut hasher = xxh3::Xxh3::with_seed(seed);
+        hasher.update(bytes);
+        Self::from_hasher(&hasher)
+    }
 }
 
 impl Sig for [u64; 2] {
@@ -111,6 +129,12 @@ impl Sig for [u64; 2] {
         let h = hasher.digest128();
         [(h >> 64) as u64, h as u64]
     }
+
+    #[inline(always)]
+    fn from_bytes(bytes: &[u8], seed: u64) -> Self {
+        let h = xxh3::xxh3_128_with_seed(bytes, seed);
+        [(h >> 64) as u64, h as u64]
+    }
 }
 
 impl Sig for [u64; 1] {
@@ -123,6 +147,11 @@ impl Sig for [u64; 1] {
     #[inline(always)]
     fn from_hasher(hasher: &xxh3::Xxh3) -> Self {
         [hasher.digest()]
+    }
+
+    #[inline(always)]
+    fn from_bytes(bytes: &[u8], seed: u64) -> Self {
+        [xxh3::xxh3_64_with_seed(bytes, seed)]
     }
 }
 
@@ -1603,6 +1632,32 @@ mod tests {
             [rand.random(), rand.random()]
         })?;
         Ok(())
+    }
+
+    #[test]
+    fn test_from_bytes() {
+        // The one-shot hashes must give the same signatures as the streaming
+        // hasher, or structures built by previous versions would break
+        fn streaming<S: Sig>(bytes: &[u8], seed: u64) -> S {
+            let mut hasher = xxh3::Xxh3::with_seed(seed);
+            hasher.update(bytes);
+            S::from_hasher(&hasher)
+        }
+        let mut rand = SmallRng::seed_from_u64(0);
+        let mut bytes = [0u8; 300];
+        rand.fill(&mut bytes[..]);
+        for len in 0..=bytes.len() {
+            let seed = rand.random();
+            let b = &bytes[..len];
+            assert_eq!(
+                <[u64; 1]>::from_bytes(b, seed),
+                streaming::<[u64; 1]>(b, seed)
+            );
+            assert_eq!(
+                <[u64; 2]>::from_bytes(b, seed),
+                streaming::<[u64; 2]>(b, seed)
+            );
+        }
     }
 }
 
