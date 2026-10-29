@@ -402,18 +402,38 @@ macro_rules! fixed_point_inv_128 {
 /// [`SigStore`]: crate::utils::SigStore
 pub const LOG2_MAX_SHARDS: u32 = 16;
 
+/// The maximum probability that the largest shard selected by
+/// [`sharding_high_bits`] exceeds the average shard size by more than a
+/// factor 1 + ε.
+pub const SHARD_EXCESS_PROB: f64 = 0.1;
+
 /// Returns the maximum number of high bits for sharding the given number of
-/// keys so that the overhead of the maximum shard size with respect to the
-/// average shard size is with high probability `eps`.
+/// keys so that the probability that the largest shard exceeds the average
+/// shard size by more than a factor 1 + `eps` is at most
+/// [`SHARD_EXCESS_PROB`].
+///
+/// By a multiplicative Chernoff bound and a union bound, when *n* keys are
+/// divided at random into *S* shards the probability that some shard contains
+/// more than (1 + ε)*n*/*S* keys is at most *S* exp(−ε²(*n*/*S*)/(2 + ε)).
+/// This function returns the largest *h* such that the bound is at most
+/// [`SHARD_EXCESS_PROB`] for *S* = 2*ʰ*.
 ///
 /// From “[ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to
 /// Trillions of Keys]”.
 ///
 /// [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
 pub fn sharding_high_bits(n: usize, eps: f64) -> u32 {
-    // Bound from balls and bins problem
-    let t = (n as f64 * eps * eps / 2.0).max(1.);
-    (t.log2() - t.ln().max(1.).log2()).floor() as u32
+    let n = n as f64;
+    let ln_prob = SHARD_EXCESS_PROB.ln();
+    // The logarithm of the bound is increasing in h, and with one shard
+    // there is no excess
+    (1..64)
+        .take_while(|&h| {
+            let num_shards = (h as f64).exp2();
+            num_shards.ln() - eps * eps * (n / num_shards) / (2.0 + eps) <= ln_prob
+        })
+        .last()
+        .unwrap_or(0)
 }
 
 /// Returns the minimum number of shard high bits such that the shards of a

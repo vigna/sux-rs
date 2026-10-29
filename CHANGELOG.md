@@ -1,6 +1,6 @@
 # Change Log
 
-## [0.15.3] - unreleased
+## [0.15.3] - 2026-10-29
 
 ### New
 
@@ -35,6 +35,12 @@
   duplicate signatures). Structures serialized by previous versions with the
   default types must be deserialized by specifying also `[u64; 1]` and
   `Fuse3NoShards` as the last two type parameters.
+
+- `sharding_high_bits` uses a Chernoff bound and a union bound, rather than
+  an asymptotic estimate, so the probability that the largest shard exceeds
+  the average shard size by more than a factor 1 + ε is now provably at most
+  the new constant `SHARD_EXCESS_PROB` (10%). With the default parameters, the
+  number of shards of the structures based on fuse graphs is unchanged.
 
 ### Improved
 
