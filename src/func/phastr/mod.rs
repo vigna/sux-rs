@@ -53,8 +53,7 @@ const fn mul_hi(a: u64, b: u64) -> u64 {
 /// variable shift whose count depends on the seed, and thus on a cache miss,
 /// reduces memory-level parallelism: we read instead the field from memory
 /// (the load is satisfied by store-to-load forwarding). On 10⁹ keys,
-/// this makes queries about 15% faster on AMD Zen 5, and 10% faster on
-/// Intel Rocket Lake.
+/// this makes queries about 10% faster.
 #[inline(always)]
 fn default_layout_field(lo: u64, s: u64) -> u64 {
     #[cfg(target_endian = "little")]

@@ -87,9 +87,8 @@
 - `PHastR` queries with the default parameters extract the in-slice offset
   of the layout of a key with a load, rather than with a variable shift
   whose count depends on the seed (and thus on a cache miss), which reduced
-  memory-level parallelism: on a billion keys, queries are about 15% faster
-  on AMD Zen 5, and 10% faster on Intel Rocket Lake. The structure is
-  unchanged.
+  memory-level parallelism: on a billion keys, queries are about 10% faster.
+  The structure is unchanged.
 
 - The documentation of `PHastR` cites the paper describing it.
 
