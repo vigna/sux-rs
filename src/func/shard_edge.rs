@@ -1490,12 +1490,15 @@ mod fuse {
         ///
         /// A fuse graph with 𝓁 first segments of size *s* has 𝓁s³ distinct
         /// edges. If `local_sig_bits` is `Some(t)`, edges are a
-        /// deterministic image of *t*-bit local signatures, so the
-        /// collision probability of a pair of distinct signatures is at
-        /// most 1/𝓁s³ − 2⁻ᵗ; in particular, when 𝓁s³ ≥ 2ᵗ the map from
-        /// local signatures to edges is injective and duplicate edges are
-        /// impossible. If `local_sig_bits` is `None` (full signatures),
-        /// the uniform estimate 1/𝓁s³ is used.
+        /// deterministic image of *t*-bit local signatures in which every
+        /// edge has *q* or *q* + 1 preimages, where *q* = ⌊2ᵗ/𝓁s³⌋, so the
+        /// collision probability of a pair of distinct signatures is exactly
+        /// *q*(2ᵗ⁺¹ − (*q* + 1)𝓁s³)/(2ᵗ(2ᵗ − 1)): this is the minimum over
+        /// all maps to 𝓁s³ edges, and it is at least 1/𝓁s³ − 2⁻ᵗ. In
+        /// particular, when 𝓁s³ ≥ 2ᵗ the map from local signatures to edges
+        /// is injective and duplicate edges are impossible. If
+        /// `local_sig_bits` is `None` (full signatures), the uniform estimate
+        /// 1/𝓁s³ is used.
         ///
         /// From “[ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to
         /// Trillions of Keys]”.
@@ -1513,11 +1516,21 @@ mod fuse {
             let c = Fuse3NoShards::c(m);
             let log2_seg_size = Self::log2_seg_size(m);
             let l = fuse_l((c * m as f64).ceil() as u128, log2_seg_size);
-            let log2_num_edges = (l as f64).log2() + 3.0 * log2_seg_size as f64;
-            let mut pair_prob = (-log2_num_edges).exp2();
-            if let Some(t) = local_sig_bits {
-                pair_prob = (pair_prob - (-(t as f64)).exp2()).max(0.0);
-            }
+            let num_edges = l << (3 * log2_seg_size);
+            let pair_prob = match local_sig_bits {
+                Some(t) => {
+                    // Every edge has q or q + 1 preimages, so the number of
+                    // ordered pairs of distinct colliding signatures is
+                    // q(2N − (q + 1)𝓁s³), where N = 2ᵗ and q = ⌊N/𝓁s³⌋ (the
+                    // subtraction saturates only when q is zero)
+                    let num_sigs = 1_u128 << t;
+                    let q = num_sigs / num_edges;
+                    let colliding_pairs =
+                        q as f64 * (2 * num_sigs).saturating_sub((q + 1) * num_edges) as f64;
+                    colliding_pairs / (num_sigs as f64 * (num_sigs - 1) as f64)
+                }
+                None => 1.0 / num_edges as f64,
+            };
             let m = m as f64;
             let expected_dups = (log2_num_shards as f64).exp2() * (m * m / 2.0) * pair_prob;
             -f64::exp_m1(-expected_dups)

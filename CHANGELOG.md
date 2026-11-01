@@ -1,5 +1,15 @@
 # Change Log
 
+## [0.15.4]
+
+### Changed
+
+- `Fuse3Shards::dup_edge_retry_prob` uses the exact collision probability of
+  the map from local signatures to edges, in which the numbers of preimages of
+  any two edges differ by at most one, rather than its lower bound 1/𝓁s³ − 2⁻ᵗ.
+  With the default parameters, the only effect is that structures based on fuse
+  graphs with about 12 billion keys use 64 rather than 128 shards.
+
 ## [0.15.3] - 2026-10-29
 
 ### New
