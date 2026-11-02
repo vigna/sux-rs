@@ -309,6 +309,9 @@ impl<K: ?Sized, D, P, R> SignableFunc for PHastR<K, D, P, R> {
 /// output if the key is not bumped from the first level, so the same
 /// irreducible false positive happens for keys sharing the signature.
 ///
+/// As explained in the [`VFunc`] documentation, an inner [`VFunc`] with more
+/// than ten billion keys must use full signatures (e.g., `FuseAug3FullSigs`).
+///
 /// Instances of this structure are immutable; they are built using the
 /// constructors listed below, or assembled using [`from_parts`], and can be
 /// serialized using [ε-serde] or [`serde`].

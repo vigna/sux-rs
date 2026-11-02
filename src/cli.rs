@@ -36,8 +36,9 @@ use rand::{RngExt, SeedableRng};
 
 use crate::bits::BitFieldVec;
 use crate::func::VBuilder;
-use crate::func::shard_edge::ShardEdge;
+use crate::func::shard_edge::{MAX_LOCAL_SIG_FUNC_KEYS, ShardEdge};
 use crate::traits::TryIntoUnaligned;
+use crate::utils::Sig;
 pub use crate::utils::lenders::{AnyLineLender, Decompression};
 
 /// Initializes the `env_logger` logger with a custom format including
@@ -167,6 +168,30 @@ pub fn check_num_keys(num_keys: usize, n: Option<usize>) -> Result<()> {
         ensure!(
             num_keys == n,
             "key count mismatch: read {num_keys} keys, expected {n}"
+        );
+    }
+    Ok(())
+}
+
+/// Checks that a function on `n` keys, if `n` is [`Some`], does not use local
+/// signatures shorter than its signatures with more than
+/// [`MAX_LOCAL_SIG_FUNC_KEYS`] keys.
+///
+/// [`VBuilder`] refuses such constructions, but only after keys have been
+/// loaded in memory or hashed, so binaries call this function before reading
+/// or generating keys. `full_sigs` is the command-line option selecting full
+/// signatures, which is suggested in the error message.
+///
+/// [`MAX_LOCAL_SIG_FUNC_KEYS`]: crate::func::shard_edge::MAX_LOCAL_SIG_FUNC_KEYS
+pub fn check_func_num_keys<S: Sig, E: ShardEdge<S, 3>>(
+    n: Option<usize>,
+    full_sigs: &str,
+) -> Result<()> {
+    if let Some(n) = n {
+        ensure!(
+            n as u64 <= MAX_LOCAL_SIG_FUNC_KEYS
+                || std::any::TypeId::of::<E::LocalSig>() == std::any::TypeId::of::<S>(),
+            "functions with more than {MAX_LOCAL_SIG_FUNC_KEYS} keys ({n} requested) need full signatures: use {full_sigs}"
         );
     }
     Ok(())
@@ -414,10 +439,12 @@ impl BuilderArgs {
 /// Shard/edge type used during construction.
 #[derive(clap::ValueEnum, Copy, Clone, Debug, Default)]
 pub enum ShardEdgeType {
-    /// Fuse 3-hypergraphs with augmented peeling and ε-cost sharding.​
+    /// Fuse 3-hypergraphs with augmented peeling and ε-cost sharding
+    /// (functions with more than ten billion keys need fuse-aug3-full-sigs).​
     #[default]
     FuseAug3Shards,
-    /// Fuse 3-hypergraphs with ε-cost sharding, no augmented peeling.​
+    /// Fuse 3-hypergraphs with ε-cost sharding, no augmented peeling
+    /// (functions with more than ten billion keys need fuse3-full-sigs).​
     Fuse3Shards,
     /// Fuse 3-hypergraphs without sharding or augmented peeling and 64-bit signatures.​
     Fuse3NoShards64,
@@ -432,6 +459,9 @@ pub enum ShardEdgeType {
     /// Fuse 3-hypergraphs with augmented peeling, ε-cost sharding, and full
     /// signatures.​
     FuseAug3FullSigs,
+    /// Fuse 3-hypergraphs with ε-cost sharding and full signatures, no
+    /// augmented peeling.​
+    Fuse3FullSigs,
     /// Deprecated: same as fuse-aug3-shards, but builds the type of previous
     /// versions.​
     FuseLge3Shards,

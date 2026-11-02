@@ -24,14 +24,22 @@
 //!   has a low space overhead at all sizes, and sharding makes construction
 //!   parallel and scalable on large key sets.
 //!
+//! - Use [`FuseAug3FullSigs`] for functions with more than ten billion keys:
+//!   beyond that size, the probability that a construction attempt with
+//!   [`FuseAug3Shards`] finds two keys with the same 64-bit local signature,
+//!   which forces a new attempt, becomes significant, and it grows quickly
+//!   with the number of keys. For this reason, [`VBuilder`] refuses to build
+//!   functions with more than [`MAX_LOCAL_SIG_FUNC_KEYS`] keys unless local
+//!   signatures are full signatures. Full signatures make construction about
+//!   10% slower, but they have no effect on query time. Filters do not need
+//!   them.
+//!
 //! - Use [`Fuse3Shards`] if construction time on small key sets matters more
 //!   than space: up to 2 · 10⁷ keys [`FuseAug3Shards`] is slower and sometimes
 //!   needs more than one construction attempt. [`Fuse3Shards`] is also the
-//!   default of [`CompVFunc`], which does not support augmented peeling.
-//!
-//! - Use [`FuseAug3FullSigs`] if the construction of a function fails with
-//!   [`BuildError::DuplicateLocalSignatures`], which might happen with more
-//!   than a few dozen billion keys.
+//!   default of [`CompVFunc`], which does not support augmented peeling; for
+//!   the same reason as above, use [`Fuse3FullSigs`] for a [`CompVFunc`] with
+//!   more than ten billion keys.
 //!
 //! - Use [`Fuse3NoShards`] (possibly with `[u64; 1]` signatures) for small or
 //!   medium key sets, as it avoids the small cost of sharding at query time.
@@ -58,9 +66,8 @@
 //!   hundred million keys, and of 11–12% for key sets above 2 · 10⁷ keys. Up to
 //!   2 · 10⁷ keys, it uses up to sixteen smaller shards solved by augmented
 //!   peeling, which keeps the space overhead at 9–12%, and makes construction
-//!   parallel above 400000 keys. Depending on the amount of sharding, functions
-//!   with more than a few dozen billion keys might incur in duplicate local
-//!   signatures, which requires switching to [`FuseAug3FullSigs`].
+//!   parallel above 400000 keys. Functions with more than ten billion keys
+//!   must use [`FuseAug3FullSigs`] instead.
 //!
 //! - [`Fuse3Shards`] is like [`FuseAug3Shards`] but does not use augmented
 //!   peeling, so on small key sets the construction will be faster but the
@@ -72,13 +79,18 @@
 //!   Xor Filters”], albeit for large key sets the space overhead will be lower,
 //!   as we use a better expansion factor.
 //!
-//! - [`FuseAug3FullSigs`]: When building functions with more than a few dozen
-//!   billion keys, depending on the amount of sharding [`FuseAug3Shards`] might
-//!   incur in duplicate local signatures. This logic is slightly slower and
-//!   uses almost double memory during construction, but uses full local
-//!   signatures, which cannot lead to duplicates with overwhelming probability.
-//!   Filter do not have this problem as local signatures can be deduplicated
-//!   without affecting the semantics of the filter.
+//! - [`FuseAug3FullSigs`]: when building functions with more than about ten
+//!   billion keys, the probability that [`FuseAug3Shards`] finds duplicate
+//!   64-bit local signatures becomes significant (above 5% per construction
+//!   attempt at about twelve billion keys), and it grows quickly with the
+//!   number of keys, so [`VBuilder`] refuses to build functions with more
+//!   than [`MAX_LOCAL_SIG_FUNC_KEYS`] keys using [`FuseAug3Shards`]. This
+//!   logic uses full local signatures, which cannot lead to duplicates with
+//!   overwhelming probability; construction is about 10% slower and uses
+//!   almost double memory, but query time is the same. Filters do not have
+//!   this problem as local signatures can be deduplicated without affecting
+//!   the semantics of the filter. [`Fuse3FullSigs`] is the analogous variant
+//!   of [`Fuse3Shards`].
 //!
 //! - `Mwhc3Shards` with 128-bit signatures (requires the `mwhc` feature): this
 //!   choice gives much worse overhead (23%) but can be sharded very finely.
@@ -97,7 +109,6 @@
 //! [`VFunc`]: crate::func::VFunc
 //! [`LcpMmphf`]: crate::func::LcpMmphf
 //! [`CompVFunc`]: crate::func::CompVFunc
-//! [`BuildError::DuplicateLocalSignatures`]: crate::func::BuildError::DuplicateLocalSignatures
 
 use crate::utils::{BinSafe, Sig};
 use mem_dbg::*;
@@ -401,6 +412,19 @@ macro_rules! fixed_point_inv_128 {
 ///
 /// [`SigStore`]: crate::utils::SigStore
 pub const LOG2_MAX_SHARDS: u32 = 16;
+
+/// The maximum number of keys of a function built using local signatures
+/// shorter than its signatures.
+///
+/// With 64-bit local signatures, beyond about ten billion keys the
+/// probability that a construction attempt finds two keys with the same local
+/// signature, which forces a new attempt, becomes significant, and it grows
+/// quickly with the number of keys. [`VBuilder`](crate::func::VBuilder) thus
+/// refuses to build functions with more keys than this value unless local
+/// signatures are full signatures, as in [`FuseAug3FullSigs`] and
+/// [`Fuse3FullSigs`]. Filters are not affected, as duplicate local signatures
+/// can be removed without affecting their semantics.
+pub const MAX_LOCAL_SIG_FUNC_KEYS: u64 = 10_000_000_000;
 
 /// The maximum probability that the largest shard selected by
 /// [`sharding_high_bits`] exceeds the average shard size by more than a
@@ -826,11 +850,14 @@ mod fuse {
     /// need the fastest construction, you can use [`Fuse3Shards`] instead,
     /// trading some space for a faster construction.
     ///
-    /// When building functions over key sets above a few dozen billion keys
-    /// (but this depends on the sharding parameter ε) we suggest to use
-    /// [`FuseAug3FullSigs`]. It uses full signatures as local signatures,
-    /// making the probability of a duplicate local signature negligible. As a
-    /// result, it is slightly slower and uses more space at construction time.
+    /// Functions with more than [`MAX_LOCAL_SIG_FUNC_KEYS`] (ten billion) keys
+    /// must use [`FuseAug3FullSigs`]: beyond that size, the probability that
+    /// a construction attempt finds duplicate 64-bit local signatures becomes
+    /// significant, and [`VBuilder`](crate::func::VBuilder) refuses to build
+    /// them using this logic. [`FuseAug3FullSigs`] uses full signatures as
+    /// local signatures, making the probability of a duplicate local
+    /// signature negligible. As a result, it is slightly slower and uses more
+    /// space at construction time.
     /// Filters do not have this problem, as local signatures can be
     /// deduplicated without affecting the semantics of the filter.
     ///
@@ -1383,6 +1410,10 @@ mod fuse {
     /// (which slows down construction) at the cost of higher space overhead
     /// for small shard sizes; the two variants coincide above 2 · 10⁷ keys.
     ///
+    /// Functions with more than [`MAX_LOCAL_SIG_FUNC_KEYS`] (ten billion) keys
+    /// must use [`Fuse3FullSigs`], the variant of this logic using full
+    /// signatures as local signatures (see [`FuseAug3Shards`] for details).
+    ///
     /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
     /// [fuse 3-hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
     /// [ε-cost sharded]: https://arxiv.org/abs/2503.18397
@@ -1668,9 +1699,9 @@ mod fuse {
     /// [ε-cost sharded] fuse 3-hypergraphs with augmented peeling using full
     /// local signatures.
     ///
-    /// This construction should be preferred to [`FuseAug3Shards`] when
-    /// building functions over key sets above a few dozen billion keys (but
-    /// this depends on the sharding parameter ε). It uses full signatures as
+    /// This construction must be used in place of [`FuseAug3Shards`] when
+    /// building functions with more than [`MAX_LOCAL_SIG_FUNC_KEYS`] (ten
+    /// billion) keys. It uses full signatures as
     /// local signatures, making the probability of a duplicate local signature
     /// negligible. Filters do not have this problem as local signatures can be
     /// deduplicated without affecting the semantics of the filter.
@@ -1686,6 +1717,9 @@ mod fuse {
     /// [`VBuilder::retry_prob`](crate::func::VBuilder::retry_prob)). As a
     /// consequence, this structure sometimes shards less than
     /// [`FuseAug3Shards`].
+    ///
+    /// [`Fuse3FullSigs`] is the analogous variant of [`Fuse3Shards`], which
+    /// does not use augmented peeling.
     ///
     /// [ε-cost sharded]: https://arxiv.org/abs/2503.18397
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
@@ -1754,6 +1788,147 @@ mod fuse {
 
         fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
             self.0.set_up_graphs_named("FuseAug3FullSigs", n, max_shard)
+        }
+
+        #[inline(always)]
+        fn shard_high_bits(&self) -> u32 {
+            self.0.shard_high_bits()
+        }
+
+        fn num_sort_keys(&self) -> usize {
+            self.0.num_sort_keys()
+        }
+
+        #[inline(always)]
+        fn sort_key(&self, sig: [u64; 2]) -> usize {
+            fixed_point_inv_64!(
+                sig[0].rotate_right(self.0.shard_bits_shift).rotate_right(1) >> 32,
+                self.0.l
+            )
+        }
+
+        #[inline(always)]
+        fn edge_hash(&self, sig: [u64; 2]) -> u64 {
+            sig[1]
+        }
+
+        #[inline(always)]
+        fn shard(&self, sig: [u64; 2]) -> usize {
+            (sig[0] >> self.0.shard_bits_shift >> 1) as usize
+        }
+
+        #[inline(always)]
+        fn num_vertices(&self) -> usize {
+            self.0.num_vertices()
+        }
+
+        #[inline(always)]
+        fn local_sig(&self, sig: [u64; 2]) -> Self::LocalSig {
+            sig
+        }
+
+        #[inline(always)]
+        fn local_edge(&self, local_sig: Self::LocalSig) -> [usize; 3] {
+            edge_2_big(
+                0,
+                self.0.shard_bits_shift,
+                self.0.log2_seg_size,
+                self.0.l,
+                local_sig,
+            )
+        }
+
+        #[inline(always)]
+        fn edge(&self, sig: [u64; 2]) -> [usize; 3] {
+            edge_2_big(
+                self.shard(sig),
+                self.0.shard_bits_shift,
+                self.0.log2_seg_size,
+                self.0.l,
+                sig,
+            )
+        }
+    }
+
+    /// [ε-cost sharded] [fuse 3-hypergraphs] without augmented peeling using
+    /// full local signatures.
+    ///
+    /// This logic is to [`Fuse3Shards`] what [`FuseAug3FullSigs`] is to
+    /// [`FuseAug3Shards`]: it must be used in place of [`Fuse3Shards`] when
+    /// building functions with more than [`MAX_LOCAL_SIG_FUNC_KEYS`] (ten
+    /// billion) keys. In particular, it is the logic to use for a
+    /// [`CompVFunc`] on such key sets, as [`CompVFunc`] does not support
+    /// augmented peeling. It uses full signatures as local signatures, making
+    /// the probability of a duplicate local signature negligible.
+    ///
+    /// As in the case of [`FuseAug3FullSigs`], construction is slightly
+    /// slower and uses more space, duplicate edges are possible at every
+    /// scale, and sharding is limited so that the probability of a
+    /// construction retry caused by a duplicate edge is at most
+    /// [`Fuse3Shards::DUP_EDGE_RETRY_PROB`] (or the bound set with
+    /// [`VBuilder::retry_prob`](crate::func::VBuilder::retry_prob)). As a
+    /// consequence, this structure sometimes shards less than
+    /// [`Fuse3Shards`].
+    ///
+    /// [ε-cost sharded]: https://arxiv.org/abs/2503.18397
+    /// [fuse 3-hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
+    /// [`CompVFunc`]: crate::func::CompVFunc
+    #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
+    #[mem_size(flat)]
+    #[cfg_attr(feature = "epserde", derive(epserde::Epserde), epserde(deep_copy))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[derive(Default)]
+    pub struct Fuse3FullSigs(Fuse3Shards);
+
+    impl Display for Fuse3FullSigs {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.0.fmt(f)
+        }
+    }
+
+    // SAFETY: the delegated setup bounds all generated indices, and
+    // SortSigVal is exactly SigVal<[u64; 2], V>.
+    unsafe impl ShardEdge<[u64; 2], 3> for Fuse3FullSigs {
+        type SortSigVal<V: BinSafe> = SigVal<[u64; 2], V>;
+        type LocalSig = [u64; 2];
+        type Vertex = u32;
+
+        fn set_up_shards(&mut self, n: usize, eps: f64, retry_prob: f64) {
+            // Same logic as Fuse3Shards, except that full local signatures
+            // never enter the injective regime, so the uniform
+            // duplicate-edge estimate applies at every scale.
+            self.0.shard_bits_shift = 63
+                - if n <= Fuse3Shards::MIN_SHARD {
+                    // No sharding below the minimum shard size.
+                    0
+                } else {
+                    let max_high_bits = sharding_high_bits(n, eps)
+                        .min((n / Fuse3Shards::MIN_SHARD).max(1).ilog2())
+                        .min(LOG2_MAX_SHARDS);
+                    Fuse3Shards::dup_edge_high_bits(n, retry_prob, None, max_high_bits)
+                        .max(min_fuse_high_bits("Fuse3FullSigs", n))
+                };
+        }
+
+        fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
+            self.0.set_up_graphs(n, max_shard)
+        }
+
+        fn set_up_corr_graphs(
+            &mut self,
+            num_keys: usize,
+            max_shard_keys: usize,
+            max_shard_edges: usize,
+            clump: f64,
+            num_failures: usize,
+        ) -> (f64, bool) {
+            self.0.set_up_corr_graphs(
+                num_keys,
+                max_shard_keys,
+                max_shard_edges,
+                clump,
+                num_failures,
+            )
         }
 
         #[inline(always)]

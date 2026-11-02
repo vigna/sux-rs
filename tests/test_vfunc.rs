@@ -17,7 +17,9 @@ use sux::{
     dict::VFilter,
     func::{
         VBuilder, VFunc,
-        shard_edge::{Fuse3NoShards, Fuse3Shards, FuseAug3FullSigs, FuseAug3Shards, ShardEdge},
+        shard_edge::{
+            Fuse3FullSigs, Fuse3NoShards, Fuse3Shards, FuseAug3FullSigs, FuseAug3Shards, ShardEdge,
+        },
     },
     utils::{EmptyVal, FromCloneableIntoIterator, Sig, SigVal, ToSig},
 };
@@ -68,6 +70,8 @@ fn test_vfunc_lge() -> Result<()> {
     _test_vfunc::<[u64; 1], Fuse3NoShards>(&[0, 10, 1000, 100_000], true, false)?;
     _test_vfunc::<[u64; 2], Fuse3Shards>(&[0, 10, 1000, 100_000], false, false)?;
     _test_vfunc::<[u64; 2], Fuse3Shards>(&[0, 10, 1000, 100_000], true, false)?;
+    _test_vfunc::<[u64; 2], Fuse3FullSigs>(&[0, 10, 1000, 100_000], false, false)?;
+    _test_vfunc::<[u64; 2], Fuse3FullSigs>(&[0, 10, 1000, 100_000], true, false)?;
     Ok(())
 }
 
@@ -94,6 +98,8 @@ fn test_vfunc_peeling_by_sig_vals() -> Result<()> {
     _test_vfunc::<[u64; 2], Fuse3NoShards>(&[1_000_000], false, true)?;
     _test_vfunc::<[u64; 2], FuseAug3FullSigs>(&[1_000_000], false, false)?;
     _test_vfunc::<[u64; 2], FuseAug3FullSigs>(&[1_000_000], false, true)?;
+    _test_vfunc::<[u64; 2], Fuse3FullSigs>(&[1_000_000], false, false)?;
+    _test_vfunc::<[u64; 2], Fuse3FullSigs>(&[1_000_000], false, true)?;
     _test_vfunc::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, false)?;
     _test_vfunc::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, true)?;
     _test_vfunc::<[u64; 2], Fuse3Shards>(&[1_000_000], false, false)?;
@@ -176,6 +182,8 @@ fn test_vfilter_peeling_by_sig_vals() -> Result<()> {
     _test_vfilter::<[u64; 2], Fuse3NoShards>(&[1_000_000], false, true)?;
     _test_vfilter::<[u64; 2], FuseAug3FullSigs>(&[1_000_000], false, false)?;
     _test_vfilter::<[u64; 2], FuseAug3FullSigs>(&[1_000_000], false, true)?;
+    _test_vfilter::<[u64; 2], Fuse3FullSigs>(&[1_000_000], false, false)?;
+    _test_vfilter::<[u64; 2], Fuse3FullSigs>(&[1_000_000], false, true)?;
     _test_vfilter::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, false)?;
     _test_vfilter::<[u64; 1], Fuse3NoShards>(&[1_000_000], false, true)?;
     _test_vfilter::<[u64; 2], Fuse3Shards>(&[1_000_000], false, false)?;
@@ -336,4 +344,71 @@ fn test_zero_max_threads_falls_back_to_one() {
     for key in 0..1000 {
         assert_eq!(func.get(key), key);
     }
+}
+
+// Functions using local signatures shorter than signatures are refused
+// beyond MAX_LOCAL_SIG_FUNC_KEYS keys, already when the expected number of
+// keys exceeds it; functions with full signatures and filters are not
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn test_max_local_sig_func_keys() -> Result<()> {
+    use sux::func::{BuildError, shard_edge::MAX_LOCAL_SIG_FUNC_KEYS};
+    let n = 1000;
+    let expected_num_keys = MAX_LOCAL_SIG_FUNC_KEYS as usize + 1;
+
+    let err = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
+        FromCloneableIntoIterator::from(0..n),
+        FromCloneableIntoIterator::from(0_usize..),
+        VBuilder::default().expected_num_keys(expected_num_keys),
+        &mut ProgressLogger::default(),
+    )
+    .expect_err("functions with local signatures must be refused");
+    assert!(matches!(
+        err.downcast_ref::<BuildError>(),
+        Some(BuildError::DuplicateLocalSignatures)
+    ));
+
+    let err =
+        <VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], Fuse3Shards>>::try_new_with_builder(
+            FromCloneableIntoIterator::from(0..n),
+            FromCloneableIntoIterator::from(0_usize..),
+            VBuilder::default().expected_num_keys(expected_num_keys),
+            &mut ProgressLogger::default(),
+        )
+        .expect_err("functions with local signatures must be refused");
+    assert!(matches!(
+        err.downcast_ref::<BuildError>(),
+        Some(BuildError::DuplicateLocalSignatures)
+    ));
+
+    let func = <VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseAug3FullSigs>>::try_new_with_builder(
+        FromCloneableIntoIterator::from(0..n),
+        FromCloneableIntoIterator::from(0_usize..),
+        VBuilder::default().expected_num_keys(expected_num_keys),
+        &mut ProgressLogger::default(),
+    )?;
+    for i in 0..n {
+        assert_eq!(func.get(i), i);
+    }
+
+    let func =
+        <VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], Fuse3FullSigs>>::try_new_with_builder(
+            FromCloneableIntoIterator::from(0..n),
+            FromCloneableIntoIterator::from(0_usize..),
+            VBuilder::default().expected_num_keys(expected_num_keys),
+            &mut ProgressLogger::default(),
+        )?;
+    for i in 0..n {
+        assert_eq!(func.get(i), i);
+    }
+
+    let filter = <VFilter<usize, Box<[u8]>>>::try_new_with_builder(
+        FromCloneableIntoIterator::from(0..n),
+        VBuilder::default().expected_num_keys(expected_num_keys),
+        &mut ProgressLogger::default(),
+    )?;
+    for i in 0..n {
+        assert!(filter.contains(i));
+    }
+    Ok(())
 }

@@ -1295,6 +1295,9 @@ pub(crate) use build::{
 /// - `S0`: the [signature type] for the key map
 ///   (`lcp_len_offset`).
 /// - `E0`: the [`ShardEdge`] for the key map.
+///   With more than ten billion keys it must use full signatures (e.g.,
+///   [`FuseAug3FullSigs`](crate::func::shard_edge::FuseAug3FullSigs); see the
+///   [`VFunc`] documentation).
 /// - `S1`: the [signature type] for the prefix-to-bucket map
 ///   (`lcp_to_bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
@@ -1507,6 +1510,9 @@ impl<S: Sig> ToSig<S> for BitPrefix {
 /// - `S0`: the [signature type] for the key map
 ///   (`lcp_len_offset`).
 /// - `E0`: the [`ShardEdge`] for the key map.
+///   With more than ten billion keys it must use full signatures (e.g.,
+///   [`FuseAug3FullSigs`](crate::func::shard_edge::FuseAug3FullSigs); see the
+///   [`VFunc`] documentation).
 /// - `S1`: the [signature type] for the prefix-to-bucket map
 ///   (`lcp_to_bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.

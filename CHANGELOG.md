@@ -2,7 +2,34 @@
 
 ## [0.15.4]
 
+### New
+
+- `Fuse3FullSigs` is the variant of `Fuse3Shards` using full local signatures,
+  as `FuseAug3FullSigs` is for `FuseAug3Shards`; it makes it possible to build
+  `CompVFunc` instances with more than ten billion keys. The CLI utilities
+  accept it as `fuse3-full-sigs`.
+
+- The `lcp_mmphf` CLI utility has a new `--full-sigs` option that makes the
+  inner functions use full signatures, which is necessary with more than ten
+  billion keys.
+
 ### Changed
+
+- `VBuilder` refuses to build functions with more than
+  `shard_edge::MAX_LOCAL_SIG_FUNC_KEYS` (ten billion) keys using local
+  signatures shorter than signatures, as the default `FuseAug3Shards` does,
+  returning `BuildError::DuplicateLocalSignatures` as soon as the number of
+  keys is known: with 64-bit local signatures, beyond that size the
+  probability that a construction attempt finds duplicate local signatures
+  becomes significant (above 5% at about twelve billion keys), and grows
+  quickly. Such functions must use `FuseAug3FullSigs` (or `Fuse3FullSigs` for
+  `CompVFunc`). Filters are not affected. The CLI utilities building
+  functions check the number of keys before reading or generating them.
+
+- When building a function, `VBuilder` logs a warning if the probability
+  that a construction attempt finds duplicate local signatures exceeds the
+  retry probability, and the messages about duplicate local signatures name
+  the shard/edge logic with full signatures to use.
 
 - `Fuse3Shards::dup_edge_retry_prob` uses the exact collision probability of
   the map from local signatures to edges, in which the numbers of preimages of

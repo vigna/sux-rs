@@ -140,6 +140,11 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseAug3Shards> {
     /// While this setter is optional, setting this value to a reasonable bound
     /// on the actual number of keys will significantly speed up the
     /// construction.
+    ///
+    /// If this value is larger than
+    /// [`MAX_LOCAL_SIG_FUNC_KEYS`](crate::func::shard_edge::MAX_LOCAL_SIG_FUNC_KEYS),
+    /// the construction of a function using local signatures shorter than
+    /// signatures fails immediately, before computing signatures.
     #[setters(generate = true, strip_option)]
     expected_num_keys: Option<usize>,
 
@@ -240,7 +245,9 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseAug3Shards> {
     /// different seed, is at most this value. The bound does not cover
     /// duplicate local signatures, which can occur only with huge key sets
     /// and lead to [`BuildError::DuplicateLocalSignatures`] (see
-    /// [`FuseAug3FullSigs`](crate::func::shard_edge::FuseAug3FullSigs)). The
+    /// [`MAX_LOCAL_SIG_FUNC_KEYS`](crate::func::shard_edge::MAX_LOCAL_SIG_FUNC_KEYS));
+    /// however, when building a function the builder logs a warning if their
+    /// probability exceeds this value. The
     /// value must lie in the half-open interval (0 . . 1];
     /// constructors return an error otherwise.
     ///
@@ -337,8 +344,19 @@ pub enum BuildError {
     /// signatures).
     #[error("Duplicate key")]
     DuplicateKey,
-    /// Multiple construction attempts found duplicate local signatures.
-    #[error("Duplicate local signatures: use full signatures")]
+    /// Multiple construction attempts found duplicate local signatures, or a
+    /// function with more than
+    /// [`MAX_LOCAL_SIG_FUNC_KEYS`](crate::func::shard_edge::MAX_LOCAL_SIG_FUNC_KEYS)
+    /// keys was requested using local signatures shorter than signatures
+    /// (e.g., using the default
+    /// [`FuseAug3Shards`](crate::func::shard_edge::FuseAug3Shards)). In both
+    /// cases, the remedy is to use full signatures, e.g., by using
+    /// [`FuseAug3FullSigs`](crate::func::shard_edge::FuseAug3FullSigs), or
+    /// [`Fuse3FullSigs`](crate::func::shard_edge::Fuse3FullSigs) for a
+    /// [`CompVFunc`](crate::func::CompVFunc).
+    #[error(
+        "Duplicate local signatures found or too likely: use full signatures (FuseAug3FullSigs, or Fuse3FullSigs for CompVFunc)"
+    )]
     DuplicateLocalSignatures,
     /// The largest shard was too large with respect to the average shard
     /// size on 100 construction attempts; a larger [ε](VBuilder::eps) might
@@ -495,6 +513,7 @@ where
     {
         self.shard_edge = shard_edge;
         self.num_keys = shard_store.len();
+        self.check_local_sigs::<V>(self.num_keys, pl)?;
 
         // The shard structure is fixed by the store (set at into_shard_store
         // time). We only reconfigure graph parameters (c, aug, segment size,
@@ -700,11 +719,11 @@ impl RetryState {
                     }
                     SolveError::DuplicateLocalSignature => {
                         if self.local_dup_count >= 2 {
-                            pl.error(format_args!("Duplicate local signatures: use full signatures (duplicate local signatures with three different seeds)"));
+                            pl.error(format_args!("Duplicate local signatures with three different seeds: use full signatures (FuseAug3FullSigs, or Fuse3FullSigs for CompVFunc)"));
                             return Err(BuildError::DuplicateLocalSignatures.into());
                         }
                         pl.warn(format_args!(
-                            "Duplicate local signature, trying again with a different seed..."
+                            "Duplicate local signature (full signatures, e.g., FuseAug3FullSigs or Fuse3FullSigs for CompVFunc, avoid this), trying again with a different seed..."
                         ));
                         self.local_dup_count += 1;
                         Ok(None)
@@ -1193,6 +1212,11 @@ impl<
     where
         SigVal<S, V>: RadixKey,
     {
+        // Fail before hashing if we know already that there are too many keys
+        if let Some(expected_num_keys) = self.expected_num_keys {
+            self.check_local_sigs::<V>(expected_num_keys, pl)?;
+        }
+
         self.try_with_retries(
             (keys, values),
             |builder, seed, (keys, values), pl| {
@@ -1268,6 +1292,8 @@ impl<
             "offline mode is not supported by the parallel builder; use the sequential constructor (try_new_with_builder)"
         );
         let n = keys.len();
+        // Fail before hashing if there are too many keys
+        self.check_local_sigs::<V>(n, pl)?;
 
         self.try_with_retries(
             (),
@@ -1456,6 +1482,48 @@ impl<
         self.try_build_from_sig_store(seed, sig_store, max_value, start, build_fn, pl, state)
     }
 
+    /// Returns the name of the shard/edge logic with full signatures
+    /// suggested in messages.
+    ///
+    /// Only [`CompVFunc`] sets [`shard_size_hint`], and it does not support
+    /// augmented peeling.
+    ///
+    /// [`shard_size_hint`]: Self::shard_size_hint
+    fn full_sigs_name(&self) -> &'static str {
+        if self.shard_size_hint.is_none() {
+            "FuseAug3FullSigs"
+        } else {
+            "Fuse3FullSigs"
+        }
+    }
+
+    /// Returns [`BuildError::DuplicateLocalSignatures`] if we are building a
+    /// function with more than [`MAX_LOCAL_SIG_FUNC_KEYS`] keys using local
+    /// signatures shorter than signatures.
+    ///
+    /// Filters, whose values are [`EmptyVal`], are not affected, as they
+    /// remove duplicate local signatures.
+    ///
+    /// [`MAX_LOCAL_SIG_FUNC_KEYS`]: crate::func::shard_edge::MAX_LOCAL_SIG_FUNC_KEYS
+    fn check_local_sigs<V: 'static>(
+        &self,
+        num_keys: usize,
+        pl: &mut impl ProgressLog,
+    ) -> anyhow::Result<()> {
+        if TypeId::of::<E::LocalSig>() != TypeId::of::<S>()
+            && TypeId::of::<V>() != TypeId::of::<EmptyVal>()
+            && num_keys as u64 > shard_edge::MAX_LOCAL_SIG_FUNC_KEYS
+        {
+            pl.error(format_args!(
+                "Functions with more than {} keys ({num_keys} requested) need full signatures: use {}",
+                shard_edge::MAX_LOCAL_SIG_FUNC_KEYS,
+                self.full_sigs_name()
+            ));
+            return Err(BuildError::DuplicateLocalSignatures.into());
+        }
+        Ok(())
+    }
+
     /// Completes a construction attempt whose signature/value pairs have
     /// been stored in `sig_store`, starting at time `start`.
     ///
@@ -1503,6 +1571,9 @@ impl<
             start.elapsed().as_nanos() as f64 / num_keys as f64
         ));
 
+        self.check_local_sigs::<V>(num_keys, pl)?;
+        let full_sigs_name = self.full_sigs_name();
+
         // When shard_size_hint is set (e.g. by CompVFunc with the total
         // number of edges after building the Huffman coder), the sharding
         // strategy is sized for the hinted workload rather than the raw key
@@ -1519,6 +1590,29 @@ impl<
                 "Max shard / average shard: {:.3}%",
                 (100.0 * max_shard as f64) / (num_keys as f64 / shard_edge.num_shards() as f64)
             ));
+        }
+
+        // A duplicate local signature forces a new attempt when building a
+        // function (filters just remove it), so we warn upfront if its
+        // probability exceeds the retry budget: two keys collide if they lie
+        // in the same shard and have the same local signature
+        if TypeId::of::<E::LocalSig>() != TypeId::of::<S>()
+            && TypeId::of::<V>() != TypeId::of::<EmptyVal>()
+        {
+            let local_sig_bits = (size_of::<E::LocalSig>() * 8) as f64;
+            let colliding_pairs = shard_store
+                .shard_sizes()
+                .map(|m| m as f64 * (m as f64 - 1.0) / 2.0)
+                .sum::<f64>()
+                * (-local_sig_bits).exp2();
+            let dup_prob = -f64::exp_m1(-colliding_pairs);
+            if dup_prob > self.retry_prob {
+                pl.warn(format_args!(
+                    "With {num_keys} keys and {local_sig_bits}-bit local signatures, a construction attempt fails because of duplicate local signatures with probability {:.1}%: use full signatures (e.g., {})",
+                    100.0 * dup_prob,
+                    full_sigs_name
+                ));
+            }
         }
 
         // Reject pathological deviation from the target ε-cost. When

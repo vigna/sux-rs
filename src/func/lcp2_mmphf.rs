@@ -86,6 +86,9 @@ use xxhash_rust::xxh3;
 /// - `S0`: the [signature type] for the key maps (`lcp_freq_len_offset`
 ///   and `lcp_infreq_len`).
 /// - `E0`: the [`ShardEdge`] for the key map `lcp_freq_len_offset`.
+///   With more than ten billion keys it must use full signatures (e.g.,
+///   [`FuseAug3FullSigs`](crate::func::shard_edge::FuseAug3FullSigs); see the
+///   [`VFunc`] documentation).
 /// - `F0`: the [`ShardEdge`] for `lcp_infreq_len`. Defaults to
 ///   [`Fuse3Shards`].
 /// - `S1`: the [signature type] for the prefix-to-bucket map
@@ -1196,6 +1199,9 @@ mod build {
 /// - `S0`: the [signature type] for the key maps (`lcp_freq_len_offset`
 ///   and `lcp_infreq_len`).
 /// - `E0`: the [`ShardEdge`] for the key map `lcp_freq_len_offset`.
+///   With more than ten billion keys it must use full signatures (e.g.,
+///   [`FuseAug3FullSigs`](crate::func::shard_edge::FuseAug3FullSigs); see the
+///   [`VFunc`] documentation).
 /// - `F0`: the [`ShardEdge`] for `lcp_infreq_len`. Defaults to
 ///   [`Fuse3Shards`].
 /// - `S1`: the [signature type] for the prefix-to-bucket map

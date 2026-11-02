@@ -75,7 +75,10 @@ use value_traits::slices::SliceByValue;
 /// * `S` - the signature type; the default is `[u64; 2]`.
 ///
 /// * `E` - the sharding and edge logic type for the first (frequent-value)
-///   function; the default is [`FuseAug3Shards`].
+///   function; the default is [`FuseAug3Shards`]. Functions with more than
+///   ten billion keys must use
+///   [`FuseAug3FullSigs`](crate::func::shard_edge::FuseAug3FullSigs), for
+///   the reasons explained in the [`VFunc`] documentation.
 ///
 /// * `F` - the sharding and edge logic type for the second (escaped-value)
 ///   function; the default is `E`.

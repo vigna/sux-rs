@@ -56,8 +56,9 @@ fn main() -> Result<()> {
         ShardEdgeType::Fuse3NoShards64 => main_with_types::<[u64; 1], Fuse3NoShards>(args),
         ShardEdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
         ShardEdgeType::Fuse3Shards => main_with_types::<[u64; 2], Fuse3Shards>(args),
+        ShardEdgeType::Fuse3FullSigs => main_with_types::<[u64; 2], Fuse3FullSigs>(args),
         _ => bail!(
-            "bench_comp_vfunc only supports --shard-edge fuse3-shards, fuse3-no-shards64, and fuse3-no-shards128"
+            "bench_comp_vfunc only supports --shard-edge fuse3-shards, fuse3-full-sigs, fuse3-no-shards64, and fuse3-no-shards128"
         ),
     }
 }

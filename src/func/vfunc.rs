@@ -34,6 +34,16 @@ use std::borrow::Borrow;
 /// key sets. Details on other possible [`ShardEdge`] implementations can be
 /// found in the [`shard_edge`] module documentation.
 ///
+/// **Functions with more than ten billion keys must use full local
+/// signatures**, that is, [`FuseAug3FullSigs`] in place of the default: with
+/// 64-bit local signatures, beyond that size the probability that a
+/// construction attempt fails because two keys have the same local signature
+/// becomes significant, and grows quickly with the number of keys, so the
+/// construction of a function with more than [`MAX_LOCAL_SIG_FUNC_KEYS`] keys
+/// using the default fails as soon as the number of keys is known. Full
+/// signatures make construction about 10% slower, but they have no effect on
+/// query time.
+///
 /// Instances of this structure are immutable; they are built using [`try_new`]
 /// or one of its variants, and can be serialized using [ε-serde] or [`serde`].
 /// The construction can be configured by passing a [`VBuilder`] to the
@@ -86,8 +96,8 @@ use std::borrow::Borrow;
 ///
 /// * `E` - the sharding and edge logic type. The default is [`FuseAug3Shards`].
 ///   For small sets of keys you might try [`Fuse3NoShards`], possibly
-///   coupled with `[u64; 1]` signatures. For functions with more than a few
-///   dozen billion keys, you might try [`FuseAug3FullSigs`].
+///   coupled with `[u64; 1]` signatures. Functions with more than ten
+///   billion keys must use [`FuseAug3FullSigs`] (see above).
 ///
 /// # Examples
 ///
@@ -100,6 +110,7 @@ use std::borrow::Borrow;
 /// [ε-serde]: https://crates.io/crates/epserde
 /// [unaligned reads]: BitFieldVec::get_unaligned
 /// [`FuseAug3FullSigs`]: crate::func::shard_edge::FuseAug3FullSigs
+/// [`MAX_LOCAL_SIG_FUNC_KEYS`]: crate::func::shard_edge::MAX_LOCAL_SIG_FUNC_KEYS
 /// [`serde`]: https://crates.io/crates/serde
 /// [`Fuse3NoShards`]: crate::func::shard_edge::Fuse3NoShards
 /// [`VBuilder`]: crate::func::VBuilder

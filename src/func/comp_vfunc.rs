@@ -124,7 +124,10 @@ use std::hash::Hash;
 ///
 /// * `E` - the [`ShardEdge`] used for sharding and local hashing;
 ///   defaults to [`Fuse3Shards`] (see [`VFunc`] for details; note that
-///   variants using augmented peeling are not supported).
+///   variants using augmented peeling are not supported). Functions with
+///   more than ten billion keys must use
+///   [`Fuse3FullSigs`](crate::func::shard_edge::Fuse3FullSigs), for the
+///   reasons explained in the [`VFunc`] documentation.
 ///
 /// # Examples
 ///

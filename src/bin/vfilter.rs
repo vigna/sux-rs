@@ -78,6 +78,7 @@ macro_rules! dispatch_edge {
             ShardEdgeType::Fuse3Shards => $main::<$ty, [u64; 2], Fuse3Shards>($args),
             ShardEdgeType::FuseAug3Shards => $main::<$ty, [u64; 2], FuseAug3Shards>($args),
             ShardEdgeType::FuseAug3FullSigs => $main::<$ty, [u64; 2], FuseAug3FullSigs>($args),
+            ShardEdgeType::Fuse3FullSigs => $main::<$ty, [u64; 2], Fuse3FullSigs>($args),
             #[allow(deprecated)]
             ShardEdgeType::FuseLge3Shards => $main::<$ty, [u64; 2], FuseLge3Shards>($args),
             #[allow(deprecated)]

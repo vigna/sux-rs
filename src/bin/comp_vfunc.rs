@@ -12,11 +12,11 @@ use mem_dbg::{FlatType, MemSize};
 use rdst::RadixKey;
 use sux::bits::BitVec;
 use sux::cli::{
-    AnyLineLender, BuilderArgs, Decompression, KeyBuffer, ValueArgs, check_num_keys, count_lines,
-    init_env_logger, store,
+    AnyLineLender, BuilderArgs, Decompression, KeyBuffer, ValueArgs, check_func_num_keys,
+    check_num_keys, count_lines, init_env_logger, store,
 };
 use sux::func::codec::HuffmanConf;
-use sux::func::shard_edge::{Fuse3NoShards, Fuse3Shards, ShardEdge};
+use sux::func::shard_edge::{Fuse3FullSigs, Fuse3NoShards, Fuse3Shards, ShardEdge};
 use sux::func::{CompVFunc, VBuilder};
 use sux::traits::TryIntoUnaligned;
 use sux::utils::{
@@ -75,7 +75,8 @@ struct Args {
     builder: BuilderArgs,
     /// Shard/edge type: CompVFunc does not support augmented peeling,
     /// so only fuse3-shards (the default, unlike in the other binaries),
-    /// fuse3-no-shards64, and fuse3-no-shards128 are supported.​
+    /// fuse3-full-sigs (needed beyond ten billion keys), fuse3-no-shards64,
+    /// and fuse3-no-shards128 are supported.​
     #[arg(long, short = 'E', value_enum, default_value_t = sux::cli::ShardEdgeType::Fuse3Shards)]
     shard_edge: sux::cli::ShardEdgeType,
     #[clap(flatten)]
@@ -109,9 +110,10 @@ fn main() -> Result<()> {
         ShardEdgeType::Fuse3NoShards64 => main_with_types::<[u64; 1], Fuse3NoShards>(args),
         ShardEdgeType::Fuse3NoShards128 => main_with_types::<[u64; 2], Fuse3NoShards>(args),
         ShardEdgeType::Fuse3Shards => main_with_types::<[u64; 2], Fuse3Shards>(args),
+        ShardEdgeType::Fuse3FullSigs => main_with_types::<[u64; 2], Fuse3FullSigs>(args),
         _ => {
             bail!(
-                "comp_vfunc only supports --shard-edge fuse3-shards, fuse3-no-shards64, and fuse3-no-shards128"
+                "comp_vfunc only supports --shard-edge fuse3-shards, fuse3-full-sigs, fuse3-no-shards64, and fuse3-no-shards128"
             )
         }
     }
@@ -128,6 +130,7 @@ where
     CompVFunc<usize, BitVec<Box<[usize]>>, S, E>:
         Serialize + TryIntoUnaligned<Unaligned: Serialize>,
 {
+    check_func_num_keys::<S, E>(args.n, "--shard-edge fuse3-full-sigs")?;
     let vbuilder: VBuilder<BitVec<Box<[usize]>>, S, E> =
         args.builder.configure(VBuilder::default());
     let huffman =

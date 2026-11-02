@@ -15,8 +15,8 @@ use num_primitive::PrimitiveNumberAs;
 use rdst::RadixKey;
 use sux::bits::BitFieldVec;
 use sux::cli::{
-    AnyLineLender, BuilderArgs, Decompression, HashTypes, KeyBuffer, ShardingArgs, check_num_keys,
-    init_env_logger, store,
+    AnyLineLender, BuilderArgs, Decompression, HashTypes, KeyBuffer, ShardingArgs,
+    check_func_num_keys, check_num_keys, init_env_logger, store,
 };
 use sux::func::signed::SignedFunc;
 use sux::func::{shard_edge::*, *};
@@ -95,6 +95,7 @@ fn main() -> Result<()> {
         ShardEdgeType::Fuse3Shards => build_with_types!([u64; 2], Fuse3Shards),
         ShardEdgeType::FuseAug3Shards => build_with_types!([u64; 2], FuseAug3Shards),
         ShardEdgeType::FuseAug3FullSigs => build_with_types!([u64; 2], FuseAug3FullSigs),
+        ShardEdgeType::Fuse3FullSigs => build_with_types!([u64; 2], Fuse3FullSigs),
         #[allow(deprecated)]
         ShardEdgeType::FuseLge3Shards => build_with_types!([u64; 2], FuseLge3Shards),
         #[allow(deprecated)]
@@ -127,6 +128,7 @@ where
     Func<str, S, E>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
     Func<usize, S, E>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
 {
+    check_func_num_keys::<S, E>(args.n, "--shard-edge fuse-aug3-full-sigs")?;
     let mut pl = args.log.progress_logger();
     let builder = new_builder(args);
 
@@ -186,6 +188,7 @@ where
     Signed<str, S, E, W>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
     Signed<usize, S, E, W>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
 {
+    check_func_num_keys::<S, E>(args.n, "--shard-edge fuse-aug3-full-sigs")?;
     let mut pl = args.log.progress_logger();
     let builder = new_builder(args);
 

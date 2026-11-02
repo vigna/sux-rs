@@ -13,8 +13,8 @@ use rdst::RadixKey;
 use std::ops::{BitXor, BitXorAssign};
 use sux::bits::BitFieldVec;
 use sux::cli::{
-    AnyLineLender, BuilderArgs, Decompression, KeyBuffer, ShardingArgs, ValueArgs, check_num_keys,
-    count_lines, init_env_logger, store,
+    AnyLineLender, BuilderArgs, Decompression, KeyBuffer, ShardingArgs, ValueArgs,
+    check_func_num_keys, check_num_keys, count_lines, init_env_logger, store,
 };
 use sux::func::VBuilder;
 use sux::func::VFunc2;
@@ -80,6 +80,7 @@ fn main() -> Result<()> {
         ShardEdgeType::Fuse3Shards => main_with_types::<[u64; 2], Fuse3Shards>(args),
         ShardEdgeType::FuseAug3Shards => main_with_types::<[u64; 2], FuseAug3Shards>(args),
         ShardEdgeType::FuseAug3FullSigs => main_with_types::<[u64; 2], FuseAug3FullSigs>(args),
+        ShardEdgeType::Fuse3FullSigs => main_with_types::<[u64; 2], Fuse3FullSigs>(args),
         #[allow(deprecated)]
         ShardEdgeType::FuseLge3Shards => main_with_types::<[u64; 2], FuseLge3Shards>(args),
         #[allow(deprecated)]
@@ -104,6 +105,7 @@ where
     VFunc2<usize, BitFieldVec<Box<[usize]>>, S, E>:
         Serialize + TryIntoUnaligned<Unaligned: Serialize>,
 {
+    check_func_num_keys::<S, E>(args.n, "--shard-edge fuse-aug3-full-sigs")?;
     let mut pl = args.log.progress_logger();
     let mut builder = args
         .builder

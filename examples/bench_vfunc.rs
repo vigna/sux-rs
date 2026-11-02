@@ -55,6 +55,7 @@ fn main() -> Result<()> {
         ShardEdgeType::Fuse3Shards => main_with_types::<[u64; 2], Fuse3Shards>(args),
         ShardEdgeType::FuseAug3Shards => main_with_types::<[u64; 2], FuseAug3Shards>(args),
         ShardEdgeType::FuseAug3FullSigs => main_with_types::<[u64; 2], FuseAug3FullSigs>(args),
+        ShardEdgeType::Fuse3FullSigs => main_with_types::<[u64; 2], Fuse3FullSigs>(args),
         #[allow(deprecated)]
         ShardEdgeType::FuseLge3Shards => main_with_types::<[u64; 2], FuseLge3Shards>(args),
         #[allow(deprecated)]

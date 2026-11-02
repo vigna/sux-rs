@@ -621,3 +621,31 @@ mod corr_graph_regime {
         }
     }
 }
+
+// Fuse3FullSigs is the shard/edge logic with full signatures that CompVFunc,
+// which does not support augmented peeling, needs beyond ten billion keys
+#[test]
+fn test_full_sigs() {
+    use sux::func::shard_edge::Fuse3FullSigs;
+    let n = 100_000usize;
+    let values: Vec<usize> = (0..n).map(|i| (i % 16).trailing_zeros() as usize).collect();
+    let keys: Vec<u64> = (0..n as u64).collect();
+    let func = CompVFunc::<u64, BitVec<Box<[usize]>>, [u64; 2], Fuse3FullSigs>::try_par_new(
+        &keys,
+        &values,
+        no_logging![],
+    )
+    .expect("build");
+    for (i, &v) in values.iter().enumerate() {
+        assert_eq!(func.get(keys[i]), v, "mismatch at key {}", keys[i]);
+    }
+    let func = CompVFunc::<usize, BitVec<Box<[usize]>>, [u64; 2], Fuse3FullSigs>::try_new(
+        FromCloneableIntoIterator::from(0..n),
+        FromSlice::new(&values),
+        no_logging![],
+    )
+    .expect("build");
+    for (i, &v) in values.iter().enumerate() {
+        assert_eq!(func.get(i), v, "mismatch at key {i}");
+    }
+}
