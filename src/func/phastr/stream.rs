@@ -143,6 +143,15 @@ const fn partition(sig: u64, log2_partitions: u32) -> usize {
 /// a read moves the current position of its file, threads reading the same
 /// file take turns; however, threads sweeping different chunks of a level,
 /// or scanning different ranges of partitions, read different files.
+///
+/// Taking turns is not a bottleneck: with 96 threads, 16 and 64 files yield
+/// the same construction time, both when the files are in the page cache
+/// and when they are read from disk, where the device is the bound. On
+/// volumes with a limit on operations per second, such as Amazon EBS, the
+/// bound is the number of reads, which is high up to about 10¹⁰ keys, as
+/// blocks are still small (see [`GROWTH`]). More files would also need
+/// more file descriptors: two stores are open at the same time, and the
+/// default limit on macOS is 256.
 #[cfg(not(test))]
 const LOG2_FILES: u32 = 4;
 #[cfg(test)]
