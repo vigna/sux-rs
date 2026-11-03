@@ -1,6 +1,6 @@
 # Change Log
 
-## [0.15.4]
+## [0.15.4] - 2026-11-03
 
 ### New
 
@@ -33,9 +33,13 @@
 
 - When building a function, `VBuilder` logs a warning if the probability
   that a construction attempt finds duplicate local signatures exceeds the
-  retry probability, and the messages about duplicate local signatures name
-  the shard/edge logic with full signatures to use (given by
-  `ShardEdge::full_sigs_name`).
+  retry probability. The warning and the refusal above name the shard/edge
+  logic with full signatures to use (given by `ShardEdge::full_sigs_name`),
+  and the other messages about duplicate local signatures suggest
+  `FuseAug3FullSigs`, or `Fuse3FullSigs` for `CompVFunc`.
+
+- The `Display` implementation of `FuseAug3FullSigs` mentions full
+  signatures, so that logs distinguish it from `FuseAug3Shards`.
 
 - `Fuse3Shards::dup_edge_retry_prob` uses the exact collision probability of
   the map from local signatures to edges, in which the numbers of preimages of

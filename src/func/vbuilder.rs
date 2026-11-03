@@ -348,12 +348,11 @@ pub enum BuildError {
     /// function with more than
     /// [`MAX_LOCAL_SIG_FUNC_KEYS`](crate::func::shard_edge::MAX_LOCAL_SIG_FUNC_KEYS)
     /// keys was requested using local signatures shorter than the signatures
-    /// (e.g., using the default
-    /// [`FuseAug3Shards`](crate::func::shard_edge::FuseAug3Shards)). In both
-    /// cases, the remedy is to use full signatures, e.g., by using
+    /// (e.g., using the default [`FuseAug3Shards`]). In both cases, the remedy
+    /// is to use full signatures, e.g., by using
     /// [`FuseAug3FullSigs`](crate::func::shard_edge::FuseAug3FullSigs), or
     /// [`Fuse3FullSigs`](crate::func::shard_edge::Fuse3FullSigs) for a
-    /// [`CompVFunc`](crate::func::CompVFunc).
+    /// [`CompVFunc`].
     #[error(
         "Duplicate local signatures found or too likely: use full signatures (FuseAug3FullSigs, or Fuse3FullSigs for CompVFunc)"
     )]
@@ -2418,7 +2417,7 @@ impl<
     /// and peeling resumes from the hole left by the removal, as at the
     /// lightly loaded left end of a fuse graph. The procedure is a transposed
     /// form of the inactivation decoding of Raptor codes (see
-    /// [`FuseAug3Shards`](crate::func::shard_edge::FuseAug3Shards)).
+    /// [`FuseAug3Shards`]).
     ///
     /// At the end, every vertex that is incident to some edge but is not the
     /// pivot of a peeled edge is *lost*: its value can be chosen freely, and

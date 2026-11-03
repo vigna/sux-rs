@@ -903,9 +903,16 @@ mod fuse {
 
     impl Display for FuseAug3Shards {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.fmt_named(f, "augmented peeling up to 2·10^7 keys, shards")
+        }
+    }
+
+    impl FuseAug3Shards {
+        /// Formats the parameters, describing the logic as `kind`.
+        fn fmt_named(&self, f: &mut std::fmt::Formatter<'_>, kind: &str) -> std::fmt::Result {
             write!(
                 f,
-                "Fuse3 (augmented peeling up to 2·10^7 keys, shards); shards: 2^{}; vertices per shard: {}; segment size: 2^{}; segments: {}",
+                "Fuse3 ({kind}); shards: 2^{}; vertices per shard: {}; segment size: 2^{}; segments: {}",
                 self.shard_high_bits(),
                 (self.l as usize + 2) << self.log2_seg_size,
                 self.log2_seg_size,
@@ -1458,18 +1465,91 @@ mod fuse {
 
     impl Display for Fuse3Shards {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.fmt_named(f, "no augmented peeling, shards")
+        }
+    }
+
+    impl Fuse3Shards {
+        /// Formats the parameters, describing the logic as `kind`.
+        fn fmt_named(&self, f: &mut std::fmt::Formatter<'_>, kind: &str) -> std::fmt::Result {
             write!(
                 f,
-                "Fuse3 (no augmented peeling, shards); shards: 2^{}; vertices per shard: {}; segment size: 2^{}; segments: {}",
+                "Fuse3 ({kind}); shards: 2^{}; vertices per shard: {}; segment size: 2^{}; segments: {}",
                 self.shard_high_bits(),
                 (self.l as usize + 2) << self.log2_seg_size,
                 self.log2_seg_size,
                 self.l + 2
             )
         }
-    }
 
-    impl Fuse3Shards {
+        /// Sets up the graphs as in [`ShardEdge::set_up_graphs`], using
+        /// `name` in panic messages.
+        fn set_up_graphs_named(&mut self, name: &str, max_shard: usize) -> (f64, bool) {
+            let c = Fuse3NoShards::c(max_shard);
+            self.log2_seg_size = Self::log2_seg_size(max_shard);
+
+            let num_vertices = num_vertices(
+                name,
+                c,
+                max_shard,
+                <Self as ShardEdge<[u64; 2], 3>>::Vertex::MAX as u128,
+            );
+            let num_shards = <Self as ShardEdge<[u64; 2], 3>>::num_shards(self);
+            self.l = fuse_l_peelable(
+                fuse_l(num_vertices, self.log2_seg_size),
+                max_shard,
+                self.log2_seg_size,
+                num_shards,
+            )
+            .try_into()
+            .unwrap();
+            check_total_vertices(
+                name,
+                <Self as ShardEdge<[u64; 2], 3>>::num_vertices(self),
+                num_shards,
+            );
+            (c, false) // false = no augmented peeling
+        }
+
+        /// Sets up the graphs as in [`ShardEdge::set_up_corr_graphs`], using
+        /// `name` in panic messages.
+        fn set_up_corr_graphs_named(
+            &mut self,
+            name: &str,
+            max_shard_edges: usize,
+            clump: f64,
+            num_failures: usize,
+        ) -> (f64, bool) {
+            // The expansion factor of independent edges is a floor; the effect
+            // of correlation is accounted for by fuse_l_corr
+            let c = Fuse3NoShards::c(max_shard_edges);
+            self.log2_seg_size = Self::log2_seg_size(max_shard_edges);
+
+            let num_vertices = num_vertices(
+                name,
+                c,
+                max_shard_edges,
+                <Self as ShardEdge<[u64; 2], 3>>::Vertex::MAX as u128,
+            );
+            let num_shards = <Self as ShardEdge<[u64; 2], 3>>::num_shards(self);
+            self.l = fuse_l_corr(
+                fuse_l(num_vertices, self.log2_seg_size),
+                max_shard_edges,
+                self.log2_seg_size,
+                num_shards,
+                clump,
+                num_failures,
+            )
+            .try_into()
+            .unwrap();
+            check_total_vertices(
+                name,
+                <Self as ShardEdge<[u64; 2], 3>>::num_vertices(self),
+                num_shards,
+            );
+            (c, false)
+        }
+
         /// Minimum shard size. Shards are never smaller than this to keep
         /// the expansion factor near its asymptotic optimum.
         const MIN_SHARD: usize = 10_000_000;
@@ -1565,7 +1645,13 @@ mod fuse {
             let c = Fuse3NoShards::c(m);
             let log2_seg_size = Self::log2_seg_size(m);
             let l = fuse_l((c * m as f64).ceil() as u128, log2_seg_size);
-            let num_edges = l << (3 * log2_seg_size);
+            // 𝓁s³, saturated, as on huge shards it might not fit a u128
+            let shift = 3 * log2_seg_size;
+            let num_edges = if shift < 128 && l.leading_zeros() >= shift {
+                l << shift
+            } else {
+                u128::MAX
+            };
             let pair_prob = match local_sig_bits {
                 Some(t) => {
                     // Every edge has q or q + 1 preimages, so the number of
@@ -1624,20 +1710,7 @@ mod fuse {
         }
 
         fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> (f64, bool) {
-            let c = Fuse3NoShards::c(max_shard);
-            self.log2_seg_size = Self::log2_seg_size(max_shard);
-
-            let num_vertices = num_vertices("Fuse3Shards", c, max_shard, Self::Vertex::MAX as u128);
-            self.l = fuse_l_peelable(
-                fuse_l(num_vertices, self.log2_seg_size),
-                max_shard,
-                self.log2_seg_size,
-                self.num_shards(),
-            )
-            .try_into()
-            .unwrap();
-            check_total_vertices("Fuse3Shards", self.num_vertices(), self.num_shards());
-            (c, false) // false = no augmented peeling
+            self.set_up_graphs_named("Fuse3Shards", max_shard)
         }
 
         fn full_sigs_name() -> Option<&'static str> {
@@ -1652,25 +1725,7 @@ mod fuse {
             clump: f64,
             num_failures: usize,
         ) -> (f64, bool) {
-            // The expansion factor of independent edges is a floor; the effect
-            // of correlation is accounted for by fuse_l_corr
-            let c = Fuse3NoShards::c(max_shard_edges);
-            self.log2_seg_size = Fuse3Shards::log2_seg_size(max_shard_edges);
-
-            let num_vertices =
-                num_vertices("Fuse3Shards", c, max_shard_edges, Self::Vertex::MAX as u128);
-            self.l = fuse_l_corr(
-                fuse_l(num_vertices, self.log2_seg_size),
-                max_shard_edges,
-                self.log2_seg_size,
-                self.num_shards(),
-                clump,
-                num_failures,
-            )
-            .try_into()
-            .unwrap();
-            check_total_vertices("Fuse3Shards", self.num_vertices(), self.num_shards());
-            (c, false)
+            self.set_up_corr_graphs_named("Fuse3Shards", max_shard_edges, clump, num_failures)
         }
 
         #[inline(always)]
@@ -1753,7 +1808,10 @@ mod fuse {
 
     impl Display for FuseAug3FullSigs {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            self.0.fmt(f)
+            self.0.fmt_named(
+                f,
+                "augmented peeling up to 2·10^7 keys, shards, full signatures",
+            )
         }
     }
 
@@ -1904,7 +1962,8 @@ mod fuse {
 
     impl Display for Fuse3FullSigs {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            self.0.fmt(f)
+            self.0
+                .fmt_named(f, "no augmented peeling, shards, full signatures")
         }
     }
 
@@ -1932,25 +1991,20 @@ mod fuse {
                 };
         }
 
-        fn set_up_graphs(&mut self, n: usize, max_shard: usize) -> (f64, bool) {
-            self.0.set_up_graphs(n, max_shard)
+        fn set_up_graphs(&mut self, _n: usize, max_shard: usize) -> (f64, bool) {
+            self.0.set_up_graphs_named("Fuse3FullSigs", max_shard)
         }
 
         fn set_up_corr_graphs(
             &mut self,
-            num_keys: usize,
-            max_shard_keys: usize,
+            _num_keys: usize,
+            _max_shard_keys: usize,
             max_shard_edges: usize,
             clump: f64,
             num_failures: usize,
         ) -> (f64, bool) {
-            self.0.set_up_corr_graphs(
-                num_keys,
-                max_shard_keys,
-                max_shard_edges,
-                clump,
-                num_failures,
-            )
+            self.0
+                .set_up_corr_graphs_named("Fuse3FullSigs", max_shard_edges, clump, num_failures)
         }
 
         #[inline(always)]
