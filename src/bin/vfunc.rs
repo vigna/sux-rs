@@ -24,7 +24,7 @@ use sux::traits::{TryIntoUnaligned, Word};
 use sux::utils::{FromCloneableIntoIterator, FromIntoFallibleLenderFactory, Sig, SigVal, ToSig};
 
 #[derive(Parser, Debug)]
-#[command(about = "Creates a (possibly signed) VFunc mapping each input to its rank and serializes it with ε-serde.", long_about = None, next_line_help = true, max_term_width = 100)]
+#[command(about = "Creates a (possibly signed) VFunc mapping each key to its index in the input and serializes it with ε-serde.", long_about = None, next_line_help = true, max_term_width = 100)]
 #[clap(group(
             ArgGroup::new("input")
                 .required(true)

@@ -144,7 +144,7 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseAug3Shards> {
     /// If this value is larger than
     /// [`MAX_LOCAL_SIG_FUNC_KEYS`](crate::func::shard_edge::MAX_LOCAL_SIG_FUNC_KEYS),
     /// the construction of a function using local signatures shorter than
-    /// signatures fails immediately, before computing signatures.
+    /// the signatures fails immediately, before computing signatures.
     #[setters(generate = true, strip_option)]
     expected_num_keys: Option<usize>,
 
@@ -347,7 +347,7 @@ pub enum BuildError {
     /// Multiple construction attempts found duplicate local signatures, or a
     /// function with more than
     /// [`MAX_LOCAL_SIG_FUNC_KEYS`](crate::func::shard_edge::MAX_LOCAL_SIG_FUNC_KEYS)
-    /// keys was requested using local signatures shorter than signatures
+    /// keys was requested using local signatures shorter than the signatures
     /// (e.g., using the default
     /// [`FuseAug3Shards`](crate::func::shard_edge::FuseAug3Shards)). In both
     /// cases, the remedy is to use full signatures, e.g., by using
@@ -1490,7 +1490,7 @@ impl<
 
     /// Returns [`BuildError::DuplicateLocalSignatures`] if we are building a
     /// function with more than [`MAX_LOCAL_SIG_FUNC_KEYS`] keys using local
-    /// signatures shorter than signatures.
+    /// signatures shorter than the signatures.
     ///
     /// Filters, whose values are [`EmptyVal`], are not affected, as they
     /// remove duplicate local signatures.

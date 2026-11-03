@@ -63,13 +63,13 @@ use std::hash::Hash;
 /// with a [`VBuilder`] configuring the construction.
 ///
 /// When the value distribution is skewed, this uses much less space than
-/// [`VFunc`], roughly the empirical entropy of the value list plus ≈11%
-/// overhead. This estimate, however, does not take into consideration the
-/// storage of the decoder, which can be significant when the number of
-/// keys is very small.
+/// [`VFunc`], roughly the empirical entropy of the value list plus an overhead
+/// of 11–12% for large key sets (slightly more for smaller key sets). This
+/// estimate, however, does not take into consideration the storage of the
+/// decoder, which can be significant when the number of keys is very small.
 ///
 /// Instances of this structure are immutable, except for the [`branchless`]
-/// setting of the internal decoder they are built using [`try_new`] or one of
+/// setting of the internal decoder; they are built using [`try_new`] or one of
 /// its variants, and can be serialized using [ε-serde] or [`serde`]. Since
 /// signatures are computed from the native representation of keys (see
 /// [`ToSig`]), a serialized function must be queried on a machine with the
@@ -160,7 +160,7 @@ use std::hash::Hash;
 /// [`VBuilder`]: crate::func::VBuilder
 /// [`HuffmanConf`]: crate::func::codec::HuffmanConf
 /// [`try_new`]: Self::try_new
-/// [ε-serde]: https://docs.rs/epserde/latest/epserde/
+/// [ε-serde]: https://crates.io/crates/epserde
 /// [`serde`]: https://crates.io/crates/serde
 /// [`D::Word`]: Backend::Word
 /// [`branchless`]: Self::branchless

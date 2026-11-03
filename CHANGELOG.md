@@ -21,14 +21,15 @@
 
 - `VBuilder` refuses to build functions with more than
   `shard_edge::MAX_LOCAL_SIG_FUNC_KEYS` (ten billion) keys using local
-  signatures shorter than signatures, as the default `FuseAug3Shards` does,
-  returning `BuildError::DuplicateLocalSignatures` as soon as the number of
-  keys is known: with 64-bit local signatures, beyond that size the
+  signatures shorter than the signatures, as the default `FuseAug3Shards`
+  does, returning `BuildError::DuplicateLocalSignatures` as soon as the number
+  of keys is known: with 64-bit local signatures, beyond that size the
   probability that a construction attempt finds duplicate local signatures
   becomes significant (above 5% at about twelve billion keys), and grows
-  quickly. Such functions must use `FuseAug3FullSigs` (or `Fuse3FullSigs` for
-  `CompVFunc`). Filters are not affected. The CLI utilities building
-  functions check the number of keys before reading or generating them.
+  quickly. Such functions must use `FuseAug3FullSigs` (or `Fuse3FullSigs` in
+  place of `Fuse3Shards`, as in the case of `CompVFunc`). Filters are not
+  affected. When the number of keys is specified, the CLI utilities building
+  functions check it before reading or generating the keys.
 
 - When building a function, `VBuilder` logs a warning if the probability
   that a construction attempt finds duplicate local signatures exceeds the
@@ -40,7 +41,7 @@
   the map from local signatures to edges, in which the numbers of preimages of
   any two edges differ by at most one, rather than its lower bound 1/𝓁s³ − 2⁻ᵗ.
   With the default parameters, the only effect is that structures based on fuse
-  graphs with about 12 billion keys use 64 rather than 128 shards.
+  graphs with about twelve billion keys use 64 rather than 128 shards.
 
 ### Fixed
 

@@ -20,7 +20,7 @@ struct Args {
     /// The length of the bit vector (at least 2).​
     #[arg(value_parser = parse_len)]
     len: usize,
-    /// The finite density of ones in the bit vector, in (0, 1].​
+    /// The finite density of ones in the bit vector, in (0 . . 1].​
     #[arg(value_parser = parse_density)]
     density: f64,
     /// Scale the density by 1% in the first half and 99% in the second.​
@@ -46,7 +46,7 @@ fn parse_density(value: &str) -> Result<f64> {
         .parse::<f64>()
         .with_context(|| format!("invalid density '{value}'"))?;
     if !(density.is_finite() && 0.0 < density && density <= 1.0) {
-        bail!("density must be finite and in (0, 1]");
+        bail!("density must be finite and in (0..1]");
     }
     Ok(density)
 }

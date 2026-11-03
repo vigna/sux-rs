@@ -41,7 +41,7 @@
 //! Djamal Belazzougui, Paolo Boldi, Rasmus Pagh, and Sebastiano Vigna.
 //! [Monotone minimal perfect hashing: Searching a sorted table with O(1)
 //! accesses]. In *Proceedings of the 20th Annual ACM-SIAM Symposium On
-//! Discrete Mathematics (SODA)*, pages 785−794, New York, 2009. ACM Press.
+//! Discrete Mathematics (SODA)*, pages 785–794, New York, 2009. ACM Press.
 //!
 //! [Monotone minimal perfect hashing: Searching a sorted table with O(1) accesses]: https://dl.acm.org/doi/10.5555/1496770.1496856
 //! [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
@@ -1295,12 +1295,17 @@ pub(crate) use build::{
 /// - `S0`: the [signature type] for the key map
 ///   (`lcp_len_offset`).
 /// - `E0`: the [`ShardEdge`] for the key map.
-///   With more than ten billion keys it must use full signatures (e.g.,
-///   [`FuseAug3FullSigs`](crate::func::shard_edge::FuseAug3FullSigs); see the
-///   [`VFunc`] documentation).
 /// - `S1`: the [signature type] for the prefix-to-bucket map
 ///   (`lcp_to_bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
+///
+/// With more than ten billion keys, all inner functions should use full
+/// signatures, as the `--full-sigs` option of the `lcp_mmphf` CLI utility
+/// does (e.g.,
+/// [`FuseAug3FullSigs`](crate::func::shard_edge::FuseAug3FullSigs); see the
+/// [`VFunc`] documentation): the key map needs them beyond ten billion keys,
+/// and the prefix-to-bucket map, which has a key per bucket, beyond about
+/// 3 · 10¹¹ keys.
 ///
 /// # Examples
 ///
@@ -1510,12 +1515,17 @@ impl<S: Sig> ToSig<S> for BitPrefix {
 /// - `S0`: the [signature type] for the key map
 ///   (`lcp_len_offset`).
 /// - `E0`: the [`ShardEdge`] for the key map.
-///   With more than ten billion keys it must use full signatures (e.g.,
-///   [`FuseAug3FullSigs`](crate::func::shard_edge::FuseAug3FullSigs); see the
-///   [`VFunc`] documentation).
 /// - `S1`: the [signature type] for the prefix-to-bucket map
 ///   (`lcp_to_bucket`).
 /// - `E1`: the [`ShardEdge`] for the prefix-to-bucket map.
+///
+/// With more than ten billion keys, all inner functions should use full
+/// signatures, as the `--full-sigs` option of the `lcp_mmphf` CLI utility
+/// does (e.g.,
+/// [`FuseAug3FullSigs`](crate::func::shard_edge::FuseAug3FullSigs); see the
+/// [`VFunc`] documentation): the key map needs them beyond ten billion keys,
+/// and the prefix-to-bucket map, which has a key per bucket, beyond about
+/// 3 · 10¹¹ keys.
 ///
 /// # Examples
 ///

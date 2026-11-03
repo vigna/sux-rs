@@ -32,7 +32,7 @@ pub struct Modulo2Equation<W: Word = usize> {
 
 /// A system of [equations].
 ///
-/// [equations]: struct.Modulo2Equation.html
+/// [equations]: Modulo2Equation
 #[derive(Clone, Debug)]
 pub struct Modulo2System<W: Word = usize> {
     /// The number of variables.

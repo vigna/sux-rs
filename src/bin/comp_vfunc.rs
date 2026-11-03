@@ -77,7 +77,7 @@ struct Args {
     /// so only fuse3-shards (the default, unlike in the other binaries),
     /// fuse3-full-sigs (needed beyond ten billion keys), fuse3-no-shards64,
     /// and fuse3-no-shards128 are supported.​
-    #[arg(long, short = 'E', value_enum, default_value_t = sux::cli::ShardEdgeType::Fuse3Shards)]
+    #[arg(long, short = 'E', value_enum, hide_possible_values = true, default_value_t = sux::cli::ShardEdgeType::Fuse3Shards)]
     shard_edge: sux::cli::ShardEdgeType,
     #[clap(flatten)]
     log: sux::cli::LogIntervalArg,

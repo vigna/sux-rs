@@ -54,9 +54,10 @@ struct Args {
     /// Hashes keys sequentially without loading them in RAM.​
     #[arg(short, long)]
     sequential: bool,
-    /// Keep the hashes of the keys in temporary files in the default
-    /// temporary directory (TMPDIR), which needs about sixteen bytes of free
-    /// space per key. Requires --sequential (-s).​
+    /// Keep the hashes of the keys in temporary files in the directory given
+    /// by --temp-dir (by default, the temporary directory, TMPDIR), which
+    /// needs about sixteen bytes of free space per key. Requires --sequential
+    /// (-s).​
     #[arg(short, long, requires = "sequential")]
     offline: bool,
     /// The directory of the temporary files of --offline (-o) [default:

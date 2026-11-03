@@ -23,7 +23,7 @@ use value_traits::slices::SliceByValue;
 /// frequency-based remapping.
 ///
 /// During construction, the value distribution is analyzed and the most
-/// frequent values are assigned compact indices (0 . . 2*ʳ* − 1). A first
+/// frequent values are assigned compact indices [0 . . 2*ʳ* − 1). A first
 /// [`VFunc`] maps every key either to one of these compact indices or to the
 /// escape sentinel 2*ʳ* − 1. For escaped keys a second [`VFunc`], built only
 /// over the escaped subset, stores the full value. A small `remap` table

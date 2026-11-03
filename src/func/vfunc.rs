@@ -29,10 +29,10 @@ use std::borrow::Borrow;
 /// This structure has been described by Sebastiano Vigna in “[ε–Cost Sharding:
 /// Scaling Hypergraph–Based Data Structures to Trillions of Keys]”, 2026. Space
 /// overhead with respect to the optimum depends on the [`ShardEdge`] type. The
-/// default is [`FuseAug3Shards`], which provides a space overhead of about 11%
-/// for large key sets (above a hundred million keys), and of 9–12% for smaller
-/// key sets. Details on other possible [`ShardEdge`] implementations can be
-/// found in the [`shard_edge`] module documentation.
+/// default is [`FuseAug3Shards`], which provides a space overhead of about
+/// 10.5% for large key sets (from about two billion keys), and slightly more
+/// for smaller key sets. Details on other possible [`ShardEdge`]
+/// implementations can be found in the [`shard_edge`] module documentation.
 ///
 /// **Functions with more than ten billion keys must use full local
 /// signatures**, that is, [`FuseAug3FullSigs`] in place of the default: with
@@ -91,8 +91,10 @@ use std::borrow::Borrow;
 ///   function into one using [unaligned reads] for faster queries.
 ///
 /// * `S` - the signature type. The default is `[u64; 2]`. You can switch to
-///   `[u64; 1]` for slightly faster construction and queries, but the
-///   construction will not scale beyond 3.8 billion keys.
+///   `[u64; 1]`, together with `E` = [`Fuse3NoShards`] (the only logic
+///   supporting 64-bit signatures), for slightly faster construction and
+///   queries, but the construction will not scale beyond 2³² vertices (about
+///   3.8 billion keys).
 ///
 /// * `E` - the sharding and edge logic type. The default is [`FuseAug3Shards`].
 ///   For small sets of keys you might try [`Fuse3NoShards`], possibly

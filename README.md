@@ -31,7 +31,7 @@ from [the DSI Utilities] and new structures.
 - a [minimal perfect hash function] with very fast construction and queries,
   using less than two bits per key;
 - [monotone minimal perfect hash functions] based on longest common prefixes,
-  which are [the fastest available] (using less than log₂*n* space);
+  which are [the fastest available] (using less than log₂*n* bits per key);
 - support for [signed minimal perfect hash functions];
 - [partial arrays], that is, “arrays with holes”, implemented using ranking or
   Elias–Fano;
@@ -207,7 +207,7 @@ The crate provides binaries that build structures and serialize them with
 | ------------ | ---------------------------------------------------------- | --------------------------------------------------------- |
 | `rcl`        | a [`RearCodedListStr`] of the lines of a file              | `RearCodedListStr<false>` with `--unsorted`; `-` is stdin |
 | `mrcl`       | a [`MappedRearCodedListStr`] from a stored rear-coded list | `MappedRearCodedListStr<false>` with `--unsorted`         |
-| `vfunc`      | a [`VFunc`] mapping each key to its rank                   | signed with `--hash-type`                                 |
+| `vfunc`      | a [`VFunc`] mapping each key to its index in the input     | signed with `--hash-type`                                 |
 | `vfunc2`     | a [`VFunc2`]                                               | values from a file or generated                           |
 | `comp_vfunc` | a [`CompVFunc`]                                            | values from a file or generated                           |
 | `vfilter`    | a [`VFilter`]                                              | hashes of `--bits` bits                                   |

@@ -62,20 +62,20 @@
 //! - [`FuseAug3Shards`] with 128-bit signatures and 64-bit local signatures:
 //!   this is the default choice. It shards keys using ε-cost sharding and
 //!   generates edges from 64-bit local signatures using a fuse 3-hypergraph
-//!   with a space overhead of about 11% (ε = 0.001) for key sets above a
-//!   hundred million keys, and of 11–12% for key sets above 2 · 10⁷ keys. Up to
-//!   2 · 10⁷ keys, it uses up to sixteen smaller shards solved by augmented
-//!   peeling, which keeps the space overhead at 9–12%, and makes construction
-//!   parallel above 400000 keys. Functions with more than ten billion keys
-//!   must use [`FuseAug3FullSigs`] instead.
+//!   with a space overhead of about 10.5% (ε = 0.001) for large key sets
+//!   (slightly more for smaller key sets). Up to 2 · 10⁷ keys, it uses up to
+//!   sixteen smaller shards solved by augmented peeling, which keeps the space
+//!   overhead low, and makes construction parallel above 400,000 keys.
+//!   Functions with more than ten billion keys must use [`FuseAug3FullSigs`]
+//!   instead.
 //!
 //! - [`Fuse3Shards`] is like [`FuseAug3Shards`] but does not use augmented
 //!   peeling, so on small key sets the construction will be faster but the
-//!   resulting structure will be bigger (≈+10% on small key sets, ≈+2% on a
-//!   few million keys).
+//!   resulting structure will be bigger. Functions with more than ten billion
+//!   keys must use [`Fuse3FullSigs`] instead.
 //!
 //! - [`Fuse3NoShards`] is like [`Fuse3Shards`] but does not use sharding. It is
-//!   thus is mostly equivalent to [“Binary Fuse Filters: Fast and Smaller Than
+//!   thus mostly equivalent to [“Binary Fuse Filters: Fast and Smaller Than
 //!   Xor Filters”], albeit for large key sets the space overhead will be lower,
 //!   as we use a better expansion factor.
 //!
@@ -86,21 +86,22 @@
 //!   number of keys, so [`VBuilder`] refuses to build functions with more
 //!   than [`MAX_LOCAL_SIG_FUNC_KEYS`] keys using [`FuseAug3Shards`]. This
 //!   logic uses full local signatures, which cannot lead to duplicates with
-//!   overwhelming probability; construction is about 10% slower and uses
-//!   almost double memory, but query time is the same. Filters do not have
-//!   this problem as local signatures can be deduplicated without affecting
-//!   the semantics of the filter. [`Fuse3FullSigs`] is the analogous variant
-//!   of [`Fuse3Shards`].
+//!   overwhelming probability; the construction of functions is about 10%
+//!   slower and uses almost double memory, but query time is the same.
+//!   Filters do not have this problem as local signatures can be deduplicated
+//!   without affecting the semantics of the filter. [`Fuse3FullSigs`] is the
+//!   analogous variant of [`Fuse3Shards`].
 //!
 //! - `Mwhc3Shards` with 128-bit signatures (requires the `mwhc` feature): this
-//!   choice gives much worse overhead (23%) but can be sharded very finely.
-//!   With ε = 0.01 (and thus 24% space overhead) sharding can already happen at
-//!   very small sizes, providing the fastest parallel construction. Query speed
-//!   is similar to [`Fuse3Shards`].
+//!   choice gives a much larger space overhead (23.4% with ε = 0.01), but it
+//!   can be sharded very finely, so sharding can already happen at very small
+//!   sizes, providing the fastest parallel construction among hypergraph-based
+//!   structures. Query speed is similar to [`Fuse3Shards`].
 //!
 //! Note that the solving strategy (e.g., using or not augmented peeling) has
-//! no effect on query time. Sharding adds a few nanoseconds to
-//! query time, but without sharding one cannot go beyond a few billion keys.
+//! no effect on query time. Sharding adds a few nanoseconds to query time, but
+//! without sharding construction is sequential, and beyond a few billion keys
+//! it requires 128-bit signatures and becomes very slow.
 //!
 //! [“Binary Fuse Filters: Fast and Smaller Than Xor Filters”]: https://doi.org/10.1145/3510449
 //! [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
@@ -347,7 +348,7 @@ pub unsafe trait ShardEdge<S, const K: usize>:
     /// Returns the name of the shard/edge logic with full signatures that
     /// replaces this one when building functions with more than
     /// [`MAX_LOCAL_SIG_FUNC_KEYS`] keys, if [local signatures] are shorter than
-    /// signatures.
+    /// the signatures.
     ///
     /// The name is used in error and warning messages. The default
     /// implementation returns [`None`].
@@ -799,12 +800,12 @@ mod fuse {
     /// This construction uses ε-cost sharding (“[ε–Cost Sharding: Scaling
     /// Hypergraph–Based Data Structures to Trillions of Keys]”) to shard keys
     /// and then fuse 3-hypergraphs (see “[Dense Peelable Random Uniform
-    /// Hypergraphs]”) on sharded keys, giving a space overhead of about 11% for
-    /// large key sets (above a hundred million keys); smaller key sets have a
-    /// slightly larger overhead (11–12%). Duplicate edges are possible, which
-    /// limits the amount of possible sharding.
+    /// Hypergraphs]”) on sharded keys, giving a space overhead of about 10.5%
+    /// for large key sets (from about two billion keys); smaller key sets have
+    /// a slightly larger overhead. Duplicate edges are possible, which limits
+    /// the amount of possible sharding.
     ///
-    /// To keep the expansion factor close to the minimums (1.105), in the
+    /// To keep the expansion factor close to its minimum value (1.105), in the
     /// peeling regime shards are never smaller than 10⁷ keys. In the
     /// augmented-peeling regime (up to 2 · 10⁷ keys, see below) shards are
     /// much smaller, and the probability of a construction retry caused by a
@@ -833,8 +834,8 @@ mod fuse {
     /// Below a few dozen million keys, peelable fuse graphs have a higher space
     /// overhead, and since shards cannot be smaller than 10⁷ keys, construction
     /// is sequential. Up to 2 · 10⁷ keys this construction thus uses up to
-    /// eight shards of at least 200000 keys, or sixteen shards of at least
-    /// 400000 keys, and, following a suggestion by Stefan Walzer, Stefan
+    /// eight shards of at least 200,000 keys, or sixteen shards of at least
+    /// 400,000 keys, and, following a suggestion by Stefan Walzer, Stefan
     /// Hermann, and Markus Wünstel, solves them by *augmented peeling*:
     /// whenever peeling gets stuck, it removes the first remaining edge in the
     /// leftmost segment containing edges and continues; at the end, the removed
@@ -845,8 +846,9 @@ mod fuse {
     /// segments are chosen to minimize the number of vertices using a law for
     /// the threshold of solvability, derived by density evolution and corrected
     /// for finite segments, so that a construction attempt succeeds with
-    /// probability ≈70%, duplicate edges included. The resulting space overhead
-    /// is 9–12%, and construction is parallel above 400000 keys.
+    /// probability at least ≈70%, duplicate edges included. The resulting space
+    /// overhead is close to that of large key sets, and construction is
+    /// parallel above 400,000 keys.
     ///
     /// Augmented peeling is a transposed form of the *inactivation decoding*
     /// of Raptor codes, described by Amin Shokrollahi and Michael Luby in
@@ -869,10 +871,10 @@ mod fuse {
     /// significant, and [`VBuilder`](crate::func::VBuilder) refuses to build
     /// them using this logic. [`FuseAug3FullSigs`] uses full signatures as
     /// local signatures, making the probability of a duplicate local
-    /// signature negligible. As a result, it is slightly slower and uses more
-    /// space at construction time.
-    /// Filters do not have this problem, as local signatures can be
-    /// deduplicated without affecting the semantics of the filter.
+    /// signature negligible. As a result, the construction is about 10% slower
+    /// and uses almost double memory. Filters do not have this problem, as
+    /// local signatures can be deduplicated without affecting the semantics of
+    /// the filter.
     ///
     /// [Dense Peelable Random Uniform Hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
     /// [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
@@ -903,7 +905,7 @@ mod fuse {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
-                "Fuse3 (augmented peeling, shards); shards: 2^{}; vertices per shard: {}; segment size: 2^{}; segments: {}",
+                "Fuse3 (augmented peeling up to 2·10^7 keys, shards); shards: 2^{}; vertices per shard: {}; segment size: 2^{}; segments: {}",
                 self.shard_high_bits(),
                 (self.l as usize + 2) << self.log2_seg_size,
                 self.log2_seg_size,
@@ -1105,16 +1107,17 @@ mod fuse {
     /// Unsharded [fuse 3-hypergraphs] without augmented peeling.
     ///
     /// In the case of 64-bit signatures this implementation is equivalent to
-    /// that described in "[Binary Fuse Filters: Fast and Smaller Than Xor
-    /// Filters]"; however, with 64-bit signatures it is not possible to build
+    /// that described in “[Binary Fuse Filters: Fast and Smaller Than Xor
+    /// Filters]”; however, with 64-bit signatures it is not possible to build
     /// functions beyond a few billion keys, so the usage is limited to small to
-    /// medium key sets (up to 2³² keys due to `u32` vertices).
+    /// medium key sets (up to 2³² vertices, that is, about 3.8 billion keys,
+    /// due to `u32` vertices).
     ///
-    /// Moreover, for small key sets (up to 800k) we use the expansion factor from
-    /// Table 1 of "[Binary Fuse Filters: Fast and Smaller Than Xor
-    /// Filters]". After that, we use an [experimentally derived smaller
+    /// Moreover, for small key sets (up to 800,000 keys) we use the expansion
+    /// factor from Table 1 of “[Binary Fuse Filters: Fast and Smaller Than Xor
+    /// Filters]”. After that, we use an [experimentally derived smaller
     /// factor] that is close to the real peelability threshold (*c* = 1.105).
-    /// Up to 100000 keys, the number of segments is increased, if necessary,
+    /// Up to 100,000 keys, the number of segments is increased, if necessary,
     /// so that the density of the segments containing the first vertex of
     /// edges reaches an empirical peelability threshold: otherwise, the
     /// rounding of the number of segments would make most construction
@@ -1122,7 +1125,7 @@ mod fuse {
     ///
     /// We provide also an implementation for 128-bit signatures without these
     /// limitations, but we strongly suggest to use sharding as very large
-    /// graphs are very slow to peel due sparse memory access and lack of
+    /// graphs are very slow to peel due to sparse memory access and lack of
     /// parallel processing.
     ///
     /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
@@ -1153,8 +1156,8 @@ mod fuse {
     impl Fuse3NoShards {
         /// Returns the expansion factor for fuse 3-hypergraphs.
         ///
-        /// For small key sets (up to 800k) this function uses Table 1 of
-        /// "[Binary Fuse Filters: Fast and Smaller Than Xor Filters]". After
+        /// For small key sets (up to 800,000 keys) this function uses Table 1
+        /// of “[Binary Fuse Filters: Fast and Smaller Than Xor Filters]”. After
         /// that, it uses an experimentally derived smaller factor that is close
         /// to the real peelability threshold; in particular, after 20 million
         /// keys it returns 1.105.
@@ -1182,7 +1185,7 @@ mod fuse {
 
         /// Returns the log₂ of segment size for fuse 3-hypergraphs.
         ///
-        /// From "[Binary Fuse Filters: Fast and Smaller Than Xor Filters]".
+        /// From “[Binary Fuse Filters: Fast and Smaller Than Xor Filters]”.
         ///
         /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
         pub fn log2_seg_size(n: usize) -> u32 {
@@ -1225,7 +1228,7 @@ mod fuse {
             .try_into()
             .unwrap();
 
-            (c, false) // false = no Gaussian elimination
+            (c, false) // false = no augmented peeling
         }
 
         fn set_up_corr_graphs(
@@ -1431,7 +1434,6 @@ mod fuse {
     /// must use [`Fuse3FullSigs`], the variant of this logic using full
     /// signatures as local signatures (see [`FuseAug3Shards`] for details).
     ///
-    /// [Binary Fuse Filters: Fast and Smaller Than Xor Filters]: https://doi.org/10.1145/3510449
     /// [fuse 3-hypergraphs]: https://doi.org/10.4230/LIPIcs.ESA.2019.38
     /// [ε-cost sharded]: https://arxiv.org/abs/2503.18397
     #[derive(Debug, Clone, Copy, MemSize, MemDbg)]
@@ -1509,9 +1511,8 @@ mod fuse {
         /// high probability, keeping segments as large as possible to reduce
         /// the probability of duplicate edges.
         ///
-        /// This function returns [`Fuse3NoShards::log2_seg_size`] for less than
-        /// 20 millions, and [`Fuse3Shards::log2_large_seg_size`] for
-        /// larger value.
+        /// This function returns [`Fuse3NoShards::log2_seg_size`] up to
+        /// 2 · 10⁷, and [`Fuse3Shards::log2_large_seg_size`] for larger values.
         pub fn log2_seg_size(n: usize) -> u32 {
             if n <= Self::LARGE_SEGMENT_THRESHOLD {
                 Fuse3NoShards::log2_seg_size(n)
@@ -1636,7 +1637,7 @@ mod fuse {
             .try_into()
             .unwrap();
             check_total_vertices("Fuse3Shards", self.num_vertices(), self.num_shards());
-            (c, false) // false = no Gaussian elimination
+            (c, false) // false = no augmented peeling
         }
 
         fn full_sigs_name() -> Option<&'static str> {
@@ -1727,8 +1728,8 @@ mod fuse {
     /// negligible. Filters do not have this problem as local signatures can be
     /// deduplicated without affecting the semantics of the filter.
     ///
-    /// As a result, it is slightly slower and uses more space at
-    /// construction time. The rest of the logic is identical, with one
+    /// As a result, the construction of functions is about 10% slower and uses
+    /// almost double memory. The rest of the logic is identical, with one
     /// exception: since local signatures have 128 bits, the map from local
     /// signatures to edges never becomes injective, so, contrarily to
     /// [`FuseAug3Shards`], duplicate edges are possible at every scale.
@@ -1882,8 +1883,8 @@ mod fuse {
     /// augmented peeling. It uses full signatures as local signatures, making
     /// the probability of a duplicate local signature negligible.
     ///
-    /// As in the case of [`FuseAug3FullSigs`], construction is slightly
-    /// slower and uses more space, duplicate edges are possible at every
+    /// As in the case of [`FuseAug3FullSigs`], construction is slower and uses
+    /// almost double memory, duplicate edges are possible at every
     /// scale, and sharding is limited so that the probability of a
     /// construction retry caused by a duplicate edge is at most
     /// [`Fuse3Shards::DUP_EDGE_RETRY_PROB`] (or the bound set with
@@ -2591,9 +2592,10 @@ mod mwhc {
     ///
     /// This construction uses ε-cost sharding (“[ε–Cost Sharding: Scaling
     /// Hypergraph–Based Data Structures to Trillions of Keys]”) to shard keys
-    /// and then random peelable 3-hypergraphs on sharded keys, giving a 23%
-    /// space overhead. Duplicate edges are much less likely than with [fuse
-    /// graphs], which makes it possible to shard keys with a finer grain.
+    /// and then random peelable 3-hypergraphs on sharded keys, giving a 23.4%
+    /// space overhead with ε = 0.01. Duplicate edges are much less likely than
+    /// with [fuse graphs], which makes it possible to shard keys with a finer
+    /// grain.
     ///
     /// The MWHC construction has mostly been obsoleted by [fuse graphs], but it
     /// is still useful for benchmarking and comparison. It also provides
@@ -2635,7 +2637,8 @@ mod mwhc {
     }
 
     /// We use the lower 32 bits of `sig[0]` for the first vertex, the higher 32
-    /// bits of `sig[1]`, and the lower 32 bits of `sig[1]` for the third vertex.
+    /// bits of `sig[1]` for the second vertex, and the lower 32 bits of
+    /// `sig[1]` for the third vertex.
     fn edge(shard: usize, seg_size: usize, sig: [u64; 2]) -> [usize; 3] {
         let mut start = shard * seg_size * 3;
         let v0 = fixed_point_inv_64!(sig[0] as u32, seg_size) + start;
