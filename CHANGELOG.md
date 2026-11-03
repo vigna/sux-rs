@@ -37,6 +37,14 @@
   With the default parameters, the only effect is that structures based on fuse
   graphs with about 12 billion keys use 64 rather than 128 shards.
 
+### Fixed
+
+- The progress of shard solving in `VBuilder`, and of shard signing in the
+  constructors of signed `VFunc`s, is now logged during the process:
+  previously, each thread reported its shards only when it finished, so no
+  progress was logged until the end, when a spurious line estimated the
+  remaining time from the shards of a single thread.
+
 ## [0.15.3] - 2026-10-29
 
 ### New

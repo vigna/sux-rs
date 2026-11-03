@@ -2107,7 +2107,13 @@ impl<
                                     shard_index + 1,
                                     num_shards
                                 ));
-                                main_pl.update();
+                                // update() would keep the count in this
+                                // clone of the logger until it reaches a
+                                // large threshold, but each thread solves
+                                // few shards, so we update the shared count
+                                // directly.
+                                main_pl.add_to_count(1);
+                                main_pl.log_if(Instant::now());
                             }
                         }
                     }

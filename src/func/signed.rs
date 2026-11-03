@@ -708,7 +708,10 @@ mod build {
                 for sig_val in shard.iter() {
                     set(sig_val.val, shard_edge.remixed_hash(sig_val.sig));
                 }
-                cpl.update();
+                // As in VBuilder::par_solve, update() would keep the count
+                // in this clone of the logger, as shards are few.
+                cpl.add_to_count(1);
+                cpl.log_if(std::time::Instant::now());
             });
         cpl.done();
         pl.pop_log_target();
