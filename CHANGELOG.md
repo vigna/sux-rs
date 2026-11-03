@@ -11,7 +11,11 @@
 
 - The `lcp_mmphf` CLI utility has a new `--full-sigs` option that makes the
   inner functions use full signatures, which is necessary with more than ten
-  billion keys.
+  billion keys; the `bench_lcp_mmphf` example has the same option.
+
+- `ShardEdge::full_sigs_name` returns the name of the shard/edge logic with
+  full signatures that replaces a given one when building functions with more
+  than ten billion keys.
 
 ### Changed
 
@@ -29,7 +33,8 @@
 - When building a function, `VBuilder` logs a warning if the probability
   that a construction attempt finds duplicate local signatures exceeds the
   retry probability, and the messages about duplicate local signatures name
-  the shard/edge logic with full signatures to use.
+  the shard/edge logic with full signatures to use (given by
+  `ShardEdge::full_sigs_name`).
 
 - `Fuse3Shards::dup_edge_retry_prob` uses the exact collision probability of
   the map from local signatures to edges, in which the numbers of preimages of

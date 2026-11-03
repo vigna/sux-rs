@@ -2161,7 +2161,7 @@ impl<'a, B: Backend<Word: Word> + AsRef<[B::Word]>> value_traits::iter::IterateB
 /// The backing storage must have sufficient padding at the end so that
 /// unaligned reads do not access memory outside the allocation.
 ///
-/// [`From` implementation]: #impl-From<BitFieldVecU<Box<%5BW%5D>>-for-BitFieldVec<Box<%5BW%5D>>
+/// [`From` implementation]: #impl-From%3CBitFieldVecU%3CBox%3C%5BW%5D%3E%3E%3E-for-BitFieldVec%3CBox%3C%5BW%5D%3E%3E
 /// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 #[derive(Debug, Clone, MemSize, MemDbg, value_traits::Subslices)]
 #[value_traits_subslices(bound = "B: AsRef<[B::Word]>")]

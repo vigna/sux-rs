@@ -105,7 +105,7 @@ where
     VFunc2<usize, BitFieldVec<Box<[usize]>>, S, E>:
         Serialize + TryIntoUnaligned<Unaligned: Serialize>,
 {
-    check_func_num_keys::<S, E>(args.n, "--shard-edge fuse-aug3-full-sigs")?;
+    check_func_num_keys::<S, E>(args.n, args.sharding.shard_edge.full_sigs_option())?;
     let mut pl = args.log.progress_logger();
     let mut builder = args
         .builder

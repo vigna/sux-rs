@@ -1483,18 +1483,9 @@ impl<
     }
 
     /// Returns the name of the shard/edge logic with full signatures
-    /// suggested in messages.
-    ///
-    /// Only [`CompVFunc`] sets [`shard_size_hint`], and it does not support
-    /// augmented peeling.
-    ///
-    /// [`shard_size_hint`]: Self::shard_size_hint
+    /// suggested in messages (see [`ShardEdge::full_sigs_name`]).
     fn full_sigs_name(&self) -> &'static str {
-        if self.shard_size_hint.is_none() {
-            "FuseAug3FullSigs"
-        } else {
-            "Fuse3FullSigs"
-        }
+        E::full_sigs_name().unwrap_or("a shard/edge logic with full signatures")
     }
 
     /// Returns [`BuildError::DuplicateLocalSignatures`] if we are building a

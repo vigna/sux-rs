@@ -76,7 +76,7 @@ use value_traits::slices::SliceByValue;
 ///
 /// - `B`: The data backend. Must implement [`Backend`] and
 ///   [`BitVecValueOps<B::Word>`]. Defaults to
-///   [`BitVec<Box<[usize]>>`].
+///   [`BitVec<Box<[usize]>>`][BitVec].
 /// - `D`: The delimiter structure. Must implement `SliceByValue<Value = u64>`.
 ///   Defaults to [`EfSeq<u64>`].
 ///

@@ -128,7 +128,7 @@ where
     Func<str, S, E>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
     Func<usize, S, E>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
 {
-    check_func_num_keys::<S, E>(args.n, "--shard-edge fuse-aug3-full-sigs")?;
+    check_func_num_keys::<S, E>(args.n, args.sharding.shard_edge.full_sigs_option())?;
     let mut pl = args.log.progress_logger();
     let builder = new_builder(args);
 
@@ -188,7 +188,7 @@ where
     Signed<str, S, E, W>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
     Signed<usize, S, E, W>: Serialize + TryIntoUnaligned<Unaligned: Serialize>,
 {
-    check_func_num_keys::<S, E>(args.n, "--shard-edge fuse-aug3-full-sigs")?;
+    check_func_num_keys::<S, E>(args.n, args.sharding.shard_edge.full_sigs_option())?;
     let mut pl = args.log.progress_logger();
     let builder = new_builder(args);
 

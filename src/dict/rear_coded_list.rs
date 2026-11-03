@@ -287,11 +287,11 @@ impl<I: ?Sized, O, D: Clone, P: Clone, const SORTED: bool> Clone
 
 /// A rear-coded list of byte sequences, returning `Vec<u8>` on access.
 ///
-/// Instances are built using a [`RearCodedListBuilder<[u8], SORTED>`]. When
+/// Instances are built using a
+/// [`RearCodedListBuilder<[u8], SORTED>`][RearCodedListBuilder]. When
 /// deserializing with ε-serde, `SORTED` must match the value used at
 /// construction time (see the [module documentation]).
 ///
-/// [`RearCodedListBuilder<[u8], SORTED>`]: RearCodedListBuilder
 /// [module documentation]: crate::dict::rear_coded_list#serialization-and-the-sorted-parameter
 pub type RearCodedListSliceU8<const SORTED: bool = true> =
     RearCodedList<[u8], Vec<u8>, Box<[u8]>, Box<[usize]>, SORTED>;

@@ -470,6 +470,18 @@ pub enum ShardEdgeType {
     FuseLge3FullSigs,
 }
 
+impl ShardEdgeType {
+    /// Returns the option selecting the shard/edge type with full signatures
+    /// that replaces this one when building functions with more than
+    /// [`MAX_LOCAL_SIG_FUNC_KEYS`] keys.
+    pub fn full_sigs_option(self) -> &'static str {
+        match self {
+            Self::Fuse3Shards => "--shard-edge fuse3-full-sigs",
+            _ => "--shard-edge fuse-aug3-full-sigs",
+        }
+    }
+}
+
 /// Shared CLI flags that select the *type* of shard/edge used during
 /// construction.
 ///
@@ -479,7 +491,8 @@ pub enum ShardEdgeType {
 /// Binaries that dispatch on shard/edge type (`vfunc`, `vfunc2`, `vfilter`)
 /// flatten this struct next to [`BuilderArgs`]; `comp_vfunc` has its own
 /// option, as it supports only some types and has a different default;
-/// binaries that pin their shard/edge type (`lcp_mmphf`) have no option.
+/// `lcp_mmphf` uses fixed types, with or without full signatures (option
+/// `--full-sigs`).
 #[derive(clap::Args, Debug)]
 pub struct ShardingArgs {
     /// Shard/edge type.​

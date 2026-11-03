@@ -211,7 +211,7 @@ fn padding_bits(len: usize, bits_per_word: usize) -> usize {
 ///
 /// See the [module documentation] for more details.
 ///
-/// [`FromIterator` implementation]: #impl-FromIterator<bool>-for-BitVec
+/// [`FromIterator` implementation]: #impl-FromIterator%3Cbool%3E-for-BitVec%3CVec%3CW%3E%3E
 /// [`new`]: BitVec::new
 /// [`with_value`]: BitVec::with_value
 /// [`bit_vec!`]: macro@crate::bits::bit_vec
@@ -1428,7 +1428,7 @@ impl<B: Backend<Word: Word + SelectInWord> + AsRef<[B::Word]>> SelectZeroHinted 
 /// methods available, and [`Index`] to make slice-like read-only access
 /// available.
 ///
-/// [`From` implementation]: #impl-From<BitVecU<Box<%5BW%5D>>-for-BitVec<Box<%5BW%5D>>
+/// [`From` implementation]: #impl-From%3CBitVecU%3CBox%3C%5BW%5D%3E%3E%3E-for-BitVec%3CBox%3C%5BW%5D%3E%3E
 /// [`TryIntoUnaligned`]: crate::traits::TryIntoUnaligned
 #[derive(Debug, Clone, MemSize, MemDbg, Delegate)]
 #[cfg_attr(feature = "epserde", derive(epserde::Epserde))]

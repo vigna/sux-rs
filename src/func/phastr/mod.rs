@@ -355,6 +355,7 @@ pub struct LevelParams {
 ///
 /// [PHast]: https://doi.org/10.1137/1.9781611978957.1
 /// [PHastR: Minimal Perfect Hashing with Rotated Layouts]: https://arxiv.org/abs/2610.17833
+/// [PHastR paper]: https://arxiv.org/abs/2610.17833
 /// [`SignedFunc`]: crate::func::SignedFunc
 /// [constructors for `PHastR`]: crate::func::SignedFunc#supported-combinations
 /// [lender]: crate::utils::lenders

@@ -4,16 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-#![allow(clippy::collapsible_else_if)]
 use anyhow::Result;
 use clap::Parser;
 use epserde::prelude::*;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::{
-    bits::BitFieldVecU,
+    bits::{BitFieldVec, BitFieldVecU},
     cli::{Decompression, bench, gen_sorted_keys, init_env_logger, pack_strings, reservoir_sample},
-    func::{lcp_mmphf::*, lcp2_mmphf::*},
+    func::{
+        lcp_mmphf::*,
+        lcp2_mmphf::*,
+        shard_edge::{Fuse3FullSigs, Fuse3Shards, FuseAug3FullSigs, FuseAug3Shards},
+    },
 };
 
 /// Sample n random keys from the key set (with replacement).
@@ -52,6 +55,84 @@ struct Args {
     /// Use unaligned reads.​
     #[arg(long, short)]
     unaligned: bool,
+    /// The function was built using full signatures (option --full-sigs of
+    /// lcp_mmphf).​
+    #[arg(long)]
+    full_sigs: bool,
+}
+
+/// Benchmarks a structure of type `$t` on strings sampled from `$filename`.
+macro_rules! bench_str {
+    ($t:ty, $args:expr, $filename:expr) => {{
+        let func = unsafe { <$t>::load_full(&$args.func) }?;
+        let (packed, packed_offsets) = {
+            let queries = reservoir_sample($filename, $args.n, 42, $args.decompress)?;
+            pack_strings(&queries, $args.n)
+        };
+        bench($args.n, $args.repeats, || {
+            let mut u = 0usize;
+            for i in 0..$args.n {
+                let s = packed_offsets[i];
+                let e = packed_offsets[i + 1];
+                let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
+                u ^= func.get(q);
+            }
+            std::hint::black_box(u);
+        });
+    }};
+}
+
+/// Benchmarks a structure of type `$t` on random sorted u64 keys.
+macro_rules! bench_int {
+    ($t:ty, $args:expr) => {{
+        let func = unsafe { <$t>::load_full(&$args.func) }?;
+        let keys = gen_sorted_keys(func.len(), 0);
+        let queries = sample_queries(&keys, $args.n, 42);
+        drop(keys);
+        bench($args.n, $args.repeats, || {
+            let mut u = 0usize;
+            for &key in &queries {
+                u ^= func.get(key);
+            }
+            std::hint::black_box(u);
+        });
+    }};
+}
+
+/// Benchmarks a structure whose inner functions use the shard/edge types
+/// `$e0` (key map), `$f0` (infrequent LCP lengths of the two-step variant),
+/// and `$e1` (LCP-to-bucket map), as the `lcp_mmphf` binary does.
+macro_rules! bench_with_types {
+    ($args:expr, $e0:ty, $f0:ty, $e1:ty) => {{
+        type A = BitFieldVec<Box<[usize]>>;
+        type U = BitFieldVecU<Box<[usize]>>;
+        match (&$args.filename, $args.two_step, $args.unaligned) {
+            (Some(f), false, false) => {
+                bench_str!(LcpMmphfStr<A, [u64; 2], $e0, [u64; 2], $e1>, $args, f)
+            }
+            (Some(f), false, true) => {
+                bench_str!(LcpMmphfStr<U, [u64; 2], $e0, [u64; 2], $e1>, $args, f)
+            }
+            (Some(f), true, false) => {
+                bench_str!(Lcp2MmphfStr<A, [u64; 2], $e0, $f0, [u64; 2], $e1>, $args, f)
+            }
+            (Some(f), true, true) => {
+                bench_str!(Lcp2MmphfStr<U, [u64; 2], $e0, $f0, [u64; 2], $e1>, $args, f)
+            }
+            (None, false, false) => {
+                bench_int!(LcpMmphfInt<u64, A, [u64; 2], $e0, [u64; 2], $e1>, $args)
+            }
+            (None, false, true) => {
+                bench_int!(LcpMmphfInt<u64, U, [u64; 2], $e0, [u64; 2], $e1>, $args)
+            }
+            (None, true, false) => {
+                bench_int!(Lcp2MmphfInt<u64, A, [u64; 2], $e0, $f0, [u64; 2], $e1>, $args)
+            }
+            (None, true, true) => {
+                bench_int!(Lcp2MmphfInt<u64, U, [u64; 2], $e0, $f0, [u64; 2], $e1>, $args)
+            }
+        }
+    }};
 }
 
 fn main() -> Result<()> {
@@ -59,142 +140,10 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    if args.two_step {
-        main_two_step(args)
+    if args.full_sigs {
+        bench_with_types!(args, FuseAug3FullSigs, Fuse3FullSigs, FuseAug3FullSigs);
     } else {
-        main_single(args)
-    }
-}
-
-fn main_single(args: Args) -> Result<()> {
-    if let Some(ref filename) = args.filename {
-        if args.unaligned {
-            let func = unsafe { <LcpMmphfStr<BitFieldVecU<Box<[usize]>>>>::load_full(&args.func) }?;
-            let (packed, packed_offsets) = {
-                let queries = reservoir_sample(filename, args.n, 42, args.decompress)?;
-                pack_strings(&queries, args.n)
-            };
-            bench(args.n, args.repeats, || {
-                let mut u = 0usize;
-                for i in 0..args.n {
-                    let s = packed_offsets[i];
-                    let e = packed_offsets[i + 1];
-                    let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
-                    u ^= func.get(q);
-                }
-                std::hint::black_box(u);
-            });
-        } else {
-            let func = unsafe { <LcpMmphfStr>::load_full(&args.func) }?;
-            let (packed, packed_offsets) = {
-                let queries = reservoir_sample(filename, args.n, 42, args.decompress)?;
-                pack_strings(&queries, args.n)
-            };
-            bench(args.n, args.repeats, || {
-                let mut u = 0usize;
-                for i in 0..args.n {
-                    let s = packed_offsets[i];
-                    let e = packed_offsets[i + 1];
-                    let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
-                    u ^= func.get(q);
-                }
-                std::hint::black_box(u);
-            });
-        }
-    } else {
-        if args.unaligned {
-            let func =
-                unsafe { LcpMmphfInt::<u64, BitFieldVecU<Box<[usize]>>>::load_full(&args.func) }?;
-            let keys = gen_sorted_keys(func.len(), 0);
-            let queries = sample_queries(&keys, args.n, 42);
-            drop(keys);
-            bench(args.n, args.repeats, || {
-                let mut u = 0usize;
-                for &key in &queries {
-                    u ^= func.get(key);
-                }
-                std::hint::black_box(u);
-            });
-        } else {
-            let func = unsafe { LcpMmphfInt::<u64>::load_full(&args.func) }?;
-            let keys = gen_sorted_keys(func.len(), 0);
-            let queries = sample_queries(&keys, args.n, 42);
-            drop(keys);
-            bench(args.n, args.repeats, || {
-                let mut u = 0usize;
-                for &key in &queries {
-                    u ^= func.get(key);
-                }
-                std::hint::black_box(u);
-            });
-        }
-    }
-    Ok(())
-}
-
-fn main_two_step(args: Args) -> Result<()> {
-    if let Some(ref filename) = args.filename {
-        if args.unaligned {
-            let func =
-                unsafe { <Lcp2MmphfStr<BitFieldVecU<Box<[usize]>>>>::load_full(&args.func) }?;
-            let (packed, packed_offsets) = {
-                let queries = reservoir_sample(filename, args.n, 42, args.decompress)?;
-                pack_strings(&queries, args.n)
-            };
-            bench(args.n, args.repeats, || {
-                let mut u = 0usize;
-                for i in 0..args.n {
-                    let s = packed_offsets[i];
-                    let e = packed_offsets[i + 1];
-                    let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
-                    u ^= func.get(q);
-                }
-                std::hint::black_box(u);
-            });
-        } else {
-            let func = unsafe { <Lcp2MmphfStr>::load_full(&args.func) }?;
-            let (packed, packed_offsets) = {
-                let queries = reservoir_sample(filename, args.n, 42, args.decompress)?;
-                pack_strings(&queries, args.n)
-            };
-            bench(args.n, args.repeats, || {
-                let mut u = 0usize;
-                for i in 0..args.n {
-                    let s = packed_offsets[i];
-                    let e = packed_offsets[i + 1];
-                    let q = unsafe { std::str::from_utf8_unchecked(&packed[s..e]) };
-                    u ^= func.get(q);
-                }
-                std::hint::black_box(u);
-            });
-        }
-    } else {
-        if args.unaligned {
-            let func =
-                unsafe { Lcp2MmphfInt::<u64, BitFieldVecU<Box<[usize]>>>::load_full(&args.func) }?;
-            let keys = gen_sorted_keys(func.len(), 0);
-            let queries = sample_queries(&keys, args.n, 42);
-            drop(keys);
-            bench(args.n, args.repeats, || {
-                let mut u = 0usize;
-                for &key in &queries {
-                    u ^= func.get(key);
-                }
-                std::hint::black_box(u);
-            });
-        } else {
-            let func = unsafe { Lcp2MmphfInt::<u64>::load_full(&args.func) }?;
-            let keys = gen_sorted_keys(func.len(), 0);
-            let queries = sample_queries(&keys, args.n, 42);
-            drop(keys);
-            bench(args.n, args.repeats, || {
-                let mut u = 0usize;
-                for &key in &queries {
-                    u ^= func.get(key);
-                }
-                std::hint::black_box(u);
-            });
-        }
+        bench_with_types!(args, FuseAug3Shards, Fuse3Shards, FuseAug3Shards);
     }
     Ok(())
 }
