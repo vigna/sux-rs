@@ -658,20 +658,31 @@ fn aug_rank_threshold(l: f64) -> f64 {
 /// segments of size *s* = 2<sup>`log2_seg_size`</sup>.
 ///
 /// The attempt fails if there are duplicate edges (the graph has 𝓁*s*³
-/// possible edges) or if the linear system is unsolvable. We model the
-/// probability that the system is solvable as Φ((𝓁*s* / `num_edges` − μ) /
-/// σ), where:
+/// possible edges) or if the linear system is unsolvable. The probability
+/// that there are no duplicate edges is approximately
+/// exp(−*m*(*m* − 1) / 2𝓁*s*³), where *m* = `num_edges`.
 ///
-/// - μ is the [rank threshold] for *s* → ∞ plus a correction proportional to
-///   1 / *s*, which grows slowly with 𝓁 as the load of some segments is
-///   larger than average;
+/// We model the probability that the system is solvable as Φ((*x* − μ) / σ),
+/// where *x* = 𝓁*s* / *m* is the density, Φ is the standard normal
+/// distribution function (computed as Φ(*z*) = erfc(−*z* / √2) / 2), and:
 ///
-/// - σ combines the finite-size window of a system with about 𝓁*s*
-///   variables, which grows with 𝓁 as the end segments make the threshold
-///   fluctuate, and a fluctuation term that decreases quickly with *s*.
+/// - μ = θ(𝓁) + (`A0` + `A1` (ln 𝓁)<sup>`A2`</sup>) (1 + `A3` / *s*) / *s*,
+///   where θ(𝓁) is the [rank threshold] for *s* → ∞. The correction accounts
+///   for the fluctuations of the load of the segments, which grow slowly with
+///   𝓁. The factor 1 + `A3` / *s* is a second-order correction for small
+///   segments.
 ///
-/// The parameters of the corrections have been fitted on about 1.6 million
-/// simulated systems with 2³ ≤ *s* ≤ 2¹⁴ and 1 ≤ 𝓁 ≤ 1536.
+/// - σ² = *g*(𝓁)² / 𝓁*s* + `H`² / *s*<sup>`H_S_EXP`</sup>, where *g*(𝓁) =
+///   `G` (1 − exp(−(𝓁 + `G_SHIFT`) / `LAMBDA`)). The first term is the
+///   finite-size window of a system with 𝓁*s* variables. Its coefficient
+///   grows with 𝓁, as the end segments make the threshold fluctuate, and is
+///   within 1% of `G` for 𝓁 ≥ 20. The second term is a fluctuation term that
+///   decreases quickly with *s*.
+///
+/// The constants have been fitted by maximum likelihood on about 1.6 million
+/// simulated systems with 2³ ≤ *s* ≤ 2¹⁴ and 1 ≤ 𝓁 ≤ 1536. Where the
+/// predicted probability of success is between 50% and 99%, it is within 1.5
+/// points of the observed one, or conservative by about 3 points.
 ///
 /// [rank threshold]: aug_rank_threshold
 fn aug_success_prob(num_edges: usize, l: u128, log2_seg_size: u32) -> f64 {

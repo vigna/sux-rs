@@ -1838,8 +1838,9 @@ impl<
         }
     }
 
-    /// After this number of keys, in the case of filters we remove duplicate
-    /// edges.
+    /// After this number of keys we check for duplicate local signatures:
+    /// in the case of filters we remove them, in the case of functions the
+    /// construction attempt fails.
     #[cfg(target_pointer_width = "64")]
     const MAX_NO_LOCAL_SIG_CHECK: usize = 1 << 33;
     #[cfg(not(target_pointer_width = "64"))]
