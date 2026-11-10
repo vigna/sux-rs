@@ -195,6 +195,11 @@ pub struct VBuilder<D, S = [u64; 2], E = FuseAug3Shards> {
     /// This is not necessary in general, but if you suspect you might be
     /// feeding duplicate keys, you can enable this check: construction will
     /// then fail with [`BuildError::DuplicateKey`].
+    ///
+    /// Duplicate keys make a shard unsolvable with every seed. Thus, if this
+    /// check is disabled, it is enabled anyway after three consecutive
+    /// unsolvable shards (twenty when using augmented peeling, which fails
+    /// often by design).
     #[setters(generate = true)]
     check_dups: bool,
 
@@ -684,6 +689,36 @@ impl RetryState {
     /// estimate of the success probability is less accurate.
     const MAX_AUG_ATTEMPTS: u32 = 1000;
 
+    /// The number of [`SolveError::UnsolvableShard`] failures after which
+    /// the check for duplicate signatures is forced (see
+    /// [`VBuilder::check_dups`]).
+    ///
+    /// Large shards are unsolvable with very small probability, so a few
+    /// consecutive failures almost surely mean duplicate keys, whose edges
+    /// are the same for every seed.
+    const DUP_CHECK_ATTEMPTS: u32 = 3;
+
+    /// The number of [`SolveError::UnsolvableShard`] failures after which
+    /// the check for duplicate signatures is forced when using augmented
+    /// peeling.
+    ///
+    /// Augmented peeling fails with probability about 30%, so twenty
+    /// consecutive failures happen by chance with probability about
+    /// 3·10⁻¹¹. Forcing the check by mistake costs just a sort per shard.
+    const DUP_CHECK_AUG_ATTEMPTS: u32 = 20;
+
+    /// Returns whether the failures so far are enough to force the check
+    /// for duplicate signatures; `aug` tells whether the last attempt used
+    /// augmented peeling.
+    fn forces_dup_check(&self, aug: bool) -> bool {
+        self.unsolvable_count
+            >= if aug {
+                Self::DUP_CHECK_AUG_ATTEMPTS
+            } else {
+                Self::DUP_CHECK_ATTEMPTS
+            }
+    }
+
     /// Returns the next seed to try.
     fn next_seed(&mut self) -> u64 {
         self.prng.random()
@@ -1125,12 +1160,19 @@ impl<
     /// [`BuildError::DuplicateLocalSignatures`] is returned. Any other error
     /// is propagated immediately.
     ///
+    /// After three [`SolveError::UnsolvableShard`] failures (twenty when
+    /// using augmented peeling), the following attempts check for duplicate
+    /// signatures even if [`check_dups`] is false, so duplicate keys lead to
+    /// [`BuildError::DuplicateKey`] instead of a long series of unsolvable
+    /// shards. The setting of [`check_dups`] is restored on exit.
+    ///
     /// Before each retry, `state` is replaced with `rewind(state)`;
     /// usually, `state` contains the lenders to rewind.
     ///
     /// Returns the result of the successful attempt and the state.
     ///
     /// [builder seed]: Self::seed
+    /// [`check_dups`]: Self::check_dups
     pub(crate) fn try_with_retries<T, R, P: ProgressLog>(
         &mut self,
         mut state: T,
@@ -1140,24 +1182,47 @@ impl<
     ) -> anyhow::Result<(R, T)> {
         let mut rs = self.retry_state(pl)?;
         let start = Instant::now();
+        // The check for duplicate signatures might be forced below: we
+        // restore the user's setting on exit
+        let check_dups = self.check_dups;
 
-        loop {
+        let result = loop {
             let seed = rs.next_seed();
             let result = attempt(self, seed, &mut state, pl);
 
             // self.aug has been set by the attempt
-            if let Some(r) = rs.handle_solve_result(result, self.aug, pl)? {
-                pl.info(format_args!(
-                    "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                    start.elapsed().as_secs_f64(),
-                    self.num_keys,
-                    start.elapsed().as_nanos() as f64 / self.num_keys as f64
-                ));
-                return Ok((r, state));
+            match rs.handle_solve_result(result, self.aug, pl) {
+                Ok(Some(r)) => {
+                    pl.info(format_args!(
+                        "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+                        start.elapsed().as_secs_f64(),
+                        self.num_keys,
+                        start.elapsed().as_nanos() as f64 / self.num_keys as f64
+                    ));
+                    break Ok(r);
+                }
+                Ok(None) => {}
+                Err(e) => break Err(e),
             }
 
-            state = rewind(state)?;
-        }
+            if !self.check_dups && rs.forces_dup_check(self.aug) {
+                pl.info(format_args!(
+                    "Too many unsolvable shards: checking for duplicate keys from now on"
+                ));
+                self.check_dups = true;
+            }
+
+            state = match rewind(state) {
+                Ok(state) => state,
+                Err(e) => {
+                    self.check_dups = check_dups;
+                    return Err(e);
+                }
+            };
+        };
+
+        self.check_dups = check_dups;
+        result.map(|r| (r, state))
     }
 
     /// Populates a shard store from keys and values, then calls a build
@@ -2891,6 +2956,29 @@ mod retry_state_tests {
                 ),
                 "the 100th MaxShardTooBig must be fatal"
             );
+        }
+    }
+
+    /// The check for duplicate signatures is forced after three unsolvable
+    /// shards, or twenty with augmented peeling.
+    #[test]
+    fn unsolvable_shard_forces_dup_check() {
+        for (aug, threshold) in [
+            (false, RetryState::DUP_CHECK_ATTEMPTS),
+            (true, RetryState::DUP_CHECK_AUG_ATTEMPTS),
+        ] {
+            let mut pl = no_logging![];
+            let mut rs = retry_state();
+            for _ in 0..threshold {
+                assert!(!rs.forces_dup_check(aug));
+                let r = rs.handle_solve_result(
+                    Err::<(), _>(SolveError::UnsolvableShard.into()),
+                    aug,
+                    &mut pl,
+                );
+                assert!(matches!(r, Ok(None)));
+            }
+            assert!(rs.forces_dup_check(aug));
         }
     }
 

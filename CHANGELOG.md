@@ -1,5 +1,17 @@
 # Change Log
 
+## [0.15.5] - unreleased
+
+### Changed
+
+- If `check_dups` is false, `VBuilder` enables it after three consecutive
+  unsolvable shards (twenty when using augmented peeling, which fails often
+  by design), and restores it at the end of the construction. Duplicate keys
+  make a shard unsolvable with every seed, so before this change they caused
+  a long series of retries (up to 100, or 1000 with augmented peeling)
+  ending with `BuildError::UnsolvableShard`; now construction fails after a
+  few attempts with `BuildError::DuplicateKey`.
+
 ## [0.15.4] - 2026-11-03
 
 ### New

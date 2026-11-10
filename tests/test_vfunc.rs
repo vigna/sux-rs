@@ -16,7 +16,7 @@ use sux::{
     bits::BitFieldVec,
     dict::VFilter,
     func::{
-        VBuilder, VFunc,
+        BuildError, VBuilder, VFunc,
         shard_edge::{
             Fuse3FullSigs, Fuse3NoShards, Fuse3Shards, FuseAug3FullSigs, FuseAug3Shards, ShardEdge,
         },
@@ -208,6 +208,41 @@ fn test_dup_key() -> Result<()> {
         .is_err()
     );
 
+    Ok(())
+}
+
+/// Duplicate keys are detected even without check_dups: after a few
+/// unsolvable shards the builder forces the check.
+#[test]
+fn test_dup_key_forced_check() -> Result<()> {
+    let _ = env_logger::builder()
+        .is_test(true)
+        .filter_level(log::LevelFilter::Info)
+        .try_init();
+
+    macro_rules! check {
+        ($edge:ty) => {
+            // Key 42 appears twice, with different values
+            let err =
+                <VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], $edge>>::try_new_with_builder(
+                    FromCloneableIntoIterator::from((0..100_000).chain([42])),
+                    FromCloneableIntoIterator::from((0..100_000).chain([7])),
+                    VBuilder::default(),
+                    &mut ProgressLogger::default(),
+                )
+                .unwrap_err();
+            assert!(
+                matches!(
+                    err.downcast_ref::<BuildError>(),
+                    Some(BuildError::DuplicateKey)
+                ),
+                "{err}"
+            );
+        };
+    }
+
+    check!(FuseAug3Shards);
+    check!(Fuse3Shards);
     Ok(())
 }
 
