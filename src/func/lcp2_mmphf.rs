@@ -992,7 +992,8 @@ mod build {
                 build_key_funcs(builder, seed, store, &scan.lcp_bit_lens, log2_bs, pl)?;
 
             let lcp_to_bucket = build_bytes_lcp_to_bucket(
-                &scan.bucket_first_keys,
+                &scan.first_keys_arena,
+                &scan.first_keys_bounds,
                 &scan.lcp_bit_lens,
                 VBuilder::default().set_from(builder),
                 pl,
