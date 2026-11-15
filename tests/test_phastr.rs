@@ -7,13 +7,13 @@
 use std::borrow::Borrow;
 
 use anyhow::Result;
-use dsi_progress_logger::no_logging;
+use dsi_progress_logger::{ProgressLogger, no_logging};
 use mem_dbg::{FlatType, MemSize};
 use sux::bits::BitFieldVec;
 use sux::func::phastr::SeedStoreBuild;
 use sux::func::{PHastR, PHastRBuilder};
 use sux::traits::TryIntoUnaligned;
-use sux::utils::{FromSlice, ToSig};
+use sux::utils::{FromSlice, LineLender, ToSig};
 
 /// Builds a function on the first `n` integers from a slice, and checks that
 /// it is a minimal perfect hash function.
@@ -33,7 +33,8 @@ fn check<D: SeedStoreBuild + MemSize + FlatType>(n: usize, builder: PHastRBuilde
 
 #[test]
 fn test_small() -> Result<()> {
-    for n in [0, 1, 2, 3, 10, 100, 1000, 5000, 10000] {
+    // 4096 is the largest number of keys of a last level
+    for n in [0, 1, 2, 3, 10, 100, 1000, 4096, 4097, 5000, 10000] {
         check::<Box<[u8]>>(n, PHastRBuilder::default())?;
         check::<BitFieldVec<Box<[usize]>>>(n, PHastRBuilder::default().seed_bits(10))?;
         for log2_layouts in 0..=3 {
@@ -82,7 +83,20 @@ fn test_medium() -> Result<()> {
             .bucket_size(2.0),
     )?;
     // Slices with fewer slots than there are seeds: rotations are redundant
-    check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_slice_len(6))
+    check::<Box<[u8]>>(300_000, PHastRBuilder::default().log2_slice_len(6))?;
+    // All numbers of layouts with short slices
+    for log2_layouts in 0..=3 {
+        check::<Box<[u8]>>(
+            100_000,
+            PHastRBuilder::default()
+                .log2_layouts(log2_layouts)
+                .log2_slice_len(8),
+        )?;
+    }
+    check::<Box<[u8]>>(100_000, PHastRBuilder::default())?;
+    check::<BitFieldVec<Box<[usize]>>>(100_000, PHastRBuilder::default().seed_bits(10))?;
+    // A different seed
+    check::<Box<[u8]>>(100_000, PHastRBuilder::default().seed(42))
 }
 
 #[test]
@@ -117,6 +131,60 @@ fn test_many_chunks() -> Result<()> {
         )?;
         check::<Box<[u8]>>(2_000_000, PHastRBuilder::default())
     })
+}
+
+#[cfg(feature = "rayon")]
+#[test]
+fn test_threads() -> Result<()> {
+    // Chunks and gaps depend on the number of threads; without slow tests,
+    // the key sets are just large enough for three chunks
+    let (threads, n8, n10): (&[usize], _, _) = if cfg!(feature = "slow_tests") {
+        (&[1, 2, 3, 8, 16], 2_000_000, 1_000_000)
+    } else {
+        (&[1, 3], 400_000, 500_000)
+    };
+    for &threads in threads {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()?;
+        pool.install(|| {
+            check::<Box<[u8]>>(n8, PHastRBuilder::default())?;
+            check::<BitFieldVec<Box<[usize]>>>(
+                n10,
+                PHastRBuilder::default()
+                    .seed_bits(10)
+                    .log2_slice_len(11)
+                    .bucket_size(6.0),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+#[test]
+fn test_logging() -> Result<()> {
+    // With a million keys the second level is not the last one (even with
+    // one thread), so all phases are logged; logging does not change the
+    // function
+    let keys: Vec<u64> = (0..1_000_000).collect();
+    let quiet = <PHastR<u64>>::try_par_new(&keys, no_logging![])?;
+    // Without a logger, log macros do not format their arguments
+    let _ = env_logger::builder()
+        .is_test(true)
+        .filter_level(log::LevelFilter::Info)
+        .try_init();
+    let mut pl = ProgressLogger::default();
+    let par = <PHastR<u64>>::try_par_new(&keys, &mut pl)?;
+    assert_eq!(format!("{par:?}"), format!("{quiet:?}"));
+    for offline in [false, true] {
+        let phf = <PHastR<u64>>::try_new_with_builder(
+            FromSlice::new(&keys),
+            PHastRBuilder::default().offline(offline),
+            &mut pl,
+        )?;
+        assert_eq!(format!("{phf:?}"), format!("{quiet:?}"));
+    }
+    Ok(())
 }
 
 #[test]
@@ -465,5 +533,85 @@ fn test_strings() -> Result<()> {
         assert!(!seen[v], "duplicate output {v}");
         seen[v] = true;
     }
+    // Lines from a reader give the same function
+    for offline in [false, true] {
+        let lines = <PHastR<str>>::try_new_with_builder(
+            LineLender::new(std::io::Cursor::new(keys.join("\n"))),
+            PHastRBuilder::default().offline(offline),
+            no_logging![],
+        )?;
+        assert_eq!(format!("{lines:?}"), format!("{phf:?}"));
+    }
+    Ok(())
+}
+
+/// Functions with seeds stored in bytes, in bit-field vectors, and in
+/// bit-field vectors with unaligned reads are deserialized zero-copy (the
+/// type annotations check at compile time that seeds, level parameters, and
+/// the remapping sequence are borrowed), and give the same outputs.
+#[cfg(feature = "epserde")]
+#[test]
+fn test_epserde() -> Result<()> {
+    use epserde::prelude::*;
+    use epserde::utils::AlignedCursor;
+    use sux::bits::{BitFieldVecU, BitVec};
+    use sux::dict::EliasFano;
+    use sux::func::phastr::LevelParams;
+    use sux::rank_sel::SelectAdaptConst;
+    use sux::traits::Unaligned;
+
+    // The remapping sequence, given the type of its lower bits
+    type DeserRemap<'a, L> =
+        EliasFano<usize, SelectAdaptConst<BitVec<&'a [usize]>, &'a [usize], 12, 3>, L>;
+
+    macro_rules! check_epserde {
+        ($t:ty, $deser_d:ty, $low_bits:ty, $phf:expr) => {{
+            let keys: Vec<u64> = (0..200_000).collect();
+            let phf: $t = $phf(&keys)?;
+            let mut cursor = <AlignedCursor<Aligned64>>::new();
+            // SAFETY: phf was built by its constructor
+            unsafe { phf.serialize(&mut cursor) }?;
+            let len = cursor.len();
+            cursor.set_position(0);
+            // SAFETY: we just serialized a valid structure into this buffer
+            let case = unsafe { <$t>::read_mem(&mut cursor, len) }?;
+            let des: &PHastR<u64, $deser_d, &[LevelParams], DeserRemap<'_, $low_bits>> =
+                case.uncase();
+            assert_eq!(des.len(), keys.len());
+            for key in &keys {
+                assert_eq!(des.get(key), phf.get(key));
+            }
+        }};
+    }
+
+    let wide = || PHastRBuilder::default().seed_bits(10).log2_slice_len(11);
+    check_epserde!(PHastR<u64>, &[u8], BitFieldVec<&[usize]>, |keys| {
+        <PHastR<u64>>::try_par_new(keys, no_logging![])
+    });
+    check_epserde!(
+        PHastR<u64, BitFieldVec<Box<[usize]>>>,
+        BitFieldVec<&[usize]>,
+        BitFieldVec<&[usize]>,
+        |keys| <PHastR<u64, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
+            keys,
+            wide(),
+            no_logging![]
+        )
+    );
+    check_epserde!(
+        Unaligned<PHastR<u64, BitFieldVec<Box<[usize]>>>>,
+        BitFieldVecU<&[usize]>,
+        BitFieldVecU<&[usize]>,
+        |keys| -> Result<_> {
+            Ok(
+                <PHastR<u64, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
+                    keys,
+                    wide(),
+                    no_logging![],
+                )?
+                .try_into_unaligned()?,
+            )
+        }
+    );
     Ok(())
 }

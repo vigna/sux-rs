@@ -1045,17 +1045,16 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
         };
         // The slots were free: a used slot has been marked by a previous
         // key of the bucket
-        let used = &mut self.used[..];
         let mut collisions = 0;
         for &key in keys {
             let (w, mask) = bit(key);
-            collisions |= used[w] & mask;
-            used[w] |= mask;
+            collisions |= self.used[w] & mask;
+            self.used[w] |= mask;
         }
         if collisions != 0 {
             for &key in keys {
                 let (w, mask) = bit(key);
-                used[w] &= !mask;
+                self.used[w] &= !mask;
             }
         }
         collisions == 0
@@ -1103,6 +1102,9 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
     /// Processes the buckets of the range, logging them on `pl`; returns
     /// `None` if `allow_bump` is false and some bucket could not be placed
     /// (in which case the sweep stops immediately).
+    ///
+    /// The logger is passed by value because it is a clone of a concurrent
+    /// logger owned by this sweep, which drops it when it ends.
     fn run(self, allow_bump: bool, pl: impl ProgressLog) -> Option<()> {
         let rings = self.rings;
         // The parameters of the rings are used as shift amounts and masks

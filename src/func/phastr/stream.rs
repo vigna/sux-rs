@@ -983,8 +983,11 @@ impl PHastRBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bits::BitFieldVec;
     use crate::utils::FromSlice;
-    use dsi_progress_logger::{ProgressLogger, no_logging};
+    #[cfg(feature = "slow_tests")]
+    use dsi_progress_logger::ProgressLogger;
+    use dsi_progress_logger::no_logging;
 
     /// A key whose 64-bit signature with seed 0 collides with that of another
     /// key for the first 2 · `COLLIDING` keys (pairs 2*i*, 2*i* + 1); other
@@ -1095,6 +1098,113 @@ mod tests {
     }
 
     #[test]
+    fn test_equivalence() -> Result<()> {
+        // The constructions from a slice and from a lender, in memory and
+        // offline, give the same function: with the constants used in tests,
+        // 10⁵ keys are enough for several partitions and for blocks of
+        // maximum size. The tests of the functions themselves are in
+        // tests/test_phastr.rs.
+        for n in [0, 1, 100, 4096, 4097, 100_000] {
+            check_u64::<Box<[u8]>>(n, PHastRBuilder::default())?;
+        }
+        // Rings of four words, a single layout with short slices, and
+        // large buckets
+        check_u64::<BitFieldVec<Box<[usize]>>>(
+            100_000,
+            PHastRBuilder::default()
+                .seed_bits(10)
+                .log2_slice_len(11)
+                .bucket_size(6.0),
+        )?;
+        check_u64::<Box<[u8]>>(
+            100_000,
+            PHastRBuilder::default().log2_layouts(0).log2_slice_len(8),
+        )?;
+        check_u64::<Box<[u8]>>(100_000, PHastRBuilder::default().bucket_size(64.0))?;
+        // Colliding signatures, with only the last level and with more
+        // levels after the first one
+        for n in [5_000u64, 300_000] {
+            let keys: Vec<CollidingKey> = (0..n).map(CollidingKey).collect();
+            let refs: Vec<&CollidingKey> = keys.iter().collect();
+            check::<CollidingKey, Box<[u8]>>(&refs, PHastRBuilder::default())?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "rayon")]
+    #[test]
+    fn test_sweep_chunks() -> Result<()> {
+        // With a fixed number of sweep chunks, the function does not depend
+        // on the size of the pool; by default, the number of chunks is the
+        // number of threads. The key set is large enough for three chunks.
+        let n = 400_000;
+        let fixed = PHastRBuilder::default().sweep_chunks(3);
+        assert_eq!(fixed.geometry(n, n, fixed.bucket_size).sweep_chunks(), 3);
+        let keys: Vec<u64> = (0..n as u64).collect();
+        let refs: Vec<&u64> = keys.iter().collect();
+        let in_pool = |threads: usize, f: &(dyn Fn() -> Result<PHastR<u64>> + Sync)| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()?
+                .install(f)
+        };
+        let reference = in_pool(3, &|| {
+            <PHastR<u64>>::try_par_new_with_builder(&refs, PHastRBuilder::default(), no_logging![])
+        })?;
+        for threads in [1, 2, 3, 4] {
+            let par = in_pool(threads, &|| {
+                <PHastR<u64>>::try_par_new_with_builder(&refs, fixed.clone(), no_logging![])
+            })?;
+            assert_same(&par, &reference);
+            for offline in [false, true] {
+                let phf = in_pool(threads, &|| {
+                    <PHastR<u64>>::try_new_with_builder(
+                        FromSlice::new(&refs),
+                        fixed.clone().offline(offline),
+                        no_logging![],
+                    )
+                })?;
+                assert_same(&phf, &reference);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_duplicates() {
+        // Duplicates detected at a level kept in a vector and at a level
+        // kept in a store
+        for offline in [false, true] {
+            for n in [1000u64, 100_000] {
+                let mut keys: Vec<u64> = (0..n).collect();
+                keys.push(n / 2);
+                assert!(
+                    <PHastR<u64>>::try_new_with_builder(
+                        FromSlice::new(&keys),
+                        PHastRBuilder::default().offline(offline),
+                        no_logging![],
+                    )
+                    .is_err()
+                );
+            }
+            let mut keys: Vec<CollidingKey> = (0..100_000).map(CollidingKey).collect();
+            keys.push(CollidingKey(50_000));
+            assert!(
+                <PHastR<CollidingKey>>::try_new_with_builder(
+                    FromSlice::new(&keys),
+                    PHastRBuilder::default().offline(offline),
+                    no_logging![],
+                )
+                .is_err()
+            );
+        }
+    }
+
+    // The following tests repeat the comparison of test_equivalence on
+    // more sizes, parameters, thread pools, and types of keys
+
+    #[cfg(feature = "slow_tests")]
+    #[test]
     fn test_sizes() -> Result<()> {
         for n in [
             0, 1, 2, 3, 10, 100, 1000, 4096, 4097, 5000, 10_000, 100_000, 1_000_000,
@@ -1104,6 +1214,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "slow_tests")]
     #[test]
     fn test_parameters() -> Result<()> {
         for n in [1000, 100_000] {
@@ -1151,6 +1262,7 @@ mod tests {
         check_u64::<Box<[u8]>>(100_000, PHastRBuilder::default().seed(42))
     }
 
+    #[cfg(feature = "slow_tests")]
     #[cfg(feature = "rayon")]
     #[test]
     fn test_threads() -> Result<()> {
@@ -1179,45 +1291,7 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "rayon")]
-    #[test]
-    fn test_sweep_chunks() -> Result<()> {
-        // With a fixed number of sweep chunks, the function does not depend
-        // on the size of the pool; by default, the number of chunks is the
-        // number of threads. The key set is large enough for three chunks.
-        let n = 400_000;
-        let fixed = PHastRBuilder::default().sweep_chunks(3);
-        assert_eq!(fixed.geometry(n, n, fixed.bucket_size).sweep_chunks(), 3);
-        let keys: Vec<u64> = (0..n as u64).collect();
-        let refs: Vec<&u64> = keys.iter().collect();
-        let in_pool = |threads: usize, f: &(dyn Fn() -> Result<PHastR<u64>> + Sync)| {
-            rayon::ThreadPoolBuilder::new()
-                .num_threads(threads)
-                .build()?
-                .install(f)
-        };
-        let reference = in_pool(3, &|| {
-            <PHastR<u64>>::try_par_new_with_builder(&refs, PHastRBuilder::default(), no_logging![])
-        })?;
-        for threads in [1, 2, 3, 4] {
-            let par = in_pool(threads, &|| {
-                <PHastR<u64>>::try_par_new_with_builder(&refs, fixed.clone(), no_logging![])
-            })?;
-            assert_same(&par, &reference);
-            for offline in [false, true] {
-                let phf = in_pool(threads, &|| {
-                    <PHastR<u64>>::try_new_with_builder(
-                        FromSlice::new(&refs),
-                        fixed.clone().offline(offline),
-                        no_logging![],
-                    )
-                })?;
-                assert_same(&phf, &reference);
-            }
-        }
-        Ok(())
-    }
-
+    #[cfg(feature = "slow_tests")]
     #[test]
     fn test_strings() -> Result<()> {
         let keys: Vec<String> = (0..200_000).map(|i| format!("key{i}")).collect();
@@ -1235,46 +1309,7 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_signature_collisions() -> Result<()> {
-        for n in [5_000u64, 300_000] {
-            let keys: Vec<CollidingKey> = (0..n).map(CollidingKey).collect();
-            let refs: Vec<&CollidingKey> = keys.iter().collect();
-            check::<CollidingKey, Box<[u8]>>(&refs, PHastRBuilder::default())?;
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn test_duplicates() {
-        // Duplicates detected at a level kept in a vector and at a level
-        // kept in a store
-        for offline in [false, true] {
-            for n in [1000u64, 100_000] {
-                let mut keys: Vec<u64> = (0..n).collect();
-                keys.push(n / 2);
-                assert!(
-                    <PHastR<u64>>::try_new_with_builder(
-                        FromSlice::new(&keys),
-                        PHastRBuilder::default().offline(offline),
-                        no_logging![],
-                    )
-                    .is_err()
-                );
-            }
-            let mut keys: Vec<CollidingKey> = (0..100_000).map(CollidingKey).collect();
-            keys.push(CollidingKey(50_000));
-            assert!(
-                <PHastR<CollidingKey>>::try_new_with_builder(
-                    FromSlice::new(&keys),
-                    PHastRBuilder::default().offline(offline),
-                    no_logging![],
-                )
-                .is_err()
-            );
-        }
-    }
-
+    #[cfg(feature = "slow_tests")]
     #[test]
     fn test_logging() -> Result<()> {
         // With a million keys the second level is not the last one (even

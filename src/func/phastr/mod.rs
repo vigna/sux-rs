@@ -19,8 +19,8 @@ use mem_dbg::*;
 use value_traits::slices::SliceByValue;
 
 use crate::bits::BitVec;
-// For documentation and tests
-#[cfg(any(doc, test))]
+// For documentation
+#[cfg(doc)]
 use crate::bits::BitFieldVec;
 use crate::dict::elias_fano::EliasFano;
 use crate::rank_sel::SelectAdaptConst;
@@ -975,83 +975,5 @@ impl<K: ?Sized, D: SeedStoreBuild + TryIntoUnaligned + From<Unaligned<D>>, P>
             remap: f.remap.into(),
             _marker: std::marker::PhantomData,
         }
-    }
-}
-
-// The other tests that use only the public interface are in
-// tests/test_phastr.rs; this one needs the private fields
-#[cfg(all(test, feature = "epserde"))]
-mod tests {
-    use super::*;
-    use dsi_progress_logger::no_logging;
-
-    /// Serializes, deserializes zero-copy (checking at compile time that
-    /// seeds, level parameters, and the remapping sequence are borrowed),
-    /// and compares outputs.
-    macro_rules! check_epserde {
-        ($d:ty, $deser_d:ty, $builder:expr) => {{
-            use epserde::prelude::*;
-            use epserde::utils::AlignedCursor;
-            let keys: Vec<u64> = (0..200_000).collect();
-            let phf = <PHastR<u64, $d>>::try_par_new_with_builder(&keys, $builder, no_logging![])?;
-            let mut cursor = <AlignedCursor<Aligned64>>::new();
-            // SAFETY: phf was built by its constructor
-            unsafe { phf.serialize(&mut cursor) }?;
-            let len = cursor.len();
-            cursor.set_position(0);
-            // SAFETY: we just serialized a valid structure into this buffer
-            let case = unsafe { <PHastR<u64, $d>>::read_mem(&mut cursor, len) }?;
-            let des = case.uncase();
-            let _: &$deser_d = &des.seeds0;
-            let _: &$deser_d = &des.seeds;
-            let _: &&[LevelParams] = &des.params;
-            let _: &crate::dict::EliasFano<
-                usize,
-                crate::rank_sel::SelectAdaptConst<crate::bits::BitVec<&[usize]>, &[usize], 12, 3>,
-                BitFieldVec<&[usize]>,
-            > = &des.remap;
-            assert_eq!(des.len(), keys.len());
-            for key in &keys {
-                assert_eq!(des.get(key), phf.get(key));
-            }
-        }};
-    }
-
-    /// Functions with seeds stored in bytes, in bit-field vectors, and in
-    /// bit-field vectors with unaligned reads are deserialized zero-copy,
-    /// and give the same outputs.
-    #[test]
-    fn test_epserde() -> Result<()> {
-        check_epserde!(Box<[u8]>, &[u8], PHastRBuilder::default());
-        check_epserde!(
-            BitFieldVec<Box<[usize]>>,
-            BitFieldVec<&[usize]>,
-            PHastRBuilder::default().seed_bits(10).log2_slice_len(11)
-        );
-        // Unaligned reads
-        use crate::bits::BitFieldVecU;
-        use epserde::prelude::*;
-        use epserde::utils::AlignedCursor;
-        type U = Unaligned<PHastR<u64, BitFieldVec<Box<[usize]>>>>;
-        let keys: Vec<u64> = (0..200_000).collect();
-        let phf = <PHastR<u64, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
-            &keys,
-            PHastRBuilder::default().seed_bits(10).log2_slice_len(11),
-            no_logging![],
-        )?;
-        let phf: U = phf.try_into_unaligned()?;
-        let mut cursor = <AlignedCursor<Aligned64>>::new();
-        // SAFETY: phf was built by its constructor
-        unsafe { phf.serialize(&mut cursor) }?;
-        let len = cursor.len();
-        cursor.set_position(0);
-        // SAFETY: we just serialized a valid structure into this buffer
-        let case = unsafe { <U>::read_mem(&mut cursor, len) }?;
-        let des = case.uncase();
-        let _: &BitFieldVecU<&[usize]> = &des.seeds0;
-        for key in &keys {
-            assert_eq!(des.get(key), phf.get(key));
-        }
-        Ok(())
     }
 }
