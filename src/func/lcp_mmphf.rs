@@ -205,11 +205,12 @@ mod build {
 
     /// Logs the completion of a construction of `n` keys started at `start`.
     fn log_completion(pl: &mut impl ProgressLog, start: std::time::Instant, n: usize) {
+        let elapsed = start.elapsed();
         pl.info(format_args!(
             "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-            start.elapsed().as_secs_f64(),
+            elapsed.as_secs_f64(),
             n,
-            start.elapsed().as_nanos() as f64 / n as f64
+            elapsed.as_nanos() as f64 / n as f64
         ));
     }
 

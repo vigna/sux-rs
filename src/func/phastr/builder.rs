@@ -738,11 +738,12 @@ pub(super) const fn level_salt(seed: u64, level: usize, attempt: u64) -> u64 {
 /// Logs the completion of a phase (e.g., the computation of the signatures,
 /// or the whole construction) on `n` keys, started at `start`.
 pub(super) fn log_completion(phase: &str, start: Instant, n: usize, pl: &mut impl ProgressLog) {
+    let elapsed = start.elapsed();
     pl.info(format_args!(
         "{phase} completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-        start.elapsed().as_secs_f64(),
+        elapsed.as_secs_f64(),
         n,
-        start.elapsed().as_nanos() as f64 / n.max(1) as f64
+        elapsed.as_nanos() as f64 / n.max(1) as f64
     ));
 }
 

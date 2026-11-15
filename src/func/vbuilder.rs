@@ -1193,11 +1193,12 @@ impl<
             // self.aug has been set by the attempt
             match rs.handle_solve_result(result, self.aug, pl) {
                 Ok(Some(r)) => {
+                    let elapsed = start.elapsed();
                     pl.info(format_args!(
                         "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-                        start.elapsed().as_secs_f64(),
+                        elapsed.as_secs_f64(),
                         self.num_keys,
-                        start.elapsed().as_nanos() as f64 / self.num_keys as f64
+                        elapsed.as_nanos() as f64 / self.num_keys as f64
                     ));
                     break Ok(r);
                 }
@@ -1619,11 +1620,12 @@ impl<
     {
         let num_keys = sig_store.len();
 
+        let elapsed = start.elapsed();
         pl.info(format_args!(
             "Computation of signatures from inputs completed in {:.3} seconds ({} keys, {:.3} ns/key)",
-            start.elapsed().as_secs_f64(),
+            elapsed.as_secs_f64(),
             num_keys,
-            start.elapsed().as_nanos() as f64 / num_keys as f64
+            elapsed.as_nanos() as f64 / num_keys as f64
         ));
 
         self.check_local_sigs::<V>(num_keys, pl)?;
