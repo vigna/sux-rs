@@ -12,7 +12,7 @@ use super::*;
 use crate::dict::elias_fano::EliasFanoBuilder;
 use anyhow::{bail, ensure};
 use derive_setters::*;
-use dsi_progress_logger::no_logging;
+use dsi_progress_logger::no_logs;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -377,15 +377,18 @@ impl PHastRBuilder {
         let par = parallel(n);
         #[cfg(not(feature = "rayon"))]
         let par = false;
-        pl.start(format!(
-            "Computing and distributing 64-bit signatures {} in RAM using seed 0x{:016x}...",
-            if par {
-                format!("in parallel ({} threads)", num_threads())
-            } else {
-                "sequentially".to_owned()
-            },
-            self.seed
-        ));
+        if par {
+            pl.start_with(format_args!(
+                "Computing and distributing 64-bit signatures in parallel ({} threads) in RAM using seed 0x{:016x}...",
+                num_threads(),
+                self.seed
+            ));
+        } else {
+            pl.start_with(format_args!(
+                "Computing and distributing 64-bit signatures sequentially in RAM using seed 0x{:016x}...",
+                self.seed
+            ));
+        }
         let start = Instant::now();
         let geom = self.geometry(n, n, self.bucket_size);
         let sigs = group(n, |i| hash(i, self.seed), &geom);
@@ -509,7 +512,7 @@ impl PHastRBuilder {
             if index == 1 && attempt == 0 && duplicates(&sigs, &geom) {
                 bail!("Duplicate keys");
             }
-            if let Some(out) = sweep_level(&sigs, &geom, weights, false, no_logging![]) {
+            if let Some(out) = sweep_level(&sigs, &geom, weights, false, no_logs![]) {
                 let mut level = geom.level();
                 level.salt = salt;
                 return Ok((level, out, geom.m));

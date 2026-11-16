@@ -6,7 +6,7 @@
 
 #![cfg(feature = "rayon")]
 use anyhow::Result;
-use dsi_progress_logger::no_logging;
+use dsi_progress_logger::no_logs;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use std::io::Cursor;
@@ -17,7 +17,7 @@ use sux::utils::{FromSlice, LineLender};
 #[test]
 fn test_small_u64() -> Result<()> {
     let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    let func = Lcp2MmphfInt::<u64>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?
+    let func = Lcp2MmphfInt::<u64>::try_new(FromSlice::new(&keys), keys.len(), no_logs![])?
         .try_into_unaligned()
         .unwrap();
     for (i, &key) in keys.iter().enumerate() {
@@ -33,7 +33,7 @@ fn test_monotone_1000_u64() -> Result<()> {
     keys.sort();
     keys.dedup();
     let n = keys.len();
-    let func = Lcp2MmphfInt::<u64>::try_new(FromSlice::new(&keys), n, no_logging![])?
+    let func = Lcp2MmphfInt::<u64>::try_new(FromSlice::new(&keys), n, no_logs![])?
         .try_into_unaligned()
         .unwrap();
     for (i, &key) in keys.iter().enumerate() {
@@ -45,7 +45,7 @@ fn test_monotone_1000_u64() -> Result<()> {
 #[test]
 fn test_signed_i64() -> Result<()> {
     let keys: Vec<i64> = vec![-100, -10, -1, 0, 1, 10, 100];
-    let func = Lcp2MmphfInt::<i64>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?
+    let func = Lcp2MmphfInt::<i64>::try_new(FromSlice::new(&keys), keys.len(), no_logs![])?
         .try_into_unaligned()
         .unwrap();
     for (i, &key) in keys.iter().enumerate() {
@@ -57,7 +57,7 @@ fn test_signed_i64() -> Result<()> {
 #[test]
 fn test_empty_u64() -> Result<()> {
     let keys: Vec<u64> = vec![];
-    let func = Lcp2MmphfInt::<u64>::try_new(FromSlice::new(&keys), 0, no_logging![])?
+    let func = Lcp2MmphfInt::<u64>::try_new(FromSlice::new(&keys), 0, no_logs![])?
         .try_into_unaligned()
         .unwrap();
     assert_eq!(func.len(), 0);
@@ -74,7 +74,7 @@ fn keys_lender(keys: &[&str]) -> LineLender<Cursor<Vec<u8>>> {
 fn test_small_str() -> Result<()> {
     let mut keys = vec!["alpha", "beta", "delta", "gamma"];
     keys.sort();
-    let func: Lcp2MmphfStr = Lcp2MmphfStr::try_new(keys_lender(&keys), keys.len(), no_logging![])?;
+    let func: Lcp2MmphfStr = Lcp2MmphfStr::try_new(keys_lender(&keys), keys.len(), no_logs![])?;
     let func = func.try_into_unaligned().unwrap();
     for (i, key) in keys.iter().enumerate() {
         assert_eq!(func.get(key), i, "key {key:?} at position {i}");
@@ -87,7 +87,7 @@ fn test_str_1000() -> Result<()> {
     let mut keys: Vec<String> = (0..1000).map(|i| format!("key_{:06}", i)).collect();
     keys.sort();
     let refs: Vec<&str> = keys.iter().map(|s| s.as_str()).collect();
-    let func: Lcp2MmphfStr = Lcp2MmphfStr::try_new(keys_lender(&refs), refs.len(), no_logging![])?;
+    let func: Lcp2MmphfStr = Lcp2MmphfStr::try_new(keys_lender(&refs), refs.len(), no_logs![])?;
     let func = func.try_into_unaligned().unwrap();
     for (i, key) in refs.iter().enumerate() {
         assert_eq!(func.get(key), i, "key {key:?} at position {i}");
@@ -98,7 +98,7 @@ fn test_str_1000() -> Result<()> {
 #[test]
 fn test_empty_str() -> Result<()> {
     let keys: Vec<&str> = vec![];
-    let func: Lcp2MmphfStr = Lcp2MmphfStr::try_new(keys_lender(&keys), 0, no_logging![])?;
+    let func: Lcp2MmphfStr = Lcp2MmphfStr::try_new(keys_lender(&keys), 0, no_logs![])?;
     let func = func.try_into_unaligned().unwrap();
     assert_eq!(func.len(), 0);
     assert!(func.is_empty());
@@ -115,7 +115,7 @@ fn test_slice_u8() -> Result<()> {
         b"gamma".to_vec(),
     ];
     let func: Lcp2MmphfSliceU8 =
-        Lcp2MmphfSliceU8::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+        Lcp2MmphfSliceU8::try_new(FromSlice::new(&keys), keys.len(), no_logs![])?;
     let func = func.try_into_unaligned().unwrap();
     for (i, key) in keys.iter().enumerate() {
         assert_eq!(func.get(key.as_slice()), i);
@@ -128,7 +128,7 @@ fn test_slice_u8() -> Result<()> {
 #[test]
 fn test_par_small_u64() -> Result<()> {
     let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
-    let func: Lcp2MmphfInt<u64> = Lcp2MmphfInt::try_par_new(&keys, no_logging![])?;
+    let func: Lcp2MmphfInt<u64> = Lcp2MmphfInt::try_par_new(&keys, no_logs![])?;
     let func = func.try_into_unaligned().unwrap();
     for (i, &key) in keys.iter().enumerate() {
         assert_eq!(func.get(key), i, "key {key} at position {i}");
@@ -142,7 +142,7 @@ fn test_par_monotone_1000_u64() -> Result<()> {
     let mut keys: Vec<u64> = (0..1000).map(|_| rng.random::<u64>()).collect();
     keys.sort();
     keys.dedup();
-    let func: Lcp2MmphfInt<u64> = Lcp2MmphfInt::try_par_new(&keys, no_logging![])?;
+    let func: Lcp2MmphfInt<u64> = Lcp2MmphfInt::try_par_new(&keys, no_logs![])?;
     let func = func.try_into_unaligned().unwrap();
     for (i, &key) in keys.iter().enumerate() {
         assert_eq!(func.get(key), i, "key {key} at position {i}");
@@ -153,7 +153,7 @@ fn test_par_monotone_1000_u64() -> Result<()> {
 #[test]
 fn test_par_signed_i64() -> Result<()> {
     let keys: Vec<i64> = vec![-100, -10, -1, 0, 1, 10, 100];
-    let func: Lcp2MmphfInt<i64> = Lcp2MmphfInt::try_par_new(&keys, no_logging![])?;
+    let func: Lcp2MmphfInt<i64> = Lcp2MmphfInt::try_par_new(&keys, no_logs![])?;
     let func = func.try_into_unaligned().unwrap();
     for (i, &key) in keys.iter().enumerate() {
         assert_eq!(func.get(key), i, "key {key} at position {i}");
@@ -164,7 +164,7 @@ fn test_par_signed_i64() -> Result<()> {
 #[test]
 fn test_par_empty_u64() -> Result<()> {
     let keys: Vec<u64> = vec![];
-    let func: Lcp2MmphfInt<u64> = Lcp2MmphfInt::try_par_new(&keys, no_logging![])?;
+    let func: Lcp2MmphfInt<u64> = Lcp2MmphfInt::try_par_new(&keys, no_logs![])?;
     let func = func.try_into_unaligned().unwrap();
     assert_eq!(func.len(), 0);
     assert!(func.is_empty());
@@ -175,7 +175,7 @@ fn test_par_empty_u64() -> Result<()> {
 fn test_par_small_str() -> Result<()> {
     let mut keys = vec!["alpha", "beta", "delta", "gamma"];
     keys.sort();
-    let func: Lcp2MmphfStr = Lcp2MmphfStr::try_par_new(&keys, no_logging![])?;
+    let func: Lcp2MmphfStr = Lcp2MmphfStr::try_par_new(&keys, no_logs![])?;
     let func = func.try_into_unaligned().unwrap();
     for (i, key) in keys.iter().enumerate() {
         assert_eq!(func.get(key), i, "key {key:?} at position {i}");
@@ -187,7 +187,7 @@ fn test_par_small_str() -> Result<()> {
 fn test_par_str_1000() -> Result<()> {
     let mut keys: Vec<String> = (0..1000).map(|i| format!("key_{:06}", i)).collect();
     keys.sort();
-    let func: Lcp2MmphfStr = Lcp2MmphfStr::try_par_new(&keys, no_logging![])?;
+    let func: Lcp2MmphfStr = Lcp2MmphfStr::try_par_new(&keys, no_logs![])?;
     let func = func.try_into_unaligned().unwrap();
     for (i, key) in keys.iter().enumerate() {
         assert_eq!(func.get(key.as_str()), i, "key {key:?} at position {i}");
@@ -198,7 +198,7 @@ fn test_par_str_1000() -> Result<()> {
 #[test]
 fn test_par_empty_str() -> Result<()> {
     let keys: Vec<&str> = vec![];
-    let func: Lcp2MmphfStr = Lcp2MmphfStr::try_par_new(&keys, no_logging![])?;
+    let func: Lcp2MmphfStr = Lcp2MmphfStr::try_par_new(&keys, no_logs![])?;
     let func = func.try_into_unaligned().unwrap();
     assert_eq!(func.len(), 0);
     assert!(func.is_empty());
@@ -214,7 +214,7 @@ fn test_par_slice_u8() -> Result<()> {
         b"delta".to_vec(),
         b"gamma".to_vec(),
     ];
-    let func: Lcp2MmphfSliceU8 = Lcp2MmphfSliceU8::try_par_new(&keys, no_logging![])?;
+    let func: Lcp2MmphfSliceU8 = Lcp2MmphfSliceU8::try_par_new(&keys, no_logs![])?;
     let func = func.try_into_unaligned().unwrap();
     for (i, key) in keys.iter().enumerate() {
         assert_eq!(func.get(key.as_slice()), i);
@@ -233,7 +233,7 @@ fn test_absent_keys_do_not_panic() -> Result<()> {
     keys.sort();
     keys.dedup();
     let n = keys.len();
-    let func = Lcp2MmphfInt::<u64>::try_new(FromSlice::new(&keys), n, no_logging![])?
+    let func = Lcp2MmphfInt::<u64>::try_new(FromSlice::new(&keys), n, no_logs![])?
         .try_into_unaligned()
         .unwrap();
     let present: std::collections::HashSet<u64> = keys.iter().copied().collect();
@@ -257,7 +257,7 @@ fn test_cardinality_mismatch_is_error() {
     let keys = vec![10_u64, 20];
     for declared in [0, 1, 3] {
         let result: Result<Lcp2MmphfInt<u64>> =
-            Lcp2MmphfInt::try_new(FromSlice::new(&keys), declared, no_logging![]);
+            Lcp2MmphfInt::try_new(FromSlice::new(&keys), declared, no_logs![]);
         assert!(
             result.is_err(),
             "declared count {declared} must be rejected"
@@ -276,7 +276,7 @@ fn test_long_common_prefix_str() -> Result<()> {
     let b = format!("{prefix}1");
     let mut keys = vec![a.as_str(), b.as_str()];
     keys.sort();
-    let func: Lcp2MmphfStr = Lcp2MmphfStr::try_new(keys_lender(&keys), keys.len(), no_logging![])?;
+    let func: Lcp2MmphfStr = Lcp2MmphfStr::try_new(keys_lender(&keys), keys.len(), no_logs![])?;
     let func = func.try_into_unaligned().unwrap();
     for (i, key) in keys.iter().enumerate() {
         assert_eq!(func.get(key), i, "long-prefix key at position {i}");

@@ -289,13 +289,13 @@ pub struct LevelParams {
 /// ```rust
 /// # #[cfg(feature = "mmap")]
 /// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
+/// # use dsi_progress_logger::no_logs;
 /// use epserde::prelude::*;
 /// use sux::func::PHastR;
 /// use sux::traits::{TryIntoUnaligned, Unaligned};
 ///
 /// let keys: Vec<String> = (0..100_000).map(|i| format!("key{i}")).collect();
-/// let phf = <PHastR<str>>::try_par_new(&keys, no_logging![])?;
+/// let phf = <PHastR<str>>::try_par_new(&keys, no_logs![])?;
 ///
 /// let mut seen = vec![false; keys.len()];
 /// for key in &keys {
@@ -336,12 +336,12 @@ pub struct LevelParams {
 /// ```rust
 /// # #[cfg(feature = "rayon")]
 /// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
+/// # use dsi_progress_logger::no_logs;
 /// use sux::func::{PHastR, SignedFunc};
 ///
 /// let keys: Vec<String> = (0..100_000).map(|i| format!("key{i}")).collect();
 /// // 16-bit verification hashes: false positives happen with probability 2⁻¹⁶
-/// let func = <SignedFunc<PHastR<str>, Box<[u16]>>>::try_par_new(&keys, no_logging![])?;
+/// let func = <SignedFunc<PHastR<str>, Box<[u16]>>>::try_par_new(&keys, no_logs![])?;
 ///
 /// for key in &keys {
 ///     assert!(func.get(key.as_str()).is_some());
@@ -689,11 +689,11 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild + MemSize + FlatType> PHastR
     /// ```rust
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::PHastR;
-    /// # use dsi_progress_logger::no_logging;
+    /// # use dsi_progress_logger::no_logs;
     /// # use sux::utils::FromCloneableIntoIterator;
     /// let phf = <PHastR<usize>>::try_new(
     ///     FromCloneableIntoIterator::new(0..100_000),
-    ///     no_logging![],
+    ///     no_logs![],
     /// )?;
     ///
     /// let mut seen = vec![false; phf.len()];
@@ -755,12 +755,12 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild + MemSize + FlatType> PHastR
     /// ```rust
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::{PHastR, PHastRBuilder};
-    /// # use dsi_progress_logger::no_logging;
+    /// # use dsi_progress_logger::no_logs;
     /// # use sux::utils::FromCloneableIntoIterator;
     /// let phf = <PHastR<usize>>::try_new_with_builder(
     ///     FromCloneableIntoIterator::new(0..100_000),
     ///     PHastRBuilder::default().offline(true),
-    ///     no_logging![],
+    ///     no_logs![],
     /// )?;
     ///
     /// let mut seen = vec![false; phf.len()];
@@ -815,9 +815,9 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild + MemSize + FlatType> PHastR
     /// ```rust
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::func::PHastR;
-    /// # use dsi_progress_logger::no_logging;
+    /// # use dsi_progress_logger::no_logs;
     /// let keys: Vec<u64> = (0..100_000).collect();
-    /// let phf = <PHastR<u64>>::try_par_new(&keys, no_logging![])?;
+    /// let phf = <PHastR<u64>>::try_par_new(&keys, no_logs![])?;
     ///
     /// let mut seen = vec![false; keys.len()];
     /// for key in &keys {
@@ -876,7 +876,7 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild + MemSize + FlatType> PHastR
     /// # use sux::func::{PHastR, PHastRBuilder};
     /// # use sux::bits::BitFieldVec;
     /// # use sux::traits::TryIntoUnaligned;
-    /// # use dsi_progress_logger::no_logging;
+    /// # use dsi_progress_logger::no_logs;
     /// let keys: Vec<u64> = (0..100_000).collect();
     /// // 10-bit seeds (see "Changing the defaults" in the documentation of
     /// // PHastR)
@@ -886,7 +886,7 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild + MemSize + FlatType> PHastR
     ///         .seed_bits(10)
     ///         .log2_slice_len(11)
     ///         .bucket_size(5.75),
-    ///     no_logging![],
+    ///     no_logs![],
     /// )?;
     /// // Faster queries using unaligned reads
     /// let phf = phf.try_into_unaligned()?;

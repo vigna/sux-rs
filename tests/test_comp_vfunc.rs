@@ -6,7 +6,7 @@
 
 #![cfg(feature = "rayon")]
 
-use dsi_progress_logger::no_logging;
+use dsi_progress_logger::no_logs;
 use sux::bits::BitVec;
 use sux::func::codec::{Decoder, HuffmanConf};
 use sux::func::{CompVFunc, VBuilder};
@@ -17,7 +17,7 @@ use sux::utils::lenders::FromSlice;
 fn build_and_check(values: &[usize]) {
     let n = values.len();
     let keys: Vec<u64> = (0..n as u64).collect();
-    let func = CompVFunc::<u64>::try_par_new(&keys, values, no_logging![]).expect("build");
+    let func = CompVFunc::<u64>::try_par_new(&keys, values, no_logs![]).expect("build");
     for (i, &v) in values.iter().enumerate() {
         assert_eq!(func.get(keys[i]), v, "mismatch at key {}", keys[i]);
     }
@@ -27,7 +27,7 @@ fn build_and_check(values: &[usize]) {
 fn test_empty() {
     let values: Vec<usize> = vec![];
     let keys: Vec<u64> = vec![];
-    let func = CompVFunc::<u64>::try_par_new(&keys, &values, no_logging![]).expect("build");
+    let func = CompVFunc::<u64>::try_par_new(&keys, &values, no_logs![]).expect("build");
     assert!(func.is_empty());
     assert_eq!(func.len(), 0);
     // get on an empty function must not panic
@@ -41,7 +41,7 @@ fn test_streaming_construction() {
     let func = CompVFunc::<usize>::try_new(
         FromCloneableIntoIterator::from(0..n),
         FromSlice::new(&values),
-        no_logging![],
+        no_logs![],
     )
     .expect("build");
     for (i, &v) in values.iter().enumerate() {
@@ -81,7 +81,7 @@ fn test_many_keys() {
         })
         .collect();
     let keys: Vec<u64> = (0..n as u64).collect();
-    let func = CompVFunc::<u64>::try_par_new(&keys, &values, no_logging![]).expect("build");
+    let func = CompVFunc::<u64>::try_par_new(&keys, &values, no_logs![]).expect("build");
     for (i, &v) in values.iter().enumerate() {
         assert_eq!(func.get(keys[i]), v, "mismatch at key {}", keys[i]);
     }
@@ -92,7 +92,7 @@ fn test_string_keys() {
     let n = 300usize;
     let keys: Vec<String> = (0..n).map(|i| format!("key-{i:08}")).collect();
     let values: Vec<usize> = (0..n).map(|i| i % 5).collect();
-    let func = CompVFunc::<String>::try_par_new(&keys, &values, no_logging![]).expect("build");
+    let func = CompVFunc::<String>::try_par_new(&keys, &values, no_logs![]).expect("build");
     for (k, &v) in keys.iter().zip(values.iter()) {
         assert_eq!(func.get(k), v, "mismatch at {k}");
     }
@@ -103,7 +103,7 @@ fn test_try_into_unaligned() {
     let n = 1500usize;
     let keys: Vec<u64> = (0..n as u64).collect();
     let values: Vec<usize> = (0..n).map(|i| i % 7).collect();
-    let func = CompVFunc::<u64>::try_par_new(&keys, &values, no_logging![]).expect("build");
+    let func = CompVFunc::<u64>::try_par_new(&keys, &values, no_logs![]).expect("build");
     let unaligned = func.try_into_unaligned().expect("convert");
     for (k, &v) in keys.iter().zip(values.iter()) {
         assert_eq!(unaligned.get(*k), v, "mismatch at {k}");
@@ -140,7 +140,7 @@ fn test_with_escapes() {
         &values,
         HuffmanConf::length_limited(8, 0.95),
         VBuilder::default(),
-        no_logging![],
+        no_logs![],
     )
     .expect("build");
     for (i, &v) in values.iter().enumerate() {
@@ -163,7 +163,7 @@ fn test_forced_escape() {
         &values,
         HuffmanConf::length_limited(1, 1.0),
         VBuilder::default(),
-        no_logging![],
+        no_logs![],
     )
     .expect("build");
     assert!(
@@ -195,7 +195,7 @@ fn test_large_values_forced_escape() {
         &values,
         HuffmanConf::length_limited(1, 1.0),
         VBuilder::default(),
-        no_logging![],
+        no_logs![],
     )
     .expect("build");
     assert!(
@@ -218,7 +218,7 @@ fn test_u16_basic() {
     let n = 500usize;
     let values: Vec<u16> = (0..n as u16).map(|i| i % 7).collect();
     let keys: Vec<u64> = (0..n as u64).collect();
-    let func = CompVFunc::<u64, BitVec<Box<[u16]>>>::try_par_new(&keys, &values, no_logging![])
+    let func = CompVFunc::<u64, BitVec<Box<[u16]>>>::try_par_new(&keys, &values, no_logs![])
         .expect("build");
     for (i, &v) in values.iter().enumerate() {
         assert_eq!(func.get(keys[i]), v, "mismatch at key {}", keys[i]);
@@ -238,7 +238,7 @@ fn test_u16_full_range_forced_escape() {
         &values,
         HuffmanConf::length_limited(1, 1.0),
         VBuilder::default(),
-        no_logging![],
+        no_logs![],
     )
     .expect("build");
     assert!(
@@ -261,7 +261,7 @@ fn test_u32_basic() {
     let n = 500usize;
     let values: Vec<u32> = (0..n as u32).map(|i| i % 7).collect();
     let keys: Vec<u64> = (0..n as u64).collect();
-    let func = CompVFunc::<u64, BitVec<Box<[u32]>>>::try_par_new(&keys, &values, no_logging![])
+    let func = CompVFunc::<u64, BitVec<Box<[u32]>>>::try_par_new(&keys, &values, no_logs![])
         .expect("build");
     for (i, &v) in values.iter().enumerate() {
         assert_eq!(func.get(keys[i]), v, "mismatch at key {}", keys[i]);
@@ -288,7 +288,7 @@ fn test_u32_full_range_forced_escape() {
         &values,
         HuffmanConf::length_limited(1, 1.0),
         VBuilder::default(),
-        no_logging![],
+        no_logs![],
     )
     .expect("build");
     assert!(
@@ -309,7 +309,7 @@ fn test_u32_try_into_unaligned() {
     let n = 1500usize;
     let keys: Vec<u64> = (0..n as u64).collect();
     let values: Vec<u32> = (0..n as u32).map(|i| i % 7).collect();
-    let func = CompVFunc::<u64, BitVec<Box<[u32]>>>::try_par_new(&keys, &values, no_logging![])
+    let func = CompVFunc::<u64, BitVec<Box<[u32]>>>::try_par_new(&keys, &values, no_logs![])
         .expect("build");
     let unaligned = func.try_into_unaligned().expect("convert");
     for (k, &v) in keys.iter().zip(values.iter()) {
@@ -324,7 +324,7 @@ fn test_u64_basic() {
     let n = 500usize;
     let values: Vec<u64> = (0..n as u64).map(|i| i % 5).collect();
     let keys: Vec<u64> = (0..n as u64).collect();
-    let func = CompVFunc::<u64, BitVec<Box<[u64]>>>::try_par_new(&keys, &values, no_logging![])
+    let func = CompVFunc::<u64, BitVec<Box<[u64]>>>::try_par_new(&keys, &values, no_logs![])
         .expect("build");
     for (i, &v) in values.iter().enumerate() {
         assert_eq!(func.get(keys[i]), v, "mismatch at key {}", keys[i]);
@@ -351,7 +351,7 @@ fn test_u64_full_range_forced_escape() {
         &values,
         HuffmanConf::length_limited(1, 1.0),
         VBuilder::default(),
-        no_logging![],
+        no_logs![],
     )
     .expect("build");
     assert!(
@@ -374,7 +374,7 @@ fn test_u128_basic() {
     let n = 500usize;
     let values: Vec<u128> = (0..n as u128).map(|i| i % 5).collect();
     let keys: Vec<u64> = (0..n as u64).collect();
-    let func = CompVFunc::<u64, BitVec<Box<[u128]>>>::try_par_new(&keys, &values, no_logging![])
+    let func = CompVFunc::<u64, BitVec<Box<[u128]>>>::try_par_new(&keys, &values, no_logs![])
         .expect("build");
     for (i, &v) in values.iter().enumerate() {
         assert_eq!(func.get(keys[i]), v, "mismatch at key {}", keys[i]);
@@ -401,7 +401,7 @@ fn test_u128_full_range_forced_escape() {
         &values,
         HuffmanConf::length_limited(1, 1.0),
         VBuilder::default(),
-        no_logging![],
+        no_logs![],
     )
     .expect("build");
     assert!(
@@ -439,7 +439,7 @@ fn test_usize_msb_values() {
         &values,
         HuffmanConf::length_limited(1, 1.0),
         VBuilder::default(),
-        no_logging![],
+        no_logs![],
     )
     .expect("build");
     assert!(
@@ -463,7 +463,7 @@ fn test_mismatched_keys_and_values() {
     let keys: Vec<u64> = (0..100).collect();
     for len in [50_usize, 200] {
         let values: Vec<usize> = (0..len).map(|i| i % 5).collect();
-        let result = CompVFunc::<u64>::try_par_new(&keys, &values, no_logging![]);
+        let result = CompVFunc::<u64>::try_par_new(&keys, &values, no_logs![]);
         assert!(matches!(
             result.unwrap_err().downcast_ref::<BuildError>(),
             Some(BuildError::MismatchedKeysAndValues { .. })
@@ -475,7 +475,7 @@ fn test_mismatched_keys_and_values() {
     let result = CompVFunc::<usize>::try_new(
         FromCloneableIntoIterator::from(0..100_usize),
         FromSlice::new(&values),
-        no_logging![],
+        no_logs![],
     );
     assert!(matches!(
         result.unwrap_err().downcast_ref::<BuildError>(),
@@ -488,7 +488,7 @@ fn test_mismatched_keys_and_values() {
     let result = CompVFunc::<usize>::try_new(
         FromCloneableIntoIterator::from(0..100_usize),
         FromSlice::new(&values),
-        no_logging![],
+        no_logs![],
     );
     assert!(matches!(
         result.unwrap_err().downcast_ref::<BuildError>(),
@@ -500,7 +500,7 @@ fn test_mismatched_keys_and_values() {
     let result = CompVFunc::<usize>::try_new(
         FromCloneableIntoIterator::from(0..100_usize),
         FromSlice::new(&values),
-        no_logging![],
+        no_logs![],
     );
     assert!(matches!(
         result.unwrap_err().downcast_ref::<BuildError>(),
@@ -613,7 +613,7 @@ mod corr_graph_regime {
                 &values,
                 HuffmanConf::new(),
                 builder,
-                no_logging![],
+                no_logs![],
             )
             .expect("build");
         for (i, &v) in values.iter().enumerate() {
@@ -633,7 +633,7 @@ fn test_full_sigs() {
     let func = CompVFunc::<u64, BitVec<Box<[usize]>>, [u64; 2], Fuse3FullSigs>::try_par_new(
         &keys,
         &values,
-        no_logging![],
+        no_logs![],
     )
     .expect("build");
     for (i, &v) in values.iter().enumerate() {
@@ -642,7 +642,7 @@ fn test_full_sigs() {
     let func = CompVFunc::<usize, BitVec<Box<[usize]>>, [u64; 2], Fuse3FullSigs>::try_new(
         FromCloneableIntoIterator::from(0..n),
         FromSlice::new(&values),
-        no_logging![],
+        no_logs![],
     )
     .expect("build");
     for (i, &v) in values.iter().enumerate() {

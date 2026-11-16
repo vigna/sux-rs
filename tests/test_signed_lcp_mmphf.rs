@@ -8,7 +8,7 @@
 use anyhow::Result;
 use core::borrow::Borrow;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use dsi_progress_logger::no_logging;
+use dsi_progress_logger::no_logs;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 use sux::bits::BitFieldVec;
@@ -51,7 +51,7 @@ fn test_str_small() -> Result<()> {
         "gamma".to_owned(),
     ];
     let func: SignedLcpMmphfStr =
-        SignedLcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+        SignedLcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logs![])?;
     let func = func.try_into_unaligned()?;
 
     for (i, key) in keys.iter().enumerate() {
@@ -69,8 +69,7 @@ fn test_str_small() -> Result<()> {
 #[test]
 fn test_str_single() -> Result<()> {
     let keys = vec!["hello".to_owned()];
-    let func: SignedLcpMmphfStr =
-        SignedLcpMmphfStr::try_new(FromSlice::new(&keys), 1, no_logging![])?;
+    let func: SignedLcpMmphfStr = SignedLcpMmphfStr::try_new(FromSlice::new(&keys), 1, no_logs![])?;
     let func = func.try_into_unaligned()?;
     assert_eq!(func.get("hello"), Some(0));
     assert_eq!(func.get("world"), None);
@@ -82,8 +81,7 @@ fn test_str_single() -> Result<()> {
 #[test]
 fn test_str_empty() -> Result<()> {
     let keys: Vec<String> = vec![];
-    let func: SignedLcpMmphfStr =
-        SignedLcpMmphfStr::try_new(FromSlice::new(&keys), 0, no_logging![])?;
+    let func: SignedLcpMmphfStr = SignedLcpMmphfStr::try_new(FromSlice::new(&keys), 0, no_logs![])?;
     let func = func.try_into_unaligned()?;
     assert_eq!(func.len(), 0);
     assert!(func.is_empty());
@@ -96,7 +94,7 @@ fn test_str_1000() -> Result<()> {
     let mut keys: Vec<String> = (0..1000).map(|i| format!("key_{:06}", i)).collect();
     keys.sort();
     let func: SignedLcpMmphfStr =
-        SignedLcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+        SignedLcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logs![])?;
     let func = func.try_into_unaligned()?;
 
     for (i, key) in keys.iter().enumerate() {
@@ -122,7 +120,7 @@ fn test_slice_u8_small() -> Result<()> {
         b"gamma".to_vec(),
     ];
     let func: SignedLcpMmphfSliceU8 =
-        SignedLcpMmphfSliceU8::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+        SignedLcpMmphfSliceU8::try_new(FromSlice::new(&keys), keys.len(), no_logs![])?;
     let func = func.try_into_unaligned()?;
 
     for (i, key) in keys.iter().enumerate() {
@@ -138,7 +136,7 @@ fn test_slice_u8_small() -> Result<()> {
 fn test_u64_small() -> Result<()> {
     let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
     let func: SignedLcpMmphfInt<u64> =
-        SignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+        SignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logs![])?;
     let func = func.try_into_unaligned()?;
 
     for (i, &key) in keys.iter().enumerate() {
@@ -153,7 +151,7 @@ fn test_u64_small() -> Result<()> {
 fn test_u64_empty() -> Result<()> {
     let keys: Vec<u64> = vec![];
     let func: SignedLcpMmphfInt<u64> =
-        SignedLcpMmphfInt::try_new(FromSlice::new(&keys), 0, no_logging![])?;
+        SignedLcpMmphfInt::try_new(FromSlice::new(&keys), 0, no_logs![])?;
     let func = func.try_into_unaligned()?;
     assert_eq!(func.len(), 0);
     assert!(func.is_empty());
@@ -170,7 +168,7 @@ fn test_u64_1000() -> Result<()> {
     let n = keys.len();
 
     let func: SignedLcpMmphfInt<u64> =
-        SignedLcpMmphfInt::try_new(FromSlice::new(&keys), n, no_logging![])?;
+        SignedLcpMmphfInt::try_new(FromSlice::new(&keys), n, no_logs![])?;
     let func = func.try_into_unaligned()?;
 
     for (i, &key) in keys.iter().enumerate() {
@@ -184,7 +182,7 @@ fn test_u64_1000() -> Result<()> {
 fn test_signed_i64() -> Result<()> {
     let keys: Vec<i64> = vec![-100, -10, -1, 0, 1, 10, 100];
     let func: SignedLcpMmphfInt<i64> =
-        SignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+        SignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logs![])?;
     let func = func.try_into_unaligned()?;
 
     for (i, &key) in keys.iter().enumerate() {
@@ -199,7 +197,7 @@ fn test_signed_i64() -> Result<()> {
 fn test_u32() -> Result<()> {
     let keys: Vec<u32> = vec![1, 100, 1000, 10000, 100000];
     let func: SignedLcpMmphfInt<u32> =
-        SignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+        SignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logs![])?;
     let func = func.try_into_unaligned()?;
 
     for (i, &key) in keys.iter().enumerate() {
@@ -215,7 +213,7 @@ fn test_u32() -> Result<()> {
 fn test_bit_signed_u64_8bit() -> Result<()> {
     let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
     let func: BitSignedLcpMmphfInt<u64> =
-        BitSignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
+        BitSignedLcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), 8, no_logs![])?;
     let func = func.try_into_unaligned()?;
 
     for (i, &key) in keys.iter().enumerate() {
@@ -234,7 +232,7 @@ fn test_bit_signed_str_12bit() -> Result<()> {
         "gamma".to_owned(),
     ];
     let func: BitSignedLcpMmphfStr =
-        BitSignedLcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), 12, no_logging![])?;
+        BitSignedLcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), 12, no_logs![])?;
     let func = func.try_into_unaligned()?;
 
     for (i, key) in keys.iter().enumerate() {
@@ -257,7 +255,7 @@ fn test_bit_signed_u64_1000() -> Result<()> {
     let n = keys.len();
 
     let func: BitSignedLcpMmphfInt<u64> =
-        BitSignedLcpMmphfInt::try_new(FromSlice::new(&keys), n, 16, no_logging![])?;
+        BitSignedLcpMmphfInt::try_new(FromSlice::new(&keys), n, 16, no_logs![])?;
     let func = func.try_into_unaligned()?;
 
     for (i, &key) in keys.iter().enumerate() {
@@ -277,7 +275,7 @@ type BitSignedLcp2MmphfInt<T> = SignedFunc<Lcp2MmphfInt<T>, BitFieldVec<Box<[usi
 fn test_lcp2_u64_small() -> Result<()> {
     let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
     let func: SignedLcp2MmphfInt<u64> =
-        SignedLcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+        SignedLcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logs![])?;
     let func = func.try_into_unaligned()?;
     for (i, &key) in keys.iter().enumerate() {
         assert_eq!(func.get(key), Some(i), "key {key}");
@@ -294,7 +292,7 @@ fn test_lcp2_u64_1000() -> Result<()> {
     keys.dedup();
     let n = keys.len();
     let func: SignedLcp2MmphfInt<u64> =
-        SignedLcp2MmphfInt::try_new(FromSlice::new(&keys), n, no_logging![])?;
+        SignedLcp2MmphfInt::try_new(FromSlice::new(&keys), n, no_logs![])?;
     let func = func.try_into_unaligned()?;
     for (i, &key) in keys.iter().enumerate() {
         assert_eq!(func.get(key), Some(i), "key {key}");
@@ -313,7 +311,7 @@ fn test_lcp2_str_small() -> Result<()> {
     ];
     keys.sort();
     let func: SignedLcp2MmphfStr =
-        SignedLcp2MmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+        SignedLcp2MmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logs![])?;
     let func = func.try_into_unaligned()?;
     for (i, key) in keys.iter().enumerate() {
         assert_eq!(func.get(key.as_str()), Some(i), "key {key}");
@@ -326,7 +324,7 @@ fn test_lcp2_str_small() -> Result<()> {
 fn test_lcp2_bit_signed_u64() -> Result<()> {
     let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
     let func: BitSignedLcp2MmphfInt<u64> =
-        BitSignedLcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), 8, no_logging![])?;
+        BitSignedLcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), 8, no_logs![])?;
     let func = func.try_into_unaligned()?;
     for (i, &key) in keys.iter().enumerate() {
         assert_eq!(func.get(key), Some(i), "key {key}");
@@ -339,13 +337,13 @@ fn test_signed_lcp_queries_hash_key_once() -> Result<()> {
     let keys = ["alpha", "beta", "delta", "gamma"].map(|key| CountingKey(key.as_bytes().to_vec()));
 
     type CountingLcp = SignedFunc<LcpMmphf<CountingKey>, Box<[u64]>>;
-    let lcp = CountingLcp::try_par_new(&keys, no_logging![])?;
+    let lcp = CountingLcp::try_par_new(&keys, no_logs![])?;
     SIGNATURE_CALLS.store(0, Ordering::Relaxed);
     assert_eq!(lcp.get(&keys[2]), Some(2));
     assert_eq!(SIGNATURE_CALLS.load(Ordering::Relaxed), 1);
 
     type CountingLcp2 = SignedFunc<sux::func::Lcp2Mmphf<CountingKey>, Box<[u64]>>;
-    let lcp2 = CountingLcp2::try_par_new(&keys, no_logging![])?;
+    let lcp2 = CountingLcp2::try_par_new(&keys, no_logs![])?;
     SIGNATURE_CALLS.store(0, Ordering::Relaxed);
     assert_eq!(lcp2.get(&keys[2]), Some(2));
     assert_eq!(SIGNATURE_CALLS.load(Ordering::Relaxed), 1);

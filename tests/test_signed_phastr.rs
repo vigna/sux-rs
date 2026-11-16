@@ -35,7 +35,7 @@ fn check(n: usize, get: impl Fn(usize) -> Option<usize>) {
 #[test]
 fn test_signed_phastr() -> Result<()> {
     let n = 100_000;
-    let func = MySignedPHastR::try_new(FromCloneableIntoIterator::from(0..n), no_logging![])?;
+    let func = MySignedPHastR::try_new(FromCloneableIntoIterator::from(0..n), no_logs![])?;
     check(n, |i| func.get(i));
     let func = func.try_into_unaligned()?;
     check(n, |i| func.get(i));
@@ -50,11 +50,8 @@ fn test_bit_signed_phastr() -> Result<()> {
         23
     };
     let n = 100_000;
-    let func = MyBitSignedPHastR::try_new(
-        FromCloneableIntoIterator::from(0..n),
-        hash_bits,
-        no_logging![],
-    )?;
+    let func =
+        MyBitSignedPHastR::try_new(FromCloneableIntoIterator::from(0..n), hash_bits, no_logs![])?;
     check(n, |i| func.get(i));
     let func = func.try_into_unaligned()?;
     check(n, |i| func.get(i));
@@ -67,15 +64,15 @@ fn test_bit_signed_phastr() -> Result<()> {
 fn test_par_signed_phastr() -> Result<()> {
     let n = 100_000;
     let keys: Vec<usize> = (0..n).collect();
-    let seq = MySignedPHastR::try_new(FromCloneableIntoIterator::from(0..n), no_logging![])?;
-    let par = MySignedPHastR::try_par_new(&keys, no_logging![])?;
+    let seq = MySignedPHastR::try_new(FromCloneableIntoIterator::from(0..n), no_logs![])?;
+    let par = MySignedPHastR::try_par_new(&keys, no_logs![])?;
     check(n, |i| par.get(i));
     for i in 0..2 * n {
         assert_eq!(seq.get(i), par.get(i));
     }
 
-    let seq = MyBitSignedPHastR::try_new(FromCloneableIntoIterator::from(0..n), 13, no_logging![])?;
-    let par = MyBitSignedPHastR::try_par_new(&keys, 13, no_logging![])?;
+    let seq = MyBitSignedPHastR::try_new(FromCloneableIntoIterator::from(0..n), 13, no_logs![])?;
+    let par = MyBitSignedPHastR::try_par_new(&keys, 13, no_logs![])?;
     for i in 0..n {
         assert_eq!(seq.get(i), par.get(i));
         assert!(par.get(i).is_some());
@@ -90,8 +87,8 @@ fn test_par_signed_phastr_u64_words() -> Result<()> {
     type F = SignedFunc<PHastR<usize>, BitFieldVec<Box<[u64]>>>;
     let n = 100_000;
     let keys: Vec<usize> = (0..n).collect();
-    let seq = F::try_new(FromCloneableIntoIterator::from(0..n), 40, no_logging![])?;
-    let par = F::try_par_new(&keys, 40, no_logging![])?;
+    let seq = F::try_new(FromCloneableIntoIterator::from(0..n), 40, no_logs![])?;
+    let par = F::try_par_new(&keys, 40, no_logs![])?;
     check(n, |i| par.get(i));
     for i in 0..2 * n {
         assert_eq!(seq.get(i), par.get(i));
@@ -105,7 +102,7 @@ fn test_offline_signed_phastr() -> Result<()> {
     let func = MySignedPHastR::try_new_with_builder(
         FromCloneableIntoIterator::from(0..n),
         PHastRBuilder::default().offline(true),
-        no_logging![],
+        no_logs![],
     )?;
     check(n, |i| func.get(i));
     Ok(())
@@ -122,7 +119,7 @@ fn test_wide_seeds_signed_phastr() -> Result<()> {
         .seed_bits(10)
         .log2_slice_len(11)
         .bucket_size(5.75);
-    let func = F::try_par_new_with_builder(&keys, builder, no_logging![])?;
+    let func = F::try_par_new_with_builder(&keys, builder, no_logs![])?;
     check(n, |i| func.get(i));
     let func = func.try_into_unaligned()?;
     check(n, |i| func.get(i));
@@ -136,7 +133,7 @@ fn test_str_signed_phastr() -> Result<()> {
     let n = 10_000;
     let keys: Vec<String> = (0..2 * n).map(|i| format!("key {i}")).collect();
     let func =
-        <SignedFunc<PHastR<str>, Box<[u64]>>>::try_new(FromSlice::new(&keys[..n]), no_logging![])?;
+        <SignedFunc<PHastR<str>, Box<[u64]>>>::try_new(FromSlice::new(&keys[..n]), no_logs![])?;
     let mut seen = vec![false; n];
     for key in &keys[..n] {
         let v = func.get(key.as_str()).unwrap();
@@ -155,7 +152,7 @@ fn test_str_signed_phastr() -> Result<()> {
 fn test_false_positives_signed_phastr() -> Result<()> {
     let n = 100_000;
     let keys: Vec<usize> = (0..n).collect();
-    let func = <SignedFunc<PHastR<usize>, Box<[u8]>>>::try_par_new(&keys, no_logging![])?;
+    let func = <SignedFunc<PHastR<usize>, Box<[u8]>>>::try_par_new(&keys, no_logs![])?;
     let fp = (n..11 * n).filter(|&i| func.get(i).is_some()).count();
     let expected = 10 * n / 256;
     assert!(
@@ -171,10 +168,10 @@ fn test_invalid_hash_width_is_error() {
         let result = MyBitSignedPHastR::try_new(
             FromCloneableIntoIterator::from(0..1),
             hash_width,
-            no_logging![],
+            no_logs![],
         );
         assert!(result.is_err(), "hash width {hash_width} must be rejected");
-        let result = MyBitSignedPHastR::try_par_new(&[0_usize], hash_width, no_logging![]);
+        let result = MyBitSignedPHastR::try_par_new(&[0_usize], hash_width, no_logs![]);
         assert!(result.is_err(), "hash width {hash_width} must be rejected");
     }
 }
@@ -188,7 +185,7 @@ fn test_signed_phastr_mapped_query() -> Result<()> {
     use epserde::utils::AlignedCursor;
 
     let n = 100_000;
-    let func = MySignedPHastR::try_new(FromCloneableIntoIterator::from(0..n), no_logging![])?;
+    let func = MySignedPHastR::try_new(FromCloneableIntoIterator::from(0..n), no_logs![])?;
 
     let mut cursor = <AlignedCursor<Aligned64>>::new();
     // SAFETY: func was built by its safe constructor, so all epserde

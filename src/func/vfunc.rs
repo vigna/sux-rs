@@ -310,12 +310,12 @@ mod build {
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::VFunc;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// # use sux::utils::FromCloneableIntoIterator;
         /// let func = <VFunc<usize, Box<[u8]>>>::try_new(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     FromCloneableIntoIterator::new(0..100_u8),
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?;
         ///
         /// for i in 0..100_u8 {
@@ -376,13 +376,13 @@ mod build {
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::{VBuilder, VFunc};
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// # use sux::utils::FromCloneableIntoIterator;
         /// let func = <VFunc<usize, Box<[u8]>>>::try_new_with_builder(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     FromCloneableIntoIterator::new(0..100_u8),
         ///     VBuilder::default().offline(true),
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?;
         ///
         /// for i in 0..100_u8 {
@@ -443,11 +443,11 @@ mod build {
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::VFunc;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// let keys: Vec<u64> = (0..1000).collect();
         /// let values: Vec<u8> = (0..1000).map(|x| x as u8).collect();
         /// let func =
-        ///     <VFunc<u64, Box<[u8]>>>::try_par_new(&keys, &values, no_logging![])?;
+        ///     <VFunc<u64, Box<[u8]>>>::try_par_new(&keys, &values, no_logs![])?;
         /// for (i, &key) in keys.iter().enumerate() {
         ///     assert_eq!(func.get(key), i as u8);
         /// }
@@ -495,11 +495,11 @@ mod build {
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::{VFunc, VBuilder};
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// let keys: Vec<u64> = (0..1000).collect();
         /// let values: Vec<u8> = (0..1000).map(|x| x as u8).collect();
         /// let func =
-        ///     <VFunc<u64, Box<[u8]>>>::try_par_new_with_builder(&keys, &values, VBuilder::default(), no_logging![])?;
+        ///     <VFunc<u64, Box<[u8]>>>::try_par_new_with_builder(&keys, &values, VBuilder::default(), no_logs![])?;
         /// for (i, &key) in keys.iter().enumerate() {
         ///     assert_eq!(func.get(key), i as u8);
         /// }
@@ -572,12 +572,12 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::VFunc;
         /// # use sux::bits::BitFieldVec;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// # use sux::utils::FromCloneableIntoIterator;
         /// let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     FromCloneableIntoIterator::new(0..100),
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?;
         ///
         /// for i in 0..100 {
@@ -633,13 +633,13 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::{VBuilder, VFunc};
         /// # use sux::bits::BitFieldVec;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// # use sux::utils::FromCloneableIntoIterator;
         /// let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     FromCloneableIntoIterator::new(0..100),
         ///     VBuilder::default().offline(true),
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?;
         ///
         /// for i in 0..100 {
@@ -695,11 +695,11 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::VFunc;
         /// # use sux::bits::BitFieldVec;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// let keys: Vec<u64> = (0..1000).collect();
         /// let values: Vec<usize> = (0..1000).collect();
         /// let func =
-        ///     <VFunc<u64, BitFieldVec<Box<[usize]>>>>::try_par_new(&keys, &values, no_logging![])?;
+        ///     <VFunc<u64, BitFieldVec<Box<[usize]>>>>::try_par_new(&keys, &values, no_logs![])?;
         /// for (i, &key) in keys.iter().enumerate() {
         ///     assert_eq!(func.get(key), i);
         /// }
@@ -744,12 +744,12 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::{VFunc, VBuilder};
         /// # use sux::bits::BitFieldVec;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// let keys: Vec<u64> = (0..1000).collect();
         /// let values: Vec<usize> = (0..1000).collect();
         /// let func =
         ///     <VFunc<u64, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
-        ///         &keys, &values, VBuilder::default(), no_logging![],
+        ///         &keys, &values, VBuilder::default(), no_logs![],
         ///     )?;
         /// for (i, &key) in keys.iter().enumerate() {
         ///     assert_eq!(func.get(key), i);

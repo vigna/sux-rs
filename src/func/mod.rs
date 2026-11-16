@@ -105,12 +105,12 @@
 //! # #[cfg(feature = "rayon")]
 //! # fn main() -> anyhow::Result<()> {
 //! # use sux::func::VFunc;
-//! # use dsi_progress_logger::no_logging;
+//! # use dsi_progress_logger::no_logs;
 //! # use sux::utils::FromCloneableIntoIterator;
 //! let func = <VFunc<usize, Box<[u8]>>>::try_new(
 //!     FromCloneableIntoIterator::new(0..10_usize),
 //!     FromCloneableIntoIterator::new(0..10_u8),
-//!     no_logging![],
+//!     no_logs![],
 //! )?;
 //! # Ok(())
 //! # }

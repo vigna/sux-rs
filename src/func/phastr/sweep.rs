@@ -342,7 +342,7 @@ pub(super) fn sweep_bumping_level<S: PartSource, T: SweepSeed>(
     let mut cpl = pl.concurrent();
     cpl.item_name("bucket");
     cpl.expected_updates(g.buckets);
-    cpl.start(format!(
+    cpl.start_with(format_args!(
         "Sweeping level {index} ({k} keys, {} buckets, {} chunks)...",
         g.buckets,
         g.sweep_chunks()

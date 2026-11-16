@@ -187,14 +187,14 @@ pub type Unaligned<T> = <T as TryIntoUnaligned>::Unaligned;
 /// ```rust
 /// # #[cfg(feature = "rayon")]
 /// # fn main() -> anyhow::Result<()> {
-/// use dsi_progress_logger::no_logging;
+/// use dsi_progress_logger::no_logs;
 /// use sux::func::LcpMmphfInt;
 /// use sux::traits::{TryIntoUnaligned, Unaligned};
 /// use sux::utils::FromSlice;
 ///
 /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
 /// let unaligned_func: Unaligned<LcpMmphfInt<u64>> =
-///     LcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?.try_into_unaligned()?;
+///     LcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logs![])?.try_into_unaligned()?;
 /// # Ok(())
 /// # }
 /// # #[cfg(not(feature = "rayon"))]
@@ -206,14 +206,14 @@ pub type Unaligned<T> = <T as TryIntoUnaligned>::Unaligned;
 /// ```rust
 /// # #[cfg(feature = "rayon")]
 /// # fn main() -> anyhow::Result<()> {
-/// use dsi_progress_logger::no_logging;
+/// use dsi_progress_logger::no_logs;
 /// use sux::func::LcpMmphfInt;
 /// use sux::traits::TryIntoUnaligned;
 /// use sux::utils::FromSlice;
 ///
 /// # let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
 /// let func: LcpMmphfInt<u64> =
-///     LcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?;
+///     LcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logs![])?;
 /// let unaligned_func = func.try_into_unaligned()?;
 /// # Ok(())
 /// # }

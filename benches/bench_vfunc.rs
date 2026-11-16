@@ -7,7 +7,7 @@
 #![allow(clippy::type_complexity)]
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use dsi_progress_logger::no_logging;
+use dsi_progress_logger::no_logs;
 use mem_dbg::{MemSize, SizeFlags};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
@@ -58,14 +58,14 @@ fn build_vfunc(n: usize, values: &[usize]) -> VFunc<usize, BitFieldVec<Box<[usiz
         FromSlice::new(&keys),
         FromSlice::new(values),
         VBuilder::default().expected_num_keys(n),
-        no_logging![],
+        no_logs![],
     )
     .unwrap()
 }
 
 fn build_vfunc2(n: usize, values: &[usize]) -> VFunc2<usize, BitFieldVec<Box<[usize]>>> {
     let keys: Vec<usize> = (0..n).collect();
-    VFunc2::try_new(FromSlice::new(&keys), FromSlice::new(values), no_logging![]).unwrap()
+    VFunc2::try_new(FromSlice::new(&keys), FromSlice::new(values), no_logs![]).unwrap()
 }
 
 // ── Benchmarks ──────────────────────────────────────────────────────

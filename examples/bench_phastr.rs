@@ -8,7 +8,7 @@
 //! integer keys.
 
 use clap::Parser;
-use dsi_progress_logger::no_logging;
+use dsi_progress_logger::no_logs;
 use mem_dbg::{MemSize, SizeFlags};
 use std::time::Instant;
 use sux::bits::BitFieldVec;
@@ -50,8 +50,7 @@ fn build<D: SeedStoreBuild + MemSize + mem_dbg::FlatType>(
         .log2_slice_len(args.log2_slice_len)
         .bucket_size(args.bucket_size);
     let start = Instant::now();
-    let phf: PHastR<u64, D> =
-        PHastR::try_par_new_with_builder(keys, builder, no_logging![]).unwrap();
+    let phf: PHastR<u64, D> = PHastR::try_par_new_with_builder(keys, builder, no_logs![]).unwrap();
     let build = start.elapsed().as_nanos() as f64 / keys.len() as f64;
     let bits = phf.mem_size(SizeFlags::default()) as f64 * 8.0 / keys.len() as f64;
     eprintln!("Construction: {build:.1} ns/key");

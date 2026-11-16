@@ -9,7 +9,7 @@
 #![cfg(all(feature = "rayon", feature = "serde"))]
 
 use anyhow::Result;
-use dsi_progress_logger::no_logging;
+use dsi_progress_logger::no_logs;
 use sux::bits::BitFieldVec;
 use sux::dict::VFilter;
 use sux::func::shard_edge::{Fuse3NoShards, Fuse3Shards, FuseAug3FullSigs};
@@ -31,8 +31,7 @@ fn test_serde_vfunc() -> Result<()> {
     let keys: Vec<usize> = (0..10_000).collect();
     let values: Vec<usize> = (0..10_000).map(|i| i * 3 % 1000).collect();
 
-    let func =
-        <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_par_new(&keys, &values, no_logging![])?;
+    let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_par_new(&keys, &values, no_logs![])?;
     let back = round_trip(&func)?;
     for (&key, &value) in keys.iter().zip(&values) {
         assert_eq!(back.get(key), value);
@@ -42,7 +41,7 @@ fn test_serde_vfunc() -> Result<()> {
     let func = <VFunc<usize, Box<[u16]>, [u64; 1], Fuse3NoShards>>::try_par_new(
         &keys,
         &values16,
-        no_logging![],
+        no_logs![],
     )?;
     let back = round_trip(&func)?;
     for (&key, &value) in keys.iter().zip(&values16) {
@@ -52,23 +51,20 @@ fn test_serde_vfunc() -> Result<()> {
     let func = <VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], Fuse3Shards>>::try_par_new(
         &keys,
         &values,
-        no_logging![],
+        no_logs![],
     )?;
     round_trip(&func)?;
 
     let func = <VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], FuseAug3FullSigs>>::try_par_new(
         &keys,
         &values,
-        no_logging![],
+        no_logs![],
     )?;
     round_trip(&func)?;
 
     let skeys: Vec<String> = (0..1000).map(|i| format!("key{i}")).collect();
-    let func = <VFunc<str, BitFieldVec<Box<[usize]>>>>::try_par_new(
-        &skeys,
-        &values[..1000],
-        no_logging![],
-    )?;
+    let func =
+        <VFunc<str, BitFieldVec<Box<[usize]>>>>::try_par_new(&skeys, &values[..1000], no_logs![])?;
     let back = round_trip(&func)?;
     for (key, &value) in skeys.iter().zip(&values) {
         assert_eq!(back.get(key.as_str()), value);
@@ -81,7 +77,7 @@ fn test_serde_vfunc() -> Result<()> {
 fn test_serde_vfilter() -> Result<()> {
     let keys: Vec<usize> = (0..10_000).collect();
 
-    let filter = <VFilter<usize, Box<[u8]>>>::try_par_new(&keys, no_logging![])?;
+    let filter = <VFilter<usize, Box<[u8]>>>::try_par_new(&keys, no_logs![])?;
     let back = round_trip(&filter)?;
     for i in 0..2 * keys.len() {
         assert_eq!(back.contains(i), filter.contains(i));
@@ -90,7 +86,7 @@ fn test_serde_vfilter() -> Result<()> {
     let filter = <VFilter<usize, BitFieldVec<Box<[usize]>>, [u64; 1], Fuse3NoShards>>::try_par_new(
         &keys,
         10,
-        no_logging![],
+        no_logs![],
     )?;
     let back = round_trip(&filter)?;
     for i in 0..2 * keys.len() {
@@ -107,27 +103,26 @@ fn test_serde_other_funcs() -> Result<()> {
         .map(|i: usize| i.trailing_zeros() as usize)
         .collect();
 
-    let func =
-        <VFunc2<u64, BitFieldVec<Box<[usize]>>>>::try_par_new(&keys, &values, no_logging![])?;
+    let func = <VFunc2<u64, BitFieldVec<Box<[usize]>>>>::try_par_new(&keys, &values, no_logs![])?;
     let back = round_trip(&func)?;
     for (&key, &value) in keys.iter().zip(&values) {
         assert_eq!(back.get(key), value);
     }
 
-    let func = <CompVFunc<u64>>::try_par_new(&keys, &values, no_logging![])?;
+    let func = <CompVFunc<u64>>::try_par_new(&keys, &values, no_logs![])?;
     let back = round_trip(&func)?;
     for (&key, &value) in keys.iter().zip(&values) {
         assert_eq!(back.get(key), value);
     }
 
-    let func = <Lcp2MmphfInt<u64>>::try_par_new(&keys, no_logging![])?;
+    let func = <Lcp2MmphfInt<u64>>::try_par_new(&keys, no_logs![])?;
     let back = round_trip(&func)?;
     for (i, &key) in keys.iter().enumerate() {
         assert_eq!(back.get(key), i);
     }
 
     let skeys: Vec<String> = (0..1000).map(|i| format!("{i:05}")).collect();
-    let func = <LcpMmphfStr>::try_par_new(&skeys, no_logging![])?;
+    let func = <LcpMmphfStr>::try_par_new(&skeys, no_logs![])?;
     let back = round_trip(&func)?;
     for (i, key) in skeys.iter().enumerate() {
         assert_eq!(back.get(key.as_str()), i);
@@ -147,7 +142,7 @@ fn test_serde_mwhc() -> Result<()> {
     let func = <VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], Mwhc3Shards>>::try_par_new(
         &keys,
         &values,
-        no_logging![],
+        no_logs![],
     )?;
     let back = round_trip(&func)?;
     for (&key, &value) in keys.iter().zip(&values) {
@@ -157,7 +152,7 @@ fn test_serde_mwhc() -> Result<()> {
     let func = <VFunc<usize, BitFieldVec<Box<[usize]>>, [u64; 2], Mwhc3NoShards>>::try_par_new(
         &keys,
         &values,
-        no_logging![],
+        no_logs![],
     )?;
     round_trip(&func)?;
 

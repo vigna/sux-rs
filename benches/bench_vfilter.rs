@@ -7,7 +7,7 @@
 #![allow(clippy::type_complexity)]
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use dsi_progress_logger::no_logging;
+use dsi_progress_logger::no_logs;
 use mem_dbg::{MemSize, SizeFlags};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
@@ -34,12 +34,12 @@ fn gen_query_indices(n: usize) -> Vec<usize> {
 
 fn build_filter_box_u8(n: usize) -> VFilter<usize, Box<[u8]>> {
     let keys: Vec<usize> = (0..n).collect();
-    <VFilter<usize, Box<[u8]>>>::try_par_new(&keys, no_logging![]).unwrap()
+    <VFilter<usize, Box<[u8]>>>::try_par_new(&keys, no_logs![]).unwrap()
 }
 
 fn build_filter_bfv(n: usize, filter_bits: usize) -> VFilter<usize, BitFieldVec<Box<[usize]>>> {
     let keys: Vec<usize> = (0..n).collect();
-    <VFilter<usize, BitFieldVec<Box<[usize]>>>>::try_par_new(&keys, filter_bits, no_logging![])
+    <VFilter<usize, BitFieldVec<Box<[usize]>>>>::try_par_new(&keys, filter_bits, no_logs![])
         .unwrap()
 }
 

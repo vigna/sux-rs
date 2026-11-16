@@ -66,14 +66,14 @@
 //! ```no_run
 //! # #[cfg(feature = "rayon")]
 //! # fn main() -> anyhow::Result<()> {
-//! # use dsi_progress_logger::no_logging;
+//! # use dsi_progress_logger::no_logs;
 //! # use sux::bits::BitFieldVec;
 //! # use sux::func::VFunc;
 //! # use sux::utils::{FromCloneableIntoIterator, LineLender};
 //! let func = <VFunc<str, BitFieldVec<Box<[usize]>>>>::try_new(
 //!     LineLender::from_path("keys.txt")?,
 //!     FromCloneableIntoIterator::from(0_usize..),
-//!     no_logging![],
+//!     no_logs![],
 //! )?;
 //! # Ok(())
 //! # }
@@ -92,7 +92,7 @@
 //! ```no_run
 //! # #[cfg(feature = "rayon")]
 //! # fn main() -> anyhow::Result<()> {
-//! # use dsi_progress_logger::no_logging;
+//! # use dsi_progress_logger::no_logs;
 //! # use lender::FallibleLender;
 //! # use sux::bits::BitFieldVec;
 //! # use sux::func::VFunc;
@@ -103,7 +103,7 @@
 //!         LineLender::from_path("keys.txt").map(|lender| lender.take(n))
 //!     })?,
 //!     FromCloneableIntoIterator::from(0_usize..),
-//!     no_logging![],
+//!     no_logs![],
 //! )?;
 //! # Ok(())
 //! # }

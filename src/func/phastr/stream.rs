@@ -661,7 +661,7 @@ fn collect_bumped<T: SweepSeed>(
     let mut cpl = pl.concurrent();
     cpl.item_name("key");
     cpl.expected_updates(store.len);
-    cpl.start(format!(
+    cpl.start_with(format_args!(
         "Collecting the {k} keys of buckets without a seed..."
     ));
     let keys = if k <= LAST_LEVEL_THRESHOLD {
@@ -850,14 +850,17 @@ impl PHastRBuilder {
 
         pl.item_name("key");
         pl.expected_updates(self.expected_num_keys);
-        pl.start(format!(
-            "Computing and storing 128-bit signatures sequentially {} using seed 0x{:016x}...",
-            match &dir {
-                Some(dir) => format!("on disk ({})", dir.display()),
-                None => "in RAM".to_owned(),
-            },
-            self.seed
-        ));
+        match &dir {
+            Some(dir) => pl.start_with(format_args!(
+                "Computing and storing 128-bit signatures sequentially on disk ({}) using seed 0x{:016x}...",
+                dir.display(),
+                self.seed
+            )),
+            None => pl.start_with(format_args!(
+                "Computing and storing 128-bit signatures sequentially in RAM using seed 0x{:016x}...",
+                self.seed
+            )),
+        }
         let start = Instant::now();
         let writer = StoreWriter::new(SigFn(None), MAX_LOG2_PARTITIONS, dir.as_deref())?;
         let mut buffers = writer.buffers();
@@ -987,7 +990,7 @@ mod tests {
     use crate::utils::FromSlice;
     #[cfg(feature = "slow_tests")]
     use dsi_progress_logger::ProgressLogger;
-    use dsi_progress_logger::no_logging;
+    use dsi_progress_logger::no_logs;
 
     /// A key whose 64-bit signature with seed 0 collides with that of another
     /// key for the first 2 · `COLLIDING` keys (pairs 2*i*, 2*i* + 1); other
@@ -1049,12 +1052,12 @@ mod tests {
         keys: &[&K],
         builder: PHastRBuilder,
     ) -> Result<()> {
-        let par = <PHastR<K, D>>::try_par_new_with_builder(keys, builder.clone(), no_logging![])?;
+        let par = <PHastR<K, D>>::try_par_new_with_builder(keys, builder.clone(), no_logs![])?;
         for offline in [false, true] {
             let phf = <PHastR<K, D>>::try_new_with_builder(
                 FromSlice::new(keys),
                 builder.clone().offline(offline),
-                no_logging![],
+                no_logs![],
             )?;
             assert_same(&phf, &par);
         }
@@ -1149,11 +1152,11 @@ mod tests {
                 .install(f)
         };
         let reference = in_pool(3, &|| {
-            <PHastR<u64>>::try_par_new_with_builder(&refs, PHastRBuilder::default(), no_logging![])
+            <PHastR<u64>>::try_par_new_with_builder(&refs, PHastRBuilder::default(), no_logs![])
         })?;
         for threads in [1, 2, 3, 4] {
             let par = in_pool(threads, &|| {
-                <PHastR<u64>>::try_par_new_with_builder(&refs, fixed.clone(), no_logging![])
+                <PHastR<u64>>::try_par_new_with_builder(&refs, fixed.clone(), no_logs![])
             })?;
             assert_same(&par, &reference);
             for offline in [false, true] {
@@ -1161,7 +1164,7 @@ mod tests {
                     <PHastR<u64>>::try_new_with_builder(
                         FromSlice::new(&refs),
                         fixed.clone().offline(offline),
-                        no_logging![],
+                        no_logs![],
                     )
                 })?;
                 assert_same(&phf, &reference);
@@ -1182,7 +1185,7 @@ mod tests {
                     <PHastR<u64>>::try_new_with_builder(
                         FromSlice::new(&keys),
                         PHastRBuilder::default().offline(offline),
-                        no_logging![],
+                        no_logs![],
                     )
                     .is_err()
                 );
@@ -1193,7 +1196,7 @@ mod tests {
                 <PHastR<CollidingKey>>::try_new_with_builder(
                     FromSlice::new(&keys),
                     PHastRBuilder::default().offline(offline),
-                    no_logging![],
+                    no_logs![],
                 )
                 .is_err()
             );
@@ -1296,13 +1299,13 @@ mod tests {
     fn test_strings() -> Result<()> {
         let keys: Vec<String> = (0..200_000).map(|i| format!("key{i}")).collect();
         let refs: Vec<&str> = keys.iter().map(|s| s.as_str()).collect();
-        let par = <PHastR<str>>::try_par_new(&refs, no_logging![])?;
+        let par = <PHastR<str>>::try_par_new(&refs, no_logs![])?;
         // Lines from a reader
         for offline in [false, true] {
             let phf = <PHastR<str>>::try_new_with_builder(
                 crate::utils::LineLender::new(std::io::Cursor::new(keys.join("\n"))),
                 PHastRBuilder::default().offline(offline),
-                no_logging![],
+                no_logs![],
             )?;
             assert_same(&phf, &par);
         }
@@ -1317,7 +1320,7 @@ mod tests {
         // change the function
         let keys: Vec<u64> = (0..1_000_000).collect();
         let builder = PHastRBuilder::default();
-        let quiet = <PHastR<u64>>::try_par_new_with_builder(&keys, builder.clone(), no_logging![])?;
+        let quiet = <PHastR<u64>>::try_par_new_with_builder(&keys, builder.clone(), no_logs![])?;
         // Without a logger, log macros do not format their arguments
         let _ = env_logger::builder()
             .is_test(true)

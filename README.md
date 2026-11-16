@@ -116,12 +116,12 @@ assert_eq!(ef.succ(6), Some((2, 8))); // position and value of the successor
 A minimal perfect hash function on a set of strings, built in parallel:
 
 ```rust
-use dsi_progress_logger::no_logging;
+use dsi_progress_logger::no_logs;
 use sux::prelude::*;
 
 fn main() -> anyhow::Result<()> {
     let keys = ["apple", "banana", "cherry", "date"];
-    let mphf = <PHastR<str>>::try_par_new(&keys, no_logging![])?;
+    let mphf = <PHastR<str>>::try_par_new(&keys, no_logs![])?;
 
     // The keys are mapped bijectively to [0 . . 4)
     let mut seen = [false; 4];

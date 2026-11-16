@@ -135,14 +135,14 @@ use std::hash::Hash;
 /// # #[cfg(feature = "rayon")]
 /// # fn main() -> anyhow::Result<()> {
 /// # use sux::func::CompVFunc;
-/// # use dsi_progress_logger::no_logging;
+/// # use dsi_progress_logger::no_logs;
 /// # use sux::utils::FromCloneableIntoIterator;
 /// # use mem_dbg::{MemSize, SizeFlags};
 /// // Maps keys to their trailing zeros, which are distributed geometrically
 /// let func = <CompVFunc<usize>>::try_new(
 ///     FromCloneableIntoIterator::new(0..100_usize),
 ///     FromCloneableIntoIterator::new((1..101_usize).map(|x| x.trailing_zeros() as usize)),
-///     no_logging![],
+///     no_logs![],
 /// )?;
 ///
 /// for i in 0..100 {
@@ -721,7 +721,7 @@ where
 
             if force_index_peeler {
                 pl.item_name("edge");
-                pl.start(format!(
+                pl.start_with(format_args!(
                     "Generating graph for shard {}/{} (index peeler)...",
                     shard_index + 1,
                     num_shards
@@ -1038,7 +1038,7 @@ fn peel_by_index<W: Word>(
     shard_index: usize,
     num_shards: usize,
 ) -> Result<()> {
-    pl.start(format!(
+    pl.start_with(format_args!(
         "Peeling graph for shard {}/{}...",
         shard_index + 1,
         num_shards
@@ -1065,7 +1065,7 @@ fn peel_by_index<W: Word>(
     }
     pl.done();
 
-    pl.start(format!(
+    pl.start_with(format_args!(
         "Assigning values for shard {}/{}...",
         shard_index + 1,
         num_shards
@@ -1345,7 +1345,7 @@ where
     S: Sig,
     E: ShardEdge<S, 3>,
 {
-    pl.start(format!(
+    pl.start_with(format_args!(
         "Generating graph for shard {}/{} (high-mem)...",
         shard_index + 1,
         num_shards
@@ -1363,7 +1363,7 @@ where
 
     drop(shard);
 
-    pl.start(format!(
+    pl.start_with(format_args!(
         "Peeling graph for shard {}/{} (high-mem)...",
         shard_index + 1,
         num_shards
@@ -1409,7 +1409,7 @@ where
     }
     pl.done();
 
-    pl.start(format!(
+    pl.start_with(format_args!(
         "Assigning values for shard {}/{} (high-mem)...",
         shard_index + 1,
         num_shards
@@ -1456,7 +1456,7 @@ where
     S: Sig,
     E: ShardEdge<S, 3>,
 {
-    pl.start(format!(
+    pl.start_with(format_args!(
         "Generating graph for shard {}/{} (low-mem)...",
         shard_index + 1,
         num_shards
@@ -1478,7 +1478,7 @@ where
         return Err(());
     }
 
-    pl.start(format!(
+    pl.start_with(format_args!(
         "Peeling graph for shard {}/{} (low-mem)...",
         shard_index + 1,
         num_shards
@@ -1519,7 +1519,7 @@ where
     }
     pl.done();
 
-    pl.start(format!(
+    pl.start_with(format_args!(
         "Assigning values for shard {}/{} (low-mem)...",
         shard_index + 1,
         num_shards

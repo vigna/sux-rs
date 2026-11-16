@@ -570,12 +570,12 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::VFunc2;
         /// # use sux::bits::BitFieldVec;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// # use sux::utils::FromCloneableIntoIterator;
         /// let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> = VFunc2::try_new(
         ///     FromCloneableIntoIterator::new(0..100_usize),
         ///     FromCloneableIntoIterator::new(0..100_usize),
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?;
         ///
         /// for i in 0..100 {
@@ -626,13 +626,13 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::{VBuilder, VFunc2};
         /// # use sux::bits::BitFieldVec;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// # use sux::utils::FromCloneableIntoIterator;
         /// let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> = VFunc2::try_new_with_builder(
         ///     FromCloneableIntoIterator::new(0..100_usize),
         ///     FromCloneableIntoIterator::new(0..100_usize),
         ///     VBuilder::default().offline(true),
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?;
         ///
         /// for i in 0..100 {
@@ -877,7 +877,7 @@ mod tests {
     use super::*;
     use crate::bits::BitFieldVec;
     use crate::utils::FromCloneableIntoIterator;
-    use dsi_progress_logger::no_logging;
+    use dsi_progress_logger::no_logs;
 
     /// When `find_optimal_r` picks an escape range larger than the distinct-value
     /// count (`escape > m`), the `remap` table is padded to `escape`: the frequent
@@ -896,7 +896,7 @@ mod tests {
         let func: VFunc2<usize, BitFieldVec<Box<[usize]>>> = VFunc2::try_new(
             FromCloneableIntoIterator::new(0..n),
             FromCloneableIntoIterator::new((0..n).map(|i| DISTINCT[i % DISTINCT.len()])),
-            no_logging![],
+            no_logs![],
         )
         .unwrap();
 

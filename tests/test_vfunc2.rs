@@ -7,7 +7,7 @@
 #![cfg(feature = "rayon")]
 
 use anyhow::Result;
-use dsi_progress_logger::no_logging;
+use dsi_progress_logger::no_logs;
 use sux::bits::BitFieldVec;
 use sux::func::VFunc2;
 
@@ -28,7 +28,7 @@ fn test_vfunc2_wide_u128_values() -> Result<()> {
         .collect();
 
     let func: VFunc2<u64, BitFieldVec<Box<[u128]>>> =
-        VFunc2::try_par_new(&keys, &values, no_logging![])?;
+        VFunc2::try_par_new(&keys, &values, no_logs![])?;
 
     for (&key, &expected) in keys.iter().zip(&values) {
         assert_eq!(func.get(key), expected, "key {key}");
@@ -55,7 +55,7 @@ fn test_vfunc2_uniform_u128() -> Result<()> {
     let values: Vec<u128> = (0..n).map(|i| distinct[i % distinct.len()]).collect();
 
     let func: VFunc2<u64, BitFieldVec<Box<[u128]>>> =
-        VFunc2::try_par_new(&keys, &values, no_logging![])?;
+        VFunc2::try_par_new(&keys, &values, no_logs![])?;
 
     for (&key, &expected) in keys.iter().zip(&values) {
         assert_eq!(func.get(key), expected, "key {key}");
@@ -83,16 +83,14 @@ fn test_vfunc2_narrow_value_widths() -> Result<()> {
             }
         })
         .collect();
-    let f32: VFunc2<u64, BitFieldVec<Box<[u32]>>> =
-        VFunc2::try_par_new(&keys, &v32, no_logging![])?;
+    let f32: VFunc2<u64, BitFieldVec<Box<[u32]>>> = VFunc2::try_par_new(&keys, &v32, no_logs![])?;
     for (&key, &expected) in keys.iter().zip(&v32) {
         assert_eq!(f32.get(key), expected, "u32 key {key}");
     }
 
     // u64 backend, roughly uniform values.
     let v64: Vec<u64> = keys.iter().map(|&k| (k % 5) * 1_000_000_000).collect();
-    let f64: VFunc2<u64, BitFieldVec<Box<[u64]>>> =
-        VFunc2::try_par_new(&keys, &v64, no_logging![])?;
+    let f64: VFunc2<u64, BitFieldVec<Box<[u64]>>> = VFunc2::try_par_new(&keys, &v64, no_logs![])?;
     for (&key, &expected) in keys.iter().zip(&v64) {
         assert_eq!(f64.get(key), expected, "u64 key {key}");
     }
@@ -118,13 +116,13 @@ fn test_vfunc2_honors_check_dups() -> Result<()> {
             FromSlice::new(&keys),
             FromSlice::new(&values),
             VBuilder::default().check_dups(true),
-            no_logging![],
+            no_logs![],
         ),
         <VFunc2<usize, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
             &keys,
             &values,
             VBuilder::default().check_dups(true),
-            no_logging![],
+            no_logs![],
         ),
     ] {
         assert!(matches!(

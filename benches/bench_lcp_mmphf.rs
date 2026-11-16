@@ -5,7 +5,7 @@
  */
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use dsi_progress_logger::no_logging;
+use dsi_progress_logger::no_logs;
 use mem_dbg::{MemSize, SizeFlags};
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
@@ -70,7 +70,7 @@ fn bench_int_query(c: &mut Criterion) {
 
         // LcpMmphf (single-packed)
         let func: LcpMmphfInt<u64> =
-            LcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+            LcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logs![]).unwrap();
         let bytes = func.mem_size(SizeFlags::default());
         eprintln!(
             "LcpMmphfInt n={label}: {bytes} bytes, {:.2} bits/key",
@@ -100,7 +100,7 @@ fn bench_int_query(c: &mut Criterion) {
 
         // Lcp2Mmphf (two-step)
         let func2: Lcp2MmphfInt<u64> =
-            Lcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+            Lcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logs![]).unwrap();
         let bytes2 = func2.mem_size(SizeFlags::default());
         eprintln!(
             "Lcp2MmphfInt n={label}: {bytes2} bytes, {:.2} bits/key",
@@ -151,7 +151,7 @@ fn bench_str_query(c: &mut Criterion) {
 
         // LcpMmphf (single-packed)
         let func: LcpMmphfStr =
-            LcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+            LcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logs![]).unwrap();
         let bytes = func.mem_size(SizeFlags::default());
         eprintln!(
             "LcpMmphfStr n={label}: {bytes} bytes, {:.2} bits/key",
@@ -187,7 +187,7 @@ fn bench_str_query(c: &mut Criterion) {
 
         // Lcp2Mmphf (two-step)
         let func2: Lcp2MmphfStr =
-            Lcp2MmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+            Lcp2MmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logs![]).unwrap();
         let bytes2 = func2.mem_size(SizeFlags::default());
         eprintln!(
             "Lcp2MmphfStr n={label}: {bytes2} bytes, {:.2} bits/key",
@@ -236,7 +236,7 @@ fn bench_int_construction(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("LcpMmphf", label), |b| {
             b.iter(|| {
                 let func: LcpMmphfInt<u64> =
-                    LcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+                    LcpMmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logs![]).unwrap();
                 black_box(&func);
             })
         });
@@ -244,8 +244,7 @@ fn bench_int_construction(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("Lcp2Mmphf", label), |b| {
             b.iter(|| {
                 let func: Lcp2MmphfInt<u64> =
-                    Lcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logging![])
-                        .unwrap();
+                    Lcp2MmphfInt::try_new(FromSlice::new(&keys), keys.len(), no_logs![]).unwrap();
                 black_box(&func);
             })
         });
@@ -263,7 +262,7 @@ fn bench_str_construction(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("LcpMmphf", label), |b| {
             b.iter(|| {
                 let func: LcpMmphfStr =
-                    LcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![]).unwrap();
+                    LcpMmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logs![]).unwrap();
                 black_box(&func);
             })
         });
@@ -271,8 +270,7 @@ fn bench_str_construction(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("Lcp2Mmphf", label), |b| {
             b.iter(|| {
                 let func: Lcp2MmphfStr =
-                    Lcp2MmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logging![])
-                        .unwrap();
+                    Lcp2MmphfStr::try_new(FromSlice::new(&keys), keys.len(), no_logs![]).unwrap();
                 black_box(&func);
             })
         });

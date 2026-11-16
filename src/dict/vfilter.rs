@@ -222,11 +222,11 @@ where
     /// # #[cfg(feature = "rayon")]
     /// # fn main() -> anyhow::Result<()> {
     /// # use sux::dict::VFilter;
-    /// # use dsi_progress_logger::no_logging;
+    /// # use dsi_progress_logger::no_logs;
     /// # use sux::utils::FromCloneableIntoIterator;
     /// let filter = <VFilter<usize, Box<[u8]>>>::try_new(
     ///     FromCloneableIntoIterator::new(0..100),
-    ///     no_logging![],
+    ///     no_logs![],
     /// )?;
     ///
     /// for i in 0..100 {
@@ -409,11 +409,11 @@ mod build {
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::dict::VFilter;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// # use sux::utils::FromCloneableIntoIterator;
         /// let filter = <VFilter<usize, Box<[u8]>>>::try_new(
         ///     FromCloneableIntoIterator::new(0..100),
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?;
         ///
         /// for i in 0..100 {
@@ -467,12 +467,12 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::dict::VFilter;
         /// # use sux::func::VBuilder;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// # use sux::utils::FromCloneableIntoIterator;
         /// let filter = <VFilter<usize, Box<[u8]>>>::try_new_with_builder(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     VBuilder::default().offline(true),
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?;
         ///
         /// for i in 0..100 {
@@ -535,11 +535,11 @@ mod build {
         /// # #[cfg(feature = "rayon")]
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::dict::VFilter;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// let keys: Vec<usize> = (0..100).collect();
         /// let filter = <VFilter<usize, Box<[u8]>>>::try_par_new(
         ///     &keys,
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?;
         ///
         /// for &i in &keys {
@@ -583,12 +583,12 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::dict::VFilter;
         /// # use sux::func::VBuilder;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// let keys: Vec<usize> = (0..100).collect();
         /// let filter = <VFilter<usize, Box<[u8]>>>::try_par_new_with_builder(
         ///     &keys,
         ///     VBuilder::default(),
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?;
         ///
         /// for &i in &keys {
@@ -658,12 +658,12 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::dict::VFilter;
         /// # use sux::bits::BitFieldVec;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// # use sux::utils::FromCloneableIntoIterator;
         /// let filter = <VFilter<usize, BitFieldVec<Box<[usize]>>>>::try_new(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     5,
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?;
         ///
         /// for i in 0..100 {
@@ -717,13 +717,13 @@ mod build {
         /// # use sux::dict::VFilter;
         /// # use sux::func::VBuilder;
         /// # use sux::bits::BitFieldVec;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// # use sux::utils::FromCloneableIntoIterator;
         /// let filter = <VFilter<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
         ///     FromCloneableIntoIterator::new(0..100),
         ///     5,
         ///     VBuilder::default().offline(true),
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?;
         ///
         /// for i in 0..100 {
@@ -787,12 +787,12 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::dict::VFilter;
         /// # use sux::bits::BitFieldVec;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// let keys: Vec<usize> = (0..100).collect();
         /// let filter = <VFilter<usize, BitFieldVec<Box<[usize]>>>>::try_par_new(
         ///     &keys,
         ///     5,
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?;
         ///
         /// for &i in &keys {
@@ -838,13 +838,13 @@ mod build {
         /// # use sux::dict::VFilter;
         /// # use sux::func::VBuilder;
         /// # use sux::bits::BitFieldVec;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// let keys: Vec<usize> = (0..100).collect();
         /// let filter = <VFilter<usize, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
         ///     &keys,
         ///     5,
         ///     VBuilder::default(),
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?;
         ///
         /// for &i in &keys {
@@ -889,7 +889,7 @@ mod build {
 mod tests {
     use std::ops::{BitXor, BitXorAssign};
 
-    use dsi_progress_logger::no_logging;
+    use dsi_progress_logger::no_logs;
     use mem_dbg::{FlatType, MemSize};
     use num_primitive::PrimitiveNumberAs;
     use rdst::RadixKey;
@@ -925,7 +925,7 @@ mod tests {
             let filter = <VFilter<usize, Box<[u8]>, S, E>>::try_new_with_builder(
                 FromCloneableIntoIterator::from(0..n),
                 VBuilder::default().log2_buckets(4).offline(false),
-                no_logging![],
+                no_logs![],
             )?;
             // Verify that the stored hash matches the expected derivation
             // for every key in the set.
@@ -948,22 +948,19 @@ mod tests {
         let keys: Vec<usize> = (0..10).collect();
         // A boxed filter wider than 64 bits stores fictional entropy and is
         // rejected.
-        assert!(<VFilter<usize, Box<[u128]>>>::try_par_new(&keys, no_logging![]).is_err());
+        assert!(<VFilter<usize, Box<[u128]>>>::try_par_new(&keys, no_logs![]).is_err());
         // A bit-field filter with more than 64 bits is rejected (u64 word so
         // the cap is the same on 32- and 64-bit targets).
         assert!(
-            <VFilter<usize, BitFieldVec<Box<[u64]>>>>::try_par_new(&keys, 65, no_logging![])
-                .is_err()
+            <VFilter<usize, BitFieldVec<Box<[u64]>>>>::try_par_new(&keys, 65, no_logs![]).is_err()
         );
         // Zero bits is rejected.
         assert!(
-            <VFilter<usize, BitFieldVec<Box<[u64]>>>>::try_par_new(&keys, 0, no_logging![])
-                .is_err()
+            <VFilter<usize, BitFieldVec<Box<[u64]>>>>::try_par_new(&keys, 0, no_logs![]).is_err()
         );
         // Exactly 64 bits is accepted.
         assert!(
-            <VFilter<usize, BitFieldVec<Box<[u64]>>>>::try_par_new(&keys, 64, no_logging![])
-                .is_ok()
+            <VFilter<usize, BitFieldVec<Box<[u64]>>>>::try_par_new(&keys, 64, no_logs![]).is_ok()
         );
     }
 
@@ -980,7 +977,7 @@ mod tests {
         let keys = (0..n).collect::<Vec<usize>>();
 
         // Boxed-slice backend
-        let filter = <VFilter<usize, Box<[u8]>>>::try_par_new(&keys, no_logging![])?;
+        let filter = <VFilter<usize, Box<[u8]>>>::try_par_new(&keys, no_logs![])?;
         let mut cursor = <AlignedCursor<Aligned16>>::new();
         unsafe { filter.serialize(&mut cursor)? };
         let len = cursor.len();
@@ -993,7 +990,7 @@ mod tests {
 
         // BitFieldVec backend
         let filter =
-            <VFilter<usize, BitFieldVec<Box<[usize]>>>>::try_par_new(&keys, 5, no_logging![])?;
+            <VFilter<usize, BitFieldVec<Box<[usize]>>>>::try_par_new(&keys, 5, no_logs![])?;
         let mut cursor = <AlignedCursor<Aligned16>>::new();
         unsafe { filter.serialize(&mut cursor)? };
         let len = cursor.len();

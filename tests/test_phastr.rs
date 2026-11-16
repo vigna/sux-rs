@@ -7,7 +7,7 @@
 use std::borrow::Borrow;
 
 use anyhow::Result;
-use dsi_progress_logger::{ProgressLogger, no_logging};
+use dsi_progress_logger::{ProgressLogger, no_logs};
 use mem_dbg::{FlatType, MemSize};
 use sux::bits::BitFieldVec;
 use sux::func::phastr::SeedStoreBuild;
@@ -19,7 +19,7 @@ use sux::utils::{FromSlice, LineLender, ToSig};
 /// it is a minimal perfect hash function.
 fn check<D: SeedStoreBuild + MemSize + FlatType>(n: usize, builder: PHastRBuilder) -> Result<()> {
     let keys: Vec<u64> = (0..n as u64).collect();
-    let phf = <PHastR<u64, D>>::try_par_new_with_builder(&keys, builder, no_logging![])?;
+    let phf = <PHastR<u64, D>>::try_par_new_with_builder(&keys, builder, no_logs![])?;
     assert_eq!(phf.len(), n);
     let mut seen = vec![false; n];
     for key in &keys {
@@ -167,7 +167,7 @@ fn test_logging() -> Result<()> {
     // one thread), so all phases are logged; logging does not change the
     // function
     let keys: Vec<u64> = (0..1_000_000).collect();
-    let quiet = <PHastR<u64>>::try_par_new(&keys, no_logging![])?;
+    let quiet = <PHastR<u64>>::try_par_new(&keys, no_logs![])?;
     // Without a logger, log macros do not format their arguments
     let _ = env_logger::builder()
         .is_test(true)
@@ -191,7 +191,7 @@ fn test_logging() -> Result<()> {
 fn test_parameter_checks() {
     let keys: Vec<u64> = (0..1000).collect();
     let build = |builder: PHastRBuilder| {
-        <PHastR<u64>>::try_par_new_with_builder(&keys, builder, no_logging![])
+        <PHastR<u64>>::try_par_new_with_builder(&keys, builder, no_logs![])
     };
     // Seeds too large for the storage
     assert!(build(PHastRBuilder::default().seed_bits(10)).is_err());
@@ -226,7 +226,7 @@ fn test_construction_failures() {
             .log2_layouts(0)
             .log2_slice_len(4)
             .bucket_size(2.0),
-        no_logging![],
+        no_logs![],
     )
     .unwrap_err();
     assert!(
@@ -241,7 +241,7 @@ fn test_construction_failures() {
             .log2_layouts(0)
             .log2_slice_len(9)
             .bucket_size(64.0),
-        no_logging![],
+        no_logs![],
     )
     .unwrap_err();
     assert!(err.to_string().contains("could be placed"), "{err}");
@@ -252,18 +252,18 @@ fn test_weights_and_generic_queries() -> Result<()> {
     // Explicit default weights give the same function, and the generic
     // query code gives the same outputs as the code with constant shifts
     let keys: Vec<u64> = (0..300_000).collect();
-    let phf = <PHastR<u64>>::try_par_new(&keys, no_logging![])?;
+    let phf = <PHastR<u64>>::try_par_new(&keys, no_logs![])?;
     let weighted = <PHastR<u64>>::try_par_new_with_builder(
         &keys,
         PHastRBuilder::default().weights([-52000, 53315, 105861, 138629, 156944, 175176, 186591]),
-        no_logging![],
+        no_logs![],
     )?;
     assert_eq!(format!("{weighted:?}"), format!("{phf:?}"));
     // Other weights give a valid function
     let other = <PHastR<u64>>::try_par_new_with_builder(
         &keys,
         PHastRBuilder::default().weights([0, 1 << 16, 2 << 16, 3 << 16, 4 << 16, 5 << 16, 6 << 16]),
-        no_logging![],
+        no_logs![],
     )?;
     let generic = phf.clone().generic_queries();
     let mut seen = vec![false; keys.len()];
@@ -289,16 +289,16 @@ fn test_serde() -> Result<()> {
         Ok(())
     }
     let keys: Vec<u64> = (0..100_000).collect();
-    round_trip(&<PHastR<u64>>::try_par_new(&keys, no_logging![])?)?;
+    round_trip(&<PHastR<u64>>::try_par_new(&keys, no_logs![])?)?;
     let phf = <PHastR<u64, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
         &keys,
         PHastRBuilder::default().seed_bits(10).log2_slice_len(11),
-        no_logging![],
+        no_logs![],
     )?;
     round_trip(&phf)?;
     round_trip(&phf.try_into_unaligned()?)?;
     let keys: Vec<String> = (0..10_000).map(|i| format!("key{i}")).collect();
-    round_trip(&<PHastR<str>>::try_par_new(&keys, no_logging![])?)?;
+    round_trip(&<PHastR<str>>::try_par_new(&keys, no_logs![])?)?;
     Ok(())
 }
 
@@ -310,7 +310,7 @@ fn test_clone_unsized() -> Result<()> {
     send_sync::<PHastR<u64, BitFieldVec<Box<[usize]>>>>();
     // Clone and Debug do not require the type of the keys to implement them
     let keys = ["a", "b", "c"];
-    let phf = <PHastR<str>>::try_par_new(&keys, no_logging![])?;
+    let phf = <PHastR<str>>::try_par_new(&keys, no_logs![])?;
     let clone = phf.clone();
     assert_eq!(format!("{phf:?}"), format!("{clone:?}"));
     for key in keys {
@@ -324,7 +324,7 @@ fn test_unaligned_round_trip() -> Result<()> {
     // Conversion to unaligned reads and back, for both seed storages (seeds
     // and remapping sequence are already padded, so nothing changes)
     let keys: Vec<u64> = (0..100_000).collect();
-    let phf = <PHastR<u64>>::try_par_new(&keys, no_logging![])?;
+    let phf = <PHastR<u64>>::try_par_new(&keys, no_logs![])?;
     let back: PHastR<u64> = phf.clone().try_into_unaligned()?.into();
     assert_eq!(format!("{back:?}"), format!("{phf:?}"));
     for key in &keys {
@@ -333,7 +333,7 @@ fn test_unaligned_round_trip() -> Result<()> {
     let phf = <PHastR<u64, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
         &keys,
         PHastRBuilder::default().seed_bits(10).log2_slice_len(11),
-        no_logging![],
+        no_logs![],
     )?;
     let back: PHastR<u64, BitFieldVec<Box<[usize]>>> = phf.clone().try_into_unaligned()?.into();
     assert_eq!(format!("{back:?}"), format!("{phf:?}"));
@@ -351,9 +351,9 @@ fn test_temp_dir() -> Result<()> {
     let phf = <PHastR<u64>>::try_new_with_builder(
         FromSlice::new(&keys),
         PHastRBuilder::default().offline(true).temp_dir(dir.path()),
-        no_logging![],
+        no_logs![],
     )?;
-    let mem = <PHastR<u64>>::try_new(FromSlice::new(&keys), no_logging![])?;
+    let mem = <PHastR<u64>>::try_new(FromSlice::new(&keys), no_logs![])?;
     for key in &keys {
         assert_eq!(phf.get(key), mem.get(key));
     }
@@ -362,7 +362,7 @@ fn test_temp_dir() -> Result<()> {
     let err = <PHastR<u64>>::try_new_with_builder(
         FromSlice::new(&keys),
         PHastRBuilder::default().offline(true).temp_dir(&missing),
-        no_logging![],
+        no_logs![],
     )
     .expect_err("construction in a missing directory must fail");
     assert!(
@@ -380,8 +380,7 @@ fn test_lender() -> Result<()> {
         PHastRBuilder::default(),
         PHastRBuilder::default().offline(true),
     ] {
-        let phf =
-            <PHastR<u64>>::try_new_with_builder(FromSlice::new(&keys), builder, no_logging![])?;
+        let phf = <PHastR<u64>>::try_new_with_builder(FromSlice::new(&keys), builder, no_logs![])?;
         assert_eq!(phf.len(), keys.len());
         let mut seen = vec![false; keys.len()];
         for key in &keys {
@@ -390,7 +389,7 @@ fn test_lender() -> Result<()> {
             seen[v] = true;
         }
     }
-    let phf = <PHastR<u64>>::try_new(FromSlice::new(&keys), no_logging![])?;
+    let phf = <PHastR<u64>>::try_new(FromSlice::new(&keys), no_logs![])?;
     assert_eq!(phf.len(), keys.len());
     Ok(())
 }
@@ -410,7 +409,7 @@ fn test_unaligned() -> Result<()> {
                 .seed_bits(bits)
                 .log2_slice_len(log2_slice_len)
                 .bucket_size(6.0),
-            no_logging![],
+            no_logs![],
         )?;
         let expected: Vec<usize> = keys.iter().map(|k| phf.get(k)).collect();
         let phf = phf.try_into_unaligned()?;
@@ -428,7 +427,7 @@ fn test_unaligned() -> Result<()> {
 #[test]
 fn test_batch() -> Result<()> {
     let keys: Vec<u64> = (0..100_000).collect();
-    let phf = <PHastR<u64>>::try_par_new(&keys, no_logging![])?;
+    let phf = <PHastR<u64>>::try_par_new(&keys, no_logs![])?;
     for chunk in keys.chunks_exact(8) {
         let batch: [&u64; 8] = std::array::from_fn(|i| &chunk[i]);
         let values = phf.get_batch(batch);
@@ -442,7 +441,7 @@ fn test_batch() -> Result<()> {
 #[test]
 fn test_duplicates() {
     let keys: Vec<u64> = vec![1, 2, 3, 2];
-    assert!(<PHastR<u64>>::try_par_new(&keys, no_logging![]).is_err());
+    assert!(<PHastR<u64>>::try_par_new(&keys, no_logs![]).is_err());
 }
 
 /// A key whose 64-bit signature with seed 0 collides with that of another key
@@ -470,7 +469,7 @@ fn test_signature_collisions() -> Result<()> {
     // particular, with only the last level)
     for n in [5_000u64, 300_000] {
         let keys: Vec<CollidingKey> = (0..n).map(CollidingKey).collect();
-        let phf = <PHastR<CollidingKey>>::try_par_new(&keys, no_logging![])?;
+        let phf = <PHastR<CollidingKey>>::try_par_new(&keys, no_logs![])?;
         let mut seen = vec![false; keys.len()];
         for &key in &keys {
             if key.0 < 2 * COLLIDING {
@@ -484,7 +483,7 @@ fn test_signature_collisions() -> Result<()> {
     // Equal keys are still detected
     let mut keys: Vec<CollidingKey> = (0..100_000).map(CollidingKey).collect();
     keys.push(CollidingKey(50_000));
-    assert!(<PHastR<CollidingKey>>::try_par_new(&keys, no_logging![]).is_err());
+    assert!(<PHastR<CollidingKey>>::try_par_new(&keys, no_logs![]).is_err());
     Ok(())
 }
 
@@ -498,7 +497,7 @@ fn test_mmap_mem_size() -> Result<()> {
     use epserde::prelude::*;
     use mem_dbg::{MemSize, SizeFlags};
     let keys: Vec<u64> = (0..1_000_000).collect();
-    let phf = <PHastR<u64>>::try_par_new(&keys, no_logging![])?;
+    let phf = <PHastR<u64>>::try_par_new(&keys, no_logs![])?;
     let file = tempfile::NamedTempFile::new()?;
     // SAFETY: phf was built by its constructor
     unsafe { phf.store(file.path()) }?;
@@ -526,7 +525,7 @@ fn test_mmap_mem_size() -> Result<()> {
 fn test_strings() -> Result<()> {
     let keys: Vec<String> = (0..200_000).map(|i| format!("key{i}")).collect();
     let refs: Vec<&str> = keys.iter().map(|s| s.as_str()).collect();
-    let phf = <PHastR<str>>::try_par_new(&refs, no_logging![])?;
+    let phf = <PHastR<str>>::try_par_new(&refs, no_logs![])?;
     let mut seen = vec![false; keys.len()];
     for key in &keys {
         let v = phf.get(key.as_str());
@@ -538,7 +537,7 @@ fn test_strings() -> Result<()> {
         let lines = <PHastR<str>>::try_new_with_builder(
             LineLender::new(std::io::Cursor::new(keys.join("\n"))),
             PHastRBuilder::default().offline(offline),
-            no_logging![],
+            no_logs![],
         )?;
         assert_eq!(format!("{lines:?}"), format!("{phf:?}"));
     }
@@ -586,7 +585,7 @@ fn test_epserde() -> Result<()> {
 
     let wide = || PHastRBuilder::default().seed_bits(10).log2_slice_len(11);
     check_epserde!(PHastR<u64>, &[u8], BitFieldVec<&[usize]>, |keys| {
-        <PHastR<u64>>::try_par_new(keys, no_logging![])
+        <PHastR<u64>>::try_par_new(keys, no_logs![])
     });
     check_epserde!(
         PHastR<u64, BitFieldVec<Box<[usize]>>>,
@@ -595,7 +594,7 @@ fn test_epserde() -> Result<()> {
         |keys| <PHastR<u64, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
             keys,
             wide(),
-            no_logging![]
+            no_logs![]
         )
     );
     check_epserde!(
@@ -607,7 +606,7 @@ fn test_epserde() -> Result<()> {
                 <PHastR<u64, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
                     keys,
                     wide(),
-                    no_logging![],
+                    no_logs![],
                 )?
                 .try_into_unaligned()?,
             )

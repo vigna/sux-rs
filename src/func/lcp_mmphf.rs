@@ -519,11 +519,11 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::LcpMmphfInt;
         /// # use sux::traits::TryIntoUnaligned;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// # use sux::utils::FromSlice;
         /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
         /// let func =
-        ///     LcpMmphfInt::<u64>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?.try_into_unaligned()?;
+        ///     LcpMmphfInt::<u64>::try_new(FromSlice::new(&keys), keys.len(), no_logs![])?.try_into_unaligned()?;
         ///
         /// for (i, &key) in keys.iter().enumerate() {
         ///     assert_eq!(func.get(key), i);
@@ -570,14 +570,14 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::{LcpMmphfInt, VBuilder};
         /// # use sux::traits::TryIntoUnaligned;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// # use sux::utils::FromSlice;
         /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
         /// let func = LcpMmphfInt::<u64>::try_new_with_builder(
         ///     FromSlice::new(&keys),
         ///     keys.len(),
         ///     VBuilder::default().offline(true),
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?.try_into_unaligned()?;
         ///
         /// for (i, &key) in keys.iter().enumerate() {
@@ -724,10 +724,10 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::LcpMmphfInt;
         /// # use sux::traits::TryIntoUnaligned;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
         /// let func =
-        ///     LcpMmphfInt::<u64>::try_par_new(&keys, no_logging![])?.try_into_unaligned()?;
+        ///     LcpMmphfInt::<u64>::try_par_new(&keys, no_logs![])?.try_into_unaligned()?;
         ///
         /// for (i, &key) in keys.iter().enumerate() {
         ///     assert_eq!(func.get(key), i);
@@ -765,12 +765,12 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::{LcpMmphfInt, VBuilder};
         /// # use sux::traits::TryIntoUnaligned;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// let keys: Vec<u64> = vec![10, 20, 30, 40, 50];
         /// let func = LcpMmphfInt::<u64>::try_par_new_with_builder(
         ///     &keys,
         ///     VBuilder::default(),
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?.try_into_unaligned()?;
         ///
         /// for (i, &key) in keys.iter().enumerate() {
@@ -922,11 +922,11 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::LcpMmphfStr;
         /// # use sux::traits::TryIntoUnaligned;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// # use sux::utils::FromSlice;
         /// let keys = vec!["a", "b", "c", "d", "e"];
         /// let func =
-        ///     <LcpMmphfStr>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?.try_into_unaligned()?;
+        ///     <LcpMmphfStr>::try_new(FromSlice::new(&keys), keys.len(), no_logs![])?.try_into_unaligned()?;
         ///
         /// for (i, &key) in keys.iter().enumerate() {
         ///     assert_eq!(func.get(key), i);
@@ -973,14 +973,14 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::{LcpMmphfStr, VBuilder};
         /// # use sux::traits::TryIntoUnaligned;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// # use sux::utils::FromSlice;
         /// let keys = vec!["a", "b", "c", "d", "e"];
         /// let func = <LcpMmphfStr>::try_new_with_builder(
         ///     FromSlice::new(&keys),
         ///     keys.len(),
         ///     VBuilder::default().offline(true),
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?.try_into_unaligned()?;
         ///
         /// for (i, &key) in keys.iter().enumerate() {
@@ -1128,10 +1128,10 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::LcpMmphfStr;
         /// # use sux::traits::TryIntoUnaligned;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// let keys = vec!["a", "b", "c", "d", "e"];
         /// let func =
-        ///     <LcpMmphfStr>::try_par_new(&keys, no_logging![])?.try_into_unaligned()?;
+        ///     <LcpMmphfStr>::try_par_new(&keys, no_logs![])?.try_into_unaligned()?;
         ///
         /// for (i, &key) in keys.iter().enumerate() {
         ///     assert_eq!(func.get(key), i);
@@ -1172,12 +1172,12 @@ mod build {
         /// # fn main() -> anyhow::Result<()> {
         /// # use sux::func::{LcpMmphfStr, VBuilder};
         /// # use sux::traits::TryIntoUnaligned;
-        /// # use dsi_progress_logger::no_logging;
+        /// # use dsi_progress_logger::no_logs;
         /// let keys = vec!["a", "b", "c", "d", "e"];
         /// let func = <LcpMmphfStr>::try_par_new_with_builder(
         ///     &keys,
         ///     VBuilder::default(),
-        ///     no_logging![],
+        ///     no_logs![],
         /// )?.try_into_unaligned()?;
         ///
         /// for (i, &key) in keys.iter().enumerate() {
@@ -1598,7 +1598,7 @@ impl<K: ?Sized, D: Clone, S0, E0: Clone, S1, E1: Clone> Clone for LcpMmphf<K, D,
 /// ```rust
 /// # #[cfg(feature = "rayon")]
 /// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
+/// # use dsi_progress_logger::no_logs;
 /// # use sux::func::LcpMmphfStr;
 /// # use sux::traits::TryIntoUnaligned;
 /// # use sux::utils::FromSlice;
@@ -1610,7 +1610,7 @@ impl<K: ?Sized, D: Clone, S0, E0: Clone, S1, E1: Clone> Clone for LcpMmphf<K, D,
 /// ];
 ///
 /// let func =
-///     <LcpMmphfStr>::try_new(FromSlice::new(&keys), keys.len(), no_logging![])?.try_into_unaligned()?;
+///     <LcpMmphfStr>::try_new(FromSlice::new(&keys), keys.len(), no_logs![])?.try_into_unaligned()?;
 ///
 /// for (i, key) in keys.iter().enumerate() {
 ///     assert_eq!(func.get(key.as_str()), i);
@@ -1638,7 +1638,7 @@ pub type LcpMmphfStr<
 /// ```rust
 /// # #[cfg(feature = "rayon")]
 /// # fn main() -> anyhow::Result<()> {
-/// # use dsi_progress_logger::no_logging;
+/// # use dsi_progress_logger::no_logs;
 /// # use sux::func::LcpMmphfSliceU8;
 /// # use sux::traits::TryIntoUnaligned;
 /// # use sux::utils::FromSlice;
@@ -1652,7 +1652,7 @@ pub type LcpMmphfStr<
 /// let func = <LcpMmphfSliceU8>::try_new(
 ///     FromSlice::new(&keys),
 ///     keys.len(),
-///     no_logging![],
+///     no_logs![],
 /// )?.try_into_unaligned()?;
 ///
 /// for (i, key) in keys.iter().enumerate() {

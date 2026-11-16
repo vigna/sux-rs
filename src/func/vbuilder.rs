@@ -24,7 +24,7 @@ use rayon::iter::ParallelIterator;
 use rayon::slice::ParallelSlice;
 use rdst::*;
 use std::any::TypeId;
-use std::borrow::{Borrow, Cow};
+use std::borrow::Borrow;
 use std::marker::PhantomData;
 use std::ops::{BitXor, BitXorAssign};
 use std::path::PathBuf;
@@ -81,7 +81,7 @@ fn default_max_num_threads() -> usize {
 /// # fn main() -> anyhow::Result<()> {
 /// # use sux::func::{VBuilder, VFunc};
 /// # use sux::bits::BitFieldVec;
-/// # use dsi_progress_logger::no_logging;
+/// # use dsi_progress_logger::no_logs;
 /// # use sux::utils::FromCloneableIntoIterator;
 /// let n = 1000;
 /// let func = <VFunc<usize, BitFieldVec<Box<[usize]>>>>::try_new_with_builder(
@@ -91,7 +91,7 @@ fn default_max_num_threads() -> usize {
 ///         .offline(true)
 ///         .expected_num_keys(n)
 ///         .max_num_threads(4),
-///     no_logging![],
+///     no_logs![],
 /// )?;
 ///
 /// for i in 0..n {
@@ -1371,7 +1371,7 @@ impl<
 
                 pl.expected_updates(n);
                 pl.item_name("key");
-                pl.start(format!(
+                pl.start_with(format_args!(
                     "Computing and storing {}-bit signatures in parallel ({} threads) in RAM using seed 0x{seed:016x}...",
                     std::mem::size_of::<S>() * 8,
                     builder.max_num_threads,
@@ -1523,15 +1523,19 @@ impl<
     {
         pl.expected_updates(self.expected_num_keys);
         pl.item_name("key");
-        pl.start(format!(
-            "Computing and storing {}-bit signatures sequentially {} using seed 0x{:016x}...",
-            std::mem::size_of::<S>() * 8,
-            sig_store
-                .temp_dir()
-                .map(|d| Cow::Owned(format!("on disk ({})", d.path().display())))
-                .unwrap_or(Cow::Borrowed("in RAM")),
-            seed
-        ));
+        match sig_store.temp_dir() {
+            Some(dir) => pl.start_with(format_args!(
+                "Computing and storing {}-bit signatures sequentially on disk ({}) using seed 0x{:016x}...",
+                std::mem::size_of::<S>() * 8,
+                dir.path().display(),
+                seed
+            )),
+            None => pl.start_with(format_args!(
+                "Computing and storing {}-bit signatures sequentially in RAM using seed 0x{:016x}...",
+                std::mem::size_of::<S>() * 8,
+                seed
+            )),
+        }
 
         let start = Instant::now();
 
@@ -1964,7 +1968,10 @@ impl<
             .item_name("shard")
             .expected_updates(self.shard_edge.num_shards())
             .display_memory(true)
-            .start(format!("Solving shards ({} threads)...", self.num_threads));
+            .start_with(format_args!(
+                "Solving shards ({} threads)...",
+                self.num_threads
+            ));
 
         self.failed.store(false, Ordering::Relaxed);
         let num_shards = self.shard_edge.num_shards();
@@ -2036,7 +2043,7 @@ impl<
                                     num_shards
                                 ));
 
-                                pl.start(format!(
+                                pl.start_with(format_args!(
                                     "Sorting shard {}/{}...",
                                     shard_index + 1,
                                     num_shards
@@ -2236,7 +2243,7 @@ impl<
         let num_shards = shard_edge.num_shards();
         let shard_len = shard.len();
 
-        pl.start(format!(
+        pl.start_with(format_args!(
             "Generating graph for shard {}/{}...",
             shard_index + 1,
             num_shards
@@ -2280,7 +2287,7 @@ impl<
         // num_vertices / 4
         let mut visit_stack = Vec::<E::Vertex>::with_capacity(num_vertices / 3);
 
-        pl.start(format!(
+        pl.start_with(format_args!(
             "Peeling graph for shard {}/{} by signatures (high-mem)...",
             shard_index + 1,
             num_shards
@@ -2379,7 +2386,7 @@ impl<
         let num_shards = shard_edge.num_shards();
         let shard_len = shard.len();
 
-        pl.start(format!(
+        pl.start_with(format_args!(
             "Generating graph for shard {}/{}...",
             shard_index + 1,
             num_shards,
@@ -2419,7 +2426,7 @@ impl<
 
         let mut visit_stack = DoubleStack::<E::Vertex>::new(num_vertices);
 
-        pl.start(format!(
+        pl.start_with(format_args!(
             "Peeling graph for shard {}/{} by signatures (low-mem)...",
             shard_index + 1,
             num_shards
@@ -2526,7 +2533,7 @@ impl<
         let num_shards = shard_edge.num_shards();
         let num_edges = shard.len();
 
-        pl.start(format!(
+        pl.start_with(format_args!(
             "Generating graph for shard {}/{}...",
             shard_index + 1,
             num_shards
@@ -2564,7 +2571,7 @@ impl<
             return Err(());
         }
 
-        pl.start(format!(
+        pl.start_with(format_args!(
             "Peeling graph for shard {}/{} by signatures (augmented)...",
             shard_index + 1,
             num_shards
@@ -2677,7 +2684,7 @@ impl<
                 return Err(());
             }
 
-            pl.start(format!(
+            pl.start_with(format_args!(
                 "Eliminating peeled variables for shard {}/{} ({} removed edges, {} lost vertices)...",
                 shard_index + 1,
                 num_shards,
@@ -2843,7 +2850,7 @@ impl<
             return Err(());
         }
 
-        pl.start(format!(
+        pl.start_with(format_args!(
             "Assigning values for shard {}/{}...",
             shard_index + 1,
             num_shards
@@ -2889,7 +2896,7 @@ impl<
             return;
         }
 
-        pl.start(format!(
+        pl.start_with(format_args!(
             "Assigning values for shard {}/{}...",
             shard_index + 1,
             self.shard_edge.num_shards()
@@ -2936,7 +2943,7 @@ mod retry_state_tests {
     #[test]
     fn max_shard_too_big_is_bounded() {
         for aug in [false, true] {
-            let mut pl = no_logging![];
+            let mut pl = no_logs![];
             let mut rs = retry_state();
             for i in 0..99 {
                 let r = rs.handle_solve_result(
@@ -2969,7 +2976,7 @@ mod retry_state_tests {
             (false, RetryState::DUP_CHECK_ATTEMPTS),
             (true, RetryState::DUP_CHECK_AUG_ATTEMPTS),
         ] {
-            let mut pl = no_logging![];
+            let mut pl = no_logs![];
             let mut rs = retry_state();
             for _ in 0..threshold {
                 assert!(!rs.forces_dup_check(aug));
@@ -2993,7 +3000,7 @@ mod retry_state_tests {
             (false, RetryState::MAX_ATTEMPTS),
             (true, RetryState::MAX_AUG_ATTEMPTS),
         ] {
-            let mut pl = no_logging![];
+            let mut pl = no_logs![];
             let mut rs = retry_state();
             for i in 0..max_attempts - 1 {
                 let r = rs.handle_solve_result(

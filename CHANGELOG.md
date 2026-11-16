@@ -12,6 +12,14 @@
   ending with `BuildError::UnsolvableShard`; now construction fails after a
   few attempts with `BuildError::DuplicateKey`.
 
+- Updated `dsi-progress-logger` to 0.8.11. All code, tests, and examples now
+  use the new `no_logs!` macro in place of the deprecated `no_logging!`, and
+  non-constant start messages are passed with `start_with` and
+  `format_args!`. As a result, constructions invoked with `no_logs![]`
+  contain no logging code, and no message is formatted unless it is
+  displayed. We suggest to replace `no_logging![]` with `no_logs![]` in
+  code calling our constructors.
+
 ## [0.15.4] - 2026-11-03
 
 ### New
