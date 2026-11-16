@@ -10,6 +10,7 @@ use super::builder::*;
 use super::*;
 use dsi_progress_logger::ConcurrentProgressLog;
 use std::collections::BinaryHeap;
+use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// A source of the signatures of the keys of a level, distributed into
@@ -33,11 +34,8 @@ pub(super) trait PartSource: Sync {
     /// Returns the part of bucket `b`.
     fn part(&self, b: usize) -> usize;
 
-    /// Returns the first bucket of part `p`.
-    fn first_bucket(&self, p: usize) -> usize;
-
-    /// Returns the number of buckets of part `p`.
-    fn buckets(&self, p: usize, g: &Geometry) -> usize;
+    /// Returns the buckets of part `p`.
+    fn buckets(&self, p: usize) -> Range<usize>;
 
     /// Distributes into buckets the signatures of part `p` whose bucket is
     /// in `range` (which must contain the buckets of the part only, but can
@@ -53,7 +51,7 @@ pub(super) trait PartSource: Sync {
         loader: &mut Self::Loader,
         p: usize,
         g: &Geometry,
-        range: std::ops::Range<usize>,
+        range: Range<usize>,
         sigs: &mut Vec<u64>,
         begin: &mut Vec<usize>,
         temp: &mut Vec<u64>,
@@ -62,8 +60,10 @@ pub(super) trait PartSource: Sync {
 
 /// Number of buckets in the window of a sweep.
 pub(super) const WINDOW: usize = 256;
+
 /// Size of the cyclic set recording the buckets in the window.
 const WINDOW_BITS: usize = 1024;
+
 /// Number of keys from which the buckets of a window are kept in a heap.
 const LARGE_BUCKET: usize = 64;
 
@@ -80,7 +80,7 @@ struct Window {
     /// keys.
     weights: [i64; LARGE_BUCKET],
     /// For each size below [`LARGE_BUCKET`], a cyclic buffer containing
-    /// the lowest bits of the indices of the buckets of that size.
+    /// the lowest eight bits of the indices of the buckets of that size.
     queues: Box<[[u8; WINDOW]]>,
     /// The position in its cyclic buffer of the first bucket of each
     /// queue.
@@ -98,7 +98,12 @@ struct Window {
 }
 
 impl Window {
+    /// Creates an empty window, given the priority weights for the first
+    /// seven sizes.
     fn new(weights: &[i64; 7]) -> Self {
+        // The buckets of the window are identified by the lowest eight bits
+        // of their index in the queues, and by their index modulo
+        // WINDOW_BITS in the keys and in the cyclic set
         const { assert!(WINDOW <= 256 && WINDOW <= WINDOW_BITS) }
         Self {
             weights: std::array::from_fn(|size| Self::weight(weights, size)),
@@ -169,7 +174,12 @@ impl Window {
     }
 
     /// Adds bucket `b`, which must follow all buckets added previously and
-    /// have the given nonzero size.
+    /// have the given nonzero size; `weights` are the priority weights for
+    /// the first seven sizes, which are needed for buckets with at least
+    /// [`LARGE_BUCKET`] keys.
+    ///
+    /// The weights are an argument, rather than a field: keeping a copy in
+    /// the window makes sweeps about 2% slower.
     #[inline(always)]
     fn push(&mut self, b: usize, size: usize, weights: &[i64; 7]) {
         self.buckets[(b % WINDOW_BITS) / 64] |= 1 << (b % 64);
@@ -201,7 +211,8 @@ impl Window {
                 (key, size)
             };
         }
-        // Buckets are identified by the lowest bits of their index
+        // Buckets are identified by their index modulo a power of two:
+        // WINDOW_BITS in the keys, and 256 in the queues
         let bucket = |low: usize, bits: usize| oldest + low.wrapping_sub(oldest) % bits;
         let b = if self.large.peek().is_some_and(|&large| large > key) {
             let key = self.large.pop().unwrap();
@@ -236,31 +247,24 @@ pub(super) trait SweepSeed: Copy + Default + Send + Sync {
     fn seed(self) -> usize;
 }
 
-impl SweepSeed for u8 {
-    #[inline(always)]
-    fn from_seed(seed: usize) -> Self {
-        debug_assert!(seed <= u8::MAX as usize);
-        seed as u8
-    }
+macro_rules! impl_sweep_seed {
+    ($($ty:ty),*) => {$(
+        impl SweepSeed for $ty {
+            #[inline(always)]
+            fn from_seed(seed: usize) -> Self {
+                debug_assert!(seed <= <$ty>::MAX as usize);
+                seed as $ty
+            }
 
-    #[inline(always)]
-    fn seed(self) -> usize {
-        self as usize
-    }
+            #[inline(always)]
+            fn seed(self) -> usize {
+                self as usize
+            }
+        }
+    )*};
 }
 
-impl SweepSeed for u16 {
-    #[inline(always)]
-    fn from_seed(seed: usize) -> Self {
-        debug_assert!(seed <= u16::MAX as usize);
-        seed as u16
-    }
-
-    #[inline(always)]
-    fn seed(self) -> usize {
-        self as usize
-    }
-}
+impl_sweep_seed!(u8, u16);
 
 /// The set of used slots of a level while its sweeps, which can run in
 /// parallel, update it (see [`UsedSlots`]).
@@ -301,6 +305,13 @@ impl SharedUsedSlots {
 /// is set if slot 64*w* + *i* is used.
 pub(super) struct UsedSlots(Box<[AtomicU64]>);
 
+impl UsedSlots {
+    /// Returns the number of used slots.
+    pub(super) fn num_used(&self) -> usize {
+        self.iter().map(|w| w.count_ones() as usize).sum()
+    }
+}
+
 impl From<SharedUsedSlots> for UsedSlots {
     fn from(used: SharedUsedSlots) -> Self {
         Self(used.0)
@@ -320,7 +331,7 @@ impl std::ops::Deref for UsedSlots {
 }
 
 /// The result of the sweep of a level.
-pub(super) struct Level<T: SweepSeed = u16> {
+pub(super) struct SweptLevel<T: SweepSeed = u16> {
     /// The seeds of the buckets.
     pub(super) seeds: Vec<T>,
     /// The used slots.
@@ -331,14 +342,14 @@ pub(super) struct Level<T: SweepSeed = u16> {
 /// [`sweep_level`]), logging the progress of the sweep, in buckets, on a
 /// concurrent logger obtained from `pl`; `index` is the index of the level
 /// and `k` its number of keys.
-pub(super) fn sweep_bumping_level<S: PartSource, T: SweepSeed>(
-    sigs: &S,
+pub(super) fn sweep_bumping_level<T: SweepSeed>(
+    sigs: &impl PartSource,
     g: &Geometry,
     weights: &[i64; 7],
     index: usize,
     k: usize,
     pl: &mut impl ProgressLog,
-) -> Level<T> {
+) -> SweptLevel<T> {
     let mut cpl = pl.concurrent();
     cpl.item_name("bucket");
     cpl.expected_updates(g.buckets);
@@ -347,9 +358,9 @@ pub(super) fn sweep_bumping_level<S: PartSource, T: SweepSeed>(
         g.buckets,
         g.sweep_chunks()
     ));
-    let out = sweep_level(sigs, g, weights, true, &mut cpl).expect("bumping sweeps cannot fail");
+    let level = sweep_level(sigs, g, weights, true, &mut cpl).expect("bumping sweeps cannot fail");
     cpl.done();
-    out
+    level
 }
 
 /// Assigns seeds to the buckets of a level, possibly in parallel, given the
@@ -371,7 +382,7 @@ pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog, T: SweepSeed>
     weights: &[i64; 7],
     allow_bump: bool,
     pl: &mut P,
-) -> Option<Level<T>> {
+) -> Option<SweptLevel<T>> {
     let nb = g.buckets;
     let chunks = g.sweep_chunks();
 
@@ -382,7 +393,7 @@ pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog, T: SweepSeed>
 
     if chunks == 1 {
         Sweep::new(sigs, g, weights, 0, nb, &mut seeds, &occupied).run(allow_bump, pl.clone())?;
-        return Some(Level {
+        return Some(SweptLevel {
             seeds,
             occupied: occupied.into(),
         });
@@ -414,20 +425,16 @@ pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog, T: SweepSeed>
             .run(allow_bump, pl.clone())
     };
     #[cfg(feature = "rayon")]
-    let swept: Vec<Option<()>> = {
+    {
         use rayon::prelude::*;
-        parts.par_iter_mut().enumerate().map(run_chunk).collect()
-    };
-    #[cfg(not(feature = "rayon"))]
-    let swept: Vec<Option<()>> = parts.iter_mut().enumerate().map(run_chunk).collect();
-    drop(parts);
-    for swept in swept {
-        swept?;
+        parts.par_iter_mut().enumerate().try_for_each(run_chunk)?;
     }
+    #[cfg(not(feature = "rayon"))]
+    parts.iter_mut().enumerate().try_for_each(run_chunk)?;
 
     // Gaps: the seeds of the neighboring buckets are now known, and the
     // slots they use are marked.
-    let run_gap = |i: usize| -> (Vec<T>, Option<()>) {
+    let run_gap = |i: usize| -> Option<Vec<T>> {
         let lo = bounds[i + 1] - gap;
         let hi = bounds[i + 1];
         let mut gap_seeds = vec![T::default(); hi - lo];
@@ -449,30 +456,23 @@ pub(super) fn sweep_level<S: PartSource, P: ConcurrentProgressLog, T: SweepSeed>
                 }
             }
         }
-        let swept = sw.run(allow_bump, pl.clone());
-        (gap_seeds, swept)
+        sw.run(allow_bump, pl.clone())?;
+        Some(gap_seeds)
     };
     #[cfg(feature = "rayon")]
-    let gaps: Vec<(Vec<T>, Option<()>)> = {
+    let gaps: Option<Vec<Vec<T>>> = {
         use rayon::prelude::*;
         (0..chunks - 1).into_par_iter().map(run_gap).collect()
     };
     #[cfg(not(feature = "rayon"))]
-    let gaps: Vec<(Vec<T>, Option<()>)> = (0..chunks - 1).map(run_gap).collect();
-    for (i, (gap_seeds, swept)) in gaps.into_iter().enumerate() {
-        swept?;
+    let gaps: Option<Vec<Vec<T>>> = (0..chunks - 1).map(run_gap).collect();
+    for (i, gap_seeds) in gaps?.into_iter().enumerate() {
         seeds[bounds[i + 1] - gap..bounds[i + 1]].copy_from_slice(&gap_seeds);
     }
-    Some(Level {
+    Some(SweptLevel {
         seeds,
         occupied: occupied.into(),
     })
-}
-
-/// Returns whether slot `p` is used, given the bit vector of used slots.
-#[inline(always)]
-pub(super) fn is_occupied(bits: &[u64], p: usize) -> bool {
-    bits[p / 64] >> (p % 64) & 1 != 0
 }
 
 /// Calls `f`, in increasing order, on the free slots in [0 . . `m`) of the
@@ -613,7 +613,7 @@ impl Rings {
     /// Returns the offset in its slice of the base slot of a key in layout
     /// `r`, given the value providing its offsets.
     #[inline(always)]
-    fn offset(&self, offsets: u64, r: usize) -> usize {
+    const fn offset(&self, offsets: u64, r: usize) -> usize {
         ((offsets >> (r as u32 * self.layout_bits)).wrapping_add((r as u64) << self.scale)
             & self.l_mask) as usize
     }
@@ -624,7 +624,7 @@ impl Rings {
     ///
     /// [offset]: Self::offset
     #[inline(always)]
-    fn ring(&self, slice_begin: usize, offset: usize) -> (usize, usize) {
+    const fn ring(&self, slice_begin: usize, offset: usize) -> (usize, usize) {
         (
             slice_begin + (offset & ((1 << self.log2_stride) - 1)),
             offset >> self.log2_stride,
@@ -637,7 +637,7 @@ impl Rings {
     ///
     /// [`ring`]: Self::ring
     #[inline(always)]
-    fn slot(&self, first: usize, index: usize, j: usize) -> usize {
+    const fn slot(&self, first: usize, index: usize, j: usize) -> usize {
         first + (((index + j) & (self.len - 1)) << self.log2_stride)
     }
 
@@ -647,7 +647,7 @@ impl Rings {
     /// rotations are redundant we use instead the rotation equal to the
     /// length of a ring, which maps the keys to the same slots.
     #[inline(always)]
-    fn seed(&self, r: usize, j: usize) -> usize {
+    const fn seed(&self, r: usize, j: usize) -> usize {
         if r == 0 && j == 0 {
             debug_assert!(self.len < self.rotations);
             self.len * self.layouts
@@ -660,7 +660,7 @@ impl Rings {
     /// the bit associated with slot `p` (the index of the bit in the word
     /// is `p >> log2_stride`, modulo 64).
     #[inline(always)]
-    fn word(&self, p: usize) -> usize {
+    const fn word(&self, p: usize) -> usize {
         let stride_mask = (1 << self.log2_stride) - 1;
         (((p >> 6) & !stride_mask) | (p & stride_mask)) & self.word_mask
     }
@@ -695,6 +695,10 @@ impl Rings {
 /// exhaustively when looking for the best seed.
 const MAX_FREE: u32 = 32;
 
+/// The number of free rotations that [`Sweep::search_distinct`] finds by
+/// scanning, in order of cost, before sorting the remaining ones.
+const SELECTIONS: usize = 8;
+
 /// The distance of the *origin* of a bucket from the beginning of the
 /// leftmost slice that a key of the bucket can have (see [`Sweep::cost`]);
 /// this is the value used by `ProdOfValues` and `ShiftOnlyProdWrapped` in the
@@ -720,7 +724,9 @@ const LOG2_FRACTION: u32 = 24;
 struct Sweep<'a, S: PartSource, T: SweepSeed> {
     /// The signatures of the keys of the level.
     sigs: &'a S,
+    /// The geometry of the level.
     g: &'a Geometry,
+    /// The priority weights for the first seven bucket sizes.
     weights: &'a [i64; 7],
     /// First bucket of the range.
     lo: usize,
@@ -730,6 +736,7 @@ struct Sweep<'a, S: PartSource, T: SweepSeed> {
     seeds: &'a mut [T],
     /// Cyclic bit set of used slots (see [`Rings`]).
     used: Box<[u64]>,
+    /// The parameters of the rings of the level.
     rings: Rings,
     /// The first slot of the first column of the set of used slots; slots
     /// before this one are no longer reachable.
@@ -761,6 +768,9 @@ struct Sweep<'a, S: PartSource, T: SweepSeed> {
 }
 
 impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
+    /// Creates a sweep over the buckets in [`lo` . . `hi`) of a level, which
+    /// writes their seeds to `seeds` and adds the slots it uses to
+    /// `occupied`.
     fn new(
         sigs: &'a S,
         g: &'a Geometry,
@@ -847,15 +857,30 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
     /// The logarithms are in fixed point and are read from a table, so the
     /// cost does not depend on the order of the keys.
     ///
+    /// This is the innermost loop of a sweep, and the table is accessed
+    /// without bounds checks: [`search`] checks instead, once for each ring,
+    /// that all the slots of the ring have their distances in the table
+    /// (this makes sweeps about 2% faster).
+    ///
+    /// # Safety
+    ///
+    /// The upper half of each ring key, plus the length of a ring of `rings`
+    /// minus one times its stride, must be smaller than the length of
+    /// `log2`.
+    ///
     /// [`ring_keys`]: Self::ring_keys
+    /// [`search`]: Self::search
     #[inline(always)]
-    fn cost(rings: &Rings, log2: &[u32], ring_keys: &[u64], r: usize, j: usize) -> u64 {
+    unsafe fn cost(rings: &Rings, log2: &[u32], ring_keys: &[u64], r: usize, j: usize) -> u64 {
         ring_keys
             .chunks_exact(rings.layouts)
             .map(|ring_key| {
                 let d = ring_key[r];
                 let x = (d as u32 as usize + j) & (rings.len - 1);
-                log2[(d >> 32) as usize + (x << rings.log2_stride)] as u64
+                // SAFETY: x is smaller than the length of a ring, so by the
+                // contract of this method the index is smaller than the
+                // length of the table
+                unsafe { *log2.get_unchecked((d >> 32) as usize + (x << rings.log2_stride)) as u64 }
             })
             .sum()
     }
@@ -864,7 +889,11 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
     /// bucket, and marks their slots as used; returns zero if no seed is
     /// feasible.
     ///
+    /// As in the other hot methods, `rings` must be equal to the rings of
+    /// this sweep (see [`sweep`]).
+    ///
     /// [cost]: Self::cost
+    /// [`sweep`]: Self::sweep
     #[inline(always)]
     fn search(&mut self, rings: &Rings, keys: &[u64], b: usize) -> usize {
         let g = *self.g;
@@ -900,12 +929,22 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
         // key by the ring position of the key, so that bit j is associated
         // with the slot of the key for rotation j, and combine the results: we
         // obtain the rotations for which some key is mapped to a used slot
+        // The distances from the origin of the slots of a ring are in the
+        // table of logarithms if that of the first slot, which is the
+        // smallest one, is smaller than first_end: we check it here, once
+        // for each ring, so that cost can access the table without bounds
+        // checks
+        let span = (n - 1) << rings.log2_stride;
+        assert!(span < log2.len());
+        let first_end = log2.len() - span;
         for (&key, ring_key) in keys.iter().zip(ring_keys.chunks_exact_mut(layouts)) {
             let (slice_begin, offsets) = (g.slice_begin(key), g.offsets(key));
             for r in 0..layouts {
                 let offset = rings.offset(offsets, r);
                 let (first, x) = rings.ring(slice_begin, offset);
-                ring_key[r] = ((first.wrapping_sub(origin) as u64) << 32) | x as u64;
+                let distance = first.wrapping_sub(origin);
+                assert!(distance < first_end);
+                ring_key[r] = ((distance as u64) << 32) | x as u64;
                 if words == 1 {
                     // Rings of at most a word (e.g., 8-bit seeds and four
                     // layouts)
@@ -959,13 +998,16 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
             for _ in 0..total {
                 let (word, index) = nonzero[i];
                 let bit = index as usize * 64 + word.trailing_zeros() as usize;
-                let cost = Self::cost(
-                    rings,
-                    log2,
-                    ring_keys,
-                    bit / (64 * words),
-                    bit % (64 * words),
-                );
+                // SAFETY: the ring keys have been checked above
+                let cost = unsafe {
+                    Self::cost(
+                        rings,
+                        log2,
+                        ring_keys,
+                        bit / (64 * words),
+                        bit % (64 * words),
+                    )
+                };
                 (best_cost, best) = if cost < best_cost {
                     (cost, bit)
                 } else {
@@ -985,7 +1027,7 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
         if self.place(rings, keys, r, j) {
             rings.seed(r, j)
         } else {
-            self.search_distinct(keys)
+            self.search_distinct(keys, best)
         }
     }
 
@@ -1021,7 +1063,9 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
             for i in 0..=self.back.len() {
                 let end = self.back.get(i).map_or(n, |&x| x as usize);
                 if let Some(j) = next_set(free, begin, end) {
-                    let cost = Self::cost(&rings, &self.log2, &self.ring_keys, r, j);
+                    // SAFETY: search checked the ring keys of the bucket
+                    // being searched using the rings of this sweep
+                    let cost = unsafe { Self::cost(&rings, &self.log2, &self.ring_keys, r, j) };
                     best = best.min((cost, r * 64 * words + j));
                 }
                 begin = end;
@@ -1060,38 +1104,67 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
         collisions == 0
     }
 
-    /// Like [`search`], but considers all free rotations in order of cost
-    /// until one that maps the keys of the bucket to distinct slots is found
-    /// (this is rarely necessary).
+    /// Returns the seed of minimum [cost] among the free rotations of the
+    /// bucket being searched that map its keys to distinct slots, as
+    /// [`search`] does (in case of equal costs, the first rotation of the
+    /// first layout is chosen), and marks the slots as used; returns zero
+    /// if there is no such rotation.
     ///
+    /// [`search`] calls this method when the free rotation of minimum cost,
+    /// whose bit in `free` has index `failed`, maps two keys to the same
+    /// slot, which happens for about 1.5% of the buckets with the default
+    /// parameters. More than half of the times the next rotation in order
+    /// of cost is suitable, and a few attempts are almost always enough:
+    /// thus, after computing the costs of the remaining free rotations, we
+    /// find the first [`SELECTIONS`] candidates by scanning, and we sort the
+    /// other ones only if all of them fail.
+    ///
+    /// [cost]: Self::cost
     /// [`search`]: Self::search
     #[cold]
     #[inline(never)]
-    fn search_distinct(&mut self, keys: &[u64]) -> usize {
+    fn search_distinct(&mut self, keys: &[u64], failed: usize) -> usize {
         // Keys with the same signature are mapped to the same slot by every
         // seed, so the bucket must be bumped: we return at once, rather than
         // trying all free rotations (e.g., duplicate keys yield large
         // buckets of this kind)
-        let mut sorted = keys.to_vec();
-        sorted.sort_unstable();
-        if sorted.windows(2).any(|w| w[0] == w[1]) {
+        if has_equal_sigs(keys) {
             return 0;
         }
         let rings = self.rings;
         let ring_bits = 64 * rings.len.div_ceil(64);
-        let mut candidates = vec![];
+        self.free[failed / 64] &= !(1 << (failed % 64));
+        // The remaining free rotations, each with its cost
+        let free = self.free.iter().map(|w| w.count_ones() as usize).sum();
+        let mut candidates = Vec::with_capacity(free);
         for (i, &word) in self.free.iter().enumerate() {
             let mut word = word;
             while word != 0 {
                 let bit = i * 64 + word.trailing_zeros() as usize;
                 word &= word - 1;
                 let (r, j) = (bit / ring_bits, bit % ring_bits);
-                let cost = Self::cost(&rings, &self.log2, &self.ring_keys, r, j);
-                candidates.push((cost, r, j));
+                // SAFETY: search checked the ring keys of the bucket being
+                // searched using the rings of this sweep
+                let cost = unsafe { Self::cost(&rings, &self.log2, &self.ring_keys, r, j) };
+                candidates.push((cost, bit));
             }
         }
-        candidates.sort_unstable();
-        for (_, r, j) in candidates {
+        let mut attempts = 0;
+        while !candidates.is_empty() {
+            if attempts == SELECTIONS {
+                // In decreasing order, as from now on we take the last one
+                candidates.sort_unstable_by(|a, b| b.cmp(a));
+            }
+            let next = if attempts < SELECTIONS {
+                (0..candidates.len())
+                    .min_by_key(|&i| candidates[i])
+                    .unwrap()
+            } else {
+                candidates.len() - 1
+            };
+            attempts += 1;
+            let (_, bit) = candidates.swap_remove(next);
+            let (r, j) = (bit / ring_bits, bit % ring_bits);
             if self.place(&rings, keys, r, j) {
                 return rings.seed(r, j);
             }
@@ -1121,6 +1194,11 @@ impl<'a, S: PartSource, T: SweepSeed> Sweep<'a, S, T> {
         }
     }
 
+    /// Implements [`run`]; `rings` must be equal to the rings of this
+    /// sweep (the hot methods use it, rather than their copy, so that its
+    /// fields can be constants).
+    ///
+    /// [`run`]: Self::run
     #[inline(always)]
     fn sweep(mut self, rings: &Rings, allow_bump: bool, pl: impl ProgressLog) -> Option<()> {
         let (lo, hi) = (self.lo, self.hi);
@@ -1200,9 +1278,13 @@ struct Part {
 /// The parts loaded by a sweep, restricted to a range of buckets: the
 /// buckets of the window are consecutive, so a few parts are enough.
 struct Parts<S: PartSource, P> {
-    range: std::ops::Range<usize>,
+    /// The range of buckets.
+    range: Range<usize>,
+    /// The loaded parts.
     parts: Vec<Part>,
+    /// A temporary buffer for loading parts.
     temp: Vec<u64>,
+    /// The state of the loader of the parts.
     loader: S::Loader,
     /// The logger updated with the number of buckets of each loaded part,
     /// if any.
@@ -1212,7 +1294,7 @@ struct Parts<S: PartSource, P> {
 impl<S: PartSource, P: ProgressLog> Parts<S, P> {
     /// Creates a cache for the buckets of the given range, logging the
     /// buckets loaded on `pl`, if any.
-    fn new(sigs: &S, range: std::ops::Range<usize>, pl: Option<P>) -> Self {
+    fn new(sigs: &S, range: Range<usize>, pl: Option<P>) -> Self {
         // The window can span (WINDOW >> log2_min_buckets) + 1 parts, and we
         // keep the last one when loading the next
         let slots = (WINDOW >> sigs.log2_min_buckets()) + 2;
@@ -1254,8 +1336,9 @@ impl<S: PartSource, P: ProgressLog> Parts<S, P> {
                     .unwrap()
             });
         let part = &mut self.parts[slot];
-        let first = sigs.first_bucket(p).max(self.range.start);
-        let end = (sigs.first_bucket(p) + sigs.buckets(p, g)).min(self.range.end);
+        let buckets = sigs.buckets(p);
+        let first = buckets.start.max(self.range.start);
+        let end = buckets.end.min(self.range.end);
         sigs.load(
             &mut self.loader,
             p,
@@ -1308,7 +1391,7 @@ impl<S: PartSource, P: ProgressLog> Parts<S, P> {
         &mut self,
         sigs: &S,
         g: &Geometry,
-        range: std::ops::Range<usize>,
+        range: Range<usize>,
         mut f: impl FnMut(usize, usize),
     ) {
         let mut b = range.start;
@@ -1331,6 +1414,16 @@ impl<S: PartSource, P: ProgressLog> Parts<S, P> {
         let part = self.part(sigs, b);
         let i = b - part.first_bucket;
         &part.sigs[part.begin[i]..part.begin[i + 1]]
+    }
+}
+
+/// Returns whether two of the given signatures are equal.
+fn has_equal_sigs(sigs: &[u64]) -> bool {
+    // Buckets are usually small, so we avoid allocating and sorting a copy
+    if sigs.len() <= 16 {
+        (1..sigs.len()).any(|i| sigs[..i].contains(&sigs[i]))
+    } else {
+        contains_duplicates(&mut sigs.to_vec())
     }
 }
 

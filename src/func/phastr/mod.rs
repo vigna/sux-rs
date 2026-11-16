@@ -8,6 +8,33 @@
 //!
 //! See [`PHastR`] for a description of the structure, of its construction,
 //! and of when to change the default parameters.
+//!
+//! # Implementation Notes
+//!
+//! A function is built a level at a time. The signatures of the keys of a
+//! level are distributed into parts of consecutive buckets; a sweep then
+//! goes through the buckets, roughly in order of index, and assigns to each
+//! bucket a seed mapping its keys to free slots, or bumps it; the keys of
+//! the bumped buckets form the following level. The last level is small,
+//! and it is built without bumping. Finally, the outputs of the levels after
+//! the first one are remapped to the slots that the first level left free.
+//!
+//! The code is split among private modules:
+//!
+//! - `builder` contains the builder, the geometry of a level, the
+//!   construction from a slice of keys, and the code assembling a function
+//!   from its levels;
+//!
+//! - `sigs` contains the signatures of the keys of a level kept in memory,
+//!   which are used by the construction from a slice and by the last level;
+//!
+//! - `stream` contains the construction from a lender, which keeps a record
+//!   for each key in memory or on disk;
+//!
+//! - `sweep` contains the sweep assigning seeds to buckets, which reads the
+//!   signatures through a trait implemented in `sigs` and in `stream`;
+//!
+//! - `seeds` contains the storage of the seeds.
 
 use core::error::Error;
 use std::borrow::Borrow;
@@ -37,35 +64,6 @@ mod sigs;
 mod stream;
 mod sweep;
 
-/// Returns the most significant 64 bits of the 128-bit product of `a` and
-/// `b`.
-#[inline(always)]
-const fn mul_hi(a: u64, b: u64) -> u64 {
-    ((a as u128 * b as u128) >> 64) as u64
-}
-
-/// Returns, in its lowest 16 bits, the field of `lo` of layout *r* = *s* mod
-/// 4 with four layouts (the default), that is, bits [16*r* . . 16*r* + 16)
-/// of `lo`; the higher bits of the result are arbitrary.
-///
-/// The result agrees in its lowest 16 bits with that of shifting `lo` right
-/// by 16*s* (as shifts are taken modulo 64, see [`PHastR::pos`]), but a
-/// variable shift whose count depends on the seed, and thus on a cache miss,
-/// reduces memory-level parallelism: we read instead the field from memory
-/// (the load is satisfied by store-to-load forwarding). On 10⁹ keys,
-/// this makes queries about 10% faster.
-#[inline(always)]
-fn default_layout_field(lo: u64, s: u64) -> u64 {
-    #[cfg(target_endian = "little")]
-    {
-        let buf = [lo];
-        // SAFETY: s & 3 < 4, and buf is aligned for u16
-        unsafe { buf.as_ptr().cast::<u16>().add((s & 3) as usize).read() as u64 }
-    }
-    #[cfg(not(target_endian = "little"))]
-    lo.wrapping_shr((s << DEFAULT_LAYOUT_SHIFT) as u32)
-}
-
 /// The base-2 logarithm of the distance in bits between the offsets of two
 /// consecutive layouts with the default number of layouts (four).
 const DEFAULT_LAYOUT_SHIFT: u32 = 4;
@@ -87,12 +85,26 @@ const THIRD_HASH: u64 = 0xD6E8_FEB8_6659_FD93;
 /// of [`level_sig`].
 const LEVEL_SIG: u64 = 0xE703_7ED1_A0B4_28DB;
 
+/// Returns the most significant 64 bits of the 128-bit product of `a` and
+/// `b`.
+#[inline(always)]
+const fn mul_hi(a: u64, b: u64) -> u64 {
+    ((a as u128 * b as u128) >> 64) as u64
+}
+
 /// Returns the upper half of the 128-bit product of `a` and `b` xored with
 /// the lower half.
 #[inline(always)]
 const fn folded_multiply(a: u64, b: u64) -> u64 {
     let p = a as u128 * b as u128;
     (p >> 64) as u64 ^ p as u64
+}
+
+/// Returns whether bit `i` of a bit vector, given as a slice of words, is
+/// set.
+#[inline(always)]
+const fn bit(bits: &[u64], i: usize) -> bool {
+    bits[i / 64] >> (i % 64) & 1 != 0
 }
 
 /// Returns the signature of a key for a level after the first one, given
@@ -102,13 +114,34 @@ const fn folded_multiply(a: u64, b: u64) -> u64 {
 /// Keys with the same signature for the first level have, with high
 /// probability, different signatures for the following ones, as the second
 /// hash is independent from the first one; on the other hand, the key
-/// itself is not necessary
-/// after computing the two hashes, and this makes it possible to handle the
-/// keys bumped from the first level out of line without keeping the key
-/// around.
+/// itself is not necessary after computing the two hashes, and this makes
+/// it possible to handle the keys bumped from the first level out of line
+/// without keeping the key around.
 #[inline(always)]
 const fn level_sig(h: u64, second: u64, salt: u64) -> u64 {
     folded_multiply(h ^ salt, second ^ LEVEL_SIG)
+}
+
+/// Returns, in its lowest 16 bits, the field of `lo` of layout *r* = *s* mod
+/// 4 with four layouts (the default), that is, bits [16*r* . . 16*r* + 16)
+/// of `lo`; the higher bits of the result are arbitrary.
+///
+/// The result agrees in its lowest 16 bits with that of shifting `lo` right
+/// by 16*s* (as shifts are taken modulo 64, see [`LevelParams::pos`]), but a
+/// variable shift whose count depends on the seed, and thus on a cache miss,
+/// reduces memory-level parallelism: we read instead the field from memory
+/// (the load is satisfied by store-to-load forwarding). On 10⁹ keys,
+/// this makes queries about 10% faster.
+#[inline(always)]
+fn default_layout_field(lo: u64, s: u64) -> u64 {
+    #[cfg(target_endian = "little")]
+    {
+        let buf = [lo];
+        // SAFETY: s & 3 < 4, and buf is aligned for u16
+        unsafe { buf.as_ptr().cast::<u16>().add((s & 3) as usize).read() as u64 }
+    }
+    #[cfg(not(target_endian = "little"))]
+    lo.wrapping_shr((s << DEFAULT_LAYOUT_SHIFT) as u32)
 }
 
 /// The default remapping sequence of a [`PHastR`]: an Elias–Fano whose
@@ -146,6 +179,44 @@ pub struct LevelParams {
     salt: u64,
     /// The index of the first seed of this level in the seed storage.
     first_seed: u64,
+}
+
+impl LevelParams {
+    /// Returns the output of a key in this level, given its signature *h*
+    /// for the level, the lower half `lo` of the product of *h* and the
+    /// number of buckets (whose upper half is the bucket of the key), the
+    /// seed of the bucket, the base-2 logarithm of the width *f* of the field
+    /// of each layout in `lo`, and the base-2 logarithm of the amount *u* by
+    /// which a unit increase of the seed moves a key (the scale of the
+    /// level, which is an argument so that queries can pass a constant; see
+    /// [`PHastR::pos0`]).
+    ///
+    /// The layout *r* is given by the lowest bits of the seed *s*, and its
+    /// in-slice offset is in field *r* of `lo`, which starts at bit *rf*:
+    /// since *sf* mod 64 = *rf* and shifts are taken modulo 64, shifting `lo`
+    /// right by *sf* yields the offset without extracting the layout.
+    #[inline(always)]
+    const fn pos(&self, h: u64, lo: u64, seed: usize, layout_shift: u32, scale: u32) -> usize {
+        let s = seed as u64;
+        let offset = lo
+            .wrapping_shr((s << layout_shift) as u32)
+            .wrapping_add(s << scale);
+        mul_hi(h, self.num_slices) as usize + (offset & self.l_mask) as usize
+    }
+
+    /// Returns the output of a key in this level with the default shifts, as
+    /// [`pos`] does with layout shift [`DEFAULT_LAYOUT_SHIFT`] and scale
+    /// [`DEFAULT_SCALE`], but extracting the field of the layout with
+    /// [`default_layout_field`] (since the slice length is at most 2^16, the
+    /// bits of `lo` beyond the field are irrelevant).
+    ///
+    /// [`pos`]: Self::pos
+    #[inline(always)]
+    fn pos_default(&self, h: u64, lo: u64, seed: usize) -> usize {
+        let s = seed as u64;
+        let offset = default_layout_field(lo, s).wrapping_add(s << DEFAULT_SCALE);
+        mul_hi(h, self.num_slices) as usize + (offset & self.l_mask) as usize
+    }
 }
 
 /// A bucket-placement minimal perfect hash function with rotated layouts.
@@ -341,7 +412,8 @@ pub struct LevelParams {
 ///
 /// let keys: Vec<String> = (0..100_000).map(|i| format!("key{i}")).collect();
 /// // 16-bit verification hashes: false positives happen with probability 2⁻¹⁶
-/// let func = <SignedFunc<PHastR<str>, Box<[u16]>>>::try_par_new(&keys, no_logs![])?;
+/// let func =
+///     <SignedFunc<PHastR<str>, Box<[u16]>>>::try_par_new(&keys, no_logs![])?;
 ///
 /// for key in &keys {
 ///     assert!(func.get(key.as_str()).is_some());
@@ -459,13 +531,6 @@ impl<K: ?Sized, D, P, R> PHastR<K, D, P, R> {
     pub const fn is_empty(&self) -> bool {
         self.num_keys == 0
     }
-}
-
-impl<K: ?Sized, D, P: AsRef<[LevelParams]>, R> PHastR<K, D, P, R> {
-    /// Returns the number of levels.
-    pub fn num_levels(&self) -> usize {
-        self.params.as_ref().len() + 1
-    }
 
     /// Makes queries use the generic code, rather than the code with
     /// constant shifts used with four layouts (for benchmarking, so that
@@ -477,51 +542,9 @@ impl<K: ?Sized, D, P: AsRef<[LevelParams]>, R> PHastR<K, D, P, R> {
         self.fast_scale = 0;
         self
     }
-}
 
-impl<
-    K: ?Sized + ToSig<[u64; 1]>,
-    D: SeedStore,
-    P: AsRef<[LevelParams]>,
-    R: SliceByValue<Value = usize>,
-> PHastR<K, D, P, R>
-{
-    /// Returns the output of a key in the given level, given its signature
-    /// *h* for the level, the lower half `lo` of the product of *h* and the
-    /// number of buckets (whose upper half is the bucket of the key), the
-    /// seed of the bucket, the base-2 logarithm of the width *f* of the field
-    /// of each layout in `lo`, and the base-2 logarithm of the amount *u* by
-    /// which a unit increase of the seed moves a key (the scale of the
-    /// level).
-    ///
-    /// The layout *r* is given by the lowest bits of the seed *s*, and its
-    /// in-slice offset is in field *r* of `lo`, which starts at bit *rf*:
-    /// since *sf* mod 64 = *rf* and shifts are taken modulo 64, shifting `lo`
-    /// right by *sf* yields the offset without extracting the layout.
-    #[inline(always)]
-    fn pos(lv: &LevelParams, h: u64, lo: u64, seed: usize, layout_shift: u32, scale: u32) -> usize {
-        let s = seed as u64;
-        let offset = lo
-            .wrapping_shr((s << layout_shift) as u32)
-            .wrapping_add(s << scale);
-        mul_hi(h, lv.num_slices) as usize + (offset & lv.l_mask) as usize
-    }
-
-    /// Returns the output of a key in a level with the default shifts, as
-    /// [`pos`] does with layout shift [`DEFAULT_LAYOUT_SHIFT`] and scale
-    /// [`DEFAULT_SCALE`], but extracting the field of the layout with
-    /// [`default_layout_field`] (since the slice length is at most 2^16, the
-    /// bits of `lo` beyond the field are irrelevant).
-    ///
-    /// [`pos`]: Self::pos
-    #[inline(always)]
-    fn pos_default(lv: &LevelParams, h: u64, lo: u64, seed: usize) -> usize {
-        let s = seed as u64;
-        let offset = default_layout_field(lo, s).wrapping_add(s << DEFAULT_SCALE);
-        mul_hi(h, lv.num_slices) as usize + (offset & lv.l_mask) as usize
-    }
-
-    /// Returns the output of a key in the first level (see [`pos`]).
+    /// Returns the output of a key in the first level (see
+    /// [`LevelParams::pos`]).
     ///
     /// With the default shifts we use constants, so that the compiler can
     /// fuse the scaling of the seed with the addition (the test is on a
@@ -537,22 +560,36 @@ impl<
     /// The code of this method must stay small, or [`get`] might not be
     /// inlined in loops.
     ///
-    /// [`pos`]: Self::pos
     /// [`get`]: Self::get
     #[inline(always)]
     fn pos0(&self, h: u64, lo: u64, seed: usize) -> usize {
         let lv = &self.params0;
         if self.default_shifts {
-            return Self::pos_default(lv, h, lo, seed);
+            return lv.pos_default(h, lo, seed);
         }
         match self.fast_scale {
-            1 => Self::pos(lv, h, lo, seed, DEFAULT_LAYOUT_SHIFT, 0),
-            2 => Self::pos(lv, h, lo, seed, DEFAULT_LAYOUT_SHIFT, 1),
-            4 => Self::pos(lv, h, lo, seed, DEFAULT_LAYOUT_SHIFT, 3),
-            _ => Self::pos(lv, h, lo, seed, self.layout_shift, lv.scale as u32),
+            1 => lv.pos(h, lo, seed, DEFAULT_LAYOUT_SHIFT, 0),
+            2 => lv.pos(h, lo, seed, DEFAULT_LAYOUT_SHIFT, 1),
+            4 => lv.pos(h, lo, seed, DEFAULT_LAYOUT_SHIFT, 3),
+            _ => lv.pos(h, lo, seed, self.layout_shift, lv.scale as u32),
         }
     }
+}
 
+impl<K: ?Sized, D, P: AsRef<[LevelParams]>, R> PHastR<K, D, P, R> {
+    /// Returns the number of levels.
+    pub fn num_levels(&self) -> usize {
+        self.params.as_ref().len() + 1
+    }
+}
+
+impl<
+    K: ?Sized + ToSig<[u64; 1]>,
+    D: SeedStore,
+    P: AsRef<[LevelParams]>,
+    R: SliceByValue<Value = usize>,
+> PHastR<K, D, P, R>
+{
     /// Returns the value associated with the given key.
     ///
     /// The returned value is in the range [0 . . *n*), where *n* is the
@@ -562,10 +599,13 @@ impl<
     /// empty, in which case it is zero).
     #[inline(always)]
     pub fn get(&self, key: impl Borrow<K>) -> usize {
+        // This is the body of get_by_sig, repeated on purpose: delegating to
+        // it changes the code generated for the first-level path (in
+        // particular, callers that are not loops save registers before the
+        // lookup of the seed)
         let key = key.borrow();
         let h = K::to_sig(key, self.seed)[0];
-        let lv = &self.params0;
-        let p = h as u128 * lv.buckets as u128;
+        let p = h as u128 * self.params0.buckets as u128;
         // SAFETY: the upper half of the product is smaller than the number
         // of buckets, which is the number of seeds
         let s = unsafe { self.seeds0.get_seed((p >> 64) as usize) };
@@ -586,8 +626,7 @@ impl<
     #[inline(always)]
     pub(crate) fn get_by_sig(&self, key: &K, sig: [u64; 1]) -> usize {
         let h = sig[0];
-        let lv = &self.params0;
-        let p = h as u128 * lv.buckets as u128;
+        let p = h as u128 * self.params0.buckets as u128;
         // SAFETY: the upper half of the product is smaller than the number
         // of buckets, which is the number of seeds
         let s = unsafe { self.seeds0.get_seed((p >> 64) as usize) };
@@ -603,23 +642,13 @@ impl<
     #[doc(hidden)]
     #[inline(always)]
     pub fn get_batch<const B: usize>(&self, keys: [&K; B]) -> [usize; B] {
-        let lv = &self.params0;
-        let hs: [u64; B] = std::array::from_fn(|i| {
-            let h = K::to_sig(keys[i], self.seed)[0];
-            self.seeds0.prefetch_seed(mul_hi(h, lv.buckets) as usize);
-            h
+        let sigs: [[u64; 1]; B] = std::array::from_fn(|i| {
+            let sig = K::to_sig(keys[i], self.seed);
+            self.seeds0
+                .prefetch_seed(mul_hi(sig[0], self.params0.buckets) as usize);
+            sig
         });
-        std::array::from_fn(|i| {
-            let h = hs[i];
-            let p = h as u128 * lv.buckets as u128;
-            // SAFETY: the upper half of the product is smaller than the
-            // number of buckets, which is the number of seeds
-            let s = unsafe { self.seeds0.get_seed((p >> 64) as usize) };
-            if s != 0 {
-                return self.pos0(h, p as u64, s);
-            }
-            self.get_slow(h, K::to_sig(keys[i], self.seed ^ SECOND_HASH)[0])
-        })
+        std::array::from_fn(|i| self.get_by_sig(keys[i], sigs[i]))
     }
 
     /// Returns whether the given key is bumped from the first level (for
@@ -649,7 +678,7 @@ impl<
                     .get_seed(lv.first_seed as usize + (p >> 64) as usize)
             };
             if s != 0 {
-                let pos = Self::pos(lv, h, p as u64, s, self.layout_shift, lv.scale as u32);
+                let pos = lv.pos(h, p as u64, s, self.layout_shift, lv.scale as u32);
                 // SAFETY: by construction, the remapping sequence contains
                 // one entry for each output of each level after the first
                 return unsafe { self.remap.get_value_unchecked(lv.offset as usize + pos) };
@@ -880,7 +909,8 @@ impl<K: ?Sized + ToSig<[u64; 1]>, D: SeedStoreBuild + MemSize + FlatType> PHastR
     /// let keys: Vec<u64> = (0..100_000).collect();
     /// // 10-bit seeds (see "Changing the defaults" in the documentation of
     /// // PHastR)
-    /// let phf = <PHastR<u64, BitFieldVec<Box<[usize]>>>>::try_par_new_with_builder(
+    /// type Phf = PHastR<u64, BitFieldVec<Box<[usize]>>>;
+    /// let phf = Phf::try_par_new_with_builder(
     ///     &keys,
     ///     PHastRBuilder::default()
     ///         .seed_bits(10)

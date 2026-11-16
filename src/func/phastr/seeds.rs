@@ -9,6 +9,8 @@
 //! [`PHastR`]: super::PHastR
 
 use crate::bits::{BitFieldVec, BitFieldVecU};
+use crate::traits::{Backend, BitWidth};
+use crate::utils::prefetch_index;
 use value_traits::slices::{SliceByValue, SliceByValueMut};
 
 /// Storage for the seeds of a level (query side).
@@ -67,37 +69,25 @@ pub unsafe trait SeedStoreBuild: SeedStore + Sized {
     }
 }
 
-macro_rules! impl_seed_store_slice {
-    ($ty:ty) => {
-        impl SeedStore for Box<[$ty]> {
+/// Implements [`SeedStore`] for types dereferencing to a slice of bytes.
+macro_rules! impl_seed_store_bytes {
+    ($($ty:ty),*) => {$(
+        impl SeedStore for $ty {
             #[inline(always)]
             unsafe fn get_seed(&self, i: usize) -> usize {
                 // SAFETY: by the contract of this method
-                unsafe { *<[$ty]>::get_unchecked(self, i) as usize }
+                unsafe { *<[u8]>::get_unchecked(self, i) as usize }
             }
 
             #[inline(always)]
             fn prefetch_seed(&self, i: usize) {
-                crate::utils::prefetch_index(self, i);
+                $crate::utils::prefetch_index(self, i);
             }
         }
-
-        impl SeedStore for &[$ty] {
-            #[inline(always)]
-            unsafe fn get_seed(&self, i: usize) -> usize {
-                // SAFETY: by the contract of this method
-                unsafe { *<[$ty]>::get_unchecked(self, i) as usize }
-            }
-
-            #[inline(always)]
-            fn prefetch_seed(&self, i: usize) {
-                crate::utils::prefetch_index(self, i);
-            }
-        }
-    };
+    )*};
 }
 
-impl_seed_store_slice!(u8);
+impl_seed_store_bytes!(Box<[u8]>, &[u8]);
 
 // SAFETY: the storage contains all the given seeds
 unsafe impl SeedStoreBuild for Box<[u8]> {
@@ -118,7 +108,7 @@ unsafe impl SeedStoreBuild for Box<[u8]> {
     }
 }
 
-impl<B: crate::traits::Backend<Word = usize> + AsRef<[usize]>> SeedStore for BitFieldVec<B> {
+impl<B: Backend<Word = usize> + AsRef<[usize]>> SeedStore for BitFieldVec<B> {
     #[inline(always)]
     unsafe fn get_seed(&self, i: usize) -> usize {
         // SAFETY: by the contract of this method
@@ -127,12 +117,11 @@ impl<B: crate::traits::Backend<Word = usize> + AsRef<[usize]>> SeedStore for Bit
 
     #[inline(always)]
     fn prefetch_seed(&self, i: usize) {
-        let bw = crate::traits::BitWidth::bit_width(self);
-        crate::utils::prefetch_index(self.as_slice(), i * bw / usize::BITS as usize);
+        prefetch_index(self.as_slice(), i * self.bit_width() / usize::BITS as usize);
     }
 }
 
-impl<B: crate::traits::Backend<Word = usize> + AsRef<[usize]>> SeedStore for BitFieldVecU<B> {
+impl<B: Backend<Word = usize> + AsRef<[usize]>> SeedStore for BitFieldVecU<B> {
     #[inline(always)]
     unsafe fn get_seed(&self, i: usize) -> usize {
         // SAFETY: by the contract of this method (reads are unaligned)
@@ -141,8 +130,7 @@ impl<B: crate::traits::Backend<Word = usize> + AsRef<[usize]>> SeedStore for Bit
 
     #[inline(always)]
     fn prefetch_seed(&self, i: usize) {
-        let bw = crate::traits::BitWidth::bit_width(self);
-        crate::utils::prefetch_index(self.as_ref(), i * bw / usize::BITS as usize);
+        prefetch_index(self.as_ref(), i * self.bit_width() / usize::BITS as usize);
     }
 }
 
