@@ -84,7 +84,8 @@ use std::hash::Hash;
 /// # Alternatives
 ///
 /// - A [`VFunc`] has faster queries, and it is smaller when values are not
-///   skewed.
+///   skewed; a [`PHunc`] uses less space than a [`VFunc`] when such values
+///   are large.
 ///
 /// - A [`VFunc2`] is a compromise: it uses less space than a [`VFunc`] on
 ///   skewed distributions, with almost the same query speed.
@@ -157,6 +158,7 @@ use std::hash::Hash;
 /// [`VFunc`]: crate::func::VFunc
 /// [`VFunc2`]: crate::func::VFunc2
 /// [`SignedFunc`]: crate::func::SignedFunc
+/// [`PHunc`]: crate::func::PHunc
 /// [`VBuilder`]: crate::func::VBuilder
 /// [`HuffmanConf`]: crate::func::codec::HuffmanConf
 /// [`try_new`]: Self::try_new

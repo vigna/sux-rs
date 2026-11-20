@@ -1285,7 +1285,7 @@ pub(crate) use build::{
 /// - A [`SignedFunc`] wrapping this structure rejects (with high
 ///   probability) keys outside the original set.
 ///
-/// - [`VFunc`] stores arbitrary values instead of ranks.
+/// - [`VFunc`] and [`PHunc`] store arbitrary values instead of ranks.
 ///
 /// # Type parameters
 ///
@@ -1321,6 +1321,7 @@ pub(crate) use build::{
 /// [`Lcp2MmphfInt`]: crate::func::Lcp2MmphfInt
 /// [`PHastR`]: crate::func::PHastR
 /// [`SignedFunc`]: crate::func::SignedFunc
+/// [`PHunc`]: crate::func::PHunc
 #[doc(alias("monotone", "mmphf"))]
 #[derive(Debug, Clone, MemSize, MemDbg)]
 #[cfg_attr(
@@ -1505,7 +1506,7 @@ impl<S: Sig> ToSig<S> for BitPrefix {
 /// - A [`SignedFunc`] wrapping this structure rejects (with high
 ///   probability) keys outside the original set.
 ///
-/// - [`VFunc`] stores arbitrary values instead of ranks.
+/// - [`VFunc`] and [`PHunc`] store arbitrary values instead of ranks.
 ///
 /// # Type parameters
 ///
@@ -1542,6 +1543,7 @@ impl<S: Sig> ToSig<S> for BitPrefix {
 /// [`Lcp2Mmphf`]: crate::func::Lcp2Mmphf
 /// [`PHastR`]: crate::func::PHastR
 /// [`SignedFunc`]: crate::func::SignedFunc
+/// [`PHunc`]: crate::func::PHunc
 #[doc(alias("monotone", "mmphf"))]
 #[derive(Debug, MemSize, MemDbg)]
 #[cfg_attr(

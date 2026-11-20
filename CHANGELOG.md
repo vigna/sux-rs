@@ -5,15 +5,12 @@
 ### New
 
 - `PHunc` is a static function storing its values in an array indexed by a
-  minimal perfect hash function, that is, an implementation of the new trait
-  `Mphf`, which `PHastR` implements. The space overhead is that of the
-  minimal perfect hash function (about 1.94 bits per key), whatever the size
-  of the values, so it uses less space than a `VFunc` when values have more
-  than about twenty bits, and values can be of any type. Constructors are
-  available for values in a `Box<[V]>` and in a `BitFieldVec<Box<[W]>>`;
-  those reading keys and values from lenders read them just once, in memory
-  or offline: values are kept next to the signatures of their keys, and are
-  written into the array in parallel once the `PHastR` has been built.
+  minimal perfect hash function (the new trait `Mphf`, implemented by `PHastR`
+  and by the monotone minimal perfect hash functions). The `phunc` CLI
+  utility builds it, and the `bench_phunc` example benchmarks it.
+
+- `SignedFunc::func`, `SignedFunc::hashes`, and `SignedFunc::into_parts` give
+  access to the inner function and to the hashes of a signed function.
 
 ### Changed
 

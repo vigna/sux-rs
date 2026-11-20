@@ -65,8 +65,8 @@ use value_traits::slices::SliceByValue;
 ///
 /// # Alternatives
 ///
-/// - A [`VFunc`] stores arbitrary values instead of hashes, but returns
-///   arbitrary values on keys outside the original set.
+/// - A [`VFunc`] or a [`PHunc`] stores arbitrary values instead of hashes,
+///   but returns arbitrary values on keys outside the original set.
 ///
 /// - A [`SignedFunc`] maps keys to their index (or rank, if it wraps an
 ///   [`LcpMmphf`]) and rejects keys outside the original set with a
@@ -93,6 +93,7 @@ use value_traits::slices::SliceByValue;
 /// [`serde`]: https://crates.io/crates/serde
 /// [`VBuilder`]: crate::func::VBuilder
 /// [`SignedFunc`]: crate::func::SignedFunc
+/// [`PHunc`]: crate::func::PHunc
 /// [`LcpMmphf`]: crate::func::LcpMmphf
 /// [ε–Cost Sharding: Scaling Hypergraph–Based Data Structures to Trillions of Keys]: https://arxiv.org/abs/2503.18397
 #[doc(alias("bloom", "membership", "filter"))]

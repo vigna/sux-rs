@@ -8,11 +8,17 @@
 
 use anyhow::Result;
 use dsi_progress_logger::no_logs;
+use std::io::Cursor;
 use sux::bits::BitFieldVec;
-use sux::func::{Mphf, PHastR, PHastRBuilder, PHunc};
+use sux::func::{
+    Lcp2MmphfInt, Lcp2MmphfStr, LcpMmphfInt, LcpMmphfStr, Mphf, PHastR, PHastRBuilder, PHunc,
+};
 use sux::traits::TryIntoUnaligned;
-use sux::utils::FromSlice;
-use value_traits::slices::SliceByValue;
+use sux::utils::{FromSlice, LineLender};
+use value_traits::slices::{SliceByValue, SliceByValueMut};
+
+// The output of a PHastR is in range for all keys
+const _: () = assert!(<PHastR<u64> as Mphf>::CLAMPED);
 
 /// The value of a key.
 fn value(key: u64) -> u64 {
@@ -183,6 +189,149 @@ fn test_foreign_keys() -> Result<()> {
                 let _ = func.get(key);
             }
         }
+    }
+    Ok(())
+}
+
+/// Checks a function based on a monotone minimal perfect hash function on
+/// the given sorted keys: the array contains the values in the order of the
+/// keys. The output of a monotone function for a key outside the original
+/// set can be larger than the number of keys, so the function clamps it.
+fn check_monotone<F: Mphf<Key: ToOwned>>(
+    phf: F,
+    keys: &[<F::Key as ToOwned>::Owned],
+    foreign: impl Iterator<Item = <F::Key as ToOwned>::Owned>,
+) where
+    <F::Key as ToOwned>::Owned: std::borrow::Borrow<F::Key>,
+{
+    use std::borrow::Borrow;
+    assert!(!F::CLAMPED);
+    let n = keys.len();
+    assert_eq!(phf.len(), n);
+    // One padding value if there are no keys
+    let data: Vec<u64> = (0..n.max(1) as u64).map(value).collect();
+    let foreign: Vec<_> = foreign.collect();
+    let indices: Vec<usize> = foreign.iter().map(|key| phf.index(key.borrow())).collect();
+    let func = PHunc::from_parts(phf, data.clone());
+    for (i, key) in keys.iter().enumerate() {
+        assert_eq!(func.get(key.borrow()), data[i], "key {i} of {n}");
+        // The position of a key is its rank
+        assert_eq!(func.index(key.borrow()), i);
+        assert_eq!(func.get_with_index(key.borrow()), (i, data[i]));
+    }
+    for (key, &index) in foreign.iter().zip(&indices) {
+        let clamped = index.min(data.len() - 1);
+        assert_eq!(func.get(key.borrow()), data[clamped]);
+        assert_eq!(func.index(key.borrow()), clamped);
+        assert_eq!(func.get_with_index(key.borrow()), (clamped, data[clamped]));
+    }
+    // Otherwise, this test does not check the clamping (tiny functions can
+    // have just in-range outputs)
+    if n >= 100 {
+        assert!(indices.iter().any(|&index| index >= n), "{n} keys");
+    }
+}
+
+#[test]
+fn test_monotone() -> Result<()> {
+    for n in [0, 1, 2, 100, 10_000, 100_000] {
+        let keys: Vec<u64> = (0..n as u64).map(|i| i * 7 + 3).collect();
+        let foreign = || (0..100_000_u64).map(|i| i.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1 << 40);
+        check_monotone(
+            <LcpMmphfInt<u64>>::try_new(FromSlice::new(&keys), n, no_logs![])?,
+            &keys,
+            foreign(),
+        );
+        check_monotone(
+            <Lcp2MmphfInt<u64>>::try_new(FromSlice::new(&keys), n, no_logs![])?,
+            &keys,
+            foreign(),
+        );
+
+        let keys: Vec<String> = (0..n).map(|i| format!("key{i:08}")).collect();
+        let lender = || LineLender::new(Cursor::new(keys.join("\n").into_bytes()));
+        let foreign = || (0..100_000).map(|i| format!("foreign{i}"));
+        check_monotone(
+            <LcpMmphfStr>::try_new(lender(), n, no_logs![])?,
+            &keys,
+            foreign(),
+        );
+        check_monotone(
+            <Lcp2MmphfStr>::try_new(lender(), n, no_logs![])?,
+            &keys,
+            foreign(),
+        );
+    }
+    Ok(())
+}
+
+/// The positions of the values can be used to access other arrays.
+#[test]
+fn test_index() -> Result<()> {
+    let keys: Vec<u64> = (0..50_000).collect();
+    let values: Vec<u64> = keys.iter().map(|&k| value(k)).collect();
+    let func = <PHunc<PHastR<u64>, BitFieldVec<Box<[u64]>>>>::try_new(
+        FromSlice::new(&keys),
+        FromSlice::new(&values),
+        no_logs![],
+    )?;
+    // Ancillary data, indexed like the values
+    let mut names = vec![String::new(); keys.len()];
+    for &key in &keys {
+        let index = func.index(key);
+        assert!(names[index].is_empty(), "position {index} is not unique");
+        names[index] = format!("name{key}");
+    }
+    for &key in &keys {
+        let (index, v) = func.get_with_index(key);
+        assert_eq!(index, func.index(key));
+        assert_eq!(index, func.mphf().index(&key));
+        assert_eq!(v, value(key));
+        assert_eq!(func.values().index_value(index), v);
+        assert_eq!(names[index], format!("name{key}"));
+    }
+    // Keys outside the original set still have a valid position
+    for key in 50_000..100_000_u64 {
+        let (index, v) = func.get_with_index(key);
+        assert!(index < keys.len());
+        assert_eq!(func.values().index_value(index), v);
+    }
+    Ok(())
+}
+
+/// Functions can be assembled from references to their parts, so several
+/// functions can share the same minimal perfect hash function.
+#[test]
+fn test_from_parts_refs() -> Result<()> {
+    let keys: Vec<u64> = (0..10_000).collect();
+    let phf = <PHastR<u64>>::try_par_new(&keys, no_logs![])?;
+    let mut values = vec![0_u64; keys.len()];
+    let mut squares = BitFieldVec::<Box<[usize]>>::new_padded(40, keys.len());
+    for &key in &keys {
+        let index = phf.index(&key);
+        values[index] = value(key);
+        squares.set_value(index, (key * key) as usize);
+    }
+
+    // References to a vector, to a slice, and to a bit-field vector
+    let by_vec = PHunc::from_parts(&phf, &values);
+    let by_slice = PHunc::from_parts(&phf, values.as_slice());
+    let by_bits = PHunc::from_parts(&phf, &squares);
+    for &key in &keys {
+        assert_eq!(by_vec.get(key), value(key));
+        assert_eq!(by_slice.get(key), value(key));
+        assert_eq!(by_bits.get(key), (key * key) as usize);
+        assert_eq!(by_vec.index(key), by_bits.index(key));
+    }
+
+    // From the parts of another function
+    let owned = PHunc::from_parts(&phf, values.clone());
+    let borrowed = PHunc::from_parts(owned.mphf(), owned.values());
+    // A boxed function
+    let boxed = PHunc::from_parts(Box::new(&phf), values.as_slice());
+    for &key in &keys {
+        assert_eq!(borrowed.get(key), value(key));
+        assert_eq!(boxed.get(key), value(key));
     }
     Ok(())
 }

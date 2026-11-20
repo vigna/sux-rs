@@ -228,6 +228,9 @@ impl LevelParams {
 /// introduced by Sebastiano Vigna in “[PHastR: Minimal Perfect Hashing with
 /// Rotated Layouts]”, 2026.
 ///
+/// To associate a value with each key, use a [`PHunc`], which stores the
+/// values in an array indexed by a [`PHastR`].
+///
 /// Like [PHast], it is based on *bucket placement*: keys are hashed to buckets,
 /// and each bucket stores a fixed-width *seed* that maps each key of the bucket
 /// to a slot of the output range so that no two keys collide. For almost all
@@ -429,6 +432,7 @@ impl LevelParams {
 /// [PHastR: Minimal Perfect Hashing with Rotated Layouts]: https://arxiv.org/abs/2610.17833
 /// [PHastR paper]: https://arxiv.org/abs/2610.17833
 /// [`SignedFunc`]: crate::func::SignedFunc
+/// [`PHunc`]: crate::func::PHunc
 /// [constructors for `PHastR`]: crate::func::SignedFunc#supported-combinations
 /// [lender]: crate::utils::lenders
 /// [rayon]: https://docs.rs/rayon

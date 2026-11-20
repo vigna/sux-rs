@@ -12,29 +12,52 @@ use std::borrow::Borrow;
 use mem_dbg::*;
 use value_traits::slices::SliceByValue;
 
-use crate::func::PHastR;
+use num_primitive::PrimitiveInteger;
+
+use crate::func::lcp_mmphf::{BitPrefix, IntBitPrefix};
 use crate::func::phastr::{LevelParams, Remap, SeedStore, SeedStoreBuild};
+use crate::func::shard_edge::ShardEdge;
+use crate::func::{Lcp2Mmphf, Lcp2MmphfInt, LcpMmphf, LcpMmphfInt, PHastR};
 use crate::traits::{TryIntoUnaligned, Unaligned, UnalignedConversionError};
-use crate::utils::ToSig;
+use crate::utils::{Sig, ToSig};
 
 /// A minimal perfect hash function, which maps bijectively a set of *n* keys
 /// to the integers in [0 . . *n*).
 ///
 /// This trait is the interface through which a [`PHunc`] finds the position
-/// of the value of a key. It is implemented by [`PHastR`].
+/// of the value of a key. It is implemented by [`PHastR`], and by the
+/// monotone minimal perfect hash functions [`LcpMmphfInt`], [`LcpMmphf`],
+/// [`Lcp2MmphfInt`], and [`Lcp2Mmphf`], which map each key to its rank.
+///
+/// The constant [`CLAMPED`] tells whether the output of the keys outside
+/// the original set is still in [0 . . *n*): if it is not, a [`PHunc`]
+/// clamps the output before accessing its values.
+///
+/// The trait is implemented for references and boxes, so several
+/// [`PHunc`]s can share the same function.
 ///
 /// # Safety
 ///
-/// The value returned by [`index`] must be smaller than [`len`] for every
-/// key, including the keys outside the original set; if the function is
-/// empty, it must be zero. A [`PHunc`] relies on this property to access its
-/// values without bounds checks.
+/// If [`CLAMPED`] is true, the value returned by [`index`] must be smaller
+/// than [`len`] for every key, including the keys outside the original set;
+/// if the function is empty, it must be zero. A [`PHunc`] relies on this
+/// property to access its values without bounds checks. Implementations
+/// for which [`CLAMPED`] is false have no obligation.
 ///
+/// [`CLAMPED`]: Mphf::CLAMPED
 /// [`index`]: Mphf::index
 /// [`len`]: Mphf::len
 pub unsafe trait Mphf {
     /// The type of the keys.
     type Key: ?Sized;
+
+    /// Whether the value returned by [`index`] is smaller than [`len`] also
+    /// for the keys outside the original set (and zero if the function is
+    /// empty).
+    ///
+    /// [`index`]: Mphf::index
+    /// [`len`]: Mphf::len
+    const CLAMPED: bool;
 
     /// Returns the number of keys.
     fn len(&self) -> usize;
@@ -47,11 +70,13 @@ pub unsafe trait Mphf {
 
     /// Returns the output of the given key.
     ///
-    /// Different keys of the original set have different outputs. If the
-    /// key was not in the original set, the result is arbitrary, but it is
-    /// still smaller than [`len`] (zero, if the function is empty).
+    /// Different keys of the original set have different outputs, which are
+    /// smaller than [`len`]. If the key was not in the original set, the
+    /// result is arbitrary; if [`CLAMPED`] is true, it is still smaller than
+    /// [`len`] (zero, if the function is empty).
     ///
     /// [`len`]: Mphf::len
+    /// [`CLAMPED`]: Mphf::CLAMPED
     fn index(&self, key: &Self::Key) -> usize;
 }
 
@@ -64,24 +89,20 @@ pub unsafe trait Mphf {
 /// Like for all static functions, querying a key outside of the original set
 /// will lead to an arbitrary result (one of the values).
 ///
-/// With respect to a [`VFunc`], which is the other generic static function
-/// of this crate:
+/// The space overhead is that of the minimal perfect hash function (about
+/// 1.94 bits per key for a [`PHastR`] with default parameters), whatever the
+/// size of the values; moreover, values are stored as they are, so they can
+/// be of any type that can be stored in the array, and not just integers.
+/// A query needs two dependent memory accesses: one for the minimal perfect
+/// hash function, and one for the array.
 ///
-/// - The space overhead is that of the minimal perfect hash function
-///   (about 1.94 bits per key for a [`PHastR`] with default parameters),
-///   rather than a fraction of the size of the values (10.5% for a
-///   [`VFunc`] with default parameters): thus, a [`PHunc`] uses less space
-///   when values have more than about twenty bits.
-///
-/// - Values are stored as they are, so they can be of any type that can be
-///   stored in the array, and not just integers.
-///
-/// - A query needs two dependent memory accesses (one for the minimal
-///   perfect hash function, and one for the array), whereas the three
-///   accesses of a [`VFunc`] are independent, so on large key sets a
-///   [`PHunc`] is usually slower when queries are issued one at a time.
-///
-/// - Construction from lenders reads keys and values just once.
+/// The position of the value of a key is available, too: [`index`] returns
+/// it, and [`get_with_index`] returns it together with the value, computing
+/// the output of the minimal perfect hash function just once. Since the
+/// positions of the keys are distinct and smaller than *n*, they can be used
+/// to access other arrays of data associated with the keys; with a monotone
+/// minimal perfect hash function such as [`LcpMmphf`], the position of a key
+/// is its rank.
 ///
 /// The array can be any implementation of [`SliceByValue`]: a boxed slice
 /// provides the fastest queries, whereas a [`BitFieldVec`] uses for each
@@ -95,6 +116,29 @@ pub unsafe trait Mphf {
 /// Instances of this structure are immutable; they are built using the
 /// constructors listed below, or assembled using [`from_parts`], and can be
 /// serialized using [ε-serde] or [`serde`].
+///
+/// The `phunc` binary (`cli` feature) builds and serializes instances of
+/// this structure.
+///
+/// # Alternatives
+///
+/// - A [`VFunc`] stores integer values with a space overhead that is a
+///   fraction of their size (10.5% with default parameters), rather than a
+///   fixed number of bits per key: it uses less space when values have
+///   fewer than about twenty bits. A query needs three memory accesses, but
+///   they are independent. A [`VFunc`] does not associate a position with
+///   each key, so it cannot be used to access other data: each array of
+///   data needs its own function.
+///
+/// - [`VFunc2`] and [`CompVFunc`] use less space when the distribution of
+///   the values is skewed.
+///
+/// - A [`PHastR`] alone is sufficient if the values are any bijection
+///   between the keys and [0 . . *n*), and an [`LcpMmphf`] if they are the
+///   ranks of the keys.
+///
+/// - Contrarily to a [`VFunc`] mapping each key to its index, a [`PHunc`]
+///   cannot be wrapped in a [`SignedFunc`].
 ///
 /// # Construction
 ///
@@ -118,7 +162,10 @@ pub unsafe trait Mphf {
 ///
 /// For other minimal perfect hash functions and other arrays, build the two
 /// components, store the value of each key at the position returned by
-/// [`Mphf::index`], and use [`from_parts`].
+/// [`Mphf::index`], and use [`from_parts`]. In particular, with a monotone
+/// minimal perfect hash function such as [`LcpMmphf`], which maps each key
+/// to its rank, the array is just the list of the values in the order of
+/// the keys.
 ///
 /// # Examples
 ///
@@ -156,9 +203,14 @@ pub unsafe trait Mphf {
 ///
 /// [minimal perfect hash function]: Mphf
 /// [`VFunc`]: crate::func::VFunc
+/// [`VFunc2`]: crate::func::VFunc2
+/// [`CompVFunc`]: crate::func::CompVFunc
+/// [`SignedFunc`]: crate::func::SignedFunc
 /// [`BitFieldVec`]: crate::bits::BitFieldVec
 /// [unaligned reads]: crate::bits::BitFieldVec::get_unaligned
 /// [`from_parts`]: PHunc::from_parts
+/// [`index`]: PHunc::index
+/// [`get_with_index`]: PHunc::get_with_index
 /// [ε-serde]: https://crates.io/crates/epserde
 /// [`serde`]: https://crates.io/crates/serde
 /// [lenders]: crate::utils::lenders
@@ -184,10 +236,41 @@ impl<F: Mphf, D: SliceByValue> PHunc<F, D> {
     /// If the function is empty, the array must contain a single value,
     /// which is what queries return.
     ///
+    /// Both parts can be references: for example, several functions can
+    /// share the same minimal perfect hash function.
+    ///
     /// # Panics
     ///
     /// Panics if the number of values is different from the number of keys
     /// or, if there are no keys, from one.
+    ///
+    /// # Examples
+    ///
+    /// Two functions sharing a minimal perfect hash function:
+    ///
+    /// ```rust
+    /// # fn main() -> anyhow::Result<()> {
+    /// # use dsi_progress_logger::no_logs;
+    /// use sux::func::{Mphf, PHastR, PHunc};
+    ///
+    /// let keys = ["apple", "banana", "cherry"];
+    /// let phf = <PHastR<str>>::try_par_new(&keys, no_logs![])?;
+    ///
+    /// let mut lens = vec![0; 3];
+    /// let mut initials = vec![' '; 3];
+    /// for key in keys {
+    ///     let index = phf.index(key);
+    ///     lens[index] = key.len();
+    ///     initials[index] = key.chars().next().unwrap();
+    /// }
+    ///
+    /// let lens = PHunc::from_parts(&phf, lens);
+    /// let initials = PHunc::from_parts(&phf, initials);
+    /// assert_eq!(lens.get("banana"), 6);
+    /// assert_eq!(initials.get("cherry"), 'c');
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn from_parts(func: F, data: D) -> Self {
         assert_eq!(
             data.len(),
@@ -203,10 +286,48 @@ impl<F: Mphf, D: SliceByValue> PHunc<F, D> {
     /// values (the padding value, if the function is empty).
     #[inline(always)]
     pub fn get(&self, key: impl Borrow<F::Key>) -> D::Value {
-        // SAFETY: the output of a key is smaller than the number of keys, or
-        // zero if there are no keys, and there are as many values as keys,
-        // or one if there are no keys
-        unsafe { self.data.get_value_unchecked(self.func.index(key.borrow())) }
+        // SAFETY: see index
+        unsafe { self.data.get_value_unchecked(self.index(key)) }
+    }
+
+    /// Returns the position of the value of the given key, that is, the
+    /// output of the minimal perfect hash function.
+    ///
+    /// Different keys of the original set have different positions in
+    /// [0 . . *n*), where *n* is the number of keys, so the position can be
+    /// used to access other arrays of data associated with the keys; with a
+    /// monotone minimal perfect hash function, it is the rank of the key.
+    ///
+    /// If the key was not in the original set, the result is arbitrary, but
+    /// it is still in [0 . . *n*) (zero, if the function is empty), even if
+    /// the minimal perfect hash function does not [clamp its output].
+    ///
+    /// [clamp its output]: Mphf::CLAMPED
+    #[inline(always)]
+    pub fn index(&self, key: impl Borrow<F::Key>) -> usize {
+        let index = self.func.index(key.borrow());
+        // The test is on a constant: functions that clamp their output pay
+        // nothing. Otherwise, the index is smaller than the number of keys,
+        // or zero if there are no keys, by the contract of Mphf or because
+        // we clamp it: there are as many values as keys, or one if there
+        // are no keys.
+        if F::CLAMPED {
+            index
+        } else {
+            index.min(self.data.len() - 1)
+        }
+    }
+
+    /// Returns the position of the value of the given key (see [`index`])
+    /// and the value, computing the output of the minimal perfect hash
+    /// function just once.
+    ///
+    /// [`index`]: Self::index
+    #[inline(always)]
+    pub fn get_with_index(&self, key: impl Borrow<F::Key>) -> (usize, D::Value) {
+        let index = self.index(key);
+        // SAFETY: see index
+        (index, unsafe { self.data.get_value_unchecked(index) })
     }
 
     /// Returns the number of keys.
@@ -221,11 +342,54 @@ impl<F: Mphf, D: SliceByValue> PHunc<F, D> {
 }
 
 impl<F, D> PHunc<F, D> {
+    /// Returns a reference to the minimal perfect hash function.
+    pub const fn mphf(&self) -> &F {
+        &self.func
+    }
+
+    /// Returns a reference to the array of values, which are indexed by
+    /// the positions returned by [`index`].
+    ///
+    /// [`index`]: Self::index
+    pub const fn values(&self) -> &D {
+        &self.data
+    }
+
     /// Returns the minimal perfect hash function and the array of values.
     pub fn into_parts(self) -> (F, D) {
         (self.func, self.data)
     }
 }
+
+// Mphf is an unsafe trait, which autoimpl cannot implement, so we forward it
+// to references and boxes explicitly.
+macro_rules! forward_mphf {
+    ($($ptr:ty),+) => {$(
+        // SAFETY: all items, including CLAMPED, are those of the function
+        // the pointer refers to
+        unsafe impl<T: Mphf + ?Sized> Mphf for $ptr {
+            type Key = T::Key;
+            const CLAMPED: bool = T::CLAMPED;
+
+            #[inline(always)]
+            fn len(&self) -> usize {
+                (**self).len()
+            }
+
+            #[inline(always)]
+            fn is_empty(&self) -> bool {
+                (**self).is_empty()
+            }
+
+            #[inline(always)]
+            fn index(&self, key: &Self::Key) -> usize {
+                (**self).index(key)
+            }
+        }
+    )+};
+}
+
+forward_mphf!(&T, &mut T, Box<T>);
 
 // SAFETY: PHastR::get returns a value smaller than the number of keys for
 // every key, and zero if there are no keys
@@ -237,10 +401,117 @@ unsafe impl<
 > Mphf for PHastR<K, S, P, R>
 {
     type Key = K;
+    const CLAMPED: bool = true;
 
     #[inline(always)]
     fn len(&self) -> usize {
         PHastR::len(self)
+    }
+
+    #[inline(always)]
+    fn index(&self, key: &K) -> usize {
+        self.get(key)
+    }
+}
+
+// SAFETY: the output is not clamped, so there is no obligation
+unsafe impl<
+    K: PrimitiveInteger + ToSig<S0>,
+    D: SliceByValue<Value = usize>,
+    S0: Sig,
+    E0: ShardEdge<S0, 3>,
+    S1: Sig,
+    E1: ShardEdge<S1, 3>,
+> Mphf for LcpMmphfInt<K, D, S0, E0, S1, E1>
+where
+    IntBitPrefix<K>: ToSig<S1>,
+{
+    type Key = K;
+    const CLAMPED: bool = false;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        LcpMmphfInt::len(self)
+    }
+
+    #[inline(always)]
+    fn index(&self, key: &K) -> usize {
+        self.get(*key)
+    }
+}
+
+// SAFETY: the output is not clamped, so there is no obligation
+unsafe impl<
+    K: ?Sized + AsRef<[u8]> + ToSig<S0>,
+    D: SliceByValue<Value = usize>,
+    S0: Sig,
+    E0: ShardEdge<S0, 3>,
+    S1: Sig,
+    E1: ShardEdge<S1, 3>,
+> Mphf for LcpMmphf<K, D, S0, E0, S1, E1>
+where
+    BitPrefix: ToSig<S1>,
+{
+    type Key = K;
+    const CLAMPED: bool = false;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        LcpMmphf::len(self)
+    }
+
+    #[inline(always)]
+    fn index(&self, key: &K) -> usize {
+        self.get(key)
+    }
+}
+
+// SAFETY: the output is not clamped, so there is no obligation
+unsafe impl<
+    K: PrimitiveInteger + ToSig<S0>,
+    D: SliceByValue<Value = usize>,
+    S0: Sig,
+    E0: ShardEdge<S0, 3>,
+    F0: ShardEdge<S0, 3>,
+    S1: Sig,
+    E1: ShardEdge<S1, 3>,
+> Mphf for Lcp2MmphfInt<K, D, S0, E0, F0, S1, E1>
+where
+    IntBitPrefix<K>: ToSig<S1>,
+{
+    type Key = K;
+    const CLAMPED: bool = false;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        Lcp2MmphfInt::len(self)
+    }
+
+    #[inline(always)]
+    fn index(&self, key: &K) -> usize {
+        self.get(*key)
+    }
+}
+
+// SAFETY: the output is not clamped, so there is no obligation
+unsafe impl<
+    K: ?Sized + AsRef<[u8]> + ToSig<S0>,
+    D: SliceByValue<Value = usize>,
+    S0: Sig,
+    E0: ShardEdge<S0, 3>,
+    F0: ShardEdge<S0, 3>,
+    S1: Sig,
+    E1: ShardEdge<S1, 3>,
+> Mphf for Lcp2Mmphf<K, D, S0, E0, F0, S1, E1>
+where
+    BitPrefix: ToSig<S1>,
+{
+    type Key = K;
+    const CLAMPED: bool = false;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        Lcp2Mmphf::len(self)
     }
 
     #[inline(always)]
@@ -285,15 +556,17 @@ mod build {
     use crate::bits::BitFieldVec;
     use crate::func::phastr::PHastRBuilder;
     use crate::func::signed::build::par_fill_hashes;
+    use crate::func::vbuilder::check_num_values;
     use crate::traits::{AtomicBitFieldSlice, Word};
     use crate::utils::{BinSafe, PrimitiveUnsignedExt};
-    use anyhow::{Result, ensure};
+    use anyhow::Result;
     use atomic_primitive::{AtomicPrimitive, PrimitiveAtomicUnsigned};
     use core::error::Error;
     use dsi_progress_logger::ProgressLog;
     use lender::{FallibleLender, FallibleLending};
     use rayon::prelude::*;
     use std::sync::atomic::Ordering;
+    use std::time::Instant;
     use sync_cell_slice::SyncSlice;
 
     /// Passes to `set` the output and the value of each key, in parallel;
@@ -317,13 +590,46 @@ mod build {
         pl.done();
     }
 
-    /// Checks that there are as many values as keys.
-    fn check_lens(num_keys: usize, num_values: usize) -> Result<()> {
-        ensure!(
-            num_keys == num_values,
-            "There are {num_keys} keys, but {num_values} values"
-        );
-        Ok(())
+    /// Logs the maximum value and the bit width of the values of a function
+    /// with `n` keys, in the format used by [`VFunc`](crate::func::VFunc).
+    fn log_values<W: Word>(n: usize, max: W, pl: &mut impl ProgressLog) {
+        pl.info(format_args!("Max value: {}", max));
+        pl.info(format_args!(
+            "Number of keys: {}; bit width: {}",
+            n,
+            max.bit_len()
+        ));
+    }
+
+    /// Logs the number of bits per key of a function with the given
+    /// minimal perfect hash function and `data_bytes` bytes of values, and
+    /// the time taken by its construction, in the format used by the other
+    /// functions (the lines logged by the construction of the [`PHastR`] are
+    /// about the minimal perfect hash function only).
+    fn log_summary<K: ?Sized, S: SeedStoreBuild + MemSize + FlatType>(
+        func: &PHastR<K, S>,
+        data_bytes: usize,
+        bit_width: Option<usize>,
+        start: Instant,
+        pl: &mut impl ProgressLog,
+    ) {
+        let n = func.len().max(1) as f64;
+        let bits = ((func.mem_size(SizeFlags::default()) + data_bytes) * 8) as f64 / n;
+        match bit_width {
+            Some(bit_width) => pl.info(format_args!(
+                "Bits/key: {:.3} ({:+.3}% with respect to bit width)",
+                bits,
+                100.0 * (bits / bit_width as f64 - 1.0)
+            )),
+            None => pl.info(format_args!("Bits/key: {:.3}", bits)),
+        }
+        let elapsed = start.elapsed();
+        pl.info(format_args!(
+            "Construction completed in {:.3} seconds ({} keys, {:.3} ns/key)",
+            elapsed.as_secs_f64(),
+            func.len(),
+            elapsed.as_nanos() as f64 / n
+        ));
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -348,16 +654,18 @@ mod build {
         ///   such lenders.
         ///
         /// * `values` - a [`FallibleLender`] returning the values, in the
-        ///   order of their keys, which is read just once.
+        ///   order of their keys, which is read just once. It may return
+        ///   more values than there are keys (in particular, it may be
+        ///   infinite); the extra values are ignored.
         ///
         /// * `pl` - a progress logger, which logs the parameters and the
         ///   phases of the construction.
         ///
         /// # Errors
         ///
-        /// Returns an error if there are duplicate keys, if the two lenders
-        /// return a different number of items, if a lender returns an
-        /// error, or if there are too many keys for the platform.
+        /// Returns an error if there are duplicate keys, if there are
+        /// fewer values than keys ([`MismatchedKeysAndValues`](crate::func::BuildError::MismatchedKeysAndValues)), if a lender
+        /// returns an error, or if there are too many keys for the platform.
         ///
         /// # Examples
         ///
@@ -413,6 +721,7 @@ mod build {
             builder: PHastRBuilder,
             pl: &mut impl ProgressLog,
         ) -> Result<Self> {
+            let start = Instant::now();
             let (func, stored) = builder.try_build_from_lender_with_values::<K, S, B, V>(
                 keys,
                 values,
@@ -426,6 +735,7 @@ mod build {
                 // is written by a single thread
                 stored.for_each(&func, |i, v| unsafe { sync_data[i].set(v) }, pl)?;
             }
+            log_summary(&func, size_of_val(&*data), None, start, pl);
             Ok(PHunc {
                 func,
                 data: data.into_boxed_slice(),
@@ -445,8 +755,8 @@ mod build {
         /// # Errors
         ///
         /// Returns an error if there are duplicate keys, if the two slices
-        /// have different lengths, or if there are too many keys for the
-        /// platform.
+        /// have different lengths ([`MismatchedKeysAndValues`](crate::func::BuildError::MismatchedKeysAndValues)), or if
+        /// there are too many keys for the platform.
         ///
         /// # Examples
         ///
@@ -498,7 +808,8 @@ mod build {
         where
             K: Sync,
         {
-            check_lens(keys.len(), values.len())?;
+            check_num_values(keys.len(), values.len())?;
+            let start = Instant::now();
             let func = <PHastR<K, S>>::try_par_new_with_builder(keys, builder, pl)?;
             let mut data = vec![V::new_zeroed(); func.len().max(1)];
             let sync_data = data.as_sync_slice();
@@ -511,6 +822,7 @@ mod build {
                 |i, v| unsafe { sync_data[i].set(v) },
                 pl,
             );
+            log_summary(&func, size_of_val(&*data), None, start, pl);
             Ok(PHunc {
                 func,
                 data: data.into_boxed_slice(),
@@ -543,16 +855,18 @@ mod build {
         ///   such lenders.
         ///
         /// * `values` - a [`FallibleLender`] returning the values, in the
-        ///   order of their keys, which is read just once.
+        ///   order of their keys, which is read just once. It may return
+        ///   more values than there are keys (in particular, it may be
+        ///   infinite); the extra values are ignored.
         ///
         /// * `pl` - a progress logger, which logs the parameters and the
         ///   phases of the construction.
         ///
         /// # Errors
         ///
-        /// Returns an error if there are duplicate keys, if the two lenders
-        /// return a different number of items, if a lender returns an
-        /// error, or if there are too many keys for the platform.
+        /// Returns an error if there are duplicate keys, if there are
+        /// fewer values than keys ([`MismatchedKeysAndValues`](crate::func::BuildError::MismatchedKeysAndValues)), if a lender
+        /// returns an error, or if there are too many keys for the platform.
         ///
         /// # Examples
         ///
@@ -611,6 +925,7 @@ mod build {
             builder: PHastRBuilder,
             pl: &mut impl ProgressLog,
         ) -> Result<Self> {
+            let start = Instant::now();
             let mut max = W::ZERO;
             let (func, stored) = builder.try_build_from_lender_with_values::<K, S, B, W>(
                 keys,
@@ -618,6 +933,7 @@ mod build {
                 |&v| max = max.max(v),
                 pl,
             )?;
+            log_values(func.len(), max, pl);
             let mut result = Ok(());
             let data = par_fill_hashes::<W>(max.bit_len() as usize, func.len().max(1), |data| {
                 if let Some(stored) = &stored {
@@ -629,6 +945,13 @@ mod build {
                 }
             });
             result?;
+            log_summary(
+                &func,
+                size_of_val(data.as_slice()),
+                Some(data.bit_width()),
+                start,
+                pl,
+            );
             Ok(PHunc { func, data })
         }
 
@@ -645,8 +968,8 @@ mod build {
         /// # Errors
         ///
         /// Returns an error if there are duplicate keys, if the two slices
-        /// have different lengths, or if there are too many keys for the
-        /// platform.
+        /// have different lengths ([`MismatchedKeysAndValues`](crate::func::BuildError::MismatchedKeysAndValues)), or if
+        /// there are too many keys for the platform.
         ///
         /// # Examples
         ///
@@ -704,9 +1027,11 @@ mod build {
         where
             K: Sync,
         {
-            check_lens(keys.len(), values.len())?;
+            check_num_values(keys.len(), values.len())?;
+            let start = Instant::now();
             let func = <PHastR<K, S>>::try_par_new_with_builder(keys, builder, pl)?;
             let max = values.par_iter().copied().max().unwrap_or(W::ZERO);
+            log_values(func.len(), max, pl);
             let data = par_fill_hashes::<W>(max.bit_len() as usize, func.len().max(1), |data| {
                 // The outputs of the keys are distinct, but the fields of
                 // different outputs may share a word: we write atomically
@@ -718,6 +1043,13 @@ mod build {
                     pl,
                 );
             });
+            log_summary(
+                &func,
+                size_of_val(data.as_slice()),
+                Some(data.bit_width()),
+                start,
+                pl,
+            );
             Ok(PHunc { func, data })
         }
     }
@@ -865,7 +1197,8 @@ mod tests {
                     PHastRBuilder::default().offline(offline),
                     no_logs![],
                 );
-                assert!(result.is_err(), "{num_values} values");
+                // A lender can return more values than there are keys
+                assert_eq!(result.is_err(), num_values < 1000, "{num_values} values");
             }
             assert!(
                 <PHunc<PHastR<u64>, Box<[u64]>>>::try_par_new(&keys, &values, no_logs![]).is_err()

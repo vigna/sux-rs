@@ -30,6 +30,9 @@ from [the DSI Utilities] and new structures.
   both use less space when the distribution of values is skewed;
 - a [minimal perfect hash function] with very fast construction and queries,
   using less than two bits per key;
+- [static functions based on minimal perfect hashing], whose space overhead
+  does not depend on the size of the values, which store values of any type,
+  and which provide an index that can be reused to access other data;
 - [monotone minimal perfect hash functions] based on longest common prefixes,
   which are [the fastest available] (using less than log₂*n* bits per key);
 - support for [signed minimal perfect hash functions];
@@ -213,6 +216,7 @@ The crate provides binaries that build structures and serialize them with
 | `vfilter`    | a [`VFilter`]                                              | hashes of `--bits` bits                                   |
 | `lcp_mmphf`  | an [`LcpMmphf`] (an [`Lcp2Mmphf`] with `-2`)               | keys must be sorted; signed with `--hash-type`            |
 | `phastr`     | a [`PHastR`]                                               | signed with `--hash-type`                                 |
+| `phunc`      | a [`PHunc`] mapping each key to its index in the input     | same construction options as `phastr`                     |
 | `mem_usage`  | rank/select structures, printing their memory layout       | requires only the `clap` feature                          |
 
 Use `--help` to see the options of each binary. Input files are read as they
@@ -292,7 +296,8 @@ cargo run --release --features cli --example bench_vfunc -- -f keys.txt 10000000
 ```
 
 performs ten million queries on a [`VFunc`]. The examples `bench_vfunc`,
-`bench_vfilter`, `bench_comp_vfunc`, and `bench_lcp_mmphf` work in this way;
+`bench_phunc`, `bench_vfilter`, `bench_comp_vfunc`, and `bench_lcp_mmphf` work
+in this way;
 `bench_phastr` instead builds and queries a [`PHastR`] on 64-bit keys by itself
 (e.g., `cargo run --release --example bench_phastr -- 10000000`).
 
@@ -375,6 +380,7 @@ Union nor the Italian MUR can be held responsible for them.
 [compressed static functions]: https://docs.rs/sux/latest/sux/func/struct.CompVFunc.html
 [two-step static functions]: https://docs.rs/sux/latest/sux/func/struct.VFunc2.html
 [minimal perfect hash function]: https://docs.rs/sux/latest/sux/func/struct.PHastR.html
+[static functions based on minimal perfect hashing]: https://docs.rs/sux/latest/sux/func/struct.PHunc.html
 [monotone minimal perfect hash functions]: https://docs.rs/sux/latest/sux/func/lcp_mmphf/index.html
 [static filters]: https://docs.rs/sux/latest/sux/dict/vfilter/struct.VFilter.html
 [partial arrays]: https://docs.rs/sux/latest/sux/array/struct.PartialArray.html

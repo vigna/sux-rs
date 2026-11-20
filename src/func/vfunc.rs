@@ -62,6 +62,15 @@ use std::borrow::Borrow;
 /// - [`VFunc2`] and [`CompVFunc`] use less space when the distribution of
 ///   values is skewed.
 ///
+/// - [`PHunc`] stores values in an array indexed by a minimal perfect hash
+///   function: its space overhead is less than two bits per key, whatever
+///   the size of the values, so it uses less space when values have more
+///   than about twenty bits. Moreover, its values can be of any type, its
+///   constructors read keys and values from lenders just once, and it
+///   provides the position of the value of a key, which can be reused to
+///   access other data associated with the keys. A query needs two memory
+///   accesses, rather than three, but they are dependent.
+///
 /// - [`VFilter`] uses a [`VFunc`] to provide approximate membership.
 ///
 /// - [`SignedFunc`] wraps a [`VFunc`] mapping each key to its index in the
@@ -118,6 +127,7 @@ use std::borrow::Borrow;
 /// [`VBuilder`]: crate::func::VBuilder
 /// [`VFunc2`]: crate::func::VFunc2
 /// [`CompVFunc`]: crate::func::CompVFunc
+/// [`PHunc`]: crate::func::PHunc
 /// [`VFilter`]: crate::dict::VFilter
 /// [`SignedFunc`]: crate::func::SignedFunc
 /// [`PHastR`]: crate::func::PHastR

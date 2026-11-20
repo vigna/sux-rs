@@ -963,8 +963,10 @@ impl PHastRBuilder {
     /// they can be written at the outputs of their keys (see
     /// [`StoredValues::for_each`]).
     ///
-    /// The two lenders are read just once, and they must return the same
-    /// number of items; `inspect` is called on each value, in order.
+    /// The two lenders are read just once; the lender of the values can
+    /// return more values than there are keys (the extra values are ignored),
+    /// as in the constructors of [`VFunc`](crate::func::VFunc), but not
+    /// fewer. The function `inspect` is called on each value used, in order.
     ///
     /// The construction stores each value next to the record of its key, in
     /// memory or, in offline mode, on disk, and it keeps the records and the
@@ -994,12 +996,16 @@ impl PHastRBuilder {
             let writer =
                 StoreWriter::<WithValue<V>>::new(SigFn(None), MAX_LOG2_PARTITIONS, dir.as_deref())?;
             let mut buffers = writer.buffers();
+            let mut num_keys = 0;
             while let Some(key) = keys.next()? {
-                let Some(value) = values.next()? else {
-                    bail!(
-                        "The lender of the values returned fewer items than the lender of the keys"
-                    );
-                };
+                num_keys += 1;
+                let value =
+                    values
+                        .next()?
+                        .ok_or(crate::func::BuildError::MismatchedKeysAndValues {
+                            num_keys,
+                            num_values: num_keys - 1,
+                        })?;
                 let key: &K = key.borrow();
                 buffers
                     .push(WithValue {
@@ -1012,9 +1018,6 @@ impl PHastRBuilder {
                     .context("Could not store the hashes and the values of the keys")?;
                 inspect(value);
                 pl.light_update();
-            }
-            if values.next()?.is_some() {
-                bail!("The lender of the values returned more items than the lender of the keys");
             }
             let n = buffers
                 .finish()

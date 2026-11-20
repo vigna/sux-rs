@@ -403,6 +403,25 @@ impl<F: SignableFunc, H: SliceByValue> SignedFunc<F, H> {
     }
 }
 
+impl<F, H> SignedFunc<F, H> {
+    /// Returns a reference to the inner function, which can be queried
+    /// without verification.
+    pub const fn func(&self) -> &F {
+        &self.func
+    }
+
+    /// Returns a reference to the verification hashes, which are indexed by
+    /// the output of the inner function.
+    pub const fn hashes(&self) -> &H {
+        &self.hashes
+    }
+
+    /// Returns the inner function and the verification hashes.
+    pub fn into_parts(self) -> (F, H) {
+        (self.func, self.hashes)
+    }
+}
+
 // ── Unified query helpers ────────────────────────────────────────
 
 impl<F: SignableFunc, H: SliceByValue<Value: PrimitiveNumber> + TruncateHash<H::Value>>

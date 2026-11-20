@@ -53,7 +53,8 @@ use value_traits::slices::SliceByValue;
 /// # Alternatives
 ///
 /// - A [`VFunc`] is preferable when values are not skewed, as it uses a
-///   single function.
+///   single function; a [`PHunc`] uses less space than a [`VFunc`] when
+///   such values are large.
 ///
 /// - A [`CompVFunc`] stores values in space close to their empirical
 ///   entropy, which is usually smaller, but queries are slower.
@@ -103,6 +104,7 @@ use value_traits::slices::SliceByValue;
 /// [`Lcp2MmphfInt`]: crate::func::Lcp2MmphfInt
 /// [`Lcp2Mmphf`]: crate::func::Lcp2Mmphf
 /// [`SignedFunc`]: crate::func::SignedFunc
+/// [`PHunc`]: crate::func::PHunc
 #[derive(MemSize, MemDbg)]
 #[cfg_attr(
     feature = "epserde",

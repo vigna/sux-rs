@@ -130,6 +130,10 @@ name = "phastr"
 required-features = ["cli"]
 
 [[bin]]
+name = "phunc"
+required-features = ["cli"]
+
+[[bin]]
 name = "mem_usage"
 required-features = ["clap"]
 
@@ -139,6 +143,10 @@ required-features = ["cli"]
 
 [[example]]
 name = "bench_vfunc"
+required-features = ["cli"]
+
+[[example]]
+name = "bench_phunc"
 required-features = ["cli"]
 
 [[example]]

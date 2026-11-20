@@ -20,7 +20,7 @@
 //!
 //! | You need to… | Use |
 //! |---|---|
-//! | associate a value with each key | [`VFunc`]; [`VFunc2`] or [`CompVFunc`] if the distribution of the values is skewed; [`PHunc`] if the values are large, or they are not integers |
+//! | associate a value with each key | [`VFunc`]; [`VFunc2`] or [`CompVFunc`] if the distribution of the values is skewed; [`PHunc`] if the values are large, if they are not integers, or if you need more than one value per key |
 //! | map the keys bijectively to [0 . . *n*), in any order | [`PHastR`] |
 //! | map the keys to their rank in lexicographical order | [`LcpMmphf`]/[`LcpMmphfInt`], or [`Lcp2Mmphf`]/[`Lcp2MmphfInt`] to use less space |
 //! | reject keys outside the original set | a [`SignedFunc`] wrapping one of the above |
@@ -49,20 +49,22 @@
 //!   queries.
 //!
 //! - [`PHunc`] is a static function storing its values in an array indexed
-//!   by a minimal perfect hash function (by default, a [`PHastR`]): its
-//!   space overhead does not depend on the size of the values, so it uses
-//!   less space than a [`VFunc`] when values have more than about twenty
-//!   bits, and its values can be of any type. Its constructors read keys and
-//!   values from lenders just once.
+//!   by a minimal perfect hash function, such as a [`PHastR`]: its space
+//!   overhead does not depend on the size of the values, so it uses less
+//!   space than a [`VFunc`] when values have more than about twenty bits,
+//!   and its values can be of any type. It provides also the position of
+//!   the value of a key, which can be reused to access other data
+//!   associated with the keys. Its constructors read keys and values from
+//!   lenders just once.
 //!
 //! - [`SignedFunc`] wraps a [`VFunc`], a [`PHastR`],
 //!   [`LcpMmphfInt`]/[`LcpMmphf`], or [`Lcp2MmphfInt`]/[`Lcp2Mmphf`] (but not
-//!   [`VFunc2`] or [`CompVFunc`]) with per-key verification hashes, returning
-//!   `None` for keys outside the original set. Use `Box<[W]>` for full-width
-//!   hashes or [`BitFieldVec`] for sub-word-width hashes. Use concrete types
-//!   like `SignedFunc<LcpMmphfStr, Box<[u64]>>`; the [supported
-//!   combinations](SignedFunc#supported-combinations) are listed in the
-//!   documentation of [`SignedFunc`].
+//!   [`VFunc2`], [`CompVFunc`], or [`PHunc`]) with per-key verification
+//!   hashes, returning `None` for keys outside the original set. Use
+//!   `Box<[W]>` for full-width hashes or [`BitFieldVec`] for sub-word-width
+//!   hashes. Use concrete types like `SignedFunc<LcpMmphfStr, Box<[u64]>>`;
+//!   the [supported combinations](SignedFunc#supported-combinations) are
+//!   listed in the documentation of [`SignedFunc`].
 //!
 //! # Construction
 //!
@@ -94,9 +96,9 @@
 //! # Command-line utilities
 //!
 //! With the `cli` feature, the binaries `vfunc`, `vfunc2`, `comp_vfunc`,
-//! `vfilter`, `lcp_mmphf`, and `phastr` build these structures from files of
-//! keys and serialize them with ε-serde, logging the type of the structure
-//! they store; use `--help` for their options.
+//! `vfilter`, `lcp_mmphf`, `phastr`, and `phunc` build these structures from
+//! files of keys and serialize them with ε-serde, logging the type of the
+//! structure they store; use `--help` for their options.
 //!
 //! # Type annotations
 //!
