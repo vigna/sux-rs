@@ -78,7 +78,7 @@ too.
 | a static list of strings, with search | [`RearCodedList`] |
 | a static list of integers | [`CompIntList`], [`PrefixSumIntList`] |
 | an array with holes | [`PartialArray`] |
-| a value for each key of a static set | [`VFunc`]; [`VFunc2`] or [`CompVFunc`] if the values are skewed |
+| a value for each key of a static set | [`VFunc`]; [`VFunc2`] or [`CompVFunc`] if the values are skewed; [`PHunc`] if the values are large |
 | a bijection between a static set of keys and [0 . . *n*) | [`PHastR`] |
 | the lexicographical rank of the keys of a static set | [`LcpMmphf`] |
 | approximate membership in a static set | [`VFilter`], or a [`SignedFunc`] |
@@ -245,6 +245,7 @@ or map it into memory with `mmap` (requires the `mmap` feature).
 [`LcpMmphf`]: https://docs.rs/sux/latest/sux/func/lcp_mmphf/struct.LcpMmphf.html
 [`Lcp2Mmphf`]: https://docs.rs/sux/latest/sux/func/lcp2_mmphf/struct.Lcp2Mmphf.html
 [`PHastR`]: https://docs.rs/sux/latest/sux/func/struct.PHastR.html
+[`PHunc`]: https://docs.rs/sux/latest/sux/func/struct.PHunc.html
 [`SignedFunc`]: https://docs.rs/sux/latest/sux/func/signed/struct.SignedFunc.html
 
 ## Features

@@ -593,7 +593,7 @@ impl<
 // ═══════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "rayon")]
-mod build {
+pub(crate) mod build {
     use super::*;
     use crate::bits::AtomicBitFieldVec;
     use crate::func::VBuilder;
@@ -724,7 +724,9 @@ mod build {
     /// `u64` on 32-bit x86), the vector cannot be viewed as atomic, so `fill`
     /// writes into an atomic copy with the same layout, which is then copied
     /// back.
-    fn par_fill_hashes<H: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned<Value = H>>>(
+    pub(crate) fn par_fill_hashes<
+        H: Word + AtomicPrimitive<Atomic: PrimitiveAtomicUnsigned<Value = H>>,
+    >(
         hash_width: usize,
         len: usize,
         fill: impl FnOnce(&AtomicBitFieldVec<&mut [H::Atomic]>),

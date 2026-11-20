@@ -32,15 +32,24 @@
 //! the detection of duplicate keys, which uses the records (see
 //! [`has_duplicates`]).
 //!
+//! A construction can also keep a value for each key, next to its record
+//! in the store of the first level (see [`Item`]), and keep that store until
+//! the function is built (see [`StoredValues`]): since the output of a key
+//! depends just on its record, the values can then be written at the outputs
+//! of their keys in parallel, without reading the keys again. This is how
+//! [`PHunc`] is built from lenders.
+//!
 //! [offline mode]: PHastRBuilder::offline
 //! [rayon]: https://docs.rs/rayon
 //! [number of sweep chunks]: PHastRBuilder::sweep_chunks
+//! [`PHunc`]: crate::func::PHunc
 
 use super::builder::*;
 use super::sigs::*;
 use super::sweep::*;
 use super::*;
 use crate::dict::elias_fano::{EliasFano, EliasFanoBuilder};
+use crate::utils::BinSafe;
 use anyhow::{Context, bail};
 use std::fs::File;
 use std::io::{self, Read, Seek, Write};
@@ -52,6 +61,60 @@ use zerocopy::IntoBytes;
 
 /// The signature of a key for the first level and its second hash.
 type Record = [u64; 2];
+
+/// An item of a [`Store`]: the record of a key, possibly with other data
+/// (see [`WithValue`]).
+trait Item: BinSafe {
+    /// Returns the record of the key.
+    fn record(&self) -> Record;
+}
+
+impl Item for Record {
+    #[inline(always)]
+    fn record(&self) -> Record {
+        *self
+    }
+}
+
+/// The record of a key of the first level, followed by the value of the key
+/// (see [`StoredValues`]).
+///
+/// The structure is packed, so it has no padding whatever the type of the
+/// value, and its fields must be read by copy.
+#[cfg(feature = "rayon")]
+#[derive(zerocopy::FromBytes, zerocopy::IntoBytes)]
+#[repr(C, packed)]
+struct WithValue<V> {
+    record: Record,
+    value: V,
+}
+
+#[cfg(feature = "rayon")]
+impl<V: Copy> Clone for WithValue<V> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+#[cfg(feature = "rayon")]
+impl<V: Copy> Copy for WithValue<V> {}
+
+#[cfg(feature = "rayon")]
+impl<V: BinSafe> Item for WithValue<V> {
+    #[inline(always)]
+    fn record(&self) -> Record {
+        self.record
+    }
+}
+
+/// Returns the bytes of a slice of items of a [`Store`].
+fn bytes<T: Item>(items: &[T]) -> &[u8] {
+    // SAFETY: the items have no padding, as they implement IntoBytes, and no
+    // interior mutability, as they are Copy
+    let (pre, bytes, post) = unsafe { items.align_to::<u8>() };
+    debug_assert!(pre.is_empty() && post.is_empty());
+    bytes
+}
 
 /// The base-2 logarithm of the maximum number of partitions of a store,
 /// which is the number of partitions of the first level (whose number of
@@ -173,34 +236,37 @@ struct Blocks {
     shift: u32,
 }
 
-/// The storage of the records of a [`Store`].
-enum Storage {
+/// The storage of the items of a [`Store`].
+enum Storage<T = Record> {
     /// Temporary files, each containing the blocks of a range of
     /// consecutive partitions (see [`LOG2_FILES`]).
     Files(Vec<Mutex<File>>, Blocks),
     /// A vector for each partition.
-    Memory(Vec<Vec<Record>>),
+    Memory(Vec<Vec<T>>),
 }
 
 /// The records of the keys of a level, partitioned by the upper bits of
 /// their signature for the level.
-struct Store {
+///
+/// The items of the store of the first level can contain, besides the
+/// record of a key, its value (see [`Item`]).
+struct Store<T = Record> {
     /// The signature of a record for the level.
     sig: SigFn,
     /// The base-2 logarithm of the number of partitions.
     log2_partitions: u32,
-    /// The number of records.
+    /// The number of items.
     len: usize,
-    storage: Storage,
+    storage: Storage<T>,
 }
 
-impl Store {
+impl<T: Item> Store<T> {
     /// Returns the number of partitions.
     const fn num_partitions(&self) -> usize {
         1 << self.log2_partitions
     }
 
-    /// Returns the number of records of partition `p`.
+    /// Returns the number of items of partition `p`.
     fn partition_len(&self, p: usize) -> usize {
         match &self.storage {
             Storage::Files(_, blocks) => blocks.blocks[p]
@@ -211,20 +277,21 @@ impl Store {
         }
     }
 
-    /// Calls `f` on the records of partition `p`, using `buf` as a buffer.
+    /// Calls `f` on the items of partition `p`, in the order in which they
+    /// were written by each thread, using `buf` as a buffer.
     fn for_each(
         &self,
         p: usize,
-        buf: &mut Vec<Record>,
-        mut f: impl FnMut(&Record) -> io::Result<()>,
+        buf: &mut Vec<T>,
+        mut f: impl FnMut(&T) -> io::Result<()>,
     ) -> io::Result<()> {
         match &self.storage {
             Storage::Files(files, blocks) => {
                 for &(pos, len) in &blocks.blocks[p] {
-                    buf.resize(len as usize, [0; 2]);
+                    buf.resize(len as usize, T::new_zeroed());
                     {
                         let mut file = files[p >> blocks.shift].lock().unwrap();
-                        file.seek(io::SeekFrom::Start(pos * size_of::<Record>() as u64))?;
+                        file.seek(io::SeekFrom::Start(pos * size_of::<T>() as u64))?;
                         file.read_exact(buf.as_mut_bytes())?;
                     }
                     for r in buf.iter() {
@@ -242,15 +309,15 @@ impl Store {
     }
 }
 
-/// Writes records to a new [`Store`]: several threads can write at the same
+/// Writes items to a new [`Store`]: several threads can write at the same
 /// time, each using its own [`Buffers`].
-struct StoreWriter {
+struct StoreWriter<T = Record> {
     sig: SigFn,
     log2_partitions: u32,
-    storage: Mutex<Storage>,
+    storage: Mutex<Storage<T>>,
 }
 
-impl StoreWriter {
+impl<T: Item> StoreWriter<T> {
     /// Creates a writer for a store with the given signature function and
     /// number of partitions, kept in anonymous temporary files in `dir`, if
     /// it is not `None`, and in memory otherwise.
@@ -289,7 +356,7 @@ impl StoreWriter {
     }
 
     /// Returns a set of buffers writing to this store.
-    fn buffers(&self) -> Buffers<'_> {
+    fn buffers(&self) -> Buffers<'_, T> {
         let partitions = 1 << self.log2_partitions;
         let offline = matches!(*self.storage.lock().unwrap(), Storage::Files(..));
         Buffers {
@@ -298,7 +365,7 @@ impl StoreWriter {
             // A single zeroed allocation, so that pages are allocated only
             // when used, and returned to the system when dropped
             blocks: if offline {
-                vec![[0; 2]; partitions * BLOCK]
+                vec![T::new_zeroed(); partitions * BLOCK]
             } else {
                 vec![]
             },
@@ -313,8 +380,8 @@ impl StoreWriter {
         }
     }
 
-    /// Returns the store, given the number of records written to it.
-    fn finish(self, len: usize) -> Store {
+    /// Returns the store, given the number of items written to it.
+    fn finish(self, len: usize) -> Store<T> {
         let mut storage = self.storage.into_inner().unwrap();
         if let Storage::Memory(partitions) = &mut storage {
             partitions.iter_mut().for_each(Vec::shrink_to_fit);
@@ -330,41 +397,43 @@ impl StoreWriter {
 
 /// The buffers of a thread writing to a [`StoreWriter`]: in offline mode, a
 /// block for each partition, which is appended to its file when full (the
-/// length of the blocks grows with the number of records written, see
-/// [`GROWTH`]); otherwise, the records of each partition, which are moved
-/// to the store at the end.
-struct Buffers<'a> {
-    writer: &'a StoreWriter,
+/// length of the blocks grows with the number of items written, see
+/// [`GROWTH`]); otherwise, the items of each partition, which are moved to
+/// the store at the end.
+struct Buffers<'a, T = Record> {
+    writer: &'a StoreWriter<T>,
     /// Whether the store is kept on disk.
     offline: bool,
     /// In offline mode, a block for each partition.
-    blocks: Vec<Record>,
-    /// In offline mode, the number of records in the block of each
-    /// partition.
+    blocks: Vec<T>,
+    /// In offline mode, the number of items in the block of each partition.
     lens: Vec<u32>,
-    /// In offline mode, the length of the blocks, in records.
+    /// In offline mode, the length of the blocks, in items.
     block: usize,
-    /// Otherwise, the records of each partition.
-    parts: Vec<Vec<Record>>,
-    /// The number of records pushed.
+    /// Otherwise, the items of each partition.
+    parts: Vec<Vec<T>>,
+    /// The number of items pushed.
     len: usize,
 }
 
-impl Buffers<'_> {
-    /// Adds a record to the store.
+impl<T: Item> Buffers<'_, T> {
+    /// Adds an item to the store.
     #[inline(always)]
-    fn push(&mut self, r: Record) -> io::Result<()> {
-        let p = partition(self.writer.sig.sig(&r), self.writer.log2_partitions);
+    fn push(&mut self, item: T) -> io::Result<()> {
+        let p = partition(
+            self.writer.sig.sig(&item.record()),
+            self.writer.log2_partitions,
+        );
         if self.len == MAX_KEYS {
             return Err(io::Error::other("Too many keys for this platform"));
         }
         self.len += 1;
         if !self.offline {
-            self.parts[p].push(r);
+            self.parts[p].push(item);
             return Ok(());
         }
         let len = &mut self.lens[p];
-        self.blocks[p * self.block + *len as usize] = r;
+        self.blocks[p * self.block + *len as usize] = item;
         *len += 1;
         if *len as usize == self.block {
             self.flush(p)?;
@@ -375,7 +444,7 @@ impl Buffers<'_> {
         Ok(())
     }
 
-    /// Appends the records in the block of partition `p` to its file.
+    /// Appends the items in the block of partition `p` to its file.
     fn flush(&mut self, p: usize) -> io::Result<()> {
         let len = self.lens[p];
         let mut storage = self.writer.storage.lock().unwrap();
@@ -386,7 +455,7 @@ impl Buffers<'_> {
         files[f]
             .get_mut()
             .unwrap()
-            .write_all(self.blocks[p * self.block..][..len as usize].as_bytes())?;
+            .write_all(bytes(&self.blocks[p * self.block..][..len as usize]))?;
         blocks.blocks[p].push((blocks.lens[f], len));
         blocks.lens[f] += len as u64;
         self.lens[p] = 0;
@@ -405,12 +474,12 @@ impl Buffers<'_> {
         // The old buffers are freed first; the new ones are a zeroed
         // allocation (see StoreWriter::buffers)
         self.blocks = vec![];
-        self.blocks = vec![[0; 2]; self.lens.len() * self.block];
+        self.blocks = vec![T::new_zeroed(); self.lens.len() * self.block];
         Ok(())
     }
 
-    /// Moves the remaining records to the store, and returns the number of
-    /// records pushed.
+    /// Moves the remaining items to the store, and returns the number of
+    /// items pushed.
     fn finish(mut self) -> io::Result<usize> {
         if self.offline {
             for p in 0..self.lens.len() {
@@ -421,7 +490,7 @@ impl Buffers<'_> {
         } else {
             let mut storage = self.writer.storage.lock().unwrap();
             let Storage::Memory(partitions) = &mut *storage else {
-                unreachable!("records are moved only to memory")
+                unreachable!("items are moved only to memory")
             };
             for (partition, part) in partitions.iter_mut().zip(&mut self.parts) {
                 if partition.is_empty() {
@@ -445,9 +514,9 @@ impl Buffers<'_> {
 /// The keys of the first bucket of a part can thus have their signature in
 /// the previous part: they are passed by the loader of the previous part, if
 /// it was loaded just before, or found by reading it.
-struct Partitioned<'a> {
+struct Partitioned<'a, T = Record> {
     /// The records of the level.
-    store: &'a Store,
+    store: &'a Store<T>,
     /// The base-2 logarithm of the number of parts.
     log2_parts: u32,
     /// The first bucket of each part, followed by the number of buckets.
@@ -460,10 +529,10 @@ struct Partitioned<'a> {
     error: Mutex<Option<io::Error>>,
 }
 
-impl<'a> Partitioned<'a> {
+impl<'a, T: Item> Partitioned<'a, T> {
     /// Creates the parts of a level with the given geometry whose records
     /// are in `store`.
-    fn new(store: &'a Store, g: &Geometry) -> Self {
+    fn new(store: &'a Store<T>, g: &Geometry) -> Self {
         let mut log2_parts = store.log2_partitions;
         while log2_parts > 0 && g.buckets >> log2_parts < 2 * WINDOW {
             log2_parts -= 1;
@@ -491,10 +560,10 @@ impl<'a> Partitioned<'a> {
 
     /// Calls `f` on the signatures of the keys whose record is in partition
     /// `q` of the store, recording the first error.
-    fn read(&self, q: usize, records: &mut Vec<Record>, mut f: impl FnMut(u64)) {
+    fn read(&self, q: usize, items: &mut Vec<T>, mut f: impl FnMut(u64)) {
         let sig = self.store.sig;
-        if let Err(e) = self.store.for_each(q, records, |r| {
-            f(sig.sig(r));
+        if let Err(e) = self.store.for_each(q, items, |item| {
+            f(sig.sig(&item.record()));
             Ok(())
         }) {
             self.error.lock().unwrap().get_or_insert(e);
@@ -503,8 +572,7 @@ impl<'a> Partitioned<'a> {
 }
 
 /// The state of a loader of the parts of a [`Partitioned`] level.
-#[derive(Default)]
-struct Loader {
+struct Loader<T = Record> {
     /// The part following the last loaded one.
     next: Option<usize>,
     /// The signatures of the keys of the first bucket of part `next` found
@@ -512,12 +580,24 @@ struct Loader {
     carry: Vec<u64>,
     /// The signatures to distribute into buckets.
     sigs: Vec<u64>,
-    /// A buffer for reading records.
-    records: Vec<Record>,
+    /// A buffer for reading the items of the store.
+    records: Vec<T>,
 }
 
-impl PartSource for Partitioned<'_> {
-    type Loader = Loader;
+// Not derived, as the items need not have a default value
+impl<T> Default for Loader<T> {
+    fn default() -> Self {
+        Self {
+            next: None,
+            carry: vec![],
+            sigs: vec![],
+            records: vec![],
+        }
+    }
+}
+
+impl<T: Item> PartSource for Partitioned<'_, T> {
+    type Loader = Loader<T>;
 
     fn log2_min_buckets(&self) -> u32 {
         self.log2_min_buckets
@@ -538,7 +618,7 @@ impl PartSource for Partitioned<'_> {
 
     fn load(
         &self,
-        loader: &mut Loader,
+        loader: &mut Loader<T>,
         p: usize,
         g: &Geometry,
         range: Range<usize>,
@@ -610,7 +690,7 @@ impl Keys {
 /// Assigns seeds to the buckets of the level of index `index` whose records
 /// are in a store, logging its progress (see [`sweep_bumping_level`]).
 fn sweep_store<T: SweepSeed>(
-    store: &Store,
+    store: &Store<impl Item>,
     g: &Geometry,
     weights: &[i64; 7],
     index: usize,
@@ -627,7 +707,7 @@ fn sweep_store<T: SweepSeed>(
 /// Applies `f` to disjoint ranges of the partitions of a store, one for each
 /// thread, possibly in parallel, and returns the results in order.
 fn by_thread<T: Send>(
-    store: &Store,
+    store: &Store<impl Item>,
     f: impl Fn(Range<usize>) -> io::Result<T> + Sync,
 ) -> io::Result<Vec<T>> {
     let (np, threads) = (
@@ -652,7 +732,7 @@ fn by_thread<T: Send>(
 /// whose partition is in `range`, given the seeds of the buckets, updating
 /// `pl` with the number of records read.
 fn for_each_bumped<T: SweepSeed>(
-    store: &Store,
+    store: &Store<impl Item>,
     g: &Geometry,
     seeds: &[T],
     range: Range<usize>,
@@ -660,11 +740,12 @@ fn for_each_bumped<T: SweepSeed>(
     mut f: impl FnMut(&Record) -> io::Result<()>,
 ) -> io::Result<()> {
     let sig = store.sig;
-    let mut records = vec![];
+    let mut items = vec![];
     for p in range {
-        store.for_each(p, &mut records, |r| {
-            if seeds[g.bucket(sig.sig(r))].seed() == 0 {
-                f(r)?;
+        store.for_each(p, &mut items, |item| {
+            let r = item.record();
+            if seeds[g.bucket(sig.sig(&r))].seed() == 0 {
+                f(&r)?;
             }
             Ok(())
         })?;
@@ -679,7 +760,7 @@ fn for_each_bumped<T: SweepSeed>(
 /// one. The progress of the pass, in records read, is logged on a concurrent
 /// logger obtained from `pl`.
 fn collect_bumped<T: SweepSeed>(
-    store: &Store,
+    store: &Store<impl Item>,
     g: &Geometry,
     seeds: &[T],
     k: usize,
@@ -793,14 +874,14 @@ impl PHastRBuilder {
     /// the keys of the following level.
     fn first_level<T: SweepSeed>(
         &self,
-        store: Store,
+        store: &Store<impl Item>,
         geom: &Geometry,
         weights: &[i64; 7],
         n: usize,
         pl: &mut impl ProgressLog,
     ) -> Result<(Vec<T>, EliasFano<usize>, Keys)> {
         let SweptLevel { seeds, occupied } =
-            sweep_store(&store, geom, weights, 0, pl).context("Could not sweep level 0")?;
+            sweep_store(store, geom, weights, 0, pl).context("Could not sweep level 0")?;
         let num_holes = n - occupied.num_used();
         let mut efb = EliasFanoBuilder::new(num_holes, n);
         for_each_hole(0, &occupied, n, |p| efb.push(p));
@@ -808,7 +889,7 @@ impl PHastRBuilder {
         drop(occupied);
         log_level(0, n, num_holes, pl);
         let cur = collect_bumped(
-            &store,
+            store,
             geom,
             &seeds,
             num_holes,
@@ -820,13 +901,26 @@ impl PHastRBuilder {
         Ok((seeds, holes, cur))
     }
 
+    /// Starts logging the pass over the keys of a construction from a
+    /// lender; `what` describes what is computed and stored.
+    fn start_pass(&self, what: &str, dir: Option<&Path>, pl: &mut impl ProgressLog) {
+        pl.item_name("key");
+        pl.expected_updates(self.expected_num_keys);
+        match dir {
+            Some(dir) => pl.start_with(format_args!(
+                "Computing and storing {what} sequentially on disk ({}) using seed 0x{:016x}...",
+                dir.display(),
+                self.seed
+            )),
+            None => pl.start_with(format_args!(
+                "Computing and storing {what} sequentially in RAM using seed 0x{:016x}...",
+                self.seed
+            )),
+        }
+    }
+
     /// Builds a function on the keys returned by a lender (see
     /// [`build_levels`]).
-    ///
-    /// To save memory, the seeds of the first level are stored as soon as
-    /// the level is built, its free slots are kept in an Elias–Fano
-    /// sequence, and the remapping sequence is built at the end from the
-    /// sets of used slots of the following levels, which are small.
     ///
     /// [`build_levels`]: Self::build_levels
     fn build_levels_from_lender<
@@ -839,22 +933,8 @@ impl PHastRBuilder {
         + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
         pl: &mut impl ProgressLog,
     ) -> Result<PHastR<K, D>> {
-        let weights = self.priority_weights();
         let dir = self.offline_dir();
-
-        pl.item_name("key");
-        pl.expected_updates(self.expected_num_keys);
-        match &dir {
-            Some(dir) => pl.start_with(format_args!(
-                "Computing and storing 128-bit signatures sequentially on disk ({}) using seed 0x{:016x}...",
-                dir.display(),
-                self.seed
-            )),
-            None => pl.start_with(format_args!(
-                "Computing and storing 128-bit signatures sequentially in RAM using seed 0x{:016x}...",
-                self.seed
-            )),
-        }
+        self.start_pass("128-bit signatures", dir.as_deref(), pl);
         let start = Instant::now();
         let writer = StoreWriter::new(SigFn(None), MAX_LOG2_PARTITIONS, dir.as_deref())?;
         let mut buffers = writer.buffers();
@@ -874,21 +954,116 @@ impl PHastRBuilder {
         let store = writer.finish(n);
         pl.done();
         log_completion("Computation of signatures from inputs", start, n, pl);
+        Ok(self.build_levels_from_store(store, n, false, pl)?.0)
+    }
+
+    /// Builds a function on the keys returned by a lender, as
+    /// [`try_build_from_lender`] does, keeping a value for each key: returns
+    /// the function and, unless there are no keys, the values, from which
+    /// they can be written at the outputs of their keys (see
+    /// [`StoredValues::for_each`]).
+    ///
+    /// The two lenders are read just once, and they must return the same
+    /// number of items; `inspect` is called on each value, in order.
+    ///
+    /// The construction stores each value next to the record of its key, in
+    /// memory or, in offline mode, on disk, and it keeps the records and the
+    /// values until the returned [`StoredValues`] is dropped.
+    ///
+    /// [`try_build_from_lender`]: Self::try_build_from_lender
+    #[cfg(feature = "rayon")]
+    pub(crate) fn try_build_from_lender_with_values<
+        K: ?Sized + ToSig<[u64; 1]>,
+        D: SeedStoreBuild + MemSize + FlatType,
+        B: ?Sized + Borrow<K>,
+        V: BinSafe,
+    >(
+        &self,
+        mut keys: impl FallibleLender<Error: Error + Send + Sync + 'static>
+        + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
+        mut values: impl FallibleLender<Error: Error + Send + Sync + 'static>
+        + for<'lend> FallibleLending<'lend, Lend = &'lend V>,
+        mut inspect: impl FnMut(&V),
+        pl: &mut impl ProgressLog,
+    ) -> Result<(PHastR<K, D>, Option<StoredValues<V>>)> {
+        let mut stored = None;
+        let func = self.try_build(pl, |pl| {
+            let dir = self.offline_dir();
+            self.start_pass("128-bit signatures and values", dir.as_deref(), pl);
+            let start = Instant::now();
+            let writer =
+                StoreWriter::<WithValue<V>>::new(SigFn(None), MAX_LOG2_PARTITIONS, dir.as_deref())?;
+            let mut buffers = writer.buffers();
+            while let Some(key) = keys.next()? {
+                let Some(value) = values.next()? else {
+                    bail!(
+                        "The lender of the values returned fewer items than the lender of the keys"
+                    );
+                };
+                let key: &K = key.borrow();
+                buffers
+                    .push(WithValue {
+                        record: [
+                            K::to_sig(key, self.seed)[0],
+                            K::to_sig(key, self.seed ^ SECOND_HASH)[0],
+                        ],
+                        value: *value,
+                    })
+                    .context("Could not store the hashes and the values of the keys")?;
+                inspect(value);
+                pl.light_update();
+            }
+            if values.next()?.is_some() {
+                bail!("The lender of the values returned more items than the lender of the keys");
+            }
+            let n = buffers
+                .finish()
+                .context("Could not store the hashes and the values of the keys")?;
+            let store = writer.finish(n);
+            pl.done();
+            log_completion("Computation of signatures from inputs", start, n, pl);
+            let (func, store) = self.build_levels_from_store(store, n, true, pl)?;
+            stored = store.map(|store| StoredValues { store });
+            Ok(func)
+        })?;
+        Ok((func, stored))
+    }
+
+    /// Builds a function on `n` keys, given the store of their records;
+    /// returns also the store if `keep` is true and there are keys.
+    ///
+    /// To save memory, the seeds of the first level are stored as soon as
+    /// the level is built, its free slots are kept in an Elias–Fano
+    /// sequence, and the remapping sequence is built at the end from the
+    /// sets of used slots of the following levels, which are small. Unless
+    /// `keep` is true, the store is dropped as soon as the keys of the
+    /// second level have been collected.
+    fn build_levels_from_store<K: ?Sized, D: SeedStoreBuild, I: Item>(
+        &self,
+        store: Store<I>,
+        n: usize,
+        keep: bool,
+        pl: &mut impl ProgressLog,
+    ) -> Result<(PHastR<K, D>, Option<Store<I>>)> {
+        let weights = self.priority_weights();
+        let dir = self.offline_dir();
 
         if n == 0 {
-            return Ok(self.empty());
+            return Ok((self.empty(), None));
         }
 
         // The first level: with at most eight bits per seed, its sweep keeps
         // a byte per bucket, which storage of bytes takes without copying
         let geom = self.geometry(n, n, self.bucket_size);
         let (seeds0, holes, mut cur) = if self.seed_bits <= 8 {
-            let (seeds, holes, cur) = self.first_level::<u8>(store, &geom, &weights, n, pl)?;
+            let (seeds, holes, cur) = self.first_level::<u8>(&store, &geom, &weights, n, pl)?;
             (D::from_byte_seeds(seeds, self.seed_bits), holes, cur)
         } else {
-            let (seeds, holes, cur) = self.first_level::<u16>(store, &geom, &weights, n, pl)?;
+            let (seeds, holes, cur) = self.first_level::<u16>(&store, &geom, &weights, n, pl)?;
             (D::from_seeds(&seeds, self.seed_bits), holes, cur)
         };
+        // Dropped here, unless the caller needs it
+        let store = keep.then_some(store);
 
         // The following levels, as in build_levels
         let mut following = FollowingLevels::default();
@@ -946,7 +1121,58 @@ impl PHastRBuilder {
             cur = next;
         }
 
-        Ok(self.assemble(n, geom.level(), seeds0, holes.iter(), following))
+        Ok((
+            self.assemble(n, geom.level(), seeds0, holes.iter(), following),
+            store,
+        ))
+    }
+}
+
+/// The store of the first level of a function built from a lender, whose
+/// items contain, besides the record of a key, its value (see
+/// [`PHastRBuilder::try_build_from_lender_with_values`]).
+#[cfg(feature = "rayon")]
+pub(crate) struct StoredValues<V> {
+    store: Store<WithValue<V>>,
+}
+
+#[cfg(feature = "rayon")]
+impl<V: BinSafe> StoredValues<V> {
+    /// Calls `f` on the output and on the value of each key of `func`,
+    /// which must be the function built with these values, using a thread
+    /// for each range of partitions (see [`by_thread`]); the outputs of the
+    /// keys are distinct. The progress of the pass, in keys, is logged on a
+    /// concurrent logger obtained from `pl`.
+    pub(crate) fn for_each<
+        K: ?Sized + ToSig<[u64; 1]>,
+        D: SeedStore + Sync,
+        P: AsRef<[LevelParams]> + Sync,
+        R: SliceByValue<Value = usize> + Sync,
+    >(
+        &self,
+        func: &PHastR<K, D, P, R>,
+        f: impl Fn(usize, V) + Sync,
+        pl: &mut impl ProgressLog,
+    ) -> Result<()> {
+        let mut cpl = pl.concurrent();
+        cpl.item_name("key");
+        cpl.expected_updates(self.store.len);
+        cpl.start("Storing the values of the keys...");
+        by_thread(&self.store, |range| {
+            let (mut items, mut pl) = (vec![], cpl.clone());
+            for p in range {
+                self.store.for_each(p, &mut items, |item| {
+                    let r = item.record;
+                    f(func.get_by_hashes(r[0], r[1]), item.value);
+                    Ok(())
+                })?;
+                pl.update_with_count(self.store.partition_len(p));
+            }
+            Ok(())
+        })
+        .context("Could not read the records and the values of the keys")?;
+        cpl.done();
+        Ok(())
     }
 }
 

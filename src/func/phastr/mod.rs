@@ -636,6 +636,27 @@ impl<
         self.get_slow(h, K::to_sig(key, self.seed ^ SECOND_HASH)[0])
     }
 
+    /// Returns the value associated with a key, given its signature for
+    /// the first level and its second hash (i.e., `K::to_sig(key, self.seed)`
+    /// and `K::to_sig(key, self.seed ^ SECOND_HASH)`), as [`get`] does.
+    ///
+    /// Constructions from a lender keep these two hashes for each key, so
+    /// they can compute the output of a key without reading it again.
+    ///
+    /// [`get`]: Self::get
+    #[cfg(feature = "rayon")]
+    #[inline(always)]
+    pub(crate) fn get_by_hashes(&self, h: u64, second: u64) -> usize {
+        let p = h as u128 * self.params0.buckets as u128;
+        // SAFETY: the upper half of the product is smaller than the number
+        // of buckets, which is the number of seeds
+        let s = unsafe { self.seeds0.get_seed((p >> 64) as usize) };
+        if s != 0 {
+            return self.pos0(h, p as u64, s);
+        }
+        self.get_slow(h, second)
+    }
+
     /// Returns the values associated with a batch of keys, prefetching the
     /// seeds of the first level of all keys before computing the values
     /// (experimental).
