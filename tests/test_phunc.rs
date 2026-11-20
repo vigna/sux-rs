@@ -306,7 +306,9 @@ fn test_from_parts_refs() -> Result<()> {
     let keys: Vec<u64> = (0..10_000).collect();
     let phf = <PHastR<u64>>::try_par_new(&keys, no_logs![])?;
     let mut values = vec![0_u64; keys.len()];
-    let mut squares = BitFieldVec::<Box<[usize]>>::new_padded(40, keys.len());
+    // The largest square has 27 bits (the width must fit in a usize also on
+    // 32-bit platforms)
+    let mut squares = BitFieldVec::<Box<[usize]>>::new_padded(27, keys.len());
     for &key in &keys {
         let index = phf.index(&key);
         values[index] = value(key);
