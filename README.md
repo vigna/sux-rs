@@ -216,7 +216,7 @@ The crate provides binaries that build structures and serialize them with
 | `vfilter`    | a [`VFilter`]                                              | hashes of `--bits` bits                                   |
 | `lcp_mmphf`  | an [`LcpMmphf`] (an [`Lcp2Mmphf`] with `-2`)               | keys must be sorted; signed with `--hash-type`            |
 | `phastr`     | a [`PHastR`]                                               | signed with `--hash-type`                                 |
-| `phunc`      | a [`PHunc`] mapping each key to its index in the input     | the options of `phastr`, except for `--hash-type`         |
+| `phunc`      | a [`PHunc`] mapping each key to its index in the input     | as `phastr`, without `--hash-type`; values with `--bits`  |
 | `mem_usage`  | rank/select structures, printing their memory layout       | requires only the `clap` feature                          |
 
 Use `--help` to see the options of each binary. Input files are read as they
