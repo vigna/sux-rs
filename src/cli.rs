@@ -35,8 +35,8 @@ use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 
 use crate::bits::BitFieldVec;
-use crate::func::VBuilder;
 use crate::func::shard_edge::{MAX_LOCAL_SIG_FUNC_KEYS, ShardEdge};
+use crate::func::{PHastRBuilder, VBuilder};
 use crate::traits::TryIntoUnaligned;
 use crate::utils::Sig;
 pub use crate::utils::lenders::{AnyLineLender, Decompression};
@@ -348,6 +348,97 @@ fn short_type_name<T: ?Sized>() -> String {
         }
     }
     result
+}
+
+/// Options configuring a [`PHastRBuilder`], shared by the binaries building
+/// structures based on a `PHastR`.​
+#[derive(clap::Args, Debug)]
+pub struct PHastRArgs {
+    /// Keep the hashes of the keys (and their values, if any) in temporary
+    /// files in the directory given by --temp-dir (by default, the temporary
+    /// directory, TMPDIR), which needs about sixteen bytes of free space per
+    /// key, plus the size of a value. Requires --sequential (-s).​
+    #[arg(short, long, requires = "sequential")]
+    pub offline: bool,
+    /// The directory of the temporary files of --offline (-o) [default:
+    /// TMPDIR].​
+    #[arg(long, requires = "offline")]
+    pub temp_dir: Option<std::path::PathBuf>,
+    /// Use this number of threads [default: all available cores].​
+    #[arg(short, long)]
+    pub threads: Option<usize>,
+    /// The number of bits of a seed [default: 8]; seeds of more than 8 bits
+    /// are stored in a bit-field vector.​
+    #[arg(long)]
+    pub seed_bits: Option<u32>,
+    /// The base-2 logarithm of the number of layouts [default: 2].​
+    #[arg(long)]
+    pub log2_layouts: Option<u32>,
+    /// The base-2 logarithm of the slice length [default: 10].​
+    #[arg(long)]
+    pub log2_slice_len: Option<u32>,
+    /// The expected number of keys per bucket [default: 4.25].​
+    #[arg(long)]
+    pub bucket_size: Option<f64>,
+    /// A 64-bit seed for the hash function.​
+    #[arg(long)]
+    pub seed: Option<u64>,
+    /// The maximum number of chunks in which a level is swept in parallel
+    /// [default: the number of threads]; setting it makes the function
+    /// independent of the number of threads.​
+    #[arg(long)]
+    pub sweep_chunks: Option<usize>,
+}
+
+impl PHastRArgs {
+    /// Returns a [`PHastRBuilder`] configured by these options, given the
+    /// number of keys, if it is known.
+    pub fn builder(&self, n: Option<usize>) -> PHastRBuilder {
+        let mut builder = PHastRBuilder::default().offline(self.offline);
+        if let Some(seed_bits) = self.seed_bits {
+            builder = builder.seed_bits(seed_bits);
+        }
+        if let Some(log2_layouts) = self.log2_layouts {
+            builder = builder.log2_layouts(log2_layouts);
+        }
+        if let Some(log2_slice_len) = self.log2_slice_len {
+            builder = builder.log2_slice_len(log2_slice_len);
+        }
+        if let Some(bucket_size) = self.bucket_size {
+            builder = builder.bucket_size(bucket_size);
+        }
+        if let Some(seed) = self.seed {
+            builder = builder.seed(seed);
+        }
+        if let Some(temp_dir) = &self.temp_dir {
+            builder = builder.temp_dir(temp_dir);
+        }
+        if let Some(sweep_chunks) = self.sweep_chunks {
+            builder = builder.sweep_chunks(sweep_chunks);
+        }
+        if let Some(n) = n {
+            builder = builder.expected_num_keys(n);
+        }
+        builder
+    }
+
+    /// Returns whether seeds have more than 8 bits, in which case they are
+    /// stored in a bit-field vector, rather than in bytes.
+    pub fn wide_seeds(&self) -> bool {
+        self.seed_bits.is_some_and(|b| b > 8)
+    }
+
+    /// Runs `f` in a pool with the number of threads given by `--threads`,
+    /// if any, and in the current pool otherwise.
+    pub fn install<R: Send>(&self, f: impl FnOnce() -> Result<R> + Send) -> Result<R> {
+        match self.threads {
+            Some(threads) => rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()?
+                .install(f),
+            None => f(),
+        }
+    }
 }
 
 /// Hash types for signed functions.​

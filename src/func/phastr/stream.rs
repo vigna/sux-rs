@@ -107,6 +107,13 @@ impl<V: BinSafe> Item for WithValue<V> {
     }
 }
 
+/// Returns a vector of `len` zeroed items of a [`Store`] in a single zeroed
+/// allocation, so that pages are allocated only when used, and returned to
+/// the system when dropped (`vec!` does that just for some types).
+fn zeroed<T: Item>(len: usize) -> Vec<T> {
+    T::new_vec_zeroed(len).expect("Could not allocate the buffers of a store")
+}
+
 /// Returns the bytes of a slice of items of a [`Store`].
 fn bytes<T: Item>(items: &[T]) -> &[u8] {
     // SAFETY: the items have no padding, as they implement IntoBytes, and no
@@ -119,8 +126,9 @@ fn bytes<T: Item>(items: &[T]) -> &[u8] {
 /// The base-2 logarithm of the maximum number of partitions of a store,
 /// which is the number of partitions of the first level (whose number of
 /// keys is not known in advance): in offline mode, with blocks of [`BLOCK`]
-/// records, the buffers of a writer take 256 MiB, and partitions are small
-/// enough to be loaded quickly by a sweep up to about 10¹¹ keys.
+/// records, the buffers of a writer take 256 MiB (more, if the items of the
+/// store contain also a value), and partitions are small enough to be loaded
+/// quickly by a sweep up to about 10¹¹ keys.
 #[cfg(not(test))]
 const MAX_LOG2_PARTITIONS: u32 = 14;
 #[cfg(test)]
@@ -143,7 +151,8 @@ const MAX_BLOCK: usize = 64;
 /// partition: on huge key sets blocks become large, so that reading a
 /// partition from a disk requires few seeks, whereas the memory used by the
 /// buffers, a block for each partition, is at most a sixteenth of a byte
-/// per record written, besides the initial blocks.
+/// per record written, besides the initial blocks (in proportion more, if
+/// the items of the store contain also a value).
 #[cfg(not(test))]
 const GROWTH: usize = 512;
 #[cfg(test)]
@@ -362,10 +371,9 @@ impl<T: Item> StoreWriter<T> {
         Buffers {
             writer: self,
             offline,
-            // A single zeroed allocation, so that pages are allocated only
-            // when used, and returned to the system when dropped
+            // A single zeroed allocation (see zeroed)
             blocks: if offline {
-                vec![T::new_zeroed(); partitions * BLOCK]
+                zeroed(partitions * BLOCK)
             } else {
                 vec![]
             },
@@ -472,9 +480,9 @@ impl<T: Item> Buffers<'_, T> {
         }
         self.block *= 2;
         // The old buffers are freed first; the new ones are a zeroed
-        // allocation (see StoreWriter::buffers)
+        // allocation (see zeroed)
         self.blocks = vec![];
-        self.blocks = vec![T::new_zeroed(); self.lens.len() * self.block];
+        self.blocks = zeroed(self.lens.len() * self.block);
         Ok(())
     }
 
@@ -965,14 +973,15 @@ impl PHastRBuilder {
     ///
     /// The two lenders are read just once; the lender of the values can
     /// return more values than there are keys (the extra values are ignored),
-    /// as in the constructors of [`VFunc`](crate::func::VFunc), but not
-    /// fewer. The function `inspect` is called on each value used, in order.
+    /// as in the constructors of [`VFunc`], but not fewer. The function
+    /// `inspect` is called on each value used, in order.
     ///
     /// The construction stores each value next to the record of its key, in
     /// memory or, in offline mode, on disk, and it keeps the records and the
     /// values until the returned [`StoredValues`] is dropped.
     ///
     /// [`try_build_from_lender`]: Self::try_build_from_lender
+    /// [`VFunc`]: crate::func::VFunc
     #[cfg(feature = "rayon")]
     pub(crate) fn try_build_from_lender_with_values<
         K: ?Sized + ToSig<[u64; 1]>,

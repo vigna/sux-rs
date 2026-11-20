@@ -10,9 +10,8 @@
 use std::borrow::Borrow;
 
 use mem_dbg::*;
-use value_traits::slices::SliceByValue;
-
 use num_primitive::PrimitiveInteger;
+use value_traits::slices::SliceByValue;
 
 use crate::func::lcp_mmphf::{BitPrefix, IntBitPrefix};
 use crate::func::phastr::{LevelParams, Remap, SeedStore, SeedStoreBuild};
@@ -114,8 +113,8 @@ pub unsafe trait Mphf {
 /// with [unaligned reads].
 ///
 /// Instances of this structure are immutable; they are built using the
-/// constructors listed below, or assembled using [`from_parts`], and can be
-/// serialized using [ε-serde] or [`serde`].
+/// [constructors] listed below, or assembled using [`from_parts`], and can
+/// be serialized using [ε-serde] or [`serde`].
 ///
 /// The `phunc` binary (`cli` feature) builds and serializes instances of
 /// this structure.
@@ -148,14 +147,14 @@ pub unsafe trait Mphf {
 /// the `rayon` feature.
 ///
 /// To build a function from a slice of keys and a slice of values, use
-/// `try_par_new`, which is parallel in all its phases; to read keys and
-/// values from two [lenders] (for example, from files), use `try_new`,
+/// [`try_par_new`], which is parallel in all its phases; to read keys and
+/// values from two [lenders] (for example, from files), use [`try_new`],
 /// which reads them just once: values are kept next to the signatures of
 /// their keys, in memory or, in [offline mode], on disk, and they are
 /// written into the array in parallel after the minimal perfect hash
 /// function has been built, without reading the keys again. The variants
-/// `try_par_new_with_builder` and `try_new_with_builder` make it possible
-/// to configure the construction of the [`PHastR`] using a
+/// [`try_par_new_with_builder`] and [`try_new_with_builder`] make it
+/// possible to configure the construction of the [`PHastR`] using a
 /// [`PHastRBuilder`]. The memory used by the construction is that
 /// [used by `PHastR`], plus the array of values; construction from lenders
 /// stores in addition a copy of the values, in memory or on disk.
@@ -180,8 +179,11 @@ pub unsafe trait Mphf {
 /// let values: Vec<usize> = (0..10_000).map(|i| i * 3).collect();
 ///
 /// // Values in a boxed slice
-/// let func =
-///     <PHunc<PHastR<str>, Box<[usize]>>>::try_par_new(&keys, &values, no_logs![])?;
+/// let func = <PHunc<PHastR<str>, Box<[usize]>>>::try_par_new(
+///     &keys,
+///     &values,
+///     no_logs![],
+/// )?;
 /// for (key, &value) in keys.iter().zip(&values) {
 ///     assert_eq!(func.get(key.as_str()), value);
 /// }
@@ -211,6 +213,11 @@ pub unsafe trait Mphf {
 /// [`from_parts`]: PHunc::from_parts
 /// [`index`]: PHunc::index
 /// [`get_with_index`]: PHunc::get_with_index
+/// [constructors]: PHunc#construction
+/// [`try_new`]: PHunc::try_new
+/// [`try_new_with_builder`]: PHunc::try_new_with_builder
+/// [`try_par_new`]: PHunc::try_par_new
+/// [`try_par_new_with_builder`]: PHunc::try_par_new_with_builder
 /// [ε-serde]: https://crates.io/crates/epserde
 /// [`serde`]: https://crates.io/crates/serde
 /// [lenders]: crate::utils::lenders
@@ -222,10 +229,10 @@ pub unsafe trait Mphf {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PHunc<F, D> {
     /// The minimal perfect hash function.
-    func: F,
+    mphf: F,
     /// The values, indexed by the outputs of the keys; if there are no keys,
     /// a single value, which is what queries return.
-    data: D,
+    values: D,
 }
 
 impl<F: Mphf, D: SliceByValue> PHunc<F, D> {
@@ -271,13 +278,13 @@ impl<F: Mphf, D: SliceByValue> PHunc<F, D> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn from_parts(func: F, data: D) -> Self {
+    pub fn from_parts(mphf: F, values: D) -> Self {
         assert_eq!(
-            data.len(),
-            func.len().max(1),
+            values.len(),
+            mphf.len().max(1),
             "the number of values must be the number of keys (one, if there are no keys)"
         );
-        Self { func, data }
+        Self { mphf, values }
     }
 
     /// Returns the value associated with the given key.
@@ -287,7 +294,7 @@ impl<F: Mphf, D: SliceByValue> PHunc<F, D> {
     #[inline(always)]
     pub fn get(&self, key: impl Borrow<F::Key>) -> D::Value {
         // SAFETY: see index
-        unsafe { self.data.get_value_unchecked(self.index(key)) }
+        unsafe { self.values.get_value_unchecked(self.index(key)) }
     }
 
     /// Returns the position of the value of the given key, that is, the
@@ -305,16 +312,15 @@ impl<F: Mphf, D: SliceByValue> PHunc<F, D> {
     /// [clamp its output]: Mphf::CLAMPED
     #[inline(always)]
     pub fn index(&self, key: impl Borrow<F::Key>) -> usize {
-        let index = self.func.index(key.borrow());
-        // The test is on a constant: functions that clamp their output pay
-        // nothing. Otherwise, the index is smaller than the number of keys,
-        // or zero if there are no keys, by the contract of Mphf or because
-        // we clamp it: there are as many values as keys, or one if there
-        // are no keys.
+        let index = self.mphf.index(key.borrow());
+        // The test is on a constant, so functions that clamp their output
+        // pay nothing. In both cases the result is smaller than the number
+        // of values (which is the number of keys, or one if there are no
+        // keys): by the contract of Mphf, or because we clamp it.
         if F::CLAMPED {
             index
         } else {
-            index.min(self.data.len() - 1)
+            index.min(self.values.len() - 1)
         }
     }
 
@@ -327,24 +333,24 @@ impl<F: Mphf, D: SliceByValue> PHunc<F, D> {
     pub fn get_with_index(&self, key: impl Borrow<F::Key>) -> (usize, D::Value) {
         let index = self.index(key);
         // SAFETY: see index
-        (index, unsafe { self.data.get_value_unchecked(index) })
+        (index, unsafe { self.values.get_value_unchecked(index) })
     }
 
     /// Returns the number of keys.
     pub fn len(&self) -> usize {
-        self.func.len()
+        self.mphf.len()
     }
 
     /// Returns whether the function has no keys.
     pub fn is_empty(&self) -> bool {
-        self.func.is_empty()
+        self.mphf.is_empty()
     }
 }
 
 impl<F, D> PHunc<F, D> {
     /// Returns a reference to the minimal perfect hash function.
     pub const fn mphf(&self) -> &F {
-        &self.func
+        &self.mphf
     }
 
     /// Returns a reference to the array of values, which are indexed by
@@ -352,12 +358,12 @@ impl<F, D> PHunc<F, D> {
     ///
     /// [`index`]: Self::index
     pub const fn values(&self) -> &D {
-        &self.data
+        &self.values
     }
 
     /// Returns the minimal perfect hash function and the array of values.
     pub fn into_parts(self) -> (F, D) {
-        (self.func, self.data)
+        (self.mphf, self.values)
     }
 }
 
@@ -520,29 +526,45 @@ where
     }
 }
 
-impl<F: TryIntoUnaligned, D: TryIntoUnaligned> TryIntoUnaligned for PHunc<F, D> {
+impl<F: TryIntoUnaligned<Unaligned: Mphf>, D: TryIntoUnaligned<Unaligned: SliceByValue>>
+    TryIntoUnaligned for PHunc<F, D>
+{
     type Unaligned = PHunc<F::Unaligned, D::Unaligned>;
 
+    /// Converts the two parts.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the converted parts have a different number of keys and
+    /// values (see [`from_parts`]): the conversions are safe code, but
+    /// queries access the values without bounds checks.
+    ///
+    /// [`from_parts`]: PHunc::from_parts
     fn try_into_unaligned(self) -> Result<Self::Unaligned, UnalignedConversionError> {
-        Ok(PHunc {
-            func: self.func.try_into_unaligned()?,
-            data: self.data.try_into_unaligned()?,
-        })
+        Ok(PHunc::from_parts(
+            self.mphf.try_into_unaligned()?,
+            self.values.try_into_unaligned()?,
+        ))
     }
 }
 
 impl<
-    K: ?Sized,
-    S: SeedStoreBuild + TryIntoUnaligned + From<Unaligned<S>>,
-    P,
-    D: TryIntoUnaligned + From<Unaligned<D>>,
+    K: ?Sized + ToSig<[u64; 1]>,
+    S: SeedStoreBuild + TryIntoUnaligned<Unaligned: SeedStore> + From<Unaligned<S>>,
+    P: AsRef<[LevelParams]>,
+    D: SliceByValue + TryIntoUnaligned<Unaligned: SliceByValue> + From<Unaligned<D>>,
 > From<Unaligned<PHunc<PHastR<K, S, P, Remap>, D>>> for PHunc<PHastR<K, S, P, Remap>, D>
 {
+    /// Converts the two parts.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the converted parts have a different number of keys and
+    /// values (see [`from_parts`]).
+    ///
+    /// [`from_parts`]: PHunc::from_parts
     fn from(f: Unaligned<PHunc<PHastR<K, S, P, Remap>, D>>) -> Self {
-        PHunc {
-            func: f.func.into(),
-            data: f.data.into(),
-        }
+        PHunc::from_parts(f.mphf.into(), f.values.into())
     }
 }
 
@@ -585,13 +607,16 @@ mod build {
         pl.start("Storing the values of the keys...");
         keys.par_iter()
             .zip(values)
+            .with_min_len(crate::RAYON_MIN_LEN)
             .for_each(|(key, &value)| set(func.get(key.borrow()), value));
         pl.update_with_count(keys.len());
         pl.done();
     }
 
     /// Logs the maximum value and the bit width of the values of a function
-    /// with `n` keys, in the format used by [`VFunc`](crate::func::VFunc).
+    /// with `n` keys, in the format used by [`VFunc`].
+    ///
+    /// [`VFunc`]: crate::func::VFunc
     fn log_values<W: Word>(n: usize, max: W, pl: &mut impl ProgressLog) {
         pl.info(format_args!("Max value: {}", max));
         pl.info(format_args!(
@@ -614,7 +639,9 @@ mod build {
         pl: &mut impl ProgressLog,
     ) {
         let n = func.len().max(1) as f64;
-        let bits = ((func.mem_size(SizeFlags::default()) + data_bytes) * 8) as f64 / n;
+        // In floating point, as the number of bits can overflow on 32-bit
+        // platforms
+        let bits = (func.mem_size(SizeFlags::default()) + data_bytes) as f64 * 8.0 / n;
         match bit_width {
             Some(bit_width) => pl.info(format_args!(
                 "Bits/key: {:.3} ({:+.3}% with respect to bit width)",
@@ -664,7 +691,7 @@ mod build {
         /// # Errors
         ///
         /// Returns an error if there are duplicate keys, if there are
-        /// fewer values than keys ([`MismatchedKeysAndValues`](crate::func::BuildError::MismatchedKeysAndValues)), if a lender
+        /// fewer values than keys ([`MismatchedKeysAndValues`]), if a lender
         /// returns an error, or if there are too many keys for the platform.
         ///
         /// # Examples
@@ -689,6 +716,7 @@ mod build {
         /// ```
         ///
         /// [`lenders`]: crate::utils::lenders
+        /// [`MismatchedKeysAndValues`]: crate::func::BuildError::MismatchedKeysAndValues
         pub fn try_new<B: ?Sized + Borrow<K>>(
             keys: impl FallibleLender<Error: Error + Send + Sync + 'static>
             + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
@@ -737,8 +765,8 @@ mod build {
             }
             log_summary(&func, size_of_val(&*data), None, start, pl);
             Ok(PHunc {
-                func,
-                data: data.into_boxed_slice(),
+                mphf: func,
+                values: data.into_boxed_slice(),
             })
         }
 
@@ -755,7 +783,7 @@ mod build {
         /// # Errors
         ///
         /// Returns an error if there are duplicate keys, if the two slices
-        /// have different lengths ([`MismatchedKeysAndValues`](crate::func::BuildError::MismatchedKeysAndValues)), or if
+        /// have different lengths ([`MismatchedKeysAndValues`]), or if
         /// there are too many keys for the platform.
         ///
         /// # Examples
@@ -769,8 +797,11 @@ mod build {
         /// let values: Vec<[u8; 3]> = (0..10_000_u32)
         ///     .map(|i| [i as u8, (i >> 8) as u8, 7])
         ///     .collect();
-        /// let func =
-        ///     <PHunc<PHastR<u64>, Box<[[u8; 3]]>>>::try_par_new(&keys, &values, no_logs![])?;
+        /// let func = <PHunc<PHastR<u64>, Box<[[u8; 3]]>>>::try_par_new(
+        ///     &keys,
+        ///     &values,
+        ///     no_logs![],
+        /// )?;
         ///
         /// for (key, &value) in keys.iter().zip(&values) {
         ///     assert_eq!(func.get(key), value);
@@ -778,6 +809,8 @@ mod build {
         /// # Ok(())
         /// # }
         /// ```
+        ///
+        /// [`MismatchedKeysAndValues`]: crate::func::BuildError::MismatchedKeysAndValues
         pub fn try_par_new(
             keys: &[impl Borrow<K> + Sync],
             values: &[V],
@@ -824,8 +857,8 @@ mod build {
             );
             log_summary(&func, size_of_val(&*data), None, start, pl);
             Ok(PHunc {
-                func,
-                data: data.into_boxed_slice(),
+                mphf: func,
+                values: data.into_boxed_slice(),
             })
         }
     }
@@ -865,7 +898,7 @@ mod build {
         /// # Errors
         ///
         /// Returns an error if there are duplicate keys, if there are
-        /// fewer values than keys ([`MismatchedKeysAndValues`](crate::func::BuildError::MismatchedKeysAndValues)), if a lender
+        /// fewer values than keys ([`MismatchedKeysAndValues`]), if a lender
         /// returns an error, or if there are too many keys for the platform.
         ///
         /// # Examples
@@ -892,6 +925,7 @@ mod build {
         /// ```
         ///
         /// [`lenders`]: crate::utils::lenders
+        /// [`MismatchedKeysAndValues`]: crate::func::BuildError::MismatchedKeysAndValues
         pub fn try_new<B: ?Sized + Borrow<K>>(
             keys: impl FallibleLender<Error: Error + Send + Sync + 'static>
             + for<'lend> FallibleLending<'lend, Lend = &'lend B>,
@@ -952,7 +986,10 @@ mod build {
                 start,
                 pl,
             );
-            Ok(PHunc { func, data })
+            Ok(PHunc {
+                mphf: func,
+                values: data,
+            })
         }
 
         /// Builds a [`PHunc`] based on a [`PHastR`], with values stored in
@@ -968,7 +1005,7 @@ mod build {
         /// # Errors
         ///
         /// Returns an error if there are duplicate keys, if the two slices
-        /// have different lengths ([`MismatchedKeysAndValues`](crate::func::BuildError::MismatchedKeysAndValues)), or if
+        /// have different lengths ([`MismatchedKeysAndValues`]), or if
         /// there are too many keys for the platform.
         ///
         /// # Examples
@@ -996,6 +1033,8 @@ mod build {
         /// # Ok(())
         /// # }
         /// ```
+        ///
+        /// [`MismatchedKeysAndValues`]: crate::func::BuildError::MismatchedKeysAndValues
         pub fn try_par_new(
             keys: &[impl Borrow<K> + Sync],
             values: &[W],
@@ -1030,7 +1069,12 @@ mod build {
             check_num_values(keys.len(), values.len())?;
             let start = Instant::now();
             let func = <PHastR<K, S>>::try_par_new_with_builder(keys, builder, pl)?;
-            let max = values.par_iter().copied().max().unwrap_or(W::ZERO);
+            let max = values
+                .par_iter()
+                .with_min_len(crate::RAYON_MIN_LEN)
+                .copied()
+                .max()
+                .unwrap_or(W::ZERO);
             log_values(func.len(), max, pl);
             let data = par_fill_hashes::<W>(max.bit_len() as usize, func.len().max(1), |data| {
                 // The outputs of the keys are distinct, but the fields of
@@ -1050,7 +1094,10 @@ mod build {
                 start,
                 pl,
             );
-            Ok(PHunc { func, data })
+            Ok(PHunc {
+                mphf: func,
+                values: data,
+            })
         }
     }
 }
@@ -1094,7 +1141,7 @@ mod tests {
         assert_eq!(func.len(), n);
         for (key, &value) in keys.iter().zip(&values) {
             assert_eq!(func.get(key), value, "key {key} of {n}");
-            assert_eq!(func.func.get(key), plain.get(key), "key {key} of {n}");
+            assert_eq!(func.mphf.get(key), plain.get(key), "key {key} of {n}");
         }
 
         // Items of one byte
@@ -1133,7 +1180,7 @@ mod tests {
             no_logs![],
         )?;
         assert_eq!(
-            func.data.bit_width(),
+            func.values.bit_width(),
             values.iter().copied().max().unwrap_or(0).bit_len() as usize
         );
         for (key, &value) in keys.iter().zip(&values) {
@@ -1178,7 +1225,7 @@ mod tests {
             FromSlice::new(&values),
             no_logs![],
         )?;
-        assert_eq!(func.data.bit_width(), 1);
+        assert_eq!(func.values.bit_width(), 1);
         for key in &keys {
             assert_eq!(func.get(key), 0);
         }

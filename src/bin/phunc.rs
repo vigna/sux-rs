@@ -10,7 +10,9 @@ use epserde::ser::Serialize;
 use lender::FallibleLender;
 use mem_dbg::{FlatType, MemSize};
 use sux::bits::BitFieldVec;
-use sux::cli::{AnyLineLender, Decompression, KeyBuffer, check_num_keys, init_env_logger, store};
+use sux::cli::{
+    AnyLineLender, Decompression, KeyBuffer, PHastRArgs, check_num_keys, init_env_logger, store,
+};
 use sux::func::phastr::SeedStoreBuild;
 use sux::func::{PHastR, PHastRBuilder, PHunc};
 use sux::traits::TryIntoUnaligned;
@@ -46,40 +48,8 @@ struct Args {
     /// Hashes keys sequentially without loading them in RAM.​
     #[arg(short, long)]
     sequential: bool,
-    /// Keep the hashes of the keys and their values in temporary files in
-    /// the directory given by --temp-dir (by default, the temporary
-    /// directory, TMPDIR), which needs about twenty-four bytes of free space
-    /// per key. Requires --sequential (-s).​
-    #[arg(short, long, requires = "sequential")]
-    offline: bool,
-    /// The directory of the temporary files of --offline (-o) [default:
-    /// TMPDIR].​
-    #[arg(long, requires = "offline")]
-    temp_dir: Option<std::path::PathBuf>,
-    /// Use this number of threads [default: all available cores].​
-    #[arg(short, long)]
-    threads: Option<usize>,
-    /// The number of bits of a seed [default: 8]; seeds of more than 8 bits
-    /// are stored in a bit-field vector.​
-    #[arg(long)]
-    seed_bits: Option<u32>,
-    /// The base-2 logarithm of the number of layouts [default: 2].​
-    #[arg(long)]
-    log2_layouts: Option<u32>,
-    /// The base-2 logarithm of the slice length [default: 10].​
-    #[arg(long)]
-    log2_slice_len: Option<u32>,
-    /// The expected number of keys per bucket [default: 4.25].​
-    #[arg(long)]
-    bucket_size: Option<f64>,
-    /// A 64-bit seed for the hash function.​
-    #[arg(long)]
-    seed: Option<u64>,
-    /// The maximum number of chunks in which a level is swept in parallel
-    /// [default: the number of threads]; setting it makes the function
-    /// independent of the number of threads.​
-    #[arg(long)]
-    sweep_chunks: Option<usize>,
+    #[clap(flatten)]
+    phastr: PHastRArgs,
     #[clap(flatten)]
     log: sux::cli::LogIntervalArg,
 }
@@ -92,48 +62,18 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let mut builder = PHastRBuilder::default().offline(args.offline);
-    if let Some(seed_bits) = args.seed_bits {
-        builder = builder.seed_bits(seed_bits);
-    }
-    if let Some(log2_layouts) = args.log2_layouts {
-        builder = builder.log2_layouts(log2_layouts);
-    }
-    if let Some(log2_slice_len) = args.log2_slice_len {
-        builder = builder.log2_slice_len(log2_slice_len);
-    }
-    if let Some(bucket_size) = args.bucket_size {
-        builder = builder.bucket_size(bucket_size);
-    }
-    if let Some(seed) = args.seed {
-        builder = builder.seed(seed);
-    }
-    if let Some(temp_dir) = &args.temp_dir {
-        builder = builder.temp_dir(temp_dir);
-    }
-    if let Some(sweep_chunks) = args.sweep_chunks {
-        builder = builder.sweep_chunks(sweep_chunks);
-    }
-    if let Some(n) = args.n {
-        builder = builder.expected_num_keys(n);
-    }
+    let builder = args.phastr.builder(args.n);
 
     // The default number of bits of a seed is at most 8, so seeds are
     // stored in bytes unless more bits are requested
     let build = || {
-        if args.seed_bits.is_some_and(|b| b > 8) {
+        if args.phastr.wide_seeds() {
             build::<BitFieldVec<Box<[usize]>>>(&args, builder.clone())
         } else {
             build::<Box<[u8]>>(&args, builder.clone())
         }
     };
-    match args.threads {
-        Some(threads) => rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .build()?
-            .install(build),
-        None => build(),
-    }
+    args.phastr.install(build)
 }
 
 /// Builds a function with seeds stored in `D`.

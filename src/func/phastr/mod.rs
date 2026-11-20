@@ -651,6 +651,8 @@ impl<
     #[cfg(feature = "rayon")]
     #[inline(always)]
     pub(crate) fn get_by_hashes(&self, h: u64, second: u64) -> usize {
+        // This is the body of get_by_sig, with the second hash already
+        // computed (see the comment in get)
         let p = h as u128 * self.params0.buckets as u128;
         // SAFETY: the upper half of the product is smaller than the number
         // of buckets, which is the number of seeds
