@@ -1171,19 +1171,62 @@ impl<V: BinSafe> StoredValues<V> {
         cpl.expected_updates(self.store.len);
         cpl.start("Storing the values of the keys...");
         by_thread(&self.store, |range| {
-            let (mut items, mut pl) = (vec![], cpl.clone());
-            for p in range {
-                self.store.for_each(p, &mut items, |item| {
-                    let r = item.record;
-                    f(func.get_by_hashes(r[0], r[1]), item.value);
-                    Ok(())
-                })?;
-                pl.update_with_count(self.store.partition_len(p));
-            }
-            Ok(())
+            self.visit(func, range, &mut |i, v| f(i, v), &mut cpl.clone())
         })
         .context("Could not read the records and the values of the keys")?;
         cpl.done();
+        Ok(())
+    }
+
+    /// Calls `f` on the output and on the value of each key of `func`, as
+    /// [`for_each`] does, but using only the current thread, so that `f`
+    /// can modify its state.
+    ///
+    /// [`for_each`]: Self::for_each
+    pub(crate) fn for_each_seq<
+        K: ?Sized + ToSig<[u64; 1]>,
+        D: SeedStore,
+        P: AsRef<[LevelParams]>,
+        R: SliceByValue<Value = usize>,
+    >(
+        &self,
+        func: &PHastR<K, D, P, R>,
+        mut f: impl FnMut(usize, V),
+        pl: &mut impl ProgressLog,
+    ) -> Result<()> {
+        pl.item_name("key");
+        pl.expected_updates(self.store.len);
+        pl.start("Storing the values of the keys...");
+        self.visit(func, 0..self.store.num_partitions(), &mut f, pl)
+            .context("Could not read the records and the values of the keys")?;
+        pl.done();
+        Ok(())
+    }
+
+    /// Calls `f` on the output and on the value of each key of `func` whose
+    /// record is in a partition in `range`, updating `pl` with the number of
+    /// keys.
+    fn visit<
+        K: ?Sized + ToSig<[u64; 1]>,
+        D: SeedStore,
+        P: AsRef<[LevelParams]>,
+        R: SliceByValue<Value = usize>,
+    >(
+        &self,
+        func: &PHastR<K, D, P, R>,
+        range: Range<usize>,
+        f: &mut impl FnMut(usize, V),
+        pl: &mut impl ProgressLog,
+    ) -> io::Result<()> {
+        let mut items = vec![];
+        for p in range {
+            self.store.for_each(p, &mut items, |item| {
+                let r = item.record;
+                f(func.get_by_hashes(r[0], r[1]), item.value);
+                Ok(())
+            })?;
+            pl.update_with_count(self.store.partition_len(p));
+        }
         Ok(())
     }
 }

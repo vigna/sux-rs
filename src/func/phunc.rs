@@ -590,6 +590,38 @@ mod build {
     use std::sync::atomic::Ordering;
     use std::time::Instant;
     use sync_cell_slice::SyncSlice;
+    use value_traits::slices::SliceByValueMut;
+
+    /// Returns whether the values of `len` keys are written into a
+    /// bit-field vector in parallel.
+    ///
+    /// In parallel, values must be written atomically, as the fields of
+    /// distinct outputs may share a word; atomic operations, however,
+    /// prevent the processor from overlapping the cache misses of random
+    /// writes, so with a single thread, or a few keys, we write the values
+    /// sequentially with plain writes.
+    fn parallel(len: usize) -> bool {
+        len >= crate::RAYON_MIN_LEN && rayon::current_num_threads() > 1
+    }
+
+    /// Passes to `set` the output and the value of each key, sequentially.
+    fn store<K: ?Sized + ToSig<[u64; 1]>, S: SeedStore, V: Copy>(
+        func: &PHastR<K, S>,
+        keys: &[impl Borrow<K>],
+        values: &[V],
+        mut set: impl FnMut(usize, V),
+        pl: &mut impl ProgressLog,
+    ) {
+        debug_assert_eq!(keys.len(), values.len());
+        pl.item_name("key");
+        pl.expected_updates(Some(keys.len()));
+        pl.start("Storing the values of the keys...");
+        for (key, &value) in keys.iter().zip(values) {
+            set(func.get(key.borrow()), value);
+        }
+        pl.update_with_count(keys.len());
+        pl.done();
+    }
 
     /// Passes to `set` the output and the value of each key, in parallel;
     /// the outputs of the keys are distinct, so `set` can write them
@@ -968,17 +1000,36 @@ mod build {
                 pl,
             )?;
             log_values(func.len(), max, pl);
-            let mut result = Ok(());
-            let data = par_fill_hashes::<W>(max.bit_len() as usize, func.len().max(1), |data| {
-                if let Some(stored) = &stored {
-                    // The outputs of the keys are distinct, but the fields
-                    // of different outputs may share a word: we write
-                    // atomically
-                    result =
-                        stored.for_each(&func, |i, v| data.set_atomic(i, v, Ordering::Relaxed), pl);
+            let (bit_width, len) = (max.bit_len() as usize, func.len().max(1));
+            let data = match &stored {
+                None => BitFieldVec::new_padded(bit_width, len),
+                Some(stored) if !parallel(len) => {
+                    let mut data = BitFieldVec::<Box<[W]>>::new_padded(bit_width, len);
+                    // SAFETY: the outputs are smaller than the number of
+                    // keys, and the values fit in the bit width
+                    stored.for_each_seq(
+                        &func,
+                        |i, v| unsafe { data.set_value_unchecked(i, v) },
+                        pl,
+                    )?;
+                    data
                 }
-            });
-            result?;
+                Some(stored) => {
+                    let mut result = Ok(());
+                    let data = par_fill_hashes::<W>(bit_width, len, |data| {
+                        // The outputs of the keys are distinct, but the
+                        // fields of different outputs may share a word: we
+                        // write atomically
+                        result = stored.for_each(
+                            &func,
+                            |i, v| data.set_atomic(i, v, Ordering::Relaxed),
+                            pl,
+                        );
+                    });
+                    result?;
+                    data
+                }
+            };
             log_summary(
                 &func,
                 size_of_val(data.as_slice()),
@@ -1076,17 +1127,33 @@ mod build {
                 .max()
                 .unwrap_or(W::ZERO);
             log_values(func.len(), max, pl);
-            let data = par_fill_hashes::<W>(max.bit_len() as usize, func.len().max(1), |data| {
-                // The outputs of the keys are distinct, but the fields of
-                // different outputs may share a word: we write atomically
-                par_store(
+            let (bit_width, len) = (max.bit_len() as usize, func.len().max(1));
+            let data = if parallel(len) {
+                par_fill_hashes::<W>(bit_width, len, |data| {
+                    // The outputs of the keys are distinct, but the fields
+                    // of different outputs may share a word: we write
+                    // atomically
+                    par_store(
+                        &func,
+                        keys,
+                        values,
+                        |i, v| data.set_atomic(i, v, Ordering::Relaxed),
+                        pl,
+                    );
+                })
+            } else {
+                let mut data = BitFieldVec::<Box<[W]>>::new_padded(bit_width, len);
+                // SAFETY: the outputs are smaller than the number of keys,
+                // and the values fit in the bit width
+                store(
                     &func,
                     keys,
                     values,
-                    |i, v| data.set_atomic(i, v, Ordering::Relaxed),
+                    |i, v| unsafe { data.set_value_unchecked(i, v) },
                     pl,
                 );
-            });
+                data
+            };
             log_summary(
                 &func,
                 size_of_val(data.as_slice()),
